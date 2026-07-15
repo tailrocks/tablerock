@@ -1,0 +1,194 @@
+# Rust Core Architecture
+
+## Initial crates
+
+### `tablerock-core`
+
+Stable language shared by engine and clients:
+
+- opaque profile/session/context/tab/query/result/row/mutation IDs;
+- engine, TLS, safety, and connection-source values without resolved secrets;
+- capabilities and engine-specific facts;
+- catalog nodes/snapshots;
+- owned typed values, columns, row batches/pages, summaries;
+- commands, events, errors, revisions, edits, and restoration records.
+
+It has no Ratatui, AppKit, concrete database client, socket, task handle, or
+borrowed client row. Types are bounded and serializable for future protocol use.
+
+### `tablerock-engine`
+
+Runtime ownership:
+
+```text
+src/
+  engine.rs
+  session.rs
+  profile.rs
+  secret.rs
+  catalog.rs
+  query.rs
+  result_store.rs
+  edit.rs
+  history.rs
+  redaction.rs
+  drivers/{postgres,clickhouse,redis}.rs
+```
+
+It owns Tokio tasks/cancellation, sessions, driver adapters, catalog caches,
+query coordination, bounded results, edits, storage, reconnect/shutdown, and
+redacted telemetry. Keep drivers as modules until optional builds, helper
+processes, or independent release needs justify crates.
+
+### `tablerock-tui`
+
+TableRock presentation model, messages, pure updates, effects-as-data,
+subscriptions, views, and product compositions. It consumes `tailrocks-tui`
+but no concrete driver. Messages carry IDs and bounded snapshots/pages.
+
+### `tablerock-cli`
+
+Binary, command parsing, configuration/data paths, terminal restoration,
+signals, effect execution, noninteractive text/JSON output, secret adapter, and
+telemetry initialization.
+
+Future `tablerock-daemon` and `tablerock-ffi` appear only after the terminal
+contracts stabilize.
+
+## Dependency direction
+
+```text
+tailrocks-tui <------------- tablerock-tui
+                                  |
+                                  v
+                           tablerock-core
+                                  ^
+                                  |
+                          tablerock-engine
+
+tablerock-cli ------------> tablerock-tui + tablerock-engine
+future daemon ------------> tablerock-engine + tablerock-core
+future FFI ---------------> tablerock-engine + tablerock-core
+```
+
+No runtime-to-presentation edge is allowed.
+
+## Driver boundary
+
+A small shared lifecycle exposes engine/capabilities, connect, catalog,
+execute, cancel, and shutdown. Execution/catalog requests are enums with typed
+PostgreSQL, ClickHouse, Redis, object-page, metadata, and mutation variants.
+
+Constraints:
+
+- bounded cancellation-aware event sinks;
+- redacted errors preserve safe engine code/severity/position;
+- client row/socket types never cross the adapter;
+- write plans are typed parameters/commands, not executable preview strings;
+- reconnect never automatically retries ambiguous writes.
+
+## Commands, events, and revisions
+
+Commands represent operator intent:
+
+```text
+TestProfile / SaveProfile / Connect / Disconnect
+SelectContext / RefreshCatalog / OpenObject
+Execute / Cancel / FetchPage
+StageMutation / ReviewMutations / ApplyMutations / DiscardMutations
+```
+
+Events carry profile-test outcome, session/catalog/tab snapshot, query progress,
+result changes/pages, change review, and redacted failure. Mutable aggregates
+have monotonic revisions; stale pages/completions/events are discarded.
+
+## Session ownership
+
+One engine owns profiles, live sessions, queries, catalogs, results, and
+history. Session state is explicit:
+
+```text
+Disconnected -> Connecting -> Connected
+       ^              |            |
+       +----------- Failed <- Reconnecting
+```
+
+Transitions carry reason, attempt, time, and required operator action. Read-only
+metadata may retry under a bounded policy; user queries require explicit retry
+unless the driver proves no request reached the server.
+
+## Result store
+
+```text
+driver stream -> bounded channel -> assembler -> immutable batches
+                                             -> page projection
+```
+
+The store enforces row/byte caps, tracks completion/truncation/cancellation,
+and evicts unpinned batches under a memory budget. Table tabs page from the
+server and cache near the viewport. Arbitrary queries stream to a configured
+cap. The status distinguishes row-cap, byte-cap, cancelled, and failed.
+
+Start with an owned typed value model and row batches. Do not add Arrow until
+measurements or interoperability require it. Future RPC/FFI pages use one
+encoded buffer, never one object/call per cell.
+
+## Catalog and autocomplete
+
+Load database list, selected objects, then selected columns incrementally.
+Completion reads immutable schema-index snapshots and receives document
+revision, cursor byte offset, dialect, database/schema context, and aliases.
+Results combine parser/token context, keywords/commands, catalog candidates,
+fuzzy ranking, and bounded recent selections.
+
+## Profiles and credentials
+
+Persist a documented versioned profile schema with stable IDs, engine,
+endpoint/default context, value source per property, TLS, safety, timeouts, and
+preferences. High-churn history/cache/restoration use one embedded storage
+adapter. Do not persist results or pending edits initially.
+
+```text
+ConnectionValue
+  Literal(non-secret)
+  OnePassword(OpRef)
+  HostEnvironment(variable)
+  PromptOnConnect
+  DangerousPlaintextSecret(acknowledgement)
+```
+
+`OpRef` stores stable vault/item/field UUID references plus pinned account and
+display breadcrumb. A metadata-only picker suggests reviewed mappings for host,
+port, database/index, user, password, and TLS fields. A CLI-owned resolver runs
+bounded account-pinned `op read` calls only during Test/Connect. Resolved values
+never enter core snapshots or telemetry.
+
+The official reference format and CLI read behavior are documented in
+[1Password secret references](https://developer.1password.com/docs/cli/secret-references/).
+
+Do not depend on `jackin❯` internal secret modules. A future shared secret crate
+needs a second consumer and independent security review.
+
+## Safety and telemetry
+
+- safety mode participates in every write request;
+- prepared/bound values and dialect-owned identifier quoting;
+- operation-specific destructive confirmation tokens;
+- Redis unknown commands classified as writes;
+- timeout/result budgets below presentation;
+- redaction before UI, logs, telemetry, or diagnostics;
+- default telemetry records IDs, engine, safe codes, durations, counts, and
+  state transitions, not SQL or values;
+- OpenTelemetry may be sent to Parallax, but TableRock never depends on a
+  Parallax-specific database API.
+
+## Testing
+
+- pure capability/value/quoting/reducer/paging/redaction tests;
+- one driver contract harness over pinned PostgreSQL, ClickHouse, Redis;
+- cancellation/disconnect/reconnect/stale-event/ambiguous-write races;
+- 1Password rename, signed-out, partial mapping, multi-account, timeout, and
+  redaction cases;
+- TUI conformance at minimum/normal/wide sizes and all data/error states;
+- performance harness for first row, throughput, memory, scrolling,
+  cancellation, catalog completion, and Redis scans.
