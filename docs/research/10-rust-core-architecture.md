@@ -165,9 +165,10 @@ with no rollback claim.
 
 Review consumes the exact plan into a non-cloneable reviewed value.
 Authorization consumes that value and rejects expired tokens or scope/revision
-drift. Any edit therefore requires a new review. The later service/UniFFI seam
-must retain plans in a Rust-owned single-use token registry rather than
-serializing an authority-bearing plan into Swift.
+drift. Any edit therefore requires a new review. A bounded Rust-owned registry
+retains reviewed plans behind opaque tokens and removes authority before every
+authorization attempt. The later service/UniFFI seam must expose this registry,
+not serialize an authority-bearing plan into Swift.
 
 ## Catalog and autocomplete
 

@@ -1,4 +1,8 @@
-use std::{collections::BTreeSet, error::Error, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    error::Error,
+    fmt,
+};
 
 use crate::{
     BoundedBytes, BoundedText, Engine, MutationId, OperationScope, OwnedValue, ReviewTokenId,
@@ -478,6 +482,128 @@ impl AuthorizedMutationPlan {
     #[must_use]
     pub const fn token_id(&self) -> ReviewTokenId {
         self.token_id
+    }
+}
+
+/// Bounded owner for reviewed mutation authority crossing copyable boundaries.
+///
+/// Redemption removes the entry before validation. A stale scope, revision, or
+/// clock therefore consumes authority and cannot be retried with new arguments.
+pub struct MutationReviewRegistry {
+    max_entries: usize,
+    entries: BTreeMap<ReviewTokenId, ReviewedMutationPlan>,
+}
+
+impl MutationReviewRegistry {
+    pub const MAX_ENTRIES: u32 = 4_096;
+
+    pub const fn new(max_entries: u32) -> Result<Self, ReviewRegistryError> {
+        if max_entries == 0 || max_entries > Self::MAX_ENTRIES {
+            return Err(ReviewRegistryError::InvalidCapacity);
+        }
+        Ok(Self {
+            max_entries: max_entries as usize,
+            entries: BTreeMap::new(),
+        })
+    }
+
+    pub fn insert(
+        &mut self,
+        reviewed: ReviewedMutationPlan,
+        now_ms: u64,
+    ) -> Result<(), ReviewRegistryError> {
+        if now_ms < reviewed.issued_at_ms {
+            return Err(ReviewRegistryError::Review(ReviewError::ClockBeforeIssue));
+        }
+        if now_ms >= reviewed.expires_at_ms {
+            return Err(ReviewRegistryError::Review(ReviewError::Expired));
+        }
+        self.purge_expired(now_ms);
+        if self.entries.contains_key(&reviewed.token_id) {
+            return Err(ReviewRegistryError::DuplicateToken);
+        }
+        if self.entries.len() >= self.max_entries {
+            return Err(ReviewRegistryError::CapacityExceeded);
+        }
+        self.entries.insert(reviewed.token_id, reviewed);
+        Ok(())
+    }
+
+    pub fn authorize(
+        &mut self,
+        token_id: ReviewTokenId,
+        now_ms: u64,
+        expected_scope: OperationScope,
+        expected_revision: Revision,
+    ) -> Result<AuthorizedMutationPlan, ReviewRegistryError> {
+        let reviewed = self
+            .entries
+            .remove(&token_id)
+            .ok_or(ReviewRegistryError::TokenNotFound)?;
+        reviewed
+            .authorize(now_ms, expected_scope, expected_revision)
+            .map_err(ReviewRegistryError::Review)
+    }
+
+    pub fn revoke(&mut self, token_id: ReviewTokenId) -> bool {
+        self.entries.remove(&token_id).is_some()
+    }
+
+    pub fn purge_expired(&mut self, now_ms: u64) -> usize {
+        let before = self.entries.len();
+        self.entries
+            .retain(|_, reviewed| now_ms < reviewed.expires_at_ms);
+        before - self.entries.len()
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+impl fmt::Debug for MutationReviewRegistry {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MutationReviewRegistry")
+            .field("entries", &self.entries.len())
+            .field("max_entries", &self.max_entries)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewRegistryError {
+    InvalidCapacity,
+    CapacityExceeded,
+    DuplicateToken,
+    TokenNotFound,
+    Review(ReviewError),
+}
+
+impl fmt::Display for ReviewRegistryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidCapacity => "mutation review registry capacity must be nonzero",
+            Self::CapacityExceeded => "mutation review registry capacity exceeded",
+            Self::DuplicateToken => "mutation review token already exists",
+            Self::TokenNotFound => "mutation review token is unavailable",
+            Self::Review(_) => "mutation review authorization failed",
+        })
+    }
+}
+
+impl Error for ReviewRegistryError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Review(error) => Some(error),
+            _ => None,
+        }
     }
 }
 

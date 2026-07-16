@@ -36,8 +36,8 @@ pub use id::{
 };
 pub use mutation::{
     AuthorizedMutationPlan, FieldValue, MutationBuildError, MutationChange, MutationExecutionModel,
-    MutationPlan, MutationPlanLimits, MutationTarget, RedisExpiration, ReviewError,
-    ReviewedMutationPlan,
+    MutationPlan, MutationPlanLimits, MutationReviewRegistry, MutationTarget, RedisExpiration,
+    ReviewError, ReviewRegistryError, ReviewedMutationPlan,
 };
 pub use operation::{
     EventRejection, OperationCursor, OperationEvent, OperationEventKind, OperationIdentity,

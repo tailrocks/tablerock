@@ -208,6 +208,8 @@ move-only review/authorization gate are recorded in
 [`104-phase-2-mutation-plan.md`](docs/research/104-phase-2-mutation-plan.md).
 TermRock migration 0018 and the exact refreshed `main` pin are recorded in
 [`105-termrock-migration-0018.md`](docs/research/105-termrock-migration-0018.md).
+The bounded Rust-owned single-use mutation review registry is recorded in
+[`106-phase-2-mutation-review-registry.md`](docs/research/106-phase-2-mutation-review-registry.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

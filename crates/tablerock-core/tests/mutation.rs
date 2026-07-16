@@ -1,8 +1,9 @@
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, ContextId, Engine, EngineType, FieldValue, IdParts,
     MutationBuildError, MutationChange, MutationExecutionModel, MutationId, MutationPlan,
-    MutationPlanLimits, MutationTarget, OperationScope, OwnedValue, ProfileId, RedisExpiration,
-    ReviewError, ReviewTokenId, Revision, SessionId, Truncation,
+    MutationPlanLimits, MutationReviewRegistry, MutationTarget, OperationScope, OwnedValue,
+    ProfileId, RedisExpiration, ReviewError, ReviewRegistryError, ReviewTokenId, Revision,
+    SessionId, Truncation,
 };
 
 fn opaque<T>(
@@ -42,6 +43,10 @@ fn mutation_id() -> MutationId {
 
 fn review_id() -> ReviewTokenId {
     opaque(21, ReviewTokenId::from_parts)
+}
+
+fn review_id_with(seed: u64) -> ReviewTokenId {
+    opaque(seed, ReviewTokenId::from_parts)
 }
 
 fn postgres_target() -> MutationTarget {
@@ -345,4 +350,107 @@ fn debug_never_contains_identifiers_keys_or_values() {
     let debug = format!("{plan:?}");
     assert!(!debug.contains("do-not-log"));
     assert!(debug.contains("value_bytes"));
+}
+
+#[test]
+fn registry_redeems_authority_exactly_once() {
+    let reviewed = plan(
+        postgres_target(),
+        vec![MutationChange::DeleteRow {
+            locator: vec![field("id", OwnedValue::unsigned(1))],
+        }],
+    )
+    .review(review_id(), 100, 200)
+    .unwrap();
+    let mut registry = MutationReviewRegistry::new(1).unwrap();
+    registry.insert(reviewed, 100).unwrap();
+    assert_eq!(registry.len(), 1);
+    let authorized = registry
+        .authorize(review_id(), 150, scope(1), Revision::from_wire_u64(7))
+        .unwrap();
+    assert_eq!(authorized.token_id(), review_id());
+    assert!(registry.is_empty());
+    assert!(matches!(
+        registry.authorize(review_id(), 150, scope(1), Revision::from_wire_u64(7)),
+        Err(ReviewRegistryError::TokenNotFound)
+    ));
+}
+
+#[test]
+fn failed_registry_authorization_still_consumes_authority() {
+    let reviewed = plan(
+        postgres_target(),
+        vec![MutationChange::DeleteRow {
+            locator: vec![field("id", OwnedValue::unsigned(1))],
+        }],
+    )
+    .review(review_id(), 100, 200)
+    .unwrap();
+    let mut registry = MutationReviewRegistry::new(1).unwrap();
+    registry.insert(reviewed, 100).unwrap();
+    assert!(matches!(
+        registry.authorize(review_id(), 150, scope(9), Revision::from_wire_u64(7)),
+        Err(ReviewRegistryError::Review(ReviewError::ScopeMismatch))
+    ));
+    assert!(registry.is_empty());
+}
+
+#[test]
+fn registry_bounds_duplicates_expiry_and_revocation() {
+    assert!(matches!(
+        MutationReviewRegistry::new(0),
+        Err(ReviewRegistryError::InvalidCapacity)
+    ));
+    assert!(matches!(
+        MutationReviewRegistry::new(MutationReviewRegistry::MAX_ENTRIES + 1),
+        Err(ReviewRegistryError::InvalidCapacity)
+    ));
+    let reviewed = plan(
+        postgres_target(),
+        vec![MutationChange::DeleteRow {
+            locator: vec![field("id", OwnedValue::unsigned(1))],
+        }],
+    )
+    .review(review_id_with(30), 100, 200)
+    .unwrap();
+    let duplicate = plan(
+        postgres_target(),
+        vec![MutationChange::DeleteRow {
+            locator: vec![field("id", OwnedValue::unsigned(2))],
+        }],
+    )
+    .review(review_id_with(30), 100, 200)
+    .unwrap();
+    let overflow = plan(
+        postgres_target(),
+        vec![MutationChange::DeleteRow {
+            locator: vec![field("id", OwnedValue::unsigned(3))],
+        }],
+    )
+    .review(review_id_with(31), 100, 200)
+    .unwrap();
+    let mut registry = MutationReviewRegistry::new(1).unwrap();
+    registry.insert(reviewed, 100).unwrap();
+    assert!(matches!(
+        registry.insert(duplicate, 100),
+        Err(ReviewRegistryError::DuplicateToken)
+    ));
+    assert!(matches!(
+        registry.insert(overflow, 100),
+        Err(ReviewRegistryError::CapacityExceeded)
+    ));
+    assert_eq!(registry.purge_expired(200), 1);
+    assert!(registry.is_empty());
+
+    let reviewed = plan(
+        postgres_target(),
+        vec![MutationChange::DeleteRow {
+            locator: vec![field("id", OwnedValue::unsigned(4))],
+        }],
+    )
+    .review(review_id_with(32), 200, 300)
+    .unwrap();
+    registry.insert(reviewed, 200).unwrap();
+    assert!(registry.revoke(review_id_with(32)));
+    assert!(!registry.revoke(review_id_with(32)));
 }

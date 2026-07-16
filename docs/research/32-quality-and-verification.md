@@ -69,7 +69,8 @@ Property and model tests cover:
   unknown, and truncated;
 - page offsets/ranges/bounds and hostile encoded input;
 - capability filtering and explicit unsupported states;
-- mutation review-token scope/expiry and no display-text execution;
+- mutation review-token scope/expiry, exact-once registry redemption, and no
+  display-text execution;
 - safety monotonicity: presentation cannot weaken Rust policy;
 - redaction idempotence and absence of forbidden fields;
 - cancellation state-machine legality and ambiguous-write non-retry;

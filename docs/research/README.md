@@ -54,6 +54,7 @@ kept in the roadmap.
 - [Phase 2 immutable catalog snapshot evidence](103-phase-2-catalog-snapshot.md)
 - [Phase 2 typed mutation-plan evidence](104-phase-2-mutation-plan.md)
 - [TermRock migration 0018 adoption](105-termrock-migration-0018.md)
+- [Phase 2 single-use mutation review registry](106-phase-2-mutation-review-registry.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

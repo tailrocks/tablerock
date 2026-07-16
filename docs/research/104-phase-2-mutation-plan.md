@@ -38,9 +38,12 @@ Review consumes the exact plan and returns a non-cloneable reviewed wrapper.
 Authorization consumes that wrapper and fails closed on time, operation-scope,
 or revision drift. Editing the plan necessarily creates a new review.
 
-The future service and UniFFI boundaries must keep authority in a Rust-owned
-single-use token registry. Serialized plan bytes are copyable and therefore do
-not preserve the in-process move-only guarantee.
+The core now supplies a bounded Rust-owned single-use token registry. It purges
+expired entries, rejects duplicate tokens and capacity overflow, supports
+explicit revocation, and removes authority before validating an authorization
+attempt. The future service and UniFFI boundaries must expose this owner.
+Serialized plan bytes are copyable and therefore do not preserve the
+in-process move-only guarantee.
 
 ## Evidence
 
