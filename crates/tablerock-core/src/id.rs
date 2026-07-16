@@ -175,4 +175,5 @@ opaque_ids!(
     RequestId,
     CatalogNodeId,
     ReviewTokenId,
+    SubscriptionId,
 );

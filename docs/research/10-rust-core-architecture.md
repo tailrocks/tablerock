@@ -120,6 +120,12 @@ rejects unknown, stale, or future command expectations before operation
 capacity or driver state can change. It also rejects stale in-flight progress
 without suppressing lifecycle and terminal outcome truth.
 
+Each operation owns a finite set of opaque subscriptions. Events fan out through
+independent bounded queues; a slow subscriber receives its own resync marker and
+cannot block or degrade a current subscriber. Late subscribers start current
+only at the exact authoritative sequence, otherwise they receive resync. An
+operation cannot retire while any subscription handle or queued event remains.
+
 ## Session ownership
 
 One engine owns profiles, live sessions, queries, catalogs, results, and

@@ -1,9 +1,9 @@
 use tablerock_core::{
     CancelRequestOutcome, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
-    CommandScope, ContextId, EventQueuePush, IdParts, OperationEventKind, OperationId,
-    OperationOutcome, OperationPhase, OperationRetireError, OperationScope, ProfileId, RequestId,
-    Revision, ServiceCoordinator, ServiceError, ServiceLimits, ServicePhase, SessionId,
-    ShutdownMode, ShutdownOutcome,
+    CommandScope, ContextId, EventSequence, FanoutOutcome, IdParts, OperationEventKind,
+    OperationId, OperationOutcome, OperationPhase, OperationRetireError, OperationScope, ProfileId,
+    RequestId, Revision, ServiceCoordinator, ServiceError, ServiceLimits, ServicePhase, SessionId,
+    ShutdownMode, ShutdownOutcome, SubscriptionId, SubscriptionStart,
 };
 
 fn opaque<T>(
@@ -19,6 +19,10 @@ fn operation(low: u64) -> OperationId {
 
 fn request(low: u64) -> RequestId {
     opaque(low, RequestId::from_parts)
+}
+
+fn subscription(low: u64) -> SubscriptionId {
+    opaque(low, SubscriptionId::from_parts)
 }
 
 fn context(seed: u64) -> OperationScope {
@@ -72,7 +76,7 @@ fn scoped_revisions_are_hierarchical_monotonic_and_authoritative() {
         session_id: scope.session_id(),
     };
     let context_scope = CommandScope::Context(scope);
-    let mut service = ServiceCoordinator::new(ServiceLimits::new(4, 2, 4).unwrap());
+    let mut service = ServiceCoordinator::new(ServiceLimits::new(4, 2, 2, 4).unwrap());
     assert_eq!(
         service.register_scope(context_scope, Revision::INITIAL),
         Err(ServiceError::ParentScopeUnavailable)
@@ -167,7 +171,6 @@ fn scoped_revisions_are_hierarchical_monotonic_and_authoritative() {
             OperationPhase::Terminal(OperationOutcome::Completed),
         )
         .unwrap();
-    while service.pop_event(operation(1)).unwrap().is_some() {}
     service.retire(operation(1)).unwrap();
     service.remove_scope(context_scope).unwrap();
     service.remove_scope(session).unwrap();
@@ -180,7 +183,7 @@ fn scoped_revisions_are_hierarchical_monotonic_and_authoritative() {
 
 #[test]
 fn scope_registry_capacity_includes_required_application_scope() {
-    let mut service = ServiceCoordinator::new(ServiceLimits::new(1, 1, 1).unwrap());
+    let mut service = ServiceCoordinator::new(ServiceLimits::new(1, 1, 1, 1).unwrap());
     assert_eq!(
         service.register_scope(
             CommandScope::Profile(opaque(90, ProfileId::from_parts)),
@@ -200,9 +203,23 @@ fn context_command(request_seed: u64, parent: Option<OperationId>) -> CommandEnv
 }
 
 fn service(max_operations: u32, event_queue_capacity: u32) -> ServiceCoordinator {
+    service_with_subscriptions(max_operations, 4, event_queue_capacity)
+}
+
+fn service_with_subscriptions(
+    max_operations: u32,
+    max_subscriptions_per_operation: u32,
+    event_queue_capacity: u32,
+) -> ServiceCoordinator {
     let scope = context(10);
     let mut service = ServiceCoordinator::new(
-        ServiceLimits::new(8, max_operations, event_queue_capacity).unwrap(),
+        ServiceLimits::new(
+            8,
+            max_operations,
+            max_subscriptions_per_operation,
+            event_queue_capacity,
+        )
+        .unwrap(),
     );
     service
         .register_scope(CommandScope::Profile(scope.profile_id()), Revision::INITIAL)
@@ -223,13 +240,150 @@ fn service(max_operations: u32, event_queue_capacity: u32) -> ServiceCoordinator
 }
 
 #[test]
+fn fanout_is_independent_and_late_subscribers_receive_resync() {
+    let mut service = service(2, 4);
+    service
+        .submit(operation(1), context_command(101, None))
+        .unwrap();
+    assert_eq!(
+        service.subscribe(operation(1), subscription(201), EventSequence::INITIAL),
+        Ok(SubscriptionStart::Current)
+    );
+    assert_eq!(
+        service.transition(operation(1), OperationPhase::Running),
+        Ok(FanoutOutcome {
+            subscribers: 1,
+            enqueued: 1,
+            ..FanoutOutcome::default()
+        })
+    );
+    assert_eq!(
+        service.subscribe(operation(1), subscription(202), EventSequence::INITIAL),
+        Ok(SubscriptionStart::ResyncQueued)
+    );
+    assert!(matches!(
+        service
+            .pop_event(operation(1), subscription(202))
+            .unwrap()
+            .unwrap()
+            .kind(),
+        OperationEventKind::ResyncRequired { .. }
+    ));
+    let first = service
+        .pop_event(operation(1), subscription(201))
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        first.kind(),
+        OperationEventKind::PhaseChanged { .. }
+    ));
+    assert_eq!(
+        service.progress(operation(1), 10, 100),
+        Ok(FanoutOutcome {
+            subscribers: 2,
+            enqueued: 2,
+            ..FanoutOutcome::default()
+        })
+    );
+    let fast = service
+        .pop_event(operation(1), subscription(201))
+        .unwrap()
+        .unwrap();
+    let late = service
+        .pop_event(operation(1), subscription(202))
+        .unwrap()
+        .unwrap();
+    assert_eq!(fast, late);
+    assert_eq!(
+        service.subscribe(operation(1), subscription(201), EventSequence::INITIAL),
+        Err(ServiceError::DuplicateSubscription)
+    );
+    assert_eq!(
+        service.subscribe(
+            operation(1),
+            subscription(203),
+            EventSequence::from_wire_u64(99)
+        ),
+        Err(ServiceError::FutureSubscriptionCursor)
+    );
+}
+
+#[test]
+fn slow_subscriber_overflow_resync_does_not_block_fast_subscriber() {
+    let mut service = service_with_subscriptions(1, 2, 1);
+    service
+        .submit(operation(1), context_command(101, None))
+        .unwrap();
+    for subscriber in [subscription(201), subscription(202)] {
+        service
+            .subscribe(operation(1), subscriber, EventSequence::INITIAL)
+            .unwrap();
+    }
+    service
+        .transition(operation(1), OperationPhase::Running)
+        .unwrap();
+    service
+        .pop_event(operation(1), subscription(201))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        service.progress(operation(1), 10, 100),
+        Ok(FanoutOutcome {
+            subscribers: 2,
+            enqueued: 1,
+            resync_required: 1,
+            ..FanoutOutcome::default()
+        })
+    );
+    assert!(matches!(
+        service
+            .pop_event(operation(1), subscription(202))
+            .unwrap()
+            .unwrap()
+            .kind(),
+        OperationEventKind::ResyncRequired { .. }
+    ));
+    assert!(matches!(
+        service
+            .pop_event(operation(1), subscription(201))
+            .unwrap()
+            .unwrap()
+            .kind(),
+        OperationEventKind::Progress { .. }
+    ));
+}
+
+#[test]
+fn subscription_capacity_and_unknown_handles_fail_closed() {
+    let mut service = service_with_subscriptions(1, 1, 2);
+    service
+        .submit(operation(1), context_command(101, None))
+        .unwrap();
+    service
+        .subscribe(operation(1), subscription(201), EventSequence::INITIAL)
+        .unwrap();
+    assert_eq!(
+        service.subscribe(operation(1), subscription(202), EventSequence::INITIAL),
+        Err(ServiceError::SubscriptionCapacityExceeded)
+    );
+    assert_eq!(
+        service.pop_event(operation(1), subscription(999)),
+        Err(ServiceError::UnknownSubscription)
+    );
+    assert_eq!(
+        service.unsubscribe(operation(1), subscription(999)),
+        Err(ServiceError::UnknownSubscription)
+    );
+}
+
+#[test]
 fn service_limits_and_submission_are_finite_and_unique() {
     assert_eq!(
-        ServiceLimits::new(0, 1, 1),
+        ServiceLimits::new(0, 1, 1, 1),
         Err(ServiceError::InvalidLimits)
     );
     assert_eq!(
-        ServiceLimits::new(1, ServiceLimits::MAX_OPERATIONS + 1, 1),
+        ServiceLimits::new(1, ServiceLimits::MAX_OPERATIONS + 1, 1, 1),
         Err(ServiceError::InvalidLimits)
     );
     let mut service = service(2, 4);
@@ -257,7 +411,7 @@ fn service_limits_and_submission_are_finite_and_unique() {
 
 #[test]
 fn parent_must_exist_remain_active_and_contain_child_scope() {
-    let mut service = ServiceCoordinator::new(ServiceLimits::new(4, 4, 4).unwrap());
+    let mut service = ServiceCoordinator::new(ServiceLimits::new(4, 4, 2, 4).unwrap());
     let profile_one = opaque(30, ProfileId::from_parts);
     let profile_two = opaque(31, ProfileId::from_parts);
     service
@@ -337,16 +491,32 @@ fn coordinator_owns_lifecycle_progress_cancel_and_terminal_delivery() {
         .submit(operation(1), context_command(101, None))
         .unwrap();
     assert_eq!(
+        service.subscribe(operation(1), subscription(201), EventSequence::INITIAL),
+        Ok(SubscriptionStart::Current)
+    );
+    assert_eq!(
         service.transition(operation(1), OperationPhase::Running),
-        Ok(EventQueuePush::Enqueued)
+        Ok(FanoutOutcome {
+            subscribers: 1,
+            enqueued: 1,
+            ..FanoutOutcome::default()
+        })
     );
     assert_eq!(
         service.progress(operation(1), 10, 100),
-        Ok(EventQueuePush::Enqueued)
+        Ok(FanoutOutcome {
+            subscribers: 1,
+            enqueued: 1,
+            ..FanoutOutcome::default()
+        })
     );
     assert_eq!(
         service.progress(operation(1), 20, 200),
-        Ok(EventQueuePush::ProgressCoalesced)
+        Ok(FanoutOutcome {
+            subscribers: 1,
+            progress_coalesced: 1,
+            ..FanoutOutcome::default()
+        })
     );
     assert_eq!(
         service.request_cancel(operation(1)),
@@ -373,11 +543,18 @@ fn coordinator_owns_lifecycle_progress_cancel_and_terminal_delivery() {
         Err(OperationRetireError::PendingEvents)
     );
     let mut kinds = Vec::new();
-    while let Some(event) = service.pop_event(operation(1)).unwrap() {
+    while let Some(event) = service.pop_event(operation(1), subscription(201)).unwrap() {
         kinds.push(event.kind());
     }
     assert_eq!(kinds.len(), 4);
     assert!(matches!(kinds[1], OperationEventKind::Progress { .. }));
+    assert_eq!(
+        service.retire(operation(1)),
+        Err(OperationRetireError::ActiveSubscriptions)
+    );
+    service
+        .unsubscribe(operation(1), subscription(201))
+        .unwrap();
     service.retire(operation(1)).unwrap();
     assert!(service.is_empty());
 }

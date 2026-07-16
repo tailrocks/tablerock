@@ -33,7 +33,7 @@ pub use diagnostic::{
 };
 pub use id::{
     CatalogNodeId, ContextId, IdDecodeError, IdParts, MutationId, OperationId, ProfileId, QueryId,
-    RequestId, ResultId, ReviewTokenId, RowId, SessionId, TabId,
+    RequestId, ResultId, ReviewTokenId, RowId, SessionId, SubscriptionId, TabId,
 };
 pub use mutation::{
     AuthorizedMutationPlan, FieldValue, MutationBuildError, MutationChange, MutationExecutionModel,
@@ -76,8 +76,8 @@ pub use secret::{
     SecretField, SecretPersistenceRisk, SecretSource, SecretSourceKind,
 };
 pub use service::{
-    CancelRequestOutcome, OperationRetireError, ServiceCoordinator, ServiceError, ServiceLimits,
-    ServicePhase, ShutdownMode, ShutdownOutcome,
+    CancelRequestOutcome, FanoutOutcome, OperationRetireError, ServiceCoordinator, ServiceError,
+    ServiceLimits, ServicePhase, ShutdownMode, ShutdownOutcome, SubscriptionStart,
 };
 pub use value::{
     Availability, BoundedBytes, BoundedBytesError, BoundedText, BoundedTextError, ByteLimit,

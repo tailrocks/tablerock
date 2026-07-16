@@ -41,9 +41,16 @@ not call the service stopped. The coordinator reaches `Stopped` only after all
 operations carry legal terminal outcomes. Existing terminal records may remain
 available for delivery and retirement.
 
-Driver task ownership and bounded multi-subscriber fan-out remain later Phase 2
-work; they must compose this coordinator rather than duplicate its scope,
-revision, or lifecycle state machines.
+Every operation now owns a finite set of opaque subscription handles and one
+bounded queue per handle. Fan-out is independent: progress coalescing or resync
+for one subscriber does not alter another queue. Late subscribers receive
+resync unless their cursor exactly matches the authoritative sequence. Future
+cursors fail. Terminal retirement requires all queues drained and all handles
+explicitly removed.
+
+Driver task ownership remains later Phase 2 work; it must compose this
+coordinator rather than duplicate its scope, revision, subscription, or
+lifecycle state machines.
 
 ## Evidence
 
@@ -53,6 +60,9 @@ and-swap revision advance, stale submission rejection, safe hierarchical
 removal, operation/request uniqueness, live-parent containment, stale in-flight
 progress rejection, legal lifecycle, exact cancellation outcomes, pending-event retirement,
 cancel-active draining, stopped-state rejection, and no invented outcomes.
+Multi-subscriber tests additionally prove independent delivery, late resync,
+future/duplicate/unknown handle rejection, finite subscriber capacity, and
+slow-consumer overflow isolation.
 
 This contract derives from TableRock research 10, 14, 30, 31, and 32. No
 external product source, tests, identifiers, assets, or protected expression

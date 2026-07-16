@@ -78,6 +78,8 @@ Property and model tests cover:
   retirement, and shutdown draining without invented outcomes;
 - bounded hierarchical scope ownership with stale/future command rejection and
   monotonic revision advance;
+- bounded multi-subscriber fan-out, late/future cursor handling, independent
+  slow-subscriber resync, and explicit subscription retirement;
 - eviction/resync without dangling page or selection identity.
 
 ## Real-server matrix

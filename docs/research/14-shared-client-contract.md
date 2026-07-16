@@ -78,6 +78,11 @@ application/profile/session/context registry owns aggregate revisions, requires
 parent-before-child registration, and validates command expectations before
 submission.
 
+Subscriptions use opaque IDs and independent bounded per-operation queues.
+Late cursors receive explicit resync, future cursors fail, and one slow client
+cannot force another client's queue to drop or block. Retirement requires every
+subscriber to drain and unsubscribe.
+
 ### Command envelope
 
 Every command carries:

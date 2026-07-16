@@ -3,29 +3,34 @@ use std::{collections::BTreeMap, error::Error, fmt};
 use crate::{
     CommandEnvelope, CommandScope, CounterOverflow, EventQueueError, EventQueuePush, EventSequence,
     OperationCursor, OperationEvent, OperationEventKind, OperationEventQueue, OperationId,
-    OperationIdentity, OperationOutcome, OperationPhase, Revision, TransitionError,
+    OperationIdentity, OperationOutcome, OperationPhase, Revision, SubscriptionId, TransitionError,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServiceLimits {
     max_scopes: u32,
     max_operations: u32,
+    max_subscriptions_per_operation: u32,
     event_queue_capacity: u32,
 }
 
 impl ServiceLimits {
     pub const MAX_SCOPES: u32 = 16_384;
     pub const MAX_OPERATIONS: u32 = 4_096;
+    pub const MAX_SUBSCRIPTIONS_PER_OPERATION: u32 = 16;
 
     pub const fn new(
         max_scopes: u32,
         max_operations: u32,
+        max_subscriptions_per_operation: u32,
         event_queue_capacity: u32,
     ) -> Result<Self, ServiceError> {
         if max_scopes == 0
             || max_scopes > Self::MAX_SCOPES
             || max_operations == 0
             || max_operations > Self::MAX_OPERATIONS
+            || max_subscriptions_per_operation == 0
+            || max_subscriptions_per_operation > Self::MAX_SUBSCRIPTIONS_PER_OPERATION
             || event_queue_capacity == 0
             || event_queue_capacity > OperationEventQueue::MAX_CAPACITY
         {
@@ -34,6 +39,7 @@ impl ServiceLimits {
         Ok(Self {
             max_scopes,
             max_operations,
+            max_subscriptions_per_operation,
             event_queue_capacity,
         })
     }
@@ -65,6 +71,20 @@ pub enum CancelRequestOutcome {
     AlreadyRequested,
     AlreadyTerminal(OperationOutcome),
     UnknownOperation,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FanoutOutcome {
+    pub subscribers: u32,
+    pub enqueued: u32,
+    pub progress_coalesced: u32,
+    pub resync_required: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubscriptionStart {
+    Current,
+    ResyncQueued,
 }
 
 pub struct ServiceCoordinator {
@@ -204,18 +224,12 @@ impl ServiceCoordinator {
             EventSequence::INITIAL,
             OperationPhase::Queued,
         );
-        let queue = OperationEventQueue::new(
-            identity,
-            EventSequence::INITIAL,
-            self.limits.event_queue_capacity,
-        )
-        .map_err(ServiceError::EventQueue)?;
         self.operations.insert(
             operation_id,
             OperationRecord {
                 command,
                 cursor,
-                queue,
+                subscriptions: BTreeMap::new(),
             },
         );
         Ok(identity)
@@ -225,7 +239,7 @@ impl ServiceCoordinator {
         &mut self,
         operation_id: OperationId,
         next: OperationPhase,
-    ) -> Result<EventQueuePush, ServiceError> {
+    ) -> Result<FanoutOutcome, ServiceError> {
         let record = self
             .operations
             .get_mut(&operation_id)
@@ -252,7 +266,7 @@ impl ServiceCoordinator {
             .cursor
             .accept(event)
             .expect("coordinator-generated transition must match its cursor");
-        let pushed = record.queue.push(event).map_err(ServiceError::EventQueue)?;
+        let pushed = fanout(record, event);
         self.stop_if_drained();
         Ok(pushed)
     }
@@ -262,7 +276,7 @@ impl ServiceCoordinator {
         operation_id: OperationId,
         cumulative_rows: u64,
         cumulative_bytes: u64,
-    ) -> Result<EventQueuePush, ServiceError> {
+    ) -> Result<FanoutOutcome, ServiceError> {
         let record = self
             .operations
             .get_mut(&operation_id)
@@ -298,7 +312,7 @@ impl ServiceCoordinator {
             .cursor
             .accept(event)
             .map_err(ServiceError::EventRejected)?;
-        record.queue.push(event).map_err(ServiceError::EventQueue)
+        Ok(fanout(record, event))
     }
 
     pub fn request_cancel(
@@ -318,14 +332,80 @@ impl ServiceCoordinator {
         }
     }
 
+    pub fn subscribe(
+        &mut self,
+        operation_id: OperationId,
+        subscription_id: SubscriptionId,
+        last_delivered: EventSequence,
+    ) -> Result<SubscriptionStart, ServiceError> {
+        if self
+            .operations
+            .values()
+            .any(|record| record.subscriptions.contains_key(&subscription_id))
+        {
+            return Err(ServiceError::DuplicateSubscription);
+        }
+        let record = self
+            .operations
+            .get_mut(&operation_id)
+            .ok_or(ServiceError::UnknownOperation)?;
+        if record.subscriptions.len() >= self.limits.max_subscriptions_per_operation as usize {
+            return Err(ServiceError::SubscriptionCapacityExceeded);
+        }
+        if last_delivered > record.cursor.sequence() {
+            return Err(ServiceError::FutureSubscriptionCursor);
+        }
+        let mut queue = OperationEventQueue::new(
+            record.cursor.identity(),
+            last_delivered,
+            self.limits.event_queue_capacity,
+        )
+        .map_err(ServiceError::EventQueue)?;
+        let start = if last_delivered < record.cursor.sequence() {
+            let event = OperationEvent::new(
+                record.cursor.identity(),
+                record.cursor.revision(),
+                record.cursor.sequence(),
+                OperationEventKind::ResyncRequired { last_delivered },
+            )
+            .map_err(ServiceError::Transition)?;
+            queue.push(event).map_err(ServiceError::EventQueue)?;
+            SubscriptionStart::ResyncQueued
+        } else {
+            SubscriptionStart::Current
+        };
+        record.subscriptions.insert(subscription_id, queue);
+        Ok(start)
+    }
+
+    pub fn unsubscribe(
+        &mut self,
+        operation_id: OperationId,
+        subscription_id: SubscriptionId,
+    ) -> Result<(), ServiceError> {
+        let record = self
+            .operations
+            .get_mut(&operation_id)
+            .ok_or(ServiceError::UnknownOperation)?;
+        record
+            .subscriptions
+            .remove(&subscription_id)
+            .map(|_| ())
+            .ok_or(ServiceError::UnknownSubscription)
+    }
+
     pub fn pop_event(
         &mut self,
         operation_id: OperationId,
+        subscription_id: SubscriptionId,
     ) -> Result<Option<OperationEvent>, ServiceError> {
         self.operations
             .get_mut(&operation_id)
-            .map(|record| record.queue.pop_front())
-            .ok_or(ServiceError::UnknownOperation)
+            .ok_or(ServiceError::UnknownOperation)?
+            .subscriptions
+            .get_mut(&subscription_id)
+            .map(OperationEventQueue::pop_front)
+            .ok_or(ServiceError::UnknownSubscription)
     }
 
     pub fn retire(&mut self, operation_id: OperationId) -> Result<(), OperationRetireError> {
@@ -336,8 +416,11 @@ impl ServiceCoordinator {
         if !matches!(record.cursor.phase(), OperationPhase::Terminal(_)) {
             return Err(OperationRetireError::StillActive);
         }
-        if !record.queue.is_empty() {
+        if record.subscriptions.values().any(|queue| !queue.is_empty()) {
             return Err(OperationRetireError::PendingEvents);
+        }
+        if !record.subscriptions.is_empty() {
+            return Err(OperationRetireError::ActiveSubscriptions);
         }
         self.operations.remove(&operation_id);
         Ok(())
@@ -427,7 +510,25 @@ impl fmt::Debug for ServiceCoordinator {
 struct OperationRecord {
     command: CommandEnvelope,
     cursor: OperationCursor,
-    queue: OperationEventQueue,
+    subscriptions: BTreeMap<SubscriptionId, OperationEventQueue>,
+}
+
+fn fanout(record: &mut OperationRecord, event: OperationEvent) -> FanoutOutcome {
+    let mut outcome = FanoutOutcome {
+        subscribers: record.subscriptions.len() as u32,
+        ..FanoutOutcome::default()
+    };
+    for queue in record.subscriptions.values_mut() {
+        match queue
+            .push(event)
+            .expect("coordinator-owned subscription queue must accept generated event")
+        {
+            EventQueuePush::Enqueued => outcome.enqueued += 1,
+            EventQueuePush::ProgressCoalesced => outcome.progress_coalesced += 1,
+            EventQueuePush::ResyncRequired => outcome.resync_required += 1,
+        }
+    }
+    outcome
 }
 
 fn scope_contains(parent: CommandScope, child: CommandScope) -> bool {
@@ -495,6 +596,10 @@ pub enum ServiceError {
     OperationCapacityExceeded,
     DuplicateOperation,
     DuplicateRequest,
+    SubscriptionCapacityExceeded,
+    DuplicateSubscription,
+    UnknownSubscription,
+    FutureSubscriptionCursor,
     ParentUnavailable,
     ParentScopeMismatch,
     UnknownOperation,
@@ -520,6 +625,10 @@ impl fmt::Display for ServiceError {
             Self::OperationCapacityExceeded => "application service operation capacity exceeded",
             Self::DuplicateOperation => "operation identifier is already active",
             Self::DuplicateRequest => "request identifier is already active",
+            Self::SubscriptionCapacityExceeded => "operation subscription capacity exceeded",
+            Self::DuplicateSubscription => "subscription identifier is already active",
+            Self::UnknownSubscription => "operation subscription is unknown",
+            Self::FutureSubscriptionCursor => "subscription cursor is ahead of the operation",
             Self::ParentUnavailable => "parent operation is unavailable",
             Self::ParentScopeMismatch => "child operation escapes its parent scope",
             Self::UnknownOperation => "operation is unknown",
@@ -538,6 +647,7 @@ pub enum OperationRetireError {
     UnknownOperation,
     StillActive,
     PendingEvents,
+    ActiveSubscriptions,
 }
 
 impl fmt::Display for OperationRetireError {
@@ -546,6 +656,7 @@ impl fmt::Display for OperationRetireError {
             Self::UnknownOperation => "operation is unknown",
             Self::StillActive => "active operation cannot retire",
             Self::PendingEvents => "operation has pending required delivery",
+            Self::ActiveSubscriptions => "operation still has active subscriptions",
         })
     }
 }
