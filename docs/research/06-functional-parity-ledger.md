@@ -198,8 +198,9 @@ The ledger is reviewed at every roadmap phase exit. A new public reference
 feature is not automatically adopted; it is evaluated against the three-engine
 product boundary, clean-room rule, safety architecture, and official contracts.
 
-## Phase exit reviews
+## Roadmap checkpoint reviews
 
 | Phase | Evidence | Ledger result |
 |---|---|---|
 | Phase 1 — TermRock and TUI foundation | [`45-phase-1-exit-report.md`](45-phase-1-exit-report.md) | Reviewed 2026-07-16. The empty shell closes no Core, Parity, or Later product capability. All unimplemented rows remain visible blockers for their owning parity claims; fixed exclusions are unchanged. |
+| Phase 2 — core identity/revision tracer | [`46-phase-2-core-identity.md`](46-phase-2-core-identity.md) | Reviewed 2026-07-16. Canonical identity and stale/gap classification infrastructure closes no user capability. Engine-owned uniqueness generation and every remaining Phase 2 contract/storage/driver row stay visible blockers. |

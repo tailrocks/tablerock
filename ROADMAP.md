@@ -79,6 +79,10 @@ and TermRock's Crossterm session as the sole terminal lifecycle owner.
 
 ### Phase 2 — Rust service foundation
 
+**Status:** In progress. The std-only authoritative ID and monotonic revision
+tracer is recorded in
+[`46-phase-2-core-identity.md`](docs/research/46-phase-2-core-identity.md).
+
 Define owned IDs, capabilities, values, revisions, commands, events, pages,
 errors, cancellation, safety, and redaction. Implement local-only Turso through
 the `turso` crate on one serialized Rust async persistence actor.

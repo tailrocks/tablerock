@@ -1,0 +1,11 @@
+[package]
+name = "tablerock-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Owned domain contracts shared by TableRock engines and clients"
+
+[lints]
+workspace = true

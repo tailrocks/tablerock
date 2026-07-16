@@ -747,6 +747,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "tablerock-core"
+version = "0.1.0"
+
+[[package]]
 name = "tablerock-tui"
 version = "0.1.0"
 dependencies = [
