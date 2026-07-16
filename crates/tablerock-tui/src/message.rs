@@ -1,8 +1,69 @@
 //! Facts and semantic intents accepted by the root reducer.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use std::fmt;
+
+use crate::{ScrollDirection, ShellTarget};
+
+pub const MAX_PASTE_BYTES: usize = 1_048_576;
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct PasteText {
+    text: String,
+    truncated: bool,
+}
+
+impl PasteText {
+    #[must_use]
+    pub fn bounded(mut text: String) -> Self {
+        let mut truncated = text.len() > MAX_PASTE_BYTES;
+        if truncated {
+            let mut boundary = MAX_PASTE_BYTES;
+            while !text.is_char_boundary(boundary) {
+                boundary -= 1;
+            }
+            text.truncate(boundary);
+            truncated = true;
+        }
+        Self { text, truncated }
+    }
+
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    #[must_use]
+    pub const fn was_truncated(&self) -> bool {
+        self.truncated
+    }
+}
+
+impl fmt::Debug for PasteText {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PasteText")
+            .field("bytes", &self.text.len())
+            .field("truncated", &self.truncated)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
-    Resize { width: u16, height: u16 },
+    Resize {
+        width: u16,
+        height: u16,
+    },
+    TerminalFocusChanged(bool),
+    Paste(PasteText),
+    PointerHovered(Option<ShellTarget>),
+    PointerPressed(Option<ShellTarget>),
+    PointerDragged(Option<ShellTarget>),
+    PointerReleased(Option<ShellTarget>),
+    PointerScrolled {
+        target: Option<ShellTarget>,
+        direction: ScrollDirection,
+    },
     FocusNext,
     FocusPrevious,
     ActionNext,

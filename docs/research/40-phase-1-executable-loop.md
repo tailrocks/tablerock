@@ -18,11 +18,9 @@ and explicit resync on overflow remain required before that Phase 1 gate is
 complete.
 
 The adapter maps press/repeat events to semantic focus, action-selection,
-activation, resize, redraw, and quit messages. Key releases, ordinary letters,
-paste, and unowned pointer input are ignored by the empty shell rather than
-leaking raw backend events into root state or stealing future editor input.
-Later screen checkpoints must map paste and mouse through focused TermRock hit
-geometry before claiming their Phase 1 parity rows.
+activation, resize, redraw, and quit messages. The later render-authorized
+mouse, focus, and bounded-paste mapping checkpoint is recorded separately in
+[`42-phase-1-render-authorized-input.md`](42-phase-1-render-authorized-input.md).
 
 The process wrapper uses one current-thread runtime and serializes panic-hook
 ownership with an RAII guard,
@@ -49,9 +47,8 @@ retains both failures and makes the restoration failure observable.
 - Workspace tests, formatting, strict Clippy, rustdoc, dependency policy, secret
   scan, and English natural-language scan are required before publication.
 
-This checkpoint does not claim returned-error or panic PTY restoration,
-mouse/paste parity, typed engine-event mapping/overflow/resync, or complete
-Phase 1 exit.
+This checkpoint does not claim returned-error or panic PTY restoration, typed
+engine-event mapping/overflow/resync, or complete Phase 1 exit.
 
 External concept: async terminal event loop and PTY lifecycle verification only  
 Public sources: <https://tokio.rs/>, <https://docs.rs/crossterm/0.29.0/>, <https://docs.rs/ratatui-crossterm/0.1.2/>, and <https://docs.rs/portable-pty/0.9.0/>  

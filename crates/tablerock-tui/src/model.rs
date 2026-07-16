@@ -35,6 +35,20 @@ pub enum Screen {
     ConnectionPicker,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellTarget {
+    Focus(FocusRegion),
+    Action(ActionId),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
 impl FocusRegion {
     const ORDER: [Self; 6] = [
         Self::Context,
@@ -72,6 +86,9 @@ pub struct Model {
     focus: FocusRegion,
     action: ActionId,
     screen: Screen,
+    terminal_focused: bool,
+    hovered: Option<ShellTarget>,
+    pressed: Option<ShellTarget>,
 }
 
 impl Default for Model {
@@ -83,6 +100,9 @@ impl Default for Model {
             focus: FocusRegion::Context,
             action: ActionId::Open,
             screen: Screen::Connections,
+            terminal_focused: true,
+            hovered: None,
+            pressed: None,
         }
     }
 }
@@ -106,6 +126,21 @@ impl Model {
     #[must_use]
     pub const fn screen(&self) -> Screen {
         self.screen
+    }
+
+    #[must_use]
+    pub const fn terminal_focused(&self) -> bool {
+        self.terminal_focused
+    }
+
+    #[must_use]
+    pub const fn hovered(&self) -> Option<ShellTarget> {
+        self.hovered
+    }
+
+    #[must_use]
+    pub const fn pressed(&self) -> Option<ShellTarget> {
+        self.pressed
     }
 
     #[must_use]
@@ -136,5 +171,21 @@ impl Model {
 
     pub(crate) const fn set_screen(&mut self, screen: Screen) {
         self.screen = screen;
+    }
+
+    pub(crate) const fn set_terminal_focused(&mut self, focused: bool) {
+        self.terminal_focused = focused;
+        if !focused {
+            self.hovered = None;
+            self.pressed = None;
+        }
+    }
+
+    pub(crate) const fn set_hovered(&mut self, target: Option<ShellTarget>) {
+        self.hovered = target;
+    }
+
+    pub(crate) const fn set_pressed(&mut self, target: Option<ShellTarget>) {
+        self.pressed = target;
     }
 }

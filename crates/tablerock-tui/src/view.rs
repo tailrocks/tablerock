@@ -1,11 +1,12 @@
-//! Pure full-frame shell rendering.
+//! Pure full-frame shell rendering and render-authorized hit geometry.
 
 use ratatui_core::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Position, Rect},
     style::Style,
     terminal::Frame,
 };
 use termrock::{
+    interaction::HitRegion,
     runtime::View,
     widgets::{
         Action, ActionBar, ActionBarState, Hint, HintBar, Panel, PanelEmphasis, StatusBar,
@@ -13,10 +14,33 @@ use termrock::{
     },
 };
 
-use crate::{ActionId, FocusRegion, LayoutMode, Model, Screen};
+use crate::{ActionId, FocusRegion, LayoutMode, Model, Screen, ShellTarget};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ShellView;
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ShellGeometry {
+    regions: Vec<HitRegion<ShellTarget>>,
+}
+
+impl ShellGeometry {
+    #[must_use]
+    pub fn target_at(&self, column: u16, row: u16) -> Option<ShellTarget> {
+        let position = Position::new(column, row);
+        self.regions
+            .iter()
+            .rev()
+            .find(|region| region.area.contains(position))
+            .map(|region| region.id)
+    }
+
+    fn push(&mut self, id: ShellTarget, area: Rect) {
+        if !area.is_empty() {
+            self.regions.push(HitRegion { id, area });
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShellTab {
@@ -31,9 +55,22 @@ enum StatusId {
 
 impl View<Model> for ShellView {
     fn render(&self, model: &Model, frame: &mut Frame<'_>, area: Rect) {
+        let _ = self.render_with_geometry(model, frame, area);
+    }
+}
+
+impl ShellView {
+    #[must_use]
+    pub fn render_with_geometry(
+        &self,
+        model: &Model,
+        frame: &mut Frame<'_>,
+        area: Rect,
+    ) -> ShellGeometry {
+        let mut geometry = ShellGeometry::default();
         if model.layout_mode() == LayoutMode::TooSmall {
             render_panel(model, frame, area, "TableRock — Too Small", true);
-            return;
+            return geometry;
         }
 
         let rows = Layout::default()
@@ -54,15 +91,18 @@ impl View<Model> for ShellView {
             "TableRock — Connections",
             model.focus() == FocusRegion::Context,
         );
-        render_tabs(model, frame, rows[1]);
-        render_body(model, frame, rows[2]);
-        render_actions(model, frame, rows[3]);
+        geometry.push(ShellTarget::Focus(FocusRegion::Context), rows[0]);
+        render_tabs(model, frame, rows[1], &mut geometry);
+        render_body(model, frame, rows[2], &mut geometry);
+        render_actions(model, frame, rows[3], &mut geometry);
         render_hints(model, frame, rows[4]);
         render_status(model, frame, rows[5]);
+        geometry.push(ShellTarget::Focus(FocusRegion::Footer), rows[5]);
+        geometry
     }
 }
 
-fn render_tabs(model: &Model, frame: &mut Frame<'_>, area: Rect) {
+fn render_tabs(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
     let label = if model.focus() == FocusRegion::Tabs {
         "> Connections"
     } else {
@@ -89,11 +129,15 @@ fn render_tabs(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         area,
         &mut state,
     );
+    for region in state.regions {
+        geometry.push(ShellTarget::Focus(FocusRegion::Tabs), region.area);
+    }
 }
 
-fn render_body(model: &Model, frame: &mut Frame<'_>, area: Rect) {
+fn render_body(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
     if model.screen() == Screen::ConnectionPicker {
         render_panel(model, frame, area, "Connection Picker", true);
+        geometry.push(ShellTarget::Focus(FocusRegion::Content), area);
         return;
     }
     match model.layout_mode() {
@@ -114,6 +158,7 @@ fn render_body(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "Catalog",
                 model.focus() == FocusRegion::Catalog,
             );
+            geometry.push(ShellTarget::Focus(FocusRegion::Catalog), columns[0]);
             render_panel(
                 model,
                 frame,
@@ -121,20 +166,22 @@ fn render_body(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "Workspace",
                 model.focus() == FocusRegion::Content,
             );
+            geometry.push(ShellTarget::Focus(FocusRegion::Content), columns[1]);
         }
         LayoutMode::Narrow => {
-            let (title, focused) = match model.focus() {
-                FocusRegion::Catalog => ("Catalog", true),
-                FocusRegion::Content => ("Workspace", true),
-                _ => ("Connections", false),
+            let (title, focused, target) = match model.focus() {
+                FocusRegion::Catalog => ("Catalog", true, FocusRegion::Catalog),
+                FocusRegion::Content => ("Workspace", true, FocusRegion::Content),
+                _ => ("Connections", false, FocusRegion::Context),
             };
             render_panel(model, frame, area, title, focused);
+            geometry.push(ShellTarget::Focus(target), area);
         }
         LayoutMode::TooSmall => {}
     }
 }
 
-fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect) {
+fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
     let open_label =
         if model.focus() == FocusRegion::Actions && model.selected_action() == ActionId::Open {
             "> Open"
@@ -173,6 +220,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         area,
         &mut state,
     );
+    for region in state.regions {
+        geometry.push(ShellTarget::Action(region.id), region.area);
+    }
 }
 
 fn render_hints(model: &Model, frame: &mut Frame<'_>, area: Rect) {

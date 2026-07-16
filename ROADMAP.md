@@ -59,8 +59,10 @@ declarations, responsive shell projection, focus order, minimum-size state, and
 maps backend input into semantic messages, renders only dirty frames, contains
 panics, handles Ctrl-C/SIGTERM, rejects non-TTY execution, and has real-PTY
 normal/signal restoration evidence. It instantiates the declared bounded
-post-mapping root queue; typed engine mapping, overflow/resync, returned-error
-and panic PTY paths, and complete mouse/paste routing remain incomplete.
+post-mapping root queue. Render-authorized mouse/paste/focus routing is recorded
+in [`42-phase-1-render-authorized-input.md`](docs/research/42-phase-1-render-authorized-input.md).
+Typed engine mapping, overflow/resync, returned-error and panic PTY paths, and
+mouse/paste/focus/resize PTY sequences remain incomplete.
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

@@ -11,12 +11,9 @@ use ratatui_core::terminal::Terminal;
 use ratatui_crossterm::CrosstermBackend;
 use tablerock_tui::subscriptions::{Subscription, root_subscriptions};
 use tablerock_tui::{Effect, Message, Model, ShellView, update};
-use termrock::{
-    crossterm::{Session, SessionOptions},
-    runtime::View,
-};
+use termrock::crossterm::{Session, SessionOptions};
 
-use crate::{EventStream, map_event};
+use crate::{EventStream, InputAdapter};
 
 /// Bounded post-mapping ingress for root subscription messages.
 pub type RootMessageSender = tokio::sync::mpsc::Sender<Message>;
@@ -147,18 +144,21 @@ async fn run_session(
     );
     let mut events = EventStream::new();
     let mut root_ingress_open = true;
+    let mut input = InputAdapter::default();
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
     let mut dirty = true;
 
     loop {
         if dirty {
+            let mut geometry = None;
             terminal
                 .draw(|frame| {
                     let area = frame.area();
-                    ShellView.render(&model, frame, area);
+                    geometry = Some(ShellView.render_with_geometry(&model, frame, area));
                 })
                 .map_err(RunError::Terminal)?;
+            input.set_geometry(geometry.expect("render publishes shell geometry"));
             dirty = false;
         }
 
@@ -179,7 +179,7 @@ async fn run_session(
                 let event = event.ok_or_else(|| {
                     RunError::Input(io::Error::new(io::ErrorKind::UnexpectedEof, "terminal event stream closed"))
                 })?.map_err(RunError::Input)?;
-                let Some(message) = map_event(event) else {
+                let Some(message) = input.map_event(event) else {
                     continue;
                 };
                 message
