@@ -9,6 +9,9 @@ Phase 2 owned driver execution and cancellation routing is recorded in
 The latest lookbook-only TermRock focus/table spikes and exact refreshed pin are
 recorded in
 [`118-termrock-focus-table-spike-update.md`](docs/research/118-termrock-focus-table-spike-update.md).
+Runtime rejection now consumes session ownership and preserves cleanup evidence,
+as recorded in
+[`119-phase-2-runtime-rejection-ownership.md`](docs/research/119-phase-2-runtime-rejection-ownership.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

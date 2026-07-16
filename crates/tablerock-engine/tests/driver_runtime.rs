@@ -5,9 +5,9 @@ use std::sync::{
 
 use tablerock_core::{Engine, IdParts, OperationId, PageIdentity, ResultId, Revision};
 use tablerock_engine::{
-    AdapterError, CancelDispatch, DriverFuture, DriverOperationEvent, DriverPageRequest,
-    DriverPageStream, DriverRuntime, DriverRuntimeError, DriverSession, DriverTaskExit,
-    PostgresProbeQuery, RuntimeCancelOutcome,
+    AdapterError, AdapterFailureClass, CancelDispatch, DriverFuture, DriverOperationEvent,
+    DriverPageRequest, DriverPageStream, DriverRuntime, DriverRuntimeError, DriverSession,
+    DriverTaskExit, PostgresProbeQuery, RuntimeCancelOutcome,
 };
 use tokio::sync::Notify;
 use tokio::time::{Duration, timeout};
@@ -39,6 +39,7 @@ struct ControlledSession {
     released: Arc<AtomicBool>,
     started: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
+    fail_shutdown: bool,
 }
 
 impl DriverSession for ControlledSession {
@@ -72,7 +73,14 @@ impl DriverSession for ControlledSession {
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move {
             self.shutdown.store(true, Ordering::SeqCst);
-            Ok(())
+            if self.fail_shutdown {
+                Err(AdapterError::new(
+                    Engine::PostgreSql,
+                    AdapterFailureClass::Connection,
+                ))
+            } else {
+                Ok(())
+            }
         })
     }
 }
@@ -105,6 +113,7 @@ fn session(shutdown: Arc<AtomicBool>) -> (Box<dyn DriverSession>, Arc<AtomicBool
             released: Arc::new(AtomicBool::new(false)),
             started: Arc::clone(&started),
             shutdown,
+            fail_shutdown: false,
         }),
         started,
     )
@@ -118,6 +127,7 @@ async fn routes_cancel_while_output_is_backpressured() {
     let mut runtime = DriverRuntime::new(1, 1).unwrap();
     let mut events = runtime
         .spawn(operation_id, session, request(), identity())
+        .await
         .unwrap();
 
     while !started.load(Ordering::SeqCst) {
@@ -162,17 +172,44 @@ async fn bounds_tasks_and_stops_without_waiting_for_slow_event_consumers() {
     let (first_session, _) = session(Arc::new(AtomicBool::new(false)));
     let _events = runtime
         .spawn(first, first_session, request(), identity())
+        .await
         .unwrap();
-    let (duplicate_session, _) = session(Arc::new(AtomicBool::new(false)));
-    assert!(matches!(
-        runtime.spawn(first, duplicate_session, request(), identity()),
-        Err(DriverRuntimeError::DuplicateOperation)
-    ));
-    let (overflow_session, _) = session(Arc::new(AtomicBool::new(false)));
-    assert!(matches!(
-        runtime.spawn(second, overflow_session, request(), identity()),
-        Err(DriverRuntimeError::CapacityExhausted)
-    ));
+    let duplicate_shutdown = Arc::new(AtomicBool::new(false));
+    let (duplicate_session, _) = session(Arc::clone(&duplicate_shutdown));
+    let duplicate = runtime
+        .spawn(first, duplicate_session, request(), identity())
+        .await
+        .err()
+        .expect("duplicate operation is rejected");
+    assert_eq!(duplicate.reason(), DriverRuntimeError::DuplicateOperation);
+    assert_eq!(duplicate.shutdown_error(), None);
+    assert!(duplicate_shutdown.load(Ordering::SeqCst));
+    let overflow_shutdown = Arc::new(AtomicBool::new(false));
+    let (overflow_session, _) = session(Arc::clone(&overflow_shutdown));
+    let overflow = runtime
+        .spawn(second, overflow_session, request(), identity())
+        .await
+        .err()
+        .expect("capacity overflow is rejected");
+    assert_eq!(overflow.reason(), DriverRuntimeError::CapacityExhausted);
+    assert_eq!(overflow.shutdown_error(), None);
+    assert!(overflow_shutdown.load(Ordering::SeqCst));
+    let failing = Box::new(ControlledSession {
+        release: Arc::new(Notify::new()),
+        released: Arc::new(AtomicBool::new(false)),
+        started: Arc::new(AtomicBool::new(false)),
+        shutdown: Arc::new(AtomicBool::new(false)),
+        fail_shutdown: true,
+    });
+    let failed_cleanup = runtime
+        .spawn(second, failing, request(), identity())
+        .await
+        .err()
+        .expect("capacity rejection reports cleanup failure");
+    assert_eq!(
+        failed_cleanup.shutdown_error().unwrap().class(),
+        AdapterFailureClass::Connection
+    );
     assert_eq!(
         runtime.cancel(second),
         RuntimeCancelOutcome::UnknownOperation

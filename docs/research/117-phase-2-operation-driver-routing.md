@@ -7,6 +7,9 @@ core `OperationId` values to owned Tokio tasks, type-erased driver sessions,
 single-slot cancel channels, latest-state stop signals, and bounded event
 channels. It rejects invalid
 limits, duplicate identity, capacity overflow, and unknown joins.
+Because spawn accepts session ownership, rejection asynchronously performs
+consuming shutdown and reports cleanup failure separately from its primary
+bounded reason.
 
 Each task owns stream start, sequential immutable page production, checked row
 offsets, cancellation dispatch, and consuming session shutdown. Control remains

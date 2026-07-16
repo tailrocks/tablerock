@@ -67,6 +67,7 @@ kept in the roadmap.
 - [Phase 2 object-safe driver adapter](116-phase-2-driver-adapter.md)
 - [Phase 2 owned driver operation runtime](117-phase-2-operation-driver-routing.md)
 - [TermRock focus and table spike update](118-termrock-focus-table-spike-update.md)
+- [Phase 2 runtime rejection ownership](119-phase-2-runtime-rejection-ownership.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

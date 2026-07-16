@@ -18,6 +18,24 @@ pub enum DriverRuntimeError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DriverSpawnError {
+    reason: DriverRuntimeError,
+    shutdown_error: Option<AdapterError>,
+}
+
+impl DriverSpawnError {
+    #[must_use]
+    pub const fn reason(self) -> DriverRuntimeError {
+        self.reason
+    }
+
+    #[must_use]
+    pub const fn shutdown_error(self) -> Option<AdapterError> {
+        self.shutdown_error
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeCancelOutcome {
     UnknownOperation,
     Queued,
@@ -93,18 +111,18 @@ impl DriverRuntime {
         })
     }
 
-    pub fn spawn(
+    pub async fn spawn(
         &mut self,
         operation_id: OperationId,
         session: Box<dyn DriverSession>,
         request: DriverPageRequest,
         identity: PageIdentity,
-    ) -> Result<DriverOperationEvents, DriverRuntimeError> {
+    ) -> Result<DriverOperationEvents, DriverSpawnError> {
         if self.tasks.contains_key(&operation_id) {
-            return Err(DriverRuntimeError::DuplicateOperation);
+            return Err(reject_session(session, DriverRuntimeError::DuplicateOperation).await);
         }
         if self.tasks.len() >= self.max_operations {
-            return Err(DriverRuntimeError::CapacityExhausted);
+            return Err(reject_session(session, DriverRuntimeError::CapacityExhausted).await);
         }
         let (cancel_tx, cancel_rx) = mpsc::channel(1);
         let (stop_tx, stop_rx) = watch::channel(false);
@@ -184,6 +202,16 @@ impl DriverRuntime {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.tasks.is_empty()
+    }
+}
+
+async fn reject_session(
+    session: Box<dyn DriverSession>,
+    reason: DriverRuntimeError,
+) -> DriverSpawnError {
+    DriverSpawnError {
+        reason,
+        shutdown_error: session.shutdown().await.err(),
     }
 }
 

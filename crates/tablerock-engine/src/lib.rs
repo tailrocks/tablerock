@@ -22,6 +22,6 @@ pub use redis::{
     RedisConnectConfig, RedisError, RedisKeyStream, RedisProtocol, RedisSession, RedisTlsMode,
 };
 pub use runtime::{
-    DriverOperationEvent, DriverOperationEvents, DriverRuntime, DriverRuntimeError, DriverTaskExit,
-    RuntimeCancelOutcome,
+    DriverOperationEvent, DriverOperationEvents, DriverRuntime, DriverRuntimeError,
+    DriverSpawnError, DriverTaskExit, RuntimeCancelOutcome,
 };

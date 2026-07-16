@@ -169,6 +169,7 @@ async fn streams_bounded_pages_from_real_postgres() {
             },
             identity(),
         )
+        .await
         .unwrap();
     let mut page_rows = 0_u32;
     while let Some(event) = events.recv().await {
