@@ -56,9 +56,10 @@ Local persistence now has an isolated default-features-disabled Turso 0.7
 worker, bounded serialized commands, sequential documented migrations, and
 normalized process-local single ownership plus interrupted-migration recovery
 and abrupt-process reopen evidence; profile persistence remains gated.
-The first saved-profile write tracer now accepts only core-issued persistence
-tokens and atomically stores the complete version-1 aggregate; read, update,
-delete, and list/search contracts remain open.
+Saved-profile create accepts only core-issued persistence tokens and atomically
+stores the complete version-1 aggregate. Strict transactional lookup now
+reconstructs all three engines and all six source kinds through core validators;
+update, delete, and bounded list/search contracts remain open.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

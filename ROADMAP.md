@@ -93,6 +93,9 @@ atomic create tracer are recorded in
 TermRock's semantic constructible-theme migration and exact refreshed main pin
 are recorded in
 [`64-termrock-0.9-constructible-theme-migration.md`](docs/research/64-termrock-0.9-constructible-theme-migration.md).
+Strict transactional saved-profile decoding, not-found semantics, redaction,
+and reopen evidence are recorded in
+[`65-phase-2-saved-profile-read.md`](docs/research/65-phase-2-saved-profile-read.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

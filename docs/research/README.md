@@ -82,6 +82,7 @@ kept in the roadmap.
 - [Phase 2 persistence crash recovery evidence](62-phase-2-persistence-crash-recovery.md)
 - [Phase 2 saved-profile create evidence](63-phase-2-saved-profile-create.md)
 - [TermRock 0.9 constructible theme migration evidence](64-termrock-0.9-constructible-theme-migration.md)
+- [Phase 2 saved-profile read evidence](65-phase-2-saved-profile-read.md)
 
 ## Architecture headline
 

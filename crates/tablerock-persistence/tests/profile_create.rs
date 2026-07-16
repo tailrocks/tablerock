@@ -121,6 +121,10 @@ fn saved_profile(engine: Engine, low_id: u64) -> ProfileAggregate {
     .unwrap()
 }
 
+fn profile_id(low_id: u64) -> ProfileId {
+    ProfileId::from_parts(IdParts::new(1, low_id).unwrap()).unwrap()
+}
+
 async fn count(connection: &turso::Connection, sql: &str) -> u32 {
     let mut rows = connection.query(sql, ()).await.unwrap();
     rows.next().await.unwrap().unwrap().get::<u32>(0).unwrap()
@@ -131,6 +135,7 @@ fn saved_token_creates_complete_rows_atomically_for_every_engine() {
     let path = path("success");
     let _ = fs::remove_file(&path);
     let actor = PersistenceActor::open(&path).unwrap();
+    assert_eq!(actor.get_profile(profile_id(99)).unwrap(), None);
     for (index, engine) in [Engine::PostgreSql, Engine::ClickHouse, Engine::Redis]
         .into_iter()
         .enumerate()
@@ -139,6 +144,22 @@ fn saved_token_creates_complete_rows_atomically_for_every_engine() {
         actor
             .create_profile(profile.persistable().unwrap())
             .unwrap();
+        let loaded = actor
+            .get_profile(profile.connection().id())
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded, profile);
+        let debug = format!("{loaded:?}");
+        for sensitive in [
+            "database.internal",
+            "Saved profile",
+            "Operations",
+            "TABLE_DB",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "Account / Vault / Item / username",
+        ] {
+            assert!(!debug.contains(sensitive));
+        }
         assert!(matches!(
             actor.create_profile(profile.persistable().unwrap()),
             Err(PersistenceError::ProfileAlreadyExists)
@@ -181,7 +202,57 @@ fn saved_token_creates_complete_rows_atomically_for_every_engine() {
 
     let reopened = PersistenceActor::open(&path).unwrap();
     assert_eq!(reopened.health().unwrap().schema_version, 3);
+    for (index, engine) in [Engine::PostgreSql, Engine::ClickHouse, Engine::Redis]
+        .into_iter()
+        .enumerate()
+    {
+        let expected = saved_profile(engine, index as u64 + 1);
+        assert_eq!(
+            reopened.get_profile(expected.connection().id()).unwrap(),
+            Some(expected)
+        );
+    }
     reopened.shutdown().unwrap();
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn malformed_saved_value_fails_closed_and_rolls_back_read_transaction() {
+    let path = path("malformed-read");
+    let _ = fs::remove_file(&path);
+    let actor = PersistenceActor::open(&path).unwrap();
+    let profile = saved_profile(Engine::PostgreSql, 7);
+    actor
+        .create_profile(profile.persistable().unwrap())
+        .unwrap();
+    actor.shutdown().unwrap();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let database = turso::Builder::new_local(path.to_str().unwrap())
+            .build()
+            .await
+            .unwrap();
+        let connection = database.connect().unwrap();
+        connection
+            .execute(
+                "UPDATE saved_profiles SET name = '   ' WHERE profile_id = ?1",
+                (profile.connection().id().to_bytes().as_slice(),),
+            )
+            .await
+            .unwrap();
+    });
+
+    let actor = PersistenceActor::open(&path).unwrap();
+    let error = actor.get_profile(profile.connection().id()).unwrap_err();
+    assert_eq!(error, PersistenceError::ProfileDecode);
+    assert_eq!(format!("{error:?}"), "ProfileDecode");
+    assert_eq!(error.to_string(), "local persistence operation failed");
+    assert_eq!(actor.health().unwrap().schema_version, 3);
+    actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }
 

@@ -16,7 +16,7 @@ use std::{
 };
 
 use profile_store::EncodedProfile;
-use tablerock_core::PersistableProfile;
+use tablerock_core::{PersistableProfile, ProfileAggregate, ProfileId};
 
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
 const CALLER_TIMEOUT: Duration = Duration::from_secs(35);
@@ -80,6 +80,14 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
+    pub fn get_profile(&self, id: ProfileId) -> Result<Option<ProfileAggregate>, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::GetProfile(id, sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
     pub fn shutdown(mut self) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::Shutdown(sender))?;
@@ -119,6 +127,10 @@ enum Command {
     CreateProfile(
         EncodedProfile,
         mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
+    GetProfile(
+        ProfileId,
+        mpsc::SyncSender<Result<Option<ProfileAggregate>, PersistenceError>>,
     ),
     Shutdown(mpsc::SyncSender<Result<(), PersistenceError>>),
 }
@@ -167,6 +179,17 @@ fn worker_main(
                     tokio::time::timeout(
                         OPERATION_TIMEOUT,
                         profile_store::create(&mut connection, &profile),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::GetProfile(id, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::read(&mut connection, id),
                     )
                     .await
                     .map_err(|_| PersistenceError::Timeout)?
@@ -430,6 +453,8 @@ pub enum PersistenceError {
     Checkpoint,
     ProfileAlreadyExists,
     ProfileWrite,
+    ProfileRead,
+    ProfileDecode,
     Timeout,
 }
 

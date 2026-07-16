@@ -1,6 +1,11 @@
 use tablerock_core::{
-    Engine, PersistableProfile, ProfileProperty, ProfileSafetyMode, PropertyValueSource,
-    ReconnectPreference, SecretSourceKind, TlsPolicy,
+    BoundedBytes, BoundedText, ByteLimit, DangerousPlaintext, DangerousTlsAcknowledgement, Engine,
+    EnvironmentReference, KeychainReference, OnePasswordObjectId, OnePasswordReference,
+    OnePasswordSegment, PersistableProfile, PlaintextAcknowledgement, ProfileAggregate,
+    ProfileConnectionSnapshot, ProfileDurability, ProfileGroupName, ProfileId, ProfileIdentity,
+    ProfileLimits, ProfileName, ProfileOrganization, ProfilePolicy, ProfilePreferences,
+    ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag,
+    PropertyValueSource, ReconnectPreference, Revision, SecretSource, SecretSourceKind, TlsPolicy,
 };
 use zeroize::Zeroize;
 
@@ -251,6 +256,369 @@ pub(crate) async fn create(
         .commit()
         .await
         .map_err(|_| PersistenceError::ProfileWrite)
+}
+
+pub(crate) async fn read(
+    connection: &mut turso::Connection,
+    id: ProfileId,
+) -> Result<Option<ProfileAggregate>, PersistenceError> {
+    let transaction = connection
+        .transaction()
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?;
+    match read_transaction(&transaction, id).await {
+        Ok(profile) => {
+            transaction
+                .commit()
+                .await
+                .map_err(|_| PersistenceError::ProfileRead)?;
+            Ok(profile)
+        }
+        Err(error) => {
+            // Preserve the fail-closed decode result. Dropping the consumed transaction
+            // remains a rollback boundary even if the driver cannot report rollback while
+            // a failed row decoder is unwinding an active statement.
+            let _ = transaction.rollback().await;
+            Err(error)
+        }
+    }
+}
+
+async fn read_transaction(
+    connection: &turso::Connection,
+    id: ProfileId,
+) -> Result<Option<ProfileAggregate>, PersistenceError> {
+    let mut rows = connection
+        .query(
+            "SELECT aggregate_schema, connection_schema, property_schema, revision, engine,\
+                    name, tls_policy, safety_mode, connect_timeout_ms, operation_timeout_ms,\
+                    max_result_rows, max_result_bytes, group_name, favorite, saved_order,\
+                    reconnect, restore_last_context, preferred_page_rows \
+             FROM saved_profiles WHERE profile_id = ?1",
+            (id.to_bytes().as_slice(),),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?;
+    let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?
+    else {
+        return Ok(None);
+    };
+    let aggregate_schema = get::<u16>(&row, 0)?;
+    let connection_schema = get::<u16>(&row, 1)?;
+    let property_schema = get::<u16>(&row, 2)?;
+    let revision = Revision::from_wire_u64(u64::from_be_bytes(get::<[u8; 8]>(&row, 3)?));
+    let engine = decode_engine(get::<u8>(&row, 4)?)?;
+    let name = ProfileName::new(bounded_text(get::<String>(&row, 5)?, 128)?)
+        .map_err(|_| PersistenceError::ProfileDecode)?;
+    let tls_policy = decode_tls(get::<u8>(&row, 6)?)?;
+    let safety_mode = decode_safety(get::<u8>(&row, 7)?)?;
+    let limits = ProfileLimits::new(
+        get::<u64>(&row, 8)?,
+        get::<u64>(&row, 9)?,
+        get::<u64>(&row, 10)?,
+        get::<u64>(&row, 11)?,
+    )
+    .map_err(|_| PersistenceError::ProfileDecode)?;
+    let group_name = get::<Option<String>>(&row, 12)?
+        .map(|value| {
+            ProfileGroupName::new(bounded_text(value, ProfileGroupName::MAX_BYTES)?)
+                .map_err(|_| PersistenceError::ProfileDecode)
+        })
+        .transpose()?;
+    let favorite = decode_bool(get::<u8>(&row, 13)?)?;
+    let saved_order = get::<u32>(&row, 14)?;
+    let reconnect = decode_reconnect(get::<u8>(&row, 15)?)?;
+    let restore_last_context = decode_bool(get::<u8>(&row, 16)?)?;
+    let preferred_page_rows = get::<u32>(&row, 17)?;
+    drop(row);
+    drop(rows);
+
+    let tags = read_tags(connection, id).await?;
+    let properties = read_properties(connection, id, property_schema).await?;
+    let identity = ProfileIdentity::new(id, revision, engine, name);
+    let connection = ProfileConnectionSnapshot::from_wire(
+        connection_schema,
+        identity,
+        properties,
+        ProfilePolicy::new(tls_policy, safety_mode, limits),
+    )
+    .map_err(|_| PersistenceError::ProfileDecode)?;
+    let organization = ProfileOrganization::new(group_name, tags, favorite, saved_order)
+        .map_err(|_| PersistenceError::ProfileDecode)?;
+    let preferences = ProfilePreferences::new(reconnect, restore_last_context, preferred_page_rows)
+        .map_err(|_| PersistenceError::ProfileDecode)?;
+    ProfileAggregate::from_wire(
+        aggregate_schema,
+        connection,
+        ProfileDurability::Saved,
+        organization,
+        preferences,
+    )
+    .map(Some)
+    .map_err(|_| PersistenceError::ProfileDecode)
+}
+
+async fn read_tags(
+    connection: &turso::Connection,
+    id: ProfileId,
+) -> Result<Vec<ProfileTag>, PersistenceError> {
+    let mut rows = connection
+        .query(
+            "SELECT ordinal, tag FROM saved_profile_tags \
+             WHERE profile_id = ?1 ORDER BY ordinal",
+            (id.to_bytes().as_slice(),),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?;
+    let mut tags = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?
+    {
+        if get::<usize>(&row, 0)? != tags.len() || tags.len() >= ProfileOrganization::MAX_TAGS {
+            return Err(PersistenceError::ProfileDecode);
+        }
+        let value = bounded_text(get::<String>(&row, 1)?, ProfileTag::MAX_BYTES)?;
+        tags.push(ProfileTag::new(value).map_err(|_| PersistenceError::ProfileDecode)?);
+    }
+    Ok(tags)
+}
+
+async fn read_properties(
+    connection: &turso::Connection,
+    id: ProfileId,
+    schema_version: u16,
+) -> Result<ProfilePropertySet, PersistenceError> {
+    let mut rows = connection
+        .query(
+            "SELECT ordinal, property, source_kind, source_schema, text_value, blob_value,\
+                    op_account_id, op_vault_id, op_item_id, op_section_id, op_field_id,\
+                    op_breadcrumb \
+             FROM saved_profile_properties WHERE profile_id = ?1 ORDER BY ordinal",
+            (id.to_bytes().as_slice(),),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?;
+    let mut bindings = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?
+    {
+        if get::<usize>(&row, 0)? != bindings.len()
+            || bindings.len() >= ProfilePropertySet::MAX_BINDINGS
+        {
+            return Err(PersistenceError::ProfileDecode);
+        }
+        bindings.push(decode_binding(&row)?);
+    }
+    ProfilePropertySet::from_wire(schema_version, bindings)
+        .map_err(|_| PersistenceError::ProfileDecode)
+}
+
+fn decode_binding(row: &turso::Row) -> Result<ProfilePropertyBinding, PersistenceError> {
+    let property = decode_property(get::<u8>(row, 1)?)?;
+    let source_kind = get::<u8>(row, 2)?;
+    if source_kind == 1 {
+        let value = get::<String>(row, 4)?;
+        let value = bounded_text(value, property.literal_byte_limit())?;
+        return ProfilePropertyBinding::literal(property, value)
+            .map_err(|_| PersistenceError::ProfileDecode);
+    }
+    let schema_version = get::<u16>(row, 3)?;
+    let kind = match source_kind {
+        2 => SecretSourceKind::OnePassword(
+            OnePasswordReference::new(
+                OnePasswordObjectId::parse(&get::<String>(row, 6)?)
+                    .map_err(|_| PersistenceError::ProfileDecode)?,
+                OnePasswordObjectId::parse(&get::<String>(row, 7)?)
+                    .map_err(|_| PersistenceError::ProfileDecode)?,
+                OnePasswordObjectId::parse(&get::<String>(row, 8)?)
+                    .map_err(|_| PersistenceError::ProfileDecode)?,
+                get::<Option<String>>(row, 9)?
+                    .map(|value| {
+                        OnePasswordSegment::parse(&value)
+                            .map_err(|_| PersistenceError::ProfileDecode)
+                    })
+                    .transpose()?,
+                OnePasswordSegment::parse(&get::<String>(row, 10)?)
+                    .map_err(|_| PersistenceError::ProfileDecode)?,
+                bounded_text(
+                    get::<String>(row, 11)?,
+                    OnePasswordReference::MAX_BREADCRUMB_BYTES,
+                )?,
+            )
+            .map_err(|_| PersistenceError::ProfileDecode)?,
+        ),
+        3 => SecretSourceKind::PromptOnConnect,
+        4 => SecretSourceKind::HostEnvironment(
+            EnvironmentReference::parse(&get::<String>(row, 4)?)
+                .map_err(|_| PersistenceError::ProfileDecode)?,
+        ),
+        5 => SecretSourceKind::Keychain(
+            KeychainReference::new(bounded_bytes(
+                get::<Vec<u8>>(row, 5)?,
+                KeychainReference::MAX_BYTES,
+            )?)
+            .map_err(|_| PersistenceError::ProfileDecode)?,
+        ),
+        6 => SecretSourceKind::DangerousPlaintext(
+            DangerousPlaintext::new(
+                get::<Vec<u8>>(row, 5)?,
+                PlaintextAcknowledgement::LocalTestingOnly,
+            )
+            .map_err(|_| PersistenceError::ProfileDecode)?,
+        ),
+        _ => return Err(PersistenceError::ProfileDecode),
+    };
+    let source = SecretSource::from_wire(schema_version, kind)
+        .map_err(|_| PersistenceError::ProfileDecode)?;
+    Ok(ProfilePropertyBinding::secret(property, source))
+}
+
+fn get<T>(row: &turso::Row, index: usize) -> Result<T, PersistenceError>
+where
+    T: DecodeCell,
+{
+    let value = row
+        .get_value(index)
+        .map_err(|_| PersistenceError::ProfileDecode)?;
+    T::decode(value).ok_or(PersistenceError::ProfileDecode)
+}
+
+trait DecodeCell: Sized {
+    fn decode(value: turso::Value) -> Option<Self>;
+}
+
+macro_rules! unsigned_cell {
+    ($type:ty) => {
+        impl DecodeCell for $type {
+            fn decode(value: turso::Value) -> Option<Self> {
+                match value {
+                    turso::Value::Integer(value) => Self::try_from(value).ok(),
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+unsigned_cell!(u8);
+unsigned_cell!(u16);
+unsigned_cell!(u32);
+unsigned_cell!(u64);
+unsigned_cell!(usize);
+
+impl DecodeCell for String {
+    fn decode(value: turso::Value) -> Option<Self> {
+        match value {
+            turso::Value::Text(value) => Some(value),
+            _ => None,
+        }
+    }
+}
+
+impl DecodeCell for Option<String> {
+    fn decode(value: turso::Value) -> Option<Self> {
+        match value {
+            turso::Value::Null => Some(None),
+            turso::Value::Text(value) => Some(Some(value)),
+            _ => None,
+        }
+    }
+}
+
+impl DecodeCell for Vec<u8> {
+    fn decode(value: turso::Value) -> Option<Self> {
+        match value {
+            turso::Value::Blob(value) => Some(value),
+            _ => None,
+        }
+    }
+}
+
+impl DecodeCell for [u8; 8] {
+    fn decode(value: turso::Value) -> Option<Self> {
+        match value {
+            turso::Value::Blob(value) => value.try_into().ok(),
+            _ => None,
+        }
+    }
+}
+
+fn bounded_text(value: String, maximum: u64) -> Result<BoundedText, PersistenceError> {
+    BoundedText::from_string(value, ByteLimit::new(maximum))
+        .map_err(|_| PersistenceError::ProfileDecode)
+}
+
+fn bounded_bytes(value: Vec<u8>, maximum: u64) -> Result<BoundedBytes, PersistenceError> {
+    BoundedBytes::from_vec(value, ByteLimit::new(maximum))
+        .map_err(|_| PersistenceError::ProfileDecode)
+}
+
+const fn decode_engine(value: u8) -> Result<Engine, PersistenceError> {
+    match value {
+        1 => Ok(Engine::PostgreSql),
+        2 => Ok(Engine::ClickHouse),
+        3 => Ok(Engine::Redis),
+        _ => Err(PersistenceError::ProfileDecode),
+    }
+}
+
+const fn decode_tls(value: u8) -> Result<TlsPolicy, PersistenceError> {
+    match value {
+        1 => Ok(TlsPolicy::Disabled),
+        2 => Ok(TlsPolicy::VerifySystemRoots),
+        3 => Ok(TlsPolicy::VerifyCustomCa),
+        4 => Ok(TlsPolicy::DangerousAcceptInvalidCertificate(
+            DangerousTlsAcknowledgement::LocalTestingOnly,
+        )),
+        _ => Err(PersistenceError::ProfileDecode),
+    }
+}
+
+const fn decode_safety(value: u8) -> Result<ProfileSafetyMode, PersistenceError> {
+    match value {
+        1 => Ok(ProfileSafetyMode::ReadOnly),
+        2 => Ok(ProfileSafetyMode::ConfirmWrites),
+        _ => Err(PersistenceError::ProfileDecode),
+    }
+}
+
+const fn decode_reconnect(value: u8) -> Result<ReconnectPreference, PersistenceError> {
+    match value {
+        1 => Ok(ReconnectPreference::Manual),
+        2 => Ok(ReconnectPreference::BoundedAutomatic),
+        _ => Err(PersistenceError::ProfileDecode),
+    }
+}
+
+const fn decode_bool(value: u8) -> Result<bool, PersistenceError> {
+    match value {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(PersistenceError::ProfileDecode),
+    }
+}
+
+const fn decode_property(value: u8) -> Result<ProfileProperty, PersistenceError> {
+    match value {
+        1 => Ok(ProfileProperty::Host),
+        2 => Ok(ProfileProperty::Port),
+        3 => Ok(ProfileProperty::DefaultContext),
+        4 => Ok(ProfileProperty::Username),
+        5 => Ok(ProfileProperty::Password),
+        6 => Ok(ProfileProperty::TlsServerName),
+        7 => Ok(ProfileProperty::TlsCaCertificate),
+        8 => Ok(ProfileProperty::TlsClientCertificate),
+        9 => Ok(ProfileProperty::TlsClientPrivateKey),
+        10 => Ok(ProfileProperty::TlsClientPrivateKeyPassword),
+        _ => Err(PersistenceError::ProfileDecode),
+    }
 }
 
 const fn encode_engine(engine: Engine) -> u8 {

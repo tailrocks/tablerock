@@ -59,8 +59,10 @@ operation deadlines retain the actor's existing bounds.
 
 ## Deliberate boundary
 
-This checkpoint implements create, not full CRUD. Validated decoding/read,
-bounded list/filter projections, revision-CAS replacement, deletion policy,
+This checkpoint implements create, not full CRUD. Validated single-profile read
+is now implemented by the subsequent checkpoint in
+[`65-phase-2-saved-profile-read.md`](65-phase-2-saved-profile-read.md). Bounded
+list/filter projections, revision-CAS replacement, deletion policy,
 dangerous-source user warnings, and crash/disk/permission injection during
 profile writes remain required. No UI or resolver consumes persisted profiles
 yet.
