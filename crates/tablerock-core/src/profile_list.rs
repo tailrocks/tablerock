@@ -5,8 +5,32 @@ use crate::{
     Revision,
 };
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct ProfileListFilter {
+    engine: Option<Engine>,
+    favorite: Option<bool>,
+}
+
+impl ProfileListFilter {
+    #[must_use]
+    pub const fn new(engine: Option<Engine>, favorite: Option<bool>) -> Self {
+        Self { engine, favorite }
+    }
+
+    #[must_use]
+    pub const fn engine(self) -> Option<Engine> {
+        self.engine
+    }
+
+    #[must_use]
+    pub const fn favorite(self) -> Option<bool> {
+        self.favorite
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProfileListCursor {
+    filter: ProfileListFilter,
     favorite: bool,
     saved_order: u32,
     id: ProfileId,
@@ -15,11 +39,32 @@ pub struct ProfileListCursor {
 impl ProfileListCursor {
     #[must_use]
     pub const fn new(favorite: bool, saved_order: u32, id: ProfileId) -> Self {
+        Self::in_filter(
+            ProfileListFilter::new(None, None),
+            favorite,
+            saved_order,
+            id,
+        )
+    }
+
+    #[must_use]
+    pub const fn in_filter(
+        filter: ProfileListFilter,
+        favorite: bool,
+        saved_order: u32,
+        id: ProfileId,
+    ) -> Self {
         Self {
+            filter,
             favorite,
             saved_order,
             id,
         }
+    }
+
+    #[must_use]
+    pub const fn filter(self) -> ProfileListFilter {
+        self.filter
     }
 
     #[must_use]
@@ -40,6 +85,7 @@ impl ProfileListCursor {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProfileListRequest {
+    filter: ProfileListFilter,
     after: Option<ProfileListCursor>,
     limit: u16,
 }
@@ -47,7 +93,8 @@ pub struct ProfileListRequest {
 impl ProfileListRequest {
     pub const MAX_ITEMS: u16 = 100;
 
-    pub const fn new(
+    pub fn new(
+        filter: ProfileListFilter,
         after: Option<ProfileListCursor>,
         limit: u16,
     ) -> Result<Self, ProfileListError> {
@@ -57,7 +104,21 @@ impl ProfileListRequest {
                 maximum: Self::MAX_ITEMS,
             });
         }
-        Ok(Self { after, limit })
+        if let Some(cursor) = after
+            && cursor.filter != filter
+        {
+            return Err(ProfileListError::CursorFilterMismatch);
+        }
+        Ok(Self {
+            filter,
+            after,
+            limit,
+        })
+    }
+
+    #[must_use]
+    pub const fn filter(self) -> ProfileListFilter {
+        self.filter
     }
 
     #[must_use]
@@ -193,8 +254,8 @@ impl ProfileListItem {
         self.sources
     }
     #[must_use]
-    pub const fn cursor(&self) -> ProfileListCursor {
-        ProfileListCursor::new(self.favorite, self.saved_order, self.id)
+    pub const fn cursor(&self, filter: ProfileListFilter) -> ProfileListCursor {
+        ProfileListCursor::in_filter(filter, self.favorite, self.saved_order, self.id)
     }
 }
 
@@ -236,7 +297,12 @@ impl ProfileListPage {
         if has_more && items.is_empty() {
             return Err(ProfileListError::EmptyContinuation);
         }
-        let next = has_more.then(|| items.last().expect("checked nonempty").cursor());
+        let next = has_more.then(|| {
+            items
+                .last()
+                .expect("checked nonempty")
+                .cursor(request.filter())
+        });
         Ok(Self { items, next })
     }
 
@@ -255,6 +321,7 @@ pub enum ProfileListError {
     InvalidLimit { actual: u16, maximum: u16 },
     TooManyItems { actual: usize, maximum: u16 },
     EmptyContinuation,
+    CursorFilterMismatch,
 }
 
 impl fmt::Display for ProfileListError {

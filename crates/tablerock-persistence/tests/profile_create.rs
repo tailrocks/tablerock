@@ -4,10 +4,10 @@ use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, DangerousPlaintext, Engine, EnvironmentReference,
     IdParts, KeychainReference, OnePasswordObjectId, OnePasswordReference, OnePasswordSegment,
     PlaintextAcknowledgement, ProfileAggregate, ProfileConnectionSnapshot, ProfileDurability,
-    ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits, ProfileListRequest, ProfileName,
-    ProfileOrganization, ProfilePolicy, ProfilePreferences, ProfileProperty,
-    ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag, PropertyValueSource,
-    ReconnectPreference, Revision, SecretSource, SecretSourceKind, TlsPolicy,
+    ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits, ProfileListFilter,
+    ProfileListRequest, ProfileName, ProfileOrganization, ProfilePolicy, ProfilePreferences,
+    ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag,
+    PropertyValueSource, ReconnectPreference, Revision, SecretSource, SecretSourceKind, TlsPolicy,
 };
 use tablerock_persistence::{PersistenceActor, PersistenceError};
 
@@ -205,7 +205,7 @@ fn saved_token_creates_complete_rows_atomically_for_every_engine() {
     });
 
     let reopened = PersistenceActor::open(&path).unwrap();
-    assert_eq!(reopened.health().unwrap().schema_version, 4);
+    assert_eq!(reopened.health().unwrap().schema_version, 5);
     for (index, engine) in [Engine::PostgreSql, Engine::ClickHouse, Engine::Redis]
         .into_iter()
         .enumerate()
@@ -253,7 +253,9 @@ fn malformed_saved_value_fails_closed_and_rolls_back_read_transaction() {
     let actor = PersistenceActor::open(&path).unwrap();
     assert_eq!(
         actor
-            .list_profiles(ProfileListRequest::new(None, 10).unwrap())
+            .list_profiles(
+                ProfileListRequest::new(ProfileListFilter::default(), None, 10).unwrap(),
+            )
             .unwrap_err(),
         PersistenceError::ProfileDecode
     );
@@ -261,7 +263,7 @@ fn malformed_saved_value_fails_closed_and_rolls_back_read_transaction() {
     assert_eq!(error, PersistenceError::ProfileDecode);
     assert_eq!(format!("{error:?}"), "ProfileDecode");
     assert_eq!(error.to_string(), "local persistence operation failed");
-    assert_eq!(actor.health().unwrap().schema_version, 4);
+    assert_eq!(actor.health().unwrap().schema_version, 5);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }
@@ -316,11 +318,27 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
                 .contains("saved_profiles_bounded_list");
         }
         assert!(uses_list_index);
+        let mut engine_plan = connection
+            .query(
+                "EXPLAIN QUERY PLAN SELECT profile_id FROM saved_profiles WHERE engine = 2 \
+                 ORDER BY favorite DESC, saved_order, profile_id LIMIT 3",
+                (),
+            )
+            .await
+            .unwrap();
+        let mut uses_engine_index = false;
+        while let Some(row) = engine_plan.next().await.unwrap() {
+            uses_engine_index |= row
+                .get::<String>(3)
+                .unwrap()
+                .contains("saved_profiles_engine_bounded_list");
+        }
+        assert!(uses_engine_index);
     });
 
     let actor = PersistenceActor::open(&path).unwrap();
     let first = actor
-        .list_profiles(ProfileListRequest::new(None, 2).unwrap())
+        .list_profiles(ProfileListRequest::new(ProfileListFilter::default(), None, 2).unwrap())
         .unwrap();
     assert_eq!(
         first
@@ -349,12 +367,59 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
         }
     }
     let second = actor
-        .list_profiles(ProfileListRequest::new(first.next(), 2).unwrap())
+        .list_profiles(
+            ProfileListRequest::new(ProfileListFilter::default(), first.next(), 2).unwrap(),
+        )
         .unwrap();
     assert_eq!(second.items().len(), 1);
     assert_eq!(second.items()[0].id(), profile_id(60));
     assert!(!second.items()[0].favorite());
     assert_eq!(second.next(), None);
+
+    let favorite_filter = ProfileListFilter::new(None, Some(true));
+    let favorites = actor
+        .list_profiles(ProfileListRequest::new(favorite_filter, None, 1).unwrap())
+        .unwrap();
+    assert_eq!(favorites.items()[0].id(), profile_id(61));
+    let remaining_favorites = actor
+        .list_profiles(ProfileListRequest::new(favorite_filter, favorites.next(), 10).unwrap())
+        .unwrap();
+    assert_eq!(remaining_favorites.items().len(), 1);
+    assert_eq!(remaining_favorites.items()[0].id(), profile_id(62));
+
+    let non_favorites = actor
+        .list_profiles(
+            ProfileListRequest::new(ProfileListFilter::new(None, Some(false)), None, 10).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(non_favorites.items().len(), 1);
+    assert_eq!(non_favorites.items()[0].id(), profile_id(60));
+
+    for (engine, expected) in [
+        (Engine::PostgreSql, profile_id(60)),
+        (Engine::ClickHouse, profile_id(61)),
+        (Engine::Redis, profile_id(62)),
+    ] {
+        let page = actor
+            .list_profiles(
+                ProfileListRequest::new(ProfileListFilter::new(Some(engine), None), None, 10)
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(page.items().len(), 1);
+        assert_eq!(page.items()[0].id(), expected);
+    }
+    let impossible = actor
+        .list_profiles(
+            ProfileListRequest::new(
+                ProfileListFilter::new(Some(Engine::ClickHouse), Some(false)),
+                None,
+                10,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert!(impossible.items().is_empty());
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }

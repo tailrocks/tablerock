@@ -109,6 +109,11 @@ cursor, and sequential list-index migration are recorded in
 TermRock's additive alternate-preset proof and exact refreshed main pin are
 recorded in
 [`70-termrock-0.9-slate-preset-update.md`](docs/research/70-termrock-0.9-slate-preset-update.md).
+Filter-scoped engine/favorite profile pagination and sequential migration `0005`
+are recorded in
+[`71-phase-2-profile-engine-favorite-filter.md`](docs/research/71-phase-2-profile-engine-favorite-filter.md).
+TermRock's neutral-event migration and exact refreshed main pin are recorded in
+[`72-termrock-0.9-neutral-event-migration.md`](docs/research/72-termrock-0.9-neutral-event-migration.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

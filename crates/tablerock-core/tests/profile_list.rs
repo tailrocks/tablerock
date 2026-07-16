@@ -1,7 +1,7 @@
 use tablerock_core::{
     BoundedText, ByteLimit, Engine, IdParts, ProfileGroupName, ProfileId, ProfileListError,
-    ProfileListItem, ProfileListPage, ProfileListRequest, ProfileName, ProfileSafetyMode,
-    ProfileSourceFacts, PropertyValueSource, Revision,
+    ProfileListFilter, ProfileListItem, ProfileListPage, ProfileListRequest, ProfileName,
+    ProfileSafetyMode, ProfileSourceFacts, PropertyValueSource, Revision,
 };
 
 fn text(value: &str) -> BoundedText {
@@ -34,14 +34,14 @@ fn item(low: u64) -> ProfileListItem {
 #[test]
 fn request_and_page_are_bounded_and_cursor_based() {
     assert_eq!(
-        ProfileListRequest::new(None, 0),
+        ProfileListRequest::new(ProfileListFilter::default(), None, 0),
         Err(ProfileListError::InvalidLimit {
             actual: 0,
             maximum: 100,
         })
     );
-    assert!(ProfileListRequest::new(None, 101).is_err());
-    let request = ProfileListRequest::new(None, 2).unwrap();
+    assert!(ProfileListRequest::new(ProfileListFilter::default(), None, 101).is_err());
+    let request = ProfileListRequest::new(ProfileListFilter::default(), None, 2).unwrap();
     let page = ProfileListPage::new(request, vec![item(1), item(2)], true).unwrap();
     assert_eq!(page.items().len(), 2);
     let next = page.next().unwrap();
@@ -56,6 +56,20 @@ fn request_and_page_are_bounded_and_cursor_based() {
         ProfileListPage::new(request, Vec::new(), true),
         Err(ProfileListError::EmptyContinuation)
     );
+}
+
+#[test]
+fn continuation_is_bound_to_its_filter_scope() {
+    let filter = ProfileListFilter::new(Some(Engine::Redis), Some(true));
+    let request = ProfileListRequest::new(filter, None, 1).unwrap();
+    let page = ProfileListPage::new(request, vec![item(1)], true).unwrap();
+    let cursor = page.next().unwrap();
+    assert_eq!(cursor.filter(), filter);
+    assert_eq!(
+        ProfileListRequest::new(ProfileListFilter::default(), Some(cursor), 1),
+        Err(ProfileListError::CursorFilterMismatch)
+    );
+    assert!(ProfileListRequest::new(filter, Some(cursor), 1).is_ok());
 }
 
 #[test]

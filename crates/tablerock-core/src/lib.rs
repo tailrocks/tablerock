@@ -47,8 +47,8 @@ pub use profile_aggregate::{
     ProfileUpdateError, ReconnectPreference,
 };
 pub use profile_list::{
-    ProfileListCursor, ProfileListError, ProfileListItem, ProfileListPage, ProfileListRequest,
-    ProfileSourceFacts,
+    ProfileListCursor, ProfileListError, ProfileListFilter, ProfileListItem, ProfileListPage,
+    ProfileListRequest, ProfileSourceFacts,
 };
 pub use revision::{CounterOverflow, EventSequence, Revision, RevisionRelation, SequenceRelation};
 pub use secret::{

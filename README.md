@@ -62,7 +62,7 @@ reconstructs all three engines and all six source kinds through core validators;
 transactional revision compare-and-swap replaces complete aggregates without a
 last-writer-wins bypass. Revision-CAS deletion removes only profile-owned rows;
 a least-data, keyset-paginated summary list is capped at 100 items. Search and
-filtered list contracts remain open.
+group/tag filters remain open; engine/favorite filters use scope-bound cursors.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

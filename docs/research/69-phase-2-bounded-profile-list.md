@@ -44,8 +44,10 @@ discriminator; malformed durable rows fail closed as metadata-only
 ## Deliberate boundary
 
 The canonical unfiltered organization list is bounded and cursor-based.
-Search, tag/engine/group filters, health facts, endpoint display projection, and
-UI states remain Phase 3 work. They must extend this one contract rather than
+Engine/favorite filters are now implemented by
+[`71-phase-2-profile-engine-favorite-filter.md`](71-phase-2-profile-engine-favorite-filter.md).
+Search, tag/group filters, health facts, endpoint display projection, and UI
+states remain Phase 3 work. They must extend this one contract rather than
 introduce an unbounded or secret-bearing list path.
 
 ## Verification record

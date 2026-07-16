@@ -422,32 +422,39 @@ async fn list_transaction(
                WHERE p.profile_id = saved_profiles.profile_id AND source_kind = 6) \
         FROM saved_profiles ";
     let fetch_limit = u32::from(request.limit()) + 1;
-    let mut rows = if let Some(after) = request.after() {
-        connection
-            .query(
-                format!(
-                    "{PROJECTION} WHERE favorite < ?1 OR (favorite = ?1 AND \
-                     (saved_order > ?2 OR (saved_order = ?2 AND profile_id > ?3))) \
-                     ORDER BY favorite DESC, saved_order, profile_id LIMIT ?4"
-                ),
-                turso::params![
-                    after.favorite(),
-                    after.saved_order(),
-                    after.id().to_bytes().as_slice(),
-                    fetch_limit,
-                ],
-            )
-            .await
-            .map_err(|_| PersistenceError::ProfileRead)?
+    let mut conditions = Vec::with_capacity(3);
+    let mut parameters = Vec::with_capacity(7);
+    let filter = request.filter();
+    if let Some(engine) = filter.engine() {
+        let parameter = push_parameter(&mut parameters, i64::from(encode_engine(engine)));
+        conditions.push(format!("engine = {parameter}"));
+    }
+    if let Some(favorite) = filter.favorite() {
+        let parameter = push_parameter(&mut parameters, i64::from(u8::from(favorite)));
+        conditions.push(format!("favorite = {parameter}"));
+    }
+    if let Some(after) = request.after() {
+        let favorite = push_parameter(&mut parameters, i64::from(u8::from(after.favorite())));
+        let order = push_parameter(&mut parameters, i64::from(after.saved_order()));
+        let id = push_parameter(&mut parameters, after.id().to_bytes().to_vec());
+        conditions.push(format!(
+            "(favorite < {favorite} OR (favorite = {favorite} AND \
+             (saved_order > {order} OR (saved_order = {order} AND profile_id > {id}))))"
+        ));
+    }
+    let limit = push_parameter(&mut parameters, i64::from(fetch_limit));
+    let where_clause = if conditions.is_empty() {
+        String::new()
     } else {
-        connection
-            .query(
-                format!("{PROJECTION} ORDER BY favorite DESC, saved_order, profile_id LIMIT ?1"),
-                (fetch_limit,),
-            )
-            .await
-            .map_err(|_| PersistenceError::ProfileRead)?
+        format!("WHERE {} ", conditions.join(" AND "))
     };
+    let sql = format!(
+        "{PROJECTION}{where_clause}ORDER BY favorite DESC, saved_order, profile_id LIMIT {limit}"
+    );
+    let mut rows = connection
+        .query(sql, parameters)
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?;
     let mut items = Vec::with_capacity(usize::from(request.limit()) + 1);
     while let Some(row) = rows
         .next()
@@ -460,6 +467,11 @@ async fn list_transaction(
     let has_more = items.len() > usize::from(request.limit());
     items.truncate(usize::from(request.limit()));
     ProfileListPage::new(request, items, has_more).map_err(|_| PersistenceError::ProfileDecode)
+}
+
+fn push_parameter(parameters: &mut Vec<turso::Value>, value: impl Into<turso::Value>) -> String {
+    parameters.push(value.into());
+    format!("?{}", parameters.len())
 }
 
 fn decode_list_item(row: &turso::Row) -> Result<ProfileListItem, PersistenceError> {

@@ -88,6 +88,8 @@ kept in the roadmap.
 - [Phase 2 saved-profile delete evidence](68-phase-2-saved-profile-delete.md)
 - [Phase 2 bounded profile list evidence](69-phase-2-bounded-profile-list.md)
 - [TermRock 0.9 slate preset update evidence](70-termrock-0.9-slate-preset-update.md)
+- [Phase 2 profile engine/favorite filter evidence](71-phase-2-profile-engine-favorite-filter.md)
+- [TermRock 0.9 neutral event migration evidence](72-termrock-0.9-neutral-event-migration.md)
 
 ## Architecture headline
 
