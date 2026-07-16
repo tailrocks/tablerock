@@ -37,7 +37,9 @@ bypass is retained.
 ## Deliberate boundary
 
 Create, strict single read, and revision-CAS replacement are implemented.
-Deletion policy, bounded list/filter projections, source resolution, warnings,
+Revision-CAS deletion is now implemented by
+[`68-phase-2-saved-profile-delete.md`](68-phase-2-saved-profile-delete.md).
+Bounded list/filter projections, source resolution, warnings,
 and remaining crash/disk/permission fault matrices stay required.
 
 ## Verification record

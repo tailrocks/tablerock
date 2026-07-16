@@ -101,6 +101,8 @@ rollback evidence is recorded in
 [`66-phase-2-saved-profile-replace.md`](docs/research/66-phase-2-saved-profile-replace.md).
 TermRock's semantic-palette cleanup and exact refreshed main pin are recorded in
 [`67-termrock-0.9-semantic-palette-migration.md`](docs/research/67-termrock-0.9-semantic-palette-migration.md).
+Revision-CAS deletion and profile-owned child cleanup evidence are recorded in
+[`68-phase-2-saved-profile-delete.md`](docs/research/68-phase-2-saved-profile-delete.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

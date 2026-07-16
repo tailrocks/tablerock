@@ -60,7 +60,8 @@ Saved-profile create accepts only core-issued persistence tokens and atomically
 stores the complete version-1 aggregate. Strict transactional lookup now
 reconstructs all three engines and all six source kinds through core validators;
 transactional revision compare-and-swap replaces complete aggregates without a
-last-writer-wins bypass. Delete and bounded list/search contracts remain open.
+last-writer-wins bypass. Revision-CAS deletion removes only profile-owned rows;
+bounded list/search contracts remain open.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

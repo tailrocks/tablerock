@@ -343,6 +343,45 @@ pub(crate) async fn replace(
         .map_err(|_| PersistenceError::ProfileWrite)
 }
 
+pub(crate) async fn delete(
+    connection: &mut turso::Connection,
+    id: ProfileId,
+    expected_revision: Revision,
+) -> Result<(), PersistenceError> {
+    let transaction = connection
+        .transaction()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    let changed = transaction
+        .execute(
+            "DELETE FROM saved_profiles WHERE profile_id = ?1 AND revision = ?2",
+            (
+                id.to_bytes().as_slice(),
+                expected_revision.get().to_be_bytes().as_slice(),
+            ),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    if changed == 0 {
+        let exists = query_u32(
+            &transaction,
+            "SELECT COUNT(*) FROM saved_profiles WHERE profile_id = ?1",
+            (id.to_bytes().as_slice(),),
+        )
+        .await?;
+        let _ = transaction.rollback().await;
+        return Err(if exists == 0 {
+            PersistenceError::ProfileNotFound
+        } else {
+            PersistenceError::ProfileStaleRevision
+        });
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)
+}
+
 async fn insert_children(
     connection: &turso::Connection,
     profile: &EncodedProfile,

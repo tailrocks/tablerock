@@ -104,6 +104,21 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
+    pub fn delete_profile(
+        &self,
+        id: ProfileId,
+        expected_revision: Revision,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::DeleteProfile(id, expected_revision, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
     pub fn shutdown(mut self) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::Shutdown(sender))?;
@@ -151,6 +166,11 @@ enum Command {
     ReplaceProfile(
         Revision,
         EncodedProfile,
+        mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
+    DeleteProfile(
+        ProfileId,
+        Revision,
         mpsc::SyncSender<Result<(), PersistenceError>>,
     ),
     Shutdown(mpsc::SyncSender<Result<(), PersistenceError>>),
@@ -222,6 +242,17 @@ fn worker_main(
                     tokio::time::timeout(
                         OPERATION_TIMEOUT,
                         profile_store::replace(&mut connection, expected_revision, &profile),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::DeleteProfile(id, expected_revision, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::delete(&mut connection, id, expected_revision),
                     )
                     .await
                     .map_err(|_| PersistenceError::Timeout)?

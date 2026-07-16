@@ -364,6 +364,71 @@ fn replacement_child_failure_preserves_previous_aggregate() {
 }
 
 #[test]
+fn deletion_uses_revision_compare_and_swap_and_removes_only_owned_rows() {
+    let path = path("delete");
+    let _ = fs::remove_file(&path);
+    let actor = PersistenceActor::open(&path).unwrap();
+    let profile = saved_profile_at(Engine::PostgreSql, 50, 8, "Delete me");
+    actor
+        .create_profile(profile.persistable().unwrap())
+        .unwrap();
+
+    assert_eq!(
+        actor
+            .delete_profile(profile_id(50), Revision::from_wire_u64(7))
+            .unwrap_err(),
+        PersistenceError::ProfileStaleRevision
+    );
+    assert_eq!(actor.get_profile(profile_id(50)).unwrap(), Some(profile));
+    assert_eq!(
+        actor
+            .delete_profile(profile_id(99), Revision::INITIAL)
+            .unwrap_err(),
+        PersistenceError::ProfileNotFound
+    );
+    actor
+        .delete_profile(profile_id(50), Revision::from_wire_u64(8))
+        .unwrap();
+    assert_eq!(actor.get_profile(profile_id(50)).unwrap(), None);
+    assert_eq!(
+        actor
+            .delete_profile(profile_id(50), Revision::from_wire_u64(8))
+            .unwrap_err(),
+        PersistenceError::ProfileNotFound
+    );
+    actor.shutdown().unwrap();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let database = turso::Builder::new_local(path.to_str().unwrap())
+            .build()
+            .await
+            .unwrap();
+        let connection = database.connect().unwrap();
+        assert_eq!(
+            count(&connection, "SELECT COUNT(*) FROM saved_profiles").await,
+            0
+        );
+        assert_eq!(
+            count(&connection, "SELECT COUNT(*) FROM saved_profile_tags").await,
+            0
+        );
+        assert_eq!(
+            count(&connection, "SELECT COUNT(*) FROM saved_profile_properties",).await,
+            0
+        );
+    });
+
+    let reopened = PersistenceActor::open(&path).unwrap();
+    assert_eq!(reopened.get_profile(profile_id(50)).unwrap(), None);
+    reopened.shutdown().unwrap();
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn child_row_failure_rolls_back_the_entire_profile() {
     let path = path("rollback");
     let _ = fs::remove_file(&path);
