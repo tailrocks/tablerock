@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, error::Error, fmt, future::Future, pin::Pin};
+use std::{error::Error, fmt, future::Future, pin::Pin};
 
 use tablerock_core::{BoundedText, Engine, OperationId, PageIdentity, PageLimits, ResultPage};
 
@@ -130,78 +130,6 @@ impl Error for AdapterError {}
 pub enum CancelDispatch {
     Unsupported,
     RequestSent,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationRegistrationError {
-    CapacityExhausted,
-    DuplicateOperation,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationCancelOutcome {
-    UnknownOperation,
-    Unsupported,
-    RequestSent,
-}
-
-/// Bounded routing table from core operation identities to driver sessions.
-///
-/// This table owns no lifecycle truth: callers retain an entry until the
-/// operation reaches an observed terminal state. A cancellation dispatch is
-/// never promoted to a terminal cancellation outcome.
-pub struct DriverOperationRegistry {
-    max_operations: usize,
-    sessions: BTreeMap<OperationId, Box<dyn DriverSession>>,
-}
-
-impl DriverOperationRegistry {
-    #[must_use]
-    pub const fn new(max_operations: usize) -> Self {
-        Self {
-            max_operations,
-            sessions: BTreeMap::new(),
-        }
-    }
-
-    pub fn register(
-        &mut self,
-        operation_id: OperationId,
-        session: Box<dyn DriverSession>,
-    ) -> Result<(), OperationRegistrationError> {
-        if self.sessions.contains_key(&operation_id) {
-            return Err(OperationRegistrationError::DuplicateOperation);
-        }
-        if self.sessions.len() >= self.max_operations {
-            return Err(OperationRegistrationError::CapacityExhausted);
-        }
-        self.sessions.insert(operation_id, session);
-        Ok(())
-    }
-
-    pub async fn cancel(&self, operation_id: OperationId) -> OperationCancelOutcome {
-        let Some(session) = self.sessions.get(&operation_id) else {
-            return OperationCancelOutcome::UnknownOperation;
-        };
-        match session.cancel(operation_id).await {
-            CancelDispatch::Unsupported => OperationCancelOutcome::Unsupported,
-            CancelDispatch::RequestSent => OperationCancelOutcome::RequestSent,
-        }
-    }
-
-    pub fn remove(&mut self, operation_id: OperationId) -> Option<Box<dyn DriverSession>> {
-        self.sessions.remove(&operation_id)
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.sessions.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.sessions.is_empty()
-    }
 }
 
 pub trait DriverPageStream: Send {

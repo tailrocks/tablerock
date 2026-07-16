@@ -65,6 +65,8 @@ kept in the roadmap.
 - [Phase 2 bounded subscription fan-out](114-phase-2-subscription-fanout.md)
 - [TermRock immutable frame-tick spike adoption](115-termrock-frame-tick-spike.md)
 - [Phase 2 object-safe driver adapter](116-phase-2-driver-adapter.md)
+- [Phase 2 owned driver operation runtime](117-phase-2-operation-driver-routing.md)
+- [TermRock focus and table spike update](118-termrock-focus-table-spike-update.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

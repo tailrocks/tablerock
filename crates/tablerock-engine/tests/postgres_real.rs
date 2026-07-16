@@ -3,9 +3,9 @@ use tablerock_core::{
     PageWarning, ResultId, Revision, Truncation, ValueKind,
 };
 use tablerock_engine::{
-    AdapterFailureClass, CancelDispatch, ClickHouseProbeQuery, DriverPageRequest, DriverSession,
-    PostgresCancellationOutcome, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
-    PostgresTlsMode,
+    AdapterFailureClass, CancelDispatch, ClickHouseProbeQuery, DriverOperationEvent,
+    DriverPageRequest, DriverRuntime, DriverSession, DriverTaskExit, PostgresCancellationOutcome,
+    PostgresConnectConfig, PostgresProbeQuery, PostgresSession, PostgresTlsMode,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -155,10 +155,37 @@ async fn streams_bounded_pages_from_real_postgres() {
     assert_eq!(second.cell(0, 0).unwrap().bytes(), b"3");
     assert!(stream.next_page(identity(), 3).await.unwrap().is_none());
     drop(stream);
-    (Box::new(session) as Box<dyn DriverSession>)
-        .shutdown()
-        .await
+
+    let operation_id = OperationId::from_parts(IdParts::new(0, 10).unwrap()).unwrap();
+    let mut runtime = DriverRuntime::new(1, 2).unwrap();
+    let mut events = runtime
+        .spawn(
+            operation_id,
+            Box::new(session),
+            DriverPageRequest::PostgreSqlProbe {
+                query: PostgresProbeQuery::BoundedSeries,
+                limits: PageLimits::new(2, 8, 32, 256),
+                max_cell_bytes: 8,
+            },
+            identity(),
+        )
         .unwrap();
+    let mut page_rows = 0_u32;
+    while let Some(event) = events.recv().await {
+        match event {
+            DriverOperationEvent::Page(page) => {
+                page_rows += page.envelope().row_count();
+            }
+            DriverOperationEvent::Completed => break,
+            DriverOperationEvent::Started => {}
+            other => panic!("unexpected runtime event: {other:?}"),
+        }
+    }
+    assert_eq!(page_rows, 3);
+    assert_eq!(
+        runtime.join(operation_id).await.unwrap(),
+        DriverTaskExit::Completed
+    );
 }
 
 #[tokio::test]
