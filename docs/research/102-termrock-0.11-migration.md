@@ -2,8 +2,8 @@
 
 ## Adopted sequence
 
-TableRock moved directly from TermRock 0.10 to 0.11 at exact `main` revision
-`50d67f17e1a027a954c91ef68275afb438eed300`. The upstream migration index was
+TableRock moved directly from TermRock 0.10 to 0.11 and follows exact `main`
+revision `a4f513c31269d8f27caede3940d03b0985c68cdc`. The upstream migration index was
 read in order:
 
 1. `0016-v0.11.0-text-strong-and-viewport-emphasis.md`
@@ -22,6 +22,10 @@ manual bold `Role::Text`, viewport theme surgery, `layout` scroll imports,
 correct migration is immediate version/revision adoption with no compatibility
 alias or dead transitional path. New work must use the 0.11 semantic roles,
 viewport emphasis, and `termrock::scroll` APIs directly.
+
+The completion of migration 0017 also restores neutral dialog shell/layout,
+scroll-input, scrollbar, and line-width helpers. TableRock has no product-local
+equivalent and will consume these canonical helpers when dialog scrolling lands.
 
 ## Verification
 

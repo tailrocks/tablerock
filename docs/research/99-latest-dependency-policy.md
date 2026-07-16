@@ -33,6 +33,9 @@ directly to `main`, never through an automated pull request.
   (semantic strong text and viewport emphasis) and 0017 (canonical scrollable
   block helpers) immediately. No existing TableRock call site used a replaced
   surface, so no compatibility layer remains.
+- TermRock advanced to `a4f513c`, completing migration 0017 with neutral dialog
+  shell, dialog-body, scroll-input, scrollbar, and line-width helpers. TableRock
+  repinned immediately; no current call site requires adaptation.
 - Every other adopted and planned baseline version in dependency decision `20`
   matches the current crates.io release.
 - Current official ClickHouse 0.15.1 and upstream `main` still require
