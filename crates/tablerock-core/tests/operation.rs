@@ -1,7 +1,8 @@
 use tablerock_core::{
-    ContextId, EventRejection, EventSequence, IdParts, OperationCursor, OperationEvent,
-    OperationEventKind, OperationId, OperationIdentity, OperationOutcome, OperationPhase,
-    OperationScope, ProfileId, RequestId, Revision, SessionId, TransitionError,
+    ContextId, EventQueueError, EventQueuePush, EventRejection, EventSequence, IdParts,
+    OperationCursor, OperationEvent, OperationEventKind, OperationEventQueue, OperationId,
+    OperationIdentity, OperationOutcome, OperationPhase, OperationScope, ProfileId, RequestId,
+    Revision, SessionId, TransitionError,
 };
 
 fn id<T>(constructor: impl FnOnce(IdParts) -> Result<T, tablerock_core::IdDecodeError>) -> T {
@@ -104,6 +105,7 @@ fn event_cursor_rejects_inconsistent_history_and_requires_resync() {
         OperationEventKind::Progress {
             cumulative_rows: 25,
             cumulative_bytes: 4096,
+            coalesced_after: None,
         },
     )
     .unwrap();
@@ -119,17 +121,36 @@ fn event_cursor_rejects_inconsistent_history_and_requires_resync() {
         OperationEventKind::Progress {
             cumulative_rows: 30,
             cumulative_bytes: 8192,
+            coalesced_after: Some(EventSequence::from_wire_u64(8)),
         },
     )
     .unwrap();
-    assert_eq!(cursor.accept(gap), Err(EventRejection::SequenceGap));
+    let cursor = cursor.accept(gap).unwrap();
+    assert_eq!(cursor.cumulative_rows(), 30);
+    assert_eq!(cursor.cumulative_bytes(), 8192);
+
+    let unproven_gap = OperationEvent::new(
+        identity(),
+        Revision::from_wire_u64(3),
+        EventSequence::from_wire_u64(12),
+        OperationEventKind::Progress {
+            cumulative_rows: 31,
+            cumulative_bytes: 8200,
+            coalesced_after: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        cursor.accept(unproven_gap),
+        Err(EventRejection::SequenceGap)
+    );
 
     let resync = OperationEvent::new(
         identity(),
         Revision::from_wire_u64(3),
-        EventSequence::from_wire_u64(9),
+        EventSequence::from_wire_u64(12),
         OperationEventKind::ResyncRequired {
-            last_delivered: EventSequence::from_wire_u64(8),
+            last_delivered: EventSequence::from_wire_u64(10),
         },
     )
     .unwrap();
@@ -148,6 +169,7 @@ fn event_cursor_rejects_inconsistent_history_and_requires_resync() {
         OperationEventKind::Progress {
             cumulative_rows: 1,
             cumulative_bytes: 1,
+            coalesced_after: None,
         },
     )
     .unwrap();
@@ -159,10 +181,11 @@ fn event_cursor_rejects_inconsistent_history_and_requires_resync() {
     let stale_revision = OperationEvent::new(
         identity(),
         Revision::from_wire_u64(2),
-        EventSequence::from_wire_u64(9),
+        EventSequence::from_wire_u64(11),
         OperationEventKind::Progress {
             cumulative_rows: 1,
             cumulative_bytes: 1,
+            coalesced_after: None,
         },
     )
     .unwrap();
@@ -174,10 +197,11 @@ fn event_cursor_rejects_inconsistent_history_and_requires_resync() {
     let duplicate = OperationEvent::new(
         identity(),
         Revision::from_wire_u64(3),
-        EventSequence::from_wire_u64(8),
+        EventSequence::from_wire_u64(10),
         OperationEventKind::Progress {
             cumulative_rows: 25,
             cumulative_bytes: 4096,
+            coalesced_after: None,
         },
     )
     .unwrap();
@@ -189,7 +213,7 @@ fn event_cursor_rejects_inconsistent_history_and_requires_resync() {
     let inconsistent_phase = OperationEvent::new(
         identity(),
         Revision::from_wire_u64(4),
-        EventSequence::from_wire_u64(9),
+        EventSequence::from_wire_u64(11),
         OperationEventKind::PhaseChanged {
             from: OperationPhase::Streaming,
             to: OperationPhase::CancelRequested,
@@ -204,10 +228,11 @@ fn event_cursor_rejects_inconsistent_history_and_requires_resync() {
     let regressed_progress = OperationEvent::new(
         identity(),
         Revision::from_wire_u64(3),
-        EventSequence::from_wire_u64(9),
+        EventSequence::from_wire_u64(11),
         OperationEventKind::Progress {
             cumulative_rows: 24,
             cumulative_bytes: 4095,
+            coalesced_after: None,
         },
     )
     .unwrap();
@@ -234,4 +259,113 @@ fn event_constructor_rejects_illegal_phase_transition() {
             to: OperationPhase::Streaming,
         })
     );
+}
+
+fn progress(sequence: u64, rows: u64) -> OperationEvent {
+    OperationEvent::new(
+        identity(),
+        Revision::from_wire_u64(3),
+        EventSequence::from_wire_u64(sequence),
+        OperationEventKind::Progress {
+            cumulative_rows: rows,
+            cumulative_bytes: rows * 10,
+            coalesced_after: None,
+        },
+    )
+    .unwrap()
+}
+
+#[test]
+fn bounded_queue_coalesces_only_consecutive_progress() {
+    let mut queue =
+        OperationEventQueue::new(identity(), EventSequence::from_wire_u64(7), 2).unwrap();
+    assert_eq!(queue.push(progress(8, 10)), Ok(EventQueuePush::Enqueued));
+    assert_eq!(
+        queue.push(progress(9, 20)),
+        Ok(EventQueuePush::ProgressCoalesced)
+    );
+    assert_eq!(queue.len(), 1);
+    let coalesced = queue.pop_front().unwrap();
+    assert_eq!(coalesced.sequence().get(), 9);
+    assert_eq!(
+        coalesced.kind(),
+        OperationEventKind::Progress {
+            cumulative_rows: 20,
+            cumulative_bytes: 200,
+            coalesced_after: Some(EventSequence::from_wire_u64(7)),
+        }
+    );
+    assert!(queue.is_empty());
+}
+
+#[test]
+fn bounded_queue_turns_overflow_and_sequence_loss_into_resync() {
+    let mut queue =
+        OperationEventQueue::new(identity(), EventSequence::from_wire_u64(7), 1).unwrap();
+    let running = OperationEvent::new(
+        identity(),
+        Revision::from_wire_u64(3),
+        EventSequence::from_wire_u64(8),
+        OperationEventKind::PhaseChanged {
+            from: OperationPhase::Queued,
+            to: OperationPhase::Running,
+        },
+    )
+    .unwrap();
+    assert_eq!(queue.push(running), Ok(EventQueuePush::Enqueued));
+    assert_eq!(
+        queue.push(progress(9, 20)),
+        Ok(EventQueuePush::ResyncRequired)
+    );
+    let resync = queue.pop_front().unwrap();
+    assert_eq!(
+        resync.kind(),
+        OperationEventKind::ResyncRequired {
+            last_delivered: EventSequence::from_wire_u64(7)
+        }
+    );
+    assert_eq!(
+        queue.push(progress(11, 30)),
+        Ok(EventQueuePush::ResyncRequired)
+    );
+}
+
+#[test]
+fn bounded_queue_rejects_invalid_capacity_foreign_and_duplicate_events() {
+    assert!(matches!(
+        OperationEventQueue::new(identity(), EventSequence::INITIAL, 0),
+        Err(EventQueueError::InvalidCapacity)
+    ));
+    assert!(matches!(
+        OperationEventQueue::new(
+            identity(),
+            EventSequence::INITIAL,
+            OperationEventQueue::MAX_CAPACITY + 1
+        ),
+        Err(EventQueueError::InvalidCapacity)
+    ));
+    let mut queue =
+        OperationEventQueue::new(identity(), EventSequence::from_wire_u64(7), 2).unwrap();
+    queue.push(progress(8, 10)).unwrap();
+    assert_eq!(
+        queue.push(progress(8, 10)),
+        Err(EventQueueError::StaleOrDuplicate)
+    );
+    let foreign_identity = OperationIdentity::new(
+        OperationId::from_parts(IdParts::new(0, 2).unwrap()).unwrap(),
+        identity().request_id(),
+        identity().scope(),
+    );
+    let foreign = OperationEvent::new(
+        foreign_identity,
+        Revision::from_wire_u64(3),
+        EventSequence::from_wire_u64(9),
+        OperationEventKind::Progress {
+            cumulative_rows: 20,
+            cumulative_bytes: 200,
+            coalesced_after: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(queue.push(foreign), Err(EventQueueError::ForeignOperation));
 }

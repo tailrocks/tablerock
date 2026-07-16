@@ -210,6 +210,9 @@ TermRock migration 0018 and the exact refreshed `main` pin are recorded in
 [`105-termrock-migration-0018.md`](docs/research/105-termrock-migration-0018.md).
 The bounded Rust-owned single-use mutation review registry is recorded in
 [`106-phase-2-mutation-review-registry.md`](docs/research/106-phase-2-mutation-review-registry.md).
+The bounded operation event queue, cumulative progress coalescing, and explicit
+overflow resync are recorded in
+[`107-phase-2-operation-event-queue.md`](docs/research/107-phase-2-operation-event-queue.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

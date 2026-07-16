@@ -1,4 +1,4 @@
-use std::{error::Error, fmt};
+use std::{collections::VecDeque, error::Error, fmt};
 
 use crate::{
     ContextId, EventSequence, OperationId, ProfileId, RequestId, Revision, SequenceRelation,
@@ -178,6 +178,7 @@ pub enum OperationEventKind {
     Progress {
         cumulative_rows: u64,
         cumulative_bytes: u64,
+        coalesced_after: Option<EventSequence>,
     },
     ResyncRequired {
         last_delivered: EventSequence,
@@ -280,9 +281,23 @@ impl OperationCursor {
         if event.identity != self.identity {
             return Err(EventRejection::ForeignOperation);
         }
+        if matches!(event.kind, OperationEventKind::ResyncRequired { .. }) {
+            return Err(EventRejection::ResyncRequired);
+        }
         match event.sequence.relation_to(self.sequence) {
             SequenceRelation::StaleOrDuplicate => return Err(EventRejection::StaleOrDuplicate),
-            SequenceRelation::Gap => return Err(EventRejection::SequenceGap),
+            SequenceRelation::Gap
+                if !matches!(
+                    event.kind,
+                    OperationEventKind::Progress {
+                        coalesced_after: Some(sequence),
+                        ..
+                    } if sequence == self.sequence
+                ) =>
+            {
+                return Err(EventRejection::SequenceGap);
+            }
+            SequenceRelation::Gap => {}
             SequenceRelation::Next => {}
         }
         match event.kind {
@@ -303,6 +318,7 @@ impl OperationCursor {
             OperationEventKind::Progress {
                 cumulative_rows,
                 cumulative_bytes,
+                ..
             } => {
                 if event.revision != self.revision {
                     return Err(EventRejection::RevisionMismatch);
@@ -346,3 +362,156 @@ impl OperationCursor {
         self.cumulative_bytes
     }
 }
+
+/// Bounded delivery queue for one operation subscription.
+///
+/// Consecutive cumulative progress events may coalesce. Any other capacity or
+/// producer-sequence loss becomes one required resync marker.
+pub struct OperationEventQueue {
+    identity: OperationIdentity,
+    capacity: usize,
+    last_delivered: EventSequence,
+    events: VecDeque<OperationEvent>,
+}
+
+impl OperationEventQueue {
+    pub const MAX_CAPACITY: u32 = 4_096;
+
+    pub fn new(
+        identity: OperationIdentity,
+        last_delivered: EventSequence,
+        capacity: u32,
+    ) -> Result<Self, EventQueueError> {
+        if capacity == 0 || capacity > Self::MAX_CAPACITY {
+            return Err(EventQueueError::InvalidCapacity);
+        }
+        Ok(Self {
+            identity,
+            capacity: capacity as usize,
+            last_delivered,
+            events: VecDeque::with_capacity(capacity as usize),
+        })
+    }
+
+    pub fn push(&mut self, mut event: OperationEvent) -> Result<EventQueuePush, EventQueueError> {
+        if event.identity != self.identity {
+            return Err(EventQueueError::ForeignOperation);
+        }
+        let previous = self
+            .events
+            .back()
+            .map_or(self.last_delivered, |queued| queued.sequence);
+        match event.sequence.relation_to(previous) {
+            SequenceRelation::StaleOrDuplicate => {
+                return Err(EventQueueError::StaleOrDuplicate);
+            }
+            SequenceRelation::Gap => return Ok(self.require_resync(event)),
+            SequenceRelation::Next => {}
+        }
+        if matches!(event.kind, OperationEventKind::Progress { .. })
+            && self
+                .events
+                .back()
+                .is_some_and(|queued| matches!(queued.kind, OperationEventKind::Progress { .. }))
+        {
+            let replaced = self.events.pop_back().expect("progress tail exists");
+            let coalesced_after = match replaced.kind {
+                OperationEventKind::Progress {
+                    coalesced_after: Some(sequence),
+                    ..
+                } => sequence,
+                OperationEventKind::Progress { .. } => self
+                    .events
+                    .back()
+                    .map_or(self.last_delivered, |queued| queued.sequence),
+                _ => unreachable!("matched progress tail"),
+            };
+            if let OperationEventKind::Progress {
+                cumulative_rows,
+                cumulative_bytes,
+                ..
+            } = event.kind
+            {
+                event.kind = OperationEventKind::Progress {
+                    cumulative_rows,
+                    cumulative_bytes,
+                    coalesced_after: Some(coalesced_after),
+                };
+            }
+            self.events.push_back(event);
+            return Ok(EventQueuePush::ProgressCoalesced);
+        }
+        if self.events.len() == self.capacity {
+            return Ok(self.require_resync(event));
+        }
+        self.events.push_back(event);
+        Ok(EventQueuePush::Enqueued)
+    }
+
+    fn require_resync(&mut self, event: OperationEvent) -> EventQueuePush {
+        self.events.clear();
+        self.events.push_back(OperationEvent {
+            identity: event.identity,
+            revision: event.revision,
+            sequence: event.sequence,
+            kind: OperationEventKind::ResyncRequired {
+                last_delivered: self.last_delivered,
+            },
+        });
+        EventQueuePush::ResyncRequired
+    }
+
+    pub fn pop_front(&mut self) -> Option<OperationEvent> {
+        let event = self.events.pop_front()?;
+        self.last_delivered = event.sequence;
+        Some(event)
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+}
+
+impl fmt::Debug for OperationEventQueue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OperationEventQueue")
+            .field("identity", &self.identity)
+            .field("capacity", &self.capacity)
+            .field("last_delivered", &self.last_delivered)
+            .field("queued", &self.events.len())
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventQueuePush {
+    Enqueued,
+    ProgressCoalesced,
+    ResyncRequired,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventQueueError {
+    InvalidCapacity,
+    ForeignOperation,
+    StaleOrDuplicate,
+}
+
+impl fmt::Display for EventQueueError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidCapacity => "operation event queue capacity is invalid",
+            Self::ForeignOperation => "operation event belongs to another queue",
+            Self::StaleOrDuplicate => "operation event sequence is stale or duplicate",
+        })
+    }
+}
+
+impl Error for EventQueueError {}

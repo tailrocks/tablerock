@@ -40,8 +40,9 @@ pub use mutation::{
     ReviewError, ReviewRegistryError, ReviewedMutationPlan,
 };
 pub use operation::{
-    EventRejection, OperationCursor, OperationEvent, OperationEventKind, OperationIdentity,
-    OperationOutcome, OperationPhase, OperationScope, TransitionError,
+    EventQueueError, EventQueuePush, EventRejection, OperationCursor, OperationEvent,
+    OperationEventKind, OperationEventQueue, OperationIdentity, OperationOutcome, OperationPhase,
+    OperationScope, TransitionError,
 };
 pub use page::{
     CellRef, ColumnMetadata, PageAccessError, PageBuffers, PageDelivery, PageEnvelope, PageFacts,

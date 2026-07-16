@@ -104,10 +104,11 @@ completion/truncation/cancellation/failure state
 safe diagnostic code and optional operator action
 ```
 
-Progress may be coalesced. State transitions, review requirements, terminal
-results, and failures cannot be silently dropped. If a subscriber falls
-behind, the service emits an explicit resync requirement instead of growing an
-unbounded queue.
+Progress may be coalesced only as cumulative consecutive updates. State
+transitions, review requirements, terminal results, and failures cannot be
+silently dropped. The bounded core queue converts capacity exhaustion or a
+producer gap into an explicit resync requirement instead of growing storage or
+guessing state.
 
 ## Result/page contract
 

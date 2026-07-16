@@ -107,6 +107,9 @@ StageMutation / ReviewMutations / ApplyMutations / DiscardMutations
 Events carry profile-test outcome, session/catalog/tab snapshot, query progress,
 result changes/pages, change review, and redacted failure. Mutable aggregates
 have monotonic revisions; stale pages/completions/events are discarded.
+Cumulative consecutive progress may coalesce in the bounded per-operation
+queue. Required-event overflow or producer sequence loss emits one resync
+marker; it never silently drops lifecycle truth.
 
 ## Session ownership
 

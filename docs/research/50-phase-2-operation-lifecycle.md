@@ -9,10 +9,10 @@ running, streaming, cancel-requested, and terminal states. Terminal
 `OperationOutcome` records observed truth instead of treating task abandonment
 as server cancellation.
 
-The contract is immutable validation vocabulary. It does not own tasks,
-channels, drivers, or mutable engine state. The future application service
-remains the sole lifecycle owner and must advance the immutable cursor before
-it publishes an `OperationEvent`.
+The contract does not own tasks, drivers, or mutable engine state. It now owns
+the bounded per-operation delivery queue and immutable consumer cursor. The
+future application service remains the sole lifecycle owner and must publish
+through that queue.
 
 ## Failure, cancellation, bounds, and redaction
 
@@ -26,14 +26,14 @@ it publishes an `OperationEvent`.
   aggregate revision, and event sequence. An immutable `OperationCursor` retains
   the accepted phase, revision, sequence, and cumulative progress. It rejects
   foreign identity, stale or duplicate delivery, revision mismatch,
-  phase-history mismatch, progress regression, and sequence gaps. A gap requires
-  resync instead of unbounded buffering or guessed state.
+  phase-history mismatch, progress regression, and required-event sequence
+  gaps. A cumulative progress event may cross a gap only when the queue marks
+  the exact last sequence preceding its coalesced range.
 - Progress carries only cumulative row and byte counts and is explicitly
-  coalescible. The engine must coalesce before assigning the contiguous delivery
-  sequence; replacing pending progress therefore cannot corrupt totals or
-  manufacture a delivery gap.
-  Phase changes and resync requirements are required delivery. The bounded
-  channel and coalescing implementation remains an engine checkpoint.
+  coalescible. `OperationEventQueue` replaces only consecutive pending progress,
+  has a nonzero capacity capped at 4,096, and never drops a required event
+  silently. Capacity exhaustion or producer sequence loss replaces pending
+  delivery with one required resync marker carrying the last delivered cursor.
 - Core diagnostics contain IDs, phases, revisions, sequences, and counts only.
   No SQL, Redis arguments, credentials, endpoints, cell bytes, or driver errors
   enter this contract.
@@ -43,7 +43,7 @@ it publishes an `OperationEvent`.
 This tracer covers operations that already have a live profile/session/context.
 Application-wide profile and connection commands require different scopes and
 will be added with the typed command envelope rather than weakening this scope
-with optional IDs. Safe error payloads, bounded subscription storage, command
+with optional IDs. Safe error payloads, multi-subscription ownership, command
 budgets, shutdown, and cross-operation resync snapshots remain required Phase 2
 checkpoints.
 
@@ -55,15 +55,15 @@ checkpoints.
 - Hostile transitions prove rejection of skipped phases, false cancellation
   claims, and terminal revival.
 - Event tests prove required-versus-coalescible delivery classification,
-  cumulative progress, duplicate delivery rejection, sequence-gap resync,
-  foreign operation rejection, phase-history continuity, progress monotonicity,
-  and constructor rejection of illegal phase edges.
+  cumulative progress gaps, bounded consecutive coalescing, overflow/gap
+  resync, invalid capacity, duplicate/foreign rejection, phase-history
+  continuity, progress monotonicity, and illegal-edge rejection.
 - The architecture test includes this module and rejects runtime,
   presentation, driver, network, clock, and secret dependencies.
 
 ## Verification record
 
-- `cargo test -p tablerock-core --test operation`: 4 passed.
+- `cargo test -p tablerock-core --test operation`: 7 passed.
 - `cargo clippy -p tablerock-core --all-targets --locked -- -D warnings`: pass.
 - `cargo test --workspace --locked`: 55 passed, 3 ignored.
 - Workspace format, clippy, rustdoc, `cargo deny`, `gitleaks`, English-script,
