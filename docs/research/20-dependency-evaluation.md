@@ -36,6 +36,11 @@ TableRock does not directly depend on a separate textarea/widget framework,
 a local RPC framework, or a second SQL parser. A missing general TUI primitive
 is implemented in TermRock.
 
+TableRock enables all features published by the exact TermRock pin:
+`crossterm` and `serde`. The workspace owns that single feature declaration;
+see
+[`93-termrock-all-features-neutral-input-adoption.md`](93-termrock-all-features-neutral-input-adoption.md).
+
 ### Secret zeroization
 
 The core pins `zeroize` 1.9.0 with default features disabled and only `alloc`.

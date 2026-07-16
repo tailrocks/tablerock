@@ -1,5 +1,5 @@
-use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use tablerock_tui::{Message, PasteText, ScrollDirection, ShellGeometry};
+use termrock::input::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 
 #[derive(Debug, Clone, Default)]
 pub struct InputAdapter {
@@ -15,12 +15,12 @@ impl InputAdapter {
     #[must_use]
     pub fn map_event(&self, event: Event) -> Option<Message> {
         match event {
-            Event::Resize(width, height) => Some(Message::Resize { width, height }),
+            Event::Resize { width, height } => Some(Message::Resize { width, height }),
             Event::FocusGained => Some(Message::TerminalFocusChanged(true)),
             Event::FocusLost => Some(Message::TerminalFocusChanged(false)),
-            Event::Paste(text) => Some(Message::Paste(PasteText::bounded(text))),
+            Event::Paste => None,
             Event::Mouse(mouse) => {
-                let target = self.geometry.target_at(mouse.column, mouse.row);
+                let target = self.geometry.target_at(mouse.position.x, mouse.position.y);
                 match mouse.kind {
                     MouseEventKind::Moved => Some(Message::PointerHovered(target)),
                     MouseEventKind::Down(MouseButton::Left) => {
@@ -49,6 +49,7 @@ impl InputAdapter {
                     MouseEventKind::Down(_) | MouseEventKind::Up(_) | MouseEventKind::Drag(_) => {
                         None
                     }
+                    _ => None,
                 }
             }
             Event::Key(key) if key.kind != KeyEventKind::Release => match key.code {
@@ -65,7 +66,18 @@ impl InputAdapter {
                 }
                 _ => None,
             },
-            Event::Key(_) => None,
+            Event::Key(_) | Event::Unknown => None,
+            _ => None,
+        }
+    }
+
+    /// Convert the selected backend immediately, preserving paste text until
+    /// TermRock's neutral paste event carries its payload.
+    #[must_use]
+    pub fn map_backend_event(&self, event: crossterm::event::Event) -> Option<Message> {
+        match event {
+            crossterm::event::Event::Paste(text) => Some(Message::Paste(PasteText::bounded(text))),
+            event => self.map_event(event.into()),
         }
     }
 }
@@ -74,4 +86,10 @@ impl InputAdapter {
 #[must_use]
 pub fn map_event(event: Event) -> Option<Message> {
     InputAdapter::default().map_event(event)
+}
+
+/// Convert Crossterm input at the CLI boundary, then route neutral input.
+#[must_use]
+pub fn map_backend_event(event: crossterm::event::Event) -> Option<Message> {
+    InputAdapter::default().map_backend_event(event)
 }

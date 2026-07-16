@@ -3401,7 +3401,7 @@ dependencies = [
 [[package]]
 name = "termrock"
 version = "0.10.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=20ef50684f5e0ad9871f667ed425666b5e202a40#20ef50684f5e0ad9871f667ed425666b5e202a40"
+source = "git+https://github.com/tailrocks/termrock.git?rev=0089bd7bcd99086be1e7c7bf4753a733ef0bd935#0089bd7bcd99086be1e7c7bf4753a733ef0bd935"
 dependencies = [
  "anstyle-parse",
  "base64",
@@ -3409,6 +3409,7 @@ dependencies = [
  "ratatui-core",
  "ratatui-crossterm",
  "ratatui-widgets",
+ "serde",
  "tui-scrollbar",
  "unicode-segmentation",
  "unicode-width 0.2.2",

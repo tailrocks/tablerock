@@ -169,6 +169,15 @@ immutable Redis 7.4.9/8.8.0 Testcontainers evidence are recorded in
 TermRock's lookbook-only interactive story controls and exact refreshed `main`
 pin are recorded in
 [`91-termrock-0.10-interactive-story-controls-update.md`](docs/research/91-termrock-0.10-interactive-story-controls-update.md).
+TermRock's lookbook-only picker composition spike and exact refreshed `main`
+pin are recorded in
+[`92-termrock-0.10-picker-spike-update.md`](docs/research/92-termrock-0.10-picker-spike-update.md).
+All published TermRock features and the backend-neutral input boundary are
+recorded in
+[`93-termrock-all-features-neutral-input-adoption.md`](docs/research/93-termrock-all-features-neutral-input-adoption.md).
+TermRock's lookbook-only contract-axis story expansion and exact refreshed
+`main` pin are recorded in
+[`94-termrock-0.10-contract-axis-story-update.md`](docs/research/94-termrock-0.10-contract-axis-story-update.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

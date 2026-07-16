@@ -3,8 +3,33 @@ use crossterm::event::{
     MouseEventKind,
 };
 use ratatui_core::{backend::TestBackend, layout::Rect, terminal::Terminal};
-use tablerock_cli::{InputAdapter, map_event};
+use tablerock_cli::{InputAdapter, map_backend_event, map_event};
 use tablerock_tui::{ActionId, Message, Model, ScrollDirection, ShellTarget, ShellView, update};
+use termrock::input::{
+    Event as TermRockEvent, KeyCode as TermRockKeyCode, KeyEvent as TermRockKeyEvent,
+    KeyModifiers as TermRockKeyModifiers,
+};
+
+#[test]
+fn maps_termrock_neutral_input_without_backend_types() {
+    assert_eq!(
+        map_event(TermRockEvent::Resize {
+            width: 100,
+            height: 40,
+        }),
+        Some(Message::Resize {
+            width: 100,
+            height: 40,
+        })
+    );
+    assert_eq!(
+        map_event(TermRockEvent::Key(TermRockKeyEvent::new(
+            TermRockKeyCode::Enter,
+            TermRockKeyModifiers::NONE,
+        ))),
+        Some(Message::Activate)
+    );
+}
 
 #[test]
 fn maps_backend_facts_and_semantic_keyboard_intents() {
@@ -50,14 +75,14 @@ fn maps_backend_facts_and_semantic_keyboard_intents() {
             Some(Message::Quit),
         ),
     ] {
-        assert_eq!(map_event(event), expected);
+        assert_eq!(map_backend_event(event), expected);
     }
 }
 
 #[test]
 fn bounds_and_redacts_paste_before_root_delivery() {
     let secret = "password=correct-horse";
-    let message = map_event(Event::Paste(secret.to_owned())).expect("paste fact");
+    let message = map_backend_event(Event::Paste(secret.to_owned())).expect("paste fact");
     let Message::Paste(paste) = message else {
         panic!("expected paste fact");
     };
@@ -66,7 +91,8 @@ fn bounds_and_redacts_paste_before_root_delivery() {
     assert!(!format!("{paste:?}").contains(secret));
 
     let oversized = "🪨".repeat(tablerock_tui::MAX_PASTE_BYTES / 2);
-    let Message::Paste(paste) = map_event(Event::Paste(oversized)).expect("bounded paste") else {
+    let Message::Paste(paste) = map_backend_event(Event::Paste(oversized)).expect("bounded paste")
+    else {
         panic!("expected paste fact");
     };
     assert!(paste.was_truncated());
@@ -79,19 +105,19 @@ fn maps_pointer_input_only_through_painted_geometry() {
     let mut adapter = rendered_adapter(80, 24);
     let open = (1, 21);
     assert_eq!(
-        adapter.map_event(mouse(MouseEventKind::Down(MouseButton::Left), open)),
+        adapter.map_backend_event(mouse(MouseEventKind::Down(MouseButton::Left), open)),
         Some(Message::PointerPressed(Some(ShellTarget::Action(
             ActionId::Open
         ))))
     );
     assert_eq!(
-        adapter.map_event(mouse(MouseEventKind::Up(MouseButton::Left), open)),
+        adapter.map_backend_event(mouse(MouseEventKind::Up(MouseButton::Left), open)),
         Some(Message::PointerReleased(Some(ShellTarget::Action(
             ActionId::Open
         ))))
     );
     assert_eq!(
-        adapter.map_event(mouse(MouseEventKind::ScrollDown, (40, 10))),
+        adapter.map_backend_event(mouse(MouseEventKind::ScrollDown, (40, 10))),
         Some(Message::PointerScrolled {
             target: Some(ShellTarget::Focus(tablerock_tui::FocusRegion::Content)),
             direction: ScrollDirection::Down,
@@ -100,7 +126,7 @@ fn maps_pointer_input_only_through_painted_geometry() {
 
     adapter.set_geometry(Default::default());
     assert_eq!(
-        adapter.map_event(mouse(MouseEventKind::Moved, open)),
+        adapter.map_backend_event(mouse(MouseEventKind::Moved, open)),
         Some(Message::PointerHovered(None))
     );
 }
@@ -112,7 +138,7 @@ fn ignores_key_release_unbound_keys_and_non_primary_buttons() {
         key(KeyCode::Char('q'), KeyModifiers::NONE, KeyEventKind::Press),
         mouse(MouseEventKind::Down(MouseButton::Right), (3, 4)),
     ] {
-        assert_eq!(map_event(event), None);
+        assert_eq!(map_backend_event(event), None);
     }
 }
 

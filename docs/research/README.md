@@ -109,6 +109,9 @@ kept in the roadmap.
 - [TermRock 0.10 lookbook output hardening update](89-termrock-0.10-lookbook-output-hardening-update.md)
 - [Phase 2 Redis binary SCAN foundation evidence](90-phase-2-redis-binary-scan-foundation.md)
 - [TermRock 0.10 interactive story controls update](91-termrock-0.10-interactive-story-controls-update.md)
+- [TermRock 0.10 picker spike update](92-termrock-0.10-picker-spike-update.md)
+- [TermRock all-features and neutral input adoption](93-termrock-all-features-neutral-input-adoption.md)
+- [TermRock 0.10 contract-axis story update](94-termrock-0.10-contract-axis-story-update.md)
 
 ## Architecture headline
 

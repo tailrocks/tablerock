@@ -226,7 +226,7 @@ async fn run_session(
                         ))
                     })?
                     .map_err(RunError::Input)?;
-                let Some(message) = input.map_event(event) else {
+                let Some(message) = input.map_backend_event(event) else {
                     continue;
                 };
                 message
