@@ -8,8 +8,10 @@ repository.workspace = true
 description = "Single-owner local persistence actor for TableRock"
 
 [dependencies]
+tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
 tokio.workspace = true
 turso.workspace = true
+zeroize.workspace = true
 
 [lints]
 workspace = true

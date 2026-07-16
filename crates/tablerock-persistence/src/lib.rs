@@ -1,5 +1,7 @@
 //! Local-only persistence owned by one serialized worker thread.
 
+mod profile_store;
+
 use std::{
     collections::HashSet,
     error::Error,
@@ -13,12 +15,16 @@ use std::{
     time::Duration,
 };
 
+use profile_store::EncodedProfile;
+use tablerock_core::PersistableProfile;
+
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
 const CALLER_TIMEOUT: Duration = Duration::from_secs(35);
 
 const MIGRATIONS: &[(u32, &str)] = &[
     (1, include_str!("../migrations/0001-bootstrap.sql")),
     (2, include_str!("../migrations/0002-support-facts.sql")),
+    (3, include_str!("../migrations/0003-saved-profiles.sql")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +71,15 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
+    pub fn create_profile(&self, profile: PersistableProfile<'_>) -> Result<(), PersistenceError> {
+        let profile = EncodedProfile::from_saved(profile);
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::CreateProfile(profile, sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
     pub fn shutdown(mut self) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::Shutdown(sender))?;
@@ -101,6 +116,10 @@ fn map_receive_error(error: mpsc::RecvTimeoutError) -> PersistenceError {
 
 enum Command {
     Health(mpsc::SyncSender<Result<PersistenceHealth, PersistenceError>>),
+    CreateProfile(
+        EncodedProfile,
+        mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
     Shutdown(mpsc::SyncSender<Result<(), PersistenceError>>),
 }
 
@@ -123,7 +142,7 @@ fn worker_main(
             .await
             .map_err(|_| PersistenceError::Timeout)?
     });
-    let (database, connection) = match opened {
+    let (database, mut connection) = match opened {
         Ok(value) => {
             let _ = ready.send(Ok(()));
             value
@@ -140,6 +159,17 @@ fn worker_main(
                     tokio::time::timeout(OPERATION_TIMEOUT, read_health(&connection))
                         .await
                         .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::CreateProfile(profile, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::create(&mut connection, &profile),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
                 });
                 let _ = reply.send(result);
             }
@@ -398,6 +428,8 @@ pub enum PersistenceError {
     MissingRow,
     Decode,
     Checkpoint,
+    ProfileAlreadyExists,
+    ProfileWrite,
     Timeout,
 }
 

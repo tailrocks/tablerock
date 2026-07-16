@@ -124,6 +124,7 @@ fn render_tabs(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut 
         &Tabs {
             tabs: &tabs,
             gap: 1,
+            theme: &model.theme,
         },
         area,
         &mut state,
@@ -219,6 +220,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
         &ActionBar {
             actions: &actions,
             gap: " ",
+            theme: &model.theme,
         },
         area,
         &mut state,
@@ -277,6 +279,7 @@ fn render_hints(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         &HintBar {
             hints: &hints,
             separator: " • ",
+            theme: &model.theme,
         },
         area,
     );
@@ -315,7 +318,7 @@ fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mu
         &StatusBar {
             left: &left,
             right: &right,
-            style: Style::new(),
+            theme: &model.theme,
             alpha: 1.0,
         },
         area,

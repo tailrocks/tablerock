@@ -87,6 +87,12 @@ recovery rules are recorded in
 Abrupt subprocess death without destructor/checkpoint and verified reopen are
 recorded in
 [`62-phase-2-persistence-crash-recovery.md`](docs/research/62-phase-2-persistence-crash-recovery.md).
+Sequential saved-profile schema migration `0003` and the saved-token-only
+atomic create tracer are recorded in
+[`63-phase-2-saved-profile-create.md`](docs/research/63-phase-2-saved-profile-create.md).
+TermRock's semantic constructible-theme migration and exact refreshed main pin
+are recorded in
+[`64-termrock-0.9-constructible-theme-migration.md`](docs/research/64-termrock-0.9-constructible-theme-migration.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

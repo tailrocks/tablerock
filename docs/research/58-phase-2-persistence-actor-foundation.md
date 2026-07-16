@@ -91,6 +91,9 @@ Subsequent checkpoint `60-phase-2-persistence-ownership-recovery.md` closes the
 normalized process-local ownership and interrupted transactional migration
 items. Checkpoint `62-phase-2-persistence-crash-recovery.md` closes abrupt
 post-startup process-death reopen while retaining the other listed gates.
+Checkpoint `63-phase-2-saved-profile-create.md` adds sequential migration
+`0003`, complete saved-profile encoding, actor-level saved-token enforcement,
+and atomic create/rollback while retaining read/update/delete/list and CAS.
 
 ## Verification record
 

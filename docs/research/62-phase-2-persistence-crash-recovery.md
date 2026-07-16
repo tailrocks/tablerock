@@ -8,7 +8,7 @@ with `abort`. This deliberately bypasses `PersistenceActor::Drop`, explicit
 shutdown, WAL checkpoint, normal Rust unwinding, and worker-thread cleanup.
 
 The parent process requires the child to fail, then opens the same file through
-a new actor. Reopen must report exact schema version 2, enabled foreign keys,
+a new actor. Reopen must report exact schema version 3, enabled foreign keys,
 and `PRAGMA integrity_check = ok` before an explicit checkpointed shutdown.
 
 ## Safety and bounds
@@ -23,7 +23,7 @@ and `PRAGMA integrity_check = ok` before an explicit checkpointed shutdown.
 
 ## What this proves
 
-- Committed startup migrations survive abrupt whole-process death.
+- All three committed startup migrations survive abrupt whole-process death.
 - Reopen does not depend on actor destructor execution or a preceding manual
   checkpoint.
 - The new process rebuilds ownership state rather than inheriting stale

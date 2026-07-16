@@ -80,6 +80,8 @@ kept in the roadmap.
 - [Phase 2 persistence ownership and recovery evidence](60-phase-2-persistence-ownership-recovery.md)
 - [TermRock 0.9 unified key vocabulary migration evidence](61-termrock-0.9-key-vocabulary-migration.md)
 - [Phase 2 persistence crash recovery evidence](62-phase-2-persistence-crash-recovery.md)
+- [Phase 2 saved-profile create evidence](63-phase-2-saved-profile-create.md)
+- [TermRock 0.9 constructible theme migration evidence](64-termrock-0.9-constructible-theme-migration.md)
 
 ## Architecture headline
 

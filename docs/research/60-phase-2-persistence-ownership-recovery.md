@@ -52,7 +52,7 @@ explicit operator decision before replacement.
   healthy.
 - A real Turso transaction creates the second migration's table and is dropped
   before commit. Reopen rolls it back, applies migration `0002` completely, and
-  reports exact schema version 2.
+  then applies later supported migrations and reports exact schema version 3.
 - Existing future/gap and corrupt-file fixtures continue to fail closed.
 
 ## Remaining storage proof
