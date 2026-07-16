@@ -41,8 +41,9 @@ Phase 0 is complete. Phase 1 is in progress: the TermRock prerequisites and
 root TEA responsive shell and executable normal/signal terminal paths are
 verified. Render-authorized mouse/paste/focus/resize routing and normal, signal,
 returned-error, and panic real-PTY restoration paths are implemented. Typed
-engine overflow/resync policy remains. Product name, package namespace, and
-legal clearance remain subject to final review before public release.
+bounded ingress overflow/resync policy is implemented. The Phase 1 exit audit
+remains. Product name, package namespace, and legal clearance remain subject to
+final review before public release.
 
 ## License
 

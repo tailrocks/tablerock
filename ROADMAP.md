@@ -63,8 +63,11 @@ post-mapping root queue. Render-authorized mouse/paste/focus routing is recorded
 in [`42-phase-1-render-authorized-input.md`](docs/research/42-phase-1-render-authorized-input.md).
 Returned-error and panic PTY restoration evidence is recorded in
 [`43-phase-1-fault-restoration.md`](docs/research/43-phase-1-fault-restoration.md).
-Typed engine mapping, overflow/resync, and the final Phase 1 audit remain
-incomplete.
+Generic post-mapping progress coalescing and explicit overflow/resync evidence
+is recorded in
+[`44-phase-1-bounded-ingress.md`](docs/research/44-phase-1-bounded-ingress.md).
+Domain event identity/revision mapping belongs to Phase 2. The final Phase 1
+audit remains incomplete.
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

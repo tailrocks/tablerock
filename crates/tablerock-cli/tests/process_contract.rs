@@ -22,10 +22,19 @@ fn post_mapping_root_port_uses_the_declared_hard_capacity() {
     let (sender, mut receiver) = root_message_channel();
     for _ in 0..ENGINE_EVENT_CAPACITY {
         sender
-            .try_send(Message::RequestRedraw)
+            .try_send_event(Message::RequestRedraw)
             .expect("message within declared capacity");
     }
-    assert!(sender.try_send(Message::RequestRedraw).is_err());
-    assert_eq!(receiver.len(), ENGINE_EVENT_CAPACITY);
-    assert_eq!(receiver.try_recv(), Ok(Message::RequestRedraw));
+    assert_eq!(
+        sender.try_send_event(Message::RequestRedraw),
+        Ok(tablerock_cli::SendOutcome::ResyncRequired)
+    );
+    assert_eq!(
+        receiver.try_recv(),
+        Ok(tablerock_cli::Delivery::ResyncRequired)
+    );
+    assert_eq!(
+        receiver.try_recv(),
+        Ok(tablerock_cli::Delivery::Event(Message::RequestRedraw))
+    );
 }

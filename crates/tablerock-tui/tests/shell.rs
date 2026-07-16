@@ -114,6 +114,34 @@ fn focus_loss_clears_transient_pointer_state_and_paste_is_not_retained() {
 }
 
 #[test]
+fn ingress_overflow_projects_an_explicit_resync_state_until_reconciled() {
+    let mut model = Model::default();
+    let _ = update(
+        &mut model,
+        Message::Resize {
+            width: 80,
+            height: 24,
+        },
+    );
+    assert_eq!(
+        update(&mut model, Message::EngineResyncRequired).dirty(),
+        Dirty::Redraw
+    );
+    assert!(model.engine_resync_required());
+    assert_eq!(
+        update(&mut model, Message::EngineResyncRequired).dirty(),
+        Dirty::Clean
+    );
+    assert_render_model_contains(&model, 80, 24, "Resync required");
+
+    assert_eq!(
+        update(&mut model, Message::EngineResynchronized).dirty(),
+        Dirty::Redraw
+    );
+    assert!(!model.engine_resync_required());
+}
+
+#[test]
 fn breakpoints_are_bounded_and_deterministic() {
     let mut model = Model::default();
     for (width, height, expected) in [
@@ -255,4 +283,24 @@ fn assert_render_after(width: u16, height: u16, messages: &[Message], expected: 
             "missing {text:?} in rendered shell"
         );
     }
+}
+
+fn assert_render_model_contains(model: &Model, width: u16, height: u16, expected: &str) {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
+    drive_frame(
+        &mut terminal,
+        &ShellView,
+        model,
+        Rect::new(0, 0, width, height),
+        |_| {},
+    )
+    .expect("render model");
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(rendered.contains(expected), "missing {expected:?}");
 }

@@ -13,11 +13,21 @@ use tablerock_tui::subscriptions::{Subscription, root_subscriptions};
 use tablerock_tui::{Effect, Message, Model, ShellView, update};
 use termrock::crossterm::{Session, SessionOptions};
 
-use crate::{EventStream, InputAdapter};
+use crate::{Delivery, EventStream, IngressReceiver, IngressSender, InputAdapter, bounded_ingress};
 
 /// Bounded post-mapping ingress for root subscription messages.
-pub type RootMessageSender = tokio::sync::mpsc::Sender<Message>;
-pub type RootMessageReceiver = tokio::sync::mpsc::Receiver<Message>;
+pub type RootMessageSender = IngressSender<Message, RootProgress>;
+pub type RootMessageReceiver = IngressReceiver<Message, RootProgress>;
+
+/// Phase 1 has no domain progress payload; Phase 2 supplies the typed mapper.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootProgress {}
+
+enum LoopInput {
+    Signal,
+    Root(Option<Delivery<Message, RootProgress>>),
+    Terminal(Option<io::Result<crossterm::event::Event>>),
+}
 
 #[derive(Debug)]
 pub enum RunError {
@@ -81,7 +91,7 @@ pub fn root_message_channel() -> (RootMessageSender, RootMessageReceiver) {
             Subscription::TerminalInput | Subscription::Signals => None,
         })
         .expect("root subscriptions declare engine events");
-    tokio::sync::mpsc::channel(capacity)
+    bounded_ingress(capacity)
 }
 
 /// Run TableRock and contain panics after terminal restoration.
@@ -179,23 +189,37 @@ async fn run_session(
             after_frame()?;
         }
 
-        let message = tokio::select! {
+        let input_event = tokio::select! {
             biased;
             signal = &mut shutdown => {
                 signal?;
-                Message::Quit
+                LoopInput::Signal
             }
-            root_message = root_messages.recv(), if root_ingress_open => {
-                let Some(root_message) = root_message else {
-                    root_ingress_open = false;
-                    continue;
-                };
-                root_message
+            input_event = async {
+                tokio::select! {
+                    root = root_messages.recv(), if root_ingress_open => LoopInput::Root(root),
+                    terminal = events.next() => LoopInput::Terminal(terminal),
+                }
+            } => input_event,
+        };
+        let message = match input_event {
+            LoopInput::Signal => Message::Quit,
+            LoopInput::Root(None) => {
+                root_ingress_open = false;
+                continue;
             }
-            event = events.next() => {
-                let event = event.ok_or_else(|| {
-                    RunError::Input(io::Error::new(io::ErrorKind::UnexpectedEof, "terminal event stream closed"))
-                })?.map_err(RunError::Input)?;
+            LoopInput::Root(Some(Delivery::Event(message))) => message,
+            LoopInput::Root(Some(Delivery::Progress(progress))) => match progress {},
+            LoopInput::Root(Some(Delivery::ResyncRequired)) => Message::EngineResyncRequired,
+            LoopInput::Terminal(event) => {
+                let event = event
+                    .ok_or_else(|| {
+                        RunError::Input(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "terminal event stream closed",
+                        ))
+                    })?
+                    .map_err(RunError::Input)?;
                 let Some(message) = input.map_event(event) else {
                     continue;
                 };
@@ -278,12 +302,17 @@ mod tests {
 
     #[test]
     fn returned_error_restores_terminal_modes_in_real_pty() {
-        assert_fault_child_restores("run::tests::returned_error_fault_child");
+        assert_child_restores("run::tests::returned_error_fault_child", None);
     }
 
     #[test]
     fn panic_restores_terminal_modes_in_real_pty() {
-        assert_fault_child_restores("run::tests::panic_fault_child");
+        assert_child_restores("run::tests::panic_fault_child", None);
+    }
+
+    #[test]
+    fn busy_ingress_does_not_starve_terminal_input() {
+        assert_child_restores("run::tests::busy_ingress_child", Some(b"\x03"));
     }
 
     #[test]
@@ -302,6 +331,30 @@ mod tests {
             run_fault_caught(TestFault::Panic),
             Err(RunError::Panicked)
         ));
+    }
+
+    #[test]
+    #[ignore = "executed as a controlled PTY child"]
+    fn busy_ingress_child() {
+        assert!(
+            run_caught_boundary(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(RunError::Runtime)?
+                    .block_on(async {
+                        let (sender, receiver) = root_message_channel();
+                        tokio::spawn(async move {
+                            loop {
+                                let _ = sender.try_send_event(Message::RequestRedraw);
+                                tokio::task::yield_now().await;
+                            }
+                        });
+                        run_with_root_messages(receiver).await
+                    })
+            })
+            .is_ok()
+        );
     }
 
     fn run_fault_caught(fault: TestFault) -> Result<(), RunError> {
@@ -338,7 +391,7 @@ mod tests {
         finish_restoration(result, session.restore())
     }
 
-    fn assert_fault_child_restores(test_name: &str) {
+    fn assert_child_restores(test_name: &str, terminal_input: Option<&[u8]>) {
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 24,
@@ -360,11 +413,46 @@ mod tests {
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().expect("clone PTY reader");
         let (sender, receiver) = mpsc::sync_channel(1);
+        let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
         let reader_thread = thread::spawn(move || {
             let mut output = Vec::new();
-            reader.read_to_end(&mut output).expect("read PTY output");
+            let mut buffer = [0_u8; 4096];
+            let mut ready = false;
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(length) => {
+                        output.extend_from_slice(&buffer[..length]);
+                        if !ready && output.windows(5).any(|window| window == b"Ready") {
+                            ready = true;
+                            let _ = ready_sender.send(());
+                        }
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                    Err(error)
+                        if error.raw_os_error() == Some(5)
+                            || matches!(
+                                error.kind(),
+                                io::ErrorKind::BrokenPipe | io::ErrorKind::UnexpectedEof
+                            ) =>
+                    {
+                        break;
+                    }
+                    Err(error) => panic!("read PTY output: {error}"),
+                }
+            }
             let _ = sender.send(output);
         });
+
+        if let Some(input) = terminal_input {
+            ready_receiver
+                .recv_timeout(TIMEOUT)
+                .expect("wait for first child frame");
+            let mut writer = pair.master.take_writer().expect("open PTY writer");
+            use std::io::Write as _;
+            writer.write_all(input).expect("write terminal input");
+            writer.flush().expect("flush terminal input");
+        }
 
         let deadline = Instant::now() + TIMEOUT;
         let status = loop {

@@ -287,7 +287,11 @@ fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect) {
     };
     let left = [StatusSlot {
         id: StatusId::State,
-        content: "Ready",
+        content: if model.engine_resync_required() {
+            "Resync required"
+        } else {
+            "Ready"
+        },
         priority: 0,
         min_width: 5,
         enabled: true,

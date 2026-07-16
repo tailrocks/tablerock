@@ -58,6 +58,22 @@ pub fn update(model: &mut Model, message: Message) -> UpdateResult<Effect> {
                 UpdateResult::clean()
             }
         }
+        Message::EngineResyncRequired => {
+            if model.engine_resync_required() {
+                UpdateResult::clean()
+            } else {
+                model.set_engine_resync_required(true);
+                UpdateResult::redraw()
+            }
+        }
+        Message::EngineResynchronized => {
+            if model.engine_resync_required() {
+                model.set_engine_resync_required(false);
+                UpdateResult::redraw()
+            } else {
+                UpdateResult::clean()
+            }
+        }
         Message::FocusNext => {
             model.set_focus(model.focus().next());
             UpdateResult::redraw()

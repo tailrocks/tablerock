@@ -89,6 +89,7 @@ pub struct Model {
     terminal_focused: bool,
     hovered: Option<ShellTarget>,
     pressed: Option<ShellTarget>,
+    engine_resync_required: bool,
 }
 
 impl Default for Model {
@@ -103,6 +104,7 @@ impl Default for Model {
             terminal_focused: true,
             hovered: None,
             pressed: None,
+            engine_resync_required: false,
         }
     }
 }
@@ -141,6 +143,11 @@ impl Model {
     #[must_use]
     pub const fn pressed(&self) -> Option<ShellTarget> {
         self.pressed
+    }
+
+    #[must_use]
+    pub const fn engine_resync_required(&self) -> bool {
+        self.engine_resync_required
     }
 
     #[must_use]
@@ -187,5 +194,9 @@ impl Model {
 
     pub(crate) const fn set_pressed(&mut self, target: Option<ShellTarget>) {
         self.pressed = target;
+    }
+
+    pub(crate) const fn set_engine_resync_required(&mut self, required: bool) {
+        self.engine_resync_required = required;
     }
 }

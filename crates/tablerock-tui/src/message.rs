@@ -64,6 +64,8 @@ pub enum Message {
         target: Option<ShellTarget>,
         direction: ScrollDirection,
     },
+    EngineResyncRequired,
+    EngineResynchronized,
     FocusNext,
     FocusPrevious,
     ActionNext,
