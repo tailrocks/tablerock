@@ -16,6 +16,8 @@ name or block pre-release engineering.
 ## Approved baseline
 
 - TableRock baseline: `14149c40117f86e95ef8c8691016b3657b292a02`.
+- Phase 0 decision checkpoint:
+  `b56fbaed030e19d9f8fe9c7734af6c05d056f6a8`.
 - Product boundary: PostgreSQL, ClickHouse, and Redis only.
 - Architecture: Rust-owned engine and contracts; TEA TUI over TermRock,
   Ratatui, and Crossterm; synchronous coarse UniFFI for native macOS.
@@ -81,6 +83,9 @@ Copied code/assets/text: none
   this documentation-only decision checkpoint.
 - The repository is on `main` and matched `origin/main` at the approved
   baseline.
+- The Phase 0 decision checkpoint was pushed to `origin/main`; local `HEAD` and
+  `origin/main` both resolved to
+  `b56fbaed030e19d9f8fe9c7734af6c05d056f6a8` after publication.
 - Cross-document fixed-path searches found no competing database, persistence,
   terminal backend, TUI architecture, native bridge, or distribution path.
 - Phase 1 remains visibly unimplemented; README and roadmap make no working
