@@ -29,6 +29,10 @@ directly to `main`, never through an automated pull request.
 - TermRock advanced to `7c01dff` to provision current nightly Rust for its API
   tooling. The change is CI-only with no consumer migration; TableRock repinned
   immediately.
+- TermRock advanced to v0.11.0 at `50d67f1`. TableRock adopted migrations 0016
+  (semantic strong text and viewport emphasis) and 0017 (canonical scrollable
+  block helpers) immediately. No existing TableRock call site used a replaced
+  surface, so no compatibility layer remains.
 - Every other adopted and planned baseline version in dependency decision `20`
   matches the current crates.io release.
 - Current official ClickHouse 0.15.1 and upstream `main` still require

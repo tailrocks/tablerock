@@ -1036,7 +1036,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2918,7 +2918,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3539,13 +3539,13 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
 name = "termrock"
-version = "0.10.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=7c01dffc228d14fcc9b41b9925f90bcab68c555b#7c01dffc228d14fcc9b41b9925f90bcab68c555b"
+version = "0.11.0"
+source = "git+https://github.com/tailrocks/termrock.git?rev=50d67f17e1a027a954c91ef68275afb438eed300#50d67f17e1a027a954c91ef68275afb438eed300"
 dependencies = [
  "anstyle-parse",
  "base64",
