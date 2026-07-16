@@ -6,7 +6,7 @@ use tablerock_core::{
 };
 use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession,
-    ClickHouseTlsMode,
+    ClickHouseTlsMode, DriverPageRequest, DriverSession,
 };
 use testcontainers::{GenericImage, ImageExt, core::IntoContainerPort, runners::AsyncRunner};
 
@@ -53,13 +53,14 @@ async fn verify_image(image: &str) {
         let mut stream = None;
         let mut last_error = None;
         for attempt in 0..300 {
-            match session
-                .stream_probe(
-                    ClickHouseProbeQuery::TypedValues,
-                    &text(&format!("tablerock-{port}-{compression:?}-{attempt}")),
-                    PageLimits::new(2, 8, 256, 256),
-                    8,
-                )
+            let driver: &dyn DriverSession = &session;
+            match driver
+                .start_page_stream(DriverPageRequest::ClickHouseProbe {
+                    query: ClickHouseProbeQuery::TypedValues,
+                    query_id: text(&format!("tablerock-{port}-{compression:?}-{attempt}")),
+                    limits: PageLimits::new(2, 8, 256, 256),
+                    max_cell_bytes: 8,
+                })
                 .await
             {
                 Ok(ready) => {

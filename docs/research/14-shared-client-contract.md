@@ -69,6 +69,11 @@ The Rust application-service trait implements these semantics for both adapters.
 TUI code never calls a driver directly. Swift never calls a driver or
 reconstructs a database operation.
 
+Below that service, the engine's dyn-compatible `DriverSession`/`DriverPageStream`
+traits use boxed futures and owned bounded requests/pages. Both clients see core
+contracts only; PostgreSQL, ClickHouse, and Redis client types never enter the
+service or presentation boundary.
+
 The core coordinator now owns bounded operation submission, parent-scope
 containment, cancellation transitions, per-operation delivery queues, terminal
 retirement, and graceful/cancel-active draining. Shutdown stops new submission

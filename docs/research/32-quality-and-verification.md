@@ -91,6 +91,10 @@ reconnect, permissions, safe error, and ambiguous-write tests.
 
 Engine additions:
 
+- one object-safe adapter contract exercised by all three real-server suites;
+- cross-engine request rejection and redacted adapter diagnostics;
+- explicit cancellation support/unsupported truth and consuming shutdown;
+
 - PostgreSQL: custom/unknown OIDs, arrays/ranges/composites/JSON/bytes, notices,
   parameters, COPY, multiple statements, transaction conflicts, cancel races;
 - ClickHouse: nested/nullable/low-cardinality/decimal/large integer/binary,

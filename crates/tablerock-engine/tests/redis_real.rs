@@ -5,7 +5,9 @@ use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, Engine, IdParts, PageDelivery, PageIdentity, PageLimits,
     PageWarning, ResultId, Revision, Truncation, ValueKind,
 };
-use tablerock_engine::{RedisConnectConfig, RedisProtocol, RedisSession, RedisTlsMode};
+use tablerock_engine::{
+    DriverPageRequest, DriverSession, RedisConnectConfig, RedisProtocol, RedisSession, RedisTlsMode,
+};
 use testcontainers::{
     GenericImage,
     core::{IntoContainerPort, WaitFor},
@@ -76,8 +78,16 @@ async fn verify_version(tag: &str) {
             }
         ));
 
-        let mut stream = session
-            .scan_keys(PageLimits::new(2, 1, 256, 64), 128, 2, 128)
+        let driver: &dyn DriverSession = &session;
+        assert_eq!(driver.engine(), Engine::Redis);
+        let mut stream = driver
+            .start_page_stream(DriverPageRequest::RedisKeyScan {
+                limits: PageLimits::new(2, 1, 256, 64),
+                max_cell_bytes: 128,
+                scan_count: 2,
+                max_scan_rounds: 128,
+            })
+            .await
             .unwrap();
         let mut found = BTreeSet::new();
         let mut start = 0_u64;

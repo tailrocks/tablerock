@@ -1,9 +1,14 @@
 //! Database adapters and operation runtime for TableRock.
 
+mod adapter;
 mod clickhouse;
 mod postgres;
 mod redis;
 
+pub use adapter::{
+    AdapterError, AdapterFailureClass, CancelDispatch, DriverFuture, DriverPageRequest,
+    DriverPageStream, DriverSession,
+};
 pub use clickhouse::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseError, ClickHouseProbeQuery,
     ClickHouseRowStream, ClickHouseSession, ClickHouseTlsMode,

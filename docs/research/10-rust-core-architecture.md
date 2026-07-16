@@ -93,6 +93,14 @@ Constraints:
 - write plans are typed parameters/commands, not executable preview strings;
 - reconnect never automatically retries ambiguous writes.
 
+The Phase 2 object-safe adapter seam returns explicit boxed `Future` values;
+native `async fn` methods are not dyn-compatible. `DriverSession` exposes
+engine identity, bounded page-stream start, explicit cancellation dispatch, and
+consuming shutdown. `DriverPageStream` returns immutable core pages. Concrete
+client sessions, rows, cursors, and errors remain behind the implementation.
+Cancellation reports `Unsupported` until an adapter can map the supplied
+operation identity to a real server request; it never substitutes task drop.
+
 ## Commands, events, and revisions
 
 Commands represent operator intent:

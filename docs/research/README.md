@@ -64,6 +64,7 @@ kept in the roadmap.
 - [TermRock migration 0021 adoption](113-termrock-migration-0021.md)
 - [Phase 2 bounded subscription fan-out](114-phase-2-subscription-fanout.md)
 - [TermRock immutable frame-tick spike adoption](115-termrock-frame-tick-spike.md)
+- [Phase 2 object-safe driver adapter](116-phase-2-driver-adapter.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

@@ -234,6 +234,9 @@ resync isolation are recorded in
 TermRock's published immutable frame-tick spike and the exact refreshed `main`
 pin are recorded in
 [`115-termrock-frame-tick-spike.md`](docs/research/115-termrock-frame-tick-spike.md).
+The object-safe shared driver/page-stream seam and redacted cross-engine
+contract are recorded in
+[`116-phase-2-driver-adapter.md`](docs/research/116-phase-2-driver-adapter.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

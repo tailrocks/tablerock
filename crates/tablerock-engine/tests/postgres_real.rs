@@ -1,8 +1,9 @@
 use tablerock_core::{
-    BoundedText, ByteLimit, IdParts, PageDelivery, PageIdentity, PageLimits, PageWarning, ResultId,
-    Revision, Truncation, ValueKind,
+    BoundedText, ByteLimit, Engine, IdParts, OperationId, PageDelivery, PageIdentity, PageLimits,
+    PageWarning, ResultId, Revision, Truncation, ValueKind,
 };
 use tablerock_engine::{
+    AdapterFailureClass, CancelDispatch, ClickHouseProbeQuery, DriverPageRequest, DriverSession,
     PostgresCancellationOutcome, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
     PostgresTlsMode,
 };
@@ -92,12 +93,33 @@ async fn streams_bounded_pages_from_real_postgres() {
         PostgresTlsMode::Disable,
     );
     let session = PostgresSession::connect(&config).await.unwrap();
-    let mut stream = session
-        .stream_probe(
-            PostgresProbeQuery::BoundedSeries,
-            PageLimits::new(2, 8, 32, 256),
-            8,
-        )
+    let driver: &dyn DriverSession = &session;
+    assert_eq!(driver.engine(), Engine::PostgreSql);
+    let mismatch = match driver
+        .start_page_stream(DriverPageRequest::ClickHouseProbe {
+            query: ClickHouseProbeQuery::TypedValues,
+            query_id: text("must-not-log"),
+            limits: PageLimits::new(2, 8, 32, 256),
+            max_cell_bytes: 8,
+        })
+        .await
+    {
+        Err(error) => error,
+        Ok(_) => panic!("PostgreSQL adapter must reject a ClickHouse request"),
+    };
+    assert_eq!(mismatch.class(), AdapterFailureClass::EngineMismatch);
+    assert_eq!(
+        driver
+            .cancel(OperationId::from_parts(IdParts::new(0, 9).unwrap()).unwrap())
+            .await,
+        CancelDispatch::Unsupported
+    );
+    let mut stream = driver
+        .start_page_stream(DriverPageRequest::PostgreSqlProbe {
+            query: PostgresProbeQuery::BoundedSeries,
+            limits: PageLimits::new(2, 8, 32, 256),
+            max_cell_bytes: 8,
+        })
         .await
         .unwrap();
 
@@ -133,7 +155,10 @@ async fn streams_bounded_pages_from_real_postgres() {
     assert_eq!(second.cell(0, 0).unwrap().bytes(), b"3");
     assert!(stream.next_page(identity(), 3).await.unwrap().is_none());
     drop(stream);
-    session.shutdown().await.unwrap();
+    (Box::new(session) as Box<dyn DriverSession>)
+        .shutdown()
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
