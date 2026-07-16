@@ -112,6 +112,8 @@ kept in the roadmap.
 - [TermRock 0.10 picker spike update](92-termrock-0.10-picker-spike-update.md)
 - [TermRock all-features and neutral input adoption](93-termrock-all-features-neutral-input-adoption.md)
 - [TermRock 0.10 contract-axis story update](94-termrock-0.10-contract-axis-story-update.md)
+- [Phase 2 ClickHouse RowBinary foundation evidence](95-phase-2-clickhouse-rowbinary-foundation.md)
+- [TermRock 0.10 scroll/session migration evidence](96-termrock-0.10-scroll-session-migration.md)
 
 ## Architecture headline
 

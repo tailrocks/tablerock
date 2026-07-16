@@ -8,6 +8,8 @@ repository.workspace = true
 description = "Database adapters and operation runtime for TableRock"
 
 [dependencies]
+bytes.workspace = true
+clickhouse.workspace = true
 futures-util.workspace = true
 redis.workspace = true
 tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }

@@ -7,6 +7,7 @@ fn cli_owns_scoped_session_contract_without_live_terminal_side_effects() {
         mouse_capture: false,
         bracketed_paste: false,
         raw_mode: false,
+        ..SessionOptions::default()
     };
     let mut session = Session::enter(Vec::new(), options).expect("in-memory session");
 

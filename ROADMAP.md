@@ -178,6 +178,12 @@ recorded in
 TermRock's lookbook-only contract-axis story expansion and exact refreshed
 `main` pin are recorded in
 [`94-termrock-0.10-contract-axis-story-update.md`](docs/research/94-termrock-0.10-contract-axis-story-update.md).
+The ClickHouse self-describing RowBinary stream, query-ID/compression facts,
+and immutable 25.8/26.3 LTS Testcontainers evidence are recorded in
+[`95-phase-2-clickhouse-rowbinary-foundation.md`](docs/research/95-phase-2-clickhouse-rowbinary-foundation.md).
+TermRock's sequential scroll/hover and independent-session-options migrations,
+release-flow update, and exact refreshed `main` pin are recorded in
+[`96-termrock-0.10-scroll-session-migration.md`](docs/research/96-termrock-0.10-scroll-session-migration.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

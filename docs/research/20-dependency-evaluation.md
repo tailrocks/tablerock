@@ -109,6 +109,13 @@ compression, and TLS roots.
 
 No hand-written ClickHouse HTTP client exists in the selected architecture.
 
+The first adoption checkpoint pins `clickhouse` 0.15.1 with LZ4 and rustls
+native-root support. It consumes the official client's cancellation-safe raw
+chunk cursor, parses `RowBinaryWithNamesAndTypes` metadata, and proves bounded
+typed pages against immutable ClickHouse 25.8 and 26.3 LTS Testcontainers
+fixtures. See
+[`95-phase-2-clickhouse-rowbinary-foundation.md`](95-phase-2-clickhouse-rowbinary-foundation.md).
+
 ## Redis
 
 Use `redis-rs/redis-rs` with the minimum async, TLS, and protocol features needed
