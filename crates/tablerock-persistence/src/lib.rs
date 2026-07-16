@@ -1,6 +1,7 @@
 //! Local-only persistence owned by one serialized worker thread.
 
 mod profile_store;
+mod recovery;
 
 use std::{
     collections::HashSet,
@@ -16,6 +17,10 @@ use std::{
 };
 
 use profile_store::EncodedProfile;
+pub use recovery::{
+    BACKUP_FORMAT_VERSION, BackupManifest, MAX_BACKUP_BYTES, create_backup, read_backup_manifest,
+    restore_backup,
+};
 use tablerock_core::{
     PersistableProfile, ProfileAggregate, ProfileId, ProfileListPage, ProfileListRequest, Revision,
 };
@@ -551,6 +556,13 @@ pub enum PersistenceError {
     MissingRow,
     Decode,
     Checkpoint,
+    BackupSource,
+    BackupDestinationExists,
+    BackupTooLarge,
+    BackupIo,
+    BackupManifest,
+    BackupVerification,
+    RestoreTargetExists,
     ProfileAlreadyExists,
     ProfileWrite,
     ProfileRead,

@@ -34,9 +34,11 @@ and `PRAGMA integrity_check = ok` before an explicit checkpointed shutdown.
 
 Fault injection must still cover process death during each migration boundary,
 durable profile/history writes, backup creation, and restoration-intent updates.
-Disk-full, permission/read-only, damaged-page recovery UX, and independent
-backup manifests also remain open. Those claims require the corresponding write
-commands and cannot be inferred from startup-only recovery.
+Disk-full, permission/read-only, damaged-page recovery UX, and crash injection
+during backup publication remain open. Checkpoint
+`135-phase-2-persistence-backup-restore.md` closes the independent manifest and
+verified offline restore primitive, but it cannot infer crash-boundary evidence
+from the successful path.
 
 ## Verification record
 

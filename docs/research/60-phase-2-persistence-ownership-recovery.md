@@ -58,11 +58,15 @@ explicit operator decision before replacement.
 ## Remaining storage proof
 
 Disk-full, permission/read-only injection, crash subprocesses at additional
-boundaries, integrity recovery UX, retention/private history, independent
-backup manifests, Release package size, clean-machine deployment, and
+boundaries, integrity recovery UX, retention/private history, Release package
+size, clean-machine deployment, and
 cross-process application ownership remain open. Profile persistence remains
 unclaimed until its encoding, saved-token gate, and transactional revision CAS
 are implemented after the applicable storage prerequisites.
+
+Checkpoint `135-phase-2-persistence-backup-restore.md` closes the independent
+manifest and offline verified restore primitive. It intentionally does not
+close destructive operator replacement or the remaining fault matrix.
 
 ## Verification record
 

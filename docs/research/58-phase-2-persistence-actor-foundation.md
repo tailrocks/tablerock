@@ -83,8 +83,8 @@ packaged file is Apache-2.0 text with SHA-256
 
 This is not the complete storage-proof exit. Profile encoding/CRUD, saved-only
 token enforcement at actor commands, transactional revision CAS, retention,
-disk-full/interrupted-migration injection, crash subprocess matrix, independent
-backup manifest, package-size/release artifact, and clean-machine macOS/terminal
+disk-full/interrupted-migration injection, crash subprocess matrix,
+package-size/release artifact, and clean-machine macOS/terminal
 deployment remain required before profile persistence is claimed.
 
 Subsequent checkpoint `60-phase-2-persistence-ownership-recovery.md` closes the
@@ -94,6 +94,9 @@ post-startup process-death reopen while retaining the other listed gates.
 Checkpoint `63-phase-2-saved-profile-create.md` adds sequential migration
 `0003`, complete saved-profile encoding, actor-level saved-token enforcement,
 and atomic create/rollback while retaining read/update/delete/list and CAS.
+Checkpoint `135-phase-2-persistence-backup-restore.md` closes the independent
+manifest and verified offline copy/restore primitive while retaining its listed
+fault-injection, packaging, deployment, and operator-UX gates.
 
 ## Verification record
 

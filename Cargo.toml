@@ -18,6 +18,7 @@ futures-util = "0.3.32"
 ratatui-core = "0.1.2"
 ratatui-crossterm = { version = "0.1.2", default-features = false, features = ["crossterm_0_29"] }
 redis = { version = "=1.4.0", default-features = false, features = ["tokio-rustls-comp"] }
+sha2 = { version = "=0.11.0", default-features = false }
 termrock = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "56b856be6195cdd632c546334016df02fb9aaeff", features = ["crossterm", "serde"] }
 tokio = { version = "=1.52.4", features = ["macros", "rt", "signal", "sync", "time"] }
 tokio-postgres = "=0.7.18"

@@ -167,6 +167,8 @@ Local Turso tests prove:
 - fresh creation and every supported migration path;
 - transaction rollback and restart after interrupted migration;
 - single-actor ownership, serialized commands, flush, and clean shutdown;
+- offline checkpointed backup, bounded authenticated manifest, tamper
+  detection, absent-target restore, and independent restored-file health;
 - the dependency graph contains `turso`, never `rusqlite` or `libsql`, and does
   not enable cloud sync;
 - every schema/query feature passes the pinned Turso compatibility suite;

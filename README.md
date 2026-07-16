@@ -52,6 +52,9 @@ Immutable profile connection snapshots add stable identity/revision, all-engine 
 readiness, validated TLS state, two-mode safety, and finite limits.
 The baseline profile aggregate adds saved/temporary disposition, bounded
 organization/preferences, redaction, and monotonic replacement validation.
+Local state now has a bounded offline checkpointed backup, strict SHA-256
+manifest, tamper detection, and absent-target independently verified restore;
+operator replacement and remaining storage fault/deployment gates stay open.
 Local persistence now has an isolated default-features-disabled Turso 0.7
 worker, bounded serialized commands, sequential documented migrations, and
 normalized process-local single ownership plus interrupted-migration recovery

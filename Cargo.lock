@@ -3509,6 +3509,7 @@ dependencies = [
 name = "tablerock-persistence"
 version = "0.1.0"
 dependencies = [
+ "sha2",
  "tablerock-core",
  "tokio",
  "turso",

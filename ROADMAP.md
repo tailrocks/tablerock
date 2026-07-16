@@ -52,6 +52,9 @@ process-RSS budgets are recorded in
 [`133-phase-2-current-line-performance-budgets.md`](docs/research/133-phase-2-current-line-performance-budgets.md).
 TermRock's public Picker graduation and exact latest pin are recorded in
 [`134-termrock-picker-graduation-update.md`](docs/research/134-termrock-picker-graduation-update.md).
+The verified bounded offline Turso backup/restore path and independent manifest
+are recorded in
+[`135-phase-2-persistence-backup-restore.md`](docs/research/135-phase-2-persistence-backup-restore.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

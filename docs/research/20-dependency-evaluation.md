@@ -28,6 +28,7 @@ library does not change without a recorded architecture revision.
 | Ratatui terminal backend | [`ratatui-crossterm`](https://github.com/ratatui/ratatui) | 0.1.2 | MIT | CLI render adapter only; Crossterm 0.29 feature only |
 | PTY test harness | [`portable-pty`](https://github.com/wezterm/wezterm) | 0.9.0 | MIT | CLI development dependency only |
 | Secret zeroization | [`zeroize`](https://github.com/RustCrypto/utils/tree/master/zeroize) | 1.9.0 | MIT OR Apache-2.0 | core dangerous-local secret buffer only; `alloc` feature |
+| Backup digest | [`sha2`](https://github.com/RustCrypto/hashes/tree/master/sha2) | 0.11.0 | MIT OR Apache-2.0 | persistence offline backup verification only; default features disabled |
 | Persistence | [`turso`](https://github.com/tursodatabase/turso) local database | 0.7.0 | MIT | one serialized Rust async persistence actor |
 | Unicode normalization | [`unicode-normalization`](https://github.com/unicode-rs/unicode-normalization) | 0.1.25 | MIT OR Apache-2.0 | core profile-search normalization only |
 | Unicode case folding | [`caseless`](https://github.com/unicode-rs/rust-caseless) | 0.2.2 | MIT | core profile-search normalization only |
@@ -53,6 +54,16 @@ compiler-resistant zeroing across its full capacity. TableRock uses it only for
 the explicitly acknowledged dangerous-local plaintext owner, keeps that owner
 non-cloneable, and retains the workspace-wide `unsafe_code = "forbid"` rule.
 Reference-only secret variants never contain resolved bytes.
+
+### Backup verification
+
+The persistence crate pins latest stable `sha2` 0.11.0 with default features
+disabled. It incrementally hashes bounded 64 KiB copy buffers into SHA-256 for
+the versioned offline backup manifest; no digest or path crosses into profile
+state. Cargo registry and official RustCrypto metadata report Rust 1.85 minimum
+and MIT OR Apache-2.0. Context7 was attempted first and reported its monthly
+quota exhausted. See
+[`135-phase-2-persistence-backup-restore.md`](135-phase-2-persistence-backup-restore.md).
 
 ### Profile search normalization
 

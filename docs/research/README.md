@@ -83,6 +83,7 @@ kept in the roadmap.
 - [TermRock migration 0025 adoption](132-termrock-runtime-keymap-migration.md)
 - [Phase 2 current-line performance budgets](133-phase-2-current-line-performance-budgets.md)
 - [TermRock Picker graduation update](134-termrock-picker-graduation-update.md)
+- [Phase 2 persistence backup and restore evidence](135-phase-2-persistence-backup-restore.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)
