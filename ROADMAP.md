@@ -88,6 +88,8 @@ The bounded owned-value and explicit per-engine capability tracer is recorded in
 [`47-phase-2-value-capability-contract.md`](docs/research/47-phase-2-value-capability-contract.md).
 The pre-allocation-bounded immutable columnar page tracer is recorded in
 [`48-phase-2-page-contract.md`](docs/research/48-phase-2-page-contract.md).
+The live-session operation lifecycle and event-identity tracer is recorded in
+[`50-phase-2-operation-lifecycle.md`](docs/research/50-phase-2-operation-lifecycle.md).
 
 Define owned IDs, capabilities, values, revisions, commands, events, pages,
 errors, cancellation, safety, and redaction. Implement local-only Turso through
