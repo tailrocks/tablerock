@@ -25,6 +25,7 @@ pub enum PostgresTlsMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PostgresProbeQuery {
     BoundedSeries,
+    PerformanceSeries,
     TypedValues,
     CancellationStream,
 }
@@ -41,6 +42,9 @@ impl PostgresProbeQuery {
             Self::BoundedSeries => {
                 "SELECT value::text AS id, repeat('é', 10) AS label, NULL::text AS absent \
                  FROM generate_series(1, 3) AS value ORDER BY value"
+            }
+            Self::PerformanceSeries => {
+                "SELECT value::text AS id FROM generate_series(1, 10000) AS value ORDER BY value"
             }
             Self::TypedValues => {
                 "SELECT true::bool AS boolean_value, (-32768)::int2 AS int2_value, \

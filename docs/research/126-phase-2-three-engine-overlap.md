@@ -24,10 +24,11 @@ A warm local Docker run on 2026-07-17 observed:
 | ClickHouse | 2.863 ms | 3.059 ms |
 | Redis | 3.064 ms | 3.137 ms |
 
-These measurements are diagnostic evidence from one host, not portable
-performance budgets. Phase 2 still requires repeated first-row, throughput,
-cancel, allocation, and peak-memory measurements across the supported server
-matrix before publishing initial budgets.
+These overlap measurements remain diagnostic evidence from one host. The first
+separate current-line pass/fail budgets are now recorded in
+[`133-phase-2-current-line-performance-budgets.md`](133-phase-2-current-line-performance-budgets.md).
+Repeated older-line, cancellation, allocation-count, and release-profile
+measurements remain required.
 
 Sources are TableRock-owned requirements, official client behavior, and direct
 pinned-server tests. No external-product source or protected expression

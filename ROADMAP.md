@@ -47,6 +47,9 @@ recorded in
 TermRock migration 0025, one model-owned runtime keymap, and its exact latest
 pin are recorded in
 [`132-termrock-runtime-keymap-migration.md`](docs/research/132-termrock-runtime-keymap-migration.md).
+Current-line 10,000-row streaming, first-page, throughput, page-residency, and
+process-RSS budgets are recorded in
+[`133-phase-2-current-line-performance-budgets.md`](docs/research/133-phase-2-current-line-performance-budgets.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

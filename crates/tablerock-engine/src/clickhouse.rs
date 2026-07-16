@@ -34,6 +34,7 @@ pub enum ClickHouseCompression {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClickHouseProbeQuery {
     TypedValues,
+    PerformanceSeries,
     ComplexScalars,
     StructuredValues,
     CancellationStream,
@@ -50,6 +51,7 @@ impl ClickHouseProbeQuery {
                  CAST(unhex('00FF'), 'FixedString(2)') AS binary_value \
                  FROM numbers(3)"
             }
+            Self::PerformanceSeries => "SELECT number AS id FROM numbers(10000)",
             Self::ComplexScalars => {
                 "SELECT CAST(1, 'Bool') AS boolean_value, toUInt8(255) AS uint8_value, \
                  toUInt16(65535) AS uint16_value, toUInt32(4294967295) AS uint32_value, \

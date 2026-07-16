@@ -78,6 +78,11 @@ Start with 500-row pages, a 10,000-row arbitrary-query cap, and independent byte
 and process-memory budgets. Phase 2 measurements may revise the numeric values
 before user release, but there is no unlimited mode.
 
+The first continuously enforced current-line guardrails are 5 seconds to first
+page, 15 seconds to exhaust 10,000 rows, 500 rows/second minimum throughput,
+2 MiB maximum resident capacity per page, and 512 MiB maximum test-process RSS.
+They are conservative Phase 2 CI ceilings, not final optimized release targets.
+
 Rust pages use immutable column metadata, offset/null/truncation arrays, value
 kind tags, and one byte arena. UniFFI transfers the versioned page as one
 `Vec<u8>` plus safe envelope metadata. Swift validates bounds and decodes away
