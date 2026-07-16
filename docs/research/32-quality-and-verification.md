@@ -94,6 +94,9 @@ Engine additions:
 - one object-safe adapter contract exercised by all three real-server suites;
 - cross-engine request rejection and redacted adapter diagnostics;
 - explicit cancellation support/unsupported truth and consuming shutdown;
+- cancellation remains reachable during stream creation; dispatch transport
+  and server confirmation remain separate facts, including PostgreSQL SQLSTATE
+  confirmation through the real service path;
 - bounded engine-owned task/control/event channels, cancellation under event
   backpressure, idempotent dispatch, authoritative task exit, and client-stop
   shutdown independent of slow event consumers;

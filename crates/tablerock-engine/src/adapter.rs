@@ -91,6 +91,7 @@ pub enum AdapterFailureClass {
     Decode,
     Page,
     CancellationTransport,
+    ServerCancelled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,7 +221,12 @@ impl DriverSession for PostgresSession {
     }
 
     fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
-        Box::pin(async { CancelDispatch::Unsupported })
+        Box::pin(async {
+            match self.dispatch_cancel().await {
+                Ok(()) => CancelDispatch::RequestSent,
+                Err(_) => CancelDispatch::TransportFailed,
+            }
+        })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
@@ -316,6 +322,7 @@ fn map_postgres(error: PostgresError) -> AdapterError {
         PostgresError::Connection => AdapterFailureClass::Connection,
         PostgresError::Protocol => AdapterFailureClass::Protocol,
         PostgresError::CancellationTransport => AdapterFailureClass::CancellationTransport,
+        PostgresError::ServerCancelled => AdapterFailureClass::ServerCancelled,
         PostgresError::InvalidLimits => AdapterFailureClass::InvalidRequest,
         PostgresError::Page(_) => AdapterFailureClass::Page,
     };

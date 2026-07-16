@@ -26,6 +26,7 @@ pub enum PostgresTlsMode {
 pub enum PostgresProbeQuery {
     BoundedSeries,
     TypedValues,
+    CancellationStream,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -49,6 +50,10 @@ impl PostgresProbeQuery {
                  decode('0001ff', 'hex')::bytea AS binary_value, \
                  '123e4567-e89b-12d3-a456-426614174000'::uuid AS uuid_value, \
                  ARRAY[1, 2, 3]::int4[] AS array_value, NULL::uuid AS absent"
+            }
+            Self::CancellationStream => {
+                "SELECT value::text FROM generate_series(1, 1000) AS value UNION ALL \
+                 SELECT 'blocked'::text FROM (SELECT pg_sleep(30)) AS delayed"
             }
         }
     }
@@ -102,6 +107,7 @@ pub enum PostgresError {
     Connection,
     Protocol,
     CancellationTransport,
+    ServerCancelled,
     InvalidLimits,
     Page(PageValidationError),
 }
@@ -114,6 +120,7 @@ impl fmt::Display for PostgresError {
             Self::Connection => "PostgreSQL connection ended with an error",
             Self::Protocol => "PostgreSQL returned an unsupported result sequence",
             Self::CancellationTransport => "PostgreSQL cancellation transport failed",
+            Self::ServerCancelled => "PostgreSQL server confirmed query cancellation",
             Self::InvalidLimits => "PostgreSQL stream limits are invalid",
             Self::Page(_) => "PostgreSQL result page failed validation",
         })
@@ -197,7 +204,6 @@ impl PostgresSession {
             .map_err(|_| PostgresError::Query)?;
         Ok(PostgresRowStream {
             stream: Box::pin(stream),
-            pending: None,
             columns,
             limits,
             max_cell_bytes,
@@ -246,11 +252,24 @@ impl PostgresSession {
             Err(_) => Err(PostgresError::Query),
         }
     }
+
+    pub async fn dispatch_cancel(&self) -> Result<(), PostgresError> {
+        let token = self.client.cancel_token();
+        match self.tls {
+            PostgresTlsMode::Disable => token.cancel_query(tokio_postgres::NoTls).await,
+            PostgresTlsMode::Prefer | PostgresTlsMode::Require => {
+                let (tls, _rejected_native_certificates) =
+                    MakeRustlsConnect::with_native_certs()
+                        .map_err(|_| PostgresError::CancellationTransport)?;
+                token.cancel_query(tls).await
+            }
+        }
+        .map_err(|_| PostgresError::CancellationTransport)
+    }
 }
 
 pub struct PostgresRowStream {
     stream: Pin<Box<tokio_postgres::RowStream>>,
-    pending: Option<Row>,
     columns: Vec<ColumnMetadata>,
     limits: PageLimits,
     max_cell_bytes: u64,
@@ -271,19 +290,11 @@ impl PostgresRowStream {
         let mut arena_used = 0_u64;
         let mut delivery = PageDelivery::Final;
         loop {
-            let row = match self.pending.take() {
-                Some(row) => Some(Ok(row)),
-                None => self.stream.as_mut().next().await,
-            };
+            let row = self.stream.as_mut().next().await;
             match row {
                 Some(Ok(row)) => {
                     if row.len() != self.columns.len() {
                         return Err(PostgresError::Protocol);
-                    }
-                    if rows == self.limits.max_rows() {
-                        self.pending = Some(row);
-                        delivery = PageDelivery::Partial;
-                        break;
                     }
                     arena_used += append_row(
                         &row,
@@ -292,13 +303,31 @@ impl PostgresRowStream {
                         self.limits.max_arena_bytes().saturating_sub(arena_used),
                     )?;
                     rows += 1;
+                    if rows == self.limits.max_rows() {
+                        delivery = PageDelivery::Partial;
+                        break;
+                    }
                 }
                 None => {
                     self.complete = true;
                     break;
                 }
-                Some(Err(_)) => return Err(PostgresError::Query),
+                Some(Err(error)) => {
+                    return Err(
+                        if error
+                            .as_db_error()
+                            .is_some_and(|error| error.code().code() == "57014")
+                        {
+                            PostgresError::ServerCancelled
+                        } else {
+                            PostgresError::Query
+                        },
+                    );
+                }
             }
+        }
+        if rows == 0 && self.complete {
+            return Ok(None);
         }
         let columns = self.columns.clone();
         let mut warnings = PageWarnings::none();

@@ -30,6 +30,12 @@ recorded in
 [`125-phase-2-three-engine-service-harness.md`](docs/research/125-phase-2-three-engine-service-harness.md).
 Simultaneous bounded execution through that harness is recorded in
 [`126-phase-2-three-engine-overlap.md`](docs/research/126-phase-2-three-engine-overlap.md).
+PostgreSQL request-delivery and server-confirmed cancellation through the full
+service path are recorded in
+[`127-phase-2-postgresql-service-cancellation.md`](docs/research/127-phase-2-postgresql-service-cancellation.md).
+The latest documentation-only TermRock semantic inventory update and exact pin
+are recorded in
+[`128-termrock-semantic-inventory-update.md`](docs/research/128-termrock-semantic-inventory-update.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

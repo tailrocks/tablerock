@@ -150,6 +150,12 @@ contract evidence submits PostgreSQL, ClickHouse, and Redis operations before
 consuming any event; each per-operation queue applies independent backpressure,
 while core identity and lifecycle remain engine-neutral.
 
+The runtime reports task start before adapter stream creation and selects over
+stream creation, cancellation, client stop, and bounded event delivery. Cancel
+dispatch distinguishes unsupported, request-sent, and transport-failed facts.
+Only an adapter-observed server cancellation becomes a server-confirmed
+terminal outcome.
+
 Each operation owns a finite set of opaque subscriptions. Events fan out through
 independent bounded queues; a slow subscriber receives its own resync marker and
 cannot block or degrade a current subscriber. Late subscribers start current

@@ -1,6 +1,8 @@
+use std::time::Duration;
+
 use tablerock_core::{
-    BoundedText, ByteLimit, CancelDispatch, Engine, IdParts, OperationId, PageDelivery,
-    PageIdentity, PageLimits, PageWarning, Truncation, ValueKind,
+    BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity, PageLimits,
+    PageWarning, Truncation, ValueKind,
 };
 use tablerock_engine::{
     AdapterFailureClass, ClickHouseProbeQuery, DriverPageRequest, DriverSession,
@@ -106,12 +108,6 @@ async fn streams_bounded_pages_from_real_postgres() {
         Ok(_) => panic!("PostgreSQL adapter must reject a ClickHouse request"),
     };
     assert_eq!(mismatch.class(), AdapterFailureClass::EngineMismatch);
-    assert_eq!(
-        driver
-            .cancel(OperationId::from_parts(IdParts::new(0, 9).unwrap()).unwrap())
-            .await,
-        CancelDispatch::Unsupported
-    );
     let mut stream = driver
         .start_page_stream(DriverPageRequest::PostgreSqlProbe {
             query: PostgresProbeQuery::BoundedSeries,
@@ -182,6 +178,92 @@ async fn streams_bounded_pages_from_real_postgres() {
         }
     }
     assert_eq!(page_rows, 3);
+}
+
+#[tokio::test]
+async fn reports_request_delivery_and_server_confirmed_cancellation_through_service() {
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disable,
+    ))
+    .await
+    .unwrap();
+    let operation_id = support::operation(30);
+    let mut service = support::service(1, 2);
+    service
+        .submit(
+            operation_id,
+            support::command(31),
+            Box::new(session),
+            DriverPageRequest::PostgreSqlProbe {
+                query: PostgresProbeQuery::CancellationStream,
+                limits: PageLimits::new(1, 2, 128, 128),
+                max_cell_bytes: 32,
+            },
+            identity(),
+        )
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(5), service.next_update(operation_id))
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        EngineServiceUpdate::Started
+    ));
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(5), service.next_update(operation_id))
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        EngineServiceUpdate::Page(_)
+    ));
+    let cancel = service.cancel(operation_id).unwrap();
+    assert_eq!(cancel.core, tablerock_core::CancelRequestOutcome::Requested);
+    assert_eq!(
+        cancel.runtime,
+        Some(tablerock_engine::RuntimeCancelOutcome::Queued)
+    );
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match service.next_update(operation_id).await.unwrap().unwrap() {
+                EngineServiceUpdate::Page(_) => {}
+                EngineServiceUpdate::CancelDispatched(CancelDispatch::RequestSent) => break,
+                other => panic!("unexpected event before cancel dispatch: {other:?}"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match service.next_update(operation_id).await.unwrap().unwrap() {
+                EngineServiceUpdate::Page(_) => {}
+                EngineServiceUpdate::Terminal(
+                    tablerock_core::OperationOutcome::ServerConfirmedCancelled,
+                ) => break,
+                other => panic!("unexpected event before cancel terminal: {other:?}"),
+            }
+        }
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

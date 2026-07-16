@@ -75,6 +75,8 @@ kept in the roadmap.
 - [TermRock list multi-select migration](124-termrock-list-multiselect-migration.md)
 - [Phase 2 three-engine service harness](125-phase-2-three-engine-service-harness.md)
 - [Phase 2 three-engine overlap evidence](126-phase-2-three-engine-overlap.md)
+- [Phase 2 PostgreSQL service cancellation evidence](127-phase-2-postgresql-service-cancellation.md)
+- [TermRock semantic inventory update](128-termrock-semantic-inventory-update.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

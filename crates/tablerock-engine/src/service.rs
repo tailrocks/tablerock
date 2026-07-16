@@ -227,6 +227,10 @@ impl EngineService {
             DriverOperationEvent::Completed => {
                 self.finish(operation_id, DriverTaskExit::Completed).await
             }
+            DriverOperationEvent::ServerConfirmedCancelled => {
+                self.finish(operation_id, DriverTaskExit::ServerConfirmedCancelled)
+                    .await
+            }
             DriverOperationEvent::ClientStopped => {
                 self.finish(operation_id, DriverTaskExit::ClientStopped)
                     .await
@@ -282,7 +286,11 @@ impl EngineService {
             (OperationPhase::CancelRequested, DriverTaskExit::ClientStopped) => {
                 OperationOutcome::ClientStopped
             }
+            (OperationPhase::CancelRequested, DriverTaskExit::ServerConfirmedCancelled) => {
+                OperationOutcome::ServerConfirmedCancelled
+            }
             (_, DriverTaskExit::Completed) => OperationOutcome::Completed,
+            (_, DriverTaskExit::ServerConfirmedCancelled) => OperationOutcome::Failed,
             (_, DriverTaskExit::Failed(_)) => OperationOutcome::Failed,
             (_, DriverTaskExit::ClientStopped) => return Err(EngineServiceError::TerminalMismatch),
         };

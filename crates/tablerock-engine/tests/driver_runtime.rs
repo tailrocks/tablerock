@@ -44,6 +44,48 @@ struct ControlledSession {
     fail_shutdown: bool,
 }
 
+struct StartingSession {
+    release: Arc<Notify>,
+    cancelled: Arc<AtomicBool>,
+    shutdown: Arc<AtomicBool>,
+}
+
+impl DriverSession for StartingSession {
+    fn engine(&self) -> Engine {
+        Engine::PostgreSql
+    }
+
+    fn start_page_stream<'a>(
+        &'a self,
+        _request: DriverPageRequest,
+    ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
+        Box::pin(async move {
+            if !self.cancelled.load(Ordering::SeqCst) {
+                self.release.notified().await;
+            }
+            Err(AdapterError::new(
+                Engine::PostgreSql,
+                AdapterFailureClass::ServerCancelled,
+            ))
+        })
+    }
+
+    fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
+        Box::pin(async move {
+            self.cancelled.store(true, Ordering::SeqCst);
+            self.release.notify_one();
+            CancelDispatch::RequestSent
+        })
+    }
+
+    fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
+        Box::pin(async move {
+            self.shutdown.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+    }
+}
+
 impl DriverSession for ControlledSession {
     fn engine(&self) -> Engine {
         Engine::PostgreSql
@@ -162,6 +204,56 @@ async fn routes_cancel_while_output_is_backpressured() {
             .expect("task join remains responsive")
             .unwrap(),
         DriverTaskExit::Completed
+    );
+    assert!(shutdown.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn routes_cancel_while_stream_is_starting() {
+    let operation_id = operation(7);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let mut runtime = DriverRuntime::new(1, 2).unwrap();
+    let mut events = runtime
+        .spawn(
+            operation_id,
+            Box::new(StartingSession {
+                release: Arc::new(Notify::new()),
+                cancelled: Arc::new(AtomicBool::new(false)),
+                shutdown: Arc::clone(&shutdown),
+            }),
+            request(),
+            identity(),
+        )
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap(),
+        Some(DriverOperationEvent::Started)
+    ));
+    assert_eq!(runtime.cancel(operation_id), RuntimeCancelOutcome::Queued);
+    assert!(matches!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap(),
+        Some(DriverOperationEvent::CancelDispatched(
+            CancelDispatch::RequestSent
+        ))
+    ));
+    assert!(matches!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap(),
+        Some(DriverOperationEvent::ServerConfirmedCancelled)
+    ));
+    assert_eq!(
+        timeout(Duration::from_secs(1), runtime.join(operation_id))
+            .await
+            .unwrap()
+            .unwrap(),
+        DriverTaskExit::ServerConfirmedCancelled
     );
     assert!(shutdown.load(Ordering::SeqCst));
 }

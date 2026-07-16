@@ -54,6 +54,7 @@ pub enum RuntimeStopOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriverTaskExit {
     Completed,
+    ServerConfirmedCancelled,
     ClientStopped,
     Failed(AdapterError),
 }
@@ -64,6 +65,7 @@ pub enum DriverOperationEvent {
     Page(Box<ResultPage>),
     CancelDispatched(CancelDispatch),
     Completed,
+    ServerConfirmedCancelled,
     ClientStopped,
     Failed(AdapterError),
 }
@@ -205,7 +207,11 @@ impl DriverRuntime {
         let mut failed = false;
         for (_, task) in self.tasks {
             match task.join.await {
-                Ok(DriverTaskExit::Completed | DriverTaskExit::ClientStopped) => {}
+                Ok(
+                    DriverTaskExit::Completed
+                    | DriverTaskExit::ServerConfirmedCancelled
+                    | DriverTaskExit::ClientStopped,
+                ) => {}
                 Ok(DriverTaskExit::Failed(_)) | Err(_) => failed = true,
             }
         }
@@ -247,7 +253,23 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
         events,
         event_capacity,
     } = input;
-    let stream_result = start_stream_controlled(session.as_ref(), request, &mut stop).await;
+    let mut pending = VecDeque::with_capacity(event_capacity);
+    if events.send(DriverOperationEvent::Started).await.is_err() {
+        let _ = session.shutdown().await;
+        return DriverTaskExit::ClientStopped;
+    }
+    let mut cancel_dispatched = false;
+    let stream_result = StreamStartControl {
+        operation_id,
+        session: session.as_ref(),
+        cancels: &mut cancels,
+        stop: &mut stop,
+        events: &events,
+        pending: &mut pending,
+        cancel_dispatched: &mut cancel_dispatched,
+    }
+    .start(request)
+    .await;
     let Some(stream_result) = stream_result else {
         let _ = events.try_send(DriverOperationEvent::ClientStopped);
         let _ = session.shutdown().await;
@@ -256,16 +278,19 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
     let mut stream = match stream_result {
         Ok(stream) => stream,
         Err(error) => {
-            let _ = events.send(DriverOperationEvent::Failed(error)).await;
+            while let Some(event) = pending.pop_front() {
+                if events.send(event).await.is_err() {
+                    break;
+                }
+            }
+            let (event, exit) = terminal_event(error);
+            let _ = events.send(event).await;
             let _ = session.shutdown().await;
-            return DriverTaskExit::Failed(error);
+            return exit;
         }
     };
-    let mut pending = VecDeque::with_capacity(event_capacity);
-    pending.push_back(DriverOperationEvent::Started);
     let mut start_row = 0_u64;
     let mut stop_client = false;
-    let mut cancel_dispatched = false;
     let mut terminal_error = None;
 
     loop {
@@ -357,32 +382,68 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
         terminal_error = Some(error);
     }
     let (event, exit) = match terminal_error {
-        Some(error) => (
-            DriverOperationEvent::Failed(error),
-            DriverTaskExit::Failed(error),
-        ),
+        Some(error) => terminal_event(error),
         None => (DriverOperationEvent::Completed, DriverTaskExit::Completed),
     };
     let _ = events.send(event).await;
     exit
 }
 
-async fn start_stream_controlled(
-    session: &dyn DriverSession,
-    request: DriverPageRequest,
-    stop: &mut watch::Receiver<bool>,
-) -> Option<Result<Box<dyn crate::DriverPageStream>, AdapterError>> {
-    let start = session.start_page_stream(request);
-    tokio::pin!(start);
-    loop {
-        tokio::select! {
-            result = &mut start => return Some(result),
-            changed = stop.changed() => {
-                if changed.is_err() || *stop.borrow_and_update() {
-                    return None;
+struct StreamStartControl<'a> {
+    operation_id: OperationId,
+    session: &'a dyn DriverSession,
+    cancels: &'a mut mpsc::Receiver<()>,
+    stop: &'a mut watch::Receiver<bool>,
+    events: &'a mpsc::Sender<DriverOperationEvent>,
+    pending: &'a mut VecDeque<DriverOperationEvent>,
+    cancel_dispatched: &'a mut bool,
+}
+
+impl StreamStartControl<'_> {
+    async fn start(
+        &mut self,
+        request: DriverPageRequest,
+    ) -> Option<Result<Box<dyn crate::DriverPageStream>, AdapterError>> {
+        let start = self.session.start_page_stream(request);
+        tokio::pin!(start);
+        loop {
+            tokio::select! {
+                result = &mut start => return Some(result),
+                permit = self.events.reserve(), if !self.pending.is_empty() => {
+                    let Ok(permit) = permit else { return None; };
+                    permit.send(self.pending.pop_front().expect("guarded pending event"));
+                }
+                cancel = self.cancels.recv() => {
+                    if cancel.is_some() {
+                        handle_cancel(
+                            self.operation_id,
+                            self.session,
+                            self.pending,
+                            self.cancel_dispatched,
+                        ).await;
+                    }
+                }
+                changed = self.stop.changed() => {
+                    if changed.is_err() || *self.stop.borrow_and_update() {
+                        return None;
+                    }
                 }
             }
         }
+    }
+}
+
+fn terminal_event(error: AdapterError) -> (DriverOperationEvent, DriverTaskExit) {
+    if error.class() == AdapterFailureClass::ServerCancelled {
+        (
+            DriverOperationEvent::ServerConfirmedCancelled,
+            DriverTaskExit::ServerConfirmedCancelled,
+        )
+    } else {
+        (
+            DriverOperationEvent::Failed(error),
+            DriverTaskExit::Failed(error),
+        )
     }
 }
 

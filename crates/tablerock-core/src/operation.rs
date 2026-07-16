@@ -90,6 +90,7 @@ pub enum OperationOutcome {
 pub enum CancelDispatch {
     Unsupported,
     RequestSent,
+    TransportFailed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
