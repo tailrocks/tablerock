@@ -3,6 +3,6 @@
 mod postgres;
 
 pub use postgres::{
-    PostgresConnectConfig, PostgresError, PostgresProbeQuery, PostgresSession, PostgresTextStream,
-    PostgresTlsMode,
+    PostgresCancellationOutcome, PostgresConnectConfig, PostgresError, PostgresProbeQuery,
+    PostgresSession, PostgresTextStream, PostgresTlsMode,
 };

@@ -145,6 +145,12 @@ exact refreshed main pin are recorded in
 TermRock's sequential content-measurement revision migration `0013` and exact
 refreshed main pin are recorded in
 [`83-termrock-0.10-content-revision-migration.md`](docs/research/83-termrock-0.10-content-revision-migration.md).
+PostgreSQL cancel-request delivery versus server-confirmed SQLSTATE `57014`,
+plus post-cancel connection reuse, is recorded in
+[`84-phase-2-postgresql-cancellation-truth.md`](docs/research/84-phase-2-postgresql-cancellation-truth.md).
+TermRock's lookbook-only closure runner spike, forward API impact, and exact
+refreshed `main` pin are recorded in
+[`85-termrock-0.10-runner-spike-update.md`](docs/research/85-termrock-0.10-runner-spike-update.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

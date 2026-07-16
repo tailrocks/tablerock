@@ -7,6 +7,7 @@ use tablerock_core::{
     ResultPage, RowTotal, Truncation,
 };
 use tokio::task::JoinHandle;
+use tokio::time::{Duration, sleep};
 use tokio_postgres::{SimpleQueryMessage, config::SslMode};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
@@ -20,6 +21,12 @@ pub enum PostgresTlsMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PostgresProbeQuery {
     BoundedSeries,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PostgresCancellationOutcome {
+    ConfirmedByServer,
+    RequestAcceptedButQueryCompleted,
 }
 
 impl PostgresProbeQuery {
@@ -80,6 +87,7 @@ pub enum PostgresError {
     Query,
     Connection,
     Protocol,
+    CancellationTransport,
     InvalidLimits,
     Page(PageValidationError),
 }
@@ -91,6 +99,7 @@ impl fmt::Display for PostgresError {
             Self::Query => "PostgreSQL query failed",
             Self::Connection => "PostgreSQL connection ended with an error",
             Self::Protocol => "PostgreSQL returned an unsupported result sequence",
+            Self::CancellationTransport => "PostgreSQL cancellation transport failed",
             Self::InvalidLimits => "PostgreSQL stream limits are invalid",
             Self::Page(_) => "PostgreSQL result page failed validation",
         })
@@ -102,6 +111,7 @@ impl Error for PostgresError {}
 pub struct PostgresSession {
     client: tokio_postgres::Client,
     connection: JoinHandle<Result<(), PostgresError>>,
+    tls: PostgresTlsMode,
 }
 
 impl PostgresSession {
@@ -140,7 +150,11 @@ impl PostgresSession {
                 );
             (client, task)
         };
-        Ok(Self { client, connection })
+        Ok(Self {
+            client,
+            connection,
+            tls: config.tls,
+        })
     }
 
     pub async fn stream_probe(
@@ -172,10 +186,45 @@ impl PostgresSession {
     }
 
     pub async fn shutdown(self) -> Result<(), PostgresError> {
-        let Self { client, connection } = self;
+        let Self {
+            client,
+            connection,
+            tls: _,
+        } = self;
         drop(client);
         connection.await.map_err(|_| PostgresError::Connection)??;
         Ok(())
+    }
+
+    pub async fn cancel_sleep_probe(&self) -> Result<PostgresCancellationOutcome, PostgresError> {
+        let token = self.client.cancel_token();
+        let query = self.client.simple_query("SELECT pg_sleep(30)");
+        let cancellation = async {
+            sleep(Duration::from_millis(150)).await;
+            match self.tls {
+                PostgresTlsMode::Disable => token.cancel_query(tokio_postgres::NoTls).await,
+                PostgresTlsMode::Prefer | PostgresTlsMode::Require => {
+                    let (tls, _rejected_native_certificates) =
+                        MakeRustlsConnect::with_native_certs()
+                            .map_err(|_| PostgresError::CancellationTransport)?;
+                    token.cancel_query(tls).await
+                }
+            }
+            .map_err(|_| PostgresError::CancellationTransport)
+        };
+        let (query_result, cancellation_result) = tokio::join!(query, cancellation);
+        cancellation_result?;
+        match query_result {
+            Err(error)
+                if error
+                    .as_db_error()
+                    .is_some_and(|error| error.code().code() == "57014") =>
+            {
+                Ok(PostgresCancellationOutcome::ConfirmedByServer)
+            }
+            Ok(_) => Ok(PostgresCancellationOutcome::RequestAcceptedButQueryCompleted),
+            Err(_) => Err(PostgresError::Query),
+        }
     }
 }
 

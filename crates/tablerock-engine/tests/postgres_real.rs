@@ -3,7 +3,8 @@ use tablerock_core::{
     Revision, Truncation,
 };
 use tablerock_engine::{
-    PostgresConnectConfig, PostgresProbeQuery, PostgresSession, PostgresTlsMode,
+    PostgresCancellationOutcome, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
+    PostgresTlsMode,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -13,6 +14,54 @@ use testcontainers::{
 
 fn text(value: &str) -> BoundedText {
     BoundedText::copy_from_str(value, ByteLimit::new(128)).unwrap()
+}
+
+#[tokio::test]
+async fn distinguishes_server_confirmed_cancellation_from_request_delivery() {
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disable,
+    ))
+    .await
+    .unwrap();
+
+    assert_eq!(
+        session.cancel_sleep_probe().await.unwrap(),
+        PostgresCancellationOutcome::ConfirmedByServer
+    );
+    let mut follow_up = session
+        .stream_probe(
+            PostgresProbeQuery::BoundedSeries,
+            PageLimits::new(4, 8, 256, 256),
+            32,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        follow_up
+            .next_page(identity(), 0)
+            .await
+            .unwrap()
+            .unwrap()
+            .envelope()
+            .row_count(),
+        3
+    );
+    drop(follow_up);
+    session.shutdown().await.unwrap();
 }
 
 fn identity() -> PageIdentity {

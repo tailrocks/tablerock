@@ -101,6 +101,8 @@ kept in the roadmap.
 - [Phase 2 PostgreSQL stream foundation evidence](81-phase-2-postgresql-stream-foundation.md)
 - [TermRock 0.10 visible scroll update](82-termrock-0.10-visible-scroll-update.md)
 - [TermRock 0.10 content revision migration](83-termrock-0.10-content-revision-migration.md)
+- [Phase 2 PostgreSQL cancellation truth evidence](84-phase-2-postgresql-cancellation-truth.md)
+- [TermRock 0.10 closure runner spike update](85-termrock-0.10-runner-spike-update.md)
 
 ## Architecture headline
 
