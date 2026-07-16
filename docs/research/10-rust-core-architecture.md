@@ -100,6 +100,10 @@ consuming shutdown. `DriverPageStream` returns immutable core pages. Concrete
 client sessions, rows, cursors, and errors remain behind the implementation.
 Cancellation reports `Unsupported` until an adapter can map the supplied
 operation identity to a real server request; it never substitutes task drop.
+The bounded `DriverOperationRegistry` maps core operation identities to their
+type-erased sessions, rejects duplicate/capacity overflow, and preserves
+unknown/unsupported/request-sent outcomes without manufacturing lifecycle
+truth.
 
 ## Commands, events, and revisions
 

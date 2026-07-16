@@ -6,8 +6,9 @@ mod postgres;
 mod redis;
 
 pub use adapter::{
-    AdapterError, AdapterFailureClass, CancelDispatch, DriverFuture, DriverPageRequest,
-    DriverPageStream, DriverSession,
+    AdapterError, AdapterFailureClass, CancelDispatch, DriverFuture, DriverOperationRegistry,
+    DriverPageRequest, DriverPageStream, DriverSession, OperationCancelOutcome,
+    OperationRegistrationError,
 };
 pub use clickhouse::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseError, ClickHouseProbeQuery,

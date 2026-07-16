@@ -4,6 +4,9 @@ TableRock completed Phase 0 decision approval on 2026-07-16. The program
 builds one Rust-owned PostgreSQL, ClickHouse, and Redis workbench, first as a
 TermRock/Ratatui TUI and later as a native SwiftUI/AppKit macOS application.
 
+Phase 2 operation-to-driver cancellation routing is recorded in
+[`117-phase-2-operation-driver-routing.md`](docs/research/117-phase-2-operation-driver-routing.md).
+
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its
 documentation, and remain honest about incomplete parity.
