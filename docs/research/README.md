@@ -82,6 +82,7 @@ kept in the roadmap.
 - [Phase 2 Redis service cancellation evidence](131-phase-2-redis-service-cancellation.md)
 - [TermRock migration 0025 adoption](132-termrock-runtime-keymap-migration.md)
 - [Phase 2 current-line performance budgets](133-phase-2-current-line-performance-budgets.md)
+- [TermRock Picker graduation update](134-termrock-picker-graduation-update.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

@@ -8,6 +8,10 @@ TableRock now pins exact TermRock `main` revision
 lookbook-local caller-filtered picker composition spike and design record. It
 changes no `termrock` library source or public API and adds no migration.
 
+This historical lookbook-only status was superseded when Picker graduated into
+the public API; see
+[`134-termrock-picker-graduation-update.md`](134-termrock-picker-graduation-update.md).
+
 The chosen direction composes existing input/list/panel behavior while leaving
 filtering and product policy with the caller. That is compatible with
 TableRock's future quick-switch and completion projections; TableRock will use

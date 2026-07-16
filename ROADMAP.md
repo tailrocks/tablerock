@@ -50,6 +50,8 @@ pin are recorded in
 Current-line 10,000-row streaming, first-page, throughput, page-residency, and
 process-RSS budgets are recorded in
 [`133-phase-2-current-line-performance-budgets.md`](docs/research/133-phase-2-current-line-performance-budgets.md).
+TermRock's public Picker graduation and exact latest pin are recorded in
+[`134-termrock-picker-graduation-update.md`](docs/research/134-termrock-picker-graduation-update.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its
