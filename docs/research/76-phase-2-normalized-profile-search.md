@@ -52,13 +52,15 @@ and labels remain absent from Debug and public errors.
 
 Normalized name/group/tag search is complete below presentation. Ranking is
 canonical stable organization order, not fuzzy relevance. Endpoint display
-facts, health state, and UI loading/empty/failure projections remain required.
+facts are now implemented by
+[`77-phase-2-profile-endpoint-summary.md`](77-phase-2-profile-endpoint-summary.md).
+Live health state and UI loading/empty/failure projections remain required.
 If fuzzy ranking is later approved, it must remain bounded and replace this
 ordering explicitly rather than run as an unbounded presentation-side scan.
 
 ## Verification record
 
-- `cargo test -p tablerock-core --test profile_list`: 5 passed.
+- `cargo test -p tablerock-core --test profile_list`: 4 passed.
 - `cargo test -p tablerock-persistence --locked`: 16 passed.
 - `cargo test --workspace --all-targets --locked`: 104 passed, 3 ignored.
 - Workspace format, Clippy with warnings denied, rustdoc, dependency-tree/license,

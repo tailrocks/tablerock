@@ -2,11 +2,12 @@ use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, DangerousPlaintext, DangerousTlsAcknowledgement, Engine,
     EnvironmentReference, KeychainReference, OnePasswordObjectId, OnePasswordReference,
     OnePasswordSegment, PersistableProfile, PlaintextAcknowledgement, ProfileAggregate,
-    ProfileConnectionSnapshot, ProfileDurability, ProfileGroupName, ProfileId, ProfileIdentity,
-    ProfileLimits, ProfileListItem, ProfileListPage, ProfileListRequest, ProfileName,
-    ProfileOrganization, ProfilePolicy, ProfilePreferences, ProfileProperty,
-    ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileSourceFacts, ProfileTag,
-    PropertyValueSource, ReconnectPreference, Revision, SecretSource, SecretSourceKind, TlsPolicy,
+    ProfileConnectionSnapshot, ProfileDurability, ProfileEndpointPart, ProfileEndpointSummary,
+    ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits, ProfileListItem, ProfileListPage,
+    ProfileListRequest, ProfileName, ProfileOrganization, ProfilePolicy, ProfilePreferences,
+    ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode,
+    ProfileSourceFacts, ProfileTag, PropertyValueSource, ReconnectPreference, Revision,
+    SecretSource, SecretSourceKind, TlsPolicy,
 };
 use zeroize::Zeroize;
 
@@ -424,8 +425,12 @@ async fn list_transaction(
         saved_order, safety_mode, \
         (SELECT source_kind FROM saved_profile_properties p \
          WHERE p.profile_id = saved_profiles.profile_id AND property = 1), \
+        (SELECT text_value FROM saved_profile_properties p \
+         WHERE p.profile_id = saved_profiles.profile_id AND property = 1 AND source_kind = 1), \
         (SELECT source_kind FROM saved_profile_properties p \
          WHERE p.profile_id = saved_profiles.profile_id AND property = 2), \
+        (SELECT text_value FROM saved_profile_properties p \
+         WHERE p.profile_id = saved_profiles.profile_id AND property = 2 AND source_kind = 1), \
         EXISTS(SELECT 1 FROM saved_profile_properties p \
                WHERE p.profile_id = saved_profiles.profile_id AND source_kind > 1), \
         EXISTS(SELECT 1 FROM saved_profile_properties p \
@@ -522,7 +527,7 @@ async fn list_transaction(
 }
 
 fn decode_search_tags(row: &turso::Row) -> Result<Vec<ProfileTag>, PersistenceError> {
-    let Some(tags) = get::<Option<String>>(row, 12)? else {
+    let Some(tags) = get::<Option<String>>(row, 14)? else {
         return Ok(Vec::new());
     };
     let mut decoded = Vec::new();
@@ -536,6 +541,26 @@ fn decode_search_tags(row: &turso::Row) -> Result<Vec<ProfileTag>, PersistenceEr
         );
     }
     Ok(decoded)
+}
+
+fn decode_endpoint_part(
+    property: ProfileProperty,
+    source_kind: u8,
+    literal: Option<String>,
+) -> Result<ProfileEndpointPart, PersistenceError> {
+    match (decode_property_source(source_kind)?, literal) {
+        (PropertyValueSource::Literal, Some(value)) => {
+            let value = bounded_text(value, property.literal_byte_limit())?;
+            match property {
+                ProfileProperty::Host => ProfileEndpointPart::literal_host(value),
+                ProfileProperty::Port => ProfileEndpointPart::literal_port(value),
+                _ => return Err(PersistenceError::ProfileDecode),
+            }
+            .map_err(|_| PersistenceError::ProfileDecode)
+        }
+        (PropertyValueSource::SecretSource, None) => Ok(ProfileEndpointPart::secret_source()),
+        _ => Err(PersistenceError::ProfileDecode),
+    }
 }
 
 fn push_parameter(parameters: &mut Vec<turso::Value>, value: impl Into<turso::Value>) -> String {
@@ -562,11 +587,21 @@ fn decode_list_item(row: &turso::Row) -> Result<ProfileListItem, PersistenceErro
     let favorite = decode_bool(get::<u8>(row, 5)?)?;
     let saved_order = get::<u32>(row, 6)?;
     let safety_mode = decode_safety(get::<u8>(row, 7)?)?;
+    let endpoint = ProfileEndpointSummary::new(
+        decode_endpoint_part(
+            ProfileProperty::Host,
+            get::<u8>(row, 8)?,
+            get::<Option<String>>(row, 9)?,
+        )?,
+        decode_endpoint_part(
+            ProfileProperty::Port,
+            get::<u8>(row, 10)?,
+            get::<Option<String>>(row, 11)?,
+        )?,
+    );
     let sources = ProfileSourceFacts::new(
-        decode_property_source(get::<u8>(row, 8)?)?,
-        decode_property_source(get::<u8>(row, 9)?)?,
-        decode_bool(get::<u8>(row, 10)?)?,
-        decode_bool(get::<u8>(row, 11)?)?,
+        decode_bool(get::<u8>(row, 12)?)?,
+        decode_bool(get::<u8>(row, 13)?)?,
     );
     Ok(ProfileListItem::new(
         id,
@@ -577,6 +612,7 @@ fn decode_list_item(row: &turso::Row) -> Result<ProfileListItem, PersistenceErro
         favorite,
         saved_order,
         safety_mode,
+        endpoint,
         sources,
     ))
 }

@@ -63,7 +63,8 @@ transactional revision compare-and-swap replaces complete aggregates without a
 last-writer-wins bypass. Revision-CAS deletion removes only profile-owned rows;
 a least-data, keyset-paginated summary list is capped at 100 items. Exact engine,
 favorite, group, and tag filters use scope-bound cursors. Unicode-normalized
-name/group/tag search is bounded by a 10,000-profile durable capacity.
+name/group/tag search is bounded by a 10,000-profile durable capacity. List
+summaries expose validated literal endpoints or unresolved secret markers.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

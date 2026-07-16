@@ -21,7 +21,7 @@ Each summary contains only:
 
 - stable ID, revision, engine, validated redacted name/group;
 - favorite/order and safety mode;
-- literal-versus-secret facts for host and port;
+- validated literal host/port values or unresolved secret markers;
 - whether any secret source or dangerous plaintext source exists.
 
 The SQL projection never selects literal text values, secret blobs,
@@ -48,8 +48,11 @@ Engine/favorite filters are now implemented by
 [`71-phase-2-profile-engine-favorite-filter.md`](71-phase-2-profile-engine-favorite-filter.md).
 Group/tag filters are now implemented by
 [`73-phase-2-profile-group-tag-filter.md`](73-phase-2-profile-group-tag-filter.md).
-Search, health facts, endpoint display projection, and UI states remain Phase 3
-work. They must extend this one contract rather than
+Search is implemented by
+[`76-phase-2-normalized-profile-search.md`](76-phase-2-normalized-profile-search.md),
+and endpoint display facts by
+[`77-phase-2-profile-endpoint-summary.md`](77-phase-2-profile-endpoint-summary.md).
+Live health facts and UI states remain Phase 3 work. They must extend this one contract rather than
 introduce an unbounded or secret-bearing list path.
 
 ## Verification record

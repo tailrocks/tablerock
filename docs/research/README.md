@@ -94,6 +94,8 @@ kept in the roadmap.
 - [TermRock 0.9 canonical module migration evidence](74-termrock-0.9-canonical-module-migration.md)
 - [TermRock 0.10 metadata and selection migration evidence](75-termrock-0.10-metadata-selection-migration.md)
 - [Phase 2 normalized profile search evidence](76-phase-2-normalized-profile-search.md)
+- [Phase 2 profile endpoint summary evidence](77-phase-2-profile-endpoint-summary.md)
+- [TermRock 0.10 widget construction migration evidence](78-termrock-0.10-widget-construction-migration.md)
 
 ## Architecture headline
 

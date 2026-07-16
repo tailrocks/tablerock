@@ -4,8 +4,8 @@ use caseless::Caseless;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::{
-    BoundedText, Engine, ProfileGroupName, ProfileId, ProfileName, ProfileSafetyMode,
-    PropertyValueSource, Revision,
+    BoundedText, Engine, ProfileGroupName, ProfileId, ProfileName, ProfileProperty,
+    ProfilePropertyBinding, ProfilePropertyError, ProfileSafetyMode, PropertyValueSource, Revision,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -230,38 +230,81 @@ impl ProfileListRequest {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ProfileEndpointPart {
+    Literal(BoundedText),
+    SecretSource,
+}
+
+impl ProfileEndpointPart {
+    pub fn literal_host(value: BoundedText) -> Result<Self, ProfilePropertyError> {
+        ProfilePropertyBinding::literal(ProfileProperty::Host, value.clone())?;
+        Ok(Self::Literal(value))
+    }
+
+    pub fn literal_port(value: BoundedText) -> Result<Self, ProfilePropertyError> {
+        ProfilePropertyBinding::literal(ProfileProperty::Port, value.clone())?;
+        Ok(Self::Literal(value))
+    }
+
+    #[must_use]
+    pub const fn secret_source() -> Self {
+        Self::SecretSource
+    }
+
+    #[must_use]
+    pub const fn source(&self) -> PropertyValueSource {
+        match self {
+            Self::Literal(_) => PropertyValueSource::Literal,
+            Self::SecretSource => PropertyValueSource::SecretSource,
+        }
+    }
+
+    #[must_use]
+    pub fn literal_value(&self) -> Option<&str> {
+        match self {
+            Self::Literal(value) => Some(value.as_str()),
+            Self::SecretSource => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ProfileEndpointSummary {
+    host: ProfileEndpointPart,
+    port: ProfileEndpointPart,
+}
+
+impl ProfileEndpointSummary {
+    #[must_use]
+    pub const fn new(host: ProfileEndpointPart, port: ProfileEndpointPart) -> Self {
+        Self { host, port }
+    }
+
+    #[must_use]
+    pub const fn host(&self) -> &ProfileEndpointPart {
+        &self.host
+    }
+
+    #[must_use]
+    pub const fn port(&self) -> &ProfileEndpointPart {
+        &self.port
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProfileSourceFacts {
-    host: PropertyValueSource,
-    port: PropertyValueSource,
     has_secret_sources: bool,
     has_dangerous_plaintext: bool,
 }
 
 impl ProfileSourceFacts {
     #[must_use]
-    pub const fn new(
-        host: PropertyValueSource,
-        port: PropertyValueSource,
-        has_secret_sources: bool,
-        has_dangerous_plaintext: bool,
-    ) -> Self {
+    pub const fn new(has_secret_sources: bool, has_dangerous_plaintext: bool) -> Self {
         Self {
-            host,
-            port,
             has_secret_sources,
             has_dangerous_plaintext,
         }
-    }
-
-    #[must_use]
-    pub const fn host(self) -> PropertyValueSource {
-        self.host
-    }
-
-    #[must_use]
-    pub const fn port(self) -> PropertyValueSource {
-        self.port
     }
 
     #[must_use]
@@ -285,6 +328,7 @@ pub struct ProfileListItem {
     favorite: bool,
     saved_order: u32,
     safety_mode: ProfileSafetyMode,
+    endpoint: ProfileEndpointSummary,
     sources: ProfileSourceFacts,
 }
 
@@ -300,6 +344,7 @@ impl ProfileListItem {
         favorite: bool,
         saved_order: u32,
         safety_mode: ProfileSafetyMode,
+        endpoint: ProfileEndpointSummary,
         sources: ProfileSourceFacts,
     ) -> Self {
         Self {
@@ -311,6 +356,7 @@ impl ProfileListItem {
             favorite,
             saved_order,
             safety_mode,
+            endpoint,
             sources,
         }
     }
@@ -348,6 +394,10 @@ impl ProfileListItem {
         self.safety_mode
     }
     #[must_use]
+    pub const fn endpoint(&self) -> &ProfileEndpointSummary {
+        &self.endpoint
+    }
+    #[must_use]
     pub const fn sources(&self) -> ProfileSourceFacts {
         self.sources
     }
@@ -369,6 +419,7 @@ impl fmt::Debug for ProfileListItem {
             .field("favorite", &self.favorite)
             .field("saved_order", &self.saved_order)
             .field("safety_mode", &self.safety_mode)
+            .field("endpoint", &self.endpoint)
             .field("sources", &self.sources)
             .finish()
     }

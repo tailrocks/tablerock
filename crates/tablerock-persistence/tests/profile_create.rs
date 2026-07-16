@@ -274,6 +274,51 @@ fn malformed_saved_value_fails_closed_and_rolls_back_read_transaction() {
 }
 
 #[test]
+fn malformed_literal_endpoint_fails_closed_in_summary_projection() {
+    let path = path("malformed-endpoint");
+    let _ = fs::remove_file(&path);
+    let actor = PersistenceActor::open(&path).unwrap();
+    let profile = saved_profile(Engine::Redis, 8);
+    actor
+        .create_profile(profile.persistable().unwrap())
+        .unwrap();
+    actor.shutdown().unwrap();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let database = turso::Builder::new_local(path.to_str().unwrap())
+            .build()
+            .await
+            .unwrap();
+        let connection = database.connect().unwrap();
+        connection
+            .execute(
+                "UPDATE saved_profile_properties SET text_value = '99999' \
+                 WHERE profile_id = ?1 AND property = 2",
+                (profile_id(8).to_bytes().as_slice(),),
+            )
+            .await
+            .unwrap();
+    });
+
+    let actor = PersistenceActor::open(&path).unwrap();
+    assert_eq!(
+        actor
+            .list_profiles(
+                ProfileListRequest::new(ProfileListFilter::default(), None, 10).unwrap(),
+            )
+            .unwrap_err(),
+        PersistenceError::ProfileDecode
+    );
+    assert_eq!(actor.health().unwrap().schema_version, 6);
+    actor.shutdown().unwrap();
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
     let path = path("list");
     let _ = fs::remove_file(&path);
@@ -318,6 +363,15 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
             .execute(
                 "UPDATE saved_profile_tags SET tag = 'cache' \
                  WHERE profile_id = ?1 AND ordinal = 0",
+                (profile_id(62).to_bytes().as_slice(),),
+            )
+            .await
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE saved_profile_properties \
+                 SET source_kind = 4, source_schema = 1, text_value = 'SECRET_HOST_REFERENCE' \
+                 WHERE profile_id = ?1 AND property = 1",
                 (profile_id(62).to_bytes().as_slice(),),
             )
             .await
@@ -414,8 +468,23 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
                 "Operations"
             }
         );
-        assert_eq!(item.sources().host(), PropertyValueSource::Literal);
-        assert_eq!(item.sources().port(), PropertyValueSource::Literal);
+        assert_eq!(
+            item.endpoint().host().source(),
+            if item.id() == profile_id(62) {
+                PropertyValueSource::SecretSource
+            } else {
+                PropertyValueSource::Literal
+            }
+        );
+        assert_eq!(
+            item.endpoint().host().literal_value(),
+            (item.id() != profile_id(62)).then_some("database.internal")
+        );
+        assert_eq!(
+            item.endpoint().port().source(),
+            PropertyValueSource::Literal
+        );
+        assert_eq!(item.endpoint().port().literal_value(), Some("5432"));
         assert!(item.sources().has_secret_sources());
         assert!(item.sources().has_dangerous_plaintext());
         let debug = format!("{item:?}");
@@ -425,6 +494,7 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
             "database.internal",
             "TABLE_DB",
             "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "SECRET_HOST_REFERENCE",
         ] {
             assert!(!debug.contains(sensitive));
         }

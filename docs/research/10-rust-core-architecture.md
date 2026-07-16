@@ -192,6 +192,9 @@ Optional search terms use one versioned NFKC/full-case-fold/NFKC contract and
 join the owned cursor scope. The durable profile population is capped at 10,000
 so normalization work is finite without persisting derived keys that can drift
 from authoritative labels.
+List endpoints contain only core-validated literal host/port display values or
+an unresolved secret-source marker. Adapter projections structurally exclude
+secret reference payloads; endpoint diagnostics remain length-only.
 
 `OpRef` stores stable 26-character account/vault/item object IDs, a bounded
 section/field ID path, and a display breadcrumb. A metadata-only picker suggests reviewed mappings for host,

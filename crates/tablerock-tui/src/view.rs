@@ -120,15 +120,7 @@ fn render_tabs(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut 
         focused: model.focus() == FocusRegion::Tabs,
         regions: Vec::new(),
     };
-    frame.render_stateful_widget(
-        &Tabs {
-            tabs: &tabs,
-            gap: 1,
-            theme: &model.theme,
-        },
-        area,
-        &mut state,
-    );
+    frame.render_stateful_widget(Tabs::new(&tabs, &model.theme).gap(1), area, &mut state);
     for region in state.regions {
         geometry.push(ShellTarget::Focus(FocusRegion::Tabs), region.area);
     }
@@ -217,11 +209,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
         regions: Vec::new(),
     };
     frame.render_stateful_widget(
-        &ActionBar {
-            actions: &actions,
-            gap: " ",
-            theme: &model.theme,
-        },
+        ActionBar::new(&actions, &model.theme).gap(" "),
         area,
         &mut state,
     );
@@ -275,14 +263,7 @@ fn render_hints(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             },
         ]
     };
-    frame.render_widget(
-        &HintBar {
-            hints: &hints,
-            separator: " • ",
-            theme: &model.theme,
-        },
-        area,
-    );
+    frame.render_widget(HintBar::new(&hints, &model.theme).separator(" • "), area);
 }
 
 fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
@@ -315,12 +296,7 @@ fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mu
     }];
     let mut state = StatusBarState::default();
     frame.render_stateful_widget(
-        &StatusBar {
-            left: &left,
-            right: &right,
-            theme: &model.theme,
-            alpha: 1.0,
-        },
+        StatusBar::new(&left, &right, &model.theme).alpha(1.0),
         area,
         &mut state,
     );
@@ -331,15 +307,12 @@ fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mu
 
 fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, focused: bool) {
     let focused_title = focused.then(|| format!("> {title}"));
-    let panel = Panel {
-        title: Some(focused_title.as_deref().unwrap_or(title)),
-        emphasis: if focused {
+    let panel = Panel::new(&model.theme)
+        .title(focused_title.as_deref().unwrap_or(title))
+        .emphasis(if focused {
             PanelEmphasis::Focused
         } else {
             PanelEmphasis::Normal
-        },
-        style: None,
-        theme: &model.theme,
-    };
+        });
     frame.render_widget(&panel, area);
 }

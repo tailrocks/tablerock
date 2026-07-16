@@ -1,7 +1,8 @@
 use tablerock_core::{
-    BoundedText, ByteLimit, Engine, IdParts, ProfileGroupName, ProfileId, ProfileListError,
-    ProfileListFilter, ProfileListItem, ProfileListPage, ProfileListRequest, ProfileName,
-    ProfileSafetyMode, ProfileSearchTerm, ProfileSourceFacts, PropertyValueSource, Revision,
+    BoundedText, ByteLimit, Engine, IdParts, ProfileEndpointPart, ProfileEndpointSummary,
+    ProfileGroupName, ProfileId, ProfileListError, ProfileListFilter, ProfileListItem,
+    ProfileListPage, ProfileListRequest, ProfileName, ProfileSafetyMode, ProfileSearchTerm,
+    ProfileSourceFacts, PropertyValueSource, Revision,
 };
 
 fn text(value: &str) -> BoundedText {
@@ -22,12 +23,11 @@ fn item(low: u64) -> ProfileListItem {
         true,
         low as u32,
         ProfileSafetyMode::ReadOnly,
-        ProfileSourceFacts::new(
-            PropertyValueSource::Literal,
-            PropertyValueSource::SecretSource,
-            true,
-            true,
+        ProfileEndpointSummary::new(
+            ProfileEndpointPart::literal_host(text("private.internal")).unwrap(),
+            ProfileEndpointPart::secret_source(),
         ),
+        ProfileSourceFacts::new(true, true),
     )
 }
 
@@ -111,11 +111,23 @@ fn summaries_expose_source_facts_but_redact_labels() {
     let item = item(7);
     assert_eq!(item.name().as_str(), "Private profile name");
     assert_eq!(item.group().unwrap().as_str(), "Private group");
-    assert_eq!(item.sources().host(), PropertyValueSource::Literal);
-    assert_eq!(item.sources().port(), PropertyValueSource::SecretSource);
+    assert_eq!(
+        item.endpoint().host().source(),
+        PropertyValueSource::Literal
+    );
+    assert_eq!(
+        item.endpoint().host().literal_value(),
+        Some("private.internal")
+    );
+    assert_eq!(
+        item.endpoint().port().source(),
+        PropertyValueSource::SecretSource
+    );
+    assert_eq!(item.endpoint().port().literal_value(), None);
     assert!(item.sources().has_secret_sources());
     assert!(item.sources().has_dangerous_plaintext());
     let debug = format!("{item:?}");
     assert!(!debug.contains("Private profile name"));
     assert!(!debug.contains("Private group"));
+    assert!(!debug.contains("private.internal"));
 }
