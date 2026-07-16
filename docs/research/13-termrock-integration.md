@@ -17,16 +17,17 @@ queries, values, mutations, and safety policy never move into TermRock.
 Checked 2026-07-16:
 
 - TermRock `main` at
-  [`41482e9f`](https://github.com/tailrocks/termrock/commit/41482e9fe9b8254f82c7803692ef9dbd7d4cf87c),
+  [`cbed106c`](https://github.com/tailrocks/termrock/commit/cbed106c539efbd30dbb9935863e59a7af95bef4),
   version `0.6.0`, Rust 1.95 floor, Apache-2.0, Ratatui 0.30 component split,
-  and optional Crossterm 0.29 adapter;
+  optional Crossterm 0.29 adapter, and the published neutral `Tree`;
 - Jackin at
   [`27c450e9`](https://github.com/jackin-project/jackin/commit/27c450e9af7a299171034f98267e0fa26bd3057f)
-  pins that exact TermRock revision and uses Ratatui 0.30;
-- TermRock's [component inventory](https://github.com/tailrocks/termrock/blob/41482e9fe9b8254f82c7803692ef9dbd7d4cf87c/crates/termrock/COMPONENTS.md),
-  [migration boundary](https://github.com/tailrocks/termrock/blob/41482e9fe9b8254f82c7803692ef9dbd7d4cf87c/MIGRATING.md),
-  [interaction conventions](https://github.com/tailrocks/termrock/blob/41482e9fe9b8254f82c7803692ef9dbd7d4cf87c/docs/content/docs/interaction.mdx),
-  and [compatibility record](https://github.com/tailrocks/termrock/blob/41482e9fe9b8254f82c7803692ef9dbd7d4cf87c/compatibility.toml)
+  pins the earlier compatible TermRock baseline `41482e9f` and uses Ratatui
+  0.30; Tree is additive and does not import Jackin product internals;
+- TermRock's [component inventory](https://github.com/tailrocks/termrock/blob/cbed106c539efbd30dbb9935863e59a7af95bef4/crates/termrock/COMPONENTS.md),
+  [migration boundary](https://github.com/tailrocks/termrock/blob/cbed106c539efbd30dbb9935863e59a7af95bef4/MIGRATING.md),
+  [interaction conventions](https://github.com/tailrocks/termrock/blob/cbed106c539efbd30dbb9935863e59a7af95bef4/docs/content/docs/interaction.mdx),
+  and [compatibility record](https://github.com/tailrocks/termrock/blob/cbed106c539efbd30dbb9935863e59a7af95bef4/compatibility.toml)
   define the reusable boundary;
 - Jackin's [TUI architecture](https://github.com/jackin-project/jackin/blob/27c450e9af7a299171034f98267e0fa26bd3057f/docs/content/docs/reference/tui/architecture.mdx)
   is the approved reference for Model/Message/Update/Effect/Subscription/View
@@ -77,7 +78,7 @@ ships. Their public APIs follow TermRock's neutral contract.
 
 | Primitive | Why neutral | Required contract | First TableRock dependency |
 |---|---|---|---|
-| `Tree` | Hierarchical navigation recurs across products | Stable node IDs; disclosure state; depth; disabled/loading/error rows; keyboard/mouse; caller-owned lazy loading and filtering | Catalog and connection groups |
+| `Tree` (published) | Hierarchical navigation recurs across products | Stable node IDs; disclosure state; depth; disabled/loading/error rows; keyboard/mouse; caller-owned lazy loading and filtering | Catalog and connection groups |
 | `Form` / form layout | Structured settings are not database-specific | Sections, labels, help/error text, required/disabled state, focus traversal, responsive one/two-column layout, caller validation | Connection editor and settings |
 | `SplitPane` | Resizable regions recur in complex TUIs | Horizontal/vertical split; min sizes; remembered fraction; divider focus/drag; collapse; tiny-area safety | Catalog/workbench and editor/results |
 | `VirtualGrid` | Large two-dimensional data is broadly reusable | Borrowed visible cells; stable row/column IDs; header/gutter; two-axis viewport; range selection; column widths; hit regions; caller render projection; no fetching/edit policy | PostgreSQL table/result grid |

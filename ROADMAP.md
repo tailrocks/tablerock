@@ -46,8 +46,10 @@ this phase is approved.
 ### Phase 1 — TermRock and TUI foundation
 
 **Status:** In progress. T0 pins and verifies the minimal TermRock consumer in
-[`35-phase-1-termrock-t0.md`](docs/research/35-phase-1-termrock-t0.md). T1 and
-the executable shell remain incomplete.
+[`35-phase-1-termrock-t0.md`](docs/research/35-phase-1-termrock-t0.md). The T1
+`Tree` checkpoint is published and repinned with evidence in
+[`36-phase-1-termrock-tree.md`](docs/research/36-phase-1-termrock-tree.md).
+T1 `Form`/`SplitPane` and the executable shell remain incomplete.
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,
