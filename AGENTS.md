@@ -12,8 +12,10 @@
 
 ## Current phase
 
-TableRock is research-only. Do not add application code or dependencies until
-the relevant research decision and roadmap phase are approved.
+Phase 0 research decisions are approved. Implement Roadmap Phases 1-15 through
+their dependency-ordered, evidence-gated checkpoints. Do not add behavior or a
+dependency before its relevant roadmap checkpoint is approved and its adoption
+requirements are defined.
 
 ## Product boundary
 

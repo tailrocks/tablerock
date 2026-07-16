@@ -51,6 +51,7 @@ kept in the roadmap.
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)
 - [Main-branch delivery](33-main-branch-delivery.md)
+- [Phase 0 exit report](34-phase-0-exit-report.md)
 
 ## Architecture headline
 

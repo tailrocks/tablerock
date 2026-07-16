@@ -1,6 +1,6 @@
 # Roadmap
 
-TableRock is research-only until Phase 0 decisions are approved. The program
+TableRock completed Phase 0 decision approval on 2026-07-16. The program
 builds one Rust-owned PostgreSQL, ClickHouse, and Redis workbench, first as a
 TermRock/Ratatui TUI and later as a native SwiftUI/AppKit macOS application.
 
@@ -12,7 +12,7 @@ documentation, and remain honest about incomplete parity.
 
 | Phase | Outcome | Depends on |
 |---|---|---|
-| 0 | Research and architecture decisions approved | current research |
+| 0 | Research and architecture decisions approved (complete) | current research |
 | 1 | TermRock substrate and empty TUI shell | 0 |
 | 2 | Rust contracts, storage choice, and three driver spikes | 0 |
 | 3 | Profiles, credentials, and connection shell | 1, 2 |
@@ -32,6 +32,10 @@ documentation, and remain honest about incomplete parity.
 ## Phase outcomes
 
 ### Phase 0 — approve research
+
+**Status:** Complete. The operator approved all fixed decisions and authorized
+Phases 0-15 on 2026-07-16. Exit evidence is recorded in
+[`34-phase-0-exit-report.md`](docs/research/34-phase-0-exit-report.md).
 
 Freeze the product boundary, clean-room process, functional-parity ledger,
 TermRock ownership, TEA, Rust contract language, SecretSource model, local-only

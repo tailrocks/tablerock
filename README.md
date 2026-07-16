@@ -1,11 +1,11 @@
 # TableRock
 
-TableRock is a proposed terminal-first, multi-model database workbench for
+TableRock is a terminal-first, multi-model database workbench for
 PostgreSQL, ClickHouse, and Redis. The first product will be a Rust CLI/TUI. A
 future native macOS application will use SwiftUI/AppKit over the same Rust core.
 
-This repository currently contains research and architecture only. It does not
-claim a working database client yet.
+Phase 0 research decisions are approved. Implementation is starting; this
+repository does not claim a working database client yet.
 
 ## Direction
 
@@ -37,8 +37,9 @@ canonical prompt:
 
 ## Status
 
-Research phase. Product name, package namespace, and legal clearance remain
-subject to final review before the first release.
+Phase 0 approved; Phase 1 implementation is next. Product name, package
+namespace, and legal clearance remain subject to final review before public
+release.
 
 ## License
 

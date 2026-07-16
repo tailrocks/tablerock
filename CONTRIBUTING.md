@@ -1,8 +1,8 @@
 # Contributing
 
-TableRock is currently in a research phase. Record and approve the relevant
-research decision before adding application code, dependencies, configuration
-schemas, or public APIs.
+TableRock Phase 0 research decisions are approved. Before adding application
+code, dependencies, configuration schemas, or public APIs, confirm the relevant
+roadmap checkpoint and its adoption requirements are approved.
 
 ## Trunk-only delivery
 

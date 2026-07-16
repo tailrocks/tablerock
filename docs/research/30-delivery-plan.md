@@ -7,8 +7,9 @@ create a branch or pull request. A phase is a dependency map, not permission to
 batch months of changes into one commit. Each approved checkpoint is a small,
 buildable, documented, tested, DCO-signed forward commit.
 
-TableRock remains research-only until Phase 0 is approved. This plan adds no
-application code or dependency.
+Phase 0 was approved on 2026-07-16. This plan now authorizes dependency-ordered
+implementation checkpoints; approval alone adds no application code or
+dependency and makes no capability claim.
 
 ## Program invariants
 
