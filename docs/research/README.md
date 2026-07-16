@@ -73,6 +73,8 @@ kept in the roadmap.
 - [Phase 2 secret source evidence](53-phase-2-secret-source.md)
 - [Phase 2 profile property policy evidence](54-phase-2-profile-property-policy.md)
 - [Phase 2 profile connection snapshot evidence](55-phase-2-profile-snapshot.md)
+- [Phase 2 profile aggregate evidence](56-phase-2-profile-aggregate.md)
+- [TermRock 0.9 styled tab glyph migration evidence](57-termrock-0.9-migration.md)
 
 ## Architecture headline
 

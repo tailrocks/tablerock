@@ -6,6 +6,7 @@ mod id;
 mod operation;
 mod page;
 mod profile;
+mod profile_aggregate;
 mod revision;
 mod secret;
 mod value;
@@ -38,6 +39,11 @@ pub use profile::{
     ProfileLimitField, ProfileLimits, ProfileName, ProfilePolicy, ProfileProperty,
     ProfilePropertyBinding, ProfilePropertyError, ProfilePropertySet, ProfileSafetyMode,
     PropertyValueSource, TlsPolicy,
+};
+pub use profile_aggregate::{
+    PersistableProfile, ProfileAggregate, ProfileAggregateError, ProfileDurability,
+    ProfileGroupName, ProfileLabel, ProfileOrganization, ProfilePreferences, ProfileTag,
+    ProfileUpdateError, ReconnectPreference,
 };
 pub use revision::{CounterOverflow, EventSequence, Revision, RevisionRelation, SequenceRelation};
 pub use secret::{

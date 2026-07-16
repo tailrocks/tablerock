@@ -172,8 +172,14 @@ An immutable schema-versioned profile connection sub-snapshot owns stable identi
 engine, redacted bounded name, property set, TLS policy, safety mode, and finite
 limits. Every engine requires host and port sources. TLS configuration is a
 closed validated state; profiles select only `ReadOnly` or `ConfirmWrites`.
-The later complete durable aggregate composes organization and preferences;
+The complete durable aggregate composes organization and preferences;
 command-level enforcement remains below presentation.
+
+The baseline aggregate gives only saved profiles a non-constructible
+persistence token; temporary profiles are structurally memory-only. It bounds
+group/tags/favorite/order, stores only bounded
+reconnect/context/page preferences, and validates non-consuming monotonic
+replacement before the persistence actor repeats the CAS transactionally.
 
 `OpRef` stores stable 26-character account/vault/item object IDs, a bounded
 section/field ID path, and a display breadcrumb. A metadata-only picker suggests reviewed mappings for host,

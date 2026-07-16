@@ -12,6 +12,7 @@ fn core_contract_has_no_runtime_or_presentation_dependency() {
         include_str!("../src/operation.rs"),
         include_str!("../src/page.rs"),
         include_str!("../src/profile.rs"),
+        include_str!("../src/profile_aggregate.rs"),
         include_str!("../src/revision.rs"),
         include_str!("../src/secret.rs"),
         include_str!("../src/value.rs"),

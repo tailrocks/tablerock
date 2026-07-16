@@ -17,7 +17,7 @@ change without a recorded architecture revision.
 | Redis | [`redis`](https://github.com/redis-rs/redis-rs) | 1.4.0 | BSD-3-Clause | driver adapter only |
 | SSH tunneling | [`russh`](https://github.com/Eugeny/russh) | 0.62.2 | Apache-2.0 | transport adapter below drivers |
 | SQL analysis | [`sqlparser`](https://github.com/apache/datafusion-sqlparser-rs) | 0.62.0 | Apache-2.0 | Rust editor/query service |
-| TUI | [`termrock`](https://github.com/tailrocks/termrock) | 0.8.0 / exact Git revision | Apache-2.0 | only reusable TUI layer |
+| TUI | [`termrock`](https://github.com/tailrocks/termrock) | 0.9.0 / exact Git revision | Apache-2.0 | only reusable TUI layer |
 | Terminal renderer | [Ratatui](https://github.com/ratatui/ratatui) | 0.30-compatible with pinned TermRock | MIT | through TermRock compatibility tuple |
 | Terminal backend/input | [`crossterm`](https://github.com/crossterm-rs/crossterm) | 0.29.0 | MIT | CLI terminal adapter; TermRock `crossterm` feature |
 | Ratatui terminal backend | [`ratatui-crossterm`](https://github.com/ratatui/ratatui) | 0.1.2 | MIT | CLI render adapter only; Crossterm 0.29 feature only |

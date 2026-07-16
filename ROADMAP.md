@@ -68,8 +68,10 @@ Generic post-mapping progress coalescing and explicit overflow/resync evidence
 is recorded in
 [`44-phase-1-bounded-ingress.md`](docs/research/44-phase-1-bounded-ingress.md).
 Domain event identity/revision mapping belongs to Phase 2.
-The forward-only TermRock 0.8 migration and exact current-main pin are recorded
-in [`49-termrock-0.8-migration.md`](docs/research/49-termrock-0.8-migration.md).
+The historical TermRock 0.8 migration is recorded in
+[`49-termrock-0.8-migration.md`](docs/research/49-termrock-0.8-migration.md); the
+latest 0.9 migration and exact current-main pin are recorded in
+[`57-termrock-0.9-migration.md`](docs/research/57-termrock-0.9-migration.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,
@@ -103,6 +105,9 @@ secret material is recorded in
 The immutable connect-ready profile connection snapshot, TLS state machine, two-mode
 safety policy, and finite owner limits are recorded in
 [`55-phase-2-profile-snapshot.md`](docs/research/55-phase-2-profile-snapshot.md).
+The baseline durable profile aggregate, saved/temporary disposition, bounded
+organization/preferences, and revision replacement gate are recorded in
+[`56-phase-2-profile-aggregate.md`](docs/research/56-phase-2-profile-aggregate.md).
 
 Define owned IDs, capabilities, values, revisions, commands, events, pages,
 errors, cancellation, safety, and redaction. Implement local-only Turso through

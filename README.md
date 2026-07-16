@@ -50,6 +50,8 @@ password/private-key material is structurally rejected while every property
 remains sourceable.
 Immutable profile connection snapshots add stable identity/revision, all-engine host/port
 readiness, validated TLS state, two-mode safety, and finite limits.
+The baseline profile aggregate adds saved/temporary disposition, bounded
+organization/preferences, redaction, and monotonic replacement validation.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

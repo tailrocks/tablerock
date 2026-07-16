@@ -48,8 +48,9 @@ destructive confirmation enforcement remain mandatory below presentation.
 
 No environment lookup, 1Password process, Keychain call, resolved secret,
 driver, runtime, persistence, logging, telemetry, or FFI value is introduced.
-The complete profile aggregate and sequential migration semantics must be
-proven before this sub-snapshot becomes durable; Turso compatibility follows.
+The [profile aggregate checkpoint 56](56-phase-2-profile-aggregate.md) composes
+this sub-snapshot with durability, organization, preferences, and revision
+replacement. Sequential Turso migration compatibility follows.
 
 ## Evidence
 
