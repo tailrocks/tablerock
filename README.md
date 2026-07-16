@@ -39,10 +39,10 @@ canonical prompt:
 
 Phase 0 is complete. Phase 1 is in progress: the TermRock prerequisites and
 root TEA responsive shell and executable normal/signal terminal paths are
-verified. Render-authorized mouse/paste/focus routing is implemented. Its PTY
-paths, returned-error/panic PTY paths, and typed engine overflow/resync policy
-remain. Product name, package namespace, and legal clearance remain subject to
-final review before public release.
+verified. Render-authorized mouse/paste/focus/resize routing and its real-PTY
+path are implemented. Returned-error/panic PTY paths and typed engine
+overflow/resync policy remain. Product name, package namespace, and legal
+clearance remain subject to final review before public release.
 
 ## License
 

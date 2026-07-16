@@ -6,13 +6,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
 #[test]
 fn semantic_quit_restores_terminal_modes() {
-    let output = run_pty(|writer, _| {
+    let output = run_pty(|writer, _, _| {
         writer.write_all(b"\t\t\t\t")?;
         writer.flush()?;
         thread::sleep(Duration::from_millis(50));
@@ -28,7 +28,7 @@ fn semantic_quit_restores_terminal_modes() {
 #[cfg(unix)]
 #[test]
 fn terminate_signal_restores_terminal_modes() {
-    let output = run_pty(|_, process_id| {
+    let output = run_pty(|_, process_id, _| {
         let status = Command::new("kill")
             .args(["-TERM", &process_id.to_string()])
             .status()?;
@@ -41,7 +41,41 @@ fn terminate_signal_restores_terminal_modes() {
     assert_restored(&output);
 }
 
-fn run_pty(action: impl FnOnce(&mut dyn Write, u32) -> std::io::Result<()>) -> Vec<u8> {
+#[test]
+fn resized_render_authorizes_focus_paste_and_mouse_quit() {
+    let output = run_pty(|writer, _, master| {
+        master
+            .resize(PtySize {
+                rows: 30,
+                cols: 100,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(std::io::Error::other)?;
+        thread::sleep(Duration::from_millis(100));
+        writer.write_all(b"\x1b[O\x1b[I")?;
+        writer.write_all(b"\x1b[200~private pasted value\x1b[201~")?;
+        writer.flush()?;
+        thread::sleep(Duration::from_millis(50));
+        // SGR mouse coordinates are one-based. Click Open on resized action row
+        // 28, then keyboard-select Quit. Without the pointer focus/activation,
+        // both following keys are inert in the default Context focus.
+        writer.write_all(b"\x1b[<0;2;28M\x1b[<0;2;28m")?;
+        writer.write_all(b"\x1b[C\r")?;
+        writer.flush()
+    });
+    assert_restored(&output);
+    assert!(
+        !output
+            .windows(b"private pasted value".len())
+            .any(|window| window == b"private pasted value"),
+        "paste content must not be rendered or logged"
+    );
+}
+
+fn run_pty(
+    action: impl FnOnce(&mut dyn Write, u32, &dyn MasterPty) -> std::io::Result<()>,
+) -> Vec<u8> {
     let pair = native_pty_system()
         .openpty(PtySize {
             rows: 24,
@@ -93,7 +127,7 @@ fn run_pty(action: impl FnOnce(&mut dyn Write, u32) -> std::io::Result<()>) -> V
         .recv_timeout(TIMEOUT)
         .expect("wait for first rendered frame");
     thread::sleep(Duration::from_millis(20));
-    action(&mut writer, process_id).expect("perform PTY action");
+    action(&mut writer, process_id, pair.master.as_ref()).expect("perform PTY action");
     let deadline = Instant::now() + TIMEOUT;
     let status = loop {
         if let Some(status) = child.try_wait().expect("poll child") {
