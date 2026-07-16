@@ -226,7 +226,8 @@ async fn run_session(
                         ))
                     })?
                     .map_err(RunError::Input)?;
-                let Some(message) = input.map_backend_event(event) else {
+                let Some(message) = input.map_backend_event_with_keymap(event, model.keymap())
+                else {
                     continue;
                 };
                 message

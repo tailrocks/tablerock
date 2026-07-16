@@ -20,8 +20,8 @@ so persisted numeric bits require value migration rather than reinterpretation.
 
 ## TableRock adaptation
 
-TableRock does not consume TermRock keymap types or persist TermRock modifier
-bits. Its CLI adapter currently maps Crossterm events into TableRock root TEA
+At this historical checkpoint, TableRock did not consume TermRock keymap types
+or persist TermRock modifier bits. Its CLI adapter mapped Crossterm events into TableRock root TEA
 messages. Therefore the correct migration is an exact dependency repin with no
 compatibility aliases, conversion layer, or dormant old vocabulary.
 

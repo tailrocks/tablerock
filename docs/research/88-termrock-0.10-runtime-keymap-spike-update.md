@@ -17,9 +17,9 @@ parallel legacy/default lookup paths.
 ## TableRock impact
 
 No source migration is possible or required yet because the prototype is test
-only. TableRock retains its current static keymaps. When TermRock publishes the
-runtime API and sequential migration, TableRock will migrate directly and will
-not retain a compatibility override layer.
+only. TableRock retained its then-current static routing. TermRock later
+published migration 0025, adopted without a compatibility override layer in
+[`132-termrock-runtime-keymap-migration.md`](132-termrock-runtime-keymap-migration.md).
 
 ## Verification
 

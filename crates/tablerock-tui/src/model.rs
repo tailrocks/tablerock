@@ -1,6 +1,8 @@
 //! Root-owned terminal presentation state.
 
-use termrock::Theme;
+use termrock::{Theme, keymap::Keymap};
+
+use crate::{ShellKeyAction, default_keymap};
 
 pub const MINIMUM_WIDTH: u16 = 40;
 pub const MINIMUM_HEIGHT: u16 = 10;
@@ -81,6 +83,7 @@ impl FocusRegion {
 #[derive(Debug)]
 pub struct Model {
     pub(crate) theme: Theme,
+    keymap: Keymap<ShellKeyAction>,
     width: u16,
     height: u16,
     focus: FocusRegion,
@@ -96,6 +99,7 @@ impl Default for Model {
     fn default() -> Self {
         Self {
             theme: Theme::default(),
+            keymap: default_keymap(),
             width: 0,
             height: 0,
             focus: FocusRegion::Context,
@@ -110,6 +114,15 @@ impl Default for Model {
 }
 
 impl Model {
+    #[must_use]
+    pub const fn keymap(&self) -> &Keymap<ShellKeyAction> {
+        &self.keymap
+    }
+
+    pub fn keymap_mut(&mut self) -> &mut Keymap<ShellKeyAction> {
+        &mut self.keymap
+    }
+
     #[must_use]
     pub const fn size(&self) -> (u16, u16) {
         (self.width, self.height)

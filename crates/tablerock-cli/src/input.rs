@@ -1,5 +1,8 @@
-use tablerock_tui::{Message, PasteText, ScrollDirection, ShellGeometry};
-use termrock::input::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
+use tablerock_tui::{
+    Message, PasteText, ScrollDirection, ShellGeometry, ShellKeyAction, default_keymap,
+};
+use termrock::input::{Event, KeyEventKind, MouseButton, MouseEventKind};
+use termrock::keymap::{KeyChord, Keymap};
 
 #[derive(Debug, Clone, Default)]
 pub struct InputAdapter {
@@ -14,6 +17,15 @@ impl InputAdapter {
     /// Translate backend input into root semantic intent using painted geometry.
     #[must_use]
     pub fn map_event(&self, event: Event) -> Option<Message> {
+        self.map_event_with_keymap(event, &default_keymap())
+    }
+
+    #[must_use]
+    pub fn map_event_with_keymap(
+        &self,
+        event: Event,
+        keymap: &Keymap<ShellKeyAction>,
+    ) -> Option<Message> {
         match event {
             Event::Resize { width, height } => Some(Message::Resize { width, height }),
             Event::FocusGained => Some(Message::TerminalFocusChanged(true)),
@@ -52,20 +64,9 @@ impl InputAdapter {
                     _ => None,
                 }
             }
-            Event::Key(key) if key.kind != KeyEventKind::Release => match key.code {
-                KeyCode::Tab if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                    Some(Message::FocusPrevious)
-                }
-                KeyCode::Tab => Some(Message::FocusNext),
-                KeyCode::BackTab => Some(Message::FocusPrevious),
-                KeyCode::Left => Some(Message::ActionPrevious),
-                KeyCode::Right => Some(Message::ActionNext),
-                KeyCode::Enter => Some(Message::Activate),
-                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    Some(Message::Quit)
-                }
-                _ => None,
-            },
+            Event::Key(key) if key.kind != KeyEventKind::Release => keymap
+                .dispatch(KeyChord::from(key))
+                .map(message_for_key_action),
             Event::Key(_) | Event::Unknown => None,
             _ => None,
         }
@@ -75,6 +76,26 @@ impl InputAdapter {
     #[must_use]
     pub fn map_backend_event(&self, event: crossterm::event::Event) -> Option<Message> {
         self.map_event(event.into())
+    }
+
+    #[must_use]
+    pub fn map_backend_event_with_keymap(
+        &self,
+        event: crossterm::event::Event,
+        keymap: &Keymap<ShellKeyAction>,
+    ) -> Option<Message> {
+        self.map_event_with_keymap(event.into(), keymap)
+    }
+}
+
+const fn message_for_key_action(action: ShellKeyAction) -> Message {
+    match action {
+        ShellKeyAction::FocusNext => Message::FocusNext,
+        ShellKeyAction::FocusPrevious => Message::FocusPrevious,
+        ShellKeyAction::ActionPrevious => Message::ActionPrevious,
+        ShellKeyAction::ActionNext => Message::ActionNext,
+        ShellKeyAction::Activate => Message::Activate,
+        ShellKeyAction::Quit => Message::Quit,
     }
 }
 

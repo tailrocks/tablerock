@@ -4,11 +4,14 @@ use crossterm::event::{
 };
 use ratatui_core::{backend::TestBackend, layout::Rect, terminal::Terminal};
 use tablerock_cli::{InputAdapter, map_backend_event, map_event};
-use tablerock_tui::{ActionId, Message, Model, ScrollDirection, ShellTarget, ShellView, update};
+use tablerock_tui::{
+    ActionId, Message, Model, ScrollDirection, ShellKeyAction, ShellTarget, ShellView, update,
+};
 use termrock::input::{
     Event as TermRockEvent, KeyCode as TermRockKeyCode, KeyEvent as TermRockKeyEvent,
     KeyModifiers as TermRockKeyModifiers,
 };
+use termrock::keymap::KeyChord;
 
 #[test]
 fn maps_termrock_neutral_input_without_backend_types() {
@@ -146,6 +149,60 @@ fn ignores_key_release_unbound_keys_and_non_primary_buttons() {
     ] {
         assert_eq!(map_backend_event(event), None);
     }
+}
+
+#[test]
+fn runtime_remap_drives_dispatch_and_advertised_hint_from_one_keymap() {
+    let mut model = Model::default();
+    assert!(model.keymap_mut().remap(
+        ShellKeyAction::Activate,
+        vec![KeyChord::ctrl(TermRockKeyCode::Char('l'))],
+    ));
+    let adapter = InputAdapter::default();
+    assert_eq!(
+        adapter.map_event_with_keymap(
+            TermRockEvent::Key(TermRockKeyEvent::new(
+                TermRockKeyCode::Enter,
+                TermRockKeyModifiers::NONE,
+            )),
+            model.keymap(),
+        ),
+        None
+    );
+    assert_eq!(
+        adapter.map_event_with_keymap(
+            TermRockEvent::Key(TermRockKeyEvent::new(
+                TermRockKeyCode::Char('l'),
+                TermRockKeyModifiers::CONTROL,
+            )),
+            model.keymap(),
+        ),
+        Some(Message::Activate)
+    );
+    assert_eq!(model.keymap().glyph_for(ShellKeyAction::Activate), "Ctrl-L");
+
+    let _ = update(
+        &mut model,
+        Message::Resize {
+            width: 120,
+            height: 24,
+        },
+    );
+    for _ in 0..4 {
+        let _ = update(&mut model, Message::FocusNext);
+    }
+    let mut terminal = Terminal::new(TestBackend::new(120, 24)).unwrap();
+    terminal
+        .draw(|frame| ShellView.render(&model, frame, frame.area()))
+        .unwrap();
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(rendered.contains("Ctrl-L"));
 }
 
 fn rendered_adapter(width: u16, height: u16) -> InputAdapter {

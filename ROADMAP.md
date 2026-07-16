@@ -44,6 +44,9 @@ TermRock migration 0024 and its exact latest pin are adopted in
 Redis isolated blocking-command dispatch and server-confirmed unblocking are
 recorded in
 [`131-phase-2-redis-service-cancellation.md`](docs/research/131-phase-2-redis-service-cancellation.md).
+TermRock migration 0025, one model-owned runtime keymap, and its exact latest
+pin are recorded in
+[`132-termrock-runtime-keymap-migration.md`](docs/research/132-termrock-runtime-keymap-migration.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

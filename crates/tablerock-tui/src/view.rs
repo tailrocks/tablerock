@@ -8,12 +8,12 @@ use ratatui_core::{
 use termrock::{
     interaction::HitRegion,
     widgets::{
-        Action, ActionBar, ActionBarState, Hint, HintBar, Panel, PanelEmphasis, StatusBar,
-        StatusBarState, StatusSlot, Tab, Tabs, TabsState,
+        Action, ActionBar, ActionBarState, Panel, PanelEmphasis, StatusBar, StatusBarState,
+        StatusSlot, Tab, Tabs, TabsState, render_hint_bar,
     },
 };
 
-use crate::{ActionId, FocusRegion, LayoutMode, Model, Screen, ShellTarget};
+use crate::{ActionId, FocusRegion, LayoutMode, Model, Screen, ShellKeyAction, ShellTarget};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ShellView;
@@ -216,51 +216,17 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
 }
 
 fn render_hints(model: &Model, frame: &mut Frame<'_>, area: Rect) {
-    let actions = model.focus() == FocusRegion::Actions;
-    let hints = if actions {
-        [
-            Hint {
-                chord: "Enter",
-                label: "Activate",
-                priority: 0,
-                visible: true,
-            },
-            Hint {
-                chord: "Left/Right",
-                label: "Choose action",
-                priority: 1,
-                visible: true,
-            },
-            Hint {
-                chord: "Tab",
-                label: "Next focus",
-                priority: 2,
-                visible: true,
-            },
-        ]
+    let mut keymap = model.keymap().clone();
+    if model.focus() == FocusRegion::Actions {
+        let _ = keymap.disable(ShellKeyAction::FocusPrevious);
+        let _ = keymap.disable(ShellKeyAction::Quit);
     } else {
-        [
-            Hint {
-                chord: "Tab",
-                label: "Next focus",
-                priority: 0,
-                visible: true,
-            },
-            Hint {
-                chord: "Shift-Tab",
-                label: "Previous focus",
-                priority: 1,
-                visible: true,
-            },
-            Hint {
-                chord: "",
-                label: "",
-                priority: 2,
-                visible: false,
-            },
-        ]
-    };
-    frame.render_widget(HintBar::new(&hints, &model.theme).separator(" • "), area);
+        let _ = keymap.disable(ShellKeyAction::Activate);
+        let _ = keymap.disable(ShellKeyAction::ActionPrevious);
+        let _ = keymap.disable(ShellKeyAction::ActionNext);
+        let _ = keymap.disable(ShellKeyAction::Quit);
+    }
+    render_hint_bar(frame, area, &keymap.hint_spans(), &model.theme);
 }
 
 fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
