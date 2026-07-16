@@ -1,7 +1,7 @@
 use tablerock_core::{
     BoundedText, ByteLimit, Engine, IdParts, ProfileGroupName, ProfileId, ProfileListError,
     ProfileListFilter, ProfileListItem, ProfileListPage, ProfileListRequest, ProfileName,
-    ProfileSafetyMode, ProfileSourceFacts, PropertyValueSource, Revision,
+    ProfileSafetyMode, ProfileSearchTerm, ProfileSourceFacts, PropertyValueSource, Revision,
 };
 
 fn text(value: &str) -> BoundedText {
@@ -64,7 +64,8 @@ fn continuation_is_bound_to_its_filter_scope() {
         .with_group(Some(ProfileGroupName::new(text("Cache")).unwrap()))
         .with_tag(Some(
             tablerock_core::ProfileTag::new(text("primary")).unwrap(),
-        ));
+        ))
+        .with_search(Some(ProfileSearchTerm::new(text("Private")).unwrap()));
     let request = ProfileListRequest::new(filter.clone(), None, 1).unwrap();
     let page = ProfileListPage::new(&request, vec![item(1)], true).unwrap();
     let cursor = page.next().unwrap();
@@ -72,6 +73,7 @@ fn continuation_is_bound_to_its_filter_scope() {
     let debug = format!("{cursor:?}");
     assert!(!debug.contains("Cache"));
     assert!(!debug.contains("primary"));
+    assert!(!debug.contains("Private"));
     assert_eq!(
         ProfileListRequest::new(ProfileListFilter::default(), Some(cursor.clone()), 1),
         Err(ProfileListError::CursorFilterMismatch)
@@ -87,6 +89,21 @@ fn continuation_is_bound_to_its_filter_scope() {
         ProfileListRequest::new(different_tag, page.next(), 1),
         Err(ProfileListError::CursorFilterMismatch)
     ));
+}
+
+#[test]
+fn search_term_is_bounded_normalized_caseless_and_redacted() {
+    let street = ProfileSearchTerm::new(text("STRASSE")).unwrap();
+    assert!(street.matches("Straße cluster"));
+    let compatibility = ProfileSearchTerm::new(text("prod")).unwrap();
+    assert!(compatibility.matches("ＰＲＯＤ database"));
+    let canonical = ProfileSearchTerm::new(text("CAFÉ")).unwrap();
+    assert!(canonical.matches("cafe\u{301}"));
+    assert!(ProfileSearchTerm::new(text("   ")).is_err());
+    assert!(ProfileSearchTerm::new(text("line\nbreak")).is_err());
+    let debug = format!("{street:?}");
+    assert!(!debug.contains("strasse"));
+    assert!(debug.contains("normalized_byte_len"));
 }
 
 #[test]

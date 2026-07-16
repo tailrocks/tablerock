@@ -47,9 +47,10 @@ secret-reference payload.
 ## Deliberate boundary
 
 Exact engine, favorite, group, and tag filters are complete below presentation.
-Normalized name/group/tag search, endpoint display facts, health state, and UI
-loading/empty/failure projections remain required. Search must extend this
-owned scope and define Unicode normalization before schema work.
+Normalized name/group/tag search is now implemented by
+[`76-phase-2-normalized-profile-search.md`](76-phase-2-normalized-profile-search.md).
+Endpoint display facts, health state, and UI loading/empty/failure projections
+remain required.
 
 ## Verification record
 

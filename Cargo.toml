@@ -11,12 +11,14 @@ repository = "https://github.com/tailrocks/tablerock"
 
 [workspace.dependencies]
 crossterm = { version = "0.29.0", features = ["event-stream"] }
+caseless = "=0.2.2"
 futures-util = "0.3.32"
 ratatui-core = "0.1.2"
 ratatui-crossterm = { version = "0.1.2", default-features = false, features = ["crossterm_0_29"] }
 termrock = { version = "=0.10.0", git = "https://github.com/tailrocks/termrock.git", rev = "ccf06463382b7ca2ca7734f3d58acdc43366fb54" }
 tokio = { version = "1.52.3", features = ["macros", "rt", "signal", "sync", "time"] }
 turso = { version = "=0.7.0", default-features = false }
+unicode-normalization = { version = "=0.1.25", default-features = false, features = ["std"] }
 zeroize = { version = "=1.9.0", default-features = false, features = ["alloc"] }
 
 [workspace.lints.rust]

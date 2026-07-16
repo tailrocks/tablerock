@@ -48,7 +48,7 @@ pub use profile_aggregate::{
 };
 pub use profile_list::{
     ProfileListCursor, ProfileListError, ProfileListFilter, ProfileListItem, ProfileListPage,
-    ProfileListRequest, ProfileSourceFacts,
+    ProfileListRequest, ProfileSearchTerm, ProfileSourceFacts,
 };
 pub use revision::{CounterOverflow, EventSequence, Revision, RevisionRelation, SequenceRelation};
 pub use secret::{

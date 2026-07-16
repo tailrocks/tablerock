@@ -123,6 +123,8 @@ in
 TermRock 0.10 trailing-metadata/multi-selection migration and exact refreshed
 main pin are recorded in
 [`75-termrock-0.10-metadata-selection-migration.md`](docs/research/75-termrock-0.10-metadata-selection-migration.md).
+Bounded Unicode-normalized profile name/group/tag search is recorded in
+[`76-phase-2-normalized-profile-search.md`](docs/research/76-phase-2-normalized-profile-search.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

@@ -6,8 +6,9 @@ use tablerock_core::{
     PlaintextAcknowledgement, ProfileAggregate, ProfileConnectionSnapshot, ProfileDurability,
     ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits, ProfileListFilter,
     ProfileListRequest, ProfileName, ProfileOrganization, ProfilePolicy, ProfilePreferences,
-    ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag,
-    PropertyValueSource, ReconnectPreference, Revision, SecretSource, SecretSourceKind, TlsPolicy,
+    ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode,
+    ProfileSearchTerm, ProfileTag, PropertyValueSource, ReconnectPreference, Revision,
+    SecretSource, SecretSourceKind, TlsPolicy,
 };
 use tablerock_persistence::{PersistenceActor, PersistenceError};
 
@@ -127,6 +128,10 @@ fn saved_profile_at(engine: Engine, low_id: u64, revision: u64, name: &str) -> P
 
 fn profile_id(low_id: u64) -> ProfileId {
     ProfileId::from_parts(IdParts::new(1, low_id).unwrap()).unwrap()
+}
+
+fn search(value: &str) -> ProfileSearchTerm {
+    ProfileSearchTerm::new(text(value)).unwrap()
 }
 
 async fn count(connection: &turso::Connection, sql: &str) -> u32 {
@@ -539,6 +544,60 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
         .unwrap();
     assert_eq!(combined.items().len(), 1);
     assert_eq!(combined.items()[0].id(), profile_id(62));
+
+    let search_filter = ProfileListFilter::default().with_search(Some(search("PRIVATE")));
+    let search_first = actor
+        .list_profiles(ProfileListRequest::new(search_filter.clone(), None, 1).unwrap())
+        .unwrap();
+    assert_eq!(search_first.items()[0].id(), profile_id(61));
+    let search_second = actor
+        .list_profiles(
+            ProfileListRequest::new(search_filter.clone(), search_first.next(), 1).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(search_second.items()[0].id(), profile_id(62));
+    let search_final = actor
+        .list_profiles(ProfileListRequest::new(search_filter, search_second.next(), 1).unwrap())
+        .unwrap();
+    assert_eq!(search_final.items()[0].id(), profile_id(60));
+    assert_eq!(search_final.next(), None);
+
+    let group_search = actor
+        .list_profiles(
+            ProfileListRequest::new(
+                ProfileListFilter::default().with_search(Some(search("ANALYTICS"))),
+                None,
+                10,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(group_search.items().len(), 1);
+    assert_eq!(group_search.items()[0].id(), profile_id(61));
+    let tag_search = actor
+        .list_profiles(
+            ProfileListRequest::new(
+                ProfileListFilter::new(Some(Engine::Redis), Some(true))
+                    .with_search(Some(search("CACHE"))),
+                None,
+                10,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(tag_search.items().len(), 1);
+    assert_eq!(tag_search.items()[0].id(), profile_id(62));
+    let no_match = actor
+        .list_profiles(
+            ProfileListRequest::new(
+                ProfileListFilter::default().with_search(Some(search("absent"))),
+                None,
+                10,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert!(no_match.items().is_empty());
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }

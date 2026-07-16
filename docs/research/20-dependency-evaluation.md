@@ -17,13 +17,15 @@ change without a recorded architecture revision.
 | Redis | [`redis`](https://github.com/redis-rs/redis-rs) | 1.4.0 | BSD-3-Clause | driver adapter only |
 | SSH tunneling | [`russh`](https://github.com/Eugeny/russh) | 0.62.2 | Apache-2.0 | transport adapter below drivers |
 | SQL analysis | [`sqlparser`](https://github.com/apache/datafusion-sqlparser-rs) | 0.62.0 | Apache-2.0 | Rust editor/query service |
-| TUI | [`termrock`](https://github.com/tailrocks/termrock) | 0.9.0 / exact Git revision | Apache-2.0 | only reusable TUI layer |
+| TUI | [`termrock`](https://github.com/tailrocks/termrock) | 0.10.0 / exact Git revision | Apache-2.0 | only reusable TUI layer |
 | Terminal renderer | [Ratatui](https://github.com/ratatui/ratatui) | 0.30-compatible with pinned TermRock | MIT | through TermRock compatibility tuple |
 | Terminal backend/input | [`crossterm`](https://github.com/crossterm-rs/crossterm) | 0.29.0 | MIT | CLI terminal adapter; TermRock `crossterm` feature |
 | Ratatui terminal backend | [`ratatui-crossterm`](https://github.com/ratatui/ratatui) | 0.1.2 | MIT | CLI render adapter only; Crossterm 0.29 feature only |
 | PTY test harness | [`portable-pty`](https://github.com/wezterm/wezterm) | 0.9.0 | MIT | CLI development dependency only |
 | Secret zeroization | [`zeroize`](https://github.com/RustCrypto/utils/tree/master/zeroize) | 1.9.0 | MIT OR Apache-2.0 | core dangerous-local secret buffer only; `alloc` feature |
 | Persistence | [`turso`](https://github.com/tursodatabase/turso) local database | 0.7.0 | MIT | one serialized Rust async persistence actor |
+| Unicode normalization | [`unicode-normalization`](https://github.com/unicode-rs/unicode-normalization) | 0.1.25 | MIT OR Apache-2.0 | core profile-search normalization only |
+| Unicode case folding | [`caseless`](https://github.com/unicode-rs/rust-caseless) | 0.2.2 | MIT | core profile-search normalization only |
 | Swift binding | [`uniffi`](https://github.com/mozilla/uniffi-rs) | 0.32.0 | MPL-2.0 | synchronous coarse FFI only |
 | Structured diagnostics | [`tracing`](https://github.com/tokio-rs/tracing) | 0.1.44 | MIT | fixed safe fields only |
 | Telemetry export | [`opentelemetry-otlp`](https://github.com/open-telemetry/opentelemetry-rust) | 0.32.0 | Apache-2.0 | opt-in OTLP, disabled by default |
@@ -41,6 +43,19 @@ compiler-resistant zeroing across its full capacity. TableRock uses it only for
 the explicitly acknowledged dangerous-local plaintext owner, keeps that owner
 non-cloneable, and retains the workspace-wide `unsafe_code = "forbid"` rule.
 Reference-only secret variants never contain resolved bytes.
+
+### Profile search normalization
+
+The core pins `unicode-normalization` 0.1.25 and `caseless` 0.2.2. The tuple
+implements NFKC and full default non-Turkic case folding without locale or OS
+services. Normalization tables are Unicode 17.0 and fold tables are Unicode
+16.0; that exact tuple defines search-normalization version 1. Context7 was
+attempted first and reported its monthly quota exhausted, so current versions,
+APIs, Unicode table constants, licenses, repositories, and dependency metadata
+were verified from Cargo/crates.io and the downloaded official unicode-rs
+sources. The only new transitive crates are `tinyvec` 1.12.0 and
+`tinyvec_macros` 0.1.1; their declared licenses are Zlib/MIT/Apache-2.0 choices.
+Neither normalization dependency crosses the core boundary.
 
 ### Phase 1 runtime adoption
 

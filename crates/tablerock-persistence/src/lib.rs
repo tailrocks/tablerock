@@ -558,6 +558,7 @@ pub enum PersistenceError {
     ProfileNotFound,
     ProfileStaleRevision,
     ProfileInvalidRevision,
+    ProfileCapacity,
     Timeout,
 }
 

@@ -93,6 +93,7 @@ kept in the roadmap.
 - [Phase 2 profile group/tag filter evidence](73-phase-2-profile-group-tag-filter.md)
 - [TermRock 0.9 canonical module migration evidence](74-termrock-0.9-canonical-module-migration.md)
 - [TermRock 0.10 metadata and selection migration evidence](75-termrock-0.10-metadata-selection-migration.md)
+- [Phase 2 normalized profile search evidence](76-phase-2-normalized-profile-search.md)
 
 ## Architecture headline
 

@@ -178,6 +178,8 @@ pub(crate) async fn create(
     if exists != 0 {
         return Err(PersistenceError::ProfileAlreadyExists);
     }
+    let count = query_u32(connection, "SELECT COUNT(*) FROM saved_profiles", ()).await?;
+    validate_profile_capacity(count)?;
     let transaction = connection
         .transaction()
         .await
@@ -257,6 +259,14 @@ pub(crate) async fn create(
         .commit()
         .await
         .map_err(|_| PersistenceError::ProfileWrite)
+}
+
+fn validate_profile_capacity(count: u32) -> Result<(), PersistenceError> {
+    if count >= ProfileListRequest::MAX_SEARCH_CANDIDATES as u32 {
+        Err(PersistenceError::ProfileCapacity)
+    } else {
+        Ok(())
+    }
 }
 
 pub(crate) async fn replace(
@@ -419,8 +429,21 @@ async fn list_transaction(
         EXISTS(SELECT 1 FROM saved_profile_properties p \
                WHERE p.profile_id = saved_profiles.profile_id AND source_kind > 1), \
         EXISTS(SELECT 1 FROM saved_profile_properties p \
-               WHERE p.profile_id = saved_profiles.profile_id AND source_kind = 6) ";
-    let fetch_limit = u32::from(request.limit()) + 1;
+               WHERE p.profile_id = saved_profiles.profile_id AND source_kind = 6)";
+    let search = request.filter().search();
+    let projection = if search.is_some() {
+        format!(
+            "{PROJECTION}, (SELECT group_concat(tag, char(31)) FROM saved_profile_tags search_tag \
+             WHERE search_tag.profile_id = saved_profiles.profile_id) "
+        )
+    } else {
+        format!("{PROJECTION} ")
+    };
+    let fetch_limit = if search.is_some() {
+        ProfileListRequest::MAX_SEARCH_CANDIDATES as u32 + 1
+    } else {
+        u32::from(request.limit()) + 1
+    };
     let mut conditions = Vec::with_capacity(5);
     let mut parameters = Vec::with_capacity(9);
     let filter = request.filter();
@@ -460,24 +483,59 @@ async fn list_transaction(
         format!("WHERE {} ", conditions.join(" AND "))
     };
     let sql = format!(
-        "{PROJECTION}{from_clause}{where_clause}ORDER BY favorite DESC, saved_order, saved_profiles.profile_id LIMIT {limit}"
+        "{projection}{from_clause}{where_clause}ORDER BY favorite DESC, saved_order, saved_profiles.profile_id LIMIT {limit}"
     );
     let mut rows = connection
         .query(sql, parameters)
         .await
         .map_err(|_| PersistenceError::ProfileRead)?;
     let mut items = Vec::with_capacity(usize::from(request.limit()) + 1);
+    let mut candidate_count = 0usize;
     while let Some(row) = rows
         .next()
         .await
         .map_err(|_| PersistenceError::ProfileRead)?
     {
-        items.push(decode_list_item(&row)?);
+        candidate_count += 1;
+        if candidate_count > ProfileListRequest::MAX_SEARCH_CANDIDATES {
+            return Err(PersistenceError::ProfileCapacity);
+        }
+        let item = decode_list_item(&row)?;
+        let matches = if let Some(search) = search {
+            let tags = decode_search_tags(&row)?;
+            search.matches(item.name().as_str())
+                || item
+                    .group()
+                    .is_some_and(|group| search.matches(group.as_str()))
+                || tags.iter().any(|tag| search.matches(tag.as_str()))
+        } else {
+            true
+        };
+        if matches && items.len() <= usize::from(request.limit()) {
+            items.push(item);
+        }
     }
     drop(rows);
     let has_more = items.len() > usize::from(request.limit());
     items.truncate(usize::from(request.limit()));
     ProfileListPage::new(request, items, has_more).map_err(|_| PersistenceError::ProfileDecode)
+}
+
+fn decode_search_tags(row: &turso::Row) -> Result<Vec<ProfileTag>, PersistenceError> {
+    let Some(tags) = get::<Option<String>>(row, 12)? else {
+        return Ok(Vec::new());
+    };
+    let mut decoded = Vec::new();
+    for tag in tags.split('\u{1f}') {
+        if decoded.len() >= ProfileOrganization::MAX_TAGS {
+            return Err(PersistenceError::ProfileDecode);
+        }
+        decoded.push(
+            ProfileTag::new(bounded_text(tag.to_owned(), ProfileTag::MAX_BYTES)?)
+                .map_err(|_| PersistenceError::ProfileDecode)?,
+        );
+    }
+    Ok(decoded)
 }
 
 fn push_parameter(parameters: &mut Vec<turso::Value>, value: impl Into<turso::Value>) -> String {
@@ -973,5 +1031,23 @@ const fn encode_property(property: ProfileProperty) -> u8 {
         ProfileProperty::TlsClientCertificate => 8,
         ProfileProperty::TlsClientPrivateKey => 9,
         ProfileProperty::TlsClientPrivateKeyPassword => 10,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_profile_capacity_bounds_search_work() {
+        assert!(validate_profile_capacity(9_999).is_ok());
+        assert_eq!(
+            validate_profile_capacity(10_000),
+            Err(PersistenceError::ProfileCapacity)
+        );
+        assert_eq!(
+            validate_profile_capacity(u32::MAX),
+            Err(PersistenceError::ProfileCapacity)
+        );
     }
 }

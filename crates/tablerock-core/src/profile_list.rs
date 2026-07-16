@@ -1,9 +1,64 @@
 use std::{error::Error, fmt};
 
+use caseless::Caseless;
+use unicode_normalization::UnicodeNormalization;
+
 use crate::{
-    Engine, ProfileGroupName, ProfileId, ProfileName, ProfileSafetyMode, PropertyValueSource,
-    Revision,
+    BoundedText, Engine, ProfileGroupName, ProfileId, ProfileName, ProfileSafetyMode,
+    PropertyValueSource, Revision,
 };
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct ProfileSearchTerm {
+    normalized: String,
+}
+
+impl ProfileSearchTerm {
+    pub const MAX_INPUT_BYTES: u64 = 128;
+    pub const MAX_NORMALIZED_BYTES: usize = 1_024;
+
+    pub fn new(value: BoundedText) -> Result<Self, ProfileListError> {
+        let actual = value.len() as u64;
+        if actual == 0 || actual > Self::MAX_INPUT_BYTES {
+            return Err(ProfileListError::InvalidSearchLength {
+                actual,
+                maximum: Self::MAX_INPUT_BYTES,
+            });
+        }
+        if value.as_str().chars().any(char::is_control) {
+            return Err(ProfileListError::InvalidSearchCharacter);
+        }
+        let normalized = normalize_search(value.as_str().trim());
+        if normalized.is_empty() {
+            return Err(ProfileListError::InvalidSearchCharacter);
+        }
+        if normalized.len() > Self::MAX_NORMALIZED_BYTES {
+            return Err(ProfileListError::NormalizedSearchTooLong {
+                actual: normalized.len(),
+                maximum: Self::MAX_NORMALIZED_BYTES,
+            });
+        }
+        Ok(Self { normalized })
+    }
+
+    #[must_use]
+    pub fn matches(&self, candidate: &str) -> bool {
+        normalize_search(candidate).contains(&self.normalized)
+    }
+}
+
+impl fmt::Debug for ProfileSearchTerm {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProfileSearchTerm")
+            .field("normalized_byte_len", &self.normalized.len())
+            .finish()
+    }
+}
+
+fn normalize_search(value: &str) -> String {
+    value.chars().nfkc().default_case_fold().nfkc().collect()
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ProfileListFilter {
@@ -11,6 +66,7 @@ pub struct ProfileListFilter {
     favorite: Option<bool>,
     group: Option<ProfileGroupName>,
     tag: Option<crate::ProfileTag>,
+    search: Option<ProfileSearchTerm>,
 }
 
 impl ProfileListFilter {
@@ -21,6 +77,7 @@ impl ProfileListFilter {
             favorite,
             group: None,
             tag: None,
+            search: None,
         }
     }
 
@@ -33,6 +90,12 @@ impl ProfileListFilter {
     #[must_use]
     pub fn with_tag(mut self, tag: Option<crate::ProfileTag>) -> Self {
         self.tag = tag;
+        self
+    }
+
+    #[must_use]
+    pub fn with_search(mut self, search: Option<ProfileSearchTerm>) -> Self {
+        self.search = search;
         self
     }
 
@@ -54,6 +117,11 @@ impl ProfileListFilter {
     #[must_use]
     pub const fn tag(&self) -> Option<&crate::ProfileTag> {
         self.tag.as_ref()
+    }
+
+    #[must_use]
+    pub const fn search(&self) -> Option<&ProfileSearchTerm> {
+        self.search.as_ref()
     }
 }
 
@@ -121,6 +189,7 @@ pub struct ProfileListRequest {
 
 impl ProfileListRequest {
     pub const MAX_ITEMS: u16 = 100;
+    pub const MAX_SEARCH_CANDIDATES: usize = 10_000;
 
     pub fn new(
         filter: ProfileListFilter,
@@ -351,6 +420,9 @@ pub enum ProfileListError {
     TooManyItems { actual: usize, maximum: u16 },
     EmptyContinuation,
     CursorFilterMismatch,
+    InvalidSearchLength { actual: u64, maximum: u64 },
+    InvalidSearchCharacter,
+    NormalizedSearchTooLong { actual: usize, maximum: usize },
 }
 
 impl fmt::Display for ProfileListError {

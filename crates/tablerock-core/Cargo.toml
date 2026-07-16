@@ -8,6 +8,8 @@ repository.workspace = true
 description = "Owned domain contracts shared by TableRock engines and clients"
 
 [dependencies]
+caseless.workspace = true
+unicode-normalization.workspace = true
 zeroize.workspace = true
 
 [lints]
