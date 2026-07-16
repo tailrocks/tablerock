@@ -51,6 +51,8 @@ this phase is approved.
 [`36-phase-1-termrock-tree.md`](docs/research/36-phase-1-termrock-tree.md) and
 [`37-phase-1-termrock-form.md`](docs/research/37-phase-1-termrock-form.md), and
 [`38-phase-1-termrock-split-pane.md`](docs/research/38-phase-1-termrock-split-pane.md).
+Full-screen lifecycle implementation and compatibility evidence are repinned in
+[`41-phase-1-terminal-lifecycle.md`](docs/research/41-phase-1-terminal-lifecycle.md).
 The root TEA module boundaries, deterministic reducer, bounded subscription
 declarations, responsive shell projection, focus order, minimum-size state, and
 `TestBackend` evidence are implemented. The executable owns one EventStream,

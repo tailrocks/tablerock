@@ -17,20 +17,21 @@ queries, values, mutations, and safety policy never move into TermRock.
 Checked 2026-07-16:
 
 - TermRock `main` at
-  [`8cb3c88d`](https://github.com/tailrocks/termrock/commit/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde),
+  [`9099b3db`](https://github.com/tailrocks/termrock/commit/9099b3db0c3318fd183d076c4e8f8002a877be6a),
   version `0.6.0`, Rust 1.95 floor, Apache-2.0, Ratatui 0.30 component split,
   optional Crossterm 0.29 adapter, and published neutral `Tree`, `Form`, and
   `SplitPane`;
 - Jackin at
   [`27c450e9`](https://github.com/jackin-project/jackin/commit/27c450e9af7a299171034f98267e0fa26bd3057f)
   pins the earlier compatible TermRock baseline `41482e9f` and uses Ratatui
-  0.30; its workspace also compiles cleanly with a temporary exact pin to the
-  `17974590` SplitPane evidence revision, proving the additive widgets preserve
-  the existing consumer; TableRock imports no Jackin product internals;
-- TermRock's [component inventory](https://github.com/tailrocks/termrock/blob/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde/crates/termrock/COMPONENTS.md),
-  [migration boundary](https://github.com/tailrocks/termrock/blob/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde/MIGRATING.md),
-  [interaction conventions](https://github.com/tailrocks/termrock/blob/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde/docs/content/docs/interaction.mdx),
-  and [compatibility record](https://github.com/tailrocks/termrock/blob/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde/compatibility.toml)
+  0.30; its workspace compiles cleanly with a temporary exact pin to lifecycle
+  implementation `824783b0`. Later library changes through `f4368a3e` add only
+  private tests afterward, so its non-test contract is identical. TableRock
+  imports no Jackin product internals;
+- TermRock's [component inventory](https://github.com/tailrocks/termrock/blob/9099b3db0c3318fd183d076c4e8f8002a877be6a/crates/termrock/COMPONENTS.md),
+  [migration boundary](https://github.com/tailrocks/termrock/blob/9099b3db0c3318fd183d076c4e8f8002a877be6a/MIGRATING.md),
+  [interaction conventions](https://github.com/tailrocks/termrock/blob/9099b3db0c3318fd183d076c4e8f8002a877be6a/docs/content/docs/interaction.mdx),
+  and [compatibility record](https://github.com/tailrocks/termrock/blob/9099b3db0c3318fd183d076c4e8f8002a877be6a/compatibility.toml)
   define the reusable boundary;
 - Jackin's [TUI architecture](https://github.com/jackin-project/jackin/blob/27c450e9af7a299171034f98267e0fa26bd3057f/docs/content/docs/reference/tui/architecture.mdx)
   is the approved reference for Model/Message/Update/Effect/Subscription/View

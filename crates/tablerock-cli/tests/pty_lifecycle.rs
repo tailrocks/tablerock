@@ -116,6 +116,7 @@ fn assert_restored(output: &[u8]) {
         b"\x1b[?1049h".as_slice(),
         b"\x1b[?25l".as_slice(),
         b"\x1b[?25h".as_slice(),
+        b"\x1b[?7h".as_slice(),
         b"\x1b[?2004l".as_slice(),
         b"\x1b[?1000l".as_slice(),
         b"\x1b[?1049l".as_slice(),
