@@ -13,6 +13,7 @@ mod profile_list;
 mod result_store;
 mod revision;
 mod secret;
+mod service;
 mod value;
 
 pub use catalog::{
@@ -73,6 +74,10 @@ pub use secret::{
     DangerousPlaintext, EnvironmentReference, KeychainReference, OnePasswordObjectId,
     OnePasswordReference, OnePasswordSegment, PlaintextAcknowledgement, SecretBuildError,
     SecretField, SecretPersistenceRisk, SecretSource, SecretSourceKind,
+};
+pub use service::{
+    CancelRequestOutcome, OperationRetireError, ServiceCoordinator, ServiceError, ServiceLimits,
+    ServicePhase, ShutdownMode, ShutdownOutcome,
 };
 pub use value::{
     Availability, BoundedBytes, BoundedBytesError, BoundedText, BoundedTextError, ByteLimit,

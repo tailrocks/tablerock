@@ -1,0 +1,414 @@
+use std::{collections::BTreeMap, error::Error, fmt};
+
+use crate::{
+    CommandEnvelope, CommandScope, CounterOverflow, EventQueueError, EventQueuePush, EventSequence,
+    OperationCursor, OperationEvent, OperationEventKind, OperationEventQueue, OperationId,
+    OperationIdentity, OperationOutcome, OperationPhase, Revision, TransitionError,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServiceLimits {
+    max_operations: u32,
+    event_queue_capacity: u32,
+}
+
+impl ServiceLimits {
+    pub const MAX_OPERATIONS: u32 = 4_096;
+
+    pub const fn new(max_operations: u32, event_queue_capacity: u32) -> Result<Self, ServiceError> {
+        if max_operations == 0
+            || max_operations > Self::MAX_OPERATIONS
+            || event_queue_capacity == 0
+            || event_queue_capacity > OperationEventQueue::MAX_CAPACITY
+        {
+            return Err(ServiceError::InvalidLimits);
+        }
+        Ok(Self {
+            max_operations,
+            event_queue_capacity,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServicePhase {
+    Accepting,
+    Draining,
+    Stopped,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShutdownMode {
+    Graceful,
+    CancelActive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShutdownOutcome {
+    Draining { active_operations: u32 },
+    Stopped,
+    AlreadyStopped,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CancelRequestOutcome {
+    Requested,
+    AlreadyRequested,
+    AlreadyTerminal(OperationOutcome),
+    UnknownOperation,
+}
+
+pub struct ServiceCoordinator {
+    limits: ServiceLimits,
+    phase: ServicePhase,
+    operations: BTreeMap<OperationId, OperationRecord>,
+}
+
+impl ServiceCoordinator {
+    pub const fn new(limits: ServiceLimits) -> Self {
+        Self {
+            limits,
+            phase: ServicePhase::Accepting,
+            operations: BTreeMap::new(),
+        }
+    }
+
+    pub fn submit(
+        &mut self,
+        operation_id: OperationId,
+        command: CommandEnvelope,
+    ) -> Result<OperationIdentity, ServiceError> {
+        if self.phase != ServicePhase::Accepting {
+            return Err(ServiceError::NotAccepting);
+        }
+        if self.operations.len() >= self.limits.max_operations as usize {
+            return Err(ServiceError::OperationCapacityExceeded);
+        }
+        if self.operations.contains_key(&operation_id) {
+            return Err(ServiceError::DuplicateOperation);
+        }
+        if self
+            .operations
+            .values()
+            .any(|record| record.command.request_id() == command.request_id())
+        {
+            return Err(ServiceError::DuplicateRequest);
+        }
+        if let Some(parent_id) = command.parent_operation_id() {
+            let parent = self
+                .operations
+                .get(&parent_id)
+                .ok_or(ServiceError::ParentUnavailable)?;
+            if matches!(parent.cursor.phase(), OperationPhase::Terminal(_)) {
+                return Err(ServiceError::ParentUnavailable);
+            }
+            if !scope_contains(parent.command.scope(), command.scope()) {
+                return Err(ServiceError::ParentScopeMismatch);
+            }
+        }
+        let identity = OperationIdentity::new(operation_id, command.request_id(), command.scope());
+        let cursor = OperationCursor::new(
+            identity,
+            Revision::INITIAL,
+            EventSequence::INITIAL,
+            OperationPhase::Queued,
+        );
+        let queue = OperationEventQueue::new(
+            identity,
+            EventSequence::INITIAL,
+            self.limits.event_queue_capacity,
+        )
+        .map_err(ServiceError::EventQueue)?;
+        self.operations.insert(
+            operation_id,
+            OperationRecord {
+                command,
+                cursor,
+                queue,
+            },
+        );
+        Ok(identity)
+    }
+
+    pub fn transition(
+        &mut self,
+        operation_id: OperationId,
+        next: OperationPhase,
+    ) -> Result<EventQueuePush, ServiceError> {
+        let record = self
+            .operations
+            .get_mut(&operation_id)
+            .ok_or(ServiceError::UnknownOperation)?;
+        let from = record.cursor.phase();
+        let revision = record
+            .cursor
+            .revision()
+            .checked_next()
+            .map_err(ServiceError::CounterOverflow)?;
+        let sequence = record
+            .cursor
+            .sequence()
+            .checked_next()
+            .map_err(ServiceError::CounterOverflow)?;
+        let event = OperationEvent::new(
+            record.cursor.identity(),
+            revision,
+            sequence,
+            OperationEventKind::PhaseChanged { from, to: next },
+        )
+        .map_err(ServiceError::Transition)?;
+        record.cursor = record
+            .cursor
+            .accept(event)
+            .expect("coordinator-generated transition must match its cursor");
+        let pushed = record.queue.push(event).map_err(ServiceError::EventQueue)?;
+        self.stop_if_drained();
+        Ok(pushed)
+    }
+
+    pub fn progress(
+        &mut self,
+        operation_id: OperationId,
+        cumulative_rows: u64,
+        cumulative_bytes: u64,
+    ) -> Result<EventQueuePush, ServiceError> {
+        let record = self
+            .operations
+            .get_mut(&operation_id)
+            .ok_or(ServiceError::UnknownOperation)?;
+        let sequence = record
+            .cursor
+            .sequence()
+            .checked_next()
+            .map_err(ServiceError::CounterOverflow)?;
+        let event = OperationEvent::new(
+            record.cursor.identity(),
+            record.cursor.revision(),
+            sequence,
+            OperationEventKind::Progress {
+                cumulative_rows,
+                cumulative_bytes,
+                coalesced_after: None,
+            },
+        )
+        .map_err(ServiceError::Transition)?;
+        record.cursor = record
+            .cursor
+            .accept(event)
+            .map_err(ServiceError::EventRejected)?;
+        record.queue.push(event).map_err(ServiceError::EventQueue)
+    }
+
+    pub fn request_cancel(
+        &mut self,
+        operation_id: OperationId,
+    ) -> Result<CancelRequestOutcome, ServiceError> {
+        let Some(record) = self.operations.get(&operation_id) else {
+            return Ok(CancelRequestOutcome::UnknownOperation);
+        };
+        match record.cursor.phase() {
+            OperationPhase::CancelRequested => Ok(CancelRequestOutcome::AlreadyRequested),
+            OperationPhase::Terminal(outcome) => Ok(CancelRequestOutcome::AlreadyTerminal(outcome)),
+            OperationPhase::Queued | OperationPhase::Running | OperationPhase::Streaming => {
+                self.transition(operation_id, OperationPhase::CancelRequested)?;
+                Ok(CancelRequestOutcome::Requested)
+            }
+        }
+    }
+
+    pub fn pop_event(
+        &mut self,
+        operation_id: OperationId,
+    ) -> Result<Option<OperationEvent>, ServiceError> {
+        self.operations
+            .get_mut(&operation_id)
+            .map(|record| record.queue.pop_front())
+            .ok_or(ServiceError::UnknownOperation)
+    }
+
+    pub fn retire(&mut self, operation_id: OperationId) -> Result<(), OperationRetireError> {
+        let record = self
+            .operations
+            .get(&operation_id)
+            .ok_or(OperationRetireError::UnknownOperation)?;
+        if !matches!(record.cursor.phase(), OperationPhase::Terminal(_)) {
+            return Err(OperationRetireError::StillActive);
+        }
+        if !record.queue.is_empty() {
+            return Err(OperationRetireError::PendingEvents);
+        }
+        self.operations.remove(&operation_id);
+        Ok(())
+    }
+
+    pub fn begin_shutdown(&mut self, mode: ShutdownMode) -> Result<ShutdownOutcome, ServiceError> {
+        if self.phase == ServicePhase::Stopped {
+            return Ok(ShutdownOutcome::AlreadyStopped);
+        }
+        self.phase = ServicePhase::Draining;
+        if mode == ShutdownMode::CancelActive {
+            let active: Vec<_> = self
+                .operations
+                .iter()
+                .filter_map(|(id, record)| {
+                    (!matches!(record.cursor.phase(), OperationPhase::Terminal(_))).then_some(*id)
+                })
+                .collect();
+            for operation_id in active {
+                self.request_cancel(operation_id)?;
+            }
+        }
+        self.stop_if_drained();
+        if self.phase == ServicePhase::Stopped {
+            Ok(ShutdownOutcome::Stopped)
+        } else {
+            Ok(ShutdownOutcome::Draining {
+                active_operations: self.active_operations(),
+            })
+        }
+    }
+
+    fn stop_if_drained(&mut self) {
+        if self.phase == ServicePhase::Draining && self.active_operations() == 0 {
+            self.phase = ServicePhase::Stopped;
+        }
+    }
+
+    #[must_use]
+    pub fn active_operations(&self) -> u32 {
+        self.operations
+            .values()
+            .filter(|record| !matches!(record.cursor.phase(), OperationPhase::Terminal(_)))
+            .count() as u32
+    }
+
+    #[must_use]
+    pub fn operation_phase(&self, operation_id: OperationId) -> Option<OperationPhase> {
+        self.operations
+            .get(&operation_id)
+            .map(|record| record.cursor.phase())
+    }
+
+    #[must_use]
+    pub const fn phase(&self) -> ServicePhase {
+        self.phase
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.operations.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.operations.is_empty()
+    }
+}
+
+impl fmt::Debug for ServiceCoordinator {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ServiceCoordinator")
+            .field("phase", &self.phase)
+            .field("operations", &self.operations.len())
+            .field("active_operations", &self.active_operations())
+            .finish()
+    }
+}
+
+struct OperationRecord {
+    command: CommandEnvelope,
+    cursor: OperationCursor,
+    queue: OperationEventQueue,
+}
+
+fn scope_contains(parent: CommandScope, child: CommandScope) -> bool {
+    match (parent, child) {
+        (CommandScope::Application, _) => true,
+        (CommandScope::Profile(parent), CommandScope::Profile(child)) => parent == child,
+        (
+            CommandScope::Profile(parent),
+            CommandScope::Session {
+                profile_id: child, ..
+            },
+        ) => parent == child,
+        (CommandScope::Profile(parent), CommandScope::Context(child)) => {
+            parent == child.profile_id()
+        }
+        (
+            CommandScope::Session {
+                profile_id: parent_profile,
+                session_id: parent_session,
+            },
+            CommandScope::Session {
+                profile_id: child_profile,
+                session_id: child_session,
+            },
+        ) => parent_profile == child_profile && parent_session == child_session,
+        (CommandScope::Session { .. }, CommandScope::Context(context)) => {
+            parent
+                == CommandScope::Session {
+                    profile_id: context.profile_id(),
+                    session_id: context.session_id(),
+                }
+        }
+        (CommandScope::Context(parent), CommandScope::Context(child)) => parent == child,
+        _ => false,
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ServiceError {
+    InvalidLimits,
+    NotAccepting,
+    OperationCapacityExceeded,
+    DuplicateOperation,
+    DuplicateRequest,
+    ParentUnavailable,
+    ParentScopeMismatch,
+    UnknownOperation,
+    CounterOverflow(CounterOverflow),
+    Transition(TransitionError),
+    EventRejected(crate::EventRejection),
+    EventQueue(EventQueueError),
+}
+
+impl fmt::Display for ServiceError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidLimits => "application service limits are invalid",
+            Self::NotAccepting => "application service is not accepting commands",
+            Self::OperationCapacityExceeded => "application service operation capacity exceeded",
+            Self::DuplicateOperation => "operation identifier is already active",
+            Self::DuplicateRequest => "request identifier is already active",
+            Self::ParentUnavailable => "parent operation is unavailable",
+            Self::ParentScopeMismatch => "child operation escapes its parent scope",
+            Self::UnknownOperation => "operation is unknown",
+            Self::CounterOverflow(_) => "operation counter exhausted",
+            Self::Transition(_) => "operation transition is invalid",
+            Self::EventRejected(_) => "operation event was rejected",
+            Self::EventQueue(_) => "operation event queue rejected delivery",
+        })
+    }
+}
+
+impl Error for ServiceError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationRetireError {
+    UnknownOperation,
+    StillActive,
+    PendingEvents,
+}
+
+impl fmt::Display for OperationRetireError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::UnknownOperation => "operation is unknown",
+            Self::StillActive => "active operation cannot retire",
+            Self::PendingEvents => "operation has pending required delivery",
+        })
+    }
+}
+
+impl Error for OperationRetireError {}

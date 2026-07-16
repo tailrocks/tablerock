@@ -353,6 +353,21 @@ impl OperationCursor {
     }
 
     #[must_use]
+    pub const fn identity(self) -> OperationIdentity {
+        self.identity
+    }
+
+    #[must_use]
+    pub const fn revision(self) -> Revision {
+        self.revision
+    }
+
+    #[must_use]
+    pub const fn sequence(self) -> EventSequence {
+        self.sequence
+    }
+
+    #[must_use]
     pub const fn cumulative_rows(self) -> u64 {
         self.cumulative_rows
     }

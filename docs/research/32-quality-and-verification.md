@@ -74,6 +74,8 @@ Property and model tests cover:
 - safety monotonicity: presentation cannot weaken Rust policy;
 - redaction idempotence and absence of forbidden fields;
 - cancellation state-machine legality and ambiguous-write non-retry;
+- bounded overlapping-operation capacity, parent-scope containment, terminal
+  retirement, and shutdown draining without invented outcomes;
 - eviction/resync without dangling page or selection identity.
 
 ## Real-server matrix

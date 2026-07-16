@@ -58,6 +58,7 @@ kept in the roadmap.
 - [Phase 2 bounded operation event queue](107-phase-2-operation-event-queue.md)
 - [TermRock migration 0019 adoption](108-termrock-migration-0019.md)
 - [Phase 2 unified operation scope](109-phase-2-unified-operation-scope.md)
+- [Phase 2 application service coordinator](110-phase-2-service-coordinator.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

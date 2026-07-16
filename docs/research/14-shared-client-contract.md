@@ -69,6 +69,12 @@ The Rust application-service trait implements these semantics for both adapters.
 TUI code never calls a driver directly. Swift never calls a driver or
 reconstructs a database operation.
 
+The core coordinator now owns bounded operation submission, parent-scope
+containment, cancellation transitions, per-operation delivery queues, terminal
+retirement, and graceful/cancel-active draining. Shutdown stops new submission
+immediately but remains `Draining` until every active operation reports a legal
+terminal outcome; it never manufactures cancellation success.
+
 ### Command envelope
 
 Every command carries:

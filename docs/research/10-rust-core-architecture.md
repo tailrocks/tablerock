@@ -111,6 +111,13 @@ Cumulative consecutive progress may coalesce in the bounded per-operation
 queue. Required-event overflow or producer sequence loss emits one resync
 marker; it never silently drops lifecycle truth.
 
+`ServiceCoordinator` owns a finite set of overlapping operation records,
+canonical command identity, parent-scope containment, lifecycle cursors, event
+queues, cancellation requests, terminal retirement, and drain shutdown. It
+never equates a cancel request or process shutdown with a server-confirmed
+outcome. The enclosing application-state checkpoint must validate each
+command's expected aggregate revision before coordinator submission.
+
 ## Session ownership
 
 One engine owns profiles, live sessions, queries, catalogs, results, and

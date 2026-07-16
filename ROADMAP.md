@@ -217,6 +217,9 @@ TermRock migration 0019 and the exact refreshed `main` pin are recorded in
 [`108-termrock-migration-0019.md`](docs/research/108-termrock-migration-0019.md).
 Unified typed command/operation scope identity is recorded in
 [`109-phase-2-unified-operation-scope.md`](docs/research/109-phase-2-unified-operation-scope.md).
+Bounded operation ownership, parent containment, cancellation delivery,
+retirement, and truthful shutdown draining are recorded in
+[`110-phase-2-service-coordinator.md`](docs/research/110-phase-2-service-coordinator.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,
