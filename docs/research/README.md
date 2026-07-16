@@ -60,6 +60,7 @@ kept in the roadmap.
 - [Phase 2 unified operation scope](109-phase-2-unified-operation-scope.md)
 - [Phase 2 application service coordinator](110-phase-2-service-coordinator.md)
 - [TermRock migration 0020 adoption](111-termrock-migration-0020.md)
+- [Phase 2 scoped revision ownership](112-phase-2-scoped-revision-ownership.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

@@ -2,12 +2,20 @@
 
 ## Decision
 
-`ServiceCoordinator` is the std-only authoritative owner for operation
-lifecycle and delivery state shared by future in-process and UniFFI adapters.
-It retains a caller-selected nonzero operation capacity capped at 4,096, and
-each operation owns the already-bounded event queue.
+`ServiceCoordinator` is the std-only authoritative owner for scoped aggregate
+revisions, operation lifecycle, and delivery state shared by future in-process
+and UniFFI adapters. It retains caller-selected nonzero capacities capped at
+16,384 scopes and 4,096 operations, and each operation owns the already-bounded
+event queue.
 
-Submission binds the externally generated opaque operation ID to the command's
+Scopes register parent-first as application, profile, session, and context.
+Application scope always exists. Registration rejects duplicates, missing
+parents, and capacity overflow. Revision advance is monotonic and compare-and-
+swap guarded. Removal rejects application scope, registered children, and any
+resident operation inside the scope subtree.
+
+Submission first requires a registered scope and an exact current aggregate
+revision. It then binds the externally generated opaque operation ID to the command's
 request ID and canonical typed scope. Active operation and request IDs are
 unique. A child requires a live parent, and its scope must remain inside the
 parent's application/profile/session/context boundary. Missing, terminal, or
@@ -33,18 +41,18 @@ not call the service stopped. The coordinator reaches `Stopped` only after all
 operations carry legal terminal outcomes. Existing terminal records may remain
 available for delivery and retirement.
 
-The next enclosing application-state checkpoint must own aggregate revisions
-and validate `CommandEnvelope::expected_revision` before submission. Driver task
-ownership and bounded multi-subscriber fan-out also remain later Phase 2 work;
-they must compose this coordinator rather than duplicate its state machine.
+Driver task ownership and bounded multi-subscriber fan-out remain later Phase 2
+work; they must compose this coordinator rather than duplicate its scope,
+revision, or lifecycle state machines.
 
 ## Evidence
 
-`tablerock-core/tests/service.rs` proves finite limits, operation/request
-uniqueness, capacity, live-parent and scope containment, legal lifecycle and
-cumulative progress, exact cancellation outcomes, pending-event retirement,
-cancel-active draining, stopped-state submission rejection, and absence of
-invented terminal outcomes.
+`tablerock-core/tests/service.rs` proves finite scope/operation limits,
+parent-first registration, duplicate and capacity rejection, monotonic compare-
+and-swap revision advance, stale submission rejection, safe hierarchical
+removal, operation/request uniqueness, live-parent containment, stale in-flight
+progress rejection, legal lifecycle, exact cancellation outcomes, pending-event retirement,
+cancel-active draining, stopped-state rejection, and no invented outcomes.
 
 This contract derives from TableRock research 10, 14, 30, 31, and 32. No
 external product source, tests, identifiers, assets, or protected expression

@@ -8,15 +8,23 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServiceLimits {
+    max_scopes: u32,
     max_operations: u32,
     event_queue_capacity: u32,
 }
 
 impl ServiceLimits {
+    pub const MAX_SCOPES: u32 = 16_384;
     pub const MAX_OPERATIONS: u32 = 4_096;
 
-    pub const fn new(max_operations: u32, event_queue_capacity: u32) -> Result<Self, ServiceError> {
-        if max_operations == 0
+    pub const fn new(
+        max_scopes: u32,
+        max_operations: u32,
+        event_queue_capacity: u32,
+    ) -> Result<Self, ServiceError> {
+        if max_scopes == 0
+            || max_scopes > Self::MAX_SCOPES
+            || max_operations == 0
             || max_operations > Self::MAX_OPERATIONS
             || event_queue_capacity == 0
             || event_queue_capacity > OperationEventQueue::MAX_CAPACITY
@@ -24,6 +32,7 @@ impl ServiceLimits {
             return Err(ServiceError::InvalidLimits);
         }
         Ok(Self {
+            max_scopes,
             max_operations,
             event_queue_capacity,
         })
@@ -61,16 +70,87 @@ pub enum CancelRequestOutcome {
 pub struct ServiceCoordinator {
     limits: ServiceLimits,
     phase: ServicePhase,
+    revisions: BTreeMap<CommandScope, Revision>,
     operations: BTreeMap<OperationId, OperationRecord>,
 }
 
 impl ServiceCoordinator {
-    pub const fn new(limits: ServiceLimits) -> Self {
+    pub fn new(limits: ServiceLimits) -> Self {
+        let mut revisions = BTreeMap::new();
+        revisions.insert(CommandScope::Application, Revision::INITIAL);
         Self {
             limits,
             phase: ServicePhase::Accepting,
+            revisions,
             operations: BTreeMap::new(),
         }
+    }
+
+    pub fn register_scope(
+        &mut self,
+        scope: CommandScope,
+        revision: Revision,
+    ) -> Result<(), ServiceError> {
+        if scope == CommandScope::Application || self.revisions.contains_key(&scope) {
+            return Err(ServiceError::DuplicateScope);
+        }
+        if self.revisions.len() >= self.limits.max_scopes as usize {
+            return Err(ServiceError::ScopeCapacityExceeded);
+        }
+        let parent = parent_scope(scope).expect("application scope rejected above");
+        if !self.revisions.contains_key(&parent) {
+            return Err(ServiceError::ParentScopeUnavailable);
+        }
+        self.revisions.insert(scope, revision);
+        Ok(())
+    }
+
+    pub fn advance_scope(
+        &mut self,
+        scope: CommandScope,
+        expected_revision: Revision,
+    ) -> Result<Revision, ServiceError> {
+        let current = self
+            .revisions
+            .get_mut(&scope)
+            .ok_or(ServiceError::UnknownScope)?;
+        if *current != expected_revision {
+            return Err(ServiceError::RevisionMismatch {
+                expected: expected_revision,
+                current: *current,
+            });
+        }
+        let next = current
+            .checked_next()
+            .map_err(ServiceError::CounterOverflow)?;
+        *current = next;
+        Ok(next)
+    }
+
+    pub fn remove_scope(&mut self, scope: CommandScope) -> Result<(), ServiceError> {
+        if scope == CommandScope::Application {
+            return Err(ServiceError::ApplicationScopeRequired);
+        }
+        if !self.revisions.contains_key(&scope) {
+            return Err(ServiceError::UnknownScope);
+        }
+        if self
+            .operations
+            .values()
+            .any(|record| scope_contains(scope, record.command.scope()))
+        {
+            return Err(ServiceError::ScopeInUse);
+        }
+        if self
+            .revisions
+            .keys()
+            .copied()
+            .any(|candidate| candidate != scope && scope_contains(scope, candidate))
+        {
+            return Err(ServiceError::ScopeHasChildren);
+        }
+        self.revisions.remove(&scope);
+        Ok(())
     }
 
     pub fn submit(
@@ -80,6 +160,17 @@ impl ServiceCoordinator {
     ) -> Result<OperationIdentity, ServiceError> {
         if self.phase != ServicePhase::Accepting {
             return Err(ServiceError::NotAccepting);
+        }
+        let current_revision = self
+            .revisions
+            .get(&command.scope())
+            .copied()
+            .ok_or(ServiceError::UnknownScope)?;
+        if command.expected_revision() != current_revision {
+            return Err(ServiceError::RevisionMismatch {
+                expected: command.expected_revision(),
+                current: current_revision,
+            });
         }
         if self.operations.len() >= self.limits.max_operations as usize {
             return Err(ServiceError::OperationCapacityExceeded);
@@ -176,6 +267,17 @@ impl ServiceCoordinator {
             .operations
             .get_mut(&operation_id)
             .ok_or(ServiceError::UnknownOperation)?;
+        let current_revision = self
+            .revisions
+            .get(&record.command.scope())
+            .copied()
+            .ok_or(ServiceError::UnknownScope)?;
+        if record.command.expected_revision() != current_revision {
+            return Err(ServiceError::RevisionMismatch {
+                expected: record.command.expected_revision(),
+                current: current_revision,
+            });
+        }
         let sequence = record
             .cursor
             .sequence()
@@ -290,6 +392,11 @@ impl ServiceCoordinator {
     }
 
     #[must_use]
+    pub fn scope_revision(&self, scope: CommandScope) -> Option<Revision> {
+        self.revisions.get(&scope).copied()
+    }
+
+    #[must_use]
     pub const fn phase(&self) -> ServicePhase {
         self.phase
     }
@@ -310,6 +417,7 @@ impl fmt::Debug for ServiceCoordinator {
         formatter
             .debug_struct("ServiceCoordinator")
             .field("phase", &self.phase)
+            .field("scopes", &self.revisions.len())
             .field("operations", &self.operations.len())
             .field("active_operations", &self.active_operations())
             .finish()
@@ -357,9 +465,32 @@ fn scope_contains(parent: CommandScope, child: CommandScope) -> bool {
     }
 }
 
+fn parent_scope(scope: CommandScope) -> Option<CommandScope> {
+    match scope {
+        CommandScope::Application => None,
+        CommandScope::Profile(_) => Some(CommandScope::Application),
+        CommandScope::Session { profile_id, .. } => Some(CommandScope::Profile(profile_id)),
+        CommandScope::Context(context) => Some(CommandScope::Session {
+            profile_id: context.profile_id(),
+            session_id: context.session_id(),
+        }),
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ServiceError {
     InvalidLimits,
+    ScopeCapacityExceeded,
+    DuplicateScope,
+    UnknownScope,
+    ParentScopeUnavailable,
+    RevisionMismatch {
+        expected: Revision,
+        current: Revision,
+    },
+    ScopeInUse,
+    ScopeHasChildren,
+    ApplicationScopeRequired,
     NotAccepting,
     OperationCapacityExceeded,
     DuplicateOperation,
@@ -377,6 +508,14 @@ impl fmt::Display for ServiceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::InvalidLimits => "application service limits are invalid",
+            Self::ScopeCapacityExceeded => "application service scope capacity exceeded",
+            Self::DuplicateScope => "application service scope already exists",
+            Self::UnknownScope => "application service scope is unknown",
+            Self::ParentScopeUnavailable => "application service parent scope is unavailable",
+            Self::RevisionMismatch { .. } => "command aggregate revision is not current",
+            Self::ScopeInUse => "application service scope has resident operations",
+            Self::ScopeHasChildren => "application service scope has registered children",
+            Self::ApplicationScopeRequired => "application scope cannot be removed",
             Self::NotAccepting => "application service is not accepting commands",
             Self::OperationCapacityExceeded => "application service operation capacity exceeded",
             Self::DuplicateOperation => "operation identifier is already active",

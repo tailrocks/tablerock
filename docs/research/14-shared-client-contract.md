@@ -73,7 +73,10 @@ The core coordinator now owns bounded operation submission, parent-scope
 containment, cancellation transitions, per-operation delivery queues, terminal
 retirement, and graceful/cancel-active draining. Shutdown stops new submission
 immediately but remains `Draining` until every active operation reports a legal
-terminal outcome; it never manufactures cancellation success.
+terminal outcome; it never manufactures cancellation success. A bounded
+application/profile/session/context registry owns aggregate revisions, requires
+parent-before-child registration, and validates command expectations before
+submission.
 
 ### Command envelope
 

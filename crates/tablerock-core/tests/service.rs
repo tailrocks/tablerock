@@ -42,15 +42,152 @@ fn command(
     parent: Option<OperationId>,
     intent: CommandIntent,
 ) -> CommandEnvelope {
+    command_at(request_id, scope, Revision::INITIAL, parent, intent)
+}
+
+fn command_at(
+    request_id: RequestId,
+    scope: CommandScope,
+    expected_revision: Revision,
+    parent: Option<OperationId>,
+    intent: CommandIntent,
+) -> CommandEnvelope {
     CommandEnvelope::new(
         request_id,
         scope,
-        Revision::INITIAL,
+        expected_revision,
         budget(),
         parent,
         intent,
     )
     .unwrap()
+}
+
+#[test]
+fn scoped_revisions_are_hierarchical_monotonic_and_authoritative() {
+    let scope = context(50);
+    let profile = CommandScope::Profile(scope.profile_id());
+    let session = CommandScope::Session {
+        profile_id: scope.profile_id(),
+        session_id: scope.session_id(),
+    };
+    let context_scope = CommandScope::Context(scope);
+    let mut service = ServiceCoordinator::new(ServiceLimits::new(4, 2, 4).unwrap());
+    assert_eq!(
+        service.register_scope(context_scope, Revision::INITIAL),
+        Err(ServiceError::ParentScopeUnavailable)
+    );
+    service.register_scope(profile, Revision::INITIAL).unwrap();
+    assert_eq!(
+        service.register_scope(profile, Revision::INITIAL),
+        Err(ServiceError::DuplicateScope)
+    );
+    service.register_scope(session, Revision::INITIAL).unwrap();
+    service
+        .register_scope(context_scope, Revision::INITIAL)
+        .unwrap();
+    assert_eq!(
+        service.remove_scope(session),
+        Err(ServiceError::ScopeHasChildren)
+    );
+    let current = service
+        .advance_scope(context_scope, Revision::INITIAL)
+        .unwrap();
+    assert_eq!(current, Revision::from_wire_u64(1));
+    assert_eq!(service.scope_revision(context_scope), Some(current));
+    assert_eq!(
+        service.advance_scope(context_scope, Revision::INITIAL),
+        Err(ServiceError::RevisionMismatch {
+            expected: Revision::INITIAL,
+            current
+        })
+    );
+    assert_eq!(
+        service.submit(
+            operation(1),
+            command(
+                request(101),
+                context_scope,
+                None,
+                CommandIntent::RefreshCatalog,
+            )
+        ),
+        Err(ServiceError::RevisionMismatch {
+            expected: Revision::INITIAL,
+            current
+        })
+    );
+    assert_eq!(
+        service.submit(
+            operation(1),
+            command_at(
+                request(101),
+                context_scope,
+                Revision::from_wire_u64(2),
+                None,
+                CommandIntent::RefreshCatalog,
+            )
+        ),
+        Err(ServiceError::RevisionMismatch {
+            expected: Revision::from_wire_u64(2),
+            current
+        })
+    );
+    service
+        .submit(
+            operation(1),
+            command_at(
+                request(101),
+                context_scope,
+                current,
+                None,
+                CommandIntent::RefreshCatalog,
+            ),
+        )
+        .unwrap();
+    let advanced = service.advance_scope(context_scope, current).unwrap();
+    assert_eq!(advanced, Revision::from_wire_u64(2));
+    assert_eq!(
+        service.remove_scope(context_scope),
+        Err(ServiceError::ScopeInUse)
+    );
+    service
+        .transition(operation(1), OperationPhase::Running)
+        .unwrap();
+    assert_eq!(
+        service.progress(operation(1), 1, 1),
+        Err(ServiceError::RevisionMismatch {
+            expected: current,
+            current: advanced,
+        })
+    );
+    service
+        .transition(
+            operation(1),
+            OperationPhase::Terminal(OperationOutcome::Completed),
+        )
+        .unwrap();
+    while service.pop_event(operation(1)).unwrap().is_some() {}
+    service.retire(operation(1)).unwrap();
+    service.remove_scope(context_scope).unwrap();
+    service.remove_scope(session).unwrap();
+    service.remove_scope(profile).unwrap();
+    assert_eq!(
+        service.remove_scope(CommandScope::Application),
+        Err(ServiceError::ApplicationScopeRequired)
+    );
+}
+
+#[test]
+fn scope_registry_capacity_includes_required_application_scope() {
+    let mut service = ServiceCoordinator::new(ServiceLimits::new(1, 1, 1).unwrap());
+    assert_eq!(
+        service.register_scope(
+            CommandScope::Profile(opaque(90, ProfileId::from_parts)),
+            Revision::INITIAL
+        ),
+        Err(ServiceError::ScopeCapacityExceeded)
+    );
 }
 
 fn context_command(request_seed: u64, parent: Option<OperationId>) -> CommandEnvelope {
@@ -62,14 +199,40 @@ fn context_command(request_seed: u64, parent: Option<OperationId>) -> CommandEnv
     )
 }
 
+fn service(max_operations: u32, event_queue_capacity: u32) -> ServiceCoordinator {
+    let scope = context(10);
+    let mut service = ServiceCoordinator::new(
+        ServiceLimits::new(8, max_operations, event_queue_capacity).unwrap(),
+    );
+    service
+        .register_scope(CommandScope::Profile(scope.profile_id()), Revision::INITIAL)
+        .unwrap();
+    service
+        .register_scope(
+            CommandScope::Session {
+                profile_id: scope.profile_id(),
+                session_id: scope.session_id(),
+            },
+            Revision::INITIAL,
+        )
+        .unwrap();
+    service
+        .register_scope(CommandScope::Context(scope), Revision::INITIAL)
+        .unwrap();
+    service
+}
+
 #[test]
 fn service_limits_and_submission_are_finite_and_unique() {
-    assert_eq!(ServiceLimits::new(0, 1), Err(ServiceError::InvalidLimits));
     assert_eq!(
-        ServiceLimits::new(ServiceLimits::MAX_OPERATIONS + 1, 1),
+        ServiceLimits::new(0, 1, 1),
         Err(ServiceError::InvalidLimits)
     );
-    let mut service = ServiceCoordinator::new(ServiceLimits::new(2, 4).unwrap());
+    assert_eq!(
+        ServiceLimits::new(1, ServiceLimits::MAX_OPERATIONS + 1, 1),
+        Err(ServiceError::InvalidLimits)
+    );
+    let mut service = service(2, 4);
     let first = service
         .submit(operation(1), context_command(101, None))
         .unwrap();
@@ -94,13 +257,27 @@ fn service_limits_and_submission_are_finite_and_unique() {
 
 #[test]
 fn parent_must_exist_remain_active_and_contain_child_scope() {
-    let mut service = ServiceCoordinator::new(ServiceLimits::new(4, 4).unwrap());
-    assert_eq!(
-        service.submit(operation(2), context_command(102, Some(operation(1)))),
-        Err(ServiceError::ParentUnavailable)
-    );
+    let mut service = ServiceCoordinator::new(ServiceLimits::new(4, 4, 4).unwrap());
     let profile_one = opaque(30, ProfileId::from_parts);
     let profile_two = opaque(31, ProfileId::from_parts);
+    service
+        .register_scope(CommandScope::Profile(profile_one), Revision::INITIAL)
+        .unwrap();
+    service
+        .register_scope(CommandScope::Profile(profile_two), Revision::INITIAL)
+        .unwrap();
+    assert_eq!(
+        service.submit(
+            operation(2),
+            command(
+                request(102),
+                CommandScope::Profile(profile_one),
+                Some(operation(1)),
+                CommandIntent::TestProfile,
+            )
+        ),
+        Err(ServiceError::ParentUnavailable)
+    );
     service
         .submit(
             operation(1),
@@ -155,7 +332,7 @@ fn parent_must_exist_remain_active_and_contain_child_scope() {
 
 #[test]
 fn coordinator_owns_lifecycle_progress_cancel_and_terminal_delivery() {
-    let mut service = ServiceCoordinator::new(ServiceLimits::new(2, 8).unwrap());
+    let mut service = service(2, 8);
     service
         .submit(operation(1), context_command(101, None))
         .unwrap();
@@ -207,7 +384,7 @@ fn coordinator_owns_lifecycle_progress_cancel_and_terminal_delivery() {
 
 #[test]
 fn shutdown_drains_without_inventing_terminal_outcomes() {
-    let mut service = ServiceCoordinator::new(ServiceLimits::new(3, 8).unwrap());
+    let mut service = service(3, 8);
     service
         .submit(operation(1), context_command(101, None))
         .unwrap();

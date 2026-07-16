@@ -5,7 +5,7 @@ use crate::{
     SequenceRelation, SessionId,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OperationScope {
     profile_id: ProfileId,
     session_id: SessionId,

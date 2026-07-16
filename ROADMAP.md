@@ -223,6 +223,9 @@ retirement, and truthful shutdown draining are recorded in
 TermRock migration 0020, completed progress rendering, and the exact refreshed
 `main` pin are recorded in
 [`111-termrock-migration-0020.md`](docs/research/111-termrock-migration-0020.md).
+Bounded hierarchical scope registration and authoritative command-revision
+validation are recorded in
+[`112-phase-2-scoped-revision-ownership.md`](docs/research/112-phase-2-scoped-revision-ownership.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

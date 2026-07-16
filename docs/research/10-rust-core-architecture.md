@@ -115,8 +115,10 @@ marker; it never silently drops lifecycle truth.
 canonical command identity, parent-scope containment, lifecycle cursors, event
 queues, cancellation requests, terminal retirement, and drain shutdown. It
 never equates a cancel request or process shutdown with a server-confirmed
-outcome. The enclosing application-state checkpoint must validate each
-command's expected aggregate revision before coordinator submission.
+outcome. Its finite hierarchical scope registry owns aggregate revisions and
+rejects unknown, stale, or future command expectations before operation
+capacity or driver state can change. It also rejects stale in-flight progress
+without suppressing lifecycle and terminal outcome truth.
 
 ## Session ownership
 
