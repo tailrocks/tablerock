@@ -130,7 +130,8 @@ Engine additions:
   partial/late HTTP errors, compression, query IDs, parts, inserts, mutations;
 - Redis: binary keys/values, SCAN families, RESP2/RESP3, logical DB isolation,
   per-command pipeline partial failures and transaction no-rollback truth,
-  Pub/Sub, blocking commands, TTL, post-dispatch cancellation.
+  Pub/Sub, blocking commands, exact key TTL states, reviewed TTL mutation,
+  post-dispatch cancellation.
 
 A support claim is exactly the continuously passing real-server matrix.
 

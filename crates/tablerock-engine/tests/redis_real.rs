@@ -62,6 +62,7 @@ async fn verify_version(tag: &str) {
         .await
         .unwrap();
         assert_eq!(session.negotiated_protocol().await.unwrap(), protocol);
+        verify_ttl_states(&session, protocol, tag).await;
         verify_pipeline_partial_failure(port, protocol, tag).await;
         verify_service_cancellation(port, protocol, tag).await;
         verify_blocking_completion(port, protocol).await;
@@ -179,6 +180,33 @@ async fn verify_version(tag: &str) {
         }
         assert_eq!(service_keys, found, "Redis service {tag} {protocol:?}");
     }
+}
+
+async fn verify_ttl_states(session: &RedisSession, protocol: RedisProtocol, tag: &str) {
+    assert_eq!(
+        session.read_time_to_live(&bytes(&[0, 1])).await.unwrap(),
+        tablerock_core::RedisTimeToLive::Missing,
+        "missing TTL {tag} {protocol:?}"
+    );
+    assert_eq!(
+        session.read_time_to_live(&bytes(b"plain")).await.unwrap(),
+        tablerock_core::RedisTimeToLive::Persistent,
+        "persistent TTL {tag} {protocol:?}"
+    );
+
+    let expiring = session
+        .read_time_to_live(&bytes(b"long-binary-key"))
+        .await
+        .unwrap();
+    assert!(
+        matches!(
+            expiring,
+            tablerock_core::RedisTimeToLive::Expiring {
+                remaining_millis: 1..=600_000
+            }
+        ),
+        "finite TTL {tag} {protocol:?}: {expiring:?}"
+    );
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -423,6 +451,14 @@ async fn seed(port: u16) {
         let mut connection = connection.expect("Redis fixture accepts connections");
         for (key, value) in entries {
             let _: () = connection.set(key, value).await.unwrap();
+        }
+        if database == 0 {
+            let _: bool = redis::cmd("PEXPIRE")
+                .arg(b"long-binary-key")
+                .arg(600_000_u64)
+                .query_async(&mut connection)
+                .await
+                .unwrap();
         }
     }
 }

@@ -157,8 +157,10 @@ requires both `CLIENT UNBLOCK` reply `1` and the operation-side server error
 before reporting server-confirmed cancellation.
 The supported-line RESP2/RESP3 matrix now proves per-command pipeline outcomes,
 continued execution after a runtime response error, and `MULTI`/`EXEC`
-no-rollback truth. TLS, Pub/Sub, timeout/reconnect, SCAN-family breadth, and
-remaining failure races stay required.
+no-rollback truth. It also proves exact missing/persistent/finite-millisecond
+key TTL facts through one Rust-owned contract. TLS, Pub/Sub, timeout/reconnect,
+SCAN-family breadth, reviewed TTL writes, and remaining failure races stay
+required.
 
 ### Exit evidence
 

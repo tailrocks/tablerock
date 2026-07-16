@@ -64,6 +64,9 @@ public Table graduation, and the exact latest pin are recorded in
 Redis per-command pipeline partial failures, continued execution, and
 `MULTI`/`EXEC` no-rollback truth across the supported matrix are recorded in
 [`138-phase-2-redis-pipeline-partial-failure.md`](docs/research/138-phase-2-redis-pipeline-partial-failure.md).
+Redis missing, persistent, and finite-millisecond key TTL facts across the
+supported RESP2/RESP3 matrix are recorded in
+[`139-phase-2-redis-ttl-truth.md`](docs/research/139-phase-2-redis-ttl-truth.md).
 TermRock's public TextArea graduation, grapheme-boundary migration 0027, and
 exact latest pin are recorded in
 [`140-termrock-textarea-graduation-migration.md`](docs/research/140-termrock-textarea-graduation-migration.md).

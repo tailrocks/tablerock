@@ -10,7 +10,9 @@ pages. All driver clients, connections, commands, and response values remain
 private.
 
 This is not the complete Redis spike. TLS fixtures, authentication, HSCAN,
-SSCAN, ZSCAN, TTLs, Pub/Sub, timeout, and reconnect remain. Pipeline partial
+SSCAN, ZSCAN, reviewed TTL mutations, Pub/Sub, timeout, and reconnect remain.
+Key-level TTL read truth is proved in
+[`139-phase-2-redis-ttl-truth.md`](139-phase-2-redis-ttl-truth.md). Pipeline partial
 failures are proved in
 [`138-phase-2-redis-pipeline-partial-failure.md`](138-phase-2-redis-pipeline-partial-failure.md),
 and blocking-command isolation/cancellation are proved in

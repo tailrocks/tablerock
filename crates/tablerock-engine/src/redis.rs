@@ -15,7 +15,7 @@ use redis::{
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, ColumnMetadata, Engine, EngineType, OwnedValue,
     PageDelivery, PageFacts, PageIdentity, PageLimits, PageValidationError, PageWarning,
-    PageWarnings, ResultPage, RowTotal, Truncation,
+    PageWarnings, RedisTimeToLive, ResultPage, RowTotal, Truncation,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -304,6 +304,30 @@ impl RedisSession {
             .map(|value| bounded_binary(&value, max_bytes))
             .transpose()
     }
+
+    pub async fn read_time_to_live(
+        &self,
+        key: &BoundedBytes,
+    ) -> Result<RedisTimeToLive, RedisError> {
+        let mut connection = self.connection.clone();
+        let remaining: i64 = redis::cmd("PTTL")
+            .arg(key.as_slice())
+            .query_async(&mut connection)
+            .await
+            .map_err(|_| RedisError::Command)?;
+        decode_time_to_live(remaining)
+    }
+}
+
+fn decode_time_to_live(remaining: i64) -> Result<RedisTimeToLive, RedisError> {
+    match remaining {
+        -2 => Ok(RedisTimeToLive::Missing),
+        -1 => Ok(RedisTimeToLive::Persistent),
+        0.. => Ok(RedisTimeToLive::Expiring {
+            remaining_millis: remaining as u64,
+        }),
+        _ => Err(RedisError::Protocol),
+    }
 }
 
 type RedisBlockingResult = Result<(Vec<u8>, Vec<u8>), RedisError>;
@@ -508,5 +532,26 @@ mod tests {
         assert!(!debug.contains("SECRET_HOST"));
         assert!(debug.contains("Resp3"));
         assert!(debug.contains("Require"));
+    }
+
+    #[test]
+    fn ttl_decoder_covers_every_sentinel_and_integer_boundary() {
+        assert_eq!(decode_time_to_live(-2), Ok(RedisTimeToLive::Missing));
+        assert_eq!(decode_time_to_live(-1), Ok(RedisTimeToLive::Persistent));
+        assert_eq!(
+            decode_time_to_live(0),
+            Ok(RedisTimeToLive::Expiring {
+                remaining_millis: 0
+            })
+        );
+        assert_eq!(
+            decode_time_to_live(i64::MAX),
+            Ok(RedisTimeToLive::Expiring {
+                remaining_millis: i64::MAX as u64
+            })
+        );
+        for undocumented in [i64::MIN, -4, -3] {
+            assert_eq!(decode_time_to_live(undocumented), Err(RedisError::Protocol));
+        }
     }
 }

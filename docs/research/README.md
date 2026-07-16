@@ -87,6 +87,7 @@ kept in the roadmap.
 - [Phase 2 PostgreSQL TLS and client identity evidence](136-phase-2-postgresql-tls-identity.md)
 - [TermRock migration 0026 adoption](137-termrock-scoped-focus-migration.md)
 - [Phase 2 Redis pipeline partial-failure evidence](138-phase-2-redis-pipeline-partial-failure.md)
+- [Phase 2 Redis TTL truth](139-phase-2-redis-ttl-truth.md)
 - [TermRock TextArea graduation and migration 0027](140-termrock-textarea-graduation-migration.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)

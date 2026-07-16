@@ -82,6 +82,6 @@ pub use service::{
 pub use value::{
     Availability, BoundedBytes, BoundedBytesError, BoundedText, BoundedTextError, ByteLimit,
     Capability, CapabilityEngineMismatch, CapabilityFact, CapabilitySnapshot, EmptyEngineType,
-    Engine, EngineType, OwnedValue, Truncation, UnsupportedReason, ValueBuildError, ValueKind,
-    ValueRef,
+    Engine, EngineType, OwnedValue, RedisTimeToLive, Truncation, UnsupportedReason,
+    ValueBuildError, ValueKind, ValueRef,
 };

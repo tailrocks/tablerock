@@ -9,6 +9,32 @@ pub enum Engine {
     Redis,
 }
 
+/// Point-in-time Redis key-expiration state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RedisTimeToLive {
+    /// The key did not exist when Redis evaluated the request.
+    Missing,
+    /// The key existed without an expiration.
+    Persistent,
+    /// The key existed with this remaining lifetime at observation time.
+    Expiring { remaining_millis: u64 },
+}
+
+impl RedisTimeToLive {
+    #[must_use]
+    pub const fn key_existed_at_observation(self) -> bool {
+        !matches!(self, Self::Missing)
+    }
+
+    #[must_use]
+    pub const fn remaining_millis(self) -> Option<u64> {
+        match self {
+            Self::Expiring { remaining_millis } => Some(remaining_millis),
+            Self::Missing | Self::Persistent => None,
+        }
+    }
+}
+
 macro_rules! capabilities {
     ($($capability:ident),+ $(,)?) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
