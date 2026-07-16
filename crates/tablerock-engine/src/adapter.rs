@@ -7,8 +7,8 @@ use tablerock_core::{
 
 use crate::{
     ClickHouseError, ClickHouseProbeQuery, ClickHouseRowStream, ClickHouseSession, PostgresError,
-    PostgresProbeQuery, PostgresRowStream, PostgresSession, RedisError, RedisKeyStream,
-    RedisSession,
+    PostgresProbeQuery, PostgresRowStream, PostgresSession, RedisCollectionScanKind,
+    RedisCollectionScanOptions, RedisCollectionStream, RedisError, RedisKeyStream, RedisSession,
 };
 
 pub type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -31,6 +31,11 @@ pub enum DriverPageRequest {
         scan_count: u32,
         max_scan_rounds: u32,
     },
+    RedisCollectionScan {
+        key: BoundedBytes,
+        kind: RedisCollectionScanKind,
+        options: RedisCollectionScanOptions,
+    },
     RedisBlockingPop {
         key: BoundedBytes,
         limits: PageLimits,
@@ -44,7 +49,9 @@ impl DriverPageRequest {
         match self {
             Self::PostgreSqlProbe { .. } => Engine::PostgreSql,
             Self::ClickHouseProbe { .. } => Engine::ClickHouse,
-            Self::RedisKeyScan { .. } | Self::RedisBlockingPop { .. } => Engine::Redis,
+            Self::RedisKeyScan { .. }
+            | Self::RedisCollectionScan { .. }
+            | Self::RedisBlockingPop { .. } => Engine::Redis,
         }
     }
 }
@@ -82,6 +89,10 @@ impl fmt::Debug for DriverPageRequest {
                 .field("max_cell_bytes", max_cell_bytes)
                 .field("scan_count", scan_count)
                 .field("max_scan_rounds", max_scan_rounds),
+            Self::RedisCollectionScan { key, kind, options } => debug
+                .field("key_bytes", &key.len())
+                .field("kind", kind)
+                .field("options", options),
             Self::RedisBlockingPop {
                 key,
                 limits,
@@ -103,6 +114,7 @@ pub enum AdapterFailureClass {
     Connection,
     Protocol,
     Decode,
+    ResourceLimit,
     Page,
     CancellationTransport,
     ServerCancelled,
@@ -200,6 +212,20 @@ impl DriverPageStream for RedisKeyStream {
     ) -> DriverFuture<'a, Result<Option<ResultPage>, AdapterError>> {
         Box::pin(async move {
             RedisKeyStream::next_page(self, identity, start_row)
+                .await
+                .map_err(map_redis)
+        })
+    }
+}
+
+impl DriverPageStream for RedisCollectionStream {
+    fn next_page<'a>(
+        &'a mut self,
+        identity: PageIdentity,
+        start_row: u64,
+    ) -> DriverFuture<'a, Result<Option<ResultPage>, AdapterError>> {
+        Box::pin(async move {
+            RedisCollectionStream::next_page(self, identity, start_row)
                 .await
                 .map_err(map_redis)
         })
@@ -331,6 +357,10 @@ impl DriverSession for RedisSession {
                     .scan_keys(limits, max_cell_bytes, scan_count, max_scan_rounds)
                     .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
                     .map_err(map_redis),
+                DriverPageRequest::RedisCollectionScan { key, kind, options } => self
+                    .scan_collection(key, kind, options)
+                    .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
+                    .map_err(map_redis),
                 DriverPageRequest::RedisBlockingPop {
                     key,
                     limits,
@@ -401,6 +431,7 @@ fn map_redis(error: RedisError) -> AdapterError {
         RedisError::SessionBusy => AdapterFailureClass::InvalidRequest,
         RedisError::InvalidLimits => AdapterFailureClass::InvalidRequest,
         RedisError::ScanBudgetExhausted => AdapterFailureClass::Query,
+        RedisError::ScanResponseLimitExceeded => AdapterFailureClass::ResourceLimit,
         RedisError::Protocol => AdapterFailureClass::Protocol,
         RedisError::Page(_) => AdapterFailureClass::Page,
     };

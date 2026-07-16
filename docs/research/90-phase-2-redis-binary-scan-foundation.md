@@ -9,8 +9,9 @@ reads binary values, and converts binary SCAN keys into bounded immutable core
 pages. All driver clients, connections, commands, and response values remain
 private.
 
-This is not the complete Redis spike. TLS fixtures, authentication, HSCAN,
-SSCAN, ZSCAN, reviewed TTL mutations, Pub/Sub, timeout, and reconnect remain.
+This is not the complete Redis spike. HSCAN, SSCAN, and ZSCAN were subsequently
+closed by [research 141](141-phase-2-redis-collection-scans.md). TLS fixtures,
+authentication, reviewed TTL mutations, Pub/Sub, timeout, and reconnect remain.
 Key-level TTL read truth is proved in
 [`139-phase-2-redis-ttl-truth.md`](139-phase-2-redis-ttl-truth.md). Pipeline partial
 failures are proved in

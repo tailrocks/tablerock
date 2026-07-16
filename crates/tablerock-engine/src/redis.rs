@@ -30,6 +30,44 @@ pub enum RedisTlsMode {
     Require,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RedisCollectionScanKind {
+    Hash,
+    Set,
+    SortedSet,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RedisCollectionScanOptions {
+    limits: PageLimits,
+    max_cell_bytes: u64,
+    scan_count: u32,
+    max_batch_entries: u32,
+    max_batch_bytes: u64,
+    max_scan_rounds: u32,
+}
+
+impl RedisCollectionScanOptions {
+    #[must_use]
+    pub const fn new(
+        limits: PageLimits,
+        max_cell_bytes: u64,
+        scan_count: u32,
+        max_batch_entries: u32,
+        max_batch_bytes: u64,
+        max_scan_rounds: u32,
+    ) -> Self {
+        Self {
+            limits,
+            max_cell_bytes,
+            scan_count,
+            max_batch_entries,
+            max_batch_bytes,
+            max_scan_rounds,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct RedisConnectConfig {
     host: BoundedText,
@@ -79,6 +117,7 @@ pub enum RedisError {
     SessionBusy,
     InvalidLimits,
     ScanBudgetExhausted,
+    ScanResponseLimitExceeded,
     Protocol,
     Page(PageValidationError),
 }
@@ -92,6 +131,7 @@ impl fmt::Display for RedisError {
             Self::SessionBusy => "Redis session already owns a blocking operation",
             Self::InvalidLimits => "Redis stream limits are invalid",
             Self::ScanBudgetExhausted => "Redis scan round budget was exhausted",
+            Self::ScanResponseLimitExceeded => "Redis scan response exceeded its safety bound",
             Self::Protocol => "Redis returned an unsupported response",
             Self::Page(_) => "Redis result page failed validation",
         })
@@ -251,10 +291,36 @@ impl RedisSession {
             pending: VecDeque::new(),
             started: false,
             complete: false,
+            emitted_page: false,
             limits,
             max_cell_bytes,
             scan_count,
             remaining_rounds: max_scan_rounds,
+        })
+    }
+
+    pub fn scan_collection(
+        &self,
+        key: BoundedBytes,
+        kind: RedisCollectionScanKind,
+        options: RedisCollectionScanOptions,
+    ) -> Result<RedisCollectionStream, RedisError> {
+        validate_collection_limits(kind, options)?;
+        Ok(RedisCollectionStream {
+            connection: self.connection.clone(),
+            key,
+            kind,
+            cursor: 0,
+            pending: VecDeque::new(),
+            started: false,
+            complete: false,
+            emitted_page: false,
+            limits: options.limits,
+            max_cell_bytes: options.max_cell_bytes,
+            scan_count: options.scan_count,
+            max_batch_entries: options.max_batch_entries,
+            max_batch_bytes: options.max_batch_bytes,
+            remaining_rounds: options.max_scan_rounds,
         })
     }
 
@@ -317,6 +383,296 @@ impl RedisSession {
             .map_err(|_| RedisError::Command)?;
         decode_time_to_live(remaining)
     }
+}
+
+fn validate_collection_limits(
+    kind: RedisCollectionScanKind,
+    options: RedisCollectionScanOptions,
+) -> Result<(), RedisError> {
+    let RedisCollectionScanOptions {
+        limits,
+        max_cell_bytes,
+        scan_count,
+        max_batch_entries,
+        max_batch_bytes,
+        max_scan_rounds,
+    } = options;
+    let required_columns = match kind {
+        RedisCollectionScanKind::Set => 1,
+        RedisCollectionScanKind::Hash | RedisCollectionScanKind::SortedSet => 2,
+    };
+    let required_column_text_bytes = match kind {
+        RedisCollectionScanKind::Set => 17,
+        RedisCollectionScanKind::Hash => 32,
+        RedisCollectionScanKind::SortedSet => 28,
+    };
+    let score_arena_bytes = u64::from(limits.max_rows()).checked_mul(8);
+    if limits.max_rows() == 0
+        || limits.max_columns() < required_columns
+        || limits.max_arena_bytes() == 0
+        || limits.max_column_text_bytes() < required_column_text_bytes
+        || (matches!(kind, RedisCollectionScanKind::SortedSet)
+            && score_arena_bytes.is_none_or(|required| limits.max_arena_bytes() < required))
+        || max_cell_bytes == 0
+        || scan_count == 0
+        || max_batch_entries == 0
+        || max_batch_bytes == 0
+        || max_scan_rounds == 0
+    {
+        return Err(RedisError::InvalidLimits);
+    }
+    Ok(())
+}
+
+enum RedisCollectionEntry {
+    Binary(Vec<u8>),
+    Pair(Vec<u8>, Vec<u8>),
+    Scored(Vec<u8>, f64),
+}
+
+type RedisPairScanReply = (u64, Vec<(Vec<u8>, Vec<u8>)>);
+
+pub struct RedisCollectionStream {
+    connection: MultiplexedConnection,
+    key: BoundedBytes,
+    kind: RedisCollectionScanKind,
+    cursor: u64,
+    pending: VecDeque<RedisCollectionEntry>,
+    started: bool,
+    complete: bool,
+    emitted_page: bool,
+    limits: PageLimits,
+    max_cell_bytes: u64,
+    scan_count: u32,
+    max_batch_entries: u32,
+    max_batch_bytes: u64,
+    remaining_rounds: u32,
+}
+
+impl RedisCollectionStream {
+    pub async fn next_page(
+        &mut self,
+        identity: PageIdentity,
+        start_row: u64,
+    ) -> Result<Option<ResultPage>, RedisError> {
+        if self.complete {
+            return Ok(None);
+        }
+        let mut values = Vec::new();
+        let mut rows = 0_u32;
+        let mut arena_remaining = self.limits.max_arena_bytes();
+        while rows < self.limits.max_rows() {
+            if let Some(entry) = self.pending.pop_front() {
+                append_collection_entry(
+                    entry,
+                    &mut values,
+                    self.max_cell_bytes,
+                    &mut arena_remaining,
+                )?;
+                rows += 1;
+                continue;
+            }
+            if self.started && self.cursor == 0 {
+                self.complete = true;
+                break;
+            }
+            if self.remaining_rounds == 0 {
+                if rows == 0 {
+                    return Err(RedisError::ScanBudgetExhausted);
+                }
+                break;
+            }
+            let (cursor, entries) = match self.kind {
+                RedisCollectionScanKind::Hash => {
+                    let (cursor, entries): RedisPairScanReply = redis::cmd("HSCAN")
+                        .arg(self.key.as_slice())
+                        .arg(self.cursor)
+                        .arg("COUNT")
+                        .arg(self.scan_count)
+                        .query_async(&mut self.connection)
+                        .await
+                        .map_err(|_| RedisError::Command)?;
+                    validate_scan_batch(
+                        entries.len(),
+                        entries.iter().try_fold(0_u64, |total, (field, value)| {
+                            total
+                                .checked_add(field.len() as u64)?
+                                .checked_add(value.len() as u64)
+                        }),
+                        self.max_batch_entries,
+                        self.max_batch_bytes,
+                    )?;
+                    (
+                        cursor,
+                        entries
+                            .into_iter()
+                            .map(|(field, value)| RedisCollectionEntry::Pair(field, value))
+                            .collect::<Vec<_>>(),
+                    )
+                }
+                RedisCollectionScanKind::Set => {
+                    let (cursor, entries): (u64, Vec<Vec<u8>>) = redis::cmd("SSCAN")
+                        .arg(self.key.as_slice())
+                        .arg(self.cursor)
+                        .arg("COUNT")
+                        .arg(self.scan_count)
+                        .query_async(&mut self.connection)
+                        .await
+                        .map_err(|_| RedisError::Command)?;
+                    validate_scan_batch(
+                        entries.len(),
+                        entries.iter().try_fold(0_u64, |total, member| {
+                            total.checked_add(member.len() as u64)
+                        }),
+                        self.max_batch_entries,
+                        self.max_batch_bytes,
+                    )?;
+                    (
+                        cursor,
+                        entries
+                            .into_iter()
+                            .map(RedisCollectionEntry::Binary)
+                            .collect::<Vec<_>>(),
+                    )
+                }
+                RedisCollectionScanKind::SortedSet => {
+                    let (cursor, entries): RedisPairScanReply = redis::cmd("ZSCAN")
+                        .arg(self.key.as_slice())
+                        .arg(self.cursor)
+                        .arg("COUNT")
+                        .arg(self.scan_count)
+                        .query_async(&mut self.connection)
+                        .await
+                        .map_err(|_| RedisError::Command)?;
+                    validate_scan_batch(
+                        entries.len(),
+                        entries.iter().try_fold(0_u64, |total, (member, score)| {
+                            total
+                                .checked_add(member.len() as u64)?
+                                .checked_add(score.len() as u64)
+                        }),
+                        self.max_batch_entries,
+                        self.max_batch_bytes,
+                    )?;
+                    let entries = entries
+                        .into_iter()
+                        .map(|(member, score)| {
+                            let score = std::str::from_utf8(&score)
+                                .map_err(|_| RedisError::Protocol)?
+                                .parse::<f64>()
+                                .map_err(|_| RedisError::Protocol)?;
+                            Ok(RedisCollectionEntry::Scored(member, score))
+                        })
+                        .collect::<Result<Vec<_>, RedisError>>()?;
+                    (cursor, entries)
+                }
+            };
+            self.started = true;
+            self.cursor = cursor;
+            self.remaining_rounds -= 1;
+            self.pending.extend(entries);
+        }
+        if self.started && self.cursor == 0 && self.pending.is_empty() {
+            self.complete = true;
+        }
+        if rows == 0 && self.complete && self.emitted_page {
+            return Ok(None);
+        }
+        let delivery = if self.complete {
+            PageDelivery::Final
+        } else {
+            PageDelivery::Partial
+        };
+        let mut warnings = PageWarnings::none();
+        if !self.complete && (rows == self.limits.max_rows() || !self.pending.is_empty()) {
+            warnings = warnings.with(PageWarning::RowLimitReached);
+        }
+        if values.iter().any(OwnedValue::is_truncated) {
+            warnings = warnings.with(PageWarning::ByteLimitReached);
+        }
+        let page = ResultPage::from_row_major(
+            identity,
+            start_row,
+            RowTotal::Unknown,
+            PageFacts::new(delivery, warnings),
+            collection_columns(self.kind)?,
+            values,
+            self.limits,
+        )
+        .map_err(RedisError::Page)?;
+        self.emitted_page = true;
+        Ok(Some(page))
+    }
+}
+
+fn validate_scan_batch(
+    entry_count: usize,
+    encoded_bytes: Option<u64>,
+    max_entries: u32,
+    max_bytes: u64,
+) -> Result<(), RedisError> {
+    if entry_count > max_entries as usize || encoded_bytes.is_none_or(|bytes| bytes > max_bytes) {
+        return Err(RedisError::ScanResponseLimitExceeded);
+    }
+    Ok(())
+}
+
+fn append_collection_entry(
+    entry: RedisCollectionEntry,
+    values: &mut Vec<OwnedValue>,
+    max_cell_bytes: u64,
+    arena_remaining: &mut u64,
+) -> Result<(), RedisError> {
+    match entry {
+        RedisCollectionEntry::Binary(value) => {
+            let value = bounded_binary(&value, max_cell_bytes.min(*arena_remaining))?;
+            *arena_remaining = arena_remaining.saturating_sub(value.encoded_byte_len());
+            values.push(value);
+        }
+        RedisCollectionEntry::Pair(first, second) => {
+            let first = bounded_binary(&first, max_cell_bytes.min(*arena_remaining))?;
+            *arena_remaining = arena_remaining.saturating_sub(first.encoded_byte_len());
+            let second = bounded_binary(&second, max_cell_bytes.min(*arena_remaining))?;
+            *arena_remaining = arena_remaining.saturating_sub(second.encoded_byte_len());
+            values.extend([first, second]);
+        }
+        RedisCollectionEntry::Scored(member, score) => {
+            if *arena_remaining < 8 {
+                return Err(RedisError::InvalidLimits);
+            }
+            let member_budget = arena_remaining.saturating_sub(8).min(max_cell_bytes);
+            let member = bounded_binary(&member, member_budget)?;
+            *arena_remaining = arena_remaining.saturating_sub(member.encoded_byte_len() + 8);
+            values.extend([member, OwnedValue::float64_bits(score.to_bits())]);
+        }
+    }
+    Ok(())
+}
+
+fn collection_columns(kind: RedisCollectionScanKind) -> Result<Vec<ColumnMetadata>, RedisError> {
+    let columns = match kind {
+        RedisCollectionScanKind::Hash => vec![("field", "bulk-string"), ("value", "bulk-string")],
+        RedisCollectionScanKind::Set => vec![("member", "bulk-string")],
+        RedisCollectionScanKind::SortedSet => {
+            vec![("member", "bulk-string"), ("score", "double")]
+        }
+    };
+    columns
+        .into_iter()
+        .map(|(name, data_type)| {
+            Ok(ColumnMetadata::new(
+                BoundedText::copy_from_str(name, ByteLimit::new(name.len() as u64))
+                    .map_err(|_| RedisError::Protocol)?,
+                EngineType::new(
+                    Engine::Redis,
+                    BoundedText::copy_from_str(data_type, ByteLimit::new(data_type.len() as u64))
+                        .map_err(|_| RedisError::Protocol)?,
+                )
+                .map_err(|_| RedisError::Protocol)?,
+                false,
+            ))
+        })
+        .collect()
 }
 
 fn decode_time_to_live(remaining: i64) -> Result<RedisTimeToLive, RedisError> {
@@ -409,6 +765,7 @@ pub struct RedisKeyStream {
     pending: VecDeque<Vec<u8>>,
     started: bool,
     complete: bool,
+    emitted_page: bool,
     limits: PageLimits,
     max_cell_bytes: u64,
     scan_count: u32,
@@ -459,6 +816,9 @@ impl RedisKeyStream {
         if self.started && self.cursor == 0 && self.pending.is_empty() {
             self.complete = true;
         }
+        if values.is_empty() && self.complete && self.emitted_page {
+            return Ok(None);
+        }
         let final_page = self.complete;
         let delivery = if final_page {
             PageDelivery::Final
@@ -485,7 +845,7 @@ impl RedisKeyStream {
             .map_err(|_| RedisError::Protocol)?,
             false,
         )];
-        ResultPage::from_row_major(
+        let page = ResultPage::from_row_major(
             identity,
             start_row,
             RowTotal::Unknown,
@@ -494,8 +854,9 @@ impl RedisKeyStream {
             values,
             self.limits,
         )
-        .map(Some)
-        .map_err(RedisError::Page)
+        .map_err(RedisError::Page)?;
+        self.emitted_page = true;
+        Ok(Some(page))
     }
 }
 
@@ -553,5 +914,81 @@ mod tests {
         for undocumented in [i64::MIN, -4, -3] {
             assert_eq!(decode_time_to_live(undocumented), Err(RedisError::Protocol));
         }
+    }
+
+    #[test]
+    fn collection_scan_limits_match_each_result_shape() {
+        for (kind, columns, arena_bytes, column_text_bytes) in [
+            (RedisCollectionScanKind::Set, 1, 1, 17),
+            (RedisCollectionScanKind::Hash, 2, 1, 32),
+            (RedisCollectionScanKind::SortedSet, 2, 8, 28),
+        ] {
+            let options = |column_text_bytes| {
+                RedisCollectionScanOptions::new(
+                    PageLimits::new(1, columns, arena_bytes, column_text_bytes),
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                )
+            };
+            assert_eq!(
+                validate_collection_limits(kind, options(column_text_bytes - 1)),
+                Err(RedisError::InvalidLimits)
+            );
+            assert_eq!(
+                validate_collection_limits(kind, options(column_text_bytes)),
+                Ok(())
+            );
+        }
+        assert_eq!(
+            validate_collection_limits(
+                RedisCollectionScanKind::Hash,
+                RedisCollectionScanOptions::new(PageLimits::new(1, 1, 1, 32), 1, 1, 1, 1, 1),
+            ),
+            Err(RedisError::InvalidLimits)
+        );
+        assert_eq!(
+            validate_collection_limits(
+                RedisCollectionScanKind::SortedSet,
+                RedisCollectionScanOptions::new(PageLimits::new(2, 2, 15, 28), 1, 1, 1, 1, 1),
+            ),
+            Err(RedisError::InvalidLimits)
+        );
+    }
+
+    #[test]
+    fn collection_scan_rejects_decoded_batches_above_either_bound() {
+        assert_eq!(validate_scan_batch(2, Some(8), 2, 8), Ok(()));
+        assert_eq!(
+            validate_scan_batch(3, Some(8), 2, 8),
+            Err(RedisError::ScanResponseLimitExceeded)
+        );
+        assert_eq!(
+            validate_scan_batch(2, Some(9), 2, 8),
+            Err(RedisError::ScanResponseLimitExceeded)
+        );
+        assert_eq!(
+            validate_scan_batch(1, None, 2, u64::MAX),
+            Err(RedisError::ScanResponseLimitExceeded)
+        );
+    }
+
+    #[test]
+    fn sorted_set_reserves_score_bytes_before_bounding_member() {
+        let mut values = Vec::new();
+        let mut arena_remaining = 10;
+        append_collection_entry(
+            RedisCollectionEntry::Scored(vec![1, 2, 3, 4], -1.25),
+            &mut values,
+            4,
+            &mut arena_remaining,
+        )
+        .unwrap();
+        assert_eq!(arena_remaining, 0);
+        assert!(values[0].is_truncated());
+        assert_eq!(values[0].encoded_byte_len(), 2);
+        assert_eq!(values[1], OwnedValue::float64_bits((-1.25_f64).to_bits()));
     }
 }

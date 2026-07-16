@@ -20,7 +20,8 @@ pub use postgres::{
     PostgresProbeQuery, PostgresRowStream, PostgresSession, PostgresTlsMaterial, PostgresTlsMode,
 };
 pub use redis::{
-    RedisBlockingPopStream, RedisConnectConfig, RedisError, RedisKeyStream, RedisProtocol,
+    RedisBlockingPopStream, RedisCollectionScanKind, RedisCollectionScanOptions,
+    RedisCollectionStream, RedisConnectConfig, RedisError, RedisKeyStream, RedisProtocol,
     RedisSession, RedisTlsMode,
 };
 pub use runtime::{

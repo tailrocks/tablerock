@@ -8,7 +8,8 @@ use tablerock_core::{
     PageLimits, PageWarning, Truncation, ValueKind,
 };
 use tablerock_engine::{
-    DriverPageRequest, DriverSession, EngineServiceUpdate, RedisConnectConfig, RedisProtocol,
+    AdapterFailureClass, DriverPageRequest, DriverSession, EngineServiceUpdate,
+    RedisCollectionScanKind, RedisCollectionScanOptions, RedisConnectConfig, RedisProtocol,
     RedisSession, RedisTlsMode,
 };
 
@@ -63,6 +64,10 @@ async fn verify_version(tag: &str) {
         .unwrap();
         assert_eq!(session.negotiated_protocol().await.unwrap(), protocol);
         verify_ttl_states(&session, protocol, tag).await;
+        verify_hash_scan(&session, protocol, tag).await;
+        verify_set_scan(&session, protocol, tag).await;
+        verify_sorted_set_scan(&session, protocol, tag).await;
+        verify_empty_collection_scans(&session, protocol, tag).await;
         verify_pipeline_partial_failure(port, protocol, tag).await;
         verify_service_cancellation(port, protocol, tag).await;
         verify_blocking_completion(port, protocol).await;
@@ -105,7 +110,14 @@ async fn verify_version(tag: &str) {
         }
         assert_eq!(
             found,
-            BTreeSet::from([vec![0, 255], b"long-binary-key".to_vec(), b"plain".to_vec()]),
+            BTreeSet::from([
+                vec![0, 255],
+                b"long-binary-key".to_vec(),
+                b"plain".to_vec(),
+                b"scan-hash".to_vec(),
+                b"scan-set".to_vec(),
+                b"scan-zset".to_vec(),
+            ]),
             "Redis {tag} {protocol:?}"
         );
 
@@ -179,6 +191,156 @@ async fn verify_version(tag: &str) {
             }
         }
         assert_eq!(service_keys, found, "Redis service {tag} {protocol:?}");
+    }
+}
+
+async fn verify_hash_scan(session: &RedisSession, protocol: RedisProtocol, tag: &str) {
+    let driver: &dyn DriverSession = session;
+    let mut stream = driver
+        .start_page_stream(DriverPageRequest::RedisCollectionScan {
+            key: bytes(b"scan-hash"),
+            kind: RedisCollectionScanKind::Hash,
+            options: RedisCollectionScanOptions::new(
+                PageLimits::new(1, 2, 64, 128),
+                16,
+                1,
+                16,
+                1_024,
+                128,
+            ),
+        })
+        .await
+        .unwrap();
+    let mut rows = BTreeSet::new();
+    let mut start = 0_u64;
+    while let Some(page) = stream.next_page(identity(), start).await.unwrap() {
+        assert!(page.envelope().row_count() <= 1);
+        assert_eq!(page.envelope().column_count(), 2);
+        for row in 0..page.envelope().row_count() {
+            rows.insert((
+                page.cell(row, 0).unwrap().bytes().to_vec(),
+                page.cell(row, 1).unwrap().bytes().to_vec(),
+            ));
+        }
+        start += u64::from(page.envelope().row_count());
+    }
+    assert_eq!(
+        rows,
+        BTreeSet::from([
+            (vec![0, 255], vec![1, 2, 3, 4]),
+            (b"field".to_vec(), b"value".to_vec()),
+        ]),
+        "HSCAN {tag} {protocol:?}"
+    );
+
+    let mut oversized = driver
+        .start_page_stream(DriverPageRequest::RedisCollectionScan {
+            key: bytes(b"scan-hash"),
+            kind: RedisCollectionScanKind::Hash,
+            options: RedisCollectionScanOptions::new(
+                PageLimits::new(2, 2, 64, 128),
+                16,
+                1,
+                1,
+                1_024,
+                128,
+            ),
+        })
+        .await
+        .unwrap();
+    let error = oversized.next_page(identity(), 0).await.unwrap_err();
+    assert_eq!(
+        error.class(),
+        AdapterFailureClass::ResourceLimit,
+        "bounded HSCAN response {tag} {protocol:?}"
+    );
+}
+
+async fn verify_set_scan(session: &RedisSession, protocol: RedisProtocol, tag: &str) {
+    let mut stream = session
+        .scan_collection(
+            bytes(b"scan-set"),
+            RedisCollectionScanKind::Set,
+            RedisCollectionScanOptions::new(PageLimits::new(1, 1, 32, 128), 16, 1, 16, 1_024, 128),
+        )
+        .unwrap();
+    let mut members = BTreeSet::new();
+    let mut start = 0_u64;
+    while let Some(page) = stream.next_page(identity(), start).await.unwrap() {
+        assert!(page.envelope().row_count() <= 1);
+        assert_eq!(page.envelope().column_count(), 1);
+        for row in 0..page.envelope().row_count() {
+            members.insert(page.cell(row, 0).unwrap().bytes().to_vec());
+        }
+        start += u64::from(page.envelope().row_count());
+    }
+    assert_eq!(
+        members,
+        BTreeSet::from([vec![0, 255], b"member".to_vec()]),
+        "SSCAN {tag} {protocol:?}"
+    );
+}
+
+async fn verify_sorted_set_scan(session: &RedisSession, protocol: RedisProtocol, tag: &str) {
+    let mut stream = session
+        .scan_collection(
+            bytes(b"scan-zset"),
+            RedisCollectionScanKind::SortedSet,
+            RedisCollectionScanOptions::new(PageLimits::new(1, 2, 32, 128), 16, 1, 16, 1_024, 128),
+        )
+        .unwrap();
+    let mut members = BTreeSet::new();
+    let mut start = 0_u64;
+    while let Some(page) = stream.next_page(identity(), start).await.unwrap() {
+        assert!(page.envelope().row_count() <= 1);
+        assert_eq!(page.envelope().column_count(), 2);
+        for row in 0..page.envelope().row_count() {
+            let score_cell = page.cell(row, 1).unwrap();
+            assert_eq!(score_cell.kind(), ValueKind::Float64);
+            let score = u64::from_be_bytes(score_cell.bytes().try_into().unwrap());
+            members.insert((page.cell(row, 0).unwrap().bytes().to_vec(), score));
+        }
+        start += u64::from(page.envelope().row_count());
+    }
+    assert_eq!(
+        members,
+        BTreeSet::from([
+            (vec![0, 255], (-1.25_f64).to_bits()),
+            (b"member".to_vec(), 2.5_f64.to_bits()),
+        ]),
+        "ZSCAN {tag} {protocol:?}"
+    );
+}
+
+async fn verify_empty_collection_scans(session: &RedisSession, protocol: RedisProtocol, tag: &str) {
+    for (kind, columns) in [
+        (RedisCollectionScanKind::Hash, 2),
+        (RedisCollectionScanKind::Set, 1),
+        (RedisCollectionScanKind::SortedSet, 2),
+    ] {
+        let mut stream = session
+            .scan_collection(
+                bytes(b"missing-collection"),
+                kind,
+                RedisCollectionScanOptions::new(
+                    PageLimits::new(1, columns, 16, 128),
+                    8,
+                    1,
+                    8,
+                    128,
+                    8,
+                ),
+            )
+            .unwrap();
+        let page = stream.next_page(identity(), 0).await.unwrap().unwrap();
+        assert_eq!(
+            page.envelope().row_count(),
+            0,
+            "empty {kind:?} {tag} {protocol:?}"
+        );
+        assert_eq!(page.envelope().column_count(), columns);
+        assert_eq!(page.envelope().delivery(), PageDelivery::Final);
+        assert!(stream.next_page(identity(), 0).await.unwrap().is_none());
     }
 }
 
@@ -456,6 +618,31 @@ async fn seed(port: u16) {
             let _: bool = redis::cmd("PEXPIRE")
                 .arg(b"long-binary-key")
                 .arg(600_000_u64)
+                .query_async(&mut connection)
+                .await
+                .unwrap();
+            let _: u64 = redis::cmd("HSET")
+                .arg(b"scan-hash")
+                .arg(&[0_u8, 255])
+                .arg(&[1_u8, 2, 3, 4])
+                .arg(b"field")
+                .arg(b"value")
+                .query_async(&mut connection)
+                .await
+                .unwrap();
+            let _: u64 = redis::cmd("SADD")
+                .arg(b"scan-set")
+                .arg(&[0_u8, 255])
+                .arg(b"member")
+                .query_async(&mut connection)
+                .await
+                .unwrap();
+            let _: u64 = redis::cmd("ZADD")
+                .arg(b"scan-zset")
+                .arg(-1.25_f64)
+                .arg(&[0_u8, 255])
+                .arg(2.5_f64)
+                .arg(b"member")
                 .query_async(&mut connection)
                 .await
                 .unwrap();

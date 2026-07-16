@@ -70,6 +70,9 @@ supported RESP2/RESP3 matrix are recorded in
 TermRock's public TextArea graduation, grapheme-boundary migration 0027, and
 exact latest pin are recorded in
 [`140-termrock-textarea-graduation-migration.md`](docs/research/140-termrock-textarea-graduation-migration.md).
+Redis HSCAN, SSCAN, and ZSCAN bounded-page behavior across both supported lines
+and protocols is recorded in
+[`141-phase-2-redis-collection-scans.md`](docs/research/141-phase-2-redis-collection-scans.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

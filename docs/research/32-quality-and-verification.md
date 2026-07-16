@@ -133,6 +133,12 @@ Engine additions:
   Pub/Sub, blocking commands, exact key TTL states, reviewed TTL mutation,
   post-dispatch cancellation.
 
+The current Redis 7.4.9/8.8.0 RESP2/RESP3 matrix continuously proves binary
+SCAN, HSCAN, SSCAN, and ZSCAN bounded pages. Concurrent-mutation duplicate and
+omission behavior and a pre-decode transport allocation cap remain separate
+required gates. Accepted decoded collection batches and all retained pending
+state have explicit entry and byte bounds.
+
 A support claim is exactly the continuously passing real-server matrix.
 
 ## TUI render and interaction matrix

@@ -158,9 +158,10 @@ before reporting server-confirmed cancellation.
 The supported-line RESP2/RESP3 matrix now proves per-command pipeline outcomes,
 continued execution after a runtime response error, and `MULTI`/`EXEC`
 no-rollback truth. It also proves exact missing/persistent/finite-millisecond
-key TTL facts through one Rust-owned contract. TLS, Pub/Sub, timeout/reconnect,
-SCAN-family breadth, reviewed TTL writes, and remaining failure races stay
-required.
+key TTL facts through one Rust-owned contract. Bounded binary HSCAN, SSCAN, and
+ZSCAN pages now pass both supported lines under RESP2 and RESP3. TLS, Pub/Sub,
+timeout/reconnect, reviewed TTL writes, concurrent scan mutation races, and
+remaining failure races stay required.
 
 ### Exit evidence
 
