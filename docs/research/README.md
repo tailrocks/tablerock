@@ -114,6 +114,7 @@ kept in the roadmap.
 - [TermRock 0.10 contract-axis story update](94-termrock-0.10-contract-axis-story-update.md)
 - [Phase 2 ClickHouse RowBinary foundation evidence](95-phase-2-clickhouse-rowbinary-foundation.md)
 - [TermRock 0.10 scroll/session migration evidence](96-termrock-0.10-scroll-session-migration.md)
+- [Phase 2 ClickHouse complex scalar evidence](97-phase-2-clickhouse-complex-scalars.md)
 
 ## Architecture headline
 

@@ -184,6 +184,9 @@ and immutable 25.8/26.3 LTS Testcontainers evidence are recorded in
 TermRock's sequential scroll/hover and independent-session-options migrations,
 release-flow update, and exact refreshed `main` pin are recorded in
 [`96-termrock-0.10-scroll-session-migration.md`](docs/research/96-termrock-0.10-scroll-session-migration.md).
+The ClickHouse precision-preserving complex scalar decoder and bounded fallback
+matrix are recorded in
+[`97-phase-2-clickhouse-complex-scalars.md`](docs/research/97-phase-2-clickhouse-complex-scalars.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

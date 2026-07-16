@@ -96,5 +96,128 @@ async fn verify_image(image: &str) {
         assert_eq!(second.envelope().delivery(), PageDelivery::Final);
         assert_eq!(second.cell(0, 0).unwrap().bytes(), 2_u64.to_be_bytes());
         assert!(stream.next_page(identity(), 3).await.unwrap().is_none());
+
+        let mut complex = session
+            .stream_probe(
+                ClickHouseProbeQuery::ComplexScalars,
+                &text(&format!("tablerock-complex-{port}-{compression:?}")),
+                PageLimits::new(2, 24, 4096, 1024),
+                128,
+            )
+            .await
+            .unwrap();
+        let page = complex.next_page(identity(), 0).await.unwrap().unwrap();
+        assert_eq!(page.envelope().row_count(), 1, "{image} {compression:?}");
+        assert_eq!(page.envelope().delivery(), PageDelivery::Final);
+        assert_eq!(page.columns()[0].engine_type().name(), "Bool");
+        assert_eq!(page.cell(0, 0).unwrap().kind(), ValueKind::Boolean);
+        assert_eq!(page.cell(0, 0).unwrap().bytes(), &[1]);
+        assert_eq!(page.cell(0, 1).unwrap().bytes(), 255_u64.to_be_bytes());
+        assert_eq!(page.cell(0, 2).unwrap().bytes(), 65535_u64.to_be_bytes());
+        assert_eq!(
+            page.cell(0, 3).unwrap().bytes(),
+            4_294_967_295_u64.to_be_bytes()
+        );
+        assert_decimal(&page, 4, "340282366920938463463374607431768211455");
+        assert_decimal(&page, 5, "-170141183460469231731687303715884105728");
+        assert_decimal(
+            &page,
+            6,
+            "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+        );
+        assert_decimal(
+            &page,
+            7,
+            "-57896044618658097711785492504343953926634992332820282019728792003956564819968",
+        );
+        assert_decimal(&page, 8, "12345678901234567890123456789.123456789");
+        assert_eq!(page.cell(0, 9).unwrap().kind(), ValueKind::Float64);
+        assert_eq!(
+            page.cell(0, 9).unwrap().bytes(),
+            1.5_f64.to_bits().to_be_bytes()
+        );
+        assert_eq!(page.columns()[10].engine_type().name(), "Date");
+        assert_eq!(page.columns()[11].engine_type().name(), "Date32");
+        assert!(
+            page.columns()[12]
+                .engine_type()
+                .name()
+                .starts_with("DateTime")
+        );
+        assert!(
+            page.columns()[13]
+                .engine_type()
+                .name()
+                .starts_with("DateTime64(9")
+        );
+        assert_eq!(page.cell(0, 14).unwrap().kind(), ValueKind::Binary);
+        assert_eq!(page.cell(0, 14).unwrap().bytes().len(), 16);
+        assert_eq!(page.cell(0, 15).unwrap().kind(), ValueKind::Binary);
+        assert_eq!(page.cell(0, 15).unwrap().bytes().len(), 4);
+        assert_eq!(page.cell(0, 16).unwrap().kind(), ValueKind::Binary);
+        assert_eq!(page.cell(0, 16).unwrap().bytes().len(), 16);
+        assert!(
+            page.columns()[17]
+                .engine_type()
+                .name()
+                .starts_with("Enum8(")
+        );
+        assert_eq!(page.cell(0, 17).unwrap().bytes(), 7_i64.to_be_bytes());
+        assert_eq!(
+            page.columns()[18].engine_type().name(),
+            "LowCardinality(String)"
+        );
+        assert_eq!(page.cell(0, 18).unwrap().bytes(), b"wrapped");
+        assert_eq!(page.cell(0, 19).unwrap().bytes(), (-128_i64).to_be_bytes());
+        assert_eq!(
+            page.cell(0, 20).unwrap().bytes(),
+            (-32_768_i64).to_be_bytes()
+        );
+        assert_eq!(
+            page.cell(0, 21).unwrap().bytes(),
+            (-2_147_483_648_i64).to_be_bytes()
+        );
+        assert!(complex.next_page(identity(), 1).await.unwrap().is_none());
+
+        let mut bounded_complex = session
+            .stream_probe(
+                ClickHouseProbeQuery::ComplexScalars,
+                &text(&format!("tablerock-complex-bounded-{port}-{compression:?}")),
+                PageLimits::new(2, 24, 4096, 1024),
+                8,
+            )
+            .await
+            .unwrap();
+        let bounded_page = bounded_complex
+            .next_page(identity(), 0)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(bounded_page.cell(0, 4).unwrap().kind(), ValueKind::Unknown);
+        assert!(matches!(
+            bounded_page.cell(0, 4).unwrap().truncation(),
+            Truncation::Truncated {
+                original_byte_len: Some(16)
+            }
+        ));
+        assert!(
+            bounded_page
+                .envelope()
+                .warnings()
+                .contains(tablerock_core::PageWarning::UnknownValues)
+        );
+        assert!(
+            bounded_page
+                .envelope()
+                .warnings()
+                .contains(tablerock_core::PageWarning::ByteLimitReached)
+        );
+        assert_eq!(bounded_page.cell(0, 9).unwrap().kind(), ValueKind::Float64);
     }
+}
+
+fn assert_decimal(page: &tablerock_core::ResultPage, column: u32, expected: &str) {
+    let cell = page.cell(0, column).unwrap();
+    assert_eq!(cell.kind(), ValueKind::Decimal);
+    assert_eq!(cell.bytes(), expected.as_bytes());
 }

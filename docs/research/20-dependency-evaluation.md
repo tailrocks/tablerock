@@ -115,6 +115,9 @@ chunk cursor, parses `RowBinaryWithNamesAndTypes` metadata, and proves bounded
 typed pages against immutable ClickHouse 25.8 and 26.3 LTS Testcontainers
 fixtures. See
 [`95-phase-2-clickhouse-rowbinary-foundation.md`](95-phase-2-clickhouse-rowbinary-foundation.md).
+The same single decoder now covers the complex scalar matrix through 256-bit
+integers and decimals without precision loss; see
+[`97-phase-2-clickhouse-complex-scalars.md`](97-phase-2-clickhouse-complex-scalars.md).
 
 ## Redis
 

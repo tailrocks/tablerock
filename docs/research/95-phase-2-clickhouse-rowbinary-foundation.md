@@ -43,10 +43,12 @@ delivery, and end-of-stream behavior.
 
 ## Remaining Phase 2 proof
 
-Complex nested/array/tuple/map, low-cardinality, decimals, 128/256-bit integers,
-dates/times, UUID/IP, enums, aggregate-state fallback, TLS fixtures, progress,
+Complex nested/array/tuple/map, aggregate-state fallback, TLS fixtures, progress,
 server-observed cancellation, late-error injection, inserts, and mutations are
 not yet claimed. They remain ledger blockers.
+
+The sequential scalar extension is recorded in
+[`97-phase-2-clickhouse-complex-scalars.md`](97-phase-2-clickhouse-complex-scalars.md).
 
 External concepts: RowBinaryWithNamesAndTypes, ClickHouse HTTP compression, OCI image pinning
 Public sources: <https://github.com/ClickHouse/clickhouse-rs/tree/v0.15.1>, <https://clickhouse.com/docs/interfaces/formats/RowBinaryWithNamesAndTypes>, <https://hub.docker.com/_/clickhouse>
