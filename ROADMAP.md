@@ -73,6 +73,9 @@ exact latest pin are recorded in
 Redis HSCAN, SSCAN, and ZSCAN bounded-page behavior across both supported lines
 and protocols is recorded in
 [`141-phase-2-redis-collection-scans.md`](docs/research/141-phase-2-redis-collection-scans.md).
+Redis live-cursor guarantees during concurrent keyspace and collection mutation
+across both supported lines and protocols are recorded in
+[`142-phase-2-redis-scan-mutation-races.md`](docs/research/142-phase-2-redis-scan-mutation-races.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

@@ -90,6 +90,7 @@ kept in the roadmap.
 - [Phase 2 Redis TTL truth](139-phase-2-redis-ttl-truth.md)
 - [TermRock TextArea graduation and migration 0027](140-termrock-textarea-graduation-migration.md)
 - [Phase 2 Redis collection SCAN evidence](141-phase-2-redis-collection-scans.md)
+- [Phase 2 Redis SCAN mutation-race evidence](142-phase-2-redis-scan-mutation-races.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

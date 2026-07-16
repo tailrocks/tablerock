@@ -5,7 +5,7 @@ use redis::{
 };
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity,
-    PageLimits, PageWarning, Truncation, ValueKind,
+    PageLimits, PageWarning, ResultPage, Truncation, ValueKind,
 };
 use tablerock_engine::{
     AdapterFailureClass, DriverPageRequest, DriverSession, EngineServiceUpdate,
@@ -39,6 +39,279 @@ async fn scans_binary_keys_and_values_across_supported_redis_matrix() {
         "8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005",
     ] {
         verify_version(tag).await;
+    }
+}
+
+#[tokio::test]
+async fn scan_families_preserve_full_iteration_guarantees_during_mutation() {
+    for tag in [
+        "7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+        "8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005",
+    ] {
+        verify_scan_mutation_version(tag).await;
+    }
+}
+
+async fn verify_scan_mutation_version(tag: &str) {
+    let container = GenericImage::new("redis", tag)
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+
+    for protocol in [RedisProtocol::Resp2, RedisProtocol::Resp3] {
+        let mut mutator = raw_connection(port, protocol).await;
+        let stable = seed_scan_race(&mut mutator).await;
+        let session = RedisSession::connect(&RedisConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            0,
+            protocol,
+            RedisTlsMode::Disable,
+        ))
+        .await
+        .unwrap();
+
+        verify_keyspace_mutation(&session, &mut mutator, &stable, protocol, tag).await;
+        for (kind, key) in [
+            (RedisCollectionScanKind::Hash, b"race-hash".as_slice()),
+            (RedisCollectionScanKind::Set, b"race-set".as_slice()),
+            (RedisCollectionScanKind::SortedSet, b"race-zset".as_slice()),
+        ] {
+            verify_collection_mutation(&session, &mut mutator, &stable, kind, key, protocol, tag)
+                .await;
+        }
+    }
+}
+
+async fn raw_connection(port: u16, protocol: RedisProtocol) -> redis::aio::MultiplexedConnection {
+    let redis = RedisConnectionInfo::default()
+        .set_db(0)
+        .set_protocol(match protocol {
+            RedisProtocol::Resp2 => ProtocolVersion::RESP2,
+            RedisProtocol::Resp3 => ProtocolVersion::RESP3,
+        });
+    let info = ConnectionAddr::Tcp("127.0.0.1".to_owned(), port)
+        .into_connection_info()
+        .unwrap()
+        .set_redis_settings(redis);
+    let client = redis::Client::open(info).unwrap();
+    tokio::time::timeout(Duration::from_millis(2_500), async {
+        loop {
+            if let Ok(connection) = client.get_multiplexed_async_connection().await {
+                return connection;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("Redis fixture accepts connections within 2.5 seconds")
+}
+
+async fn seed_scan_race(connection: &mut redis::aio::MultiplexedConnection) -> BTreeSet<Vec<u8>> {
+    let mut stable = (0..600_u16)
+        .map(|index| format!("stable-{index:04}").into_bytes())
+        .collect::<BTreeSet<_>>();
+    stable.insert(vec![0, 255]);
+    let mut keys = redis::pipe();
+    for member in &stable {
+        keys.cmd("SET")
+            .arg([b"race-key:".as_slice(), member].concat())
+            .arg(1_u8);
+    }
+    keys.cmd("SET").arg(b"race-key:transient").arg(1_u8);
+    keys.cmd("SET").arg(b"race-key:removed-before").arg(1_u8);
+    let _: Vec<redis::Value> = keys.query_async(connection).await.unwrap();
+
+    let mut hash = redis::cmd("HSET");
+    hash.arg(b"race-hash");
+    for member in &stable {
+        hash.arg(member).arg(b"value");
+    }
+    hash.arg(b"transient").arg(b"value");
+    hash.arg(b"removed-before").arg(b"value");
+    let _: u64 = hash.query_async(connection).await.unwrap();
+
+    let mut set = redis::cmd("SADD");
+    set.arg(b"race-set");
+    for member in &stable {
+        set.arg(member);
+    }
+    set.arg(b"transient").arg(b"removed-before");
+    let _: u64 = set.query_async(connection).await.unwrap();
+
+    let mut sorted_set = redis::cmd("ZADD");
+    sorted_set.arg(b"race-zset");
+    for (score, member) in stable.iter().enumerate() {
+        sorted_set.arg(score).arg(member);
+    }
+    sorted_set
+        .arg(10_000_u64)
+        .arg(b"transient")
+        .arg(10_001_u64)
+        .arg(b"removed-before");
+    let _: u64 = sorted_set.query_async(connection).await.unwrap();
+
+    let _: u64 = redis::cmd("DEL")
+        .arg(b"race-key:removed-before")
+        .arg(b"race-key:late")
+        .query_async(connection)
+        .await
+        .unwrap();
+    let _: u64 = redis::cmd("HDEL")
+        .arg(b"race-hash")
+        .arg(b"removed-before")
+        .arg(b"late")
+        .query_async(connection)
+        .await
+        .unwrap();
+    let _: u64 = redis::cmd("SREM")
+        .arg(b"race-set")
+        .arg(b"removed-before")
+        .arg(b"late")
+        .query_async(connection)
+        .await
+        .unwrap();
+    let _: u64 = redis::cmd("ZREM")
+        .arg(b"race-zset")
+        .arg(b"removed-before")
+        .arg(b"late")
+        .query_async(connection)
+        .await
+        .unwrap();
+    stable
+}
+
+async fn verify_keyspace_mutation(
+    session: &RedisSession,
+    mutator: &mut redis::aio::MultiplexedConnection,
+    stable: &BTreeSet<Vec<u8>>,
+    protocol: RedisProtocol,
+    tag: &str,
+) {
+    let mut stream = session
+        .scan_keys(PageLimits::new(8, 1, 4_096, 64), 128, 8, 4_096)
+        .unwrap();
+    let first = stream.next_page(identity(), 0).await.unwrap().unwrap();
+    assert_eq!(first.envelope().delivery(), PageDelivery::Partial);
+    let _: u64 = redis::cmd("DEL")
+        .arg(b"race-key:transient")
+        .query_async(&mut *mutator)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("SET")
+        .arg(b"race-key:late")
+        .arg(1_u8)
+        .query_async(&mut *mutator)
+        .await
+        .unwrap();
+    let mut seen = BTreeSet::new();
+    collect_first_column(&first, &mut seen);
+    let mut start = u64::from(first.envelope().row_count());
+    while let Some(page) = stream.next_page(identity(), start).await.unwrap() {
+        collect_first_column(&page, &mut seen);
+        start += u64::from(page.envelope().row_count());
+    }
+    for member in stable {
+        assert!(
+            seen.contains(&[b"race-key:".as_slice(), member].concat()),
+            "stable SCAN key {member:?} {tag} {protocol:?}"
+        );
+    }
+    assert!(!seen.contains(b"race-key:removed-before".as_slice()));
+}
+
+async fn verify_collection_mutation(
+    session: &RedisSession,
+    mutator: &mut redis::aio::MultiplexedConnection,
+    stable: &BTreeSet<Vec<u8>>,
+    kind: RedisCollectionScanKind,
+    key: &[u8],
+    protocol: RedisProtocol,
+    tag: &str,
+) {
+    let mut stream = session
+        .scan_collection(
+            bytes(key),
+            kind,
+            RedisCollectionScanOptions::new(
+                PageLimits::new(8, 2, 4_096, 64),
+                128,
+                8,
+                128,
+                65_536,
+                4_096,
+            ),
+        )
+        .unwrap();
+    let first = stream.next_page(identity(), 0).await.unwrap().unwrap();
+    assert_eq!(first.envelope().delivery(), PageDelivery::Partial);
+    match kind {
+        RedisCollectionScanKind::Hash => {
+            let _: u64 = redis::cmd("HDEL")
+                .arg(key)
+                .arg(b"transient")
+                .query_async(&mut *mutator)
+                .await
+                .unwrap();
+            let _: u64 = redis::cmd("HSET")
+                .arg(key)
+                .arg(b"late")
+                .arg(b"value")
+                .query_async(&mut *mutator)
+                .await
+                .unwrap();
+        }
+        RedisCollectionScanKind::Set => {
+            let _: u64 = redis::cmd("SREM")
+                .arg(key)
+                .arg(b"transient")
+                .query_async(&mut *mutator)
+                .await
+                .unwrap();
+            let _: u64 = redis::cmd("SADD")
+                .arg(key)
+                .arg(b"late")
+                .query_async(&mut *mutator)
+                .await
+                .unwrap();
+        }
+        RedisCollectionScanKind::SortedSet => {
+            let _: u64 = redis::cmd("ZREM")
+                .arg(key)
+                .arg(b"transient")
+                .query_async(&mut *mutator)
+                .await
+                .unwrap();
+            let _: u64 = redis::cmd("ZADD")
+                .arg(key)
+                .arg(10_002_u64)
+                .arg(b"late")
+                .query_async(&mut *mutator)
+                .await
+                .unwrap();
+        }
+    }
+    let mut seen = BTreeSet::new();
+    collect_first_column(&first, &mut seen);
+    let mut start = u64::from(first.envelope().row_count());
+    while let Some(page) = stream.next_page(identity(), start).await.unwrap() {
+        collect_first_column(&page, &mut seen);
+        start += u64::from(page.envelope().row_count());
+    }
+    assert!(
+        stable.is_subset(&seen),
+        "stable {kind:?} members {tag} {protocol:?}"
+    );
+    assert!(!seen.contains(b"removed-before".as_slice()));
+}
+
+fn collect_first_column(page: &ResultPage, values: &mut BTreeSet<Vec<u8>>) {
+    assert_ne!(page.envelope().row_count(), 0);
+    for row in 0..page.envelope().row_count() {
+        values.insert(page.cell(row, 0).unwrap().bytes().to_vec());
     }
 }
 

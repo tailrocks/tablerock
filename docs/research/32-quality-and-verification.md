@@ -134,10 +134,12 @@ Engine additions:
   post-dispatch cancellation.
 
 The current Redis 7.4.9/8.8.0 RESP2/RESP3 matrix continuously proves binary
-SCAN, HSCAN, SSCAN, and ZSCAN bounded pages. Concurrent-mutation duplicate and
-omission behavior and a pre-decode transport allocation cap remain separate
-required gates. Accepted decoded collection batches and all retained pending
-state have explicit entry and byte bounds.
+SCAN, HSCAN, SSCAN, and ZSCAN bounded pages. The same matrix proves
+stable-throughout and absent-throughout guarantees during concurrent mutation,
+while accepting legal duplicates and leaving transient membership undefined. A
+pre-decode transport allocation cap remains a separate required gate. Accepted
+decoded collection batches and all retained pending state have explicit entry
+and byte bounds.
 
 A support claim is exactly the continuously passing real-server matrix.
 
