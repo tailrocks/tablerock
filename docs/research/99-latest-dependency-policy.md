@@ -26,6 +26,9 @@ directly to `main`, never through an automated pull request.
   TableRock moved to Rust 1.97 and repinned immediately. Public Rust API changes
   in that range are documentation improvements and formatting only, so no
   migration entry applies.
+- TermRock advanced to `7c01dff` to provision current nightly Rust for its API
+  tooling. The change is CI-only with no consumer migration; TableRock repinned
+  immediately.
 - Every other adopted and planned baseline version in dependency decision `20`
   matches the current crates.io release.
 - Current official ClickHouse 0.15.1 and upstream `main` still require
