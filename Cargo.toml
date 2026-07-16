@@ -12,7 +12,7 @@ repository = "https://github.com/tailrocks/tablerock"
 [workspace.dependencies]
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 ratatui-core = "0.1.2"
-termrock = { version = "=0.6.0", git = "https://github.com/tailrocks/termrock.git", rev = "cbed106c539efbd30dbb9935863e59a7af95bef4" }
+termrock = { version = "=0.6.0", git = "https://github.com/tailrocks/termrock.git", rev = "e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

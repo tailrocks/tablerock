@@ -17,17 +17,17 @@ queries, values, mutations, and safety policy never move into TermRock.
 Checked 2026-07-16:
 
 - TermRock `main` at
-  [`cbed106c`](https://github.com/tailrocks/termrock/commit/cbed106c539efbd30dbb9935863e59a7af95bef4),
+  [`e5bd94e2`](https://github.com/tailrocks/termrock/commit/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b),
   version `0.6.0`, Rust 1.95 floor, Apache-2.0, Ratatui 0.30 component split,
-  optional Crossterm 0.29 adapter, and the published neutral `Tree`;
+  optional Crossterm 0.29 adapter, and published neutral `Tree` and `Form`;
 - Jackin at
   [`27c450e9`](https://github.com/jackin-project/jackin/commit/27c450e9af7a299171034f98267e0fa26bd3057f)
   pins the earlier compatible TermRock baseline `41482e9f` and uses Ratatui
-  0.30; Tree is additive and does not import Jackin product internals;
-- TermRock's [component inventory](https://github.com/tailrocks/termrock/blob/cbed106c539efbd30dbb9935863e59a7af95bef4/crates/termrock/COMPONENTS.md),
-  [migration boundary](https://github.com/tailrocks/termrock/blob/cbed106c539efbd30dbb9935863e59a7af95bef4/MIGRATING.md),
-  [interaction conventions](https://github.com/tailrocks/termrock/blob/cbed106c539efbd30dbb9935863e59a7af95bef4/docs/content/docs/interaction.mdx),
-  and [compatibility record](https://github.com/tailrocks/termrock/blob/cbed106c539efbd30dbb9935863e59a7af95bef4/compatibility.toml)
+  0.30; Tree and Form are additive and do not import Jackin product internals;
+- TermRock's [component inventory](https://github.com/tailrocks/termrock/blob/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b/crates/termrock/COMPONENTS.md),
+  [migration boundary](https://github.com/tailrocks/termrock/blob/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b/MIGRATING.md),
+  [interaction conventions](https://github.com/tailrocks/termrock/blob/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b/docs/content/docs/interaction.mdx),
+  and [compatibility record](https://github.com/tailrocks/termrock/blob/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b/compatibility.toml)
   define the reusable boundary;
 - Jackin's [TUI architecture](https://github.com/jackin-project/jackin/blob/27c450e9af7a299171034f98267e0fa26bd3057f/docs/content/docs/reference/tui/architecture.mdx)
   is the approved reference for Model/Message/Update/Effect/Subscription/View
@@ -79,7 +79,7 @@ ships. Their public APIs follow TermRock's neutral contract.
 | Primitive | Why neutral | Required contract | First TableRock dependency |
 |---|---|---|---|
 | `Tree` (published) | Hierarchical navigation recurs across products | Stable node IDs; disclosure state; depth; disabled/loading/error rows; keyboard/mouse; caller-owned lazy loading and filtering | Catalog and connection groups |
-| `Form` / form layout | Structured settings are not database-specific | Sections, labels, help/error text, required/disabled state, focus traversal, responsive one/two-column layout, caller validation | Connection editor and settings |
+| `Form` / form layout (published) | Structured settings are not database-specific | Sections, labels, help/error text, required/disabled state, focus traversal, responsive one/two-column layout, caller validation | Connection editor and settings |
 | `SplitPane` | Resizable regions recur in complex TUIs | Horizontal/vertical split; min sizes; remembered fraction; divider focus/drag; collapse; tiny-area safety | Catalog/workbench and editor/results |
 | `VirtualGrid` | Large two-dimensional data is broadly reusable | Borrowed visible cells; stable row/column IDs; header/gutter; two-axis viewport; range selection; column widths; hit regions; caller render projection; no fetching/edit policy | PostgreSQL table/result grid |
 | `TextArea` | Multiline editing is a general primitive | Grapheme-safe buffer; cursor/selection; undo/redo; line numbers; search; vertical/horizontal scroll; paste; external spans/diagnostics; no parser | SQL and Redis command editor |

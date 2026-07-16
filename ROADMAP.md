@@ -47,9 +47,10 @@ this phase is approved.
 
 **Status:** In progress. T0 pins and verifies the minimal TermRock consumer in
 [`35-phase-1-termrock-t0.md`](docs/research/35-phase-1-termrock-t0.md). The T1
-`Tree` checkpoint is published and repinned with evidence in
-[`36-phase-1-termrock-tree.md`](docs/research/36-phase-1-termrock-tree.md).
-T1 `Form`/`SplitPane` and the executable shell remain incomplete.
+`Tree` and `Form` checkpoints are published and repinned with evidence in
+[`36-phase-1-termrock-tree.md`](docs/research/36-phase-1-termrock-tree.md) and
+[`37-phase-1-termrock-form.md`](docs/research/37-phase-1-termrock-form.md).
+T1 `SplitPane` and the executable shell remain incomplete.
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,
