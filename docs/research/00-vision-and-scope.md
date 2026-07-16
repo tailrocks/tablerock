@@ -61,6 +61,10 @@ forced into one relational abstraction.
 
 ## Product boundary
 
-TableRock consumes the independent `tailrocks-tui` component project. It never
-imports `jackin❯` product crates. A future general secret crate is considered
-only after a second consumer proves a stable neutral contract.
+TableRock consumes the independent
+[`termrock`](https://github.com/tailrocks/termrock) component project. It never
+imports `jackin❯` product crates. Every missing reusable interactive primitive
+is designed, tested, documented, committed, and pushed directly to TermRock
+`main` before TableRock consumes its exact revision; no branch or pull request
+is used. Database state and policy remain TableRock-owned. Secret handling stays
+in TableRock.

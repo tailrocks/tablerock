@@ -1,12 +1,27 @@
 # Contributing
 
-TableRock is currently in a research phase. Open an issue or proposal before
-adding application code, dependencies, configuration schemas, or public APIs.
+TableRock is currently in a research phase. Record and approve the relevant
+research decision before adding application code, dependencies, configuration
+schemas, or public APIs.
+
+## Trunk-only delivery
+
+- Work directly on `main`; do not create or switch to another branch.
+- Do not open pull requests.
+- Keep each checkpoint commit focused, buildable, and safe to publish.
+- Use a Conventional Commit subject, DCO sign-off (`git commit -s`), and the
+  `Co-authored-by: Codex <codex@openai.com>` trailer for Codex-authored work.
+- Run the checks required by the changed surface before committing, then push
+  the commit immediately unless the operator explicitly says to hold it.
+- Never force-push or rewrite published `main`; fix mistakes forward.
+- When a reusable component/API is missing, implement, test, document, commit,
+  and push it directly to TermRock `main` with no branch or pull request; then
+  pin that exact revision from TableRock `main`. Jackin is never modified as
+  part of TableRock delivery.
 
 ## Changes
 
-- Use Conventional Commits and DCO sign-off (`git commit -s`).
-- Keep one focused concern per pull request.
+- Keep one focused concern per checkpoint commit.
 - Update research/roadmap/docs with decisions and behavior.
 - Add tests proportional to safety and cross-module impact.
 - Record dependency version, features, license, MSRV, and motivation.

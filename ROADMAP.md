@@ -1,48 +1,159 @@
 # Roadmap
 
-TableRock is a research-backed proposal. Each phase is independently reviewable
-and leaves the repository honest about what exists.
+TableRock is research-only until Phase 0 decisions are approved. The program
+builds one Rust-owned PostgreSQL, ClickHouse, and Redis workbench, first as a
+TermRock/Ratatui TUI and later as a native SwiftUI/AppKit macOS application.
 
-## Phase 0: Decisions and dependency spikes
+All delivery is direct, forward-only work on `main`. Never create a branch or
+pull request. Each checkpoint must build, pass its evidence gate, update its
+documentation, and remain honest about incomplete parity.
 
-- Close naming/legal, profile scope, storage, license policy, and server matrix.
-- Establish core value/capability/result contracts and driver contract tests.
-- Spike PostgreSQL, official ClickHouse, Redis, SQL parsing, editor, and storage.
+## Program map
 
-## Phase 1: Profiles and connection shell
+| Phase | Outcome | Depends on |
+|---|---|---|
+| 0 | Research and architecture decisions approved | current research |
+| 1 | TermRock substrate and empty TUI shell | 0 |
+| 2 | Rust contracts, storage choice, and three driver spikes | 0 |
+| 3 | Profiles, credentials, and connection shell | 1, 2 |
+| 4 | PostgreSQL read-only vertical slice | 3, TermRock tree/grid |
+| 5 | Editor, completion, grid, history, and saved-query foundation | 4, TermRock editor primitives |
+| 6 | PostgreSQL editing and administration | 5 |
+| 7 | ClickHouse complete engine slice | 5 |
+| 8 | Redis complete engine slice | 5 |
+| 9 | Cross-engine data movement and daily workflows | 6, 7, 8 |
+| 10 | Scoped parity expansion | 9 |
+| 11 | TUI hardening and parity release gate | 10 |
+| 12 | selected macOS distribution and UniFFI proof | 11 |
+| 13 | Native macOS vertical slice | 12 |
+| 14 | Native workflow parity and release evidence | 13 |
+| 15 | Parity closure and ongoing compatibility | 14 |
 
-- Connection list/editor for PostgreSQL, ClickHouse, and Redis.
-- 1Password item mapping, TLS, safety modes, Test, and temporary connection.
+## Phase outcomes
 
-## Phase 2: PostgreSQL read-only slice
+### Phase 0 — approve research
 
-- Databases, schemas, tables/views, structure, table pages, SQL, streaming,
-  cancellation, typed values, and bounded results.
+Freeze the product boundary, clean-room process, functional-parity ledger,
+TermRock ownership, TEA, Rust contract language, SecretSource model, bundled
+SQLite persistence, server support policy, synchronous UniFFI bridge, and direct
+notarized macOS distribution. No application code or dependency is added before
+this phase is approved.
 
-## Phase 3: Grid, editor, autocomplete, and PostgreSQL editing
+### Phase 1 — TermRock and TUI foundation
 
-- Viewport grid, multiline SQL editor, completion, staged mutations, review,
-  transactional apply, and conflict handling.
+Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
+TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,
+responsive layout, render harness, and safe shutdown. Add missing neutral
+`Form`, `Tree`, `SplitPane`, and interaction primitives to TermRock `main` first,
+with reusable APIs, lookbook cases, docs, tests, and Jackin compatibility.
+Use Crossterm 0.29 as the sole terminal backend: one CLI EventStream for input
+and TermRock's Crossterm session as the sole terminal lifecycle owner.
 
-## Phase 4: ClickHouse slice
+### Phase 2 — Rust service foundation
 
-- Official driver, databases/objects, arbitrary dynamic results, query progress,
-  cancellation, inserts, parts, and asynchronous mutation visibility.
+Define owned IDs, capabilities, values, revisions, commands, events, pages,
+errors, cancellation, safety, and redaction. Implement bundled SQLite through
+`rusqlite` on the dedicated Rust persistence worker.
+Run real-server spikes for `tokio-postgres`, official `clickhouse-rs`, and
+`redis-rs`, proving arbitrary values, bounded streaming, TLS, cancellation
+truth, reconnect, and ambiguous-write behavior before feature claims.
 
-## Phase 5: Redis slice
+### Phase 3 — connection experience
 
-- Logical databases, SCAN browser, namespaces, typed values, TTL, commands,
-  current server overview, and guarded type-specific edits.
+Deliver searchable/organized profiles, capability-driven forms, URL and
+temporary drafts, Test and Connect, General/TLS/Safety sections, 1Password
+references, explicit plaintext danger, context selection, health, reconnect,
+and safe versioned persistence for all three engines.
 
-## Phase 6: Daily-use hardening
+### Phase 4 — PostgreSQL read-only tracer
 
-- History, restoration, health/reconnect, cache budgets, performance gates,
-  support matrix, documentation, telemetry, and provenance audit.
+Deliver lazy database/schema/object catalog, object and query tabs, structure,
+bounded table pages, arbitrary SQL streaming, typed values, progress, cancel,
+errors, and result inspection. Add TermRock `VirtualGrid` before TableRock ships
+its database-aware grid composition.
 
-## Phase 7: Service and native macOS client
+### Phase 5 — workbench foundation
 
-- Versioned local daemon protocol and authoritative sessions.
-- SwiftUI/AppKit application over coarse Rust commands, events, and pages.
+Add TermRock `TextArea` and `CompletionMenu`; then deliver multiline SQL/Redis
+editing, statement selection, revisioned completion, parameters, find/replace,
+formatting, explain foundations, sorting/filtering, column controls, copy
+formats, query files, query history, favorites, saved queries, quick switching,
+and intent-only session restoration.
 
-Detailed scope, PR slices, and gates are in
-[the delivery plan](docs/research/30-delivery-plan.md).
+### Phase 6 — PostgreSQL write/admin slice
+
+Deliver proven editability, typed value editors, inserts/updates/deletes,
+staged review/undo/discard, parameterized transactional apply, conflict and
+generated-value handling, foreign-key navigation, reviewed table operations,
+activity/dashboard, and PostgreSQL-specific structure facts.
+
+### Phase 7 — ClickHouse slice
+
+Deliver databases/objects/DDL, arbitrary dynamic query results through the
+official client, complex values, progress/query IDs, honest cancellation,
+batch inserts, parts, explain variants, and asynchronous mutation visibility.
+Never present ClickHouse mutations as transactions.
+
+### Phase 8 — Redis slice
+
+Deliver logical database isolation, SCAN navigation, namespaces, byte-safe
+keys/values, type views, TTL, bounded server overview, command editor/completion,
+pipelines, guarded type-specific edits, and honest post-dispatch cancellation.
+Automatic browsing never uses `KEYS`.
+
+### Phase 9 — daily workflows and data movement
+
+Complete result tabs, multi-statement outcomes, saved filters/preferences,
+streaming CSV/JSON/SQL import/export where meaningful, cancellation cleanup,
+table operations, health/activity, robust history/search, file change handling,
+restoration, cache/eviction, and cross-engine support documentation.
+
+### Phase 10 — scoped parity expansion
+
+Close planned later rows from the parity ledger: reviewed structure editing,
+PostgreSQL backup/restore, relationship exploration, role/privilege inspection,
+startup actions, optional Vim behavior, and engine-specific administration.
+SSH uses one Rust `russh` tunnel adapter below the database clients. Cloud
+provider proxy/identity workflows remain explicitly excluded from this program.
+Features that do not apply to an engine render an explicit unsupported
+capability.
+
+### Phase 11 — TUI parity release gate
+
+Pass reducer, widget, full-screen, PTY, real-server, failure-injection,
+security, accessibility, Unicode, performance, memory, clean-room, license, and
+support-matrix gates. Every in-scope parity-ledger row is implemented, explicitly
+excluded, or visibly blocks the parity claim.
+
+### Phase 12 — prove the selected native architecture
+
+Prove the direct Developer ID/hardened-runtime/notarized release, Keychain and
+1Password behavior, embedded synchronous UniFFI bridge, Swift 6 concurrency,
+XCFramework packaging, cancellation, ownership, and performance. Failure blocks
+native work and requires an explicit architecture revision; no secondary bridge
+or distribution path is carried in the roadmap.
+
+### Phase 13 — native vertical slice
+
+Build the SwiftUI `App`/window/commands/settings shell, `@MainActor`
+presentation store, UniFFI Rust bridge, connection experience, AppKit catalog,
+query editor, large grid, result page, cancellation, and accessibility tracer.
+Swift contains no database or safety behavior.
+
+### Phase 14 — native parity and release evidence
+
+Project all supported profiles, tabs, history, query/edit/review, engine-specific
+views, import/export, files, settings, restoration, multi-window behavior,
+VoiceOver, keyboard, appearance, IME, signing, hardened runtime/notarization, upgrade,
+uninstall, crash recovery, and performance through the shared Rust contracts.
+
+### Phase 15 — close and maintain parity
+
+Audit the functional ledger, user documentation, tested server/terminal/macOS
+matrix, provenance, licenses, migrations, support diagnostics, and release
+artifacts. Continue compatibility work through small buildable `main` commits;
+never hide an unsupported or regressed capability behind a parity claim.
+
+Detailed deliverables and phase gates are in
+[the delivery plan](docs/research/30-delivery-plan.md). The feature baseline is
+[the functional parity ledger](docs/research/06-functional-parity-ledger.md).

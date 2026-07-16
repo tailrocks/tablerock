@@ -51,7 +51,9 @@ tests, assets, text, geometry, colors, or key bindings.
 
 ## Implementation provenance
 
-Every implementation PR influenced by a reference records:
+Every implementation commit influenced by a reference records this block in
+its commit body and links the TableRock requirement/test that independently
+defines the behavior:
 
 ```text
 External concept: <broad behavior>
@@ -61,5 +63,6 @@ Implementation source: official protocol/library docs and TableRock tests
 Copied code/assets/text: none
 ```
 
-For close behavior, use a reviewer who reads the TableRock requirement and diff
-without consulting the external implementation.
+For close behavior, perform an independent review from the TableRock
+requirement and diff without consulting the external implementation. Direct
+work on `main` does not weaken this provenance gate.

@@ -1,9 +1,14 @@
 # Terminal Experience
 
 TableRock is a terminal product, not a desktop layout compressed into cells. It
-uses shared Tailrocks panels, tabs, dialogs, focus, status, hints, terminal
+uses shared TermRock panels, tabs, dialogs, focus, status, hints, terminal
 lifecycle, and default phosphor theme while owning database-specific layouts and
 state.
+
+Crossterm 0.29 is the sole terminal backend/input library. One CLI-owned
+`EventStream` feeds TEA messages; TermRock's Crossterm session solely owns raw
+mode, alternate screen, mouse/paste modes, cursor, and restoration. Screens and
+widgets never emit Crossterm commands directly.
 
 ## Application entry
 
@@ -57,13 +62,16 @@ shortcut is an optimization, not the sole path.
 
 ## Shared versus local components
 
-Use `tailrocks-tui` for theme, product header base, Panel, TabStrip, lists,
+Use `termrock` for theme, product header base, Panel, Tabs, lists,
 filters, text input, actions, status/hints, dialogs, toasts, focus, scroll, and
 terminal ownership.
 
-Keep CatalogTree, DataGrid, query editor wrapper, value inspector, change review,
-and product compositions local initially. Promote a presentation-only primitive
-only when a second consumer needs the same neutral state/interaction contract.
+Keep CatalogModel, DataGridModel, query editor model, value inspector, change
+review, and product compositions local. Every missing presentation-only
+primitive with a neutral state/interaction contract is added to TermRock first
+and remains reusable by TableRock, Jackin, and future products. The detailed
+consume/extend boundary is in
+[13-termrock-integration.md](13-termrock-integration.md).
 
 ## Data grid contract
 

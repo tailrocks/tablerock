@@ -1,102 +1,161 @@
-# Dependency Evaluation
+# Dependency Decisions
 
-Versions and license metadata were researched on 2026-07-15. Re-resolve version,
-MSRV, features, advisories, duplicates, maintenance, and licenses in the PR that
-adds each dependency.
+Versions and license metadata were checked on 2026-07-16. Re-resolve the exact
+version, MSRV, features, advisories, duplicate graph, maintenance, and license in
+the approved checkpoint that adds each dependency. The selected library does not
+change without a recorded architecture revision.
 
-## Baseline matrix
+## Selected baseline
 
-| Concern | Candidate | Researched version | License | Direction |
+| Concern | Selected project | Researched version | License | Ownership rule |
 |---|---|---:|---|---|
-| PostgreSQL | [`tokio-postgres`](https://github.com/rust-postgres/rust-postgres) | 0.7.18 | MIT OR Apache-2.0 | spike/adopt |
-| PostgreSQL TLS | [`tokio-postgres-rustls`](https://github.com/jbg/tokio-postgres-rustls) | 0.14.0 | MIT | spike/adopt |
-| ClickHouse | official [`clickhouse`](https://github.com/ClickHouse/clickhouse-rs) | 0.15.1 | MIT OR Apache-2.0 | required baseline |
-| Redis | [`redis`](https://github.com/redis-rs/redis-rs) | 1.4.0 | BSD-3-Clause | required baseline |
-| SQL analysis | [`sqlparser`](https://github.com/apache/datafusion-sqlparser-rs) | 0.62.0 | Apache-2.0 | baseline |
-| TUI editor | [`ratatui-textarea`](https://github.com/ratatui/ratatui-textarea) | 0.9.2 | MIT | local-wrapper spike |
-| TUI | future `tailrocks-tui` over [Ratatui](https://github.com/ratatui/ratatui) | release first | Apache-2.0/MIT deps | required |
-| Persistence | current `turso` or focused SQLite adapter | spike | verify | one chokepoint |
-| Swift binding | [`uniffi`](https://github.com/mozilla/uniffi-rs) | 0.32.0 | MPL-2.0 | deferred ruling |
-| AppKit from Rust | [`objc2`](https://github.com/madsmtm/objc2) | native phase | MIT | narrow option |
+| Async runtime | [`tokio`](https://github.com/tokio-rs/tokio) | resolve at adoption | MIT | engine/runtime only |
+| PostgreSQL | [`tokio-postgres`](https://github.com/rust-postgres/rust-postgres) | 0.7.18 | MIT OR Apache-2.0 | driver adapter only |
+| PostgreSQL TLS | [`tokio-postgres-rustls`](https://github.com/jbg/tokio-postgres-rustls) | 0.14.0 | MIT | PostgreSQL adapter only |
+| ClickHouse | official [`clickhouse`](https://github.com/ClickHouse/clickhouse-rs) | 0.15.1 | MIT OR Apache-2.0 | driver adapter only |
+| Redis | [`redis`](https://github.com/redis-rs/redis-rs) | 1.4.0 | BSD-3-Clause | driver adapter only |
+| SSH tunneling | [`russh`](https://github.com/Eugeny/russh) | 0.62.2 | Apache-2.0 | transport adapter below drivers |
+| SQL analysis | [`sqlparser`](https://github.com/apache/datafusion-sqlparser-rs) | 0.62.0 | Apache-2.0 | Rust editor/query service |
+| TUI | [`termrock`](https://github.com/tailrocks/termrock) | 0.6.0 / exact Git revision | Apache-2.0 | only reusable TUI layer |
+| Terminal renderer | [Ratatui](https://github.com/ratatui/ratatui) | 0.30-compatible with pinned TermRock | MIT | through TermRock compatibility tuple |
+| Terminal backend/input | [`crossterm`](https://github.com/crossterm-rs/crossterm) | 0.29.0 | MIT | CLI terminal adapter; TermRock `crossterm` feature |
+| Persistence | [`rusqlite`](https://github.com/rusqlite/rusqlite) with bundled SQLite | 0.40.1 | MIT | dedicated Rust persistence worker |
+| Swift binding | [`uniffi`](https://github.com/mozilla/uniffi-rs) | 0.32.0 | MPL-2.0 | synchronous coarse FFI only |
+| Structured diagnostics | [`tracing`](https://github.com/tokio-rs/tracing) | 0.1.44 | MIT | fixed safe fields only |
+| Telemetry export | [`opentelemetry-otlp`](https://github.com/open-telemetry/opentelemetry-rust) | 0.32.0 | Apache-2.0 | opt-in OTLP, disabled by default |
+
+TableRock does not directly depend on a separate textarea/widget framework,
+Turso/libSQL, Arrow, an Objective-C bridge from Rust, a local RPC framework, or
+a second SQL parser. A missing general TUI primitive is implemented in TermRock.
 
 ## PostgreSQL
 
 `tokio-postgres` provides explicit async connection ownership, `query_raw`
-streaming, prepared metadata, and `CancelToken`. Spike arbitrary OIDs/extension
-types, rustls cancellation, COPY/notices/multiple statements, portal
-backpressure, large values, database pools, and failure categories. Keep all
-client types behind the adapter.
+streaming, prepared metadata, and `CancelToken`. The adoption checkpoint proves
+arbitrary OIDs/extension types, rustls negotiation, cancellation races, COPY,
+notices, multiple statements, portal/backpressure behavior, large values,
+connection loss, and ambiguous writes. All client types terminate inside the
+adapter.
 
-Choose one rustls provider/root strategy. Never make invalid-certificate
-acceptance the production default. Verify hostname, CA, client identity, and
-PostgreSQL negotiation independently.
+Use rustls with explicit platform/project root handling and client identity.
+Invalid-certificate acceptance exists only as a dangerous, visible profile
+setting and is never enabled by default.
 
 ## ClickHouse
 
-The operator requires the official client. Its typed Row APIs suit known
-schemas, but a workbench needs arbitrary results. Spike `fetch_bytes()` with a
-self-describing format first, then generic RowBinary if measurements require it.
-Test partial errors, query IDs, server cancellation, progress permissions,
-nested types, mutation polling, compression, and TLS roots.
+Use official `ClickHouse/clickhouse-rs`. Typed Row APIs handle known catalog
+queries. Arbitrary workbench results use `fetch_bytes()` with one selected
+self-describing ClickHouse format and convert immediately into owned TableRock
+pages. Contract tests cover late errors, query IDs, progress, server
+cancellation, nested/nullable/decimal/large integer/binary types, mutations,
+compression, and TLS roots.
 
-Do not replace the client with hand-written HTTP before documenting and
-assessing a narrow upstream gap.
+No hand-written ClickHouse HTTP client exists in the selected architecture.
 
 ## Redis
 
-The operator selected [`redis-rs/redis-rs`](https://github.com/redis-rs/redis-rs).
-It provides high-level and raw commands, multiplexed async connections, SCAN
-options/iterators, pipelines, RESP3, cluster, Sentinel, Pub/Sub, and TLS feature
-families. The first spike must prove raw bytes, all SCAN variants, logical DB
-isolation, cancellation after command dispatch, blocking-command isolation,
-official command metadata integration, TLS, reconnect, and a minimal feature
-set.
+Use `redis-rs/redis-rs` with the minimum async, TLS, and protocol features needed
+for the supported standalone deployment. Multiplexed connections handle normal
+commands; dedicated connections isolate Pub/Sub and blocking commands. Contract
+tests prove byte safety, all SCAN variants, logical database isolation,
+post-dispatch cancellation truth, command metadata, TLS, timeout, and reconnect.
 
-Its BSD-3-Clause license is an explicit dependency-policy decision for this
-project. Record the exact license and transitive graph in the adoption PR; do
-not replace the selected client merely to narrow the allowlist.
+Its BSD-3-Clause license and transitive graph are recorded when adopted.
 
-## SQL and editor
+## SQL analysis and editor
 
-`sqlparser` supports PostgreSQL/ClickHouse dialects, token locations, multiple
-statements, AST visitors, and formatting. It is strict, not an error-tolerant
-editor parser. Use token fallback, dialect-aware delimiters, bounded cursor
-context, and revisioned last-known-valid AST. Reconsider tree-sitter only after
-grammar/dialect/license audit and measured completion failures.
+Use `sqlparser` tokens, dialect-aware delimiters, last-known-valid AST, catalog
+index, bounded cursor context, and revisioned completion. Incomplete input falls
+back to tokens; no second parser is introduced.
 
-`ratatui-textarea` provides multiline buffer/cursor/selection/undo/redo/line
-numbers/wrapping/scroll/search/mouse. Wrap it locally and prove shared TUI focus,
-restoration, external syntax/diagnostics, completion placement, large text,
-Unicode byte/character/cell mapping, and key ownership.
+TermRock owns `TextArea` and `CompletionMenu`. TableRock supplies the editor
+model, SQL/Redis spans, diagnostics, candidate ranking, statement semantics, and
+effects. TableRock does not import a separate textarea widget.
 
-## Ratatui
+## SSH transport
 
-Ratatui supplies Frame/Buffer rendering, Widget/StatefulWidget primitives,
-table/list/scrollbar state, layouts, and TestBackend. The shared Tailrocks TUI
-project owns higher-level focus, component state, terminal restoration,
-semantic theme, lookbook, and conformance. TableRock owns database compositions.
+Use `russh` for client connections and direct-tcpip channels. One Rust tunnel
+adapter below all three drivers owns host-key verification/known-hosts, key/
+agent/password authentication, local forwarding, keepalive, cancellation,
+reconnect, and redacted errors. The official client API returns a handle that
+opens tunneling channels
+([russh client](https://docs.rs/russh/latest/russh/client/)).
 
-Render only resident rows. Benchmark direct Buffer rendering only if normal
-widgets miss measured scroll budgets.
+No shell command constructs an SSH tunnel. Database drivers receive the
+established local stream/endpoint and remain unaware of SSH credentials.
 
-## Persistence and Arrow
+## Ratatui and TermRock
 
-Choose one embedded adapter after measuring startup, migration, FTS/history,
-single-process concurrency, package size, platforms, maintenance, and license.
-Connection profiles remain a versioned documented config schema; result payloads
-and pending edits are not persisted initially.
+TableRock uses Ratatui's **The Elm Architecture** application pattern as fixed
+in [07-application-pattern.md](07-application-pattern.md). TermRock supplies the
+terminal session, theme, input/focus/interaction contracts, reusable widgets,
+runtime result/subscription types, lookbook, and conformance. TableRock supplies
+the root Model/Message/Update/Effect/View and database compositions.
 
-Do not add Arrow initially. Owned typed values plus immutable pages prove the
-contract with less dependency/type/editing complexity. Reconsider for measured
-million-row memory/CPU, standardized native boundary, Parquet/export, or local
-vectorized analytics requirements.
+Render only resident rows and columns. Hot widgets use direct `Buffer` tests and
+benchmarks; database fetch never occurs during rendering.
+
+## Crossterm
+
+Use Crossterm as the only terminal backend and input source. `tablerock-cli`
+enables TermRock's `crossterm` feature and pins the same Crossterm 0.29 line as
+the TermRock/Ratatui compatibility tuple. The CLI enables `event-stream` for one
+async stream of keyboard, mouse, resize, focus, and paste events; the terminal
+adapter maps them immediately into backend-neutral TermRock input and root TEA
+messages.
+
+TermRock's scoped Crossterm session is the only owner of raw mode, alternate
+screen, mouse capture, bracketed paste, cursor restoration, and terminal
+commands. Product widgets and reducers never call Crossterm, write escape
+sequences, or restore the terminal independently. PTY tests cover partial setup,
+normal exit, error, signal, panic, resize, paste, and double-restore prevention.
+
+Official Crossterm 0.29 documentation covers the cross-platform command API,
+raw/alternate-screen terminal control, keyboard/mouse/resize events, and async
+`event-stream`
+([crate](https://docs.rs/crossterm/latest/crossterm/),
+[events](https://docs.rs/crossterm/latest/crossterm/event/),
+[terminal](https://docs.rs/crossterm/latest/crossterm/terminal/)).
+
+## Persistence
+
+Use `rusqlite` with bundled SQLite, migrations, foreign keys, WAL mode, busy
+timeout, integrity checks, and one dedicated Rust persistence worker. This keeps
+blocking SQLite access outside Tokio async tasks and gives TUI/native one schema.
+
+Persist profiles, secret references, organization, saved queries, preferences,
+intent-only restoration, bounded history, and support metadata. Do not persist
+resolved secrets, result pages, pending mutations, or automatic retry intent.
+
+## UniFFI
+
+Use a Rust `staticlib` plus UniFFI-generated Swift/header/module-map artifacts in
+an XCFramework. Export synchronous coarse calls only: open, submit, bounded event
+poll, fetch encoded page, cancel, and shutdown. Rust owns Tokio; a non-main Swift
+actor invokes the facade and publishes immutable snapshots to `MainActor`.
+
+The adoption gate requires Swift 6 strict concurrency, explicit handle
+destruction, panic containment, operation-ID cancellation, bounded buffers,
+deterministic generated artifacts, universal packaging/signing, leak checks,
+and measured page/scroll performance.
+
+## Diagnostics and telemetry
+
+Use `tracing` spans/events with compile-time-reviewed safe fields. The executable
+installs the subscriber; libraries do not set a global subscriber. Optional
+OpenTelemetry uses `opentelemetry-otlp` HTTP/protobuf export with bounded batch,
+timeout, and no exporter retry of database operations. Export is disabled by
+default
+([tracing](https://docs.rs/tracing/latest/tracing/),
+[OTLP exporter](https://docs.rs/opentelemetry-otlp/latest/opentelemetry_otlp/)).
 
 ## Adoption checklist
 
-1. Record source/version/features/license/MSRV.
-2. Run format/lint/test/docs plus dependency/license/advisory gates.
+1. Record source, exact version/revision, enabled features, license, MSRV, and
+   provenance.
+2. Run format, lint, test, docs, dependency, license, and advisory gates.
 3. Review duplicate and unused dependencies.
-4. Add an adapter; do not expose library types through `tablerock-core`.
-5. Add the contract test that proves the motivating requirement.
+4. Add an adapter; never expose dependency types through `tablerock-core`.
+5. Add the contract test proving the motivating requirement.
 6. Record cancellation, timeout, TLS, redaction, and failure semantics.
-7. Update research when a spike rejects a baseline.
+7. Update the fixed decision before substituting a selected dependency.

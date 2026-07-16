@@ -23,7 +23,7 @@ and key bindings are not TableRock requirements.
 ## Independent terminal translation
 
 Wide terminals show a key browser beside a selected type view; narrow terminals
-use Keys, Value, Commands, and Overview screens. Shared Tailrocks components
+use Keys, Value, Commands, and Overview screens. Shared TermRock components
 supply panels/focus/actions, while all Redis state remains TableRock-local.
 
 Decoded keys may be grouped by a configurable separator, but projected folders

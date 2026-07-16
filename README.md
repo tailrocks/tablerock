@@ -11,9 +11,15 @@ claim a working database client yet.
 
 - PostgreSQL, ClickHouse, and Redis only in the first program.
 - Rust owns connections, queries, results, edits, history, and safety.
-- The terminal UI consumes the independent Tailrocks TUI component crate.
-- A future native macOS client keeps Apple objects in SwiftUI/AppKit and
-  database state in Rust.
+- The TUI uses The Elm Architecture, the independent
+  [`termrock`](https://github.com/tailrocks/termrock) component crate, Ratatui,
+  and Crossterm as its sole terminal backend.
+- Missing neutral TUI components are added and pushed directly to TermRock
+  `main`, then consumed at an exact revision.
+- Native macOS uses SwiftUI/AppKit over embedded Rust through synchronous UniFFI
+  and ships by direct Developer ID notarized distribution.
+- Bundled SQLite through `rusqlite` stores profiles, preferences, intent, and
+  retention-controlled history.
 - 1Password is the preferred credential source. Saved plaintext passwords are
   an explicitly dangerous local-testing fallback.
 - TablePro, TablePlus, and Zedis are concepts-only references. No source code,

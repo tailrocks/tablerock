@@ -1,99 +1,161 @@
 # Native macOS Path
 
-The maintainable native architecture is SwiftUI/AppKit presentation over the
-same Rust service contracts, not AppKit rewritten wholesale in Rust and not a
-WebView shell.
+## Decision
 
-## Alternatives
+Build a direct-distribution native SwiftUI/AppKit application with the Rust
+engine embedded through UniFFI. Swift owns Apple UI and operating-system
+integration. Rust owns profiles, database behavior, sessions, catalogs,
+results, edits, history, redaction, and safety.
 
-Direct AppKit through [`objc2`](https://github.com/madsmtm/objc2) is technically
-viable but makes Rust own Objective-C lifecycle, delegates, selectors, reference
-counting, and main-thread rules. Reserve it for narrow adapters or custom
-rendering only.
+There is no daemon, local RPC protocol, manual C ABI, WebView, or Rust-owned
+AppKit object in the selected architecture. Direct Developer ID distribution,
+hardened runtime, notarization, and stapling are the first macOS release path.
+The Mac App Store is outside the first program.
 
-Rust UI frameworks are useful for cross-platform/custom interfaces but do not
-automatically provide AppKit controls, text behavior, accessibility, menus,
-focus, drag/drop, or VoiceOver. They are not the primary macOS choice.
-
-## Recommended ownership
+## Native ownership
 
 ```text
-SwiftUI / AppKit
-  lifecycle, windows, menus, tabs, focus, accessibility
-  NSTableView/NSOutlineView grid/catalog
-  native source editor, sheets, settings, Keychain/file/clipboard UI
-                 |
-                 v
-thin Swift adapter or local daemon client
-                 |
-                 v
-Rust TableRock core
-  profiles, sessions, drivers, catalog, queries, pages, edits, history
+SwiftUI App / WindowGroup / Commands / Settings
+  windows, menus, toolbar, settings, native restoration
+                       |
+                       v
+AppKit-backed controls through NSViewRepresentable
+  catalog, large grid, SQL/command editor, native find and IME
+                       |
+                       v
+thin generated UniFFI plus Swift adapter
+  @MainActor presentation store, platform capability adapters
+                       |
+                       v
+coarse Rust command/event/page facade
+                       |
+                       v
+tablerock-engine and three database adapters
 ```
 
-Rule: Swift owns Apple objects. Rust owns database state and computation.
+Use SwiftUI's [`App`](https://developer.apple.com/documentation/swiftui/app),
+[`WindowGroup`](https://developer.apple.com/documentation/swiftui/windowgroup),
+[`Settings`](https://developer.apple.com/documentation/swiftui/settings), and
+[commands](https://developer.apple.com/documentation/swiftui/menus-and-commands)
+for application structure. Use
+[`NSViewRepresentable`](https://developer.apple.com/documentation/swiftui/nsviewrepresentable)
+to host AppKit controls where database-workbench interaction requires them.
 
-Do not pass NSView, SwiftUI View/Binding, windows, or table objects into Rust.
-Do not expose client-library objects to Swift.
+Use `NSOutlineView` for the lazy catalog, `NSTableView` for large editable
+results, and `NSTextView`/TextKit for SQL and
+Redis command editing. SwiftUI remains the application/layout shell; AppKit is
+not a parallel product architecture.
 
-## Daemon-owned live sessions
+## Swift allowance
 
-Before the native app, introduce a versioned local protocol and
-`tablerock-daemon`:
+Swift is allowed for:
+
+- scenes, windows, menus, commands, settings, toolbars, sheets, alerts, focus,
+  drag/drop, pasteboard, and file panels;
+- AppKit catalog/grid/editor adapters and native accessibility;
+- `@MainActor` presentation stores and immutable view projections;
+- Keychain, LocalAuthentication, security-scoped files, app activation,
+  entitlements, signing, and notarization;
+- the narrow bridge wrapper and buffer decoding needed to call Rust safely.
+
+Swift must not implement:
+
+- database connections, SQL execution, Redis command classification, catalog
+  semantics, mutation generation, or editability rules;
+- profile truth, result retention, history policy, reconnect, cancellation
+  truth, redaction, or safety policy;
+- an independent SQL parser/completion engine or per-engine value model;
+- per-cell calls into Rust or duplicated caches that become authoritative.
+
+Presentation-only date, size, and accessibility labels may be formatted in
+Swift. Any label that changes database semantics or safety comes from a
+Rust-owned typed fact.
+
+## Stable bridge facade
+
+UniFFI exposes one coarse facade:
 
 ```text
-tablerock TUI ----+
-                  +--> tablerock-daemon --> Rust engine/sessions
-native macOS app -+
+open(profile) -> SessionId
+submit(CommandEnvelope) -> OperationId or rejection
+next_events(cursor, maximum) -> bounded event batch
+fetch_page(result_id, range, revision) -> encoded immutable page
+cancel(operation_id) -> request outcome
+shutdown(deadline) -> shutdown outcome
 ```
 
-The daemon owns connections, queries, result buffers, cancellation, history,
-safety, and secret resolution. This prevents duplicate pools/state/policy.
-Authenticate local peers, bound subscriptions, handle version mismatch, and do
-not return raw credentials to Swift.
+IDs, revisions, commands, events, values, pages, redaction, and cancellation
+outcomes are stable Rust contracts. Rust driver objects, Tokio handles, Swift
+objects, and borrowed rows do not cross the seam. One event/page batch crosses
+per call; never one object or callback per cell.
 
-The first TUI stays in-process behind the same command/event/page abstraction.
-Moving to daemon RPC changes the effect adapter, not domain or presentation.
+## UniFFI bridge
 
-## Grid and editor
+Use UniFFI-generated Swift bindings over a Rust `staticlib`, packaged for Apple
+architectures as an XCFramework. Keep the exported facade synchronous and
+coarse; Rust owns Tokio and long-running work, while Swift polls bounded event
+batches from a non-main actor. This avoids relying on UniFFI-generated async
+functions while its
+[Swift guide](https://mozilla.github.io/uniffi-rs/latest/swift/overview.html)
+documents partial Swift 6 support and async `Sendable` limitations.
 
-Use NSTableView/NSOutlineView or a measured purpose-built AppKit view. Scrolling
-requests coarse result pages. For large pages, use one immutable encoded buffer
-plus metadata rather than thousands of FFI records/calls.
+The UniFFI bridge must prove:
 
-Keep text input, cursor, selection, IME, native find, accessibility, and
-completion presentation in Swift/AppKit. Rust receives revisioned text/edits and
-returns statement/token/diagnostic/completion/formatting data.
+- Swift 6 strict-concurrency build without blanket unchecked `Sendable`;
+- explicit Rust runtime ownership and idempotent destruction;
+- typed errors, panic containment, and valid state after recoverable failure;
+- operation-ID cancellation independent of dropping a Swift task;
+- buffer ownership, bounded decoding, leak freedom, and low allocation count;
+- generated-artifact determinism and universal signed packaging, using an
+  [XCFramework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle)
+  as the selected packaging shape;
+- stable page latency and scrolling in Instruments at measured result sizes.
 
-## Interop
+Failure of this gate blocks native implementation and triggers a new recorded
+architecture decision; no unplanned bridge is carried as a parallel path.
 
-Coarse operations:
+## Concurrency and cancellation
 
-```text
-open profile -> session ID
-subscribe -> events
-execute -> query ID
-fetch page -> encoded page
-cancel -> outcome
-stage/review/apply -> operation IDs/events
-```
+Keep all native view mutation on
+[`MainActor`](https://developer.apple.com/documentation/swift/mainactor). Decode
+bounded Rust event/page buffers off the main actor, then publish one immutable
+snapshot. Rust callbacks never touch AppKit and Swift never holds a UI lock
+while entering Rust.
 
-Avoid per-cell calls, retained callbacks without cancellation, unspecified
-executors, Rust panics across FFI, borrowed-lifetime ambiguity, implicit
-Swift/Tokio cancellation, and duplicate authoritative state.
+Swift task cancellation submits `Cancel(OperationId)` and continues observing
+the Rust operation's terminal outcome. It does not claim that PostgreSQL,
+ClickHouse, or Redis stopped. The shared cancellation state machine is defined
+in [14-shared-client-contract.md](14-shared-client-contract.md).
 
-The primary live path is local RPC. If embedded Rust is later justified, compare
-then-current UniFFI with a narrow manual C ABI. UniFFI's MPL-2.0 license and
-Swift 6 concurrency behavior require explicit review. Build XCFramework/binding
-tooling only after choosing embedding.
+## Credentials and distribution
+
+Ship the native application as a direct Developer ID distribution with the
+hardened runtime, notarization, stapling, update/uninstall tests, and signing of
+the embedded Rust framework. The Rust CLI and native Rust engine resolve
+`op://` references through the 1Password CLI. The native client also keeps a thin
+[`Keychain Services`](https://developer.apple.com/documentation/security/keychain-services)
+adapter as a platform capability while Rust owns secret-source mapping,
+redaction, lifetime, and connection use.
+
+## Accessibility and native quality
+
+Use standard controls first. Wrapped/custom controls expose correct
+[AppKit accessibility](https://developer.apple.com/documentation/appkit/accessibility-for-appkit)
+roles, values, selection, and actions. Verify VoiceOver, complete keyboard
+operation, menu discoverability, focus restoration, IME/marked text, reduced
+motion, contrast, large text, light/dark appearance, and multi-window state.
 
 ## Acceptance
 
-- one Rust query/result/edit contract drives terminal and native clients;
-- one authoritative live session in normal mode;
-- native AppKit controls and complete VoiceOver/keyboard behavior;
-- no per-cell FFI/RPC;
-- explicit Swift-to-Rust-to-server cancellation;
-- documented credential/sandbox ownership;
-- clear protocol/version failure instead of undefined behavior;
-- no Swift database driver implementation.
+- one Rust behavior contract drives terminal and native clients;
+- embedded Rust through UniFFI passes signed Release-build evidence;
+- Swift contains only native presentation/platform integration and bridge code;
+- no database client, policy, result truth, or executable mutation is rebuilt
+  in Swift;
+- cancellation and ambiguous writes remain honest across the boundary;
+- no per-cell FFI call;
+- clean-machine signing, notarization, credentials, restoration,
+  accessibility, performance, and crash-recovery gates pass.
+
+Primary-source detail and citations are collected in
+[13-platform-architecture-sources.md](13-platform-architecture-sources.md).

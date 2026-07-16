@@ -14,7 +14,7 @@ Stable language shared by engine and clients:
 - commands, events, errors, revisions, edits, and restoration records.
 
 It has no Ratatui, AppKit, concrete database client, socket, task handle, or
-borrowed client row. Types are bounded and serializable for future protocol use.
+borrowed client row. Types are bounded, owned, and UniFFI-facade safe.
 
 ### `tablerock-engine`
 
@@ -37,28 +37,29 @@ src/
 
 It owns Tokio tasks/cancellation, sessions, driver adapters, catalog caches,
 query coordination, bounded results, edits, storage, reconnect/shutdown, and
-redacted telemetry. Keep drivers as modules until optional builds, helper
-processes, or independent release needs justify crates.
+redacted telemetry. Keep drivers as modules in `tablerock-engine`; do not create
+independently released driver crates.
 
 ### `tablerock-tui`
 
 TableRock presentation model, messages, pure updates, effects-as-data,
-subscriptions, views, and product compositions. It consumes `tailrocks-tui`
-but no concrete driver. Messages carry IDs and bounded snapshots/pages.
+subscriptions, views, and product compositions under The Elm Architecture. It
+consumes `termrock` but no concrete driver. Messages carry IDs and bounded
+snapshots/pages.
 
 ### `tablerock-cli`
 
-Binary, command parsing, configuration/data paths, terminal restoration,
-signals, effect execution, noninteractive text/JSON output, secret adapter, and
-telemetry initialization.
+Binary, command parsing, configuration/data paths, one Crossterm EventStream,
+TermRock terminal session, signals, effect execution, noninteractive text/JSON
+output, secret adapter, and telemetry initialization.
 
-Future `tablerock-daemon` and `tablerock-ffi` appear only after the terminal
-contracts stabilize.
+Later `tablerock-ffi` exposes the synchronous coarse UniFFI facade after the
+terminal contracts stabilize across all three engines.
 
 ## Dependency direction
 
 ```text
-tailrocks-tui <------------- tablerock-tui
+termrock <------------------ tablerock-tui
                                   |
                                   v
                            tablerock-core
@@ -67,11 +68,16 @@ tailrocks-tui <------------- tablerock-tui
                           tablerock-engine
 
 tablerock-cli ------------> tablerock-tui + tablerock-engine
-future daemon ------------> tablerock-engine + tablerock-core
-future FFI ---------------> tablerock-engine + tablerock-core
+tablerock-ffi ------------> tablerock-engine + tablerock-core
 ```
 
 No runtime-to-presentation edge is allowed.
+
+TableRock may use Ratatui types exposed by TermRock for composition, but it does
+not create a competing interactive widget layer. A missing product-neutral
+primitive is implemented and proven in TermRock first. TableRock owns only the
+database-specific model, formatting, policy, and screen composition over those
+primitives.
 
 ## Driver boundary
 
@@ -129,9 +135,10 @@ and evicts unpinned batches under a memory budget. Table tabs page from the
 server and cache near the viewport. Arbitrary queries stream to a configured
 cap. The status distinguishes row-cap, byte-cap, cancelled, and failed.
 
-Start with an owned typed value model and row batches. Do not add Arrow until
-measurements or interoperability require it. Future RPC/FFI pages use one
-encoded buffer, never one object/call per cell.
+Use the owned typed value model and immutable pages. UniFFI pages use the
+versioned TableRock column metadata/offset/null/type-tag/byte-arena encoding in
+one buffer, never one object/call per cell. Arrow is not part of the selected
+architecture.
 
 ## Catalog and autocomplete
 
@@ -145,8 +152,8 @@ fuzzy ranking, and bounded recent selections.
 
 Persist a documented versioned profile schema with stable IDs, engine,
 endpoint/default context, value source per property, TLS, safety, timeouts, and
-preferences. High-churn history/cache/restoration use one embedded storage
-adapter. Do not persist results or pending edits initially.
+preferences. High-churn history/cache/restoration use bundled SQLite through
+`rusqlite` on one dedicated Rust worker. Do not persist results or pending edits.
 
 ```text
 ConnectionValue
@@ -166,8 +173,8 @@ never enter core snapshots or telemetry.
 The official reference format and CLI read behavior are documented in
 [1Password secret references](https://developer.1password.com/docs/cli/secret-references/).
 
-Do not depend on `jackin❯` internal secret modules. A future shared secret crate
-needs a second consumer and independent security review.
+Do not depend on `jackin❯` internal secret modules. Secret handling remains a
+TableRock-local Rust service.
 
 ## Safety and telemetry
 
@@ -179,8 +186,9 @@ needs a second consumer and independent security review.
 - redaction before UI, logs, telemetry, or diagnostics;
 - default telemetry records IDs, engine, safe codes, durations, counts, and
   state transitions, not SQL or values;
-- OpenTelemetry may be sent to Parallax, but TableRock never depends on a
-  Parallax-specific database API.
+- `tracing` is local; opt-in OpenTelemetry exports only the fixed safe schema
+  over OTLP. Export is disabled by default and never uses a Parallax-specific
+  database API.
 
 ## Testing
 

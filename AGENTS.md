@@ -1,6 +1,14 @@
 # AGENTS.md
 
-Primary branch: `main`.
+## Trunk-only workflow
+
+- Work directly on `main` only.
+- Never create, switch to, or publish another branch.
+- Never open a pull request.
+- Keep `main` buildable through small, forward-only checkpoint commits. Do not
+  rewrite published history; repair forward.
+- These rules also apply to required TermRock changes. Jackin remains a
+  read-only reference.
 
 ## Current phase
 
@@ -12,8 +20,11 @@ the relevant research decision and roadmap phase are approved.
 - TableRock owns PostgreSQL, ClickHouse, and Redis connection, exploration,
   query, result, edit, history, and safety behavior.
 - The first UI is a Rust CLI/TUI.
-- A future native macOS UI uses SwiftUI/AppKit over the Rust core.
-- Shared terminal components come from the independent Tailrocks TUI project;
+- The TUI uses The Elm Architecture, TermRock, Ratatui, and Crossterm.
+- The native macOS UI uses SwiftUI/AppKit over embedded Rust through synchronous
+  UniFFI and ships first as a direct notarized Developer ID application.
+- Shared terminal components come from the independent
+  [`termrock`](https://github.com/tailrocks/termrock) crate;
   TableRock does not import `jackin` product internals.
 
 ## Clean-room rule
@@ -24,16 +35,25 @@ assets, product text, screenshots, layout measurements, colors, or key bindings.
 Implement from this repository's requirements, official database documentation,
 selected library documentation, and direct tests.
 
-Record external-reference provenance in every implementation PR.
+Record external-reference provenance in every influenced implementation commit
+and its accompanying requirement/test documentation.
 
 ## Engineering
 
 - Prefer maintained crates and official clients over hand-written protocols.
+- The TUI application pattern is The Elm Architecture. Do not introduce
+  Component Architecture, Flux, or component-owned application state.
+- Crossterm 0.29 is the only terminal backend/input; TermRock owns terminal
+  lifecycle and reusable components.
+- PostgreSQL uses `tokio-postgres` with rustls; SSH uses `russh`.
 - The ClickHouse baseline is the official `ClickHouse/clickhouse-rs` client.
 - The Redis baseline is `redis-rs/redis-rs`; do not substitute another client
   without an explicit architecture decision.
 - Keep database client types behind adapters and out of stable core contracts.
-- Batch/page results across UI, daemon, and future FFI boundaries.
+- Persistence uses bundled SQLite through `rusqlite` on a dedicated Rust worker.
+- Native macOS embeds Rust through synchronous UniFFI. Do not add a daemon,
+  local RPC, manual C ABI, WebView, or Mac App Store path.
+- Batch/page results across TUI and UniFFI boundaries.
 - Keep I/O out of TUI update/render functions.
 - Enforce read/write safety and redaction below presentation.
 - Never persist resolved 1Password values or log credentials, SQL text, or cell

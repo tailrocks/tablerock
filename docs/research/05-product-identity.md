@@ -28,15 +28,5 @@ release, check relevant trademark classes/markets, App Stores, domains,
 Homebrew/package managers, social names, and confusing software uses with
 appropriate legal review.
 
-## Alternatives considered
-
-- **Lode:** engine-neutral and fits the Tailrocks geology theme, but package and
-  repository usage is crowded.
-- **Strata:** expresses multiple data models, but is heavily used in software.
-- **Quarry:** suggests exploration and extraction, but is extremely crowded.
-- **Outcrop:** good visibility metaphor, but existing technical/geoscience uses
-  are substantial.
-- **Datalith:** strong data/rock meaning, but an existing data-visualization
-  component project and software company use it.
-
-TableRock is the best working identity despite the legal-clearance caveat.
+The implementation plan uses only TableRock. The legal-clearance gate may block
+public release, but no second working name appears in product code or roadmap.
