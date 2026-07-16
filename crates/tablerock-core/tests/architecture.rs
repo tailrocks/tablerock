@@ -5,6 +5,7 @@ fn core_contract_has_no_runtime_or_presentation_dependency() {
 
     let source = [
         include_str!("../src/lib.rs"),
+        include_str!("../src/command.rs"),
         include_str!("../src/diagnostic.rs"),
         include_str!("../src/id.rs"),
         include_str!("../src/operation.rs"),
@@ -26,7 +27,7 @@ fn core_contract_has_no_runtime_or_presentation_dependency() {
     ] {
         assert!(
             !source.contains(forbidden),
-            "core identity contract must not contain {forbidden:?}"
+            "core contract must not contain {forbidden:?}"
         );
     }
 }

@@ -1,5 +1,6 @@
 //! Owned, bounded contracts shared by TableRock engines and clients.
 
+mod command;
 mod diagnostic;
 mod id;
 mod operation;
@@ -7,6 +8,11 @@ mod page;
 mod revision;
 mod value;
 
+pub use command::{
+    BudgetField, CommandBudget, CommandBudgetError, CommandBudgetLimits, CommandBuildError,
+    CommandEnvelope, CommandIntent, CommandSafety, CommandScope, PageRequest, RedactionClass,
+    ValidatedCommandBudget,
+};
 pub use diagnostic::{
     ApplicationCode, DiagnosticBuildError, DiagnosticPosition, FailureClass, OperationSafety,
     OperatorAction, OutcomeCertainty, PositionUnit, PostgreSqlCode, RedisCode, RetryAdvice,

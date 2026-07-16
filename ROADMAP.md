@@ -92,6 +92,9 @@ The live-session operation lifecycle and event-identity tracer is recorded in
 [`50-phase-2-operation-lifecycle.md`](docs/research/50-phase-2-operation-lifecycle.md).
 The redacted failure, ambiguity, and retry-policy tracer is recorded in
 [`51-phase-2-safe-diagnostics.md`](docs/research/51-phase-2-safe-diagnostics.md).
+The typed scope, finite budget, and versioned command-envelope tracer is
+recorded in
+[`52-phase-2-command-envelope.md`](docs/research/52-phase-2-command-envelope.md).
 
 Define owned IDs, capabilities, values, revisions, commands, events, pages,
 errors, cancellation, safety, and redaction. Implement local-only Turso through

@@ -69,6 +69,7 @@ kept in the roadmap.
 - [TermRock 0.8 canonical API migration evidence](49-termrock-0.8-migration.md)
 - [Phase 2 operation lifecycle evidence](50-phase-2-operation-lifecycle.md)
 - [Phase 2 safe diagnostic evidence](51-phase-2-safe-diagnostics.md)
+- [Phase 2 typed command envelope evidence](52-phase-2-command-envelope.md)
 
 ## Architecture headline
 
