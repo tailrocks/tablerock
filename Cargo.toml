@@ -1,0 +1,24 @@
+[workspace]
+members = ["crates/tablerock-cli", "crates/tablerock-tui"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "Apache-2.0"
+repository = "https://github.com/tailrocks/tablerock"
+
+[workspace.dependencies]
+crossterm = { version = "0.29.0", features = ["event-stream"] }
+ratatui-core = "0.1.2"
+termrock = { version = "=0.6.0", git = "https://github.com/tailrocks/termrock.git", rev = "41482e9fe9b8254f82c7803692ef9dbd7d4cf87c" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+[workspace.lints.clippy]
+correctness = "deny"
+suspicious = "deny"
+perf = "deny"

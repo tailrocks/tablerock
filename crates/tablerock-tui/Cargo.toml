@@ -1,0 +1,15 @@
+[package]
+name = "tablerock-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "TableRock terminal presentation"
+
+[dependencies]
+ratatui-core.workspace = true
+termrock.workspace = true
+
+[lints]
+workspace = true

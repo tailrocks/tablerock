@@ -52,6 +52,7 @@ kept in the roadmap.
 - [Quality and verification](32-quality-and-verification.md)
 - [Main-branch delivery](33-main-branch-delivery.md)
 - [Phase 0 exit report](34-phase-0-exit-report.md)
+- [Phase 1 TermRock T0 evidence](35-phase-1-termrock-t0.md)
 
 ## Architecture headline
 

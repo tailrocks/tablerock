@@ -45,6 +45,10 @@ this phase is approved.
 
 ### Phase 1 — TermRock and TUI foundation
 
+**Status:** In progress. T0 pins and verifies the minimal TermRock consumer in
+[`35-phase-1-termrock-t0.md`](docs/research/35-phase-1-termrock-t0.md). T1 and
+the executable shell remain incomplete.
+
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,
 responsive layout, render harness, and safe shutdown. Add missing neutral
