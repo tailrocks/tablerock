@@ -72,7 +72,7 @@ architecture decisions.
 
 | Capability | Status | TableRock requirement | Acceptance evidence |
 |---|---|---|---|
-| Lazy catalog | Core | Engine-native hierarchy, loading/stale/error nodes, subtree refresh, filtering with ancestors preserved | Large synthetic catalogs and stale-revision tests |
+| Lazy catalog | Core | Engine-native hierarchy, loading/stale/error nodes, subtree refresh, filtering with ancestors preserved | Phase 2 now proves bounded immutable engine-native preorder snapshots, stable IDs/parents, lazy/loading/stale/partial/failed child states, safe failure diagnostics, 10,001-node synthetic scale, hostile hierarchy/type/text/depth rejection, and stale/gap revision rejection; driver subtree refresh, ancestor-preserving filtering, and UI projection remain required |
 | Object tabs | Core | Preview/pinned/durable object tabs with independent context and state | Restore and close-policy tests |
 | Query/command tabs | Core | Independent text, cursor, context, results, errors, history, and running operation | Phase 2 now proves typed command scopes, finite budgets, scoped operation identity, legal lifecycle/cancellation-outcome edges, stale/duplicate rejection, and gap resync; execution text, multi-tab engine behavior, and cancellation races remain required |
 | Result tabs | Parity | One result per statement/operation, pinning, completion summaries, failure and partial-result states | Phase 2 now proves a message-free safe diagnostic taxonomy with explicit ambiguity/retry facts; multi-statement and real-driver mapping fixtures remain required |

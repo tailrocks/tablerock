@@ -173,4 +173,5 @@ opaque_ids!(
     MutationId,
     OperationId,
     RequestId,
+    CatalogNodeId,
 );

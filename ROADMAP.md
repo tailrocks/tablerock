@@ -200,6 +200,9 @@ recorded in
 TermRock 0.11 migrations 0016–0017 and the exact refreshed `main` pin are
 recorded in
 [`102-termrock-0.11-migration.md`](docs/research/102-termrock-0.11-migration.md).
+The bounded engine-native catalog forest, stable node identity, safe lazy/error
+state, and revision cursor are recorded in
+[`103-phase-2-catalog-snapshot.md`](docs/research/103-phase-2-catalog-snapshot.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

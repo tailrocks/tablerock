@@ -157,6 +157,15 @@ revision, cursor byte offset, dialect, database/schema context, and aliases.
 Results combine parser/token context, keywords/commands, catalog candidates,
 fuzzy ranking, and bounded recent selections.
 
+The core catalog is a bounded immutable preorder forest with stable opaque node
+IDs, explicit parent IDs/depth, aggregate text limits, lazy child state, and
+safe diagnostics for failed loads. Kinds preserve PostgreSQL database/schema/
+object/column, ClickHouse database/object/column, and Redis logical-database/
+projected-namespace/key semantics. Snapshot construction rejects fake
+cross-engine hierarchies, malformed trees, misplaced engine types, and unsafe
+failure state. A scope/engine/revision cursor accepts only the immediate next
+snapshot and requires resync on revision gaps.
+
 ## Profiles and credentials
 
 Persist a documented versioned profile schema with stable IDs, engine,

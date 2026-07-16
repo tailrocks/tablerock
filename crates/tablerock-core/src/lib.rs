@@ -1,5 +1,6 @@
 //! Owned, bounded contracts shared by TableRock engines and clients.
 
+mod catalog;
 mod command;
 mod diagnostic;
 mod id;
@@ -13,6 +14,11 @@ mod revision;
 mod secret;
 mod value;
 
+pub use catalog::{
+    CatalogBuildError, CatalogChildrenState, CatalogCursor, CatalogIdentity, CatalogLimits,
+    CatalogNode, CatalogNodeKind, CatalogRejection, CatalogSnapshot, ClickHouseObjectKind,
+    PostgreSqlObjectKind, RedisKeyKind,
+};
 pub use command::{
     BudgetField, CommandBudget, CommandBudgetError, CommandBudgetLimits, CommandBuildError,
     CommandEnvelope, CommandIntent, CommandSafety, CommandScope, PageRequest, RedactionClass,
@@ -24,8 +30,8 @@ pub use diagnostic::{
     SafeCode, SafeDiagnostic, Severity,
 };
 pub use id::{
-    ContextId, IdDecodeError, IdParts, MutationId, OperationId, ProfileId, QueryId, RequestId,
-    ResultId, RowId, SessionId, TabId,
+    CatalogNodeId, ContextId, IdDecodeError, IdParts, MutationId, OperationId, ProfileId, QueryId,
+    RequestId, ResultId, RowId, SessionId, TabId,
 };
 pub use operation::{
     EventRejection, OperationCursor, OperationEvent, OperationEventKind, OperationIdentity,

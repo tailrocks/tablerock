@@ -51,6 +51,7 @@ kept in the roadmap.
 - [Phase 2 ClickHouse structured-container evidence](100-phase-2-clickhouse-structured-containers.md)
 - [Phase 2 bounded result-store evidence](101-phase-2-bounded-result-store.md)
 - [TermRock 0.11 migration evidence](102-termrock-0.11-migration.md)
+- [Phase 2 immutable catalog snapshot evidence](103-phase-2-catalog-snapshot.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)
