@@ -231,6 +231,9 @@ TermRock migration 0021 and the exact refreshed `main` pin are recorded in
 Opaque bounded subscriptions, independent event fan-out, and slow-consumer
 resync isolation are recorded in
 [`114-phase-2-subscription-fanout.md`](docs/research/114-phase-2-subscription-fanout.md).
+TermRock's published immutable frame-tick spike and the exact refreshed `main`
+pin are recorded in
+[`115-termrock-frame-tick-spike.md`](docs/research/115-termrock-frame-tick-spike.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

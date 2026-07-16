@@ -63,6 +63,7 @@ kept in the roadmap.
 - [Phase 2 scoped revision ownership](112-phase-2-scoped-revision-ownership.md)
 - [TermRock migration 0021 adoption](113-termrock-migration-0021.md)
 - [Phase 2 bounded subscription fan-out](114-phase-2-subscription-fanout.md)
+- [TermRock immutable frame-tick spike adoption](115-termrock-frame-tick-spike.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)
