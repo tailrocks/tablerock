@@ -129,6 +129,8 @@ Requirements:
 - byte and row limits are checked before allocation and decoding;
 - unknown/unsupported values remain inspectable and typed as unknown;
 - binary and text stay distinct;
+- database-native containers use a distinct bounded `Structured` projection;
+  presentation never guesses structure from ordinary text;
 - pages are independently disposable and safe to decode off the main thread;
 - the native adapter publishes only the final immutable page to `@MainActor`;
 - the TableRock versioned columnar byte-arena encoding is the sole native page

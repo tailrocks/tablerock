@@ -194,6 +194,14 @@ fn value_debug_output_never_contains_cell_or_type_content() {
     assert!(!debug.contains("do-not-log"));
     assert!(debug.contains("Text"));
 
+    let structured = OwnedValue::structured(
+        BoundedText::copy_from_str("[\"do-not-log\"]", ByteLimit::new(14)).unwrap(),
+        Truncation::Complete,
+    )
+    .unwrap();
+    assert_eq!(structured.kind(), ValueKind::Structured);
+    assert!(!format!("{structured:?}").contains("do-not-log"));
+
     let engine_type = EngineType::new(
         Engine::PostgreSql,
         BoundedText::copy_from_str("secret_type", ByteLimit::new(11)).unwrap(),

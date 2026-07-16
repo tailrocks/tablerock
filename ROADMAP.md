@@ -187,6 +187,8 @@ release-flow update, and exact refreshed `main` pin are recorded in
 The ClickHouse precision-preserving complex scalar decoder and bounded fallback
 matrix are recorded in
 [`97-phase-2-clickhouse-complex-scalars.md`](docs/research/97-phase-2-clickhouse-complex-scalars.md).
+The dedicated bounded structured-container value kind is recorded in
+[`98-phase-2-structured-value-contract.md`](docs/research/98-phase-2-structured-value-contract.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

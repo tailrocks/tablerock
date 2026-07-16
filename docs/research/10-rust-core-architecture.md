@@ -138,7 +138,8 @@ cap. The status distinguishes row-cap, byte-cap, cancelled, and failed.
 Use the owned typed value model and immutable pages. UniFFI pages use the
 versioned TableRock column metadata/offset/null/type-tag/byte-arena encoding in
 one buffer, never one object/call per cell. Arrow is not part of the selected
-architecture.
+architecture. Database-native containers use the dedicated bounded
+`Structured` value kind, not ordinary text or an untyped JSON bypass.
 
 ## Catalog and autocomplete
 

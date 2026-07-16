@@ -438,6 +438,7 @@ pub enum ValueKind {
     Float64,
     Decimal,
     Text,
+    Structured,
     Binary,
     Invalid,
     Unknown,
@@ -452,6 +453,10 @@ enum ValueData {
     Float64(u64),
     Decimal(BoundedText),
     Text {
+        value: BoundedText,
+        truncation: Truncation,
+    },
+    Structured {
         value: BoundedText,
         truncation: Truncation,
     },
@@ -483,6 +488,10 @@ pub enum ValueRef<'a> {
     Float64Bits(u64),
     Decimal(&'a str),
     Text {
+        value: &'a str,
+        truncation: Truncation,
+    },
+    Structured {
         value: &'a str,
         truncation: Truncation,
     },
@@ -539,6 +548,12 @@ impl OwnedValue {
         Ok(Self(ValueData::Text { value, truncation }))
     }
 
+    /// Stores a bounded canonical projection of a database-native container.
+    pub fn structured(value: BoundedText, truncation: Truncation) -> Result<Self, ValueBuildError> {
+        validate_truncation(value.len(), truncation)?;
+        Ok(Self(ValueData::Structured { value, truncation }))
+    }
+
     pub fn binary(value: BoundedBytes, truncation: Truncation) -> Result<Self, ValueBuildError> {
         validate_truncation(value.len(), truncation)?;
         Ok(Self(ValueData::Binary { value, truncation }))
@@ -593,6 +608,10 @@ impl OwnedValue {
                 value: value.as_str(),
                 truncation: *truncation,
             },
+            ValueData::Structured { value, truncation } => ValueRef::Structured {
+                value: value.as_str(),
+                truncation: *truncation,
+            },
             ValueData::Binary { value, truncation } => ValueRef::Binary {
                 value: value.as_slice(),
                 truncation: *truncation,
@@ -628,6 +647,7 @@ impl OwnedValue {
             ValueData::Float64(_) => ValueKind::Float64,
             ValueData::Decimal(_) => ValueKind::Decimal,
             ValueData::Text { .. } => ValueKind::Text,
+            ValueData::Structured { .. } => ValueKind::Structured,
             ValueData::Binary { .. } => ValueKind::Binary,
             ValueData::Invalid { .. } => ValueKind::Invalid,
             ValueData::Unknown { .. } => ValueKind::Unknown,
@@ -639,6 +659,9 @@ impl OwnedValue {
         matches!(
             self.0,
             ValueData::Text {
+                truncation: Truncation::Truncated { .. },
+                ..
+            } | ValueData::Structured {
                 truncation: Truncation::Truncated { .. },
                 ..
             } | ValueData::Binary {

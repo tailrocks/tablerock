@@ -853,9 +853,9 @@ fn encoded_len(value: &OwnedValue) -> u64 {
         tablerock_core::ValueRef::Signed(_)
         | tablerock_core::ValueRef::Unsigned(_)
         | tablerock_core::ValueRef::Float64Bits(_) => 8,
-        tablerock_core::ValueRef::Decimal(value) | tablerock_core::ValueRef::Text { value, .. } => {
-            value.len() as u64
-        }
+        tablerock_core::ValueRef::Decimal(value)
+        | tablerock_core::ValueRef::Text { value, .. }
+        | tablerock_core::ValueRef::Structured { value, .. } => value.len() as u64,
         tablerock_core::ValueRef::Binary { value, .. }
         | tablerock_core::ValueRef::Invalid { payload: value, .. }
         | tablerock_core::ValueRef::Unknown { payload: value, .. } => value.len() as u64,

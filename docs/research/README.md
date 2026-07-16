@@ -115,6 +115,7 @@ kept in the roadmap.
 - [Phase 2 ClickHouse RowBinary foundation evidence](95-phase-2-clickhouse-rowbinary-foundation.md)
 - [TermRock 0.10 scroll/session migration evidence](96-termrock-0.10-scroll-session-migration.md)
 - [Phase 2 ClickHouse complex scalar evidence](97-phase-2-clickhouse-complex-scalars.md)
+- [Phase 2 structured value contract](98-phase-2-structured-value-contract.md)
 
 ## Architecture headline
 

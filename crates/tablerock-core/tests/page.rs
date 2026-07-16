@@ -321,6 +321,7 @@ fn canonical_encoding_matrix_accepts_every_value_kind_and_rejects_malformed_byte
         ),
         (ValueKind::Decimal, b"-12.50".to_vec()),
         (ValueKind::Text, "snowman: \u{2603}".as_bytes().to_vec()),
+        (ValueKind::Structured, br#"[1,{"key":true}]"#.to_vec()),
         (ValueKind::Binary, vec![0, 0xff]),
         (ValueKind::Invalid, vec![0xff]),
         (ValueKind::Unknown, vec![0xfe]),

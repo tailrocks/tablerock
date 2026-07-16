@@ -697,7 +697,9 @@ fn value_byte_len(value: &OwnedValue) -> u64 {
         ValueRef::Null => 0,
         ValueRef::Boolean(_) => 1,
         ValueRef::Signed(_) | ValueRef::Unsigned(_) | ValueRef::Float64Bits(_) => 8,
-        ValueRef::Decimal(value) | ValueRef::Text { value, .. } => value.len() as u64,
+        ValueRef::Decimal(value)
+        | ValueRef::Text { value, .. }
+        | ValueRef::Structured { value, .. } => value.len() as u64,
         ValueRef::Binary { value, .. }
         | ValueRef::Invalid { payload: value, .. }
         | ValueRef::Unknown { payload: value, .. } => value.len() as u64,
@@ -707,6 +709,7 @@ fn value_byte_len(value: &OwnedValue) -> u64 {
 fn value_truncation(value: &OwnedValue) -> Truncation {
     match value.as_ref() {
         ValueRef::Text { truncation, .. }
+        | ValueRef::Structured { truncation, .. }
         | ValueRef::Binary { truncation, .. }
         | ValueRef::Invalid { truncation, .. }
         | ValueRef::Unknown { truncation, .. } => truncation,
@@ -722,7 +725,9 @@ fn append_value(value: &OwnedValue, arena: &mut Vec<u8>) {
         ValueRef::Unsigned(value) | ValueRef::Float64Bits(value) => {
             arena.extend_from_slice(&value.to_be_bytes());
         }
-        ValueRef::Decimal(value) | ValueRef::Text { value, .. } => {
+        ValueRef::Decimal(value)
+        | ValueRef::Text { value, .. }
+        | ValueRef::Structured { value, .. } => {
             arena.extend_from_slice(value.as_bytes());
         }
         ValueRef::Binary { value, .. }
@@ -888,7 +893,11 @@ fn validate_parts(
         if truncations[cell] != Truncation::Complete
             && !matches!(
                 kinds[cell],
-                ValueKind::Text | ValueKind::Binary | ValueKind::Invalid | ValueKind::Unknown
+                ValueKind::Text
+                    | ValueKind::Structured
+                    | ValueKind::Binary
+                    | ValueKind::Invalid
+                    | ValueKind::Unknown
             )
         {
             return Err(PageValidationError::UnsupportedTruncationKind {
@@ -933,8 +942,12 @@ fn validate_encoding(cell: u64, kind: ValueKind, bytes: &[u8]) -> Result<(), Pag
                 actual: bytes.len() as u64,
             })
         }
-        ValueKind::Decimal | ValueKind::Text if std::str::from_utf8(bytes).is_ok() => Ok(()),
-        ValueKind::Decimal | ValueKind::Text => {
+        ValueKind::Decimal | ValueKind::Text | ValueKind::Structured
+            if std::str::from_utf8(bytes).is_ok() =>
+        {
+            Ok(())
+        }
+        ValueKind::Decimal | ValueKind::Text | ValueKind::Structured => {
             Err(PageValidationError::InvalidUtf8Encoding { cell })
         }
         ValueKind::Binary | ValueKind::Invalid | ValueKind::Unknown => Ok(()),
