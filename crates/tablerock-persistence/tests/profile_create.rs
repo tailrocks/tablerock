@@ -43,6 +43,10 @@ fn one_password() -> OnePasswordReference {
 }
 
 fn saved_profile(engine: Engine, low_id: u64) -> ProfileAggregate {
+    saved_profile_at(engine, low_id, low_id, "Saved profile")
+}
+
+fn saved_profile_at(engine: Engine, low_id: u64, revision: u64, name: &str) -> ProfileAggregate {
     let properties = ProfilePropertySet::new(vec![
         literal(ProfileProperty::Host, "database.internal"),
         literal(ProfileProperty::Port, "5432"),
@@ -91,9 +95,9 @@ fn saved_profile(engine: Engine, low_id: u64) -> ProfileAggregate {
     let connection = ProfileConnectionSnapshot::new(
         ProfileIdentity::new(
             id,
-            Revision::from_wire_u64(low_id),
+            Revision::from_wire_u64(revision),
             engine,
-            ProfileName::new(text("Saved profile")).unwrap(),
+            ProfileName::new(text(name)).unwrap(),
         ),
         properties,
         ProfilePolicy::new(
@@ -252,6 +256,109 @@ fn malformed_saved_value_fails_closed_and_rolls_back_read_transaction() {
     assert_eq!(format!("{error:?}"), "ProfileDecode");
     assert_eq!(error.to_string(), "local persistence operation failed");
     assert_eq!(actor.health().unwrap().schema_version, 3);
+    actor.shutdown().unwrap();
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn replacement_uses_atomic_revision_compare_and_swap() {
+    let path = path("replace");
+    let _ = fs::remove_file(&path);
+    let actor = PersistenceActor::open(&path).unwrap();
+    let current = saved_profile_at(Engine::Redis, 20, 20, "Current");
+    actor
+        .create_profile(current.persistable().unwrap())
+        .unwrap();
+
+    let replacement = saved_profile_at(Engine::Redis, 20, 21, "Replacement");
+    actor
+        .replace_profile(
+            Revision::from_wire_u64(20),
+            replacement.persistable().unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        actor.get_profile(profile_id(20)).unwrap(),
+        Some(replacement)
+    );
+
+    let stale = saved_profile_at(Engine::Redis, 20, 21, "Stale");
+    assert_eq!(
+        actor
+            .replace_profile(Revision::from_wire_u64(20), stale.persistable().unwrap(),)
+            .unwrap_err(),
+        PersistenceError::ProfileStaleRevision
+    );
+    let skipped = saved_profile_at(Engine::Redis, 20, 23, "Skipped");
+    assert_eq!(
+        actor
+            .replace_profile(Revision::from_wire_u64(21), skipped.persistable().unwrap(),)
+            .unwrap_err(),
+        PersistenceError::ProfileInvalidRevision
+    );
+    let missing = saved_profile_at(Engine::PostgreSql, 30, 1, "Missing");
+    assert_eq!(
+        actor
+            .replace_profile(Revision::INITIAL, missing.persistable().unwrap(),)
+            .unwrap_err(),
+        PersistenceError::ProfileNotFound
+    );
+    assert_eq!(
+        actor
+            .get_profile(profile_id(20))
+            .unwrap()
+            .unwrap()
+            .connection()
+            .revision(),
+        Revision::from_wire_u64(21)
+    );
+    actor.shutdown().unwrap();
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn replacement_child_failure_preserves_previous_aggregate() {
+    let path = path("replace-rollback");
+    let _ = fs::remove_file(&path);
+    let actor = PersistenceActor::open(&path).unwrap();
+    let current = saved_profile_at(Engine::ClickHouse, 40, 40, "Current");
+    actor
+        .create_profile(current.persistable().unwrap())
+        .unwrap();
+    actor.shutdown().unwrap();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let database = turso::Builder::new_local(path.to_str().unwrap())
+            .build()
+            .await
+            .unwrap();
+        let connection = database.connect().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TRIGGER reject_replacement_tags \
+                 BEFORE INSERT ON saved_profile_tags \
+                 BEGIN SELECT RAISE(ABORT, 'injected replacement failure'); END;",
+            )
+            .await
+            .unwrap();
+    });
+
+    let actor = PersistenceActor::open(&path).unwrap();
+    let replacement = saved_profile_at(Engine::ClickHouse, 40, 41, "Replacement");
+    assert_eq!(
+        actor
+            .replace_profile(
+                Revision::from_wire_u64(40),
+                replacement.persistable().unwrap(),
+            )
+            .unwrap_err(),
+        PersistenceError::ProfileWrite
+    );
+    assert_eq!(actor.get_profile(profile_id(40)).unwrap(), Some(current));
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }

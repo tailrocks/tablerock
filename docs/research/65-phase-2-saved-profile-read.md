@@ -41,8 +41,10 @@ transaction before later actor commands proceed.
 
 ## Deliberate boundary
 
-Validated single-profile create/read is implemented. Bounded list/filter
-projections, revision-CAS replacement, deletion policy, source resolution,
+Validated single-profile create/read is implemented. Revision-CAS replacement
+is now implemented by
+[`66-phase-2-saved-profile-replace.md`](66-phase-2-saved-profile-replace.md).
+Bounded list/filter projections, deletion policy, source resolution,
 dangerous-source user warnings, and write fault injection beyond transactional
 child failure remain required. No UI consumes persisted profiles yet.
 

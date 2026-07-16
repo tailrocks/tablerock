@@ -83,6 +83,8 @@ kept in the roadmap.
 - [Phase 2 saved-profile create evidence](63-phase-2-saved-profile-create.md)
 - [TermRock 0.9 constructible theme migration evidence](64-termrock-0.9-constructible-theme-migration.md)
 - [Phase 2 saved-profile read evidence](65-phase-2-saved-profile-read.md)
+- [Phase 2 saved-profile replace evidence](66-phase-2-saved-profile-replace.md)
+- [TermRock 0.9 semantic palette migration evidence](67-termrock-0.9-semantic-palette-migration.md)
 
 ## Architecture headline
 

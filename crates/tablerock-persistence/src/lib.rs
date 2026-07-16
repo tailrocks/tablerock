@@ -16,7 +16,7 @@ use std::{
 };
 
 use profile_store::EncodedProfile;
-use tablerock_core::{PersistableProfile, ProfileAggregate, ProfileId};
+use tablerock_core::{PersistableProfile, ProfileAggregate, ProfileId, Revision};
 
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
 const CALLER_TIMEOUT: Duration = Duration::from_secs(35);
@@ -88,6 +88,22 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
+    pub fn replace_profile(
+        &self,
+        expected_revision: Revision,
+        profile: PersistableProfile<'_>,
+    ) -> Result<(), PersistenceError> {
+        let profile = EncodedProfile::from_saved(profile);
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::ReplaceProfile(expected_revision, profile, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
     pub fn shutdown(mut self) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::Shutdown(sender))?;
@@ -131,6 +147,11 @@ enum Command {
     GetProfile(
         ProfileId,
         mpsc::SyncSender<Result<Option<ProfileAggregate>, PersistenceError>>,
+    ),
+    ReplaceProfile(
+        Revision,
+        EncodedProfile,
+        mpsc::SyncSender<Result<(), PersistenceError>>,
     ),
     Shutdown(mpsc::SyncSender<Result<(), PersistenceError>>),
 }
@@ -190,6 +211,17 @@ fn worker_main(
                     tokio::time::timeout(
                         OPERATION_TIMEOUT,
                         profile_store::read(&mut connection, id),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::ReplaceProfile(expected_revision, profile, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::replace(&mut connection, expected_revision, &profile),
                     )
                     .await
                     .map_err(|_| PersistenceError::Timeout)?
@@ -455,6 +487,9 @@ pub enum PersistenceError {
     ProfileWrite,
     ProfileRead,
     ProfileDecode,
+    ProfileNotFound,
+    ProfileStaleRevision,
+    ProfileInvalidRevision,
     Timeout,
 }
 

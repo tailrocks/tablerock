@@ -258,6 +258,134 @@ pub(crate) async fn create(
         .map_err(|_| PersistenceError::ProfileWrite)
 }
 
+pub(crate) async fn replace(
+    connection: &mut turso::Connection,
+    expected_revision: Revision,
+    profile: &EncodedProfile,
+) -> Result<(), PersistenceError> {
+    let next = expected_revision
+        .checked_next()
+        .map_err(|_| PersistenceError::ProfileInvalidRevision)?;
+    if profile.revision != next.get().to_be_bytes() {
+        return Err(PersistenceError::ProfileInvalidRevision);
+    }
+    let transaction = connection
+        .transaction()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    let changed = transaction
+        .execute(
+            "UPDATE saved_profiles SET \
+                aggregate_schema = ?1, connection_schema = ?2, property_schema = ?3, \
+                revision = ?4, engine = ?5, name = ?6, tls_policy = ?7, safety_mode = ?8, \
+                connect_timeout_ms = ?9, operation_timeout_ms = ?10, max_result_rows = ?11, \
+                max_result_bytes = ?12, group_name = ?13, favorite = ?14, saved_order = ?15, \
+                reconnect = ?16, restore_last_context = ?17, preferred_page_rows = ?18, \
+                updated_at = CURRENT_TIMESTAMP \
+             WHERE profile_id = ?19 AND revision = ?20",
+            turso::params![
+                profile.aggregate_schema,
+                profile.connection_schema,
+                profile.property_schema,
+                profile.revision.as_slice(),
+                profile.engine,
+                profile.name.as_str(),
+                profile.tls_policy,
+                profile.safety_mode,
+                profile.connect_timeout_ms,
+                profile.operation_timeout_ms,
+                profile.max_result_rows,
+                profile.max_result_bytes,
+                profile.group_name.as_deref(),
+                profile.favorite,
+                profile.saved_order,
+                profile.reconnect,
+                profile.restore_last_context,
+                profile.preferred_page_rows,
+                profile.id.as_slice(),
+                expected_revision.get().to_be_bytes().as_slice(),
+            ],
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    if changed == 0 {
+        let exists = query_u32(
+            &transaction,
+            "SELECT COUNT(*) FROM saved_profiles WHERE profile_id = ?1",
+            (profile.id.as_slice(),),
+        )
+        .await?;
+        let _ = transaction.rollback().await;
+        return Err(if exists == 0 {
+            PersistenceError::ProfileNotFound
+        } else {
+            PersistenceError::ProfileStaleRevision
+        });
+    }
+    transaction
+        .execute(
+            "DELETE FROM saved_profile_tags WHERE profile_id = ?1",
+            (profile.id.as_slice(),),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    transaction
+        .execute(
+            "DELETE FROM saved_profile_properties WHERE profile_id = ?1",
+            (profile.id.as_slice(),),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    insert_children(&transaction, profile).await?;
+    transaction
+        .commit()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)
+}
+
+async fn insert_children(
+    connection: &turso::Connection,
+    profile: &EncodedProfile,
+) -> Result<(), PersistenceError> {
+    for (ordinal, tag) in profile.tags.iter().enumerate() {
+        connection
+            .execute(
+                "INSERT INTO saved_profile_tags(profile_id, ordinal, tag) VALUES (?1, ?2, ?3)",
+                (profile.id.as_slice(), ordinal as u8, tag.as_str()),
+            )
+            .await
+            .map_err(|_| PersistenceError::ProfileWrite)?;
+    }
+    for property in &profile.properties {
+        connection
+            .execute(
+                "INSERT INTO saved_profile_properties(\
+                    profile_id, ordinal, property, source_kind, source_schema, text_value,\
+                    blob_value, op_account_id, op_vault_id, op_item_id, op_section_id,\
+                    op_field_id, op_breadcrumb\
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                turso::params![
+                    profile.id.as_slice(),
+                    property.ordinal,
+                    property.property,
+                    property.source_kind,
+                    property.source_schema,
+                    property.text_value.as_deref(),
+                    property.blob_value.as_ref().map(SensitiveBlob::as_slice),
+                    property.op_account_id.as_deref(),
+                    property.op_vault_id.as_deref(),
+                    property.op_item_id.as_deref(),
+                    property.op_section_id.as_deref(),
+                    property.op_field_id.as_deref(),
+                    property.op_breadcrumb.as_deref(),
+                ],
+            )
+            .await
+            .map_err(|_| PersistenceError::ProfileWrite)?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn read(
     connection: &mut turso::Connection,
     id: ProfileId,
