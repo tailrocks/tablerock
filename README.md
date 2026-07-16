@@ -61,8 +61,9 @@ stores the complete version-1 aggregate. Strict transactional lookup now
 reconstructs all three engines and all six source kinds through core validators;
 transactional revision compare-and-swap replaces complete aggregates without a
 last-writer-wins bypass. Revision-CAS deletion removes only profile-owned rows;
-a least-data, keyset-paginated summary list is capped at 100 items. Search and
-group/tag filters remain open; engine/favorite filters use scope-bound cursors.
+a least-data, keyset-paginated summary list is capped at 100 items. Exact engine,
+favorite, group, and tag filters use scope-bound cursors; normalized search
+remains open.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

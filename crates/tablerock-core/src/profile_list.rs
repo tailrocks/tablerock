@@ -5,30 +5,59 @@ use crate::{
     Revision,
 };
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct ProfileListFilter {
     engine: Option<Engine>,
     favorite: Option<bool>,
+    group: Option<ProfileGroupName>,
+    tag: Option<crate::ProfileTag>,
 }
 
 impl ProfileListFilter {
     #[must_use]
     pub const fn new(engine: Option<Engine>, favorite: Option<bool>) -> Self {
-        Self { engine, favorite }
+        Self {
+            engine,
+            favorite,
+            group: None,
+            tag: None,
+        }
     }
 
     #[must_use]
-    pub const fn engine(self) -> Option<Engine> {
+    pub fn with_group(mut self, group: Option<ProfileGroupName>) -> Self {
+        self.group = group;
+        self
+    }
+
+    #[must_use]
+    pub fn with_tag(mut self, tag: Option<crate::ProfileTag>) -> Self {
+        self.tag = tag;
+        self
+    }
+
+    #[must_use]
+    pub const fn engine(&self) -> Option<Engine> {
         self.engine
     }
 
     #[must_use]
-    pub const fn favorite(self) -> Option<bool> {
+    pub const fn favorite(&self) -> Option<bool> {
         self.favorite
+    }
+
+    #[must_use]
+    pub const fn group(&self) -> Option<&ProfileGroupName> {
+        self.group.as_ref()
+    }
+
+    #[must_use]
+    pub const fn tag(&self) -> Option<&crate::ProfileTag> {
+        self.tag.as_ref()
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProfileListCursor {
     filter: ProfileListFilter,
     favorite: bool,
@@ -38,7 +67,7 @@ pub struct ProfileListCursor {
 
 impl ProfileListCursor {
     #[must_use]
-    pub const fn new(favorite: bool, saved_order: u32, id: ProfileId) -> Self {
+    pub fn new(favorite: bool, saved_order: u32, id: ProfileId) -> Self {
         Self::in_filter(
             ProfileListFilter::new(None, None),
             favorite,
@@ -63,27 +92,27 @@ impl ProfileListCursor {
     }
 
     #[must_use]
-    pub const fn filter(self) -> ProfileListFilter {
-        self.filter
+    pub const fn filter(&self) -> &ProfileListFilter {
+        &self.filter
     }
 
     #[must_use]
-    pub const fn favorite(self) -> bool {
+    pub const fn favorite(&self) -> bool {
         self.favorite
     }
 
     #[must_use]
-    pub const fn saved_order(self) -> u32 {
+    pub const fn saved_order(&self) -> u32 {
         self.saved_order
     }
 
     #[must_use]
-    pub const fn id(self) -> ProfileId {
+    pub const fn id(&self) -> ProfileId {
         self.id
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileListRequest {
     filter: ProfileListFilter,
     after: Option<ProfileListCursor>,
@@ -104,7 +133,7 @@ impl ProfileListRequest {
                 maximum: Self::MAX_ITEMS,
             });
         }
-        if let Some(cursor) = after
+        if let Some(cursor) = after.as_ref()
             && cursor.filter != filter
         {
             return Err(ProfileListError::CursorFilterMismatch);
@@ -117,17 +146,17 @@ impl ProfileListRequest {
     }
 
     #[must_use]
-    pub const fn filter(self) -> ProfileListFilter {
-        self.filter
+    pub const fn filter(&self) -> &ProfileListFilter {
+        &self.filter
     }
 
     #[must_use]
-    pub const fn after(self) -> Option<ProfileListCursor> {
-        self.after
+    pub const fn after(&self) -> Option<&ProfileListCursor> {
+        self.after.as_ref()
     }
 
     #[must_use]
-    pub const fn limit(self) -> u16 {
+    pub const fn limit(&self) -> u16 {
         self.limit
     }
 }
@@ -284,7 +313,7 @@ pub struct ProfileListPage {
 
 impl ProfileListPage {
     pub fn new(
-        request: ProfileListRequest,
+        request: &ProfileListRequest,
         items: Vec<ProfileListItem>,
         has_more: bool,
     ) -> Result<Self, ProfileListError> {
@@ -301,7 +330,7 @@ impl ProfileListPage {
             items
                 .last()
                 .expect("checked nonempty")
-                .cursor(request.filter())
+                .cursor(request.filter().clone())
         });
         Ok(Self { items, next })
     }
@@ -311,8 +340,8 @@ impl ProfileListPage {
         &self.items
     }
     #[must_use]
-    pub const fn next(&self) -> Option<ProfileListCursor> {
-        self.next
+    pub fn next(&self) -> Option<ProfileListCursor> {
+        self.next.clone()
     }
 }
 

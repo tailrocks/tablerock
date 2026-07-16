@@ -32,6 +32,10 @@ const MIGRATIONS: &[(u32, &str)] = &[
         5,
         include_str!("../migrations/0005-profile-engine-list-index.sql"),
     ),
+    (
+        6,
+        include_str!("../migrations/0006-profile-group-list-index.sql"),
+    ),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

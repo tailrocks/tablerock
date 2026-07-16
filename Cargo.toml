@@ -14,7 +14,7 @@ crossterm = { version = "0.29.0", features = ["event-stream"] }
 futures-util = "0.3.32"
 ratatui-core = "0.1.2"
 ratatui-crossterm = { version = "0.1.2", default-features = false, features = ["crossterm_0_29"] }
-termrock = { version = "=0.9.0", git = "https://github.com/tailrocks/termrock.git", rev = "ff263f2d5fc3964d811daf5122220e6df7f95137" }
+termrock = { version = "=0.10.0", git = "https://github.com/tailrocks/termrock.git", rev = "ccf06463382b7ca2ca7734f3d58acdc43366fb54" }
 tokio = { version = "1.52.3", features = ["macros", "rt", "signal", "sync", "time"] }
 turso = { version = "=0.7.0", default-features = false }
 zeroize = { version = "=1.9.0", default-features = false, features = ["alloc"] }

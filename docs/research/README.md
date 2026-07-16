@@ -90,6 +90,9 @@ kept in the roadmap.
 - [TermRock 0.9 slate preset update evidence](70-termrock-0.9-slate-preset-update.md)
 - [Phase 2 profile engine/favorite filter evidence](71-phase-2-profile-engine-favorite-filter.md)
 - [TermRock 0.9 neutral event migration evidence](72-termrock-0.9-neutral-event-migration.md)
+- [Phase 2 profile group/tag filter evidence](73-phase-2-profile-group-tag-filter.md)
+- [TermRock 0.9 canonical module migration evidence](74-termrock-0.9-canonical-module-migration.md)
+- [TermRock 0.10 metadata and selection migration evidence](75-termrock-0.10-metadata-selection-migration.md)
 
 ## Architecture headline
 

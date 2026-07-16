@@ -41,8 +41,10 @@ at most `limit + 1` rows and never selects secret payload columns.
 ## Deliberate boundary
 
 Engine and favorite filters are complete below presentation. Exact group/tag
-filters, normalized search, endpoint display facts, health state, and UI loading/
-empty/failure projections remain required. Future filters must join this scoped
+filters are now implemented by
+[`73-phase-2-profile-group-tag-filter.md`](73-phase-2-profile-group-tag-filter.md).
+Normalized search, endpoint display facts, health state, and UI loading/empty/
+failure projections remain required. Future filters must join this scoped
 cursor contract rather than create a parallel list API.
 
 ## Verification record

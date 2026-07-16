@@ -184,9 +184,10 @@ The list boundary is a separate least-data projection: immutable pages contain
 at most 100 redacted identity/organization/safety/source-fact summaries and an
 opaque keyset cursor. List adapters never load secret payload columns or reuse
 full aggregates as presentation rows.
-Every continuation is bound to its closed filter scope; changing an engine or
-favorite filter requires a fresh first page instead of silently reusing a cursor
-from a different ordered set.
+Every continuation owns its closed filter scope; changing an engine, favorite,
+bounded group, or bounded tag filter requires a fresh first page instead of
+silently reusing a cursor from a different ordered set. Cursor diagnostics keep
+owned labels redacted.
 
 `OpRef` stores stable 26-character account/vault/item object IDs, a bounded
 section/field ID path, and a display breadcrumb. A metadata-only picker suggests reviewed mappings for host,

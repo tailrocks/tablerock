@@ -205,7 +205,7 @@ fn saved_token_creates_complete_rows_atomically_for_every_engine() {
     });
 
     let reopened = PersistenceActor::open(&path).unwrap();
-    assert_eq!(reopened.health().unwrap().schema_version, 5);
+    assert_eq!(reopened.health().unwrap().schema_version, 6);
     for (index, engine) in [Engine::PostgreSql, Engine::ClickHouse, Engine::Redis]
         .into_iter()
         .enumerate()
@@ -263,7 +263,7 @@ fn malformed_saved_value_fails_closed_and_rolls_back_read_transaction() {
     assert_eq!(error, PersistenceError::ProfileDecode);
     assert_eq!(format!("{error:?}"), "ProfileDecode");
     assert_eq!(error.to_string(), "local persistence operation failed");
-    assert_eq!(actor.health().unwrap().schema_version, 5);
+    assert_eq!(actor.health().unwrap().schema_version, 6);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }
@@ -302,6 +302,21 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
             )
             .await
             .unwrap();
+        connection
+            .execute(
+                "UPDATE saved_profiles SET group_name = 'Analytics' WHERE profile_id = ?1",
+                (profile_id(61).to_bytes().as_slice(),),
+            )
+            .await
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE saved_profile_tags SET tag = 'cache' \
+                 WHERE profile_id = ?1 AND ordinal = 0",
+                (profile_id(62).to_bytes().as_slice(),),
+            )
+            .await
+            .unwrap();
         let mut plan = connection
             .query(
                 "EXPLAIN QUERY PLAN SELECT profile_id FROM saved_profiles \
@@ -334,6 +349,42 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
                 .contains("saved_profiles_engine_bounded_list");
         }
         assert!(uses_engine_index);
+        let mut group_plan = connection
+            .query(
+                "EXPLAIN QUERY PLAN SELECT profile_id FROM saved_profiles \
+                 WHERE group_name = 'Operations' \
+                 ORDER BY favorite DESC, saved_order, profile_id LIMIT 3",
+                (),
+            )
+            .await
+            .unwrap();
+        let mut uses_group_index = false;
+        while let Some(row) = group_plan.next().await.unwrap() {
+            uses_group_index |= row
+                .get::<String>(3)
+                .unwrap()
+                .contains("saved_profiles_group_bounded_list");
+        }
+        assert!(uses_group_index);
+        let mut tag_plan = connection
+            .query(
+                "EXPLAIN QUERY PLAN SELECT saved_profiles.profile_id \
+                 FROM saved_profile_tags filtered_tag \
+                 JOIN saved_profiles ON saved_profiles.profile_id = filtered_tag.profile_id \
+                 WHERE filtered_tag.tag = 'cache' \
+                 ORDER BY favorite DESC, saved_order, saved_profiles.profile_id LIMIT 3",
+                (),
+            )
+            .await
+            .unwrap();
+        let mut uses_tag_index = false;
+        while let Some(row) = tag_plan.next().await.unwrap() {
+            uses_tag_index |= row
+                .get::<String>(3)
+                .unwrap()
+                .contains("saved_profile_tags_lookup");
+        }
+        assert!(uses_tag_index);
     });
 
     let actor = PersistenceActor::open(&path).unwrap();
@@ -350,7 +401,14 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
     );
     for item in first.items() {
         assert_eq!(item.name().as_str(), "Private profile name");
-        assert_eq!(item.group().unwrap().as_str(), "Operations");
+        assert_eq!(
+            item.group().unwrap().as_str(),
+            if item.id() == profile_id(61) {
+                "Analytics"
+            } else {
+                "Operations"
+            }
+        );
         assert_eq!(item.sources().host(), PropertyValueSource::Literal);
         assert_eq!(item.sources().port(), PropertyValueSource::Literal);
         assert!(item.sources().has_secret_sources());
@@ -378,7 +436,7 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
 
     let favorite_filter = ProfileListFilter::new(None, Some(true));
     let favorites = actor
-        .list_profiles(ProfileListRequest::new(favorite_filter, None, 1).unwrap())
+        .list_profiles(ProfileListRequest::new(favorite_filter.clone(), None, 1).unwrap())
         .unwrap();
     assert_eq!(favorites.items()[0].id(), profile_id(61));
     let remaining_favorites = actor
@@ -420,6 +478,67 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
         )
         .unwrap();
     assert!(impossible.items().is_empty());
+
+    let operations = actor
+        .list_profiles(
+            ProfileListRequest::new(
+                ProfileListFilter::default()
+                    .with_group(Some(ProfileGroupName::new(text("Operations")).unwrap())),
+                None,
+                10,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        operations
+            .items()
+            .iter()
+            .map(|item| item.id())
+            .collect::<Vec<_>>(),
+        vec![profile_id(62), profile_id(60)]
+    );
+    let analytics = actor
+        .list_profiles(
+            ProfileListRequest::new(
+                ProfileListFilter::default()
+                    .with_group(Some(ProfileGroupName::new(text("Analytics")).unwrap())),
+                None,
+                10,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(analytics.items().len(), 1);
+    assert_eq!(analytics.items()[0].id(), profile_id(61));
+
+    let cache = actor
+        .list_profiles(
+            ProfileListRequest::new(
+                ProfileListFilter::default()
+                    .with_tag(Some(ProfileTag::new(text("cache")).unwrap())),
+                None,
+                10,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(cache.items().len(), 1);
+    assert_eq!(cache.items()[0].id(), profile_id(62));
+    let combined = actor
+        .list_profiles(
+            ProfileListRequest::new(
+                ProfileListFilter::new(Some(Engine::Redis), Some(true))
+                    .with_group(Some(ProfileGroupName::new(text("Operations")).unwrap()))
+                    .with_tag(Some(ProfileTag::new(text("cache")).unwrap())),
+                None,
+                10,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(combined.items().len(), 1);
+    assert_eq!(combined.items()[0].id(), profile_id(62));
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }

@@ -391,7 +391,7 @@ pub(crate) async fn list(
         .transaction()
         .await
         .map_err(|_| PersistenceError::ProfileRead)?;
-    match list_transaction(&transaction, request).await {
+    match list_transaction(&transaction, &request).await {
         Ok(page) => {
             transaction
                 .commit()
@@ -408,9 +408,9 @@ pub(crate) async fn list(
 
 async fn list_transaction(
     connection: &turso::Connection,
-    request: ProfileListRequest,
+    request: &ProfileListRequest,
 ) -> Result<ProfileListPage, PersistenceError> {
-    const PROJECTION: &str = "SELECT profile_id, revision, engine, name, group_name, favorite, \
+    const PROJECTION: &str = "SELECT saved_profiles.profile_id, revision, engine, name, group_name, favorite, \
         saved_order, safety_mode, \
         (SELECT source_kind FROM saved_profile_properties p \
          WHERE p.profile_id = saved_profiles.profile_id AND property = 1), \
@@ -419,11 +419,10 @@ async fn list_transaction(
         EXISTS(SELECT 1 FROM saved_profile_properties p \
                WHERE p.profile_id = saved_profiles.profile_id AND source_kind > 1), \
         EXISTS(SELECT 1 FROM saved_profile_properties p \
-               WHERE p.profile_id = saved_profiles.profile_id AND source_kind = 6) \
-        FROM saved_profiles ";
+               WHERE p.profile_id = saved_profiles.profile_id AND source_kind = 6) ";
     let fetch_limit = u32::from(request.limit()) + 1;
-    let mut conditions = Vec::with_capacity(3);
-    let mut parameters = Vec::with_capacity(7);
+    let mut conditions = Vec::with_capacity(5);
+    let mut parameters = Vec::with_capacity(9);
     let filter = request.filter();
     if let Some(engine) = filter.engine() {
         let parameter = push_parameter(&mut parameters, i64::from(encode_engine(engine)));
@@ -433,13 +432,25 @@ async fn list_transaction(
         let parameter = push_parameter(&mut parameters, i64::from(u8::from(favorite)));
         conditions.push(format!("favorite = {parameter}"));
     }
+    if let Some(group) = filter.group() {
+        let parameter = push_parameter(&mut parameters, group.as_str().to_owned());
+        conditions.push(format!("group_name = {parameter}"));
+    }
+    let from_clause = if let Some(tag) = filter.tag() {
+        let parameter = push_parameter(&mut parameters, tag.as_str().to_owned());
+        conditions.push(format!("filtered_tag.tag = {parameter}"));
+        "FROM saved_profile_tags filtered_tag \
+         JOIN saved_profiles ON saved_profiles.profile_id = filtered_tag.profile_id "
+    } else {
+        "FROM saved_profiles "
+    };
     if let Some(after) = request.after() {
         let favorite = push_parameter(&mut parameters, i64::from(u8::from(after.favorite())));
         let order = push_parameter(&mut parameters, i64::from(after.saved_order()));
         let id = push_parameter(&mut parameters, after.id().to_bytes().to_vec());
         conditions.push(format!(
             "(favorite < {favorite} OR (favorite = {favorite} AND \
-             (saved_order > {order} OR (saved_order = {order} AND profile_id > {id}))))"
+             (saved_order > {order} OR (saved_order = {order} AND saved_profiles.profile_id > {id}))))"
         ));
     }
     let limit = push_parameter(&mut parameters, i64::from(fetch_limit));
@@ -449,7 +460,7 @@ async fn list_transaction(
         format!("WHERE {} ", conditions.join(" AND "))
     };
     let sql = format!(
-        "{PROJECTION}{where_clause}ORDER BY favorite DESC, saved_order, profile_id LIMIT {limit}"
+        "{PROJECTION}{from_clause}{where_clause}ORDER BY favorite DESC, saved_order, saved_profiles.profile_id LIMIT {limit}"
     );
     let mut rows = connection
         .query(sql, parameters)

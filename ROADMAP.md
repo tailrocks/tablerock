@@ -114,6 +114,15 @@ are recorded in
 [`71-phase-2-profile-engine-favorite-filter.md`](docs/research/71-phase-2-profile-engine-favorite-filter.md).
 TermRock's neutral-event migration and exact refreshed main pin are recorded in
 [`72-termrock-0.9-neutral-event-migration.md`](docs/research/72-termrock-0.9-neutral-event-migration.md).
+Owned cursor-scoped group/tag filters and sequential migration `0006` are
+recorded in
+[`73-phase-2-profile-group-tag-filter.md`](docs/research/73-phase-2-profile-group-tag-filter.md).
+TermRock's canonical-module migration and exact refreshed main pin are recorded
+in
+[`74-termrock-0.9-canonical-module-migration.md`](docs/research/74-termrock-0.9-canonical-module-migration.md).
+TermRock 0.10 trailing-metadata/multi-selection migration and exact refreshed
+main pin are recorded in
+[`75-termrock-0.10-metadata-selection-migration.md`](docs/research/75-termrock-0.10-metadata-selection-migration.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,
