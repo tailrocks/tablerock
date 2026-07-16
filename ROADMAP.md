@@ -151,6 +151,9 @@ plus post-cancel connection reuse, is recorded in
 TermRock's lookbook-only closure runner spike, forward API impact, and exact
 refreshed `main` pin are recorded in
 [`85-termrock-0.10-runner-spike-update.md`](docs/research/85-termrock-0.10-runner-spike-update.md).
+TermRock's planning-only reconciliation and exact refreshed `main` pin are
+recorded in
+[`86-termrock-0.10-plan-reconciliation-update.md`](docs/research/86-termrock-0.10-plan-reconciliation-update.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,
