@@ -28,9 +28,9 @@ ownership rather than new caller policy flags.
 - TableRock's real PTY normal-exit and SIGTERM tests now require line-wrap,
   cursor, paste, mouse, and alternate-screen restoration sequences.
 
-This checkpoint strengthens lifecycle ownership but does not claim the
-remaining returned-error/panic PTY, raw-termios, mouse/paste, or overflow/resync
-Phase 1 gates.
+Later evidence now covers render-authorized input in `42` and returned-error and
+panic PTY restoration, including raw-termios inspection, in `43`.
+Overflow/resync remains a Phase 1 audit item.
 
 External concept: scoped terminal mode ownership only  
 Public source: <https://github.com/tailrocks/termrock/tree/9099b3db0c3318fd183d076c4e8f8002a877be6a>  

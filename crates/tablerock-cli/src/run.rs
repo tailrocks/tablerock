@@ -86,18 +86,22 @@ pub fn root_message_channel() -> (RootMessageSender, RootMessageReceiver) {
 
 /// Run TableRock and contain panics after terminal restoration.
 pub fn run_caught() -> Result<(), RunError> {
-    static PANIC_HOOK: Mutex<()> = Mutex::new(());
-    let lock = PANIC_HOOK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let _hook = PanicHookGuard::suppress(lock);
-    let outcome = catch_unwind(AssertUnwindSafe(|| {
+    run_caught_boundary(|| {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(RunError::Runtime)?
             .block_on(run())
-    }));
+    })
+}
+
+fn run_caught_boundary(operation: impl FnOnce() -> Result<(), RunError>) -> Result<(), RunError> {
+    static PANIC_HOOK: Mutex<()> = Mutex::new(());
+    let lock = PANIC_HOOK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _hook = PanicHookGuard::suppress(lock);
+    let outcome = catch_unwind(AssertUnwindSafe(operation));
     outcome.unwrap_or(Err(RunError::Panicked))
 }
 
@@ -115,8 +119,18 @@ pub async fn run_with_root_messages(root_messages: RootMessageReceiver) -> Resul
 
     let mut session =
         Session::enter(io::stdout(), SessionOptions::default()).map_err(RunError::Terminal)?;
+    #[cfg(not(test))]
     let result = run_session(&mut session, root_messages).await;
-    match (result, session.restore()) {
+    #[cfg(test)]
+    let result = run_session(&mut session, root_messages, &mut || Ok(())).await;
+    finish_restoration(result, session.restore())
+}
+
+fn finish_restoration(
+    result: Result<(), RunError>,
+    restoration: Result<(), io::Error>,
+) -> Result<(), RunError> {
+    match (result, restoration) {
         (Ok(()), Ok(())) => Ok(()),
         (Err(primary), Ok(())) => Err(primary),
         (Ok(()), Err(restore)) => Err(RunError::Terminal(restore)),
@@ -130,6 +144,7 @@ pub async fn run_with_root_messages(root_messages: RootMessageReceiver) -> Resul
 async fn run_session(
     session: &mut Session<io::Stdout>,
     mut root_messages: RootMessageReceiver,
+    #[cfg(test)] after_frame: &mut dyn FnMut() -> Result<(), RunError>,
 ) -> Result<(), RunError> {
     let backend = CrosstermBackend::new(session.writer_mut());
     let mut terminal = Terminal::new(backend).map_err(RunError::Terminal)?;
@@ -160,6 +175,8 @@ async fn run_session(
                 .map_err(RunError::Terminal)?;
             input.set_geometry(geometry.expect("render publishes shell geometry"));
             dirty = false;
+            #[cfg(test)]
+            after_frame()?;
         }
 
         let message = tokio::select! {
@@ -234,5 +251,157 @@ impl Drop for PanicHookGuard<'_> {
         if let Some(previous) = self.previous.take() {
             std::panic::set_hook(previous);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        io::Read,
+        process::Command,
+        sync::mpsc,
+        thread,
+        time::{Duration, Instant},
+    };
+
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+
+    use super::*;
+
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    #[derive(Clone, Copy)]
+    enum TestFault {
+        ReturnedError,
+        Panic,
+    }
+
+    #[test]
+    fn returned_error_restores_terminal_modes_in_real_pty() {
+        assert_fault_child_restores("run::tests::returned_error_fault_child");
+    }
+
+    #[test]
+    fn panic_restores_terminal_modes_in_real_pty() {
+        assert_fault_child_restores("run::tests::panic_fault_child");
+    }
+
+    #[test]
+    #[ignore = "executed as a controlled PTY child"]
+    fn returned_error_fault_child() {
+        assert!(matches!(
+            run_fault_caught(TestFault::ReturnedError),
+            Err(RunError::Input(_))
+        ));
+    }
+
+    #[test]
+    #[ignore = "executed as a controlled PTY child"]
+    fn panic_fault_child() {
+        assert!(matches!(
+            run_fault_caught(TestFault::Panic),
+            Err(RunError::Panicked)
+        ));
+    }
+
+    fn run_fault_caught(fault: TestFault) -> Result<(), RunError> {
+        run_caught_boundary(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(RunError::Runtime)?
+                .block_on(run_fault(fault))
+        })
+    }
+
+    async fn run_fault(fault: TestFault) -> Result<(), RunError> {
+        if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+            return Err(RunError::NonInteractive);
+        }
+        let mut session =
+            Session::enter(io::stdout(), SessionOptions::default()).map_err(RunError::Terminal)?;
+        let (_, root_messages) = root_message_channel();
+        let result = run_session(&mut session, root_messages, &mut || {
+            assert!(
+                crossterm::terminal::is_raw_mode_enabled()
+                    .expect("inspect child terminal raw mode"),
+                "fault must occur only after raw mode acquisition"
+            );
+            match fault {
+                TestFault::ReturnedError => Err(RunError::Input(io::Error::other(
+                    "controlled test input failure",
+                ))),
+                TestFault::Panic => panic!("controlled test panic"),
+            }
+        })
+        .await;
+        finish_restoration(result, session.restore())
+    }
+
+    fn assert_fault_child_restores(test_name: &str) {
+        let pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("open PTY");
+        let executable = std::env::current_exe().expect("current test executable");
+        let mut command = CommandBuilder::new(executable);
+        command.args(["--exact", test_name, "--ignored", "--nocapture"]);
+        command.env("TERM", "xterm-256color");
+        #[cfg(unix)]
+        let initial_termios = pair.master.get_termios().expect("initial PTY termios");
+        let mut child = pair
+            .slave
+            .spawn_command(command)
+            .expect("spawn fault child");
+        drop(pair.slave);
+        let mut reader = pair.master.try_clone_reader().expect("clone PTY reader");
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let reader_thread = thread::spawn(move || {
+            let mut output = Vec::new();
+            reader.read_to_end(&mut output).expect("read PTY output");
+            let _ = sender.send(output);
+        });
+
+        let deadline = Instant::now() + TIMEOUT;
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("poll fault child") {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                child.kill().expect("kill timed-out fault child");
+                panic!("fault PTY child exceeded {TIMEOUT:?}");
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
+        assert!(status.success(), "fault child exited with {status:?}");
+        #[cfg(unix)]
+        assert_eq!(
+            pair.master.get_termios().expect("restored PTY termios"),
+            initial_termios,
+            "raw-mode termios state must restore exactly"
+        );
+        drop(pair.master);
+        let output = receiver.recv_timeout(TIMEOUT).expect("fault PTY output");
+        reader_thread.join().expect("join PTY reader");
+        crate::test_support::assert_fullscreen_lifecycle(&output);
+        assert!(!String::from_utf8_lossy(&output).contains("controlled test"));
+    }
+
+    #[test]
+    fn noninteractive_fault_runner_remains_rejected() {
+        let output = Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--exact",
+                "run::tests::returned_error_fault_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .output()
+            .expect("run redirected fault child");
+        assert!(!output.status.success());
     }
 }

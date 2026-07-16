@@ -8,6 +8,8 @@ use std::{
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 
+mod support;
+
 const TIMEOUT: Duration = Duration::from_secs(5);
 
 #[test]
@@ -86,6 +88,8 @@ fn run_pty(
         .expect("open PTY");
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_tablerock-cli"));
     command.env("TERM", "xterm-256color");
+    #[cfg(unix)]
+    let initial_termios = pair.master.get_termios().expect("initial PTY termios");
     let mut child = pair.slave.spawn_command(command).expect("spawn TableRock");
     drop(pair.slave);
     let process_id = child.process_id().expect("child process ID");
@@ -140,26 +144,17 @@ fn run_pty(
         thread::sleep(Duration::from_millis(20));
     };
     assert!(status.success(), "TableRock exited with {status:?}");
+    #[cfg(unix)]
+    assert_eq!(
+        pair.master.get_termios().expect("restored PTY termios"),
+        initial_termios,
+        "raw-mode termios state must restore exactly"
+    );
     drop(writer);
     drop(pair.master);
     reader_thread.join().expect("join PTY reader")
 }
 
 fn assert_restored(output: &[u8]) {
-    for sequence in [
-        b"\x1b[?1049h".as_slice(),
-        b"\x1b[?25l".as_slice(),
-        b"\x1b[?25h".as_slice(),
-        b"\x1b[?7h".as_slice(),
-        b"\x1b[?2004l".as_slice(),
-        b"\x1b[?1000l".as_slice(),
-        b"\x1b[?1049l".as_slice(),
-    ] {
-        assert!(
-            output
-                .windows(sequence.len())
-                .any(|window| window == sequence),
-            "missing terminal sequence {sequence:?}"
-        );
-    }
+    support::assert_fullscreen_lifecycle(output);
 }

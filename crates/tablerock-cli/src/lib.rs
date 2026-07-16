@@ -3,6 +3,10 @@
 mod input;
 mod run;
 
+#[cfg(test)]
+#[path = "../tests/support/mod.rs"]
+mod test_support;
+
 pub use crossterm::event::EventStream;
 pub use input::{InputAdapter, map_event};
 pub use run::{

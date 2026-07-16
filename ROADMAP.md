@@ -61,8 +61,10 @@ panics, handles Ctrl-C/SIGTERM, rejects non-TTY execution, and has real-PTY
 normal/signal restoration evidence. It instantiates the declared bounded
 post-mapping root queue. Render-authorized mouse/paste/focus routing is recorded
 in [`42-phase-1-render-authorized-input.md`](docs/research/42-phase-1-render-authorized-input.md).
-Typed engine mapping, overflow/resync, returned-error and panic PTY paths, and
-their final Phase 1 exit integration remain incomplete.
+Returned-error and panic PTY restoration evidence is recorded in
+[`43-phase-1-fault-restoration.md`](docs/research/43-phase-1-fault-restoration.md).
+Typed engine mapping, overflow/resync, and the final Phase 1 audit remain
+incomplete.
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

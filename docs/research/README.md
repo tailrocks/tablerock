@@ -60,6 +60,7 @@ kept in the roadmap.
 - [Phase 1 executable loop evidence](40-phase-1-executable-loop.md)
 - [Phase 1 terminal lifecycle evidence](41-phase-1-terminal-lifecycle.md)
 - [Phase 1 render-authorized input evidence](42-phase-1-render-authorized-input.md)
+- [Phase 1 fault restoration evidence](43-phase-1-fault-restoration.md)
 
 ## Architecture headline
 
