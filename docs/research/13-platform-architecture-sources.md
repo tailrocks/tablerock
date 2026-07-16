@@ -32,7 +32,8 @@ This is the sole implementation path:
 - SwiftUI owns application structure; AppKit owns catalog/grid/editor controls.
 - macOS ships first through direct Developer ID distribution with hardened
   runtime, notarization, and stapling.
-- SQLite through `rusqlite` stores profiles, intent, preferences, and history.
+- Local-only Turso through the Rust `turso` crate stores profiles, intent,
+  preferences, and history.
 - `tokio-postgres`, official `ClickHouse/clickhouse-rs`, and `redis-rs` are the
   three client adapters.
 - `russh` is the SSH tunnel adapter below those clients.
@@ -261,10 +262,23 @@ mapping, redaction, lifetime, and database use remain Rust-owned. Apple document
 Keychain as encrypted small-secret storage with application access control
 ([Keychain Services](https://developer.apple.com/documentation/security/keychain-services)).
 
-Use SQLite through `rusqlite` on one dedicated Rust persistence worker. Store
-profiles, secret references, preferences, saved queries, intent-only session
-state, and retention-controlled history. Never store resolved secrets, result
-payloads, pending edits, or ambiguous-write retry intents.
+Use the official Rust `turso` crate with `Builder::new_local` and one serialized
+async persistence actor. Do not enable cloud sync or use the remote `libsql`
+client. Turso recommends this crate for local Rust databases and provides native
+async I/O
+([Rust quickstart](https://docs.turso.tech/sdk/rust/quickstart)).
+
+The researched 0.7.0 release is pre-1.0 and does not yet implement every SQLite
+behavior. Pin the proven release, avoid experimental features, validate every
+schema/migration statement against the upstream compatibility ledger, and keep
+tested independent backups
+([upstream status](https://github.com/tursodatabase/turso),
+[compatibility](https://github.com/tursodatabase/turso/blob/main/COMPAT.md)). A
+failed gate blocks persistence work; it never activates `rusqlite` or `libsql`.
+
+Store profiles, secret references, preferences, saved queries, intent-only
+session state, and retention-controlled history. Never store resolved secrets,
+result payloads, pending edits, or ambiguous-write retry intents.
 
 Use `tracing` for structured local diagnostics and opt-in
 `opentelemetry-otlp` HTTP/protobuf export. Export is disabled by default and the

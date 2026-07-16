@@ -50,7 +50,8 @@ and its accompanying requirement/test documentation.
 - The Redis baseline is `redis-rs/redis-rs`; do not substitute another client
   without an explicit architecture decision.
 - Keep database client types behind adapters and out of stable core contracts.
-- Persistence uses bundled SQLite through `rusqlite` on a dedicated Rust worker.
+- Persistence uses the local-only `turso` crate through one serialized Rust
+  async persistence actor. Never add `rusqlite`, `libsql`, or Turso Cloud sync.
 - Native macOS embeds Rust through synchronous UniFFI. Do not add a daemon,
   local RPC, manual C ABI, WebView, or Mac App Store path.
 - Batch/page results across TUI and UniFFI boundaries.

@@ -25,8 +25,8 @@ WebView, manual C ABI, Mac App Store, and competing parser/TUI stacks.
 Rust owns all non-presentation behavior. The TUI uses one root TEA
 Model/Message/Update/Effect/Subscription/View flow, TermRock for reusable
 primitives, Ratatui rendering, and Crossterm input; I/O stays in effects/engine.
-Use only `20`/`31` dependencies. Hide database types behind adapters; pass bounded
-immutable result pages.
+Use `20`/`31` dependencies, including local-only `turso`; never `rusqlite` or
+`libsql`. Hide database types behind adapters; pass bounded immutable pages.
 
 macOS embeds Rust through coarse synchronous UniFFI. Swift owns presentation/OS
 integration only: SwiftUI structure plus AppKit outline/table/text controls.

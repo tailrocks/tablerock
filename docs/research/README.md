@@ -10,7 +10,8 @@ Research refreshed on 2026-07-16 for a terminal-first database workbench.
 - The Elm Architecture is the sole TUI application pattern.
 - TermRock is the only reusable interactive TUI component layer.
 - Crossterm is the only terminal backend/input library.
-- Bundled SQLite through `rusqlite` is the persistence store.
+- Local-only Turso through the Rust `turso` crate is the persistence store;
+  `rusqlite`, `libsql`, and Turso Cloud sync are excluded.
 - Native SwiftUI/AppKit embeds Rust through synchronous UniFFI.
 - Native distribution is direct Developer ID with notarization/stapling.
 - Official `ClickHouse/clickhouse-rs` client.

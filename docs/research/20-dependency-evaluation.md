@@ -19,14 +19,15 @@ change without a recorded architecture revision.
 | TUI | [`termrock`](https://github.com/tailrocks/termrock) | 0.6.0 / exact Git revision | Apache-2.0 | only reusable TUI layer |
 | Terminal renderer | [Ratatui](https://github.com/ratatui/ratatui) | 0.30-compatible with pinned TermRock | MIT | through TermRock compatibility tuple |
 | Terminal backend/input | [`crossterm`](https://github.com/crossterm-rs/crossterm) | 0.29.0 | MIT | CLI terminal adapter; TermRock `crossterm` feature |
-| Persistence | [`rusqlite`](https://github.com/rusqlite/rusqlite) with bundled SQLite | 0.40.1 | MIT | dedicated Rust persistence worker |
+| Persistence | [`turso`](https://github.com/tursodatabase/turso) local database | 0.7.0 | MIT | one serialized Rust async persistence actor |
 | Swift binding | [`uniffi`](https://github.com/mozilla/uniffi-rs) | 0.32.0 | MPL-2.0 | synchronous coarse FFI only |
 | Structured diagnostics | [`tracing`](https://github.com/tokio-rs/tracing) | 0.1.44 | MIT | fixed safe fields only |
 | Telemetry export | [`opentelemetry-otlp`](https://github.com/open-telemetry/opentelemetry-rust) | 0.32.0 | Apache-2.0 | opt-in OTLP, disabled by default |
 
 TableRock does not directly depend on a separate textarea/widget framework,
-Turso/libSQL, Arrow, an Objective-C bridge from Rust, a local RPC framework, or
-a second SQL parser. A missing general TUI primitive is implemented in TermRock.
+`rusqlite`, `libsql`, Turso Cloud sync, Arrow, an Objective-C bridge from Rust,
+a local RPC framework, or a second SQL parser. A missing general TUI primitive
+is implemented in TermRock.
 
 ## PostgreSQL
 
@@ -119,9 +120,21 @@ raw/alternate-screen terminal control, keyboard/mouse/resize events, and async
 
 ## Persistence
 
-Use `rusqlite` with bundled SQLite, migrations, foreign keys, WAL mode, busy
-timeout, integrity checks, and one dedicated Rust persistence worker. This keeps
-blocking SQLite access outside Tokio async tasks and gives TUI/native one schema.
+Use `turso` 0.7.0 with default features disabled and
+`Builder::new_local`. One dedicated current-thread Rust async runtime hosts the
+single persistence actor and owns all database handles. Commands serialize
+migrations, transactions, queries, retention, flush, and shutdown; TUI, engine,
+and Swift never access the file directly. Do not enable cloud sync/remote access
+or add `rusqlite`/`libsql`
+([Rust quickstart](https://docs.turso.tech/sdk/rust/quickstart)).
+
+The pre-1.0 adoption spike must prove every required SQL/schema operation,
+foreign-key behavior, crash boundaries, corruption detection, backup/restore,
+macOS packaging, and terminal deployment against the pinned release. Avoid
+experimental MVCC, FTS, encryption, multi-process access, and unsupported SQL;
+use ordinary transactions plus indexed bounded history. Track upstream gaps
+against [COMPAT.md](https://github.com/tursodatabase/turso/blob/main/COMPAT.md).
+Failure blocks the checkpoint and never activates a fallback persistence crate.
 
 Persist profiles, secret references, organization, saved queries, preferences,
 intent-only restoration, bounded history, and support metadata. Do not persist

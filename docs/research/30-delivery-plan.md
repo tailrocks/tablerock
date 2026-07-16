@@ -61,7 +61,7 @@ hide failure by rewriting published `main` history.
 - clear working name, package namespaces, license policy, and attribution;
 - select the database/server matrix and terminal/macOS floors;
 - approve the SecretSource variants and direct notarized distribution;
-- approve bundled SQLite, result-budget measurements, and synchronous UniFFI;
+- approve local-only Turso, result-budget measurements, and synchronous UniFFI;
 - verify every selected path in
   [31-fixed-decisions.md](31-fixed-decisions.md) is reflected consistently in the
   roadmap, quality gates, and source ruling.
@@ -116,9 +116,12 @@ generic widget layer exists in TableRock.
 
 ### Storage proof
 
-Prove bundled SQLite through `rusqlite` using startup, migrations, transactions,
-FTS/history, WAL/locking, integrity/recovery, package size, license, and macOS/
-terminal deployment. Publish migration/recovery rules before profile persistence.
+Prove local-only `turso` through `Builder::new_local`, default features disabled,
+and one serialized async persistence actor. Cover startup, migrations, ordinary
+transactions, foreign keys, indexed bounded history, single-owner behavior,
+crash/integrity/recovery, backup/restore, package size, license, and macOS/
+terminal deployment. Publish compatibility, migration, and recovery rules before
+profile persistence. Never add `rusqlite`, `libsql`, or cloud sync as fallback.
 
 ### PostgreSQL spike
 

@@ -18,8 +18,8 @@ claim a working database client yet.
   `main`, then consumed at an exact revision.
 - Native macOS uses SwiftUI/AppKit over embedded Rust through synchronous UniFFI
   and ships by direct Developer ID notarized distribution.
-- Bundled SQLite through `rusqlite` stores profiles, preferences, intent, and
-  retention-controlled history.
+- Local-only Turso through the Rust `turso` crate stores profiles, preferences,
+  intent, and retention-controlled history. `rusqlite` and `libsql` are excluded.
 - 1Password is the preferred credential source. Saved plaintext passwords are
   an explicitly dangerous local-testing fallback.
 - TablePro, TablePlus, and Zedis are concepts-only references. No source code,

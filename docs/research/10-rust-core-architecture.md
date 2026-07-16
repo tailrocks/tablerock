@@ -152,8 +152,9 @@ fuzzy ranking, and bounded recent selections.
 
 Persist a documented versioned profile schema with stable IDs, engine,
 endpoint/default context, value source per property, TLS, safety, timeouts, and
-preferences. High-churn history/cache/restoration use bundled SQLite through
-`rusqlite` on one dedicated Rust worker. Do not persist results or pending edits.
+preferences. High-churn history/cache/restoration use local-only Turso through
+one serialized Rust async persistence actor. Do not persist results or pending
+edits.
 
 ```text
 ConnectionValue

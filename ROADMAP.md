@@ -34,8 +34,8 @@ documentation, and remain honest about incomplete parity.
 ### Phase 0 — approve research
 
 Freeze the product boundary, clean-room process, functional-parity ledger,
-TermRock ownership, TEA, Rust contract language, SecretSource model, bundled
-SQLite persistence, server support policy, synchronous UniFFI bridge, and direct
+TermRock ownership, TEA, Rust contract language, SecretSource model, local-only
+Turso persistence, server support policy, synchronous UniFFI bridge, and direct
 notarized macOS distribution. No application code or dependency is added before
 this phase is approved.
 
@@ -52,8 +52,8 @@ and TermRock's Crossterm session as the sole terminal lifecycle owner.
 ### Phase 2 — Rust service foundation
 
 Define owned IDs, capabilities, values, revisions, commands, events, pages,
-errors, cancellation, safety, and redaction. Implement bundled SQLite through
-`rusqlite` on the dedicated Rust persistence worker.
+errors, cancellation, safety, and redaction. Implement local-only Turso through
+the `turso` crate on one serialized Rust async persistence actor.
 Run real-server spikes for `tokio-postgres`, official `clickhouse-rs`, and
 `redis-rs`, proving arbitrary values, bounded streaming, TLS, cancellation
 truth, reconnect, and ambiguous-write behavior before feature claims.

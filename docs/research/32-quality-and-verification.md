@@ -16,7 +16,7 @@ never accepted as a low-priority exception; it blocks the affected claim.
 | View | complete TableRock TUI screens | TestBackend at narrow/normal/wide sizes and all operation states |
 | Effect adapter | TUI-to-engine command/event seam | fake port, bounded channel, timeout, cancellation, shutdown |
 | Driver contract | each real database | pinned-server integration and failure injection |
-| Persistence | SQLite schema and worker | migrations, crash recovery, corruption/disk/lock handling, retention |
+| Persistence | Turso schema and async actor | migrations, crash recovery, corruption/disk/ownership handling, retention |
 | Security | secrets, safety, files, processes, bridge | adversarial fixtures, redaction scans, permission and injection tests |
 | PTY | Crossterm/TermRock terminal lifecycle | setup/restore, signals, panic, resize, paste, focus, mouse |
 | UniFFI | Rust/Swift ownership and semantics | strict concurrency, lifetime/free stress, pages, cancel, panic, leaks |
@@ -125,11 +125,14 @@ PTY/process tests prove:
 
 ## Persistence matrix
 
-SQLite tests prove:
+Local Turso tests prove:
 
 - fresh creation and every supported migration path;
 - transaction rollback and restart after interrupted migration;
-- WAL/busy timeout behavior and single-worker ownership;
+- single-actor ownership, serialized commands, flush, and clean shutdown;
+- the dependency graph contains `turso`, never `rusqlite` or `libsql`, and does
+  not enable cloud sync;
+- every schema/query feature passes the pinned Turso compatibility suite;
 - disk full, permission denied, read-only filesystem, corrupt database, and
   integrity-check recovery UX;
 - bounded history retention and private/disabled history;
@@ -198,7 +201,7 @@ Measure before publishing budgets:
 - completion latency after edit/context change;
 - cancellation request to observed terminal state;
 - process memory with multiple tabs and maximum configured pages;
-- SQLite write/flush and shutdown;
+- Turso write/flush and shutdown;
 - UniFFI page decode and native grid scroll.
 
 The release threshold is recorded with hardware, OS, terminal, server, dataset,

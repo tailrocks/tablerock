@@ -16,7 +16,7 @@ activate a parallel approach.
 | ClickHouse | official `ClickHouse/clickhouse-rs` |
 | Redis | `redis-rs/redis-rs`, standalone deployment first |
 | SQL analysis | `sqlparser` tokens plus last-known-valid AST and catalog index |
-| Persistence | bundled SQLite through `rusqlite` on a dedicated Rust worker |
+| Persistence | local-only `turso` through one serialized Rust async persistence actor |
 | Credentials | Rust-owned SecretSource; 1Password CLI primary, prompt/Keychain/acknowledged plaintext explicit sources |
 | Native UI | SwiftUI application shell with NSOutlineView, NSTableView, and NSTextView adapters |
 | Native bridge | embedded Rust static library through synchronous coarse UniFFI |
@@ -51,11 +51,18 @@ security decision; it is not part of TermRock.
 
 ## Persistence
 
-Use `rusqlite` with bundled SQLite, migrations, foreign keys, WAL mode, busy
-timeout, integrity checks, and one dedicated Rust worker. Persist profiles,
-secret references, organization, saved queries, preferences, intent-only
-restoration, bounded history, and support facts. Never persist result payloads,
-resolved secrets, pending edits, or ambiguous-write retry intent.
+Use `turso` with default features disabled, `Builder::new_local`, and one
+dedicated current-thread Rust async runtime hosting a serialized persistence
+actor. Do not enable cloud sync/remote access or add `rusqlite`/`libsql`. Pin the
+proven release; use migrations, ordinary transactions, foreign keys after their
+gate passes, indexed bounded history, integrity checks, and tested independent
+backup/restore. Avoid experimental or unsupported Turso features.
+
+Persist profiles, secret references, organization, saved queries, preferences,
+intent-only restoration, bounded history, and support facts. Never persist
+result payloads, resolved secrets, pending edits, or ambiguous-write retry
+intent. A Turso compatibility failure blocks the checkpoint; no fallback store
+is allowed.
 
 ## Server support
 
