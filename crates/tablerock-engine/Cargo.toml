@@ -1,0 +1,21 @@
+[package]
+name = "tablerock-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Database adapters and operation runtime for TableRock"
+
+[dependencies]
+futures-util.workspace = true
+tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
+tokio.workspace = true
+tokio-postgres.workspace = true
+tokio-postgres-rustls.workspace = true
+
+[dev-dependencies]
+testcontainers = { version = "=0.27.3", default-features = false }
+
+[lints]
+workspace = true

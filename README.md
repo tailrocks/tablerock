@@ -66,7 +66,9 @@ favorite, group, and tag filters use scope-bound cursors. Unicode-normalized
 name/group/tag search is bounded by a 10,000-profile durable capacity. List
 summaries expose validated literal endpoints or unresolved secret markers.
 Bounded adapter rows now assemble through one checked immutable result-page
-path; real database drivers remain Phase 2 work.
+path. The first private PostgreSQL adapter now proves driven ownership and
+bounded pages against PostgreSQL 18.4; the full driver matrix remains Phase 2
+work.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

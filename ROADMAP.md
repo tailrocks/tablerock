@@ -136,6 +136,15 @@ recorded in
 TermRock's additive public-documentation hardening and exact refreshed main pin
 are recorded in
 [`80-termrock-0.10-documentation-hardening-update.md`](docs/research/80-termrock-0.10-documentation-hardening-update.md).
+The private PostgreSQL adapter boundary, driven connection, bounded text stream,
+and pinned 18.4 real-server tracer are recorded in
+[`81-phase-2-postgresql-stream-foundation.md`](docs/research/81-phase-2-postgresql-stream-foundation.md).
+TermRock's visible-slice scroll optimization, focus-hierarchy documentation, and
+exact refreshed main pin are recorded in
+[`82-termrock-0.10-visible-scroll-update.md`](docs/research/82-termrock-0.10-visible-scroll-update.md).
+TermRock's sequential content-measurement revision migration `0013` and exact
+refreshed main pin are recorded in
+[`83-termrock-0.10-content-revision-migration.md`](docs/research/83-termrock-0.10-content-revision-migration.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

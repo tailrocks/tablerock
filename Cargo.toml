@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/tablerock-cli", "crates/tablerock-core", "crates/tablerock-persistence", "crates/tablerock-tui"]
+members = ["crates/tablerock-cli", "crates/tablerock-core", "crates/tablerock-engine", "crates/tablerock-persistence", "crates/tablerock-tui"]
 resolver = "3"
 
 [workspace.package]
@@ -15,8 +15,10 @@ caseless = "=0.2.2"
 futures-util = "0.3.32"
 ratatui-core = "0.1.2"
 ratatui-crossterm = { version = "0.1.2", default-features = false, features = ["crossterm_0_29"] }
-termrock = { version = "=0.10.0", git = "https://github.com/tailrocks/termrock.git", rev = "1130d8c1d16489b2f510d93bac07f5370ba2cbc7" }
+termrock = { version = "=0.10.0", git = "https://github.com/tailrocks/termrock.git", rev = "4b7927335663e0b275588a93ca0ebe6bc4032b0d" }
 tokio = { version = "1.52.3", features = ["macros", "rt", "signal", "sync", "time"] }
+tokio-postgres = "=0.7.18"
+tokio-postgres-rustls = { version = "=0.14.0", features = ["native-certs", "ring"] }
 turso = { version = "=0.7.0", default-features = false }
 unicode-normalization = { version = "=0.1.25", default-features = false, features = ["std"] }
 zeroize = { version = "=1.9.0", default-features = false, features = ["alloc"] }

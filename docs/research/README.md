@@ -98,6 +98,9 @@ kept in the roadmap.
 - [TermRock 0.10 widget construction migration evidence](78-termrock-0.10-widget-construction-migration.md)
 - [Phase 2 row-major page assembly evidence](79-phase-2-row-major-page-assembly.md)
 - [TermRock 0.10 documentation hardening update](80-termrock-0.10-documentation-hardening-update.md)
+- [Phase 2 PostgreSQL stream foundation evidence](81-phase-2-postgresql-stream-foundation.md)
+- [TermRock 0.10 visible scroll update](82-termrock-0.10-visible-scroll-update.md)
+- [TermRock 0.10 content revision migration](83-termrock-0.10-content-revision-migration.md)
 
 ## Architecture headline
 

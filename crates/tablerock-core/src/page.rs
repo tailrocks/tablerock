@@ -144,6 +144,26 @@ impl PageLimits {
             max_column_text_bytes,
         }
     }
+
+    #[must_use]
+    pub const fn max_rows(self) -> u32 {
+        self.max_rows
+    }
+
+    #[must_use]
+    pub const fn max_columns(self) -> u32 {
+        self.max_columns
+    }
+
+    #[must_use]
+    pub const fn max_arena_bytes(self) -> u64 {
+        self.max_arena_bytes
+    }
+
+    #[must_use]
+    pub const fn max_column_text_bytes(self) -> u64 {
+        self.max_column_text_bytes
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
