@@ -48,6 +48,7 @@ kept in the roadmap.
 - [Shared Rust/client contract](14-shared-client-contract.md)
 - [Dependency decisions](20-dependency-evaluation.md)
 - [Latest dependency policy and refresh evidence](99-latest-dependency-policy.md)
+- [Phase 2 ClickHouse structured-container evidence](100-phase-2-clickhouse-structured-containers.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

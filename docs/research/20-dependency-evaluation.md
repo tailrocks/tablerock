@@ -122,6 +122,9 @@ fixtures. See
 The same single decoder now covers the complex scalar matrix through 256-bit
 integers and decimals without precision loss; see
 [`97-phase-2-clickhouse-complex-scalars.md`](97-phase-2-clickhouse-complex-scalars.md).
+It also parses recursive `Array`, `Tuple`, `Map`, and named `Nested` type
+signatures and emits bounded canonical structured projections; see
+[`100-phase-2-clickhouse-structured-containers.md`](100-phase-2-clickhouse-structured-containers.md).
 
 ## Redis
 

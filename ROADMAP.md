@@ -189,6 +189,10 @@ matrix are recorded in
 [`97-phase-2-clickhouse-complex-scalars.md`](docs/research/97-phase-2-clickhouse-complex-scalars.md).
 The dedicated bounded structured-container value kind is recorded in
 [`98-phase-2-structured-value-contract.md`](docs/research/98-phase-2-structured-value-contract.md).
+Recursive ClickHouse arrays, tuples, maps, named nested records, bounded
+canonical projection, and immutable 25.8/26.3 LTS Testcontainers evidence are
+recorded in
+[`100-phase-2-clickhouse-structured-containers.md`](docs/research/100-phase-2-clickhouse-structured-containers.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

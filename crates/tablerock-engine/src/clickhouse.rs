@@ -8,6 +8,9 @@ use tablerock_core::{
     PageWarnings, ResultPage, RowTotal, Truncation, ValueKind,
 };
 
+const MAX_CLICKHOUSE_TYPE_DEPTH: u8 = 64;
+const MAX_STRUCTURED_NODES: u64 = 1_000_000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClickHouseTlsMode {
     Disable,
@@ -24,6 +27,7 @@ pub enum ClickHouseCompression {
 pub enum ClickHouseProbeQuery {
     TypedValues,
     ComplexScalars,
+    StructuredValues,
 }
 
 impl ClickHouseProbeQuery {
@@ -55,6 +59,13 @@ impl ClickHouseProbeQuery {
                  CAST('wrapped', 'LowCardinality(String)') AS low_cardinality_value, \
                  toInt8(-128) AS int8_value, toInt16(-32768) AS int16_value, \
                  toInt32(-2147483648) AS int32_value"
+            }
+            Self::StructuredValues => {
+                "SELECT [toUInt8(1), 2, 3] AS array_value, \
+                 tuple(toInt64(-7), 'quoted\\n', CAST(NULL, 'Nullable(UInt8)')) AS tuple_value, \
+                 map('a', toUInt16(1), 'b', toUInt16(2)) AS map_value, \
+                 CAST([(1, 'one'), (2, 'two')], 'Array(Tuple(id UInt8, label String))') AS nested_value, \
+                 [CAST(unhex('00FF'), 'FixedString(2)')] AS binary_array"
             }
         }
     }
@@ -313,15 +324,25 @@ enum ClickHouseType {
     String,
     Binary(usize),
     Nullable(Box<Self>),
+    Array(Box<Self>),
+    Tuple(Vec<Self>),
+    Map(Box<Self>, Box<Self>),
 }
 
 impl ClickHouseType {
     fn parse(raw: &str) -> Result<Self, ClickHouseError> {
+        Self::parse_at(raw, 0)
+    }
+
+    fn parse_at(raw: &str, depth: u8) -> Result<Self, ClickHouseError> {
+        if depth > MAX_CLICKHOUSE_TYPE_DEPTH {
+            return Err(ClickHouseError::Protocol);
+        }
         if let Some(inner) = raw
             .strip_prefix("Nullable(")
             .and_then(|raw| raw.strip_suffix(')'))
         {
-            return Ok(Self::Nullable(Box::new(Self::parse(inner)?)));
+            return Ok(Self::Nullable(Box::new(Self::parse_at(inner, depth + 1)?)));
         }
         if let Some(length) = raw
             .strip_prefix("FixedString(")
@@ -331,7 +352,40 @@ impl ClickHouseType {
             return Ok(Self::Binary(length));
         }
         if let Some(inner) = call_argument(raw, "LowCardinality") {
-            return Self::parse(inner);
+            return Self::parse_at(inner, depth + 1);
+        }
+        if let Some(inner) = call_argument(raw, "Array") {
+            return Ok(Self::Array(Box::new(Self::parse_at(inner, depth + 1)?)));
+        }
+        if let Some(inner) = call_argument(raw, "Tuple") {
+            let fields = split_type_arguments(inner)?
+                .into_iter()
+                .map(|field| Self::parse_named(field, depth + 1))
+                .collect::<Result<Vec<_>, _>>()?;
+            if fields.is_empty() {
+                return Err(ClickHouseError::Protocol);
+            }
+            return Ok(Self::Tuple(fields));
+        }
+        if let Some(inner) = call_argument(raw, "Map") {
+            let fields = split_type_arguments(inner)?;
+            if fields.len() != 2 {
+                return Err(ClickHouseError::Protocol);
+            }
+            return Ok(Self::Map(
+                Box::new(Self::parse_at(fields[0], depth + 1)?),
+                Box::new(Self::parse_at(fields[1], depth + 1)?),
+            ));
+        }
+        if let Some(inner) = call_argument(raw, "Nested") {
+            let fields = split_type_arguments(inner)?
+                .into_iter()
+                .map(|field| Self::parse_named(field, depth + 1))
+                .collect::<Result<Vec<_>, _>>()?;
+            if fields.is_empty() {
+                return Err(ClickHouseError::Protocol);
+            }
+            return Ok(Self::Array(Box::new(Self::Tuple(fields))));
         }
         if raw.starts_with("Enum8(") {
             return Ok(Self::Signed(1));
@@ -409,6 +463,15 @@ impl ClickHouseType {
         }
     }
 
+    fn parse_named(raw: &str, depth: u8) -> Result<Self, ClickHouseError> {
+        if let Ok(value) = Self::parse_at(raw.trim(), depth) {
+            return Ok(value);
+        }
+        top_level_whitespace(raw)
+            .and_then(|index| Self::parse_at(raw[index..].trim(), depth).ok())
+            .ok_or(ClickHouseError::UnsupportedType)
+    }
+
     const fn nullable(&self) -> bool {
         matches!(self, Self::Nullable(_))
     }
@@ -472,8 +535,190 @@ impl ClickHouseType {
                     )
                     .map_err(|_| ClickHouseError::Protocol)
                 }
+                Self::Array(_) | Self::Tuple(_) | Self::Map(_, _) => {
+                    let mut projection = StructuredProjection::new(limit);
+                    self.read_projection(reader, &mut projection, limit).await?;
+                    projection.finish()
+                }
             }
         })
+    }
+
+    fn read_projection<'a>(
+        &'a self,
+        reader: &'a mut ChunkReader,
+        output: &'a mut StructuredProjection,
+        limit: u64,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ClickHouseError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            output.enter_node()?;
+            match self {
+                Self::Nullable(inner) => match reader.read_u8().await? {
+                    0 => inner.read_projection(reader, output, limit).await,
+                    1 => {
+                        output.push("null");
+                        Ok(())
+                    }
+                    _ => Err(ClickHouseError::Protocol),
+                },
+                Self::Array(inner) => {
+                    let count = read_collection_len(reader).await?;
+                    output.push("[");
+                    for index in 0..count {
+                        if index != 0 {
+                            output.push(",");
+                        }
+                        inner.read_projection(reader, output, limit).await?;
+                    }
+                    output.push("]");
+                    Ok(())
+                }
+                Self::Tuple(fields) => {
+                    output.push("[");
+                    for (index, field) in fields.iter().enumerate() {
+                        if index != 0 {
+                            output.push(",");
+                        }
+                        field.read_projection(reader, output, limit).await?;
+                    }
+                    output.push("]");
+                    Ok(())
+                }
+                Self::Map(key, value) => {
+                    let count = read_collection_len(reader).await?;
+                    output.push("[");
+                    for index in 0..count {
+                        if index != 0 {
+                            output.push(",");
+                        }
+                        output.push("[");
+                        key.read_projection(reader, output, limit).await?;
+                        output.push(",");
+                        value.read_projection(reader, output, limit).await?;
+                        output.push("]");
+                    }
+                    output.push("]");
+                    Ok(())
+                }
+                scalar => {
+                    let value = scalar.read(reader, limit).await?;
+                    output.push_value(&value)
+                }
+            }
+        })
+    }
+}
+
+struct StructuredProjection {
+    stored: String,
+    original_byte_len: u64,
+    limit: u64,
+    saturated: bool,
+    nodes: u64,
+}
+
+impl StructuredProjection {
+    fn new(limit: u64) -> Self {
+        Self {
+            stored: String::new(),
+            original_byte_len: 0,
+            limit,
+            saturated: false,
+            nodes: 0,
+        }
+    }
+
+    fn enter_node(&mut self) -> Result<(), ClickHouseError> {
+        self.nodes = self.nodes.checked_add(1).ok_or(ClickHouseError::Protocol)?;
+        if self.nodes > MAX_STRUCTURED_NODES {
+            return Err(ClickHouseError::Protocol);
+        }
+        Ok(())
+    }
+
+    fn push(&mut self, value: &str) {
+        self.original_byte_len = self
+            .original_byte_len
+            .saturating_add(u64::try_from(value.len()).unwrap_or(u64::MAX));
+        if self.saturated {
+            return;
+        }
+        let remaining = self
+            .limit
+            .saturating_sub(u64::try_from(self.stored.len()).unwrap_or(u64::MAX));
+        let take = usize::try_from(remaining)
+            .unwrap_or(usize::MAX)
+            .min(value.len());
+        let mut boundary = take;
+        while !value.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        self.stored.push_str(&value[..boundary]);
+        self.saturated = boundary != value.len();
+    }
+
+    fn push_quoted(&mut self, value: &str) {
+        self.push("\"");
+        for character in value.chars() {
+            match character {
+                '\"' => self.push("\\\""),
+                '\\' => self.push("\\\\"),
+                '\n' => self.push("\\n"),
+                '\r' => self.push("\\r"),
+                '\t' => self.push("\\t"),
+                character if character.is_control() => {
+                    self.push(&format!("\\u{:04x}", u32::from(character)));
+                }
+                character => self.push(character.encode_utf8(&mut [0; 4])),
+            }
+        }
+        self.push("\"");
+    }
+
+    fn push_value(&mut self, value: &OwnedValue) -> Result<(), ClickHouseError> {
+        match value.as_ref() {
+            tablerock_core::ValueRef::Null => self.push("null"),
+            tablerock_core::ValueRef::Boolean(value) => {
+                self.push(if value { "true" } else { "false" })
+            }
+            tablerock_core::ValueRef::Signed(value) => self.push(&value.to_string()),
+            tablerock_core::ValueRef::Unsigned(value) => self.push(&value.to_string()),
+            tablerock_core::ValueRef::Float64Bits(value) => {
+                self.push(&f64::from_bits(value).to_string());
+            }
+            tablerock_core::ValueRef::Decimal(value) => self.push(value),
+            tablerock_core::ValueRef::Text { value, .. } => self.push_quoted(value),
+            tablerock_core::ValueRef::Structured { value, .. } => self.push(value),
+            tablerock_core::ValueRef::Binary { value, .. } => {
+                self.push("{\"$binary\":\"");
+                for byte in value {
+                    self.push(&format!("{byte:02x}"));
+                }
+                self.push("\"}");
+            }
+            tablerock_core::ValueRef::Invalid { .. } | tablerock_core::ValueRef::Unknown { .. } => {
+                return Err(ClickHouseError::Protocol);
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Result<OwnedValue, ClickHouseError> {
+        let stored_len = u64::try_from(self.stored.len()).unwrap_or(u64::MAX);
+        let truncation = if stored_len == self.original_byte_len {
+            Truncation::Complete
+        } else {
+            Truncation::Truncated {
+                original_byte_len: Some(self.original_byte_len),
+            }
+        };
+        OwnedValue::structured(
+            BoundedText::from_string(self.stored, ByteLimit::new(self.limit))
+                .map_err(|_| ClickHouseError::Protocol)?,
+            truncation,
+        )
+        .map_err(|_| ClickHouseError::Protocol)
     }
 }
 
@@ -508,6 +753,87 @@ fn text_or_binary(
         truncation,
     )
     .map_err(|_| ClickHouseError::Protocol)
+}
+
+async fn read_collection_len(reader: &mut ChunkReader) -> Result<usize, ClickHouseError> {
+    let count = read_leb128(reader).await?;
+    if count > MAX_STRUCTURED_NODES {
+        return Err(ClickHouseError::Protocol);
+    }
+    usize::try_from(count).map_err(|_| ClickHouseError::Protocol)
+}
+
+fn split_type_arguments(raw: &str) -> Result<Vec<&str>, ClickHouseError> {
+    let mut arguments = Vec::new();
+    let mut start = 0;
+    let mut depth = 0_u32;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, character) in raw.char_indices() {
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '\'' {
+                quoted = false;
+            }
+            continue;
+        }
+        match character {
+            '\'' => quoted = true,
+            '(' => depth = depth.checked_add(1).ok_or(ClickHouseError::Protocol)?,
+            ')' => depth = depth.checked_sub(1).ok_or(ClickHouseError::Protocol)?,
+            ',' if depth == 0 => {
+                let argument = raw[start..index].trim();
+                if argument.is_empty() {
+                    return Err(ClickHouseError::Protocol);
+                }
+                arguments.push(argument);
+                start = index + character.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if quoted || depth != 0 {
+        return Err(ClickHouseError::Protocol);
+    }
+    let argument = raw[start..].trim();
+    if argument.is_empty() {
+        return if arguments.is_empty() {
+            Ok(arguments)
+        } else {
+            Err(ClickHouseError::Protocol)
+        };
+    }
+    arguments.push(argument);
+    Ok(arguments)
+}
+
+fn top_level_whitespace(raw: &str) -> Option<usize> {
+    let mut depth = 0_u32;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, character) in raw.char_indices() {
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '\'' {
+                quoted = false;
+            }
+            continue;
+        }
+        match character {
+            '\'' => quoted = true,
+            '(' => depth = depth.saturating_add(1),
+            ')' => depth = depth.saturating_sub(1),
+            character if depth == 0 && character.is_whitespace() => return Some(index),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn call_argument<'a>(raw: &'a str, name: &str) -> Option<&'a str> {
@@ -864,9 +1190,58 @@ fn encoded_len(value: &OwnedValue) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use tablerock_core::{Truncation, ValueRef};
+    use tablerock_core::{OwnedValue, Truncation, ValueRef};
 
-    use super::{apply_decimal_scale, integer_decimal, text_or_binary};
+    use super::{
+        ClickHouseType, StructuredProjection, apply_decimal_scale, integer_decimal,
+        split_type_arguments, text_or_binary,
+    };
+
+    #[test]
+    fn parses_recursive_and_named_container_types() {
+        assert!(matches!(
+            ClickHouseType::parse("Array(Nullable(UInt8))").unwrap(),
+            ClickHouseType::Array(_)
+        ));
+        assert!(matches!(
+            ClickHouseType::parse("Map(String, Array(Tuple(id UInt8, label String)))").unwrap(),
+            ClickHouseType::Map(_, _)
+        ));
+        assert!(matches!(
+            ClickHouseType::parse("Nested(id UInt8, label Nullable(String))").unwrap(),
+            ClickHouseType::Array(_)
+        ));
+        assert_eq!(
+            split_type_arguments("Enum8('a,b' = 1), Tuple(UInt8, String)").unwrap(),
+            ["Enum8('a,b' = 1)", "Tuple(UInt8, String)"]
+        );
+
+        let deeply_nested = format!("{}UInt8{}", "Array(".repeat(65), ")".repeat(65));
+        assert!(matches!(
+            ClickHouseType::parse(&deeply_nested),
+            Err(super::ClickHouseError::Protocol)
+        ));
+    }
+
+    #[test]
+    fn structured_projection_is_utf8_bounded_and_reports_full_length() {
+        let mut projection = StructuredProjection::new(5);
+        projection.push("[");
+        projection.push_value(&OwnedValue::unsigned(7)).unwrap();
+        projection.push(",");
+        projection.push_quoted("é");
+        projection.push("]");
+        let value = projection.finish().unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "[7,\"",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(8)
+                }
+            }
+        ));
+    }
 
     #[test]
     fn converts_full_width_twos_complement_without_precision_loss() {

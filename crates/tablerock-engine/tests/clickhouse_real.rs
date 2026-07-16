@@ -213,6 +213,75 @@ async fn verify_image(image: &str) {
                 .contains(tablerock_core::PageWarning::ByteLimitReached)
         );
         assert_eq!(bounded_page.cell(0, 9).unwrap().kind(), ValueKind::Float64);
+
+        let mut structured = session
+            .stream_probe(
+                ClickHouseProbeQuery::StructuredValues,
+                &text(&format!("tablerock-structured-{port}-{compression:?}")),
+                PageLimits::new(2, 8, 4096, 1024),
+                128,
+            )
+            .await
+            .unwrap();
+        let structured_page = structured.next_page(identity(), 0).await.unwrap().unwrap();
+        assert_eq!(structured_page.envelope().delivery(), PageDelivery::Final);
+        assert_structured(&structured_page, 0, "[1,2,3]", Truncation::Complete);
+        assert_structured(
+            &structured_page,
+            1,
+            "[-7,\"quoted\\n\",null]",
+            Truncation::Complete,
+        );
+        assert_structured(
+            &structured_page,
+            2,
+            "[[\"a\",1],[\"b\",2]]",
+            Truncation::Complete,
+        );
+        assert_structured(
+            &structured_page,
+            3,
+            "[[1,\"one\"],[2,\"two\"]]",
+            Truncation::Complete,
+        );
+        assert_structured(
+            &structured_page,
+            4,
+            "[{\"$binary\":\"00ff\"}]",
+            Truncation::Complete,
+        );
+        assert!(structured.next_page(identity(), 1).await.unwrap().is_none());
+
+        let mut bounded_structured = session
+            .stream_probe(
+                ClickHouseProbeQuery::StructuredValues,
+                &text(&format!(
+                    "tablerock-structured-bounded-{port}-{compression:?}"
+                )),
+                PageLimits::new(2, 8, 4096, 1024),
+                8,
+            )
+            .await
+            .unwrap();
+        let bounded_structured_page = bounded_structured
+            .next_page(identity(), 0)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_structured(
+            &bounded_structured_page,
+            3,
+            "[[1,\"one",
+            Truncation::Truncated {
+                original_byte_len: Some(21),
+            },
+        );
+        assert!(
+            bounded_structured_page
+                .envelope()
+                .warnings()
+                .contains(tablerock_core::PageWarning::ByteLimitReached)
+        );
     }
 }
 
@@ -220,4 +289,16 @@ fn assert_decimal(page: &tablerock_core::ResultPage, column: u32, expected: &str
     let cell = page.cell(0, column).unwrap();
     assert_eq!(cell.kind(), ValueKind::Decimal);
     assert_eq!(cell.bytes(), expected.as_bytes());
+}
+
+fn assert_structured(
+    page: &tablerock_core::ResultPage,
+    column: u32,
+    expected: &str,
+    truncation: Truncation,
+) {
+    let cell = page.cell(0, column).unwrap();
+    assert_eq!(cell.kind(), ValueKind::Structured);
+    assert_eq!(cell.bytes(), expected.as_bytes());
+    assert_eq!(cell.truncation(), truncation);
 }
