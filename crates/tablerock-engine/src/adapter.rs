@@ -1,7 +1,8 @@
 use std::{error::Error, fmt, future::Future, pin::Pin};
 
 use tablerock_core::{
-    BoundedText, CancelDispatch, Engine, OperationId, PageIdentity, PageLimits, ResultPage,
+    BoundedBytes, BoundedText, CancelDispatch, Engine, OperationId, PageIdentity, PageLimits,
+    ResultPage,
 };
 
 use crate::{
@@ -30,6 +31,11 @@ pub enum DriverPageRequest {
         scan_count: u32,
         max_scan_rounds: u32,
     },
+    RedisBlockingPop {
+        key: BoundedBytes,
+        limits: PageLimits,
+        max_cell_bytes: u64,
+    },
 }
 
 impl DriverPageRequest {
@@ -38,7 +44,7 @@ impl DriverPageRequest {
         match self {
             Self::PostgreSqlProbe { .. } => Engine::PostgreSql,
             Self::ClickHouseProbe { .. } => Engine::ClickHouse,
-            Self::RedisKeyScan { .. } => Engine::Redis,
+            Self::RedisKeyScan { .. } | Self::RedisBlockingPop { .. } => Engine::Redis,
         }
     }
 }
@@ -76,6 +82,14 @@ impl fmt::Debug for DriverPageRequest {
                 .field("max_cell_bytes", max_cell_bytes)
                 .field("scan_count", scan_count)
                 .field("max_scan_rounds", max_scan_rounds),
+            Self::RedisBlockingPop {
+                key,
+                limits,
+                max_cell_bytes,
+            } => debug
+                .field("key_bytes", &key.len())
+                .field("limits", limits)
+                .field("max_cell_bytes", max_cell_bytes),
         };
         debug.finish()
     }
@@ -192,6 +206,20 @@ impl DriverPageStream for RedisKeyStream {
     }
 }
 
+impl DriverPageStream for crate::RedisBlockingPopStream {
+    fn next_page<'a>(
+        &'a mut self,
+        identity: PageIdentity,
+        start_row: u64,
+    ) -> DriverFuture<'a, Result<Option<ResultPage>, AdapterError>> {
+        Box::pin(async move {
+            crate::RedisBlockingPopStream::next_page(self, identity, start_row)
+                .await
+                .map_err(map_redis)
+        })
+    }
+}
+
 impl DriverSession for PostgresSession {
     fn engine(&self) -> Engine {
         Engine::PostgreSql
@@ -293,26 +321,40 @@ impl DriverSession for RedisSession {
         request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
         Box::pin(async move {
-            let DriverPageRequest::RedisKeyScan {
-                limits,
-                max_cell_bytes,
-                scan_count,
-                max_scan_rounds,
-            } = request
-            else {
-                return Err(AdapterError::new(
+            match request {
+                DriverPageRequest::RedisKeyScan {
+                    limits,
+                    max_cell_bytes,
+                    scan_count,
+                    max_scan_rounds,
+                } => self
+                    .scan_keys(limits, max_cell_bytes, scan_count, max_scan_rounds)
+                    .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
+                    .map_err(map_redis),
+                DriverPageRequest::RedisBlockingPop {
+                    key,
+                    limits,
+                    max_cell_bytes,
+                } => self
+                    .blocking_pop(key, limits, max_cell_bytes)
+                    .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
+                    .map_err(map_redis),
+                _ => Err(AdapterError::new(
                     Engine::Redis,
                     AdapterFailureClass::EngineMismatch,
-                ));
-            };
-            self.scan_keys(limits, max_cell_bytes, scan_count, max_scan_rounds)
-                .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
-                .map_err(map_redis)
+                )),
+            }
         })
     }
 
     fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
-        Box::pin(async { CancelDispatch::Unsupported })
+        Box::pin(async {
+            match self.dispatch_cancel().await {
+                Ok(true) => CancelDispatch::RequestSent,
+                Ok(false) => CancelDispatch::ServerRejected,
+                Err(_) => CancelDispatch::TransportFailed,
+            }
+        })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
@@ -354,6 +396,8 @@ fn map_redis(error: RedisError) -> AdapterError {
     let class = match error {
         RedisError::Connect => AdapterFailureClass::Connection,
         RedisError::Command => AdapterFailureClass::Query,
+        RedisError::ServerCancelled => AdapterFailureClass::ServerCancelled,
+        RedisError::SessionBusy => AdapterFailureClass::InvalidRequest,
         RedisError::InvalidLimits => AdapterFailureClass::InvalidRequest,
         RedisError::ScanBudgetExhausted => AdapterFailureClass::Query,
         RedisError::Protocol => AdapterFailureClass::Protocol,

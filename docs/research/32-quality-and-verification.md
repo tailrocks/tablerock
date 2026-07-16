@@ -108,6 +108,9 @@ Engine additions:
   real PostgreSQL service execution;
 - one reusable core/runtime harness proving real bounded service execution for
   PostgreSQL, ClickHouse, and Redis across the pinned version/protocol matrix;
+- Redis blocking cancellation uses a separate control connection, waits until
+  the operation connection is observably blocked, and proves both successful
+  `CLIENT UNBLOCK` dispatch and the operation-side server error under RESP2/3;
 - simultaneous PostgreSQL, ClickHouse, and Redis submission before event
   consumption, with independent page identity/data, bounded receives, and
   observed completion for every operation;

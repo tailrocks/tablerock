@@ -2,8 +2,8 @@ use std::{collections::BTreeSet, time::Duration};
 
 use redis::AsyncCommands;
 use tablerock_core::{
-    BoundedBytes, BoundedText, ByteLimit, Engine, PageDelivery, PageIdentity, PageLimits,
-    PageWarning, Truncation, ValueKind,
+    BoundedBytes, BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity,
+    PageLimits, PageWarning, Truncation, ValueKind,
 };
 use tablerock_engine::{
     DriverPageRequest, DriverSession, EngineServiceUpdate, RedisConnectConfig, RedisProtocol,
@@ -60,6 +60,8 @@ async fn verify_version(tag: &str) {
         .await
         .unwrap();
         assert_eq!(session.negotiated_protocol().await.unwrap(), protocol);
+        verify_service_cancellation(port, protocol, tag).await;
+        verify_blocking_completion(port, protocol).await;
 
         let value = session
             .read_binary(&bytes(&[0, 255]), 3)
@@ -174,6 +176,142 @@ async fn verify_version(tag: &str) {
         }
         assert_eq!(service_keys, found, "Redis service {tag} {protocol:?}");
     }
+}
+
+async fn verify_service_cancellation(port: u16, protocol: RedisProtocol, tag: &str) {
+    let session = RedisSession::connect(&RedisConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        0,
+        protocol,
+        RedisTlsMode::Disable,
+    ))
+    .await
+    .unwrap();
+    let blocked_client_id = session.client_id();
+    let operation_id = support::operation(60);
+    let mut service = support::service(1, 2);
+    service
+        .submit(
+            operation_id,
+            support::command(61),
+            Box::new(session),
+            DriverPageRequest::RedisBlockingPop {
+                key: bytes(b"tablerock-cancellation-empty-list"),
+                limits: PageLimits::new(1, 2, 256, 128),
+                max_cell_bytes: 128,
+            },
+            identity(),
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(5), service.next_update(operation_id))
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        EngineServiceUpdate::Started
+    ));
+    wait_until_blocked(port, blocked_client_id).await;
+    let cancel = service.cancel(operation_id).unwrap();
+    assert_eq!(cancel.core, tablerock_core::CancelRequestOutcome::Requested);
+    assert_eq!(
+        cancel.runtime,
+        Some(tablerock_engine::RuntimeCancelOutcome::Queued)
+    );
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(5), service.next_update(operation_id))
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        EngineServiceUpdate::CancelDispatched(CancelDispatch::RequestSent)
+    ));
+    assert!(
+        matches!(
+            tokio::time::timeout(Duration::from_secs(5), service.next_update(operation_id))
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap(),
+            EngineServiceUpdate::Terminal(
+                tablerock_core::OperationOutcome::ServerConfirmedCancelled
+            )
+        ),
+        "Redis cancellation outcome {tag} {protocol:?}"
+    );
+}
+
+async fn wait_until_blocked(port: u16, client_id: u64) {
+    let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+    let mut inspector = client.get_multiplexed_async_connection().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let state: String = redis::cmd("CLIENT")
+                .arg("LIST")
+                .arg("ID")
+                .arg(client_id)
+                .query_async(&mut inspector)
+                .await
+                .unwrap();
+            if state.split_whitespace().any(|field| field == "flags=b") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Redis reports the operation connection as blocked");
+}
+
+async fn verify_blocking_completion(port: u16, protocol: RedisProtocol) {
+    let session = RedisSession::connect(&RedisConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        0,
+        protocol,
+        RedisTlsMode::Disable,
+    ))
+    .await
+    .unwrap();
+    let client_id = session.client_id();
+    let mut stream = session
+        .blocking_pop(
+            bytes(b"tablerock-blocking-completion"),
+            PageLimits::new(1, 2, 256, 128),
+            128,
+        )
+        .unwrap();
+    assert!(matches!(
+        session.blocking_pop(
+            bytes(b"second-blocking-operation"),
+            PageLimits::new(1, 2, 256, 128),
+            128,
+        ),
+        Err(tablerock_engine::RedisError::SessionBusy)
+    ));
+    wait_until_blocked(port, client_id).await;
+    let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+    let mut producer = client.get_multiplexed_async_connection().await.unwrap();
+    let pushed: u64 = redis::cmd("RPUSH")
+        .arg(b"tablerock-blocking-completion")
+        .arg(&[0_u8, 255])
+        .query_async(&mut producer)
+        .await
+        .unwrap();
+    assert_eq!(pushed, 1);
+    let page = tokio::time::timeout(Duration::from_secs(5), stream.next_page(identity(), 0))
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(page.envelope().delivery(), PageDelivery::Final);
+    assert_eq!(
+        page.cell(0, 0).unwrap().bytes(),
+        b"tablerock-blocking-completion"
+    );
+    assert_eq!(page.cell(0, 1).unwrap().bytes(), &[0, 255]);
 }
 
 async fn seed(port: u16) {

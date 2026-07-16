@@ -79,6 +79,7 @@ kept in the roadmap.
 - [TermRock semantic inventory update](128-termrock-semantic-inventory-update.md)
 - [Phase 2 ClickHouse service cancellation evidence](129-phase-2-clickhouse-service-cancellation.md)
 - [TermRock migration 0024 adoption](130-termrock-closure-runner-frame-time-migration.md)
+- [Phase 2 Redis service cancellation evidence](131-phase-2-redis-service-cancellation.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

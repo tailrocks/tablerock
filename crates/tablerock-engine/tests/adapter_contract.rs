@@ -1,4 +1,4 @@
-use tablerock_core::{BoundedText, ByteLimit, Engine, PageLimits};
+use tablerock_core::{BoundedBytes, BoundedText, ByteLimit, Engine, PageLimits};
 use tablerock_engine::{
     AdapterError, AdapterFailureClass, ClickHouseProbeQuery, DriverPageRequest, PostgresProbeQuery,
 };
@@ -26,6 +26,16 @@ fn typed_requests_preserve_engine_identity_and_redact_query_ids() {
     let debug = format!("{clickhouse:?}");
     assert!(!debug.contains("private-correlation-value"));
     assert!(debug.contains("query_id_bytes"));
+
+    let redis = DriverPageRequest::RedisBlockingPop {
+        key: BoundedBytes::copy_from_slice(b"private-redis-key", ByteLimit::new(64)).unwrap(),
+        limits: PageLimits::new(1, 2, 128, 64),
+        max_cell_bytes: 64,
+    };
+    assert_eq!(redis.engine(), Engine::Redis);
+    let debug = format!("{redis:?}");
+    assert!(!debug.contains("private-redis-key"));
+    assert!(debug.contains("key_bytes"));
 }
 
 #[test]

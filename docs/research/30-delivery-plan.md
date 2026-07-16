@@ -150,6 +150,9 @@ matrix evidence stays required.
 Using `redis-rs`, prove raw bytes, SCAN families, logical DB isolation,
 RESP2/RESP3, TLS, pipelines/partial failures, Pub/Sub and blocking isolation,
 timeouts/reconnect, and the difference between client stop and server outcome.
+The shared service now uses an isolated blocking-operation connection and
+requires both `CLIENT UNBLOCK` reply `1` and the operation-side server error
+before reporting server-confirmed cancellation.
 
 ### Exit evidence
 

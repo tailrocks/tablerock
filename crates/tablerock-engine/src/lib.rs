@@ -20,7 +20,8 @@ pub use postgres::{
     PostgresRowStream, PostgresSession, PostgresTlsMode,
 };
 pub use redis::{
-    RedisConnectConfig, RedisError, RedisKeyStream, RedisProtocol, RedisSession, RedisTlsMode,
+    RedisBlockingPopStream, RedisConnectConfig, RedisError, RedisKeyStream, RedisProtocol,
+    RedisSession, RedisTlsMode,
 };
 pub use runtime::{
     DriverOperationEvent, DriverOperationEvents, DriverRuntime, DriverRuntimeError,

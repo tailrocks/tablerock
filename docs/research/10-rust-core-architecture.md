@@ -157,6 +157,10 @@ server-rejected facts. Only an adapter-observed server cancellation becomes a
 server-confirmed terminal outcome. ClickHouse retains a bounded active query ID
 per owned session and uses a separate bound `KILL QUERY ... SYNC` request; it
 never retains or returns query text as cancellation evidence.
+Redis assigns blocking work to one owned operation connection and sends
+`CLIENT UNBLOCK <id> ERROR` only from a separate control connection. The
+adapter requires reply `1` plus the operation-side server error; dropping the
+redis-rs future remains client stop, never server-confirmed cancellation.
 
 Each operation owns a finite set of opaque subscriptions. Events fan out through
 independent bounded queues; a slow subscriber receives its own resync marker and

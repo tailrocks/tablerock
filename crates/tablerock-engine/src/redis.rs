@@ -1,4 +1,12 @@
-use std::{collections::VecDeque, error::Error, fmt};
+use std::{
+    collections::VecDeque,
+    error::Error,
+    fmt,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use redis::{
     Client, ConnectionAddr, IntoConnectionInfo, ProtocolVersion, RedisConnectionInfo,
@@ -67,6 +75,8 @@ impl fmt::Debug for RedisConnectConfig {
 pub enum RedisError {
     Connect,
     Command,
+    ServerCancelled,
+    SessionBusy,
     InvalidLimits,
     ScanBudgetExhausted,
     Protocol,
@@ -78,6 +88,8 @@ impl fmt::Display for RedisError {
         formatter.write_str(match self {
             Self::Connect => "Redis connection failed",
             Self::Command => "Redis command failed",
+            Self::ServerCancelled => "Redis server confirmed client unblocking",
+            Self::SessionBusy => "Redis session already owns a blocking operation",
             Self::InvalidLimits => "Redis stream limits are invalid",
             Self::ScanBudgetExhausted => "Redis scan round budget was exhausted",
             Self::Protocol => "Redis returned an unsupported response",
@@ -90,6 +102,15 @@ impl Error for RedisError {}
 
 pub struct RedisSession {
     connection: MultiplexedConnection,
+    control: MultiplexedConnection,
+    client_id: u64,
+    blocking: Arc<RedisBlockingState>,
+}
+
+#[derive(Default)]
+struct RedisBlockingState {
+    active: AtomicBool,
+    server_confirmed: AtomicBool,
 }
 
 impl RedisSession {
@@ -118,11 +139,94 @@ impl RedisSession {
             .map_err(|_| RedisError::Connect)?
             .set_redis_settings(redis);
         let client = Client::open(info).map_err(|_| RedisError::Connect)?;
-        let connection = client
+        let mut connection = client
             .get_multiplexed_async_connection()
             .await
             .map_err(|_| RedisError::Connect)?;
-        Ok(Self { connection })
+        let client_id: u64 = redis::cmd("CLIENT")
+            .arg("ID")
+            .query_async(&mut connection)
+            .await
+            .map_err(|_| RedisError::Connect)?;
+        let control = client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|_| RedisError::Connect)?;
+        Ok(Self {
+            connection,
+            control,
+            client_id,
+            blocking: Arc::new(RedisBlockingState::default()),
+        })
+    }
+
+    #[must_use]
+    pub const fn client_id(&self) -> u64 {
+        self.client_id
+    }
+
+    pub fn blocking_pop(
+        &self,
+        key: BoundedBytes,
+        limits: PageLimits,
+        max_cell_bytes: u64,
+    ) -> Result<RedisBlockingPopStream, RedisError> {
+        if key.is_empty()
+            || limits.max_rows() == 0
+            || limits.max_columns() < 2
+            || limits.max_arena_bytes() == 0
+            || max_cell_bytes == 0
+        {
+            return Err(RedisError::InvalidLimits);
+        }
+        if self.blocking.active.swap(true, Ordering::AcqRel) {
+            return Err(RedisError::SessionBusy);
+        }
+        self.blocking
+            .server_confirmed
+            .store(false, Ordering::Release);
+        let mut connection = self.connection.clone();
+        let command_key = key.clone();
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let result = redis::cmd("BLPOP")
+                .arg(command_key.as_slice())
+                .arg(0)
+                .query_async(&mut connection)
+                .await
+                .map_err(|_| RedisError::Command);
+            let _ = result_tx.send(result);
+        });
+        Ok(RedisBlockingPopStream {
+            result: result_rx,
+            task,
+            limits,
+            max_cell_bytes,
+            complete: false,
+            blocking: Arc::clone(&self.blocking),
+        })
+    }
+
+    pub async fn dispatch_cancel(&self) -> Result<bool, RedisError> {
+        if !self.blocking.active.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+        let mut control = self.control.clone();
+        let unblocked: u64 = redis::cmd("CLIENT")
+            .arg("UNBLOCK")
+            .arg(self.client_id)
+            .arg("ERROR")
+            .query_async(&mut control)
+            .await
+            .map_err(|_| RedisError::Command)?;
+        if unblocked == 1 {
+            self.blocking
+                .server_confirmed
+                .store(true, Ordering::Release);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     pub fn scan_keys(
@@ -199,6 +303,79 @@ impl RedisSession {
         value
             .map(|value| bounded_binary(&value, max_bytes))
             .transpose()
+    }
+}
+
+type RedisBlockingResult = Result<(Vec<u8>, Vec<u8>), RedisError>;
+
+pub struct RedisBlockingPopStream {
+    result: tokio::sync::oneshot::Receiver<RedisBlockingResult>,
+    task: tokio::task::JoinHandle<()>,
+    limits: PageLimits,
+    max_cell_bytes: u64,
+    complete: bool,
+    blocking: Arc<RedisBlockingState>,
+}
+
+impl RedisBlockingPopStream {
+    pub async fn next_page(
+        &mut self,
+        identity: PageIdentity,
+        start_row: u64,
+    ) -> Result<Option<ResultPage>, RedisError> {
+        if self.complete {
+            return Ok(None);
+        }
+        let result = (&mut self.result).await.map_err(|_| RedisError::Command)?;
+        self.complete = true;
+        self.blocking.active.store(false, Ordering::Release);
+        let (key, value) = match result {
+            Ok(value) => value,
+            Err(_) if self.blocking.server_confirmed.load(Ordering::Acquire) => {
+                return Err(RedisError::ServerCancelled);
+            }
+            Err(_) => return Err(RedisError::Command),
+        };
+        let key = bounded_binary(&key, self.max_cell_bytes)?;
+        let remaining = self
+            .limits
+            .max_arena_bytes()
+            .saturating_sub(key.encoded_byte_len());
+        let value = bounded_binary(&value, self.max_cell_bytes.min(remaining))?;
+        let columns = ["key", "value"]
+            .into_iter()
+            .map(|name| {
+                Ok(ColumnMetadata::new(
+                    BoundedText::copy_from_str(name, ByteLimit::new(name.len() as u64))
+                        .map_err(|_| RedisError::Protocol)?,
+                    EngineType::new(
+                        Engine::Redis,
+                        BoundedText::copy_from_str("bulk-string", ByteLimit::new(11))
+                            .map_err(|_| RedisError::Protocol)?,
+                    )
+                    .map_err(|_| RedisError::Protocol)?,
+                    false,
+                ))
+            })
+            .collect::<Result<Vec<_>, RedisError>>()?;
+        ResultPage::from_row_major(
+            identity,
+            start_row,
+            RowTotal::Known(1),
+            PageFacts::new(PageDelivery::Final, PageWarnings::none()),
+            columns,
+            vec![key, value],
+            self.limits,
+        )
+        .map(Some)
+        .map_err(RedisError::Page)
+    }
+}
+
+impl Drop for RedisBlockingPopStream {
+    fn drop(&mut self) {
+        self.task.abort();
+        self.blocking.active.store(false, Ordering::Release);
     }
 }
 

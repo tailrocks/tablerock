@@ -10,8 +10,9 @@ pages. All driver clients, connections, commands, and response values remain
 private.
 
 This is not the complete Redis spike. TLS fixtures, authentication, HSCAN,
-SSCAN, ZSCAN, pipelines and partial failures, TTLs, Pub/Sub, blocking-command
-isolation, timeout, reconnect, and post-dispatch cancellation truth remain.
+SSCAN, ZSCAN, pipelines and partial failures, TTLs, Pub/Sub, TLS/authentication,
+timeout, and reconnect remain. Blocking-command isolation and cancellation are
+proved in [`131-phase-2-redis-service-cancellation.md`](131-phase-2-redis-service-cancellation.md).
 
 ## Dependency decision
 
