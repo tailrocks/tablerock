@@ -45,7 +45,9 @@ bounded ingress overflow/resync policy is implemented and audited. Phase 2 is
 in progress with dependency-minimal core identity/revision, bounded owned-value,
 redaction, explicit per-engine capability, immutable columnar page,
 live-session operation lifecycle, safe diagnostic, typed command-envelope, and
-versioned secret-source tracers.
+versioned secret-source and profile-property policy tracers. Ordinary literal
+password/private-key material is structurally rejected while every property
+remains sourceable.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

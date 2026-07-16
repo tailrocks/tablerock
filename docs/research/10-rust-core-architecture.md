@@ -159,11 +159,14 @@ edits.
 ```text
 ConnectionValue
   Literal(non-secret)
-  OnePassword(OpRef)
-  HostEnvironment(variable)
-  PromptOnConnect
-  DangerousPlaintextSecret(acknowledgement)
+  SecretSource
 ```
+
+The public constructor rejects `Literal` for passwords, TLS client private
+keys, and their passwords. All properties may use `SecretSource`, allowing
+metadata-only 1Password/environment/prompt/Keychain/dangerous-local sources
+without creating a second credential model. Versioned property sets reject
+duplicates and bound every literal before persistence or adapter boundaries.
 
 `OpRef` stores stable 26-character account/vault/item object IDs, a bounded
 section/field ID path, and a display breadcrumb. A metadata-only picker suggests reviewed mappings for host,

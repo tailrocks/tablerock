@@ -5,6 +5,7 @@ mod diagnostic;
 mod id;
 mod operation;
 mod page;
+mod profile;
 mod revision;
 mod secret;
 mod value;
@@ -31,6 +32,10 @@ pub use page::{
     CellRef, ColumnMetadata, PageAccessError, PageBuffers, PageDelivery, PageEnvelope, PageFacts,
     PageIdentity, PageLimits, PageShape, PageValidationError, PageWarning, PageWarnings,
     ResultPage, RowTotal, ValidatedPageEnvelope,
+};
+pub use profile::{
+    ProfileProperty, ProfilePropertyBinding, ProfilePropertyError, ProfilePropertySet,
+    PropertyValueSource,
 };
 pub use revision::{CounterOverflow, EventSequence, Revision, RevisionRelation, SequenceRelation};
 pub use secret::{

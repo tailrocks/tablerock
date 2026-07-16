@@ -97,6 +97,9 @@ recorded in
 [`52-phase-2-command-envelope.md`](docs/research/52-phase-2-command-envelope.md).
 The versioned, redacted secret-source reference tracer is recorded in
 [`53-phase-2-secret-source.md`](docs/research/53-phase-2-secret-source.md).
+The versioned profile property/source policy that forbids ordinary literal
+secret material is recorded in
+[`54-phase-2-profile-property-policy.md`](docs/research/54-phase-2-profile-property-policy.md).
 
 Define owned IDs, capabilities, values, revisions, commands, events, pages,
 errors, cancellation, safety, and redaction. Implement local-only Turso through
