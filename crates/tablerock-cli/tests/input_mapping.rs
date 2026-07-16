@@ -29,6 +29,12 @@ fn maps_termrock_neutral_input_without_backend_types() {
         ))),
         Some(Message::Activate)
     );
+    let Message::Paste(paste) =
+        map_event(TermRockEvent::Paste("neutral paste".to_owned())).unwrap()
+    else {
+        panic!("expected neutral paste intent");
+    };
+    assert_eq!(paste.text(), "neutral paste");
 }
 
 #[test]

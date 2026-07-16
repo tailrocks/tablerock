@@ -444,6 +444,16 @@ impl PageEnvelope {
     }
 
     #[must_use]
+    pub const fn arena_byte_len(self) -> u64 {
+        self.arena_byte_len
+    }
+
+    #[must_use]
+    pub const fn column_text_byte_len(self) -> u64 {
+        self.column_text_byte_len
+    }
+
+    #[must_use]
     pub const fn total_rows(self) -> RowTotal {
         self.total_rows
     }

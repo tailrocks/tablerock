@@ -87,6 +87,12 @@ pub enum OperationOutcome {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CancelDispatch {
+    Unsupported,
+    RequestSent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OperationPhase {
     Queued,
     Running,

@@ -41,9 +41,9 @@ pub use mutation::{
     ReviewError, ReviewRegistryError, ReviewedMutationPlan,
 };
 pub use operation::{
-    EventQueueError, EventQueuePush, EventRejection, OperationCursor, OperationEvent,
-    OperationEventKind, OperationEventQueue, OperationIdentity, OperationOutcome, OperationPhase,
-    OperationScope, TransitionError,
+    CancelDispatch, EventQueueError, EventQueuePush, EventRejection, OperationCursor,
+    OperationEvent, OperationEventKind, OperationEventQueue, OperationIdentity, OperationOutcome,
+    OperationPhase, OperationScope, TransitionError,
 };
 pub use page::{
     CellRef, ColumnMetadata, PageAccessError, PageBuffers, PageDelivery, PageEnvelope, PageFacts,

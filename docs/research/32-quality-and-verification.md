@@ -97,6 +97,9 @@ Engine additions:
 - bounded engine-owned task/control/event channels, cancellation under event
   backpressure, idempotent dispatch, authoritative task exit, and client-stop
   shutdown independent of slow event consumers;
+- core-authoritative service/runtime mapping, terminal-event versus joined-exit
+  agreement, immediate-cancel non-regression, rejected-submission cleanup, and
+  real PostgreSQL service execution;
 
 - PostgreSQL: custom/unknown OIDs, arrays/ranges/composites/JSON/bytes, notices,
   parameters, COPY, multiple statements, transaction conflicts, cancel races;

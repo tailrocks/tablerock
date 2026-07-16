@@ -95,6 +95,8 @@ fn row_major_values_become_validated_column_major_page() {
     .unwrap();
 
     assert_eq!(page.envelope().row_count(), 2);
+    assert_eq!(page.envelope().arena_byte_len(), 21);
+    assert_eq!(page.envelope().column_text_byte_len(), 14);
     assert_eq!(page.cell(0, 0).unwrap().bytes(), &7_i64.to_be_bytes());
     assert_eq!(page.cell(1, 0).unwrap().bytes(), &8_i64.to_be_bytes());
     assert_eq!(page.cell(0, 1).unwrap().bytes(), b"alpha");

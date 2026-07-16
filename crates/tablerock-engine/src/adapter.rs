@@ -1,6 +1,8 @@
 use std::{error::Error, fmt, future::Future, pin::Pin};
 
-use tablerock_core::{BoundedText, Engine, OperationId, PageIdentity, PageLimits, ResultPage};
+use tablerock_core::{
+    BoundedText, CancelDispatch, Engine, OperationId, PageIdentity, PageLimits, ResultPage,
+};
 
 use crate::{
     ClickHouseError, ClickHouseProbeQuery, ClickHouseRowStream, ClickHouseSession, PostgresError,
@@ -125,12 +127,6 @@ impl fmt::Display for AdapterError {
 }
 
 impl Error for AdapterError {}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CancelDispatch {
-    Unsupported,
-    RequestSent,
-}
 
 pub trait DriverPageStream: Send {
     fn next_page<'a>(

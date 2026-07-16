@@ -18,7 +18,7 @@ impl InputAdapter {
             Event::Resize { width, height } => Some(Message::Resize { width, height }),
             Event::FocusGained => Some(Message::TerminalFocusChanged(true)),
             Event::FocusLost => Some(Message::TerminalFocusChanged(false)),
-            Event::Paste => None,
+            Event::Paste(text) => Some(Message::Paste(PasteText::bounded(text))),
             Event::Mouse(mouse) => {
                 let target = self.geometry.target_at(mouse.position.x, mouse.position.y);
                 match mouse.kind {
@@ -71,14 +71,10 @@ impl InputAdapter {
         }
     }
 
-    /// Convert the selected backend immediately, preserving paste text until
-    /// TermRock's neutral paste event carries its payload.
+    /// Convert the selected backend into TermRock's neutral event vocabulary.
     #[must_use]
     pub fn map_backend_event(&self, event: crossterm::event::Event) -> Option<Message> {
-        match event {
-            crossterm::event::Event::Paste(text) => Some(Message::Paste(PasteText::bounded(text))),
-            event => self.map_event(event.into()),
-        }
+        self.map_event(event.into())
     }
 }
 

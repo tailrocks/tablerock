@@ -108,6 +108,12 @@ exit distinguishes completion, client stop, and safe failure; the core remains
 the sole lifecycle authority. Unknown/unsupported/request-sent cancellation is
 preserved without manufacturing server confirmation.
 
+`EngineService` owns the coordinator/runtime pairing used by both clients. It
+maps runtime start/page/terminal facts into legal core transitions, checks task
+exit against terminal delivery, preserves immediate-cancel ordering, and never
+lets presentation call a driver. Core submission failure consumes the rejected
+session before returning a redacted service error.
+
 ## Commands, events, and revisions
 
 Commands represent operator intent:

@@ -88,6 +88,12 @@ Late cursors receive explicit resync, future cursors fail, and one slow client
 cannot force another client's queue to drop or block. Retirement requires every
 subscriber to drain and unsubscribe.
 
+The in-process `EngineService` binds this coordinator to engine-owned driver
+tasks. Runtime start, immutable page, cancellation-dispatch, and terminal facts
+become legal core transitions; joined task exit must match terminal delivery.
+Immediate cancellation cannot regress from `CancelRequested` to `Running`, and
+rejected core submission consumes driver-session shutdown.
+
 ### Command envelope
 
 Every command carries:

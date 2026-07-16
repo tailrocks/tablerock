@@ -1,11 +1,13 @@
 use tablerock_core::{
-    BoundedText, ByteLimit, Engine, IdParts, OperationId, PageDelivery, PageIdentity, PageLimits,
-    PageWarning, ResultId, Revision, Truncation, ValueKind,
+    BoundedText, ByteLimit, CancelDispatch, CommandBudget, CommandBudgetLimits, CommandEnvelope,
+    CommandIntent, CommandScope, ContextId, Engine, IdParts, OperationId, OperationScope,
+    PageDelivery, PageIdentity, PageLimits, PageWarning, ProfileId, RequestId, ResultId, Revision,
+    ServiceCoordinator, ServiceLimits, SessionId, Truncation, ValueKind,
 };
 use tablerock_engine::{
-    AdapterFailureClass, CancelDispatch, ClickHouseProbeQuery, DriverOperationEvent,
-    DriverPageRequest, DriverRuntime, DriverSession, DriverTaskExit, PostgresCancellationOutcome,
-    PostgresConnectConfig, PostgresProbeQuery, PostgresSession, PostgresTlsMode,
+    AdapterFailureClass, ClickHouseProbeQuery, DriverPageRequest, DriverRuntime, DriverSession,
+    EngineService, EngineServiceUpdate, PostgresCancellationOutcome, PostgresConnectConfig,
+    PostgresProbeQuery, PostgresSession, PostgresTlsMode,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -157,10 +159,11 @@ async fn streams_bounded_pages_from_real_postgres() {
     drop(stream);
 
     let operation_id = OperationId::from_parts(IdParts::new(0, 10).unwrap()).unwrap();
-    let mut runtime = DriverRuntime::new(1, 2).unwrap();
-    let mut events = runtime
-        .spawn(
+    let mut service = EngineService::new(service_core(), DriverRuntime::new(1, 2).unwrap());
+    service
+        .submit(
             operation_id,
+            service_command(),
             Box::new(session),
             DriverPageRequest::PostgreSqlProbe {
                 query: PostgresProbeQuery::BoundedSeries,
@@ -172,21 +175,59 @@ async fn streams_bounded_pages_from_real_postgres() {
         .await
         .unwrap();
     let mut page_rows = 0_u32;
-    while let Some(event) = events.recv().await {
-        match event {
-            DriverOperationEvent::Page(page) => {
+    loop {
+        match service.next_update(operation_id).await.unwrap().unwrap() {
+            EngineServiceUpdate::Page(page) => {
                 page_rows += page.envelope().row_count();
             }
-            DriverOperationEvent::Completed => break,
-            DriverOperationEvent::Started => {}
+            EngineServiceUpdate::Terminal(tablerock_core::OperationOutcome::Completed) => break,
+            EngineServiceUpdate::Started => {}
             other => panic!("unexpected runtime event: {other:?}"),
         }
     }
     assert_eq!(page_rows, 3);
-    assert_eq!(
-        runtime.join(operation_id).await.unwrap(),
-        DriverTaskExit::Completed
+}
+
+fn service_core() -> ServiceCoordinator {
+    let scope = OperationScope::new(
+        ProfileId::from_parts(IdParts::new(0, 20).unwrap()).unwrap(),
+        SessionId::from_parts(IdParts::new(0, 21).unwrap()).unwrap(),
+        ContextId::from_parts(IdParts::new(0, 22).unwrap()).unwrap(),
     );
+    let mut core = ServiceCoordinator::new(ServiceLimits::new(8, 1, 2, 8).unwrap());
+    core.register_scope(CommandScope::Profile(scope.profile_id()), Revision::INITIAL)
+        .unwrap();
+    core.register_scope(
+        CommandScope::Session {
+            profile_id: scope.profile_id(),
+            session_id: scope.session_id(),
+        },
+        Revision::INITIAL,
+    )
+    .unwrap();
+    core.register_scope(CommandScope::Context(scope), Revision::INITIAL)
+        .unwrap();
+    core
+}
+
+fn service_command() -> CommandEnvelope {
+    let scope = OperationScope::new(
+        ProfileId::from_parts(IdParts::new(0, 20).unwrap()).unwrap(),
+        SessionId::from_parts(IdParts::new(0, 21).unwrap()).unwrap(),
+        ContextId::from_parts(IdParts::new(0, 22).unwrap()).unwrap(),
+    );
+    CommandEnvelope::new(
+        RequestId::from_parts(IdParts::new(0, 23).unwrap()).unwrap(),
+        CommandScope::Context(scope),
+        Revision::INITIAL,
+        CommandBudget::new(10_000, 8, 1024, 128)
+            .unwrap()
+            .validate(CommandBudgetLimits::new(10_000, 8, 1024, 128).unwrap())
+            .unwrap(),
+        None,
+        CommandIntent::RefreshCatalog,
+    )
+    .unwrap()
 }
 
 #[tokio::test]

@@ -3,11 +3,13 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use tablerock_core::{Engine, IdParts, OperationId, PageIdentity, ResultId, Revision};
+use tablerock_core::{
+    CancelDispatch, Engine, IdParts, OperationId, PageIdentity, ResultId, Revision,
+};
 use tablerock_engine::{
-    AdapterError, AdapterFailureClass, CancelDispatch, DriverFuture, DriverOperationEvent,
-    DriverPageRequest, DriverPageStream, DriverRuntime, DriverRuntimeError, DriverSession,
-    DriverTaskExit, PostgresProbeQuery, RuntimeCancelOutcome,
+    AdapterError, AdapterFailureClass, DriverFuture, DriverOperationEvent, DriverPageRequest,
+    DriverPageStream, DriverRuntime, DriverRuntimeError, DriverSession, DriverTaskExit,
+    PostgresProbeQuery, RuntimeCancelOutcome,
 };
 use tokio::sync::Notify;
 use tokio::time::{Duration, timeout};

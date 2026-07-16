@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use tablerock_core::{OperationId, PageIdentity, ResultPage};
+use tablerock_core::{CancelDispatch, OperationId, PageIdentity, ResultPage};
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
 };
 
-use crate::{AdapterError, AdapterFailureClass, CancelDispatch, DriverPageRequest, DriverSession};
+use crate::{AdapterError, AdapterFailureClass, DriverPageRequest, DriverSession};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriverRuntimeError {

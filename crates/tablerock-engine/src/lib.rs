@@ -5,10 +5,11 @@ mod clickhouse;
 mod postgres;
 mod redis;
 mod runtime;
+mod service;
 
 pub use adapter::{
-    AdapterError, AdapterFailureClass, CancelDispatch, DriverFuture, DriverPageRequest,
-    DriverPageStream, DriverSession,
+    AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
+    DriverSession,
 };
 pub use clickhouse::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseError, ClickHouseProbeQuery,
@@ -25,3 +26,4 @@ pub use runtime::{
     DriverOperationEvent, DriverOperationEvents, DriverRuntime, DriverRuntimeError,
     DriverSpawnError, DriverTaskExit, RuntimeCancelOutcome,
 };
+pub use service::{EngineCancelOutcome, EngineService, EngineServiceError, EngineServiceUpdate};

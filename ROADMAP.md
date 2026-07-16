@@ -12,6 +12,15 @@ recorded in
 Runtime rejection now consumes session ownership and preserves cleanup evidence,
 as recorded in
 [`119-phase-2-runtime-rejection-ownership.md`](docs/research/119-phase-2-runtime-rejection-ownership.md).
+The core-authoritative engine application-service bridge and real PostgreSQL
+execution evidence are recorded in
+[`120-phase-2-engine-service-bridge.md`](docs/research/120-phase-2-engine-service-bridge.md).
+The latest lookbook-only TermRock textarea spike and exact refreshed pin are
+recorded in
+[`121-termrock-textarea-spike-update.md`](docs/research/121-termrock-textarea-spike-update.md).
+TermRock sequential migration 0022, neutral paste payload adoption, and the
+exact refreshed pin are recorded in
+[`122-termrock-paste-payload-migration.md`](docs/research/122-termrock-paste-payload-migration.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its
