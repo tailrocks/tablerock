@@ -40,7 +40,8 @@ state.
 - Contract tests prove queued/running/streaming/completed mapping, immutable page
   delivery, cumulative progress, immediate-cancel non-regression,
   completed-before-cancel truth, and rejected-submission session shutdown.
-- PostgreSQL 18.4 Testcontainers now executes its bounded stream through
+- PostgreSQL 18.4, both pinned ClickHouse lines/compression modes, and both
+  pinned Redis lines/protocol modes execute bounded streams through
   `EngineService`, not directly through the runtime.
 - Driver/session/client types remain below the service; outputs are core IDs,
   outcomes, events, and immutable bounded pages.

@@ -1,25 +1,22 @@
 use std::time::Duration;
 
 use tablerock_core::{
-    BoundedText, ByteLimit, Engine, IdParts, PageDelivery, PageIdentity, PageLimits, ResultId,
-    Revision, Truncation, ValueKind,
+    BoundedText, ByteLimit, Engine, PageDelivery, PageIdentity, PageLimits, Truncation, ValueKind,
 };
 use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession,
-    ClickHouseTlsMode, DriverPageRequest, DriverSession,
+    ClickHouseTlsMode, DriverPageRequest, DriverSession, EngineServiceUpdate,
 };
 use testcontainers::{GenericImage, ImageExt, core::IntoContainerPort, runners::AsyncRunner};
+
+mod support;
 
 fn text(value: &str) -> BoundedText {
     BoundedText::copy_from_str(value, ByteLimit::new(128)).unwrap()
 }
 
 fn identity() -> PageIdentity {
-    PageIdentity::new(
-        ResultId::from_parts(IdParts::new(0, 3).unwrap()).unwrap(),
-        Revision::INITIAL,
-        Engine::ClickHouse,
-    )
+    support::identity(Engine::ClickHouse, 3)
 }
 
 #[tokio::test]
@@ -283,6 +280,41 @@ async fn verify_image(image: &str) {
                 .warnings()
                 .contains(tablerock_core::PageWarning::ByteLimitReached)
         );
+
+        drop(stream);
+        drop(complex);
+        drop(bounded_complex);
+        drop(structured);
+        drop(bounded_structured);
+        let operation_id = support::operation(30);
+        let mut service = support::service(1, 2);
+        service
+            .submit(
+                operation_id,
+                support::command(31),
+                Box::new(session),
+                DriverPageRequest::ClickHouseProbe {
+                    query: ClickHouseProbeQuery::TypedValues,
+                    query_id: text(&format!("tablerock-service-{port}-{compression:?}")),
+                    limits: PageLimits::new(2, 8, 256, 256),
+                    max_cell_bytes: 8,
+                },
+                identity(),
+            )
+            .await
+            .unwrap();
+        let mut rows = 0_u32;
+        loop {
+            match service.next_update(operation_id).await.unwrap().unwrap() {
+                EngineServiceUpdate::Started => {}
+                EngineServiceUpdate::Page(page) => rows += page.envelope().row_count(),
+                EngineServiceUpdate::Terminal(tablerock_core::OperationOutcome::Completed) => {
+                    break;
+                }
+                other => panic!("unexpected ClickHouse service event: {other:?}"),
+            }
+        }
+        assert_eq!(rows, 3, "{image} {compression:?}");
     }
 }
 

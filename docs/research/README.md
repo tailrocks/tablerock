@@ -73,6 +73,7 @@ kept in the roadmap.
 - [TermRock paste-payload migration](122-termrock-paste-payload-migration.md)
 - [Phase 2 service shutdown coordination](123-phase-2-service-shutdown.md)
 - [TermRock list multi-select migration](124-termrock-list-multiselect-migration.md)
+- [Phase 2 three-engine service harness](125-phase-2-three-engine-service-harness.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

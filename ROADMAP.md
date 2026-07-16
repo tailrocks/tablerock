@@ -25,6 +25,9 @@ Graceful and cancel-active service/runtime shutdown coordination is recorded in
 [`123-phase-2-service-shutdown.md`](docs/research/123-phase-2-service-shutdown.md).
 TermRock sequential migration 0023 and the exact refreshed pin are recorded in
 [`124-termrock-list-multiselect-migration.md`](docs/research/124-termrock-list-multiselect-migration.md).
+The shared real PostgreSQL/ClickHouse/Redis application-service harness is
+recorded in
+[`125-phase-2-three-engine-service-harness.md`](docs/research/125-phase-2-three-engine-service-harness.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

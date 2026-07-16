@@ -1,14 +1,14 @@
 use tablerock_core::{
-    BoundedText, ByteLimit, CancelDispatch, CommandBudget, CommandBudgetLimits, CommandEnvelope,
-    CommandIntent, CommandScope, ContextId, Engine, IdParts, OperationId, OperationScope,
-    PageDelivery, PageIdentity, PageLimits, PageWarning, ProfileId, RequestId, ResultId, Revision,
-    ServiceCoordinator, ServiceLimits, SessionId, Truncation, ValueKind,
+    BoundedText, ByteLimit, CancelDispatch, Engine, IdParts, OperationId, PageDelivery,
+    PageIdentity, PageLimits, PageWarning, Truncation, ValueKind,
 };
 use tablerock_engine::{
-    AdapterFailureClass, ClickHouseProbeQuery, DriverPageRequest, DriverRuntime, DriverSession,
-    EngineService, EngineServiceUpdate, PostgresCancellationOutcome, PostgresConnectConfig,
-    PostgresProbeQuery, PostgresSession, PostgresTlsMode,
+    AdapterFailureClass, ClickHouseProbeQuery, DriverPageRequest, DriverSession,
+    EngineServiceUpdate, PostgresCancellationOutcome, PostgresConnectConfig, PostgresProbeQuery,
+    PostgresSession, PostgresTlsMode,
 };
+
+mod support;
 use testcontainers::{
     GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
@@ -68,11 +68,7 @@ async fn distinguishes_server_confirmed_cancellation_from_request_delivery() {
 }
 
 fn identity() -> PageIdentity {
-    PageIdentity::new(
-        ResultId::from_parts(IdParts::new(0, 1).unwrap()).unwrap(),
-        Revision::INITIAL,
-        tablerock_core::Engine::PostgreSql,
-    )
+    support::identity(Engine::PostgreSql, 1)
 }
 
 #[tokio::test]
@@ -158,12 +154,12 @@ async fn streams_bounded_pages_from_real_postgres() {
     assert!(stream.next_page(identity(), 3).await.unwrap().is_none());
     drop(stream);
 
-    let operation_id = OperationId::from_parts(IdParts::new(0, 10).unwrap()).unwrap();
-    let mut service = EngineService::new(service_core(), DriverRuntime::new(1, 2).unwrap());
+    let operation_id = support::operation(10);
+    let mut service = support::service(1, 2);
     service
         .submit(
             operation_id,
-            service_command(),
+            support::command(23),
             Box::new(session),
             DriverPageRequest::PostgreSqlProbe {
                 query: PostgresProbeQuery::BoundedSeries,
@@ -186,48 +182,6 @@ async fn streams_bounded_pages_from_real_postgres() {
         }
     }
     assert_eq!(page_rows, 3);
-}
-
-fn service_core() -> ServiceCoordinator {
-    let scope = OperationScope::new(
-        ProfileId::from_parts(IdParts::new(0, 20).unwrap()).unwrap(),
-        SessionId::from_parts(IdParts::new(0, 21).unwrap()).unwrap(),
-        ContextId::from_parts(IdParts::new(0, 22).unwrap()).unwrap(),
-    );
-    let mut core = ServiceCoordinator::new(ServiceLimits::new(8, 1, 2, 8).unwrap());
-    core.register_scope(CommandScope::Profile(scope.profile_id()), Revision::INITIAL)
-        .unwrap();
-    core.register_scope(
-        CommandScope::Session {
-            profile_id: scope.profile_id(),
-            session_id: scope.session_id(),
-        },
-        Revision::INITIAL,
-    )
-    .unwrap();
-    core.register_scope(CommandScope::Context(scope), Revision::INITIAL)
-        .unwrap();
-    core
-}
-
-fn service_command() -> CommandEnvelope {
-    let scope = OperationScope::new(
-        ProfileId::from_parts(IdParts::new(0, 20).unwrap()).unwrap(),
-        SessionId::from_parts(IdParts::new(0, 21).unwrap()).unwrap(),
-        ContextId::from_parts(IdParts::new(0, 22).unwrap()).unwrap(),
-    );
-    CommandEnvelope::new(
-        RequestId::from_parts(IdParts::new(0, 23).unwrap()).unwrap(),
-        CommandScope::Context(scope),
-        Revision::INITIAL,
-        CommandBudget::new(10_000, 8, 1024, 128)
-            .unwrap()
-            .validate(CommandBudgetLimits::new(10_000, 8, 1024, 128).unwrap())
-            .unwrap(),
-        None,
-        CommandIntent::RefreshCatalog,
-    )
-    .unwrap()
 }
 
 #[tokio::test]

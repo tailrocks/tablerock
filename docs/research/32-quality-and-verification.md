@@ -100,6 +100,8 @@ Engine additions:
 - core-authoritative service/runtime mapping, terminal-event versus joined-exit
   agreement, immediate-cancel non-regression, rejected-submission cleanup, and
   real PostgreSQL service execution;
+- one reusable core/runtime harness proving real bounded service execution for
+  PostgreSQL, ClickHouse, and Redis across the pinned version/protocol matrix;
 - graceful versus cancel-active drain, bounded per-operation client-stop facts,
   slow-delivery-independent terminal reconstruction, premature completion
   rejection, and exactly-once runtime release;

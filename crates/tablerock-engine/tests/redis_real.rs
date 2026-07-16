@@ -2,12 +2,15 @@ use std::{collections::BTreeSet, time::Duration};
 
 use redis::AsyncCommands;
 use tablerock_core::{
-    BoundedBytes, BoundedText, ByteLimit, Engine, IdParts, PageDelivery, PageIdentity, PageLimits,
-    PageWarning, ResultId, Revision, Truncation, ValueKind,
+    BoundedBytes, BoundedText, ByteLimit, Engine, PageDelivery, PageIdentity, PageLimits,
+    PageWarning, Truncation, ValueKind,
 };
 use tablerock_engine::{
-    DriverPageRequest, DriverSession, RedisConnectConfig, RedisProtocol, RedisSession, RedisTlsMode,
+    DriverPageRequest, DriverSession, EngineServiceUpdate, RedisConnectConfig, RedisProtocol,
+    RedisSession, RedisTlsMode,
 };
+
+mod support;
 use testcontainers::{
     GenericImage,
     core::{IntoContainerPort, WaitFor},
@@ -23,11 +26,7 @@ fn bytes(value: &[u8]) -> BoundedBytes {
 }
 
 fn identity() -> PageIdentity {
-    PageIdentity::new(
-        ResultId::from_parts(IdParts::new(0, 2).unwrap()).unwrap(),
-        Revision::INITIAL,
-        Engine::Redis,
-    )
+    support::identity(Engine::Redis, 2)
 }
 
 #[tokio::test]
@@ -138,6 +137,42 @@ async fn verify_version(tag: &str) {
         assert_eq!(page.envelope().delivery(), PageDelivery::Final);
         assert_eq!(page.envelope().row_count(), 1);
         assert_eq!(page.cell(0, 0).unwrap().bytes(), b"database-one");
+
+        drop(stream);
+        drop(bounded);
+        let operation_id = support::operation(40);
+        let mut service = support::service(1, 2);
+        service
+            .submit(
+                operation_id,
+                support::command(41),
+                Box::new(session),
+                DriverPageRequest::RedisKeyScan {
+                    limits: PageLimits::new(2, 1, 256, 64),
+                    max_cell_bytes: 128,
+                    scan_count: 2,
+                    max_scan_rounds: 128,
+                },
+                identity(),
+            )
+            .await
+            .unwrap();
+        let mut service_keys = BTreeSet::new();
+        loop {
+            match service.next_update(operation_id).await.unwrap().unwrap() {
+                EngineServiceUpdate::Started => {}
+                EngineServiceUpdate::Page(page) => {
+                    for row in 0..page.envelope().row_count() {
+                        service_keys.insert(page.cell(row, 0).unwrap().bytes().to_vec());
+                    }
+                }
+                EngineServiceUpdate::Terminal(tablerock_core::OperationOutcome::Completed) => {
+                    break;
+                }
+                other => panic!("unexpected Redis service event: {other:?}"),
+            }
+        }
+        assert_eq!(service_keys, found, "Redis service {tag} {protocol:?}");
     }
 }
 
