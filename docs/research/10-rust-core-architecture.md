@@ -113,6 +113,10 @@ maps runtime start/page/terminal facts into legal core transitions, checks task
 exit against terminal delivery, preserves immediate-cancel ordering, and never
 lets presentation call a driver. Core submission failure consumes the rejected
 session before returning a redacted service error.
+Graceful shutdown drains observed terminal outcomes. Cancel-active shutdown
+marks core cancellation requested, then requests client stop without claiming
+server cancellation; joined task exit remains authoritative under delivery
+backpressure before runtime ownership is consumed exactly once.
 
 ## Commands, events, and revisions
 

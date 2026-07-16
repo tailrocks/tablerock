@@ -44,6 +44,14 @@ pub enum RuntimeCancelOutcome {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeStopOutcome {
+    UnknownOperation,
+    Requested,
+    AlreadyRequested,
+    TaskClosed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriverTaskExit {
     Completed,
     ClientStopped,
@@ -160,6 +168,19 @@ impl DriverRuntime {
             Ok(()) => RuntimeCancelOutcome::Queued,
             Err(mpsc::error::TrySendError::Full(())) => RuntimeCancelOutcome::AlreadyQueued,
             Err(mpsc::error::TrySendError::Closed(())) => RuntimeCancelOutcome::TaskClosed,
+        }
+    }
+
+    pub fn stop_client(&self, operation_id: OperationId) -> RuntimeStopOutcome {
+        let Some(task) = self.tasks.get(&operation_id) else {
+            return RuntimeStopOutcome::UnknownOperation;
+        };
+        if *task.stop.borrow() {
+            return RuntimeStopOutcome::AlreadyRequested;
+        }
+        match task.stop.send(true) {
+            Ok(()) => RuntimeStopOutcome::Requested,
+            Err(_) => RuntimeStopOutcome::TaskClosed,
         }
     }
 

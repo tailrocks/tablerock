@@ -24,6 +24,9 @@ pub use redis::{
 };
 pub use runtime::{
     DriverOperationEvent, DriverOperationEvents, DriverRuntime, DriverRuntimeError,
-    DriverSpawnError, DriverTaskExit, RuntimeCancelOutcome,
+    DriverSpawnError, DriverTaskExit, RuntimeCancelOutcome, RuntimeStopOutcome,
 };
-pub use service::{EngineCancelOutcome, EngineService, EngineServiceError, EngineServiceUpdate};
+pub use service::{
+    EngineCancelOutcome, EngineService, EngineServiceError, EngineServiceUpdate,
+    EngineShutdownOutcome,
+};

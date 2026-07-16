@@ -3,12 +3,14 @@ use std::{collections::BTreeMap, error::Error, fmt};
 use tablerock_core::{
     CancelDispatch, CommandEnvelope, EventSequence, OperationEvent, OperationId, OperationIdentity,
     OperationOutcome, OperationPhase, OperationRetireError, PageIdentity, ResultPage,
-    ServiceCoordinator, ServiceError, SubscriptionId, SubscriptionStart,
+    ServiceCoordinator, ServiceError, ServicePhase, ShutdownMode, ShutdownOutcome, SubscriptionId,
+    SubscriptionStart,
 };
 
 use crate::{
     AdapterError, DriverOperationEvent, DriverOperationEvents, DriverPageRequest, DriverRuntime,
     DriverRuntimeError, DriverSession, DriverSpawnError, DriverTaskExit, RuntimeCancelOutcome,
+    RuntimeStopOutcome,
 };
 
 #[derive(Debug)]
@@ -22,6 +24,8 @@ pub enum EngineServiceError {
     Runtime(DriverRuntimeError),
     MissingDriverOperation,
     TerminalMismatch,
+    ShutdownStillDraining,
+    RuntimeUnavailable,
 }
 
 impl fmt::Display for EngineServiceError {
@@ -33,6 +37,8 @@ impl fmt::Display for EngineServiceError {
             Self::Runtime(_) => "driver runtime operation failed",
             Self::MissingDriverOperation => "driver operation is not registered",
             Self::TerminalMismatch => "driver event and task exit disagree",
+            Self::ShutdownStillDraining => "engine service shutdown is still draining",
+            Self::RuntimeUnavailable => "engine service runtime is unavailable",
         })
     }
 }
@@ -43,6 +49,12 @@ impl Error for EngineServiceError {}
 pub struct EngineCancelOutcome {
     pub core: tablerock_core::CancelRequestOutcome,
     pub runtime: Option<RuntimeCancelOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EngineShutdownOutcome {
+    pub core: ShutdownOutcome,
+    pub client_stops: Box<[(OperationId, RuntimeStopOutcome)]>,
 }
 
 #[derive(Debug)]
@@ -61,7 +73,7 @@ struct EngineOperation {
 
 pub struct EngineService {
     core: ServiceCoordinator,
-    runtime: DriverRuntime,
+    runtime: Option<DriverRuntime>,
     operations: BTreeMap<OperationId, EngineOperation>,
 }
 
@@ -70,7 +82,7 @@ impl EngineService {
     pub fn new(core: ServiceCoordinator, runtime: DriverRuntime) -> Self {
         Self {
             core,
-            runtime,
+            runtime: Some(runtime),
             operations: BTreeMap::new(),
         }
     }
@@ -95,6 +107,8 @@ impl EngineService {
         };
         let events = match self
             .runtime
+            .as_mut()
+            .ok_or(EngineServiceError::RuntimeUnavailable)?
             .spawn(operation_id, session, request, page_identity)
             .await
         {
@@ -130,9 +144,12 @@ impl EngineService {
             .map_err(EngineServiceError::Core)?;
         let runtime = match core {
             tablerock_core::CancelRequestOutcome::Requested
-            | tablerock_core::CancelRequestOutcome::AlreadyRequested => {
-                Some(self.runtime.cancel(operation_id))
-            }
+            | tablerock_core::CancelRequestOutcome::AlreadyRequested => Some(
+                self.runtime
+                    .as_ref()
+                    .ok_or(EngineServiceError::RuntimeUnavailable)?
+                    .cancel(operation_id),
+            ),
             tablerock_core::CancelRequestOutcome::AlreadyTerminal(_)
             | tablerock_core::CancelRequestOutcome::UnknownOperation => None,
         };
@@ -151,14 +168,21 @@ impl EngineService {
             .recv()
             .await;
         let Some(event) = event else {
-            let joined = self.runtime.join(operation_id).await;
+            let joined = self
+                .runtime
+                .as_mut()
+                .ok_or(EngineServiceError::RuntimeUnavailable)?
+                .join(operation_id)
+                .await;
             self.operations
                 .remove(&operation_id)
                 .ok_or(EngineServiceError::MissingDriverOperation)?;
-            self.transition_unknown(operation_id)?;
             return match joined {
-                Ok(_) => Err(EngineServiceError::TerminalMismatch),
-                Err(error) => Err(EngineServiceError::Runtime(error)),
+                Ok(observed) => self.apply_terminal(operation_id, observed),
+                Err(error) => {
+                    self.transition_unknown(operation_id)?;
+                    Err(EngineServiceError::Runtime(error))
+                }
             };
         };
         match event {
@@ -219,7 +243,12 @@ impl EngineService {
         operation_id: OperationId,
         observed: DriverTaskExit,
     ) -> Result<Option<EngineServiceUpdate>, EngineServiceError> {
-        let joined = self.runtime.join(operation_id).await;
+        let joined = self
+            .runtime
+            .as_mut()
+            .ok_or(EngineServiceError::RuntimeUnavailable)?
+            .join(operation_id)
+            .await;
         self.operations
             .remove(&operation_id)
             .ok_or(EngineServiceError::MissingDriverOperation)?;
@@ -234,6 +263,14 @@ impl EngineService {
             self.transition_unknown(operation_id)?;
             return Err(EngineServiceError::TerminalMismatch);
         }
+        self.apply_terminal(operation_id, observed)
+    }
+
+    fn apply_terminal(
+        &mut self,
+        operation_id: OperationId,
+        observed: DriverTaskExit,
+    ) -> Result<Option<EngineServiceUpdate>, EngineServiceError> {
         let phase = self
             .core
             .operation_phase(operation_id)
@@ -298,5 +335,46 @@ impl EngineService {
 
     pub fn retire(&mut self, operation_id: OperationId) -> Result<(), OperationRetireError> {
         self.core.retire(operation_id)
+    }
+
+    pub fn begin_shutdown(
+        &mut self,
+        mode: ShutdownMode,
+    ) -> Result<EngineShutdownOutcome, EngineServiceError> {
+        let core = self
+            .core
+            .begin_shutdown(mode)
+            .map_err(EngineServiceError::Core)?;
+        let mut client_stops = Vec::new();
+        if mode == ShutdownMode::CancelActive {
+            let runtime = self
+                .runtime
+                .as_ref()
+                .ok_or(EngineServiceError::RuntimeUnavailable)?;
+            for operation_id in self.operations.keys().copied() {
+                if self.core.operation_phase(operation_id) == Some(OperationPhase::CancelRequested)
+                {
+                    client_stops.push((operation_id, runtime.stop_client(operation_id)));
+                }
+            }
+        }
+        Ok(EngineShutdownOutcome {
+            core,
+            client_stops: client_stops.into_boxed_slice(),
+        })
+    }
+
+    pub async fn complete_shutdown(&mut self) -> Result<(), EngineServiceError> {
+        if self.core.phase() != ServicePhase::Stopped || !self.operations.is_empty() {
+            return Err(EngineServiceError::ShutdownStillDraining);
+        }
+        let runtime = self
+            .runtime
+            .take()
+            .ok_or(EngineServiceError::RuntimeUnavailable)?;
+        runtime
+            .shutdown()
+            .await
+            .map_err(EngineServiceError::Runtime)
     }
 }

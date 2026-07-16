@@ -71,6 +71,8 @@ kept in the roadmap.
 - [Phase 2 engine service bridge](120-phase-2-engine-service-bridge.md)
 - [TermRock textarea spike update](121-termrock-textarea-spike-update.md)
 - [TermRock paste-payload migration](122-termrock-paste-payload-migration.md)
+- [Phase 2 service shutdown coordination](123-phase-2-service-shutdown.md)
+- [TermRock list multi-select migration](124-termrock-list-multiselect-migration.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

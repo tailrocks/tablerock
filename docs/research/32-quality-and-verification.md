@@ -100,6 +100,9 @@ Engine additions:
 - core-authoritative service/runtime mapping, terminal-event versus joined-exit
   agreement, immediate-cancel non-regression, rejected-submission cleanup, and
   real PostgreSQL service execution;
+- graceful versus cancel-active drain, bounded per-operation client-stop facts,
+  slow-delivery-independent terminal reconstruction, premature completion
+  rejection, and exactly-once runtime release;
 
 - PostgreSQL: custom/unknown OIDs, arrays/ranges/composites/JSON/bytes, notices,
   parameters, COPY, multiple statements, transaction conflicts, cancel races;

@@ -21,6 +21,10 @@ recorded in
 TermRock sequential migration 0022, neutral paste payload adoption, and the
 exact refreshed pin are recorded in
 [`122-termrock-paste-payload-migration.md`](docs/research/122-termrock-paste-payload-migration.md).
+Graceful and cancel-active service/runtime shutdown coordination is recorded in
+[`123-phase-2-service-shutdown.md`](docs/research/123-phase-2-service-shutdown.md).
+TermRock sequential migration 0023 and the exact refreshed pin are recorded in
+[`124-termrock-list-multiselect-migration.md`](docs/research/124-termrock-list-multiselect-migration.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

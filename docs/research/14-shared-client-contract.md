@@ -93,6 +93,10 @@ tasks. Runtime start, immutable page, cancellation-dispatch, and terminal facts
 become legal core transitions; joined task exit must match terminal delivery.
 Immediate cancellation cannot regress from `CancelRequested` to `Running`, and
 rejected core submission consumes driver-session shutdown.
+Graceful service shutdown lets tasks finish; cancel-active shutdown requests
+client stop after core cancellation intent and reports each bounded dispatch.
+Only a joined client-stop task exit becomes `ClientStopped`; it never becomes
+server-confirmed cancellation.
 
 ### Command envelope
 

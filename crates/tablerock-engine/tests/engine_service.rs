@@ -8,11 +8,12 @@ use tablerock_core::{
     CommandEnvelope, CommandIntent, CommandScope, ContextId, Engine, EngineType, IdParts,
     OperationId, OperationOutcome, OperationPhase, OperationScope, OwnedValue, PageDelivery,
     PageFacts, PageIdentity, PageLimits, PageWarnings, ProfileId, RequestId, ResultId, ResultPage,
-    Revision, RowTotal, ServiceCoordinator, ServiceLimits, SessionId, Truncation,
+    Revision, RowTotal, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
+    ShutdownOutcome, Truncation,
 };
 use tablerock_engine::{
     AdapterError, DriverFuture, DriverPageRequest, DriverPageStream, DriverRuntime, DriverSession,
-    EngineService, EngineServiceError, EngineServiceUpdate, PostgresProbeQuery,
+    EngineService, EngineServiceError, EngineServiceUpdate, PostgresProbeQuery, RuntimeStopOutcome,
 };
 
 struct OnePageStream(Option<ResultPage>);
@@ -33,6 +34,44 @@ struct PageSession {
 }
 
 struct PanicSession;
+
+struct HoldStream;
+
+impl DriverPageStream for HoldStream {
+    fn next_page<'a>(
+        &'a mut self,
+        _identity: PageIdentity,
+        _start_row: u64,
+    ) -> DriverFuture<'a, Result<Option<ResultPage>, AdapterError>> {
+        Box::pin(std::future::pending())
+    }
+}
+
+struct HoldSession(Arc<AtomicBool>);
+
+impl DriverSession for HoldSession {
+    fn engine(&self) -> Engine {
+        Engine::PostgreSql
+    }
+
+    fn start_page_stream<'a>(
+        &'a self,
+        _request: DriverPageRequest,
+    ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
+        Box::pin(async { Ok(Box::new(HoldStream) as Box<dyn DriverPageStream>) })
+    }
+
+    fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
+        Box::pin(async { CancelDispatch::Unsupported })
+    }
+
+    fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
+        Box::pin(async move {
+            self.0.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+    }
+}
 
 impl DriverSession for PanicSession {
     fn engine(&self) -> Engine {
@@ -295,4 +334,81 @@ async fn runtime_panic_becomes_unknown_instead_of_leaving_core_active() {
         service.core().operation_phase(operation_id),
         Some(OperationPhase::Terminal(OperationOutcome::Unknown))
     );
+}
+
+#[tokio::test]
+async fn cancel_active_shutdown_drains_as_client_stopped_then_releases_runtime() {
+    let operation_id = operation(1);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let mut service = EngineService::new(configured_core(1), DriverRuntime::new(1, 1).unwrap());
+    service
+        .submit(
+            operation_id,
+            command(100),
+            Box::new(HoldSession(Arc::clone(&shutdown))),
+            request(),
+            page_identity(),
+        )
+        .await
+        .unwrap();
+
+    let outcome = service.begin_shutdown(ShutdownMode::CancelActive).unwrap();
+    assert_eq!(
+        outcome.core,
+        ShutdownOutcome::Draining {
+            active_operations: 1
+        }
+    );
+    assert_eq!(
+        outcome.client_stops.as_ref(),
+        &[(operation_id, RuntimeStopOutcome::Requested)]
+    );
+    assert!(matches!(
+        service.complete_shutdown().await,
+        Err(EngineServiceError::ShutdownStillDraining)
+    ));
+
+    loop {
+        if let Some(EngineServiceUpdate::Terminal(outcome)) =
+            service.next_update(operation_id).await.unwrap()
+        {
+            assert_eq!(outcome, OperationOutcome::ClientStopped);
+            break;
+        }
+    }
+    assert_eq!(
+        service.core().phase(),
+        tablerock_core::ServicePhase::Stopped
+    );
+    service.complete_shutdown().await.unwrap();
+    assert!(shutdown.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn graceful_shutdown_allows_completion_without_client_stop() {
+    let operation_id = operation(1);
+    let mut service = EngineService::new(configured_core(1), DriverRuntime::new(1, 2).unwrap());
+    service
+        .submit(
+            operation_id,
+            command(100),
+            session(Arc::new(AtomicBool::new(false))),
+            request(),
+            page_identity(),
+        )
+        .await
+        .unwrap();
+    let outcome = service.begin_shutdown(ShutdownMode::Graceful).unwrap();
+    assert!(outcome.client_stops.is_empty());
+    assert!(matches!(outcome.core, ShutdownOutcome::Draining { .. }));
+
+    loop {
+        if let Some(EngineServiceUpdate::Terminal(outcome)) =
+            service.next_update(operation_id).await.unwrap()
+        {
+            assert_eq!(outcome, OperationOutcome::Completed);
+            break;
+        }
+    }
+    service.complete_shutdown().await.unwrap();
 }
