@@ -11,6 +11,10 @@ fn reducer_and_view_sources_exclude_io_and_async_capabilities() {
         "std::io",
         "std::net",
         "std::process",
+        "std::thread",
+        "std::time",
+        "SystemTime",
+        "Instant",
         "tracing::",
         "telemetry",
     ];
