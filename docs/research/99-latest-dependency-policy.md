@@ -36,6 +36,9 @@ directly to `main`, never through an automated pull request.
 - TermRock advanced to `a4f513c`, completing migration 0017 with neutral dialog
   shell, dialog-body, scroll-input, scrollbar, and line-width helpers. TableRock
   repinned immediately; no current call site requires adaptation.
+- TermRock advanced to `11b52a3`, exposing padded maximum line width for the
+  canonical scrollable-block helpers. TableRock repinned immediately; no
+  replaced consumer surface or migration applies.
 - Every other adopted and planned baseline version in dependency decision `20`
   matches the current crates.io release.
 - Current official ClickHouse 0.15.1 and upstream `main` still require

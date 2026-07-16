@@ -3,7 +3,7 @@
 ## Adopted sequence
 
 TableRock moved directly from TermRock 0.10 to 0.11 and follows exact `main`
-revision `a4f513c31269d8f27caede3940d03b0985c68cdc`. The upstream migration index was
+revision `11b52a35410ef2eccd336ad58cdc114e57594141`. The upstream migration index was
 read in order:
 
 1. `0016-v0.11.0-text-strong-and-viewport-emphasis.md`
@@ -26,6 +26,8 @@ viewport emphasis, and `termrock::scroll` APIs directly.
 The completion of migration 0017 also restores neutral dialog shell/layout,
 scroll-input, scrollbar, and line-width helpers. TableRock has no product-local
 equivalent and will consume these canonical helpers when dialog scrolling lands.
+The same canonical scroll module now exposes padded maximum line width; future
+viewport sizing must use that helper rather than product-local measurement.
 
 ## Verification
 
