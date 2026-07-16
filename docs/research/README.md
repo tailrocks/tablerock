@@ -30,7 +30,7 @@ kept in the roadmap.
 
 ## Map
 
-- [Research brief](prompt.md)
+- [Canonical long-running `/goal` prompt](prompt.md)
 - [Vision and scope](00-vision-and-scope.md)
 - [Clean-room reference policy](01-clean-room-reference.md)
 - [Workflow inventory](02-workflow-inventory.md)

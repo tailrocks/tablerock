@@ -28,6 +28,13 @@ claim a working database client yet.
 Start with [the research map](docs/research/README.md) and
 [roadmap](ROADMAP.md).
 
+To execute the complete long-running program with an agent, use the single
+canonical prompt:
+
+```text
+/goal Follow docs/research/prompt.md
+```
+
 ## Status
 
 Research phase. Product name, package namespace, and legal clearance remain
