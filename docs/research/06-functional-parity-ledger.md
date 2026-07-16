@@ -197,3 +197,9 @@ Every row must end in one of three states before a parity claim:
 The ledger is reviewed at every roadmap phase exit. A new public reference
 feature is not automatically adopted; it is evaluated against the three-engine
 product boundary, clean-room rule, safety architecture, and official contracts.
+
+## Phase exit reviews
+
+| Phase | Evidence | Ledger result |
+|---|---|---|
+| Phase 1 — TermRock and TUI foundation | [`45-phase-1-exit-report.md`](45-phase-1-exit-report.md) | Reviewed 2026-07-16. The empty shell closes no Core, Parity, or Later product capability. All unimplemented rows remain visible blockers for their owning parity claims; fixed exclusions are unchanged. |

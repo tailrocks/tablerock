@@ -37,12 +37,12 @@ canonical prompt:
 
 ## Status
 
-Phase 0 is complete. Phase 1 is in progress: the TermRock prerequisites and
+Phases 0 and 1 are complete. The TermRock prerequisites and
 root TEA responsive shell and executable normal/signal terminal paths are
 verified. Render-authorized mouse/paste/focus/resize routing and normal, signal,
 returned-error, and panic real-PTY restoration paths are implemented. Typed
-bounded ingress overflow/resync policy is implemented. The Phase 1 exit audit
-remains. Product name, package namespace, and legal clearance remain subject to
+bounded ingress overflow/resync policy is implemented and audited. Phase 2 is
+next. Product name, package namespace, and legal clearance remain subject to
 final review before public release.
 
 ## License

@@ -45,7 +45,8 @@ this phase is approved.
 
 ### Phase 1 — TermRock and TUI foundation
 
-**Status:** In progress. T0 pins and verifies the minimal TermRock consumer in
+**Status:** Complete. The requirement-by-requirement audit is recorded in
+[`45-phase-1-exit-report.md`](docs/research/45-phase-1-exit-report.md). T0 pins and verifies the minimal TermRock consumer in
 [`35-phase-1-termrock-t0.md`](docs/research/35-phase-1-termrock-t0.md). The T1
 `Tree`, `Form`, and `SplitPane` checkpoints are published and repinned with evidence in
 [`36-phase-1-termrock-tree.md`](docs/research/36-phase-1-termrock-tree.md) and
@@ -66,8 +67,7 @@ Returned-error and panic PTY restoration evidence is recorded in
 Generic post-mapping progress coalescing and explicit overflow/resync evidence
 is recorded in
 [`44-phase-1-bounded-ingress.md`](docs/research/44-phase-1-bounded-ingress.md).
-Domain event identity/revision mapping belongs to Phase 2. The final Phase 1
-audit remains incomplete.
+Domain event identity/revision mapping belongs to Phase 2.
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

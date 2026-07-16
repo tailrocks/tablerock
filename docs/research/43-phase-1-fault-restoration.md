@@ -33,7 +33,8 @@ can enable fault injection.
 - Normal, signal, pointer-input, returned-error, and panic PTY paths now share
   the same production session ownership and restoration contracts.
 
-Typed engine overflow/resynchronization and the final Phase 1 audit remain.
+Bounded overflow/resynchronization is recorded in `44`; the Phase 1 exit audit
+is recorded in `45`.
 
 External concept: scoped terminal restoration under Rust error and unwind only  
 Public sources: <https://doc.rust-lang.org/std/panic/fn.catch_unwind.html> and

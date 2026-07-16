@@ -30,7 +30,7 @@ ownership rather than new caller policy flags.
 
 Later evidence now covers render-authorized input in `42` and returned-error and
 panic PTY restoration, including raw-termios inspection, in `43`.
-Overflow/resync remains a Phase 1 audit item.
+Bounded overflow/resync is recorded in `44`; the completed exit audit is `45`.
 
 External concept: scoped terminal mode ownership only  
 Public source: <https://github.com/tailrocks/termrock/tree/9099b3db0c3318fd183d076c4e8f8002a877be6a>  

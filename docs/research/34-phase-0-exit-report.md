@@ -88,5 +88,5 @@ Copied code/assets/text: none
   `b56fbaed030e19d9f8fe9c7734af6c05d056f6a8` after publication.
 - Cross-document fixed-path searches found no competing database, persistence,
   terminal backend, TUI architecture, native bridge, or distribution path.
-- Phase 1 remains visibly unimplemented; README and roadmap make no working
-  client claim.
+- At this Phase 0 checkpoint, Phase 1 remained visibly unimplemented and no
+  working-client claim was made. Later evidence `35`-`45` records its delivery.

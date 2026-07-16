@@ -47,7 +47,7 @@ retains both failures and makes the restoration failure observable.
   scan, and English natural-language scan are required before publication.
 
 Later checkpoints `42`-`44` supply the input, fault-restoration, and bounded
-overflow/resync evidence. Phase 1 completion remains subject to its exit audit.
+overflow/resync evidence. The completed Phase 1 exit audit is recorded in `45`.
 
 External concept: async terminal event loop and PTY lifecycle verification only  
 Public sources: <https://tokio.rs/>, <https://docs.rs/crossterm/0.29.0/>, <https://docs.rs/ratatui-crossterm/0.1.2/>, and <https://docs.rs/portable-pty/0.9.0/>  
