@@ -104,6 +104,10 @@ completion/truncation/cancellation/failure state
 safe diagnostic code and optional operator action
 ```
 
+Operation identity uses the same typed application/profile/session/context
+scope as its originating command. No optional-ID envelope or context-only
+special case exists.
+
 Progress may be coalesced only as cumulative consecutive updates. State
 transitions, review requirements, terminal results, and failures cannot be
 silently dropped. The bounded core queue converts capacity exhaustion or a

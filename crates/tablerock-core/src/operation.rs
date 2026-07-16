@@ -1,8 +1,8 @@
 use std::{collections::VecDeque, error::Error, fmt};
 
 use crate::{
-    ContextId, EventSequence, OperationId, ProfileId, RequestId, Revision, SequenceRelation,
-    SessionId,
+    CommandScope, ContextId, EventSequence, OperationId, ProfileId, RequestId, Revision,
+    SequenceRelation, SessionId,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -42,7 +42,7 @@ impl OperationScope {
 pub struct OperationIdentity {
     operation_id: OperationId,
     request_id: RequestId,
-    scope: OperationScope,
+    scope: CommandScope,
 }
 
 impl OperationIdentity {
@@ -50,7 +50,7 @@ impl OperationIdentity {
     pub const fn new(
         operation_id: OperationId,
         request_id: RequestId,
-        scope: OperationScope,
+        scope: CommandScope,
     ) -> Self {
         Self {
             operation_id,
@@ -70,7 +70,7 @@ impl OperationIdentity {
     }
 
     #[must_use]
-    pub const fn scope(self) -> OperationScope {
+    pub const fn scope(self) -> CommandScope {
         self.scope
     }
 }

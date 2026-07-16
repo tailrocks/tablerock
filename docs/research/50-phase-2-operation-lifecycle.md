@@ -2,9 +2,9 @@
 
 ## Checkpoint
 
-This Phase 2 tracer adds the std-only lifecycle and event-identity vocabulary
-for live-session operations. `OperationIdentity` binds an operation and request
-to one profile/session/context scope. `OperationPhase` distinguishes queued,
+This Phase 2 tracer adds the std-only lifecycle and event-identity vocabulary.
+`OperationIdentity` binds an operation and request to one typed application,
+profile, session, or context command scope. `OperationPhase` distinguishes queued,
 running, streaming, cancel-requested, and terminal states. Terminal
 `OperationOutcome` records observed truth instead of treating task abandonment
 as server cancellation.
@@ -40,11 +40,9 @@ through that queue.
 
 ## Deliberate boundary
 
-This tracer covers operations that already have a live profile/session/context.
-Application-wide profile and connection commands require different scopes and
-will be added with the typed command envelope rather than weakening this scope
-with optional IDs. Safe error payloads, multi-subscription ownership, command
-budgets, shutdown, and cross-operation resync snapshots remain required Phase 2
+Identity reuses `CommandScope`; it does not add optional IDs or a second scope
+hierarchy. Safe error payloads, multi-subscription ownership, command budgets,
+shutdown, and cross-operation resync snapshots remain required Phase 2
 checkpoints.
 
 ## Evidence
@@ -63,7 +61,7 @@ checkpoints.
 
 ## Verification record
 
-- `cargo test -p tablerock-core --test operation`: 7 passed.
+- `cargo test -p tablerock-core --test operation`: 8 passed.
 - `cargo clippy -p tablerock-core --all-targets --locked -- -D warnings`: pass.
 - `cargo test --workspace --locked`: 55 passed, 3 ignored.
 - Workspace format, clippy, rustdoc, `cargo deny`, `gitleaks`, English-script,

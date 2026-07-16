@@ -1,6 +1,6 @@
 use tablerock_core::{
-    ContextId, EventQueueError, EventQueuePush, EventRejection, EventSequence, IdParts,
-    OperationCursor, OperationEvent, OperationEventKind, OperationEventQueue, OperationId,
+    CommandScope, ContextId, EventQueueError, EventQueuePush, EventRejection, EventSequence,
+    IdParts, OperationCursor, OperationEvent, OperationEventKind, OperationEventQueue, OperationId,
     OperationIdentity, OperationOutcome, OperationPhase, OperationScope, ProfileId, RequestId,
     Revision, SessionId, TransitionError,
 };
@@ -13,11 +13,11 @@ fn identity() -> OperationIdentity {
     OperationIdentity::new(
         id(OperationId::from_parts),
         id(RequestId::from_parts),
-        OperationScope::new(
+        CommandScope::Context(OperationScope::new(
             id(ProfileId::from_parts),
             id(SessionId::from_parts),
             id(ContextId::from_parts),
-        ),
+        )),
     )
 }
 
@@ -52,6 +52,29 @@ fn lifecycle_accepts_streaming_and_observed_cancellation_truth() {
             OperationPhase::CancelRequested.transition_to(OperationPhase::Terminal(outcome)),
             Ok(())
         );
+    }
+}
+
+#[test]
+fn operation_identity_covers_every_typed_command_scope() {
+    let profile_id = id(ProfileId::from_parts);
+    let session_id = id(SessionId::from_parts);
+    let context = OperationScope::new(profile_id, session_id, id(ContextId::from_parts));
+    for scope in [
+        CommandScope::Application,
+        CommandScope::Profile(profile_id),
+        CommandScope::Session {
+            profile_id,
+            session_id,
+        },
+        CommandScope::Context(context),
+    ] {
+        let identity = OperationIdentity::new(
+            id(OperationId::from_parts),
+            id(RequestId::from_parts),
+            scope,
+        );
+        assert_eq!(identity.scope(), scope);
     }
 }
 
