@@ -1,11 +1,17 @@
 //! Owned, bounded contracts shared by TableRock engines and clients.
 
+mod diagnostic;
 mod id;
 mod operation;
 mod page;
 mod revision;
 mod value;
 
+pub use diagnostic::{
+    ApplicationCode, DiagnosticBuildError, DiagnosticPosition, FailureClass, OperationSafety,
+    OperatorAction, OutcomeCertainty, PositionUnit, PostgreSqlCode, RedisCode, RetryAdvice,
+    SafeCode, SafeDiagnostic, Severity,
+};
 pub use id::{
     ContextId, IdDecodeError, IdParts, MutationId, OperationId, ProfileId, QueryId, RequestId,
     ResultId, RowId, SessionId, TabId,

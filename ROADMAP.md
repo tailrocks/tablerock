@@ -90,6 +90,8 @@ The pre-allocation-bounded immutable columnar page tracer is recorded in
 [`48-phase-2-page-contract.md`](docs/research/48-phase-2-page-contract.md).
 The live-session operation lifecycle and event-identity tracer is recorded in
 [`50-phase-2-operation-lifecycle.md`](docs/research/50-phase-2-operation-lifecycle.md).
+The redacted failure, ambiguity, and retry-policy tracer is recorded in
+[`51-phase-2-safe-diagnostics.md`](docs/research/51-phase-2-safe-diagnostics.md).
 
 Define owned IDs, capabilities, values, revisions, commands, events, pages,
 errors, cancellation, safety, and redaction. Implement local-only Turso through

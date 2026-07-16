@@ -68,6 +68,7 @@ kept in the roadmap.
 - [Phase 2 immutable page contract evidence](48-phase-2-page-contract.md)
 - [TermRock 0.8 canonical API migration evidence](49-termrock-0.8-migration.md)
 - [Phase 2 operation lifecycle evidence](50-phase-2-operation-lifecycle.md)
+- [Phase 2 safe diagnostic evidence](51-phase-2-safe-diagnostics.md)
 
 ## Architecture headline
 

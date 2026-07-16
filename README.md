@@ -43,8 +43,8 @@ verified. Render-authorized mouse/paste/focus/resize routing and normal, signal,
 returned-error, and panic real-PTY restoration paths are implemented. Typed
 bounded ingress overflow/resync policy is implemented and audited. Phase 2 is
 in progress with std-only core identity/revision, bounded owned-value,
-redaction, explicit per-engine capability, immutable columnar page, and
-live-session operation lifecycle tracers.
+redaction, explicit per-engine capability, immutable columnar page,
+live-session operation lifecycle, and safe diagnostic tracers.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

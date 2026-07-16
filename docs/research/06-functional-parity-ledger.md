@@ -75,7 +75,7 @@ architecture decisions.
 | Lazy catalog | Core | Engine-native hierarchy, loading/stale/error nodes, subtree refresh, filtering with ancestors preserved | Large synthetic catalogs and stale-revision tests |
 | Object tabs | Core | Preview/pinned/durable object tabs with independent context and state | Restore and close-policy tests |
 | Query/command tabs | Core | Independent text, cursor, context, results, errors, history, and running operation | Phase 2 now proves scoped operation identity, legal lifecycle/cancellation-outcome edges, stale/duplicate rejection, and gap resync; multi-tab engine cancellation races remain required |
-| Result tabs | Parity | One result per statement/operation, pinning, completion summaries, failure and partial-result states | Multi-statement fixtures per SQL engine |
+| Result tabs | Parity | One result per statement/operation, pinning, completion summaries, failure and partial-result states | Phase 2 now proves a message-free safe diagnostic taxonomy with explicit ambiguity/retry facts; multi-statement and real-driver mapping fixtures remain required |
 | Responsive layout | Core | Wide split view, medium constrained view, narrow single-region navigation, explicit minimum-size screen | Render fixtures with Unicode and extreme labels |
 | Quick switcher | Parity | Fuzzy switch across visible objects, profiles, tabs, and saved queries using stable IDs | Ranking and stale-index tests |
 | Favorites and saved queries | Parity | Table/object favorites and named query files with explicit scope | Persistence, rename, and missing-target tests |
