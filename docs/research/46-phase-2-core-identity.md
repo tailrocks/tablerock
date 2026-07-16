@@ -32,9 +32,12 @@ make a stale aggregate/event appear new. Arbitrary numeric construction is named
   client row, secret, or driver type. Canonical decode rejects zero, malformed
   length, and invalid hexadecimal with a safe byte position.
 - Revision advancement is constant-memory and fallible at exhaustion.
-- ID uniqueness generation is not claimed yet. It is an engine-owned blocking
-  checkpoint because core deliberately has no RNG/clock. Schema-version and
-  UniFFI derivation enter with their owning command/event/facade gates.
+- Core does not claim generation. Review rejected a standalone public allocator
+  because it could be forked and could publish an ID before durable sequence
+  advancement. Allocation must be born inside the serialized Turso actor so
+  namespace leasing, sequence persistence, and record creation share one
+  transaction. Schema-version and UniFFI derivation enter with their owning
+  command/event/facade gates.
 - There is no backward-compatibility shim. These are the first authoritative
   types and may be forward-refactored before public contract release.
 
