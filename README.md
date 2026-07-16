@@ -42,10 +42,10 @@ root TEA responsive shell and executable normal/signal terminal paths are
 verified. Render-authorized mouse/paste/focus/resize routing and normal, signal,
 returned-error, and panic real-PTY restoration paths are implemented. Typed
 bounded ingress overflow/resync policy is implemented and audited. Phase 2 is
-in progress with std-only core identity/revision and bounded owned-value,
-redaction, and explicit per-engine capability tracers. Product name, package
-namespace, and legal clearance remain subject to final review before public
-release.
+in progress with std-only core identity/revision, bounded owned-value,
+redaction, explicit per-engine capability, and immutable columnar page tracers.
+Product name, package namespace, and legal clearance remain subject to final
+review before public release.
 
 ## License
 

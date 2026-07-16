@@ -6,6 +6,7 @@ fn core_contract_has_no_runtime_or_presentation_dependency() {
     let source = [
         include_str!("../src/lib.rs"),
         include_str!("../src/id.rs"),
+        include_str!("../src/page.rs"),
         include_str!("../src/revision.rs"),
         include_str!("../src/value.rs"),
     ]
