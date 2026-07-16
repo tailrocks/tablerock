@@ -75,9 +75,15 @@ latest 0.9 migration and exact current-main pin are recorded in
 The typed OSC and unknown-key migrations, with the refreshed exact main pin,
 are recorded in
 [`59-termrock-0.9-input-osc-migration.md`](docs/research/59-termrock-0.9-input-osc-migration.md).
+TermRock's subsequent unified key-vocabulary migration and refreshed exact
+main pin are recorded in
+[`61-termrock-0.9-key-vocabulary-migration.md`](docs/research/61-termrock-0.9-key-vocabulary-migration.md).
 The local-only Turso adoption, single-owner serialized actor, sequential
 migrations, and initial real-file compatibility evidence are recorded in
 [`58-phase-2-persistence-actor-foundation.md`](docs/research/58-phase-2-persistence-actor-foundation.md).
+Normalized single-actor ownership and transactional interrupted-migration
+recovery rules are recorded in
+[`60-phase-2-persistence-ownership-recovery.md`](docs/research/60-phase-2-persistence-ownership-recovery.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

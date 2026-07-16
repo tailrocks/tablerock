@@ -54,7 +54,8 @@ The baseline profile aggregate adds saved/temporary disposition, bounded
 organization/preferences, redaction, and monotonic replacement validation.
 Local persistence now has an isolated default-features-disabled Turso 0.7
 worker, bounded serialized commands, sequential documented migrations, and
-initial real-file integrity/recovery evidence; profile persistence remains gated.
+normalized process-local single ownership plus interrupted-migration recovery
+evidence; profile persistence remains gated.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

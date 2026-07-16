@@ -87,6 +87,10 @@ disk-full/interrupted-migration injection, crash subprocess matrix, independent
 backup manifest, package-size/release artifact, and clean-machine macOS/terminal
 deployment remain required before profile persistence is claimed.
 
+Subsequent checkpoint `60-phase-2-persistence-ownership-recovery.md` closes the
+normalized process-local ownership and interrupted transactional migration
+items while retaining the other listed gates.
+
 ## Verification record
 
 - `cargo test -p tablerock-persistence`: 4 passed.

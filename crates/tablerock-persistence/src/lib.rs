@@ -1,10 +1,14 @@
 //! Local-only persistence owned by one serialized worker thread.
 
 use std::{
+    collections::HashSet,
     error::Error,
     fmt,
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, SyncSender, TrySendError},
+    sync::{
+        Mutex, OnceLock,
+        mpsc::{self, Receiver, SyncSender, TrySendError},
+    },
     thread::{self, JoinHandle},
     time::Duration,
 };
@@ -31,12 +35,13 @@ pub struct PersistenceActor {
 
 impl PersistenceActor {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, PersistenceError> {
-        let path = path.as_ref().to_path_buf();
+        let path = normalize_database_path(path.as_ref())?;
+        let lease = PathLease::acquire(path.clone())?;
         let (sender, receiver) = mpsc::sync_channel(32);
         let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
         let worker = thread::Builder::new()
             .name("tablerock-persistence".to_owned())
-            .spawn(move || worker_main(path, receiver, ready_sender))
+            .spawn(move || worker_main(path, receiver, ready_sender, lease))
             .map_err(|_| PersistenceError::WorkerStart)?;
         match ready_receiver.recv_timeout(CALLER_TIMEOUT) {
             Ok(Ok(())) => Ok(Self {
@@ -103,7 +108,9 @@ fn worker_main(
     path: PathBuf,
     receiver: Receiver<Command>,
     ready: mpsc::SyncSender<Result<(), PersistenceError>>,
+    lease: PathLease,
 ) {
+    let mut lease = Some(lease);
     let runtime = match tokio_runtime() {
         Ok(runtime) => runtime,
         Err(error) => {
@@ -144,9 +151,58 @@ fn worker_main(
                 });
                 drop(connection);
                 drop(database);
+                drop(lease.take());
                 let _ = reply.send(result);
                 break;
             }
+        }
+    }
+}
+
+fn normalize_database_path(path: &Path) -> Result<PathBuf, PersistenceError> {
+    if path.exists() {
+        return path
+            .canonicalize()
+            .map_err(|_| PersistenceError::InvalidPath);
+    }
+    let file_name = path.file_name().ok_or(PersistenceError::InvalidPath)?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty());
+    let parent = match parent {
+        Some(parent) => parent
+            .canonicalize()
+            .map_err(|_| PersistenceError::InvalidPath)?,
+        None => std::env::current_dir().map_err(|_| PersistenceError::InvalidPath)?,
+    };
+    Ok(parent.join(file_name))
+}
+
+fn leased_paths() -> &'static Mutex<HashSet<PathBuf>> {
+    static LEASED_PATHS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    LEASED_PATHS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+struct PathLease {
+    path: PathBuf,
+}
+
+impl PathLease {
+    fn acquire(path: PathBuf) -> Result<Self, PersistenceError> {
+        let mut paths = leased_paths()
+            .lock()
+            .map_err(|_| PersistenceError::OwnershipRegistry)?;
+        if !paths.insert(path.clone()) {
+            return Err(PersistenceError::DatabaseBusy);
+        }
+        Ok(Self { path })
+    }
+}
+
+impl Drop for PathLease {
+    fn drop(&mut self) {
+        if let Ok(mut paths) = leased_paths().lock() {
+            paths.remove(&self.path);
         }
     }
 }
@@ -332,6 +388,8 @@ pub enum PersistenceError {
     QueueFull,
     RuntimeStart,
     InvalidPath,
+    DatabaseBusy,
+    OwnershipRegistry,
     DatabaseOpen,
     Pragma,
     Migration { version: u32 },

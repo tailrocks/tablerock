@@ -77,6 +77,8 @@ kept in the roadmap.
 - [TermRock 0.9 styled tab glyph migration evidence](57-termrock-0.9-migration.md)
 - [Phase 2 persistence actor foundation evidence](58-phase-2-persistence-actor-foundation.md)
 - [TermRock 0.9 input and OSC migration evidence](59-termrock-0.9-input-osc-migration.md)
+- [Phase 2 persistence ownership and recovery evidence](60-phase-2-persistence-ownership-recovery.md)
+- [TermRock 0.9 unified key vocabulary migration evidence](61-termrock-0.9-key-vocabulary-migration.md)
 
 ## Architecture headline
 
