@@ -106,6 +106,7 @@ kept in the roadmap.
 - [TermRock 0.10 plan reconciliation update](86-termrock-0.10-plan-reconciliation-update.md)
 - [Phase 2 PostgreSQL typed stream evidence](87-phase-2-postgresql-typed-stream.md)
 - [TermRock 0.10 runtime keymap spike update](88-termrock-0.10-runtime-keymap-spike-update.md)
+- [TermRock 0.10 lookbook output hardening update](89-termrock-0.10-lookbook-output-hardening-update.md)
 
 ## Architecture headline
 
