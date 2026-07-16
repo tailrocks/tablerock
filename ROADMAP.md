@@ -68,6 +68,8 @@ Generic post-mapping progress coalescing and explicit overflow/resync evidence
 is recorded in
 [`44-phase-1-bounded-ingress.md`](docs/research/44-phase-1-bounded-ingress.md).
 Domain event identity/revision mapping belongs to Phase 2.
+The forward-only TermRock 0.8 migration and exact current-main pin are recorded
+in [`49-termrock-0.8-migration.md`](docs/research/49-termrock-0.8-migration.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,
@@ -84,7 +86,6 @@ tracer is recorded in
 [`46-phase-2-core-identity.md`](docs/research/46-phase-2-core-identity.md).
 The bounded owned-value and explicit per-engine capability tracer is recorded in
 [`47-phase-2-value-capability-contract.md`](docs/research/47-phase-2-value-capability-contract.md).
-
 Define owned IDs, capabilities, values, revisions, commands, events, pages,
 errors, cancellation, safety, and redaction. Implement local-only Turso through
 the `turso` crate on one serialized Rust async persistence actor.

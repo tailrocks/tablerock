@@ -68,10 +68,10 @@ performance claim beyond bounded-memory ingress proofs.
 | Lifecycle hardening | Partial acquisition rollback, reverse cleanup, earliest-error retention, retry, idempotence, and compatibility recorded at exact descendant revision in `41` | Pass |
 | Jackin compatibility | Read-only all-target compile evidence is recorded in `41`; no Jackin product internals enter TableRock | Pass |
 
-TermRock `origin/feat/canonical-widget-migration` is not a published `main`
-revision and is therefore not a TableRock dependency. The operator's other
-agent owns that refactor. TableRock will re-audit and repin immediately after a
-coherent revision reaches TermRock `main`.
+At this historical Phase 1 exit, `origin/feat/canonical-widget-migration` was
+not a published `main` revision and was not a TableRock dependency. It later
+reached TermRock `main`; TableRock's forward re-audit and exact `0.8.0` pin are
+recorded in [`49-termrock-0.8-migration.md`](49-termrock-0.8-migration.md).
 
 ## PTY/process matrix audit
 

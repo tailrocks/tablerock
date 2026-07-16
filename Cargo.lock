@@ -671,12 +671,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "similar"
-version = "2.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
-
-[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -760,8 +754,8 @@ dependencies = [
 
 [[package]]
 name = "termrock"
-version = "0.6.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=9099b3db0c3318fd183d076c4e8f8002a877be6a#9099b3db0c3318fd183d076c4e8f8002a877be6a"
+version = "0.8.0"
+source = "git+https://github.com/tailrocks/termrock.git?rev=da54a033f368ed0888af90ae43d19bcb96fb8581#da54a033f368ed0888af90ae43d19bcb96fb8581"
 dependencies = [
  "anstyle-parse",
  "base64",
@@ -769,7 +763,6 @@ dependencies = [
  "ratatui-core",
  "ratatui-crossterm",
  "ratatui-widgets",
- "similar",
  "tui-scrollbar",
  "unicode-segmentation",
  "unicode-width",

@@ -10,7 +10,7 @@ use termrock::{
     runtime::View,
     widgets::{
         Action, ActionBar, ActionBarState, Hint, HintBar, Panel, PanelEmphasis, StatusBar,
-        StatusSlot, Tab, Tabs, TabsState,
+        StatusBarState, StatusSlot, Tab, Tabs, TabsState,
     },
 };
 
@@ -96,8 +96,7 @@ impl ShellView {
         render_body(model, frame, rows[2], &mut geometry);
         render_actions(model, frame, rows[3], &mut geometry);
         render_hints(model, frame, rows[4]);
-        render_status(model, frame, rows[5]);
-        geometry.push(ShellTarget::Focus(FocusRegion::Footer), rows[5]);
+        render_status(model, frame, rows[5], &mut geometry);
         geometry
     }
 }
@@ -283,7 +282,7 @@ fn render_hints(model: &Model, frame: &mut Frame<'_>, area: Rect) {
     );
 }
 
-fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect) {
+fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
     let focus = if model.focus() == FocusRegion::Footer {
         "[FOCUSED] Footer"
     } else {
@@ -300,6 +299,7 @@ fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         min_width: 5,
         enabled: true,
         style: Style::new(),
+        hover_style: None,
     }];
     let right = [StatusSlot {
         id: StatusId::Focus,
@@ -308,14 +308,22 @@ fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         min_width: 6,
         enabled: true,
         style: Style::new(),
+        hover_style: None,
     }];
-    frame.render_widget(
+    let mut state = StatusBarState::default();
+    frame.render_stateful_widget(
         &StatusBar {
             left: &left,
             right: &right,
+            style: Style::new(),
+            alpha: 1.0,
         },
         area,
+        &mut state,
     );
+    for region in state.regions {
+        geometry.push(ShellTarget::Focus(FocusRegion::Footer), region.area);
+    }
 }
 
 fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, focused: bool) {
