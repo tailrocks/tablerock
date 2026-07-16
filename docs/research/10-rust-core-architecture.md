@@ -152,9 +152,11 @@ while core identity and lifecycle remain engine-neutral.
 
 The runtime reports task start before adapter stream creation and selects over
 stream creation, cancellation, client stop, and bounded event delivery. Cancel
-dispatch distinguishes unsupported, request-sent, and transport-failed facts.
-Only an adapter-observed server cancellation becomes a server-confirmed
-terminal outcome.
+dispatch distinguishes unsupported, request-sent, transport-failed, and
+server-rejected facts. Only an adapter-observed server cancellation becomes a
+server-confirmed terminal outcome. ClickHouse retains a bounded active query ID
+per owned session and uses a separate bound `KILL QUERY ... SYNC` request; it
+never retains or returns query text as cancellation evidence.
 
 Each operation owns a finite set of opaque subscriptions. Events fan out through
 independent bounded queues; a slow subscriber receives its own resync marker and

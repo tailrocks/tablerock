@@ -14,6 +14,9 @@ documentation. Public signatures and runtime behavior do not change. No new
 sequential migration exists or is required after migration 0023, and TableRock
 needs no source adaptation.
 
+Migration 0024 supersedes this exact pin and runtime surface; see
+[`130-termrock-closure-runner-frame-time-migration.md`](130-termrock-closure-runner-frame-time-migration.md).
+
 Uncommitted sibling-worktree changes, including a draft migration 0024, were
 not consumed or modified. TableRock adopts only immutable published TermRock
 `main` revisions.

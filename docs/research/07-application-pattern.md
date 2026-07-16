@@ -93,7 +93,7 @@ input to semantic messages under root-owned modal/focus precedence.
 
 ### Update
 
-`update(&mut Model, Message) -> UpdateResult<Effect>` is synchronous and
+`update(&mut Model, Message) -> Update` is synchronous and
 deterministic. It may delegate to pure feature reducer functions, but there is
 one root ordering and safety authority. It performs no file, process, secret,
 database, telemetry, clock, sleep, or async work.

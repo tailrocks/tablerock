@@ -7,7 +7,6 @@ use ratatui_core::{
 };
 use termrock::{
     interaction::HitRegion,
-    runtime::View,
     widgets::{
         Action, ActionBar, ActionBarState, Hint, HintBar, Panel, PanelEmphasis, StatusBar,
         StatusBarState, StatusSlot, Tab, Tabs, TabsState,
@@ -53,13 +52,11 @@ enum StatusId {
     Focus,
 }
 
-impl View<Model> for ShellView {
-    fn render(&self, model: &Model, frame: &mut Frame<'_>, area: Rect) {
+impl ShellView {
+    pub fn render(&self, model: &Model, frame: &mut Frame<'_>, area: Rect) {
         let _ = self.render_with_geometry(model, frame, area);
     }
-}
 
-impl ShellView {
     #[must_use]
     pub fn render_with_geometry(
         &self,

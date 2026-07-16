@@ -19,9 +19,10 @@ subscription APIs. That redesign is not yet implemented on `main`.
 TableRock compiles unchanged at this revision. Its root TEA remains
 TableRock-owned, as required: one Model/Message/Update/Effect/Subscription/View
 flow, with product effects and subscriptions outside TermRock. Current shell
-code still uses TermRock `UpdateResult`, `Dirty`, and `drive_frame`; those are
+code then used TermRock `UpdateResult`, `Dirty`, and `drive_frame`; those were
 the exact call sites requiring migration when the proposed upstream redesign
-lands.
+landed. Migration 0024 later removed them; TableRock adoption is recorded in
+[`130-termrock-closure-runner-frame-time-migration.md`](130-termrock-closure-runner-frame-time-migration.md).
 
 TableRock will adopt the new runner immediately after TermRock publishes it and
 its sequential migration. It will replace removed convenience result/frame

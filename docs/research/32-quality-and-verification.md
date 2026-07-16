@@ -97,6 +97,9 @@ Engine additions:
 - cancellation remains reachable during stream creation; dispatch transport
   and server confirmation remain separate facts, including PostgreSQL SQLSTATE
   confirmation through the real service path;
+- ClickHouse cancellation binds the active query ID, requires synchronous
+  `finished` server status, reads no returned query text, and proves the
+  terminal mapping across both pinned server lines and compression modes;
 - bounded engine-owned task/control/event channels, cancellation under event
   backpressure, idempotent dispatch, authoritative task exit, and client-stop
   shutdown independent of slow event consumers;

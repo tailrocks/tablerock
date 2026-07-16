@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use tablerock_core::{
-    BoundedText, ByteLimit, Engine, PageDelivery, PageIdentity, PageLimits, Truncation, ValueKind,
+    BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity, PageLimits,
+    Truncation, ValueKind,
 };
 use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession,
@@ -72,6 +73,7 @@ async fn verify_image(image: &str) {
         }
         let mut stream = stream
             .unwrap_or_else(|| panic!("ClickHouse fixture accepts HTTP queries: {last_error:?}"));
+        verify_service_cancellation(port, compression, image).await;
         let first = stream.next_page(identity(), 0).await.unwrap().unwrap();
         assert_eq!(first.envelope().row_count(), 2, "{image} {compression:?}");
         assert_eq!(first.envelope().delivery(), PageDelivery::Partial);
@@ -316,6 +318,81 @@ async fn verify_image(image: &str) {
         }
         assert_eq!(rows, 3, "{image} {compression:?}");
     }
+}
+
+async fn verify_service_cancellation(port: u16, compression: ClickHouseCompression, image: &str) {
+    let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("default"),
+        text("default"),
+        ClickHouseTlsMode::Disable,
+        compression,
+    ));
+    let operation_id = support::operation(50);
+    let mut service = support::service(1, 2);
+    service
+        .submit(
+            operation_id,
+            support::command(51),
+            Box::new(session),
+            DriverPageRequest::ClickHouseProbe {
+                query: ClickHouseProbeQuery::CancellationStream,
+                query_id: text(&format!("tablerock-cancel-{port}-{compression:?}")),
+                limits: PageLimits::new(1, 1, 64, 64),
+                max_cell_bytes: 16,
+            },
+            identity(),
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(5), service.next_update(operation_id))
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        EngineServiceUpdate::Started
+    ));
+    match tokio::time::timeout(Duration::from_secs(5), service.next_update(operation_id))
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+    {
+        EngineServiceUpdate::Page(_) => {}
+        other => panic!("unexpected {image} event before ClickHouse progress: {other:?}"),
+    }
+    let cancel = service.cancel(operation_id).unwrap();
+    assert_eq!(cancel.core, tablerock_core::CancelRequestOutcome::Requested);
+    assert_eq!(
+        cancel.runtime,
+        Some(tablerock_engine::RuntimeCancelOutcome::Queued)
+    );
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match service.next_update(operation_id).await.unwrap().unwrap() {
+                EngineServiceUpdate::Page(_) => {}
+                EngineServiceUpdate::CancelDispatched(CancelDispatch::RequestSent) => break,
+                other => panic!("unexpected {image} event before ClickHouse dispatch: {other:?}"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match service.next_update(operation_id).await.unwrap().unwrap() {
+                EngineServiceUpdate::Page(_) => {}
+                EngineServiceUpdate::Terminal(
+                    tablerock_core::OperationOutcome::ServerConfirmedCancelled,
+                ) => break,
+                other => panic!("unexpected {image} event before ClickHouse terminal: {other:?}"),
+            }
+        }
+    })
+    .await
+    .unwrap();
 }
 
 fn assert_decimal(page: &tablerock_core::ResultPage, column: u32, expected: &str) {

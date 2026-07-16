@@ -36,6 +36,11 @@ service path are recorded in
 The latest documentation-only TermRock semantic inventory update and exact pin
 are recorded in
 [`128-termrock-semantic-inventory-update.md`](docs/research/128-termrock-semantic-inventory-update.md).
+ClickHouse query-ID dispatch and synchronous server-confirmed cancellation are
+recorded in
+[`129-phase-2-clickhouse-service-cancellation.md`](docs/research/129-phase-2-clickhouse-service-cancellation.md).
+TermRock migration 0024 and its exact latest pin are adopted in
+[`130-termrock-closure-runner-frame-time-migration.md`](docs/research/130-termrock-closure-runner-frame-time-migration.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

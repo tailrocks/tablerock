@@ -10,5 +10,5 @@ pub mod view;
 pub use effect::Effect;
 pub use message::{MAX_PASTE_BYTES, Message, PasteText};
 pub use model::{ActionId, FocusRegion, LayoutMode, Model, Screen, ScrollDirection, ShellTarget};
-pub use update::update;
+pub use update::{Update, update};
 pub use view::{ShellGeometry, ShellView};

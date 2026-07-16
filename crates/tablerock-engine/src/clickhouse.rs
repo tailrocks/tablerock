@@ -1,4 +1,11 @@
-use std::{error::Error, fmt};
+use std::{
+    error::Error,
+    fmt,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use bytes::Bytes;
 use clickhouse::{Client, Compression, query::BytesCursor};
@@ -10,6 +17,7 @@ use tablerock_core::{
 
 const MAX_CLICKHOUSE_TYPE_DEPTH: u8 = 64;
 const MAX_STRUCTURED_NODES: u64 = 1_000_000;
+const MAX_QUERY_ID_BYTES: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClickHouseTlsMode {
@@ -28,6 +36,7 @@ pub enum ClickHouseProbeQuery {
     TypedValues,
     ComplexScalars,
     StructuredValues,
+    CancellationStream,
 }
 
 impl ClickHouseProbeQuery {
@@ -67,6 +76,7 @@ impl ClickHouseProbeQuery {
                  CAST([(1, 'one'), (2, 'two')], 'Array(Tuple(id UInt8, label String))') AS nested_value, \
                  [CAST(unhex('00FF'), 'FixedString(2)')] AS binary_array"
             }
+            Self::CancellationStream => "SELECT number AS id FROM numbers(1000000000)",
         }
     }
 }
@@ -121,6 +131,8 @@ pub enum ClickHouseError {
     Query,
     Protocol,
     UnsupportedType,
+    ServerCancelled,
+    SessionBusy,
     InvalidLimits,
     Page(PageValidationError),
 }
@@ -131,6 +143,8 @@ impl fmt::Display for ClickHouseError {
             Self::Query => "ClickHouse query failed",
             Self::Protocol => "ClickHouse returned an invalid result stream",
             Self::UnsupportedType => "ClickHouse returned a type not decoded by this checkpoint",
+            Self::ServerCancelled => "ClickHouse server confirmed query cancellation",
+            Self::SessionBusy => "ClickHouse session already owns an active query",
             Self::InvalidLimits => "ClickHouse stream limits are invalid",
             Self::Page(_) => "ClickHouse result page failed validation",
         })
@@ -142,6 +156,54 @@ impl Error for ClickHouseError {}
 #[derive(Clone)]
 pub struct ClickHouseSession {
     client: Client,
+    active: Arc<ClickHouseActiveQuery>,
+}
+
+#[derive(Default)]
+struct ClickHouseActiveQuery {
+    query_id: Mutex<Option<BoundedText>>,
+    server_confirmed: AtomicBool,
+}
+
+impl ClickHouseActiveQuery {
+    fn register(&self, query_id: BoundedText) -> bool {
+        let mut active = self
+            .query_id
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if active.is_some() {
+            return false;
+        }
+        *active = Some(query_id);
+        self.server_confirmed.store(false, Ordering::Release);
+        true
+    }
+
+    fn query_id(&self) -> Option<BoundedText> {
+        self.query_id
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
+    fn confirm(&self) {
+        self.server_confirmed.store(true, Ordering::Release);
+    }
+
+    fn is_confirmed(&self) -> bool {
+        self.server_confirmed.load(Ordering::Acquire)
+    }
+
+    fn clear(&self, query_id: &BoundedText) {
+        let mut active = self
+            .query_id
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if active.as_ref() == Some(query_id) {
+            active.take();
+            self.server_confirmed.store(false, Ordering::Release);
+        }
+    }
 }
 
 impl ClickHouseSession {
@@ -165,7 +227,10 @@ impl ClickHouseSession {
             .with_user(config.user.as_str())
             .with_compression(compression)
             .with_product_info("tablerock", env!("CARGO_PKG_VERSION"));
-        Self { client }
+        Self {
+            client,
+            active: Arc::new(ClickHouseActiveQuery::default()),
+        }
     }
 
     pub async fn stream_probe(
@@ -181,16 +246,69 @@ impl ClickHouseSession {
             || limits.max_column_text_bytes() == 0
             || max_cell_bytes == 0
             || query_id.is_empty()
+            || query_id.len() > MAX_QUERY_ID_BYTES
         {
             return Err(ClickHouseError::InvalidLimits);
         }
-        let cursor = self
+        if !self.active.register(query_id.clone()) {
+            return Err(ClickHouseError::SessionBusy);
+        }
+        let mut request = self
             .client
             .query(query.sql())
-            .with_setting("query_id", query_id.as_str())
+            .with_setting("query_id", query_id.as_str());
+        if query == ClickHouseProbeQuery::CancellationStream {
+            request = request.with_setting("max_block_size", "1");
+        }
+        let cursor = request
             .fetch_bytes("RowBinaryWithNamesAndTypes")
+            .map_err(|_| ClickHouseError::Query);
+        let result = match cursor {
+            Ok(cursor) => {
+                ClickHouseRowStream::start(
+                    cursor,
+                    limits,
+                    max_cell_bytes,
+                    Arc::clone(&self.active),
+                    query_id.clone(),
+                )
+                .await
+            }
+            Err(error) => Err(error),
+        };
+        match result {
+            Err(_) if self.active.is_confirmed() => Err(ClickHouseError::ServerCancelled),
+            Err(error) => {
+                self.active.clear(query_id);
+                Err(error)
+            }
+            Ok(stream) => Ok(stream),
+        }
+    }
+
+    pub async fn dispatch_cancel(&self) -> Result<bool, ClickHouseError> {
+        let Some(query_id) = self.active.query_id() else {
+            return Ok(false);
+        };
+        let cursor = self
+            .client
+            .query("KILL QUERY WHERE query_id = {target:String} SYNC")
+            .param("target", query_id.as_str())
+            .fetch_bytes("RowBinary")
             .map_err(|_| ClickHouseError::Query)?;
-        ClickHouseRowStream::start(cursor, limits, max_cell_bytes).await
+        let mut reader = ChunkReader::new(cursor);
+        let status_len = read_leb128(&mut reader).await?;
+        if status_len > 32 {
+            return Err(ClickHouseError::Protocol);
+        }
+        let mut status = vec![0; status_len as usize];
+        reader.read_exact(&mut status).await?;
+        if status == b"finished" {
+            self.active.confirm();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 
@@ -201,6 +319,8 @@ pub struct ClickHouseRowStream {
     limits: PageLimits,
     max_cell_bytes: u64,
     complete: bool,
+    active: Arc<ClickHouseActiveQuery>,
+    query_id: BoundedText,
 }
 
 impl ClickHouseRowStream {
@@ -208,6 +328,8 @@ impl ClickHouseRowStream {
         cursor: BytesCursor,
         limits: PageLimits,
         max_cell_bytes: u64,
+        active: Arc<ClickHouseActiveQuery>,
+        query_id: BoundedText,
     ) -> Result<Self, ClickHouseError> {
         let mut reader = ChunkReader::new(cursor);
         let count = read_leb128(&mut reader).await?;
@@ -243,6 +365,8 @@ impl ClickHouseRowStream {
             limits,
             max_cell_bytes,
             complete: false,
+            active,
+            query_id,
         })
     }
 
@@ -251,8 +375,26 @@ impl ClickHouseRowStream {
         identity: PageIdentity,
         start_row: u64,
     ) -> Result<Option<ResultPage>, ClickHouseError> {
-        if self.complete || !self.reader.has_data().await? {
+        let result = self.next_page_inner(identity, start_row).await;
+        if self.active.is_confirmed() && !matches!(result, Ok(Some(_))) {
+            Err(ClickHouseError::ServerCancelled)
+        } else {
+            result
+        }
+    }
+
+    async fn next_page_inner(
+        &mut self,
+        identity: PageIdentity,
+        start_row: u64,
+    ) -> Result<Option<ResultPage>, ClickHouseError> {
+        if self.complete {
+            self.active.clear(&self.query_id);
+            return Ok(None);
+        }
+        if !self.reader.has_data().await? {
             self.complete = true;
+            self.active.clear(&self.query_id);
             return Ok(None);
         }
         let mut values = Vec::new();
@@ -290,6 +432,9 @@ impl ClickHouseRowStream {
         {
             warnings = warnings.with(PageWarning::UnknownValues);
         }
+        if self.complete {
+            self.active.clear(&self.query_id);
+        }
         ResultPage::from_row_major(
             identity,
             start_row,
@@ -301,6 +446,12 @@ impl ClickHouseRowStream {
         )
         .map(Some)
         .map_err(ClickHouseError::Page)
+    }
+}
+
+impl Drop for ClickHouseRowStream {
+    fn drop(&mut self) {
+        self.active.clear(&self.query_id);
     }
 }
 

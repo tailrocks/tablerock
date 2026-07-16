@@ -141,6 +141,9 @@ Using official `ClickHouse/clickhouse-rs`, prove a self-describing arbitrary
 nested/nullable/decimal/large integer/binary values, compression, TLS,
 progressive insert boundaries, query-ID progress/cancellation, and mutation
 identity.
+The service now binds active query IDs and requires synchronous `finished`
+evidence from `KILL QUERY`; remaining progress, mutation, TLS, and failure-race
+matrix evidence stays required.
 
 ### Redis spike
 

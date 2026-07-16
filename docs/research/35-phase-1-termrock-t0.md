@@ -10,14 +10,17 @@ branch or floating tag, and `Cargo.lock` is committed.
 The minimal `tablerock-tui` consumer proves these public seams:
 
 - one root-owned `Model` and semantic `Message`;
-- synchronous `update` returning TermRock `UpdateResult`;
-- TermRock `View<Model>` rendering through `runtime::drive_frame`;
+- synchronous `update` returning the then-current TermRock `UpdateResult`;
+- the then-current TermRock `View<Model>` rendering through `runtime::drive_frame`;
 - a TermRock `Panel` rendered into Ratatui `TestBackend`;
 - CLI-owned, feature-enabled TermRock `Session` setup and idempotent restoration
   against an in-memory writer with every live-terminal mode disabled;
 - CLI-owned Crossterm 0.29 `EventStream` availability from the same locked tuple;
 - no I/O, async runtime, database type, effect executor, or terminal lifecycle
   inside the model, update, or view.
+
+These historical interfaces were replaced by migration 0024; see
+[`130-termrock-closure-runner-frame-time-migration.md`](130-termrock-closure-runner-frame-time-migration.md).
 
 This checkpoint does not claim an executable shell, input stream, terminal
 restoration, responsive layout, engine subscription, database capability, or

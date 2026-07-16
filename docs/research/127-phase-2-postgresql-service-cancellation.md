@@ -10,7 +10,8 @@ session to send a fresh-protocol cancellation request through its
 
 - `Unsupported`: the adapter has no server cancellation mechanism;
 - `RequestSent`: the cancellation transport accepted the request;
-- `TransportFailed`: the cancellation request could not be delivered.
+- `TransportFailed`: the cancellation request could not be delivered;
+- `ServerRejected`: a synchronous server response did not confirm a target.
 
 `RequestSent` is not terminal success. Only PostgreSQL SQLSTATE `57014`
 observed from the running row stream becomes
@@ -25,9 +26,10 @@ proves cancellation during stream creation. A PostgreSQL 18.4 Testcontainers
 fixture proves a real delayed query reports `RequestSent` and then
 `ServerConfirmedCancelled`, each within a five-second test deadline.
 
-ClickHouse query-ID cancellation and Redis client-stop/post-dispatch truth are
-still required. This checkpoint does not generalize PostgreSQL confirmation to
-engines whose protocols provide different evidence.
+ClickHouse query-ID cancellation is subsequently proven in
+[`129-phase-2-clickhouse-service-cancellation.md`](129-phase-2-clickhouse-service-cancellation.md).
+Redis client-stop/post-dispatch truth remains required. PostgreSQL confirmation
+is not generalized to engines whose protocols provide different evidence.
 
 Sources are TableRock-owned requirements, `tokio-postgres` behavior, PostgreSQL
 SQLSTATE behavior, and direct pinned-server tests. No external-product source

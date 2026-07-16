@@ -327,10 +327,6 @@ async fn runtime_panic_becomes_unknown_instead_of_leaving_core_active() {
         .await
         .unwrap();
     assert!(matches!(
-        service.next_update(operation_id).await.unwrap(),
-        Some(EngineServiceUpdate::Started)
-    ));
-    assert!(matches!(
         service.next_update(operation_id).await,
         Err(EngineServiceError::Runtime(_))
     ));

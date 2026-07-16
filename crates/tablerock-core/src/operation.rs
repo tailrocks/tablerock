@@ -91,6 +91,7 @@ pub enum CancelDispatch {
     Unsupported,
     RequestSent,
     TransportFailed,
+    ServerRejected,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

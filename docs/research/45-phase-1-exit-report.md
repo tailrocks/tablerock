@@ -47,12 +47,12 @@ performance claim beyond bounded-memory ingress proofs.
 
 | Requirement | Authoritative evidence | Result |
 |---|---|---|
-| Exact TermRock/Ratatui/Rust tuple | `Cargo.toml` and `Cargo.lock` pin TermRock `9099b3db`, Ratatui core `0.1.2`, Ratatui Crossterm `0.1.2`, Rust `1.95`; `35` and `41` record compatibility | Pass |
+| Exact TermRock/Ratatui/Rust tuple | `Cargo.toml` and `Cargo.lock` pin TermRock `371ff94e`, Ratatui core `0.1.2`, Ratatui Crossterm `0.1.2`, Rust `1.97`; `130` records current compatibility | Pass |
 | One Crossterm input/lifecycle path | CLI creates one `EventStream`; TermRock `Session` is the only raw/full-screen lifecycle owner; no second terminal stack exists | Pass |
 | Normal/error/signal/panic safety | Real PTYs cover semantic exit, SIGTERM, returned error, panic, and private input; `41`-`43` record lifecycle and raw-termios proof | Pass |
 | One root TEA flow | `tablerock-tui` has one Model/Message/Update/Effect/Subscription/View boundary; reducer/view tests and `39` prove deterministic projection | Pass |
 | Bounded engine subscription seam | `ENGINE_EVENT_CAPACITY` is 256; type-distinct ingress linearizes events/progress/overflow/closure, coalesces only progress, and exposes resync; `44` records evidence | Pass |
-| Dirty full-frame rendering | Executable renders the complete view only after dirty reducer outcomes and refreshes frame-scoped hit geometry atomically | Pass |
+| Bounded full-frame rendering | Executable renders the complete view only after reducer render requests and refreshes frame-scoped hit geometry atomically | Pass |
 | Responsive shell and minimum state | `TestBackend` covers wide/medium/narrow/too-small layouts; PTY resize covers tiny then normal projection | Pass |
 | Focus, discovery, keyboard/mouse parity | Reducer/input/render tests cover deterministic focus/action order, press/repeat/release policy, rendered hit targets, click/drag/wheel, non-color labels, and visible actions | Pass |
 | Test seams | Reducer, `TestBackend`, TermRock direct-buffer, process contract, and real-PTY suites exist at their public boundaries | Pass |

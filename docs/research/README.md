@@ -77,6 +77,8 @@ kept in the roadmap.
 - [Phase 2 three-engine overlap evidence](126-phase-2-three-engine-overlap.md)
 - [Phase 2 PostgreSQL service cancellation evidence](127-phase-2-postgresql-service-cancellation.md)
 - [TermRock semantic inventory update](128-termrock-semantic-inventory-update.md)
+- [Phase 2 ClickHouse service cancellation evidence](129-phase-2-clickhouse-service-cancellation.md)
+- [TermRock migration 0024 adoption](130-termrock-closure-runner-frame-time-migration.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

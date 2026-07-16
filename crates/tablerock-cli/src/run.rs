@@ -234,8 +234,8 @@ async fn run_session(
         };
 
         let result = update(&mut model, message);
-        dirty |= result.is_dirty();
-        if result.effects().contains(&Effect::Exit) {
+        dirty |= result.needs_render();
+        if result.effects().any(|effect| *effect == Effect::Exit) {
             return Ok(());
         }
     }

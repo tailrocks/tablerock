@@ -65,7 +65,7 @@ revision and commit `Cargo.lock`; do not depend on a branch.
 | Scrollable text | `Viewport` and scroll helpers | Query error, DDL, raw values |
 | Input routing | logical keymap/input types | Product actions and modal precedence |
 | Interaction identity | stable focus/hover/hit regions | Product IDs and navigation policy |
-| TEA runtime seam | `View`, `UpdateResult`, `Subscription`, frame driver | Root model, messages, effects, executor |
+| TEA runtime seam | terminal session, neutral events, widgets, interaction geometry | Root async loop, model, messages, effects, executor |
 | Terminal lifecycle | Crossterm session adapter and typed OSC requests | Process policy and failure reporting |
 
 TableRock may combine these primitives into product-local compositions such as
@@ -153,7 +153,7 @@ Model -----------------------------------------> pure View
 
 - Synchronous and deterministic; no `.await`, file, process, socket, secret
   resolution, database call, or telemetry export.
-- Mutates only the model and returns TermRock `UpdateResult<Effect>`.
+- Mutates only the model and returns TableRock's bounded `Update` effect/render envelope.
 - Applies modal precedence and focus routing in one place.
 - Emits typed effects for every external action.
 

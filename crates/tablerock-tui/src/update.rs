@@ -1,34 +1,70 @@
 //! Deterministic root update path.
 
-use termrock::runtime::UpdateResult;
-
 use crate::{ActionId, Effect, FocusRegion, Message, Model, Screen, ShellTarget};
 
-pub fn update(model: &mut Model, message: Message) -> UpdateResult<Effect> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Update {
+    render: bool,
+    effect: Option<Effect>,
+}
+
+impl Update {
+    const fn unchanged() -> Self {
+        Self {
+            render: false,
+            effect: None,
+        }
+    }
+
+    const fn render() -> Self {
+        Self {
+            render: true,
+            effect: None,
+        }
+    }
+
+    const fn with_effect(effect: Effect) -> Self {
+        Self {
+            render: false,
+            effect: Some(effect),
+        }
+    }
+
+    #[must_use]
+    pub const fn needs_render(&self) -> bool {
+        self.render
+    }
+
+    pub fn effects(&self) -> impl Iterator<Item = &Effect> {
+        self.effect.iter()
+    }
+}
+
+pub fn update(model: &mut Model, message: Message) -> Update {
     match message {
         Message::Resize { width, height } => {
             if model.size() == (width, height) {
-                UpdateResult::clean()
+                Update::unchanged()
             } else {
                 model.resize(width, height);
-                UpdateResult::redraw()
+                Update::render()
             }
         }
         Message::TerminalFocusChanged(focused) => {
             if model.terminal_focused() == focused {
-                UpdateResult::clean()
+                Update::unchanged()
             } else {
                 model.set_terminal_focused(focused);
-                UpdateResult::redraw()
+                Update::render()
             }
         }
-        Message::Paste(_) => UpdateResult::clean(),
+        Message::Paste(_) => Update::unchanged(),
         Message::PointerHovered(target) | Message::PointerDragged(target) => {
             if model.hovered() == target {
-                UpdateResult::clean()
+                Update::unchanged()
             } else {
                 model.set_hovered(target);
-                UpdateResult::redraw()
+                Update::render()
             }
         }
         Message::PointerPressed(target) => {
@@ -36,7 +72,7 @@ pub fn update(model: &mut Model, message: Message) -> UpdateResult<Effect> {
             if let Some(target) = target {
                 focus_target(model, target);
             }
-            UpdateResult::redraw()
+            Update::render()
         }
         Message::PointerReleased(target) => {
             let pressed = model.pressed();
@@ -48,39 +84,39 @@ pub fn update(model: &mut Model, message: Message) -> UpdateResult<Effect> {
                 model.set_action(action);
                 return activate_selected_action(model);
             }
-            UpdateResult::redraw()
+            Update::render()
         }
         Message::PointerScrolled { target, .. } => {
             if let Some(target) = target {
                 focus_target(model, target);
-                UpdateResult::redraw()
+                Update::render()
             } else {
-                UpdateResult::clean()
+                Update::unchanged()
             }
         }
         Message::EngineResyncRequired => {
             if model.engine_resync_required() {
-                UpdateResult::clean()
+                Update::unchanged()
             } else {
                 model.set_engine_resync_required(true);
-                UpdateResult::redraw()
+                Update::render()
             }
         }
         Message::EngineResynchronized => {
             if model.engine_resync_required() {
                 model.set_engine_resync_required(false);
-                UpdateResult::redraw()
+                Update::render()
             } else {
-                UpdateResult::clean()
+                Update::unchanged()
             }
         }
         Message::FocusNext => {
             model.set_focus(model.focus().next());
-            UpdateResult::redraw()
+            Update::render()
         }
         Message::FocusPrevious => {
             model.set_focus(model.focus().previous());
-            UpdateResult::redraw()
+            Update::render()
         }
         Message::ActionNext | Message::ActionPrevious if model.focus() == FocusRegion::Actions => {
             let action = match model.selected_action() {
@@ -88,15 +124,15 @@ pub fn update(model: &mut Model, message: Message) -> UpdateResult<Effect> {
                 ActionId::Quit => ActionId::Open,
             };
             model.set_action(action);
-            UpdateResult::redraw()
+            Update::render()
         }
-        Message::ActionNext | Message::ActionPrevious => UpdateResult::clean(),
+        Message::ActionNext | Message::ActionPrevious => Update::unchanged(),
         Message::Activate if model.focus() == FocusRegion::Actions => {
             activate_selected_action(model)
         }
-        Message::Activate => UpdateResult::clean(),
-        Message::RequestRedraw => UpdateResult::redraw(),
-        Message::Quit => UpdateResult::with_effect(Effect::Exit),
+        Message::Activate => Update::unchanged(),
+        Message::RequestRedraw => Update::render(),
+        Message::Quit => Update::with_effect(Effect::Exit),
     }
 }
 
@@ -110,12 +146,12 @@ fn focus_target(model: &mut Model, target: ShellTarget) {
     }
 }
 
-fn activate_selected_action(model: &mut Model) -> UpdateResult<Effect> {
+fn activate_selected_action(model: &mut Model) -> Update {
     match model.selected_action() {
         ActionId::Open => {
             model.set_screen(Screen::ConnectionPicker);
-            UpdateResult::redraw()
+            Update::render()
         }
-        ActionId::Quit => UpdateResult::with_effect(Effect::Exit),
+        ActionId::Quit => Update::with_effect(Effect::Exit),
     }
 }

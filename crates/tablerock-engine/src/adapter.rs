@@ -243,19 +243,21 @@ impl DriverSession for ClickHouseSession {
         &'a self,
         request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
-        Box::pin(async move {
-            let DriverPageRequest::ClickHouseProbe {
-                query,
-                query_id,
-                limits,
-                max_cell_bytes,
-            } = request
-            else {
-                return Err(AdapterError::new(
+        let DriverPageRequest::ClickHouseProbe {
+            query,
+            query_id,
+            limits,
+            max_cell_bytes,
+        } = request
+        else {
+            return Box::pin(async {
+                Err(AdapterError::new(
                     Engine::ClickHouse,
                     AdapterFailureClass::EngineMismatch,
-                ));
-            };
+                ))
+            });
+        };
+        Box::pin(async move {
             self.stream_probe(query, &query_id, limits, max_cell_bytes)
                 .await
                 .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
@@ -264,7 +266,13 @@ impl DriverSession for ClickHouseSession {
     }
 
     fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
-        Box::pin(async { CancelDispatch::Unsupported })
+        Box::pin(async {
+            match self.dispatch_cancel().await {
+                Ok(true) => CancelDispatch::RequestSent,
+                Ok(false) => CancelDispatch::ServerRejected,
+                Err(_) => CancelDispatch::TransportFailed,
+            }
+        })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
@@ -334,6 +342,8 @@ fn map_clickhouse(error: ClickHouseError) -> AdapterError {
         ClickHouseError::Query => AdapterFailureClass::Query,
         ClickHouseError::Protocol => AdapterFailureClass::Protocol,
         ClickHouseError::UnsupportedType => AdapterFailureClass::Decode,
+        ClickHouseError::ServerCancelled => AdapterFailureClass::ServerCancelled,
+        ClickHouseError::SessionBusy => AdapterFailureClass::InvalidRequest,
         ClickHouseError::InvalidLimits => AdapterFailureClass::InvalidRequest,
         ClickHouseError::Page(_) => AdapterFailureClass::Page,
     };

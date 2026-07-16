@@ -254,10 +254,8 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
         event_capacity,
     } = input;
     let mut pending = VecDeque::with_capacity(event_capacity);
-    if events.send(DriverOperationEvent::Started).await.is_err() {
-        let _ = session.shutdown().await;
-        return DriverTaskExit::ClientStopped;
-    }
+    let stream_start = session.start_page_stream(request);
+    pending.push_back(DriverOperationEvent::Started);
     let mut cancel_dispatched = false;
     let stream_result = StreamStartControl {
         operation_id,
@@ -268,7 +266,7 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
         pending: &mut pending,
         cancel_dispatched: &mut cancel_dispatched,
     }
-    .start(request)
+    .start(stream_start)
     .await;
     let Some(stream_result) = stream_result else {
         let _ = events.try_send(DriverOperationEvent::ClientStopped);
@@ -402,12 +400,11 @@ struct StreamStartControl<'a> {
 impl StreamStartControl<'_> {
     async fn start(
         &mut self,
-        request: DriverPageRequest,
+        mut start: crate::DriverFuture<'_, Result<Box<dyn crate::DriverPageStream>, AdapterError>>,
     ) -> Option<Result<Box<dyn crate::DriverPageStream>, AdapterError>> {
-        let start = self.session.start_page_stream(request);
-        tokio::pin!(start);
         loop {
             tokio::select! {
+                biased;
                 result = &mut start => return Some(result),
                 permit = self.events.reserve(), if !self.pending.is_empty() => {
                     let Ok(permit) = permit else { return None; };

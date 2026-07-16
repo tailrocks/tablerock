@@ -3,12 +3,11 @@ use tablerock_tui::{
     ActionId, Effect, FocusRegion, LayoutMode, Message, Model, PasteText, Screen, ShellTarget,
     ShellView, update,
 };
-use termrock::runtime::{Dirty, drive_frame};
 
 #[test]
 fn reducer_owns_resize_focus_and_effects() {
     let mut model = Model::default();
-    assert_eq!(
+    assert!(
         update(
             &mut model,
             Message::Resize {
@@ -16,20 +15,18 @@ fn reducer_owns_resize_focus_and_effects() {
                 height: 40
             }
         )
-        .dirty(),
-        Dirty::Redraw
+        .needs_render()
     );
     assert_eq!(model.layout_mode(), LayoutMode::Wide);
-    assert_eq!(
-        update(
+    assert!(
+        !update(
             &mut model,
             Message::Resize {
                 width: 120,
                 height: 40
             }
         )
-        .dirty(),
-        Dirty::Clean
+        .needs_render()
     );
 
     let _ = update(&mut model, Message::FocusNext);
@@ -38,27 +35,30 @@ fn reducer_owns_resize_focus_and_effects() {
     assert_eq!(model.focus(), FocusRegion::Context);
 
     let result = update(&mut model, Message::Quit);
-    assert_eq!(result.effects(), &[Effect::Exit]);
+    assert_eq!(
+        result.effects().copied().collect::<Vec<_>>(),
+        [Effect::Exit]
+    );
 }
 
 #[test]
 fn actions_are_root_owned_and_only_activate_from_action_focus() {
     let mut model = Model::default();
-    assert_eq!(
-        update(&mut model, Message::ActionNext).dirty(),
-        Dirty::Clean
-    );
-    assert_eq!(update(&mut model, Message::Activate).dirty(), Dirty::Clean);
+    assert!(!update(&mut model, Message::ActionNext).needs_render());
+    assert!(!update(&mut model, Message::Activate).needs_render());
     for _ in 0..4 {
         let _ = update(&mut model, Message::FocusNext);
     }
-    assert_eq!(update(&mut model, Message::Activate).dirty(), Dirty::Redraw);
+    assert!(update(&mut model, Message::Activate).needs_render());
     assert_eq!(model.screen(), Screen::ConnectionPicker);
     let _ = update(&mut model, Message::ActionNext);
     assert_eq!(model.selected_action(), ActionId::Quit);
     assert_eq!(
-        update(&mut model, Message::Activate).effects(),
-        &[Effect::Exit]
+        update(&mut model, Message::Activate)
+            .effects()
+            .copied()
+            .collect::<Vec<_>>(),
+        [Effect::Exit]
     );
     let _ = update(&mut model, Message::ActionPrevious);
     assert_eq!(model.selected_action(), ActionId::Open);
@@ -74,18 +74,21 @@ fn pointer_activation_requires_matching_render_authorized_press_and_release() {
     assert_eq!(model.focus(), FocusRegion::Actions);
     assert_eq!(model.selected_action(), ActionId::Open);
     let mismatch = update(&mut model, Message::PointerReleased(quit));
-    assert!(mismatch.effects().is_empty());
+    assert!(mismatch.effects().next().is_none());
     assert_eq!(model.screen(), Screen::Connections);
 
     let _ = update(&mut model, Message::PointerPressed(open));
     let activated = update(&mut model, Message::PointerReleased(open));
-    assert_eq!(activated.dirty(), Dirty::Redraw);
+    assert!(activated.needs_render());
     assert_eq!(model.screen(), Screen::ConnectionPicker);
 
     let _ = update(&mut model, Message::PointerPressed(quit));
     assert_eq!(
-        update(&mut model, Message::PointerReleased(quit)).effects(),
-        &[Effect::Exit]
+        update(&mut model, Message::PointerReleased(quit))
+            .effects()
+            .copied()
+            .collect::<Vec<_>>(),
+        [Effect::Exit]
     );
 }
 
@@ -103,13 +106,12 @@ fn focus_loss_clears_transient_pointer_state_and_paste_is_not_retained() {
     assert_eq!(model.hovered(), None);
     assert_eq!(model.pressed(), None);
 
-    assert_eq!(
-        update(
+    assert!(
+        !update(
             &mut model,
             Message::Paste(PasteText::bounded("credential material".to_owned()))
         )
-        .dirty(),
-        Dirty::Clean
+        .needs_render()
     );
 }
 
@@ -123,21 +125,12 @@ fn ingress_overflow_projects_an_explicit_resync_state_until_reconciled() {
             height: 24,
         },
     );
-    assert_eq!(
-        update(&mut model, Message::EngineResyncRequired).dirty(),
-        Dirty::Redraw
-    );
+    assert!(update(&mut model, Message::EngineResyncRequired).needs_render());
     assert!(model.engine_resync_required());
-    assert_eq!(
-        update(&mut model, Message::EngineResyncRequired).dirty(),
-        Dirty::Clean
-    );
+    assert!(!update(&mut model, Message::EngineResyncRequired).needs_render());
     assert_render_model_contains(&model, 80, 24, "Resync required");
 
-    assert_eq!(
-        update(&mut model, Message::EngineResynchronized).dirty(),
-        Dirty::Redraw
-    );
+    assert!(update(&mut model, Message::EngineResynchronized).needs_render());
     assert!(!model.engine_resync_required());
 }
 
@@ -279,14 +272,9 @@ fn assert_render_after(width: u16, height: u16, messages: &[Message], expected: 
         let _ = update(&mut model, message.clone());
     }
     let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
-    drive_frame(
-        &mut terminal,
-        &ShellView,
-        &model,
-        Rect::new(0, 0, width, height),
-        |_| {},
-    )
-    .expect("render frame");
+    terminal
+        .draw(|frame| ShellView.render(&model, frame, Rect::new(0, 0, width, height)))
+        .expect("render frame");
     let rendered = terminal
         .backend()
         .buffer()
@@ -304,14 +292,9 @@ fn assert_render_after(width: u16, height: u16, messages: &[Message], expected: 
 
 fn assert_render_model_contains(model: &Model, width: u16, height: u16, expected: &str) {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
-    drive_frame(
-        &mut terminal,
-        &ShellView,
-        model,
-        Rect::new(0, 0, width, height),
-        |_| {},
-    )
-    .expect("render model");
+    terminal
+        .draw(|frame| ShellView.render(model, frame, Rect::new(0, 0, width, height)))
+        .expect("render model");
     let rendered = terminal
         .backend()
         .buffer()
