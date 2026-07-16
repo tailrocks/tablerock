@@ -30,7 +30,10 @@ plans and every engine adapter, removing competing local estimators.
 - PostgreSQL executes an atomic transaction.
 - ClickHouse inserts are progressive and non-transactional.
 - ClickHouse updates/deletes are asynchronous mutations and non-transactional.
-- Redis commands are sequential and make no rollback claim.
+- Redis commands are sequential and make no rollback claim. The real-server
+  pipeline matrix proves successful commands remain applied around a runtime
+  response error, including inside `MULTI`/`EXEC`; see
+  [`138-phase-2-redis-pipeline-partial-failure.md`](138-phase-2-redis-pipeline-partial-failure.md).
 
 ## Review and authorization
 

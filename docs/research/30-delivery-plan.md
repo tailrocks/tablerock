@@ -155,6 +155,10 @@ timeouts/reconnect, and the difference between client stop and server outcome.
 The shared service now uses an isolated blocking-operation connection and
 requires both `CLIENT UNBLOCK` reply `1` and the operation-side server error
 before reporting server-confirmed cancellation.
+The supported-line RESP2/RESP3 matrix now proves per-command pipeline outcomes,
+continued execution after a runtime response error, and `MULTI`/`EXEC`
+no-rollback truth. TLS, Pub/Sub, timeout/reconnect, SCAN-family breadth, and
+remaining failure races stay required.
 
 ### Exit evidence
 

@@ -1,6 +1,8 @@
 use std::{collections::BTreeSet, time::Duration};
 
-use redis::AsyncCommands;
+use redis::{
+    AsyncCommands, ConnectionAddr, IntoConnectionInfo, ProtocolVersion, RedisConnectionInfo,
+};
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity,
     PageLimits, PageWarning, Truncation, ValueKind,
@@ -60,6 +62,7 @@ async fn verify_version(tag: &str) {
         .await
         .unwrap();
         assert_eq!(session.negotiated_protocol().await.unwrap(), protocol);
+        verify_pipeline_partial_failure(port, protocol, tag).await;
         verify_service_cancellation(port, protocol, tag).await;
         verify_blocking_completion(port, protocol).await;
 
@@ -175,6 +178,86 @@ async fn verify_version(tag: &str) {
             }
         }
         assert_eq!(service_keys, found, "Redis service {tag} {protocol:?}");
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PipelineMode {
+    Pipelined,
+    MultiExec,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PipelineOutcome {
+    ServerSucceeded,
+    ServerRejected,
+}
+
+async fn verify_pipeline_partial_failure(port: u16, protocol: RedisProtocol, tag: &str) {
+    for mode in [PipelineMode::Pipelined, PipelineMode::MultiExec] {
+        let redis = RedisConnectionInfo::default()
+            .set_db(0)
+            .set_protocol(match protocol {
+                RedisProtocol::Resp2 => ProtocolVersion::RESP2,
+                RedisProtocol::Resp3 => ProtocolVersion::RESP3,
+            });
+        let info = ConnectionAddr::Tcp("127.0.0.1".to_owned(), port)
+            .into_connection_info()
+            .unwrap()
+            .set_redis_settings(redis);
+        let client = redis::Client::open(info).unwrap();
+        let mut connection = client.get_multiplexed_async_connection().await.unwrap();
+        let key = format!("tablerock-pipeline-{tag}-{protocol:?}-{mode:?}");
+        let mut pipeline = redis::pipe();
+        if matches!(mode, PipelineMode::MultiExec) {
+            pipeline.atomic();
+        }
+        pipeline
+            .cmd("SET")
+            .arg(key.as_bytes())
+            .arg(1_u8)
+            .cmd("HSET")
+            .arg(key.as_bytes())
+            .arg(b"field")
+            .arg(b"value")
+            .cmd("INCR")
+            .arg(key.as_bytes())
+            .ignore_errors();
+        let results: Vec<redis::RedisResult<redis::Value>> =
+            pipeline.query_async(&mut connection).await.unwrap();
+        let outcomes = results
+            .iter()
+            .map(|result| {
+                if result.is_ok() {
+                    PipelineOutcome::ServerSucceeded
+                } else {
+                    PipelineOutcome::ServerRejected
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            outcomes,
+            &[
+                PipelineOutcome::ServerSucceeded,
+                PipelineOutcome::ServerRejected,
+                PipelineOutcome::ServerSucceeded,
+            ],
+            "Redis pipeline outcomes {tag} {protocol:?} {mode:?}"
+        );
+        let final_counter: u64 = redis::cmd("GET")
+            .arg(key.as_bytes())
+            .query_async(&mut connection)
+            .await
+            .unwrap();
+        assert_eq!(
+            final_counter, 2,
+            "Redis does not roll back successful commands {tag} {protocol:?} {mode:?}"
+        );
+        redis::cmd("DEL")
+            .arg(key.as_bytes())
+            .exec_async(&mut connection)
+            .await
+            .unwrap();
     }
 }
 

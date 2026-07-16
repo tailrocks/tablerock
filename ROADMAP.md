@@ -61,6 +61,9 @@ TLS cancellation on both supported lines are recorded in
 TermRock migration 0026, root-owned per-frame scoped focus registration, its
 public Table graduation, and the exact latest pin are recorded in
 [`137-termrock-scoped-focus-migration.md`](docs/research/137-termrock-scoped-focus-migration.md).
+Redis per-command pipeline partial failures, continued execution, and
+`MULTI`/`EXEC` no-rollback truth across the supported matrix are recorded in
+[`138-phase-2-redis-pipeline-partial-failure.md`](docs/research/138-phase-2-redis-pipeline-partial-failure.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

@@ -73,6 +73,9 @@ path. The private PostgreSQL adapter proves driven ownership, bounded pages,
 verified custom-root TLS, independent server-name verification, client
 certificate identity, plaintext downgrade rejection, and TLS cancellation on
 PostgreSQL 17.10 and 18.4; the remaining driver matrix stays Phase 2 work.
+The Redis supported-line RESP2/RESP3 matrix also proves bounded per-command
+pipeline partial failures and `MULTI`/`EXEC` no-rollback behavior; broader Redis
+TLS, command-family, Pub/Sub, timeout, and reconnect evidence remains open.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 
