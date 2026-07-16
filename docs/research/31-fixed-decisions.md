@@ -17,7 +17,7 @@ activate a parallel approach.
 | Redis | `redis-rs/redis-rs`, standalone deployment first |
 | SQL analysis | `sqlparser` tokens plus last-known-valid AST and catalog index |
 | Persistence | local-only `turso` through one serialized Rust async persistence actor |
-| Credentials | Rust-owned SecretSource; 1Password CLI primary, prompt/Keychain/acknowledged plaintext explicit sources |
+| Credentials | Rust-owned SecretSource; 1Password CLI primary; prompt, Keychain, and operator-acknowledged plaintext are explicit sources |
 | Native UI | SwiftUI application shell with NSOutlineView, NSTableView, and NSTextView adapters |
 | Native bridge | embedded Rust static library through synchronous coarse UniFFI |
 | Native distribution | direct Developer ID, hardened runtime, notarization, and stapling |

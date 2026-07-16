@@ -9,7 +9,8 @@ change without a recorded architecture revision.
 
 | Concern | Selected project | Researched version | License | Ownership rule |
 |---|---|---:|---|---|
-| Async runtime | [`tokio`](https://github.com/tokio-rs/tokio) | resolve at adoption | MIT | engine/runtime only |
+| Async runtime | [`tokio`](https://github.com/tokio-rs/tokio) | 1.52.3 | MIT | engine/runtime and CLI effect/subscription adapter only |
+| Async stream adapter | [`futures-util`](https://github.com/rust-lang/futures-rs) | 0.3.32 | MIT OR Apache-2.0 | CLI EventStream polling only |
 | PostgreSQL | [`tokio-postgres`](https://github.com/rust-postgres/rust-postgres) | 0.7.18 | MIT OR Apache-2.0 | driver adapter only |
 | PostgreSQL TLS | [`tokio-postgres-rustls`](https://github.com/jbg/tokio-postgres-rustls) | 0.14.0 | MIT | PostgreSQL adapter only |
 | ClickHouse | official [`clickhouse`](https://github.com/ClickHouse/clickhouse-rs) | 0.15.1 | MIT OR Apache-2.0 | driver adapter only |
@@ -19,6 +20,8 @@ change without a recorded architecture revision.
 | TUI | [`termrock`](https://github.com/tailrocks/termrock) | 0.6.0 / exact Git revision | Apache-2.0 | only reusable TUI layer |
 | Terminal renderer | [Ratatui](https://github.com/ratatui/ratatui) | 0.30-compatible with pinned TermRock | MIT | through TermRock compatibility tuple |
 | Terminal backend/input | [`crossterm`](https://github.com/crossterm-rs/crossterm) | 0.29.0 | MIT | CLI terminal adapter; TermRock `crossterm` feature |
+| Ratatui terminal backend | [`ratatui-crossterm`](https://github.com/ratatui/ratatui) | 0.1.2 | MIT | CLI render adapter only; Crossterm 0.29 feature only |
+| PTY test harness | [`portable-pty`](https://github.com/wezterm/wezterm) | 0.9.0 | MIT | CLI development dependency only |
 | Persistence | [`turso`](https://github.com/tursodatabase/turso) local database | 0.7.0 | MIT | one serialized Rust async persistence actor |
 | Swift binding | [`uniffi`](https://github.com/mozilla/uniffi-rs) | 0.32.0 | MPL-2.0 | synchronous coarse FFI only |
 | Structured diagnostics | [`tracing`](https://github.com/tokio-rs/tracing) | 0.1.44 | MIT | fixed safe fields only |
@@ -28,6 +31,16 @@ TableRock does not directly depend on a separate textarea/widget framework,
 `rusqlite`, `libsql`, Turso Cloud sync, Arrow, an Objective-C bridge from Rust,
 a local RPC framework, or a second SQL parser. A missing general TUI primitive
 is implemented in TermRock.
+
+### Phase 1 runtime adoption
+
+The executable shell pins Tokio 1.52.3 with only macros, current-thread runtime,
+signal, and sync features. `futures-util` exists only to poll Crossterm's one
+`EventStream`; `ratatui-crossterm` is the renderer adapter matching the pinned
+Ratatui/Crossterm tuple. `portable-pty` is test-only and runs the built CLI in a
+real sized pseudoterminal. Cargo metadata and official crate documentation were
+checked at adoption; Context7's documentation endpoint was attempted first but
+reported its monthly request quota exhausted.
 
 ## PostgreSQL
 

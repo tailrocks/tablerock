@@ -38,9 +38,10 @@ canonical prompt:
 ## Status
 
 Phase 0 is complete. Phase 1 is in progress: the TermRock prerequisites and
-root TEA responsive shell are verified; the executable terminal loop and PTY
-restoration evidence remain. Product name, package namespace, and legal
-clearance remain subject to final review before public release.
+root TEA responsive shell and executable normal/signal terminal paths are
+verified. Returned-error/panic PTY paths plus typed engine overflow/resync policy
+remain. Product name, package namespace, and legal clearance remain subject to
+final review before public release.
 
 ## License
 

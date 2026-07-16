@@ -57,6 +57,7 @@ kept in the roadmap.
 - [Phase 1 TermRock Form evidence](37-phase-1-termrock-form.md)
 - [Phase 1 TermRock SplitPane evidence](38-phase-1-termrock-split-pane.md)
 - [Phase 1 root TEA shell evidence](39-phase-1-root-tea-shell.md)
+- [Phase 1 executable loop evidence](40-phase-1-executable-loop.md)
 
 ## Architecture headline
 

@@ -53,8 +53,12 @@ this phase is approved.
 [`38-phase-1-termrock-split-pane.md`](docs/research/38-phase-1-termrock-split-pane.md).
 The root TEA module boundaries, deterministic reducer, bounded subscription
 declarations, responsive shell projection, focus order, minimum-size state, and
-`TestBackend` evidence are implemented. The executable terminal loop,
-input/effect adapters, restoration paths, and PTY evidence remain incomplete.
+`TestBackend` evidence are implemented. The executable owns one EventStream,
+maps backend input into semantic messages, renders only dirty frames, contains
+panics, handles Ctrl-C/SIGTERM, rejects non-TTY execution, and has real-PTY
+normal/signal restoration evidence. It instantiates the declared bounded
+post-mapping root queue; typed engine mapping, overflow/resync, returned-error
+and panic PTY paths, and complete mouse/paste routing remain incomplete.
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,
