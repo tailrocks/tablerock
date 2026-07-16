@@ -185,6 +185,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let open_label =
         if model.focus() == FocusRegion::Actions && model.selected_action() == ActionId::Open {
             "> Open"
+        } else if model.hovered() == Some(ShellTarget::Action(ActionId::Open)) {
+            "~ Open"
         } else {
             "Open"
         };
@@ -201,6 +203,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                 && model.selected_action() == ActionId::Quit
             {
                 "> Quit"
+            } else if model.hovered() == Some(ShellTarget::Action(ActionId::Quit)) {
+                "~ Quit"
             } else {
                 "Quit"
             },

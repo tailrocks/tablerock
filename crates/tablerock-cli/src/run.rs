@@ -19,9 +19,12 @@ use crate::{Delivery, EventStream, IngressReceiver, IngressSender, InputAdapter,
 pub type RootMessageSender = IngressSender<Message, RootProgress>;
 pub type RootMessageReceiver = IngressReceiver<Message, RootProgress>;
 
-/// Phase 1 has no domain progress payload; Phase 2 supplies the typed mapper.
+/// The shipped Phase 1 shell has no progress payload; Phase 2 supplies its mapper.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RootProgress {}
+pub enum RootProgress {
+    #[cfg(test)]
+    Redraw,
+}
 
 enum LoopInput {
     Signal,
@@ -209,7 +212,10 @@ async fn run_session(
                 continue;
             }
             LoopInput::Root(Some(Delivery::Event(message))) => message,
-            LoopInput::Root(Some(Delivery::Progress(progress))) => match progress {},
+            LoopInput::Root(Some(Delivery::Progress(progress))) => match progress {
+                #[cfg(test)]
+                RootProgress::Redraw => Message::RequestRedraw,
+            },
             LoopInput::Root(Some(Delivery::ResyncRequired)) => Message::EngineResyncRequired,
             LoopInput::Terminal(event) => {
                 let event = event
@@ -346,7 +352,7 @@ mod tests {
                         let (sender, receiver) = root_message_channel();
                         tokio::spawn(async move {
                             loop {
-                                let _ = sender.try_send_event(Message::RequestRedraw);
+                                let _ = sender.publish_progress(RootProgress::Redraw);
                                 tokio::task::yield_now().await;
                             }
                         });

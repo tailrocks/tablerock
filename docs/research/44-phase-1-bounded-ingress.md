@@ -46,9 +46,10 @@ producer traffic cannot starve terminal events, EOF, or errors.
   linearization boundary.
 - A separate 1,000-race event/progress fixture proves event-first selection
   after simultaneous publication.
-- A real PTY child continuously publishes root state while terminal Ctrl-C
-  still reaches the production loop, exits successfully, and restores termios
-  plus every writer-backed mode in order.
+- A test-only typed progress payload drives continuous latest-value publication
+  through the production loop while terminal Ctrl-C still reaches the fair
+  branch, exits successfully, and restores termios plus every writer-backed
+  mode in order. The shipped Phase 1 progress type remains uninhabited.
 - Reducer/render tests prove idempotent resync state, visible projection, and
   explicit reconciliation.
 - The transport is generic over distinct already-mapped event/progress types;

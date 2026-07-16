@@ -48,6 +48,15 @@ fn resized_render_authorizes_focus_paste_and_mouse_quit() {
     let output = run_pty(|writer, _, master| {
         master
             .resize(PtySize {
+                rows: 8,
+                cols: 30,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(std::io::Error::other)?;
+        thread::sleep(Duration::from_millis(50));
+        master
+            .resize(PtySize {
                 rows: 30,
                 cols: 100,
                 pixel_width: 0,
@@ -57,22 +66,67 @@ fn resized_render_authorizes_focus_paste_and_mouse_quit() {
         thread::sleep(Duration::from_millis(100));
         writer.write_all(b"\x1b[O\x1b[I")?;
         writer.write_all(b"\x1b[200~private pasted value\x1b[201~")?;
+        writer.write_all(b"\x1b[<0;40;10M\x1b[<0;40;10m")?;
+        writer.write_all(b"\x1b[<0;2;28M\x1b[<32;7;28M\x1b[<0;7;28m")?;
+        writer.write_all(b"\x1b[Z")?;
+        writer.write_all(b"\x1b[<64;2;28M")?;
         writer.flush()?;
-        thread::sleep(Duration::from_millis(50));
-        // SGR mouse coordinates are one-based. Click Open on resized action row
-        // 28, then keyboard-select Quit. Without the pointer focus/activation,
-        // both following keys are inert in the default Context focus.
-        writer.write_all(b"\x1b[<0;2;28M\x1b[<0;2;28m")?;
+        // Wheel focus selects Open on resized action row 28. Without that
+        // semantic mouse mapping, both following keys are inert.
         writer.write_all(b"\x1b[C\r")?;
         writer.flush()
     });
     assert_restored(&output);
+    assert!(
+        output
+            .windows(b"Too Small".len())
+            .any(|window| window == b"Too Small"),
+        "tiny resize must render its explicit bounded state"
+    );
+    assert!(
+        output
+            .windows(b"> Workspace".len())
+            .any(|window| window == b"> Workspace"),
+        "primary press/release must focus the painted workspace"
+    );
+    assert!(
+        output.contains(&b'~'),
+        "drag must project a non-color hover cue"
+    );
     assert!(
         !output
             .windows(b"private pasted value".len())
             .any(|window| window == b"private pasted value"),
         "paste content must not be rendered or logged"
     );
+}
+
+#[test]
+fn high_rate_mouse_and_resize_do_not_starve_terminal_quit() {
+    let output = run_pty(|writer, _, master| {
+        for index in 0..128 {
+            if master
+                .resize(PtySize {
+                    rows: 24,
+                    cols: 80 + (index % 2),
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .is_err()
+            {
+                break;
+            }
+            if writer.write_all(b"\x1b[<35;40;10M").is_err() {
+                break;
+            }
+            if index == 64 {
+                writer.write_all(b"\x03")?;
+            }
+            thread::yield_now();
+        }
+        writer.flush()
+    });
+    assert_restored(&output);
 }
 
 fn run_pty(

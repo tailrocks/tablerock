@@ -213,6 +213,23 @@ fn view_authorizes_only_geometry_painted_in_the_current_frame() {
 }
 
 #[test]
+fn pointer_hover_projects_a_non_color_action_cue() {
+    let mut model = Model::default();
+    let _ = update(
+        &mut model,
+        Message::Resize {
+            width: 80,
+            height: 24,
+        },
+    );
+    let _ = update(
+        &mut model,
+        Message::PointerDragged(Some(ShellTarget::Action(ActionId::Quit))),
+    );
+    assert_render_model_contains(&model, 80, 24, "~ Quit");
+}
+
+#[test]
 fn narrow_focus_projects_visible_regions_and_non_color_cues() {
     assert_render_after(
         50,
