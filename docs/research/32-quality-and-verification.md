@@ -102,6 +102,9 @@ Engine additions:
   real PostgreSQL service execution;
 - one reusable core/runtime harness proving real bounded service execution for
   PostgreSQL, ClickHouse, and Redis across the pinned version/protocol matrix;
+- simultaneous PostgreSQL, ClickHouse, and Redis submission before event
+  consumption, with independent page identity/data, bounded receives, and
+  observed completion for every operation;
 - graceful versus cancel-active drain, bounded per-operation client-stop facts,
   slow-delivery-independent terminal reconstruction, premature completion
   rejection, and exactly-once runtime release;

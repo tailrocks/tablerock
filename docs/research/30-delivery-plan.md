@@ -147,7 +147,9 @@ timeouts/reconnect, and the difference between client stop and server outcome.
 
 ### Exit evidence
 
-One contract harness runs overlapping operations against real pinned servers;
+One contract harness runs overlapping operations against real pinned servers
+(the first simultaneous PostgreSQL/ClickHouse/Redis proof is recorded in
+[`126-phase-2-three-engine-overlap.md`](126-phase-2-three-engine-overlap.md));
 engine differences are capabilities, not fake normalization; measured first-row,
 throughput, cancel, allocation, and memory facts define initial budgets;
 rejected dependencies and unsupported claims are recorded.

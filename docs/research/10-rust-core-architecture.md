@@ -145,6 +145,11 @@ rejects unknown, stale, or future command expectations before operation
 capacity or driver state can change. It also rejects stale in-flight progress
 without suppressing lifecycle and terminal outcome truth.
 
+The application service owns one bounded runtime shared by every adapter. Real
+contract evidence submits PostgreSQL, ClickHouse, and Redis operations before
+consuming any event; each per-operation queue applies independent backpressure,
+while core identity and lifecycle remain engine-neutral.
+
 Each operation owns a finite set of opaque subscriptions. Events fan out through
 independent bounded queues; a slow subscriber receives its own resync marker and
 cannot block or degrade a current subscriber. Late subscribers start current

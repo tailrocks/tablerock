@@ -28,6 +28,8 @@ TermRock sequential migration 0023 and the exact refreshed pin are recorded in
 The shared real PostgreSQL/ClickHouse/Redis application-service harness is
 recorded in
 [`125-phase-2-three-engine-service-harness.md`](docs/research/125-phase-2-three-engine-service-harness.md).
+Simultaneous bounded execution through that harness is recorded in
+[`126-phase-2-three-engine-overlap.md`](docs/research/126-phase-2-three-engine-overlap.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its
