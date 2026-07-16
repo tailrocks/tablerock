@@ -7,6 +7,7 @@ mod operation;
 mod page;
 mod profile;
 mod profile_aggregate;
+mod profile_list;
 mod revision;
 mod secret;
 mod value;
@@ -44,6 +45,10 @@ pub use profile_aggregate::{
     PersistableProfile, ProfileAggregate, ProfileAggregateError, ProfileDurability,
     ProfileGroupName, ProfileLabel, ProfileOrganization, ProfilePreferences, ProfileTag,
     ProfileUpdateError, ReconnectPreference,
+};
+pub use profile_list::{
+    ProfileListCursor, ProfileListError, ProfileListItem, ProfileListPage, ProfileListRequest,
+    ProfileSourceFacts,
 };
 pub use revision::{CounterOverflow, EventSequence, Revision, RevisionRelation, SequenceRelation};
 pub use secret::{

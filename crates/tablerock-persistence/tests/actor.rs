@@ -47,7 +47,7 @@ fn actor_opens_migrates_checks_and_reopens_one_local_file() {
     let _ = fs::remove_file(&path);
     let actor = PersistenceActor::open(&path).unwrap();
     let health = actor.health().unwrap();
-    assert_eq!(health.schema_version, 3);
+    assert_eq!(health.schema_version, 4);
     assert!(health.foreign_keys_enabled);
     assert!(health.integrity_ok);
     actor.shutdown().unwrap();
@@ -156,7 +156,7 @@ fn restart_rolls_back_an_interrupted_transactional_migration() {
     });
 
     let actor = PersistenceActor::open(&path).unwrap();
-    assert_eq!(actor.health().unwrap().schema_version, 3);
+    assert_eq!(actor.health().unwrap().schema_version, 4);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }

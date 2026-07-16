@@ -16,7 +16,9 @@ use std::{
 };
 
 use profile_store::EncodedProfile;
-use tablerock_core::{PersistableProfile, ProfileAggregate, ProfileId, Revision};
+use tablerock_core::{
+    PersistableProfile, ProfileAggregate, ProfileId, ProfileListPage, ProfileListRequest, Revision,
+};
 
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
 const CALLER_TIMEOUT: Duration = Duration::from_secs(35);
@@ -25,6 +27,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (1, include_str!("../migrations/0001-bootstrap.sql")),
     (2, include_str!("../migrations/0002-support-facts.sql")),
     (3, include_str!("../migrations/0003-saved-profiles.sql")),
+    (4, include_str!("../migrations/0004-profile-list-index.sql")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,6 +122,17 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
+    pub fn list_profiles(
+        &self,
+        request: ProfileListRequest,
+    ) -> Result<ProfileListPage, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::ListProfiles(request, sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
     pub fn shutdown(mut self) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::Shutdown(sender))?;
@@ -172,6 +186,10 @@ enum Command {
         ProfileId,
         Revision,
         mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
+    ListProfiles(
+        ProfileListRequest,
+        mpsc::SyncSender<Result<ProfileListPage, PersistenceError>>,
     ),
     Shutdown(mpsc::SyncSender<Result<(), PersistenceError>>),
 }
@@ -253,6 +271,17 @@ fn worker_main(
                     tokio::time::timeout(
                         OPERATION_TIMEOUT,
                         profile_store::delete(&mut connection, id, expected_revision),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::ListProfiles(request, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::list(&mut connection, request),
                     )
                     .await
                     .map_err(|_| PersistenceError::Timeout)?

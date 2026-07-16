@@ -180,6 +180,10 @@ persistence token; temporary profiles are structurally memory-only. It bounds
 group/tags/favorite/order, stores only bounded
 reconnect/context/page preferences, and validates non-consuming monotonic
 replacement before the persistence actor repeats the CAS transactionally.
+The list boundary is a separate least-data projection: immutable pages contain
+at most 100 redacted identity/organization/safety/source-fact summaries and an
+opaque keyset cursor. List adapters never load secret payload columns or reuse
+full aggregates as presentation rows.
 
 `OpRef` stores stable 26-character account/vault/item object IDs, a bounded
 section/field ID path, and a display breadcrumb. A metadata-only picker suggests reviewed mappings for host,

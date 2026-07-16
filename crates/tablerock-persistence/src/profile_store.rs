@@ -3,8 +3,9 @@ use tablerock_core::{
     EnvironmentReference, KeychainReference, OnePasswordObjectId, OnePasswordReference,
     OnePasswordSegment, PersistableProfile, PlaintextAcknowledgement, ProfileAggregate,
     ProfileConnectionSnapshot, ProfileDurability, ProfileGroupName, ProfileId, ProfileIdentity,
-    ProfileLimits, ProfileName, ProfileOrganization, ProfilePolicy, ProfilePreferences,
-    ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag,
+    ProfileLimits, ProfileListItem, ProfileListPage, ProfileListRequest, ProfileName,
+    ProfileOrganization, ProfilePolicy, ProfilePreferences, ProfileProperty,
+    ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileSourceFacts, ProfileTag,
     PropertyValueSource, ReconnectPreference, Revision, SecretSource, SecretSourceKind, TlsPolicy,
 };
 use zeroize::Zeroize;
@@ -382,6 +383,123 @@ pub(crate) async fn delete(
         .map_err(|_| PersistenceError::ProfileWrite)
 }
 
+pub(crate) async fn list(
+    connection: &mut turso::Connection,
+    request: ProfileListRequest,
+) -> Result<ProfileListPage, PersistenceError> {
+    let transaction = connection
+        .transaction()
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?;
+    match list_transaction(&transaction, request).await {
+        Ok(page) => {
+            transaction
+                .commit()
+                .await
+                .map_err(|_| PersistenceError::ProfileRead)?;
+            Ok(page)
+        }
+        Err(error) => {
+            let _ = transaction.rollback().await;
+            Err(error)
+        }
+    }
+}
+
+async fn list_transaction(
+    connection: &turso::Connection,
+    request: ProfileListRequest,
+) -> Result<ProfileListPage, PersistenceError> {
+    const PROJECTION: &str = "SELECT profile_id, revision, engine, name, group_name, favorite, \
+        saved_order, safety_mode, \
+        (SELECT source_kind FROM saved_profile_properties p \
+         WHERE p.profile_id = saved_profiles.profile_id AND property = 1), \
+        (SELECT source_kind FROM saved_profile_properties p \
+         WHERE p.profile_id = saved_profiles.profile_id AND property = 2), \
+        EXISTS(SELECT 1 FROM saved_profile_properties p \
+               WHERE p.profile_id = saved_profiles.profile_id AND source_kind > 1), \
+        EXISTS(SELECT 1 FROM saved_profile_properties p \
+               WHERE p.profile_id = saved_profiles.profile_id AND source_kind = 6) \
+        FROM saved_profiles ";
+    let fetch_limit = u32::from(request.limit()) + 1;
+    let mut rows = if let Some(after) = request.after() {
+        connection
+            .query(
+                format!(
+                    "{PROJECTION} WHERE favorite < ?1 OR (favorite = ?1 AND \
+                     (saved_order > ?2 OR (saved_order = ?2 AND profile_id > ?3))) \
+                     ORDER BY favorite DESC, saved_order, profile_id LIMIT ?4"
+                ),
+                turso::params![
+                    after.favorite(),
+                    after.saved_order(),
+                    after.id().to_bytes().as_slice(),
+                    fetch_limit,
+                ],
+            )
+            .await
+            .map_err(|_| PersistenceError::ProfileRead)?
+    } else {
+        connection
+            .query(
+                format!("{PROJECTION} ORDER BY favorite DESC, saved_order, profile_id LIMIT ?1"),
+                (fetch_limit,),
+            )
+            .await
+            .map_err(|_| PersistenceError::ProfileRead)?
+    };
+    let mut items = Vec::with_capacity(usize::from(request.limit()) + 1);
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?
+    {
+        items.push(decode_list_item(&row)?);
+    }
+    drop(rows);
+    let has_more = items.len() > usize::from(request.limit());
+    items.truncate(usize::from(request.limit()));
+    ProfileListPage::new(request, items, has_more).map_err(|_| PersistenceError::ProfileDecode)
+}
+
+fn decode_list_item(row: &turso::Row) -> Result<ProfileListItem, PersistenceError> {
+    let id = ProfileId::from_bytes(get::<[u8; 16]>(row, 0)?)
+        .map_err(|_| PersistenceError::ProfileDecode)?;
+    let revision = Revision::from_wire_u64(u64::from_be_bytes(get::<[u8; 8]>(row, 1)?));
+    let engine = decode_engine(get::<u8>(row, 2)?)?;
+    let name = ProfileName::new(bounded_text(
+        get::<String>(row, 3)?,
+        ProfileName::MAX_BYTES,
+    )?)
+    .map_err(|_| PersistenceError::ProfileDecode)?;
+    let group = get::<Option<String>>(row, 4)?
+        .map(|value| {
+            ProfileGroupName::new(bounded_text(value, ProfileGroupName::MAX_BYTES)?)
+                .map_err(|_| PersistenceError::ProfileDecode)
+        })
+        .transpose()?;
+    let favorite = decode_bool(get::<u8>(row, 5)?)?;
+    let saved_order = get::<u32>(row, 6)?;
+    let safety_mode = decode_safety(get::<u8>(row, 7)?)?;
+    let sources = ProfileSourceFacts::new(
+        decode_property_source(get::<u8>(row, 8)?)?,
+        decode_property_source(get::<u8>(row, 9)?)?,
+        decode_bool(get::<u8>(row, 10)?)?,
+        decode_bool(get::<u8>(row, 11)?)?,
+    );
+    Ok(ProfileListItem::new(
+        id,
+        revision,
+        engine,
+        name,
+        group,
+        favorite,
+        saved_order,
+        safety_mode,
+        sources,
+    ))
+}
+
 async fn insert_children(
     connection: &turso::Connection,
     profile: &EncodedProfile,
@@ -708,7 +826,7 @@ impl DecodeCell for Vec<u8> {
     }
 }
 
-impl DecodeCell for [u8; 8] {
+impl<const N: usize> DecodeCell for [u8; N] {
     fn decode(value: turso::Value) -> Option<Self> {
         match value {
             turso::Value::Blob(value) => value.try_into().ok(),
@@ -768,6 +886,14 @@ const fn decode_bool(value: u8) -> Result<bool, PersistenceError> {
     match value {
         0 => Ok(false),
         1 => Ok(true),
+        _ => Err(PersistenceError::ProfileDecode),
+    }
+}
+
+const fn decode_property_source(value: u8) -> Result<PropertyValueSource, PersistenceError> {
+    match value {
+        1 => Ok(PropertyValueSource::Literal),
+        2..=6 => Ok(PropertyValueSource::SecretSource),
         _ => Err(PersistenceError::ProfileDecode),
     }
 }

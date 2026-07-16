@@ -33,9 +33,10 @@ Errors contain no name, value, secret reference, SQL, or database message.
 ## Deliberate boundary
 
 Saved-profile create, strict single read, revision-CAS replacement, and
-revision-CAS deletion are implemented. Bounded list/filter projections,
-source resolution, user warnings, unrelated-entity retention, and remaining
-fault matrices stay required.
+revision-CAS deletion are implemented. The bounded base list is now implemented
+by [`69-phase-2-bounded-profile-list.md`](69-phase-2-bounded-profile-list.md).
+Filtered projections, source resolution, user warnings, unrelated-entity
+retention, and remaining fault matrices stay required.
 
 ## Verification record
 

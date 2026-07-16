@@ -4,10 +4,10 @@ use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, DangerousPlaintext, Engine, EnvironmentReference,
     IdParts, KeychainReference, OnePasswordObjectId, OnePasswordReference, OnePasswordSegment,
     PlaintextAcknowledgement, ProfileAggregate, ProfileConnectionSnapshot, ProfileDurability,
-    ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits, ProfileName, ProfileOrganization,
-    ProfilePolicy, ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
-    ProfileSafetyMode, ProfileTag, ReconnectPreference, Revision, SecretSource, SecretSourceKind,
-    TlsPolicy,
+    ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits, ProfileListRequest, ProfileName,
+    ProfileOrganization, ProfilePolicy, ProfilePreferences, ProfileProperty,
+    ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag, PropertyValueSource,
+    ReconnectPreference, Revision, SecretSource, SecretSourceKind, TlsPolicy,
 };
 use tablerock_persistence::{PersistenceActor, PersistenceError};
 
@@ -205,7 +205,7 @@ fn saved_token_creates_complete_rows_atomically_for_every_engine() {
     });
 
     let reopened = PersistenceActor::open(&path).unwrap();
-    assert_eq!(reopened.health().unwrap().schema_version, 3);
+    assert_eq!(reopened.health().unwrap().schema_version, 4);
     for (index, engine) in [Engine::PostgreSql, Engine::ClickHouse, Engine::Redis]
         .into_iter()
         .enumerate()
@@ -251,11 +251,110 @@ fn malformed_saved_value_fails_closed_and_rolls_back_read_transaction() {
     });
 
     let actor = PersistenceActor::open(&path).unwrap();
+    assert_eq!(
+        actor
+            .list_profiles(ProfileListRequest::new(None, 10).unwrap())
+            .unwrap_err(),
+        PersistenceError::ProfileDecode
+    );
     let error = actor.get_profile(profile.connection().id()).unwrap_err();
     assert_eq!(error, PersistenceError::ProfileDecode);
     assert_eq!(format!("{error:?}"), "ProfileDecode");
     assert_eq!(error.to_string(), "local persistence operation failed");
-    assert_eq!(actor.health().unwrap().schema_version, 3);
+    assert_eq!(actor.health().unwrap().schema_version, 4);
+    actor.shutdown().unwrap();
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
+    let path = path("list");
+    let _ = fs::remove_file(&path);
+    let actor = PersistenceActor::open(&path).unwrap();
+    for (engine, low) in [
+        (Engine::PostgreSql, 60),
+        (Engine::ClickHouse, 61),
+        (Engine::Redis, 62),
+    ] {
+        let profile = saved_profile_at(engine, low, low, "Private profile name");
+        actor
+            .create_profile(profile.persistable().unwrap())
+            .unwrap();
+    }
+    actor.shutdown().unwrap();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let database = turso::Builder::new_local(path.to_str().unwrap())
+            .build()
+            .await
+            .unwrap();
+        let connection = database.connect().unwrap();
+        connection
+            .execute(
+                "UPDATE saved_profiles SET favorite = 0 WHERE profile_id = ?1",
+                (profile_id(60).to_bytes().as_slice(),),
+            )
+            .await
+            .unwrap();
+        let mut plan = connection
+            .query(
+                "EXPLAIN QUERY PLAN SELECT profile_id FROM saved_profiles \
+                 ORDER BY favorite DESC, saved_order, profile_id LIMIT 3",
+                (),
+            )
+            .await
+            .unwrap();
+        let mut uses_list_index = false;
+        while let Some(row) = plan.next().await.unwrap() {
+            uses_list_index |= row
+                .get::<String>(3)
+                .unwrap()
+                .contains("saved_profiles_bounded_list");
+        }
+        assert!(uses_list_index);
+    });
+
+    let actor = PersistenceActor::open(&path).unwrap();
+    let first = actor
+        .list_profiles(ProfileListRequest::new(None, 2).unwrap())
+        .unwrap();
+    assert_eq!(
+        first
+            .items()
+            .iter()
+            .map(|item| item.id())
+            .collect::<Vec<_>>(),
+        vec![profile_id(61), profile_id(62)]
+    );
+    for item in first.items() {
+        assert_eq!(item.name().as_str(), "Private profile name");
+        assert_eq!(item.group().unwrap().as_str(), "Operations");
+        assert_eq!(item.sources().host(), PropertyValueSource::Literal);
+        assert_eq!(item.sources().port(), PropertyValueSource::Literal);
+        assert!(item.sources().has_secret_sources());
+        assert!(item.sources().has_dangerous_plaintext());
+        let debug = format!("{item:?}");
+        for sensitive in [
+            "Private profile name",
+            "Operations",
+            "database.internal",
+            "TABLE_DB",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ] {
+            assert!(!debug.contains(sensitive));
+        }
+    }
+    let second = actor
+        .list_profiles(ProfileListRequest::new(first.next(), 2).unwrap())
+        .unwrap();
+    assert_eq!(second.items().len(), 1);
+    assert_eq!(second.items()[0].id(), profile_id(60));
+    assert!(!second.items()[0].favorite());
+    assert_eq!(second.next(), None);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }
