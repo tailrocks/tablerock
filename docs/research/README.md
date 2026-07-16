@@ -64,6 +64,7 @@ kept in the roadmap.
 - [Phase 1 bounded ingress evidence](44-phase-1-bounded-ingress.md)
 - [Phase 1 exit report](45-phase-1-exit-report.md)
 - [Phase 2 core identity evidence](46-phase-2-core-identity.md)
+- [Phase 2 value and capability contract evidence](47-phase-2-value-capability-contract.md)
 
 ## Architecture headline
 

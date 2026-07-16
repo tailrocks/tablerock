@@ -82,6 +82,8 @@ and TermRock's Crossterm session as the sole terminal lifecycle owner.
 **Status:** In progress. The std-only authoritative ID and monotonic revision
 tracer is recorded in
 [`46-phase-2-core-identity.md`](docs/research/46-phase-2-core-identity.md).
+The bounded owned-value and explicit per-engine capability tracer is recorded in
+[`47-phase-2-value-capability-contract.md`](docs/research/47-phase-2-value-capability-contract.md).
 
 Define owned IDs, capabilities, values, revisions, commands, events, pages,
 errors, cancellation, safety, and redaction. Implement local-only Turso through

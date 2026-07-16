@@ -1,5 +1,5 @@
 #[test]
-fn core_identity_contract_has_no_runtime_or_presentation_dependency() {
+fn core_contract_has_no_runtime_or_presentation_dependency() {
     let manifest = include_str!("../Cargo.toml");
     assert!(!manifest.contains("[dependencies]"));
 
@@ -7,6 +7,7 @@ fn core_identity_contract_has_no_runtime_or_presentation_dependency() {
         include_str!("../src/lib.rs"),
         include_str!("../src/id.rs"),
         include_str!("../src/revision.rs"),
+        include_str!("../src/value.rs"),
     ]
     .concat();
     for forbidden in [

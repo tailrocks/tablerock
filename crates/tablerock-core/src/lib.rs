@@ -2,9 +2,16 @@
 
 mod id;
 mod revision;
+mod value;
 
 pub use id::{
     ContextId, IdDecodeError, IdParts, MutationId, OperationId, ProfileId, QueryId, RequestId,
     ResultId, RowId, SessionId, TabId,
 };
 pub use revision::{CounterOverflow, EventSequence, Revision, RevisionRelation, SequenceRelation};
+pub use value::{
+    Availability, BoundedBytes, BoundedBytesError, BoundedText, BoundedTextError, ByteLimit,
+    Capability, CapabilityEngineMismatch, CapabilityFact, CapabilitySnapshot, EmptyEngineType,
+    Engine, EngineType, OwnedValue, Truncation, UnsupportedReason, ValueBuildError, ValueKind,
+    ValueRef,
+};

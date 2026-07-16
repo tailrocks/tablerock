@@ -104,7 +104,7 @@ architecture decisions.
 | Capability | Status | TableRock requirement | Acceptance evidence |
 |---|---|---|---|
 | Virtualized grid | Core | Render only resident rows/columns; stable two-axis navigation and placeholders; no I/O from render | Million-row synthetic viewport benchmark |
-| Typed display | Core | Distinguish NULL, empty, whitespace, zero, false, bytes, unknown, invalid, and truncated values | Cross-engine value corpus |
+| Typed display | Core | Distinguish NULL, empty, whitespace, zero, false, bytes, unknown, invalid, and truncated values | The Phase 2 owned-value unit contract covers null/empty/whitespace/zero/false/bytes/unknown/invalid/truncated distinctions; cross-engine value corpus remains required |
 | Column controls | Parity | Width, fit, hide, order, format, and stable per-object preferences | Narrow/wide/Unicode geometry tests |
 | Sorting | Core | Server sort for table browsing, explicit provenance, multi-column order, no unsafe SQL concatenation | Hostile identifier/type fixtures |
 | Filtering | Core | Typed server filters plus clearly labeled resident-page value filters; saved presets later | Parameterization and NULL semantics tests |
