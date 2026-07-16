@@ -114,6 +114,14 @@ post-dispatch cancellation truth, command metadata, TLS, timeout, and reconnect.
 
 Its BSD-3-Clause license and transitive graph are recorded when adopted.
 
+The first adoption checkpoint pins `redis` 1.4.0 with only
+`tokio-rustls-comp` and proves binary GET/SCAN, RESP2/RESP3, and logical database
+isolation against immutable Redis 7.4.9 and 8.8.0 Testcontainers fixtures. See
+[`90-phase-2-redis-binary-scan-foundation.md`](90-phase-2-redis-binary-scan-foundation.md).
+The official client unconditionally brings `xxhash-rust` 0.8.17 for value
+digests. Its permissive OSI-approved BSL-1.0 license is explicitly accepted;
+the dependency cannot be feature-disabled without forking the selected client.
+
 ## SQL analysis and editor
 
 Use `sqlparser` tokens, dialect-aware delimiters, last-known-valid AST, catalog

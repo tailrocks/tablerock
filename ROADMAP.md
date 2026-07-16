@@ -163,6 +163,12 @@ TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 TermRock's lookbook-only generated-output hardening and exact refreshed `main`
 pin are recorded in
 [`89-termrock-0.10-lookbook-output-hardening-update.md`](docs/research/89-termrock-0.10-lookbook-output-hardening-update.md).
+The Redis binary GET/SCAN adapter, RESP2/RESP3 and logical-database facts, and
+immutable Redis 7.4.9/8.8.0 Testcontainers evidence are recorded in
+[`90-phase-2-redis-binary-scan-foundation.md`](docs/research/90-phase-2-redis-binary-scan-foundation.md).
+TermRock's lookbook-only interactive story controls and exact refreshed `main`
+pin are recorded in
+[`91-termrock-0.10-interactive-story-controls-update.md`](docs/research/91-termrock-0.10-interactive-story-controls-update.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

@@ -9,6 +9,7 @@ description = "Database adapters and operation runtime for TableRock"
 
 [dependencies]
 futures-util.workspace = true
+redis.workspace = true
 tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
 tokio.workspace = true
 tokio-postgres.workspace = true

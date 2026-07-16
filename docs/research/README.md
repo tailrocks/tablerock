@@ -107,6 +107,8 @@ kept in the roadmap.
 - [Phase 2 PostgreSQL typed stream evidence](87-phase-2-postgresql-typed-stream.md)
 - [TermRock 0.10 runtime keymap spike update](88-termrock-0.10-runtime-keymap-spike-update.md)
 - [TermRock 0.10 lookbook output hardening update](89-termrock-0.10-lookbook-output-hardening-update.md)
+- [Phase 2 Redis binary SCAN foundation evidence](90-phase-2-redis-binary-scan-foundation.md)
+- [TermRock 0.10 interactive story controls update](91-termrock-0.10-interactive-story-controls-update.md)
 
 ## Architecture headline
 
