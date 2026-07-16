@@ -7,8 +7,10 @@ Exact `tokio-postgres` 0.7.18 and `tokio-postgres-rustls` 0.14.0 driver types st
 private. The public seam contains only TableRock configuration facts, a fixed
 read-only feasibility probe, and bounded immutable core pages.
 
-This is not the Phase 2 PostgreSQL spike exit. It proves driven connection
-ownership and bounded text-protocol streaming against one pinned real server;
+This historical checkpoint was superseded by the sole extended-query typed path
+in [`87-phase-2-postgresql-typed-stream.md`](87-phase-2-postgresql-typed-stream.md).
+It proved driven connection ownership and bounded text-protocol streaming
+against one pinned real server;
 typed binary values, parameters, TLS fixtures, authentication, notices, COPY,
 cancel races, reconnect, connection loss, and ambiguous writes remain required.
 
@@ -44,8 +46,9 @@ official Testcontainers Rust 0.27.3 documentation/source.
 - No raw SQL API is public. Until the Rust safety classifier and execution
   contract exist, the adapter exposes only `PostgresProbeQuery::BoundedSeries`.
   This structurally prevents an early write-policy bypass.
-- Simple-query text is a deliberate feasibility path, not the final typed
-  arbitrary-result path. User parameters are never interpolated.
+- The simple-query text feasibility path described here has been deleted. The
+  current adapter uses only the extended-query typed path. User parameters are
+  never interpolated.
 
 ## Real-server evidence and support matrix
 

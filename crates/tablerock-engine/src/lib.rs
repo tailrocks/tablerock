@@ -4,5 +4,5 @@ mod postgres;
 
 pub use postgres::{
     PostgresCancellationOutcome, PostgresConnectConfig, PostgresError, PostgresProbeQuery,
-    PostgresSession, PostgresTextStream, PostgresTlsMode,
+    PostgresRowStream, PostgresSession, PostgresTlsMode,
 };

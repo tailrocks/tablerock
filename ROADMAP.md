@@ -154,6 +154,12 @@ refreshed `main` pin are recorded in
 TermRock's planning-only reconciliation and exact refreshed `main` pin are
 recorded in
 [`86-termrock-0.10-plan-reconciliation-update.md`](docs/research/86-termrock-0.10-plan-reconciliation-update.md).
+The sole PostgreSQL extended-query typed stream and PostgreSQL 17.10/18.4
+Testcontainers evidence are recorded in
+[`87-phase-2-postgresql-typed-stream.md`](docs/research/87-phase-2-postgresql-typed-stream.md).
+TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
+`main` pin are recorded in
+[`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

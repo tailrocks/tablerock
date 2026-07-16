@@ -82,6 +82,9 @@ The first adoption checkpoint pins `tokio-postgres` 0.7.18 and
 `native-certs`; the rejected `webpki-roots` candidate was removed because its
 CDLA-Permissive-2.0 data license is outside the approved license policy. See
 [`81-phase-2-postgresql-stream-foundation.md`](81-phase-2-postgresql-stream-foundation.md).
+The follow-up checkpoint removes the text-only feasibility path and proves
+extended-query binary streaming on PostgreSQL 17.10 and 18.4; see
+[`87-phase-2-postgresql-typed-stream.md`](87-phase-2-postgresql-typed-stream.md).
 Real-server lifecycle uses exact Testcontainers Rust 0.27.3 with default
 features disabled. It is a development dependency only; production engine
 artifacts cannot start or control containers.

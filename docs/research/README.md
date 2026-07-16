@@ -104,6 +104,8 @@ kept in the roadmap.
 - [Phase 2 PostgreSQL cancellation truth evidence](84-phase-2-postgresql-cancellation-truth.md)
 - [TermRock 0.10 closure runner spike update](85-termrock-0.10-runner-spike-update.md)
 - [TermRock 0.10 plan reconciliation update](86-termrock-0.10-plan-reconciliation-update.md)
+- [Phase 2 PostgreSQL typed stream evidence](87-phase-2-postgresql-typed-stream.md)
+- [TermRock 0.10 runtime keymap spike update](88-termrock-0.10-runtime-keymap-spike-update.md)
 
 ## Architecture headline
 
