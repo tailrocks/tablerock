@@ -17,17 +17,20 @@ queries, values, mutations, and safety policy never move into TermRock.
 Checked 2026-07-16:
 
 - TermRock `main` at
-  [`e5bd94e2`](https://github.com/tailrocks/termrock/commit/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b),
+  [`8cb3c88d`](https://github.com/tailrocks/termrock/commit/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde),
   version `0.6.0`, Rust 1.95 floor, Apache-2.0, Ratatui 0.30 component split,
-  optional Crossterm 0.29 adapter, and published neutral `Tree` and `Form`;
+  optional Crossterm 0.29 adapter, and published neutral `Tree`, `Form`, and
+  `SplitPane`;
 - Jackin at
   [`27c450e9`](https://github.com/jackin-project/jackin/commit/27c450e9af7a299171034f98267e0fa26bd3057f)
   pins the earlier compatible TermRock baseline `41482e9f` and uses Ratatui
-  0.30; Tree and Form are additive and do not import Jackin product internals;
-- TermRock's [component inventory](https://github.com/tailrocks/termrock/blob/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b/crates/termrock/COMPONENTS.md),
-  [migration boundary](https://github.com/tailrocks/termrock/blob/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b/MIGRATING.md),
-  [interaction conventions](https://github.com/tailrocks/termrock/blob/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b/docs/content/docs/interaction.mdx),
-  and [compatibility record](https://github.com/tailrocks/termrock/blob/e5bd94e2b6f803a8da7a25ff167cc44f51fe6c0b/compatibility.toml)
+  0.30; its workspace also compiles cleanly with a temporary exact pin to the
+  `17974590` SplitPane evidence revision, proving the additive widgets preserve
+  the existing consumer; TableRock imports no Jackin product internals;
+- TermRock's [component inventory](https://github.com/tailrocks/termrock/blob/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde/crates/termrock/COMPONENTS.md),
+  [migration boundary](https://github.com/tailrocks/termrock/blob/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde/MIGRATING.md),
+  [interaction conventions](https://github.com/tailrocks/termrock/blob/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde/docs/content/docs/interaction.mdx),
+  and [compatibility record](https://github.com/tailrocks/termrock/blob/8cb3c88d118b2cbed10eef9d7cdbf0c0adbbbfde/compatibility.toml)
   define the reusable boundary;
 - Jackin's [TUI architecture](https://github.com/jackin-project/jackin/blob/27c450e9af7a299171034f98267e0fa26bd3057f/docs/content/docs/reference/tui/architecture.mdx)
   is the approved reference for Model/Message/Update/Effect/Subscription/View
@@ -80,7 +83,7 @@ ships. Their public APIs follow TermRock's neutral contract.
 |---|---|---|---|
 | `Tree` (published) | Hierarchical navigation recurs across products | Stable node IDs; disclosure state; depth; disabled/loading/error rows; keyboard/mouse; caller-owned lazy loading and filtering | Catalog and connection groups |
 | `Form` / form layout (published) | Structured settings are not database-specific | Sections, labels, help/error text, required/disabled state, focus traversal, responsive one/two-column layout, caller validation | Connection editor and settings |
-| `SplitPane` | Resizable regions recur in complex TUIs | Horizontal/vertical split; min sizes; remembered fraction; divider focus/drag; collapse; tiny-area safety | Catalog/workbench and editor/results |
+| `SplitPane` (published) | Resizable regions recur in complex TUIs | Horizontal/vertical split; min sizes; remembered fraction; divider focus/drag; collapse; tiny-area safety | Catalog/workbench and editor/results |
 | `VirtualGrid` | Large two-dimensional data is broadly reusable | Borrowed visible cells; stable row/column IDs; header/gutter; two-axis viewport; range selection; column widths; hit regions; caller render projection; no fetching/edit policy | PostgreSQL table/result grid |
 | `TextArea` | Multiline editing is a general primitive | Grapheme-safe buffer; cursor/selection; undo/redo; line numbers; search; vertical/horizontal scroll; paste; external spans/diagnostics; no parser | SQL and Redis command editor |
 | `CompletionMenu` | Anchored candidate lists recur with editors/forms | Stable candidates; selected ID; clamp/flip geometry; scroll; keyboard/mouse; caller ranking and commit | SQL/Redis completion |

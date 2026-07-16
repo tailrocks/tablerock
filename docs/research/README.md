@@ -55,6 +55,7 @@ kept in the roadmap.
 - [Phase 1 TermRock T0 evidence](35-phase-1-termrock-t0.md)
 - [Phase 1 TermRock Tree evidence](36-phase-1-termrock-tree.md)
 - [Phase 1 TermRock Form evidence](37-phase-1-termrock-form.md)
+- [Phase 1 TermRock SplitPane evidence](38-phase-1-termrock-split-pane.md)
 
 ## Architecture headline
 

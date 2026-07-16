@@ -37,10 +37,10 @@ canonical prompt:
 
 ## Status
 
-Phase 0 is complete. Phase 1 is in progress: the minimal TermRock consumer plus
-neutral Tree and Form prerequisites are verified; SplitPane and the executable
-shell remain. Product name, package namespace, and legal clearance remain
-subject to final review before public release.
+Phase 0 is complete. Phase 1 is in progress: the minimal TermRock consumer and
+all T1 neutral Tree, Form, and SplitPane prerequisites are verified; the
+executable shell remains. Product name, package namespace, and legal clearance
+remain subject to final review before public release.
 
 ## License
 
