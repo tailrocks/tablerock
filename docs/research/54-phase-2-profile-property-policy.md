@@ -31,13 +31,13 @@ fields instead of incorrectly treating references as password-only.
 
 ## Deliberate boundary
 
-This is the property-policy layer, not the complete profile snapshot. It does
+This is the property-policy layer, not the complete profile aggregate. It does
 not yet define profile name/organization, engine applicability, TLS policy,
 safety mode, timeouts, required-field readiness, persistence encoding,
-migration, resolution, URL import, or either UI projection. The next profile
-snapshot checkpoint composes these bindings with stable profile identity and
-engine-specific readiness. The Turso actor follows only after that stable
-schema and its migration semantics are proven.
+migration, resolution, URL import, or either UI projection. The
+[profile connection snapshot checkpoint 55](55-phase-2-profile-snapshot.md) composes these
+bindings with stable profile identity and engine readiness. The Turso actor
+follows only after sequential migration semantics are proven.
 
 No I/O, driver, runtime, environment lookup, 1Password process, Keychain call,
 resolved secret, persistence, logging, telemetry, or FFI value exists here.

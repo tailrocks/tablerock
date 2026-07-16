@@ -41,7 +41,7 @@ Form sections:
 
 - **General:** engine, name, host, port, default database/index, user, sources;
 - **TLS:** verify policy, roots/CA, and client identity when supported;
-- **Safety:** Read only, Confirm writes, Unrestricted, timeouts, result caps;
+- **Safety:** Read only or Confirm writes, plus timeouts and result caps;
 - **Advanced:** only evidence-backed engine-specific settings.
 
 Manual secret choices are 1Password field, Prompt every time, Host environment,

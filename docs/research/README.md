@@ -72,6 +72,7 @@ kept in the roadmap.
 - [Phase 2 typed command envelope evidence](52-phase-2-command-envelope.md)
 - [Phase 2 secret source evidence](53-phase-2-secret-source.md)
 - [Phase 2 profile property policy evidence](54-phase-2-profile-property-policy.md)
+- [Phase 2 profile connection snapshot evidence](55-phase-2-profile-snapshot.md)
 
 ## Architecture headline
 

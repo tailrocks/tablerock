@@ -48,6 +48,8 @@ live-session operation lifecycle, safe diagnostic, typed command-envelope, and
 versioned secret-source and profile-property policy tracers. Ordinary literal
 password/private-key material is structurally rejected while every property
 remains sourceable.
+Immutable profile connection snapshots add stable identity/revision, all-engine host/port
+readiness, validated TLS state, two-mode safety, and finite limits.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

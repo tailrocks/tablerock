@@ -34,8 +34,10 @@ pub use page::{
     ResultPage, RowTotal, ValidatedPageEnvelope,
 };
 pub use profile::{
-    ProfileProperty, ProfilePropertyBinding, ProfilePropertyError, ProfilePropertySet,
-    PropertyValueSource,
+    DangerousTlsAcknowledgement, ProfileBuildError, ProfileConnectionSnapshot, ProfileIdentity,
+    ProfileLimitField, ProfileLimits, ProfileName, ProfilePolicy, ProfileProperty,
+    ProfilePropertyBinding, ProfilePropertyError, ProfilePropertySet, ProfileSafetyMode,
+    PropertyValueSource, TlsPolicy,
 };
 pub use revision::{CounterOverflow, EventSequence, Revision, RevisionRelation, SequenceRelation};
 pub use secret::{

@@ -100,6 +100,9 @@ The versioned, redacted secret-source reference tracer is recorded in
 The versioned profile property/source policy that forbids ordinary literal
 secret material is recorded in
 [`54-phase-2-profile-property-policy.md`](docs/research/54-phase-2-profile-property-policy.md).
+The immutable connect-ready profile connection snapshot, TLS state machine, two-mode
+safety policy, and finite owner limits are recorded in
+[`55-phase-2-profile-snapshot.md`](docs/research/55-phase-2-profile-snapshot.md).
 
 Define owned IDs, capabilities, values, revisions, commands, events, pages,
 errors, cancellation, safety, and redaction. Implement local-only Turso through

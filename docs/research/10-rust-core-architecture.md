@@ -168,6 +168,13 @@ metadata-only 1Password/environment/prompt/Keychain/dangerous-local sources
 without creating a second credential model. Versioned property sets reject
 duplicates and bound every literal before persistence or adapter boundaries.
 
+An immutable schema-versioned profile connection sub-snapshot owns stable identity/revision,
+engine, redacted bounded name, property set, TLS policy, safety mode, and finite
+limits. Every engine requires host and port sources. TLS configuration is a
+closed validated state; profiles select only `ReadOnly` or `ConfirmWrites`.
+The later complete durable aggregate composes organization and preferences;
+command-level enforcement remains below presentation.
+
 `OpRef` stores stable 26-character account/vault/item object IDs, a bounded
 section/field ID path, and a display breadcrumb. A metadata-only picker suggests reviewed mappings for host,
 port, database/index, user, password, and TLS fields. A CLI-owned resolver runs
