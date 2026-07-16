@@ -21,6 +21,11 @@ directly to `main`, never through an automated pull request.
 - TermRock advanced from `4c3adac` to current `7f24de4`; the intervening changes
   affect its documentation site, not its Rust API, and TableRock still verifies
   the complete `crossterm` and `serde` feature surface.
+- TermRock then advanced to `78d9671`, raising its MSRV to Rust 1.97 and updating
+  its ANSI parser, Unicode segmentation, CI actions, and development toolchain.
+  TableRock moved to Rust 1.97 and repinned immediately. Public Rust API changes
+  in that range are documentation improvements and formatting only, so no
+  migration entry applies.
 - Every other adopted and planned baseline version in dependency decision `20`
   matches the current crates.io release.
 - Current official ClickHouse 0.15.1 and upstream `main` still require
