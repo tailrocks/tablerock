@@ -165,14 +165,14 @@ ConnectionValue
   DangerousPlaintextSecret(acknowledgement)
 ```
 
-`OpRef` stores stable vault/item/field UUID references plus pinned account and
-display breadcrumb. A metadata-only picker suggests reviewed mappings for host,
+`OpRef` stores stable 26-character account/vault/item object IDs, a bounded
+section/field ID path, and a display breadcrumb. A metadata-only picker suggests reviewed mappings for host,
 port, database/index, user, password, and TLS fields. A CLI-owned resolver runs
 bounded account-pinned `op read` calls only during Test/Connect. Resolved values
 never enter core snapshots or telemetry.
 
 The official reference format and CLI read behavior are documented in
-[1Password secret references](https://developer.1password.com/docs/cli/secret-references/).
+[1Password secret references](https://www.1password.dev/cli/secret-references).
 
 Do not depend on `jackin❯` internal secret modules. Secret handling remains a
 TableRock-local Rust service.

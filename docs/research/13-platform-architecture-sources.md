@@ -250,7 +250,7 @@ Rust panics never cross the boundary
 Persist secret references, never resolved values. Rust owns a versioned
 SecretSource model and resolves only the fields needed for Test/Connect.
 `op read` resolves 1Password references at runtime
-([reference syntax](https://www.1password.dev/cli/secret-reference-syntax),
+([reference syntax](https://www.1password.dev/cli/secret-references),
 [multiple accounts](https://www.1password.dev/cli/use-multiple-accounts)).
 Do not place database secrets in environment variables by default because
 same-user processes may observe process environments

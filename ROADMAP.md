@@ -81,7 +81,7 @@ and TermRock's Crossterm session as the sole terminal lifecycle owner.
 
 ### Phase 2 — Rust service foundation
 
-**Status:** In progress. The std-only authoritative ID and monotonic revision
+**Status:** In progress. The dependency-minimal authoritative ID and monotonic revision
 tracer is recorded in
 [`46-phase-2-core-identity.md`](docs/research/46-phase-2-core-identity.md).
 The bounded owned-value and explicit per-engine capability tracer is recorded in
@@ -95,6 +95,8 @@ The redacted failure, ambiguity, and retry-policy tracer is recorded in
 The typed scope, finite budget, and versioned command-envelope tracer is
 recorded in
 [`52-phase-2-command-envelope.md`](docs/research/52-phase-2-command-envelope.md).
+The versioned, redacted secret-source reference tracer is recorded in
+[`53-phase-2-secret-source.md`](docs/research/53-phase-2-secret-source.md).
 
 Define owned IDs, capabilities, values, revisions, commands, events, pages,
 errors, cancellation, safety, and redaction. Implement local-only Turso through

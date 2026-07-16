@@ -16,6 +16,7 @@ ratatui-core = "0.1.2"
 ratatui-crossterm = { version = "0.1.2", default-features = false, features = ["crossterm_0_29"] }
 termrock = { version = "=0.8.0", git = "https://github.com/tailrocks/termrock.git", rev = "da54a033f368ed0888af90ae43d19bcb96fb8581" }
 tokio = { version = "1.52.3", features = ["macros", "rt", "signal", "sync"] }
+zeroize = { version = "=1.9.0", default-features = false, features = ["alloc"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

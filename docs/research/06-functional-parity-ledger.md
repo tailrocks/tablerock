@@ -61,7 +61,7 @@ architecture decisions.
 | External URL open | Later | Confirm target and safety before opening a temporary or matching saved session | Deep-link threat model and hostile-input tests |
 | Test connection | Core | Show server identity/version, TLS outcome, elapsed time, and redacted diagnostics without saving | Real TLS/auth fixtures for all engines |
 | Temporary connection | Core | Connect without persisting profile or secret | Relaunch proves no durable profile/secret remains |
-| Profile organization | Parity | Groups, tags, favorites, ordering, filters, and environment/safety markers without copied reference presentation | Persistence and stable-ID ordering tests |
+| Profile organization | Parity | Groups, tags, favorites, ordering, filters, and environment/safety markers without copied reference presentation | Phase 2 now proves versioned/redacted 1Password, environment, prompt, Keychain, and acknowledged-plaintext source shapes; profile CRUD, field policy, migration, ordering, stale revision, resolution, and persistence remain required |
 | Context switcher | Core | Switch connection/database/schema/logical database using engine-correct semantics | Driver contract tests prove no fake cross-engine abstraction |
 | Health and reconnect | Core | Visible state, bounded backoff, authentication stop condition, context restoration, and no automatic ambiguous-write retry | Disconnect/reconnect race harness |
 | Startup actions | Later | Reviewed, bounded startup SQL/commands with explicit reconnect behavior | Safety classification, timeout, and partial-failure tests |

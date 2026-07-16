@@ -22,6 +22,7 @@ change without a recorded architecture revision.
 | Terminal backend/input | [`crossterm`](https://github.com/crossterm-rs/crossterm) | 0.29.0 | MIT | CLI terminal adapter; TermRock `crossterm` feature |
 | Ratatui terminal backend | [`ratatui-crossterm`](https://github.com/ratatui/ratatui) | 0.1.2 | MIT | CLI render adapter only; Crossterm 0.29 feature only |
 | PTY test harness | [`portable-pty`](https://github.com/wezterm/wezterm) | 0.9.0 | MIT | CLI development dependency only |
+| Secret zeroization | [`zeroize`](https://github.com/RustCrypto/utils/tree/master/zeroize) | 1.9.0 | MIT OR Apache-2.0 | core dangerous-local secret buffer only; `alloc` feature |
 | Persistence | [`turso`](https://github.com/tursodatabase/turso) local database | 0.7.0 | MIT | one serialized Rust async persistence actor |
 | Swift binding | [`uniffi`](https://github.com/mozilla/uniffi-rs) | 0.32.0 | MPL-2.0 | synchronous coarse FFI only |
 | Structured diagnostics | [`tracing`](https://github.com/tokio-rs/tracing) | 0.1.44 | MIT | fixed safe fields only |
@@ -31,6 +32,15 @@ TableRock does not directly depend on a separate textarea/widget framework,
 `rusqlite`, `libsql`, Turso Cloud sync, Arrow, an Objective-C bridge from Rust,
 a local RPC framework, or a second SQL parser. A missing general TUI primitive
 is implemented in TermRock.
+
+### Secret zeroization
+
+The core pins `zeroize` 1.9.0 with default features disabled and only `alloc`.
+It has no dependencies, supports the workspace Rust version, and gives `Vec`
+compiler-resistant zeroing across its full capacity. TableRock uses it only for
+the explicitly acknowledged dangerous-local plaintext owner, keeps that owner
+non-cloneable, and retains the workspace-wide `unsafe_code = "forbid"` rule.
+Reference-only secret variants never contain resolved bytes.
 
 ### Phase 1 runtime adoption
 

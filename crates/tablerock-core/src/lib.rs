@@ -6,6 +6,7 @@ mod id;
 mod operation;
 mod page;
 mod revision;
+mod secret;
 mod value;
 
 pub use command::{
@@ -32,6 +33,11 @@ pub use page::{
     ResultPage, RowTotal, ValidatedPageEnvelope,
 };
 pub use revision::{CounterOverflow, EventSequence, Revision, RevisionRelation, SequenceRelation};
+pub use secret::{
+    DangerousPlaintext, EnvironmentReference, KeychainReference, OnePasswordObjectId,
+    OnePasswordReference, OnePasswordSegment, PlaintextAcknowledgement, SecretBuildError,
+    SecretField, SecretPersistenceRisk, SecretSource, SecretSourceKind,
+};
 pub use value::{
     Availability, BoundedBytes, BoundedBytesError, BoundedText, BoundedTextError, ByteLimit,
     Capability, CapabilityEngineMismatch, CapabilityFact, CapabilitySnapshot, EmptyEngineType,

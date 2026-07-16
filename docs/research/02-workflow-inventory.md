@@ -33,8 +33,8 @@ CA certificate         not mapped
 ```
 
 The picker never resolves values. Label/type matching may suggest mappings,
-but required mappings need operator review. Persist canonical UUID-form
-`op://` references and a pinned account per field. Resolve only mapped fields
+but required mappings need operator review. Persist canonical ID-based `op://`
+references and a pinned 1Password account ID per field. Resolve only mapped fields
 during Test/Connect.
 
 Form sections:
