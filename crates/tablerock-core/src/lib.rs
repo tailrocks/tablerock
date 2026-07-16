@@ -8,6 +8,7 @@ mod page;
 mod profile;
 mod profile_aggregate;
 mod profile_list;
+mod result_store;
 mod revision;
 mod secret;
 mod value;
@@ -50,6 +51,9 @@ pub use profile_list::{
     ProfileEndpointPart, ProfileEndpointSummary, ProfileListCursor, ProfileListError,
     ProfileListFilter, ProfileListItem, ProfileListPage, ProfileListRequest, ProfileSearchTerm,
     ProfileSourceFacts,
+};
+pub use result_store::{
+    AdmissionOutcome, OpenResultOutcome, PageKey, ResultStore, ResultStoreError, ResultStoreLimits,
 };
 pub use revision::{CounterOverflow, EventSequence, Revision, RevisionRelation, SequenceRelation};
 pub use secret::{

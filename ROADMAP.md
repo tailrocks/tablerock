@@ -193,6 +193,13 @@ Recursive ClickHouse arrays, tuples, maps, named nested records, bounded
 canonical projection, and immutable 25.8/26.3 LTS Testcontainers evidence are
 recorded in
 [`100-phase-2-clickhouse-structured-containers.md`](docs/research/100-phase-2-clickhouse-structured-containers.md).
+The explicit-open bounded result store, deterministic global LRU eviction,
+revision invalidation, pinning behavior, and actual page-buffer accounting are
+recorded in
+[`101-phase-2-bounded-result-store.md`](docs/research/101-phase-2-bounded-result-store.md).
+TermRock 0.11 migrations 0016–0017 and the exact refreshed `main` pin are
+recorded in
+[`102-termrock-0.11-migration.md`](docs/research/102-termrock-0.11-migration.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

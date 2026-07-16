@@ -49,6 +49,8 @@ kept in the roadmap.
 - [Dependency decisions](20-dependency-evaluation.md)
 - [Latest dependency policy and refresh evidence](99-latest-dependency-policy.md)
 - [Phase 2 ClickHouse structured-container evidence](100-phase-2-clickhouse-structured-containers.md)
+- [Phase 2 bounded result-store evidence](101-phase-2-bounded-result-store.md)
+- [TermRock 0.11 migration evidence](102-termrock-0.11-migration.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

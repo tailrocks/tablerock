@@ -57,9 +57,12 @@ tags, truncation facts, and arena into one versioned `Vec<u8>`, then run hostile
 Swift decoding and semantic-equivalence tests away from `MainActor`. Arrow and
 per-cell bridge calls remain excluded.
 
-Completion/failure/cancellation states, warning diagnostics, batch assembly,
-eviction, resync, and process-memory accounting remain Phase 2 blockers and are
-not inferred from an immutable page's presence.
+Completion/failure/cancellation states and warning diagnostics are not inferred
+from an immutable page's presence. Batch assembly is closed by checkpoint `79`;
+bounded resident ownership, eviction, revision invalidation, and page-buffer
+allocation accounting are closed by checkpoint `101`. Driver/store race
+integration, full process allocator measurement, and native bridge encoding
+remain Phase 2/later evidence.
 
 The later adapter prerequisite in
 [`79-phase-2-row-major-page-assembly.md`](79-phase-2-row-major-page-assembly.md)

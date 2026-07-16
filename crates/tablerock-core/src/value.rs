@@ -311,6 +311,10 @@ impl BoundedText {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    pub(crate) fn allocation_capacity(&self) -> usize {
+        self.0.capacity()
+    }
 }
 
 impl fmt::Debug for BoundedText {
@@ -410,6 +414,10 @@ impl EngineType {
     #[must_use]
     pub fn name(&self) -> &str {
         self.name.as_str()
+    }
+
+    pub(crate) fn allocation_capacity(&self) -> usize {
+        self.name.allocation_capacity()
     }
 }
 

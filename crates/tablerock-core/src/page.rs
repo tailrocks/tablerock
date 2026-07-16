@@ -75,6 +75,21 @@ impl PageIdentity {
             engine,
         }
     }
+
+    #[must_use]
+    pub const fn result_id(self) -> ResultId {
+        self.result_id
+    }
+
+    #[must_use]
+    pub const fn revision(self) -> Revision {
+        self.revision
+    }
+
+    #[must_use]
+    pub const fn engine(self) -> Engine {
+        self.engine
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -483,6 +498,10 @@ impl ColumnMetadata {
     fn column_text_byte_len(&self) -> u64 {
         self.name.len() as u64 + self.engine_type.name().len() as u64
     }
+
+    fn allocation_capacity(&self) -> usize {
+        self.name.allocation_capacity() + self.engine_type.allocation_capacity()
+    }
 }
 
 impl fmt::Debug for ColumnMetadata {
@@ -666,6 +685,44 @@ impl ResultPage {
     #[must_use]
     pub const fn envelope(&self) -> PageEnvelope {
         self.envelope
+    }
+
+    /// Counts all heap capacity owned by the page's immutable buffers.
+    #[must_use]
+    pub fn resident_buffer_bytes(&self) -> u64 {
+        let buffers = &self.buffers;
+        let mut bytes = buffers
+            .columns
+            .capacity()
+            .saturating_mul(std::mem::size_of::<ColumnMetadata>());
+        bytes = bytes.saturating_add(
+            buffers
+                .columns
+                .iter()
+                .map(ColumnMetadata::allocation_capacity)
+                .fold(0_usize, usize::saturating_add),
+        );
+        bytes = bytes.saturating_add(
+            buffers
+                .cell_offsets
+                .capacity()
+                .saturating_mul(std::mem::size_of::<u64>()),
+        );
+        bytes = bytes.saturating_add(buffers.null_bitmap.capacity());
+        bytes = bytes.saturating_add(
+            buffers
+                .value_kinds
+                .capacity()
+                .saturating_mul(std::mem::size_of::<ValueKind>()),
+        );
+        bytes = bytes.saturating_add(
+            buffers
+                .truncations
+                .capacity()
+                .saturating_mul(std::mem::size_of::<Truncation>()),
+        );
+        bytes = bytes.saturating_add(buffers.arena.capacity());
+        u64::try_from(bytes).unwrap_or(u64::MAX)
     }
 
     #[must_use]

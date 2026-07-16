@@ -135,6 +135,14 @@ and evicts unpinned batches under a memory budget. Table tabs page from the
 server and cache near the viewport. Arbitrary queries stream to a configured
 cap. The status distinguishes row-cap, byte-cap, cancelled, and failed.
 
+Result identities are opened explicitly before page admission. A page cannot
+implicitly create or revive a result. The core store rejects foreign engines,
+stale/future revisions, duplicates, and overlapping resident ranges; a newer
+opened revision invalidates every old page even when pinned. Global LRU eviction
+is deterministic and transactional, and pinned capacity fails admission without
+mutating resident state. Page-count and actual owned buffer-capacity limits are
+both finite; result slots close explicitly.
+
 Use the owned typed value model and immutable pages. UniFFI pages use the
 versioned TableRock column metadata/offset/null/type-tag/byte-arena encoding in
 one buffer, never one object/call per cell. Arrow is not part of the selected
