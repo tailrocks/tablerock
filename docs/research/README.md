@@ -59,6 +59,7 @@ kept in the roadmap.
 - [TermRock migration 0019 adoption](108-termrock-migration-0019.md)
 - [Phase 2 unified operation scope](109-phase-2-unified-operation-scope.md)
 - [Phase 2 application service coordinator](110-phase-2-service-coordinator.md)
+- [TermRock migration 0020 adoption](111-termrock-migration-0020.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)
