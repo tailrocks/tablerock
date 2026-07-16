@@ -47,6 +47,7 @@ kept in the roadmap.
 - [TermRock integration and extensions](13-termrock-integration.md)
 - [Shared Rust/client contract](14-shared-client-contract.md)
 - [Dependency decisions](20-dependency-evaluation.md)
+- [Latest dependency policy and refresh evidence](99-latest-dependency-policy.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

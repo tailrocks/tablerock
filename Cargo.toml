@@ -10,7 +10,7 @@ license = "Apache-2.0"
 repository = "https://github.com/tailrocks/tablerock"
 
 [workspace.dependencies]
-bytes = "1.11.1"
+bytes = "=1.12.1"
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 caseless = "=0.2.2"
 clickhouse = { version = "=0.15.1", default-features = false, features = ["lz4", "rustls-tls-native-roots", "rustls-tls-ring"] }
@@ -18,8 +18,8 @@ futures-util = "0.3.32"
 ratatui-core = "0.1.2"
 ratatui-crossterm = { version = "0.1.2", default-features = false, features = ["crossterm_0_29"] }
 redis = { version = "=1.4.0", default-features = false, features = ["tokio-rustls-comp"] }
-termrock = { version = "=0.10.0", git = "https://github.com/tailrocks/termrock.git", rev = "4c3adace5f440e2a5ca737d12bae096ee71b4df9", features = ["crossterm", "serde"] }
-tokio = { version = "1.52.3", features = ["macros", "rt", "signal", "sync", "time"] }
+termrock = { version = "=0.10.0", git = "https://github.com/tailrocks/termrock.git", rev = "7f24de44af06a13ac6ce3c8624a363741c43daaa", features = ["crossterm", "serde"] }
+tokio = { version = "=1.52.4", features = ["macros", "rt", "signal", "sync", "time"] }
 tokio-postgres = "=0.7.18"
 tokio-postgres-rustls = { version = "=0.14.0", features = ["native-certs", "ring"] }
 turso = { version = "=0.7.0", default-features = false }

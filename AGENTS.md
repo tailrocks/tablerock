@@ -42,6 +42,11 @@ and its accompanying requirement/test documentation.
 
 ## Engineering
 
+- Start every dependency, toolchain, CI action, and development-tool adoption
+  from its latest stable release. Re-check before use and upgrade immediately
+  when a newer stable release exists. Exact pins protect reproducibility, not
+  legacy compatibility; refresh them forward and document any proven temporary
+  upstream constraint.
 - Prefer maintained crates and official clients over hand-written protocols.
 - The TUI application pattern is The Elm Architecture. Do not introduce
   Component Architecture, Flux, or component-owned application state.

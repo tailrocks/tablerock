@@ -332,3 +332,6 @@ never hide an unsupported or regressed capability behind a parity claim.
 Detailed deliverables and phase gates are in
 [the delivery plan](docs/research/30-delivery-plan.md). The feature baseline is
 [the functional parity ledger](docs/research/06-functional-parity-ledger.md).
+All phases obey the forward-only dependency policy and automated freshness gate
+recorded in
+[`99-latest-dependency-policy.md`](docs/research/99-latest-dependency-policy.md).

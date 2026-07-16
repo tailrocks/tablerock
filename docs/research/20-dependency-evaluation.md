@@ -1,15 +1,19 @@
 # Dependency Decisions
 
-Versions and license metadata were checked on 2026-07-16. Re-resolve the exact
-version, MSRV, features, advisories, duplicate graph, maintenance, and license in
-the approved checkpoint that adds each dependency. The selected library does not
-change without a recorded architecture revision.
+Versions and license metadata were checked on 2026-07-17. Every adoption starts
+from the latest stable release, and every implementation checkpoint re-checks
+the registry, upstream release, MSRV, features, advisories, duplicate graph,
+maintenance, and license. Upgrade an outdated direct dependency immediately.
+Exact pins make builds reproducible; they never authorize retaining a legacy
+release. Any temporary upstream constraint requires evidence, a narrow audit
+exception when necessary, and re-checking by daily automation. The selected
+library does not change without a recorded architecture revision.
 
 ## Selected baseline
 
 | Concern | Selected project | Researched version | License | Ownership rule |
 |---|---|---:|---|---|
-| Async runtime | [`tokio`](https://github.com/tokio-rs/tokio) | 1.52.3 | MIT | engine/runtime and CLI effect/subscription adapter only |
+| Async runtime | [`tokio`](https://github.com/tokio-rs/tokio) | 1.52.4 | MIT | engine/runtime and CLI effect/subscription adapter only |
 | Async stream adapter | [`futures-util`](https://github.com/rust-lang/futures-rs) | 0.3.32 | MIT OR Apache-2.0 | CLI EventStream polling only |
 | PostgreSQL | [`tokio-postgres`](https://github.com/rust-postgres/rust-postgres) | 0.7.18 | MIT OR Apache-2.0 | driver adapter only |
 | PostgreSQL TLS | [`tokio-postgres-rustls`](https://github.com/jbg/tokio-postgres-rustls) | 0.14.0 | MIT | PostgreSQL adapter only |
@@ -65,7 +69,7 @@ Neither normalization dependency crosses the core boundary.
 
 ### Phase 1 runtime adoption
 
-The executable shell pins Tokio 1.52.3 with only macros, current-thread runtime,
+The executable shell pins Tokio 1.52.4 with only macros, current-thread runtime,
 signal, and sync features. `futures-util` exists only to poll Crossterm's one
 `EventStream`; `ratatui-crossterm` is the renderer adapter matching the pinned
 Ratatui/Crossterm tuple. `portable-pty` is test-only and runs the built CLI in a
@@ -253,3 +257,5 @@ default
 5. Add the contract test proving the motivating requirement.
 6. Record cancellation, timeout, TLS, redaction, and failure semantics.
 7. Update the fixed decision before substituting a selected dependency.
+8. Re-run the latest-release check immediately before committing; never retain
+   an older version merely for backward compatibility.

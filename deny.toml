@@ -1,5 +1,10 @@
 [advisories]
 yanked = "deny"
+ignore = [
+    # Latest official clickhouse 0.15.1 and upstream main require
+    # polonius-the-crab 0.5.0 -> paste 1.0.15. Review on every refresh.
+    "RUSTSEC-2024-0436",
+]
 
 [licenses]
 confidence-threshold = 0.8
