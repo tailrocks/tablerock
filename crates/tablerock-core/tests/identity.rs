@@ -1,8 +1,9 @@
 use std::mem::size_of;
 
 use tablerock_core::{
-    ContextId, EventSequence, IdDecodeError, IdParts, MutationId, OperationId, ProfileId, QueryId,
-    RequestId, ResultId, Revision, RevisionRelation, RowId, SequenceRelation, SessionId, TabId,
+    CatalogNodeId, ContextId, EventSequence, IdDecodeError, IdParts, MutationId, OperationId,
+    ProfileId, QueryId, RequestId, ResultId, ReviewTokenId, Revision, RevisionRelation, RowId,
+    SequenceRelation, SessionId, TabId,
 };
 
 macro_rules! assert_id_contract {
@@ -36,6 +37,8 @@ fn every_opaque_id_kind_round_trips_canonical_ffi_and_text_encodings() {
         MutationId,
         OperationId,
         RequestId,
+        CatalogNodeId,
+        ReviewTokenId,
     );
 }
 

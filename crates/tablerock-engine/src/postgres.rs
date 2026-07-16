@@ -377,7 +377,7 @@ fn append_row(
         };
         let byte_limit = max_cell_bytes.min(arena_remaining);
         let value = decode_value(row.columns()[column].type_(), raw.0, byte_limit)?;
-        let stored_len = encoded_len(&value);
+        let stored_len = value.encoded_byte_len();
         values.push(value);
         arena_remaining = arena_remaining.saturating_sub(stored_len);
     }
@@ -428,7 +428,7 @@ fn decode_value(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Post
         _ => None,
     };
     if let Some(value) = fixed {
-        return if encoded_len(&value) <= limit {
+        return if value.encoded_byte_len() <= limit {
             Ok(value)
         } else {
             bounded_raw(type_, raw, 0, false)
@@ -492,22 +492,6 @@ const fn truncation(stored_len: usize, original_len: usize) -> Truncation {
         Truncation::Truncated {
             original_byte_len: Some(original_len as u64),
         }
-    }
-}
-
-fn encoded_len(value: &OwnedValue) -> u64 {
-    match value.as_ref() {
-        tablerock_core::ValueRef::Null => 0,
-        tablerock_core::ValueRef::Boolean(_) => 1,
-        tablerock_core::ValueRef::Signed(_)
-        | tablerock_core::ValueRef::Unsigned(_)
-        | tablerock_core::ValueRef::Float64Bits(_) => 8,
-        tablerock_core::ValueRef::Decimal(value)
-        | tablerock_core::ValueRef::Text { value, .. }
-        | tablerock_core::ValueRef::Structured { value, .. } => value.len() as u64,
-        tablerock_core::ValueRef::Binary { value, .. }
-        | tablerock_core::ValueRef::Invalid { payload: value, .. }
-        | tablerock_core::ValueRef::Unknown { payload: value, .. } => value.len() as u64,
     }
 }
 

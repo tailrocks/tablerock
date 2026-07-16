@@ -684,6 +684,21 @@ impl OwnedValue {
             }
         )
     }
+
+    #[must_use]
+    pub fn encoded_byte_len(&self) -> u64 {
+        match self.as_ref() {
+            ValueRef::Null => 0,
+            ValueRef::Boolean(_) => 1,
+            ValueRef::Signed(_) | ValueRef::Unsigned(_) | ValueRef::Float64Bits(_) => 8,
+            ValueRef::Decimal(value)
+            | ValueRef::Text { value, .. }
+            | ValueRef::Structured { value, .. } => portable_byte_len(value.len()),
+            ValueRef::Binary { value, .. }
+            | ValueRef::Invalid { payload: value, .. }
+            | ValueRef::Unknown { payload: value, .. } => portable_byte_len(value.len()),
+        }
+    }
 }
 
 impl fmt::Debug for OwnedValue {

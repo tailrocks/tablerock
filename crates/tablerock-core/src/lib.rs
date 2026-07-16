@@ -4,6 +4,7 @@ mod catalog;
 mod command;
 mod diagnostic;
 mod id;
+mod mutation;
 mod operation;
 mod page;
 mod profile;
@@ -31,7 +32,12 @@ pub use diagnostic::{
 };
 pub use id::{
     CatalogNodeId, ContextId, IdDecodeError, IdParts, MutationId, OperationId, ProfileId, QueryId,
-    RequestId, ResultId, RowId, SessionId, TabId,
+    RequestId, ResultId, ReviewTokenId, RowId, SessionId, TabId,
+};
+pub use mutation::{
+    AuthorizedMutationPlan, FieldValue, MutationBuildError, MutationChange, MutationExecutionModel,
+    MutationPlan, MutationPlanLimits, MutationTarget, RedisExpiration, ReviewError,
+    ReviewedMutationPlan,
 };
 pub use operation::{
     EventRejection, OperationCursor, OperationEvent, OperationEventKind, OperationIdentity,

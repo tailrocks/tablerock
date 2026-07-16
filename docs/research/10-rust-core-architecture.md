@@ -149,6 +149,26 @@ one buffer, never one object/call per cell. Arrow is not part of the selected
 architecture. Database-native containers use the dedicated bounded
 `Structured` value kind, not ordinary text or an untyped JSON bypass.
 
+## Mutation plans
+
+Rust owns each immutable mutation plan: opaque identity, operation scope,
+revision, typed engine target, exact changes, finite bounds, and truthful
+execution model. Execution never reparses descriptive preview text. Empty or
+cross-engine changes, duplicate fields, null locators, invalid expirations, and
+`Invalid`, `Unknown`, truncated, or `Structured` values fail before an adapter
+can observe the plan.
+
+PostgreSQL plans are atomic transactions. ClickHouse inserts are progressive
+and non-transactional, while updates/deletes are asynchronous mutations and
+cannot share an insert plan. Redis string/key/expiration changes are sequential
+with no rollback claim.
+
+Review consumes the exact plan into a non-cloneable reviewed value.
+Authorization consumes that value and rejects expired tokens or scope/revision
+drift. Any edit therefore requires a new review. The later service/UniFFI seam
+must retain plans in a Rust-owned single-use token registry rather than
+serializing an authority-bearing plan into Swift.
+
 ## Catalog and autocomplete
 
 Load database list, selected objects, then selected columns incrementally.

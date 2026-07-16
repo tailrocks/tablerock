@@ -174,4 +174,5 @@ opaque_ids!(
     OperationId,
     RequestId,
     CatalogNodeId,
+    ReviewTokenId,
 );

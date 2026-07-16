@@ -263,7 +263,7 @@ impl ClickHouseRowStream {
                 let value = type_
                     .read(&mut self.reader, self.max_cell_bytes.min(arena_remaining))
                     .await?;
-                arena_remaining = arena_remaining.saturating_sub(encoded_len(&value));
+                arena_remaining = arena_remaining.saturating_sub(value.encoded_byte_len());
                 values.push(value);
             }
             rows += 1;
@@ -1169,22 +1169,6 @@ impl ChunkReader {
             offset += take;
         }
         Ok(())
-    }
-}
-
-fn encoded_len(value: &OwnedValue) -> u64 {
-    match value.as_ref() {
-        tablerock_core::ValueRef::Null => 0,
-        tablerock_core::ValueRef::Boolean(_) => 1,
-        tablerock_core::ValueRef::Signed(_)
-        | tablerock_core::ValueRef::Unsigned(_)
-        | tablerock_core::ValueRef::Float64Bits(_) => 8,
-        tablerock_core::ValueRef::Decimal(value)
-        | tablerock_core::ValueRef::Text { value, .. }
-        | tablerock_core::ValueRef::Structured { value, .. } => value.len() as u64,
-        tablerock_core::ValueRef::Binary { value, .. }
-        | tablerock_core::ValueRef::Invalid { payload: value, .. }
-        | tablerock_core::ValueRef::Unknown { payload: value, .. } => value.len() as u64,
     }
 }
 

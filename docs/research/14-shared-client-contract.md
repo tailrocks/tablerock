@@ -273,6 +273,12 @@ The in-process port and UniFFI bridge run the same tests:
 - ambiguous-write non-retry;
 - shutdown with pending reads and writes.
 
+The in-process mutation seam uses move-only reviewed and authorized plan
+wrappers. Because serialized bytes can be copied, the native bridge will expose
+only opaque, expiring, single-use handles backed by a Rust-owned registry.
+Swift may render a bounded preview but never reconstruct executable work from
+that preview.
+
 The native client does not begin broad feature work until this suite passes for
 all three engines through the in-process port and UniFFI bridge.
 

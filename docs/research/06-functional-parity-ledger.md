@@ -113,9 +113,9 @@ architecture decisions.
 | Row/value inspector | Core | Full typed values, raw bytes/hex, JSON text/tree, metadata, and stale state | Large/binary/invalid JSON fixtures |
 | Type-specific editors | Parity | Bool, number, temporal, enum, JSON, bytes, array/map/tuple, and explicit unknown fallback | Round-trip and invalid-input tests |
 | Stable editability | Core | Only results with proven base object and stable identity are editable | Joins/aggregates/no-key/duplicate-key tests |
-| Staged changes | Core | Inserts/updates/deletes remain local, visible, undoable, reviewable, and discardable until apply | Reducer model tests and quit/refresh policy tests |
-| Operation preview | Core | Preview is descriptive; execution uses a typed parameter/command plan, never reparsed display text | Mutation-plan serialization tests |
-| Conflict handling | Core | PostgreSQL conflicts roll back; ClickHouse and Redis expose their true non-transactional outcomes | Concurrent-change integration tests |
+| Staged changes | Core | Inserts/updates/deletes remain local, visible, undoable, reviewable, and discardable until apply | Phase 2 now provides bounded typed plans and move-only review/authorization; reducer undo/discard/quit policy and the service token registry remain required |
+| Operation preview | Core | Preview is descriptive; execution uses a typed parameter/command plan, never reparsed display text | Phase 2 proves execution retains the exact typed plan; bounded preview formatting and native bridge conformance remain required |
+| Conflict handling | Core | PostgreSQL conflicts roll back; ClickHouse and Redis expose their true non-transactional outcomes | Phase 2 distinguishes PostgreSQL atomic transactions, ClickHouse progressive inserts/asynchronous mutations, and Redis sequential no-rollback work; concurrent real-server tests remain required |
 | Foreign-key navigation | Parity | PostgreSQL relationship lookup and navigation with explicit unavailable state elsewhere | Catalog and permission fixtures |
 
 ## Schema, administration, and data movement

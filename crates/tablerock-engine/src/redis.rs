@@ -229,7 +229,7 @@ impl RedisKeyStream {
             if let Some(key) = self.pending.pop_front() {
                 let limit = self.max_cell_bytes.min(arena_remaining);
                 let value = bounded_binary(&key, limit)?;
-                arena_remaining = arena_remaining.saturating_sub(encoded_len(&value));
+                arena_remaining = arena_remaining.saturating_sub(value.encoded_byte_len());
                 values.push(value);
                 continue;
             }
@@ -312,13 +312,6 @@ fn bounded_binary(value: &[u8], limit: u64) -> Result<OwnedValue, RedisError> {
         }
     };
     OwnedValue::binary(bytes, truncation).map_err(|_| RedisError::Protocol)
-}
-
-fn encoded_len(value: &OwnedValue) -> u64 {
-    match value.as_ref() {
-        tablerock_core::ValueRef::Binary { value, .. } => value.len() as u64,
-        _ => 0,
-    }
 }
 
 #[cfg(test)]
