@@ -84,6 +84,8 @@ kept in the roadmap.
 - [Phase 2 current-line performance budgets](133-phase-2-current-line-performance-budgets.md)
 - [TermRock Picker graduation update](134-termrock-picker-graduation-update.md)
 - [Phase 2 persistence backup and restore evidence](135-phase-2-persistence-backup-restore.md)
+- [Phase 2 PostgreSQL TLS and client identity evidence](136-phase-2-postgresql-tls-identity.md)
+- [TermRock migration 0026 adoption](137-termrock-scoped-focus-migration.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

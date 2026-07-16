@@ -1,8 +1,13 @@
 //! Root-owned terminal presentation state.
 
-use termrock::{Theme, keymap::Keymap};
+use termrock::{
+    Theme,
+    input::{KeyCode, KeyEvent, KeyModifiers},
+    interaction::{FocusOutcome, FocusRing},
+    keymap::Keymap,
+};
 
-use crate::{ShellKeyAction, default_keymap};
+use crate::{ShellGeometry, ShellKeyAction, default_keymap};
 
 pub const MINIMUM_WIDTH: u16 = 40;
 pub const MINIMUM_HEIGHT: u16 = 10;
@@ -23,6 +28,11 @@ pub enum FocusRegion {
     Content,
     Actions,
     Footer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FocusScope {
+    Shell,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,7 +62,7 @@ pub enum ScrollDirection {
 }
 
 impl FocusRegion {
-    const ORDER: [Self; 6] = [
+    pub(crate) const CONNECTION_ORDER: [Self; 6] = [
         Self::Context,
         Self::Catalog,
         Self::Tabs,
@@ -61,23 +71,13 @@ impl FocusRegion {
         Self::Footer,
     ];
 
-    #[must_use]
-    pub fn next(self) -> Self {
-        let index = Self::ORDER
-            .iter()
-            .position(|candidate| *candidate == self)
-            .unwrap_or(0);
-        Self::ORDER[(index + 1) % Self::ORDER.len()]
-    }
-
-    #[must_use]
-    pub fn previous(self) -> Self {
-        let index = Self::ORDER
-            .iter()
-            .position(|candidate| *candidate == self)
-            .unwrap_or(0);
-        Self::ORDER[(index + Self::ORDER.len() - 1) % Self::ORDER.len()]
-    }
+    pub(crate) const PICKER_ORDER: [Self; 5] = [
+        Self::Context,
+        Self::Tabs,
+        Self::Content,
+        Self::Actions,
+        Self::Footer,
+    ];
 }
 
 #[derive(Debug)]
@@ -86,7 +86,7 @@ pub struct Model {
     keymap: Keymap<ShellKeyAction>,
     width: u16,
     height: u16,
-    focus: FocusRegion,
+    focus: FocusRing<FocusRegion, FocusScope>,
     action: ActionId,
     screen: Screen,
     terminal_focused: bool,
@@ -102,7 +102,7 @@ impl Default for Model {
             keymap: default_keymap(),
             width: 0,
             height: 0,
-            focus: FocusRegion::Context,
+            focus: initial_focus_ring(),
             action: ActionId::Open,
             screen: Screen::Connections,
             terminal_focused: true,
@@ -129,8 +129,8 @@ impl Model {
     }
 
     #[must_use]
-    pub const fn focus(&self) -> FocusRegion {
-        self.focus
+    pub const fn focus(&self) -> Option<FocusRegion> {
+        self.focus.focused().copied()
     }
 
     #[must_use]
@@ -181,8 +181,44 @@ impl Model {
         self.height = height;
     }
 
-    pub(crate) const fn set_focus(&mut self, focus: FocusRegion) {
-        self.focus = focus;
+    pub(crate) fn request_focus(&mut self, focus: FocusRegion) -> bool {
+        matches!(
+            self.focus.request_focus(focus),
+            FocusOutcome::Changed { .. }
+        )
+    }
+
+    pub(crate) fn move_focus(&mut self, reverse: bool) -> bool {
+        let key = KeyEvent::new(
+            if reverse {
+                KeyCode::BackTab
+            } else {
+                KeyCode::Tab
+            },
+            if reverse {
+                KeyModifiers::SHIFT
+            } else {
+                KeyModifiers::NONE
+            },
+        );
+        matches!(self.focus.handle_key(key), FocusOutcome::Changed { .. })
+    }
+
+    pub(crate) fn reconcile_focus_frame(&mut self, geometry: &ShellGeometry) -> bool {
+        self.focus.begin_frame();
+        let order: &[FocusRegion] = match self.screen {
+            Screen::Connections => &FocusRegion::CONNECTION_ORDER,
+            Screen::ConnectionPicker => &FocusRegion::PICKER_ORDER,
+        };
+        let enabled = self.layout_mode() != LayoutMode::TooSmall;
+        self.focus.register_order(
+            FocusScope::Shell,
+            order
+                .iter()
+                .copied()
+                .map(|id| (id, geometry.focus_area(id), enabled)),
+        );
+        matches!(self.focus.reconcile(), FocusOutcome::Changed { .. })
     }
 
     pub(crate) const fn set_action(&mut self, action: ActionId) {
@@ -212,4 +248,15 @@ impl Model {
     pub(crate) const fn set_engine_resync_required(&mut self, required: bool) {
         self.engine_resync_required = required;
     }
+}
+
+fn initial_focus_ring() -> FocusRing<FocusRegion, FocusScope> {
+    let mut focus = FocusRing::new(FocusScope::Shell, Some(FocusRegion::Context));
+    focus.begin_frame();
+    focus.register_order(
+        FocusScope::Shell,
+        FocusRegion::CONNECTION_ORDER.map(|id| (id, None, true)),
+    );
+    let _ = focus.reconcile();
+    focus
 }

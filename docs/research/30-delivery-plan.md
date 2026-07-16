@@ -130,9 +130,11 @@ Using `tokio-postgres`, prove driven connection ownership, arbitrary/unknown
 types, incremental `RowStream`, TLS roots/client identity, notices, parameters,
 multiple statements, COPY, cancellation races, connection loss, and ambiguous
 writes.
-The full service path now distinguishes PostgreSQL cancellation request
-delivery from SQLSTATE-confirmed server cancellation; remaining race and TLS
-matrix evidence stays required.
+The full service path distinguishes PostgreSQL cancellation request delivery
+from SQLSTATE-confirmed server cancellation. Verified custom roots, independent
+server name, client identity, downgrade rejection, and TLS cancellation pass on
+both pinned lines; completion races and the remaining protocol/failure matrix
+stay required.
 
 ### ClickHouse spike
 

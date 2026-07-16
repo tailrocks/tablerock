@@ -1,21 +1,276 @@
 use std::time::Duration;
 
+use rcgen::{
+    BasicConstraints, CertificateParams, CertifiedIssuer, DnType, ExtendedKeyUsagePurpose, IsCa,
+    KeyPair, KeyUsagePurpose,
+};
 use tablerock_core::{
     BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity, PageLimits,
     PageWarning, Truncation, ValueKind,
 };
 use tablerock_engine::{
     AdapterFailureClass, ClickHouseProbeQuery, DriverPageRequest, DriverSession,
-    EngineServiceUpdate, PostgresCancellationOutcome, PostgresConnectConfig, PostgresProbeQuery,
-    PostgresSession, PostgresTlsMode,
+    EngineServiceUpdate, PostgresCancellationOutcome, PostgresClientIdentity,
+    PostgresConnectConfig, PostgresError, PostgresProbeQuery, PostgresSession, PostgresTlsMaterial,
+    PostgresTlsMode,
 };
 
 mod support;
 use testcontainers::{
-    GenericImage, ImageExt,
+    CopyDataSource, CopyTargetOptions, GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
     runners::AsyncRunner,
 };
+
+struct PostgresTlsFixture {
+    ca_pem: String,
+    wrong_ca_pem: String,
+    server_certificate_pem: String,
+    server_private_key_pem: String,
+    client_certificate_pem: String,
+    client_private_key_pem: String,
+}
+
+impl PostgresTlsFixture {
+    fn generate() -> Self {
+        let ca = certificate_authority("TableRock PostgreSQL test CA");
+        let wrong_ca = certificate_authority("Untrusted TableRock test CA");
+        let (server_certificate_pem, server_private_key_pem) = leaf_certificate(
+            "database.internal",
+            ExtendedKeyUsagePurpose::ServerAuth,
+            &ca,
+        );
+        let (client_certificate_pem, client_private_key_pem) =
+            leaf_certificate("postgres", ExtendedKeyUsagePurpose::ClientAuth, &ca);
+        Self {
+            ca_pem: ca.pem(),
+            wrong_ca_pem: wrong_ca.pem(),
+            server_certificate_pem,
+            server_private_key_pem,
+            client_certificate_pem,
+            client_private_key_pem,
+        }
+    }
+}
+
+fn certificate_authority(name: &str) -> CertifiedIssuer<'static, KeyPair> {
+    let mut parameters = CertificateParams::new(Vec::new()).unwrap();
+    parameters.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    parameters.distinguished_name.push(DnType::CommonName, name);
+    parameters.key_usages = vec![
+        KeyUsagePurpose::DigitalSignature,
+        KeyUsagePurpose::KeyCertSign,
+        KeyUsagePurpose::CrlSign,
+    ];
+    CertifiedIssuer::self_signed(parameters, KeyPair::generate().unwrap()).unwrap()
+}
+
+fn leaf_certificate(
+    name: &str,
+    usage: ExtendedKeyUsagePurpose,
+    issuer: &CertifiedIssuer<'_, KeyPair>,
+) -> (String, String) {
+    let mut parameters = CertificateParams::new(vec![name.to_owned()]).unwrap();
+    parameters.distinguished_name.push(DnType::CommonName, name);
+    parameters.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+    parameters.extended_key_usages = vec![usage];
+    let key = KeyPair::generate().unwrap();
+    let certificate = parameters.signed_by(&key, issuer).unwrap();
+    (certificate.pem(), key.serialize_pem())
+}
+
+fn tls_init_script() -> Vec<u8> {
+    br#"#!/bin/sh
+set -eu
+cp /tablerock-tls/server.crt "$PGDATA/server.crt"
+cp /tablerock-tls/server.key "$PGDATA/server.key"
+cp /tablerock-tls/ca.crt "$PGDATA/ca.crt"
+chmod 600 "$PGDATA/server.key"
+chmod 644 "$PGDATA/server.crt" "$PGDATA/ca.crt"
+cat >> "$PGDATA/postgresql.conf" <<'EOF'
+ssl = on
+ssl_cert_file = 'server.crt'
+ssl_key_file = 'server.key'
+ssl_ca_file = 'ca.crt'
+ssl_min_protocol_version = 'TLSv1.2'
+EOF
+cat > "$PGDATA/pg_hba.conf" <<'EOF'
+local all all trust
+hostssl all root_only 0.0.0.0/0 trust
+hostssl all root_only ::/0 trust
+hostssl all postgres 0.0.0.0/0 cert
+hostssl all postgres ::/0 cert
+EOF
+"#
+    .to_vec()
+}
+
+async fn connect_custom_tls(
+    config: &PostgresConnectConfig,
+    ca_pem: &[u8],
+    identity: Option<(&[u8], &[u8])>,
+) -> Result<PostgresSession, PostgresError> {
+    let material = match identity {
+        Some((certificate, key)) => PostgresTlsMaterial::new(ca_pem)
+            .with_client_identity(PostgresClientIdentity::new(certificate, key)),
+        None => PostgresTlsMaterial::new(ca_pem),
+    };
+    PostgresSession::connect_with_tls(config, material).await
+}
+
+async fn connect_custom_tls_until_ready(
+    config: &PostgresConnectConfig,
+    ca_pem: &[u8],
+) -> PostgresSession {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            if let Ok(session) = connect_custom_tls(config, ca_pem, None).await {
+                break session;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn verifies_custom_roots_client_identity_and_tls_cancellation_on_supported_lines() {
+    for tag in ["17.10-alpine", "18.4-alpine"] {
+        verify_tls_matrix(tag).await;
+    }
+}
+
+async fn verify_tls_matrix(tag: &str) {
+    let fixture = PostgresTlsFixture::generate();
+    let container = GenericImage::new("postgres", tag)
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .with_copy_to(
+            CopyTargetOptions::new("/tablerock-tls/server.crt").with_mode(0o644),
+            CopyDataSource::Data(fixture.server_certificate_pem.as_bytes().to_vec()),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/tablerock-tls/server.key").with_mode(0o644),
+            CopyDataSource::Data(fixture.server_private_key_pem.as_bytes().to_vec()),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/tablerock-tls/ca.crt").with_mode(0o644),
+            CopyDataSource::Data(fixture.ca_pem.as_bytes().to_vec()),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/docker-entrypoint-initdb.d/001-tablerock-tls.sh")
+                .with_mode(0o755),
+            CopyDataSource::Data(tls_init_script()),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/docker-entrypoint-initdb.d/002-tablerock-role.sql")
+                .with_mode(0o644),
+            CopyDataSource::Data(b"CREATE ROLE root_only LOGIN;\n".to_vec()),
+        )
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let root_without_override = PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("root_only"),
+        PostgresTlsMode::Required,
+    );
+    let root_only = root_without_override
+        .clone()
+        .with_tls_server_name(text("database.internal"));
+
+    let root_session = connect_custom_tls_until_ready(&root_only, fixture.ca_pem.as_bytes()).await;
+    let mut page = root_session
+        .stream_probe(
+            PostgresProbeQuery::BoundedSeries,
+            PageLimits::new(4, 8, 256, 256),
+            32,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        page.next_page(identity(), 0)
+            .await
+            .unwrap()
+            .unwrap()
+            .envelope()
+            .row_count(),
+        3
+    );
+    drop(page);
+    root_session.shutdown().await.unwrap();
+
+    let plaintext = PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("root_only"),
+        PostgresTlsMode::Disabled,
+    );
+    assert!(matches!(
+        PostgresSession::connect(&plaintext).await,
+        Err(PostgresError::Connect)
+    ));
+    assert!(matches!(
+        connect_custom_tls(&root_without_override, fixture.ca_pem.as_bytes(), None).await,
+        Err(PostgresError::Connect)
+    ));
+    assert!(matches!(
+        connect_custom_tls(&root_only, fixture.wrong_ca_pem.as_bytes(), None).await,
+        Err(PostgresError::Connect)
+    ));
+
+    let mutual_tls = PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Required,
+    )
+    .with_tls_server_name(text("database.internal"));
+    assert!(matches!(
+        connect_custom_tls(&mutual_tls, fixture.ca_pem.as_bytes(), None).await,
+        Err(PostgresError::Connect)
+    ));
+    let duplicate_private_keys = format!(
+        "{}{}",
+        fixture.client_private_key_pem, fixture.client_private_key_pem
+    );
+    assert!(matches!(
+        connect_custom_tls(
+            &mutual_tls,
+            fixture.ca_pem.as_bytes(),
+            Some((
+                fixture.client_certificate_pem.as_bytes(),
+                duplicate_private_keys.as_bytes(),
+            )),
+        )
+        .await,
+        Err(PostgresError::TlsConfiguration)
+    ));
+    let session = connect_custom_tls(
+        &mutual_tls,
+        fixture.ca_pem.as_bytes(),
+        Some((
+            fixture.client_certificate_pem.as_bytes(),
+            fixture.client_private_key_pem.as_bytes(),
+        )),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        session.cancel_sleep_probe().await.unwrap(),
+        PostgresCancellationOutcome::ConfirmedByServer
+    );
+    session.shutdown().await.unwrap();
+}
 
 fn text(value: &str) -> BoundedText {
     BoundedText::copy_from_str(value, ByteLimit::new(128)).unwrap()
@@ -38,7 +293,7 @@ async fn distinguishes_server_confirmed_cancellation_from_request_delivery() {
         port,
         text("postgres"),
         text("postgres"),
-        PostgresTlsMode::Disable,
+        PostgresTlsMode::Disabled,
     ))
     .await
     .unwrap();
@@ -90,7 +345,7 @@ async fn streams_bounded_pages_from_real_postgres() {
         port,
         text("postgres"),
         text("postgres"),
-        PostgresTlsMode::Disable,
+        PostgresTlsMode::Disabled,
     );
     let session = PostgresSession::connect(&config).await.unwrap();
     let driver: &dyn DriverSession = &session;
@@ -197,7 +452,7 @@ async fn reports_request_delivery_and_server_confirmed_cancellation_through_serv
         port,
         text("postgres"),
         text("postgres"),
-        PostgresTlsMode::Disable,
+        PostgresTlsMode::Disabled,
     ))
     .await
     .unwrap();
@@ -289,7 +544,7 @@ async fn verify_typed_values(tag: &str) {
         port,
         text("postgres"),
         text("postgres"),
-        PostgresTlsMode::Disable,
+        PostgresTlsMode::Disabled,
     ))
     .await
     .unwrap();

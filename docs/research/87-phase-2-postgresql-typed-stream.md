@@ -8,8 +8,10 @@ The earlier simple-query text stream has been removed. Driver `Row`, `Column`,
 `Type`, `Statement`, and `RowStream` types remain private to the adapter.
 
 This is not the complete PostgreSQL spike. Parameters, decimal decoding,
-temporal interpretation, TLS fixtures, authentication failure, notices, COPY,
-late errors, connection loss, reconnect, and ambiguous writes remain required.
+temporal interpretation, authentication taxonomy, notices, COPY, late errors,
+connection loss, reconnect, and ambiguous writes remain required. Verified TLS
+and client identity later pass in
+[`136-phase-2-postgresql-tls-identity.md`](136-phase-2-postgresql-tls-identity.md).
 
 ## Type decision
 
@@ -58,8 +60,9 @@ nullable because PostgreSQL row descriptions do not carry nullability facts.
 | PostgreSQL 18.4 | same typed suite on official `postgres:18.4-alpine`; existing bounded paging and cancellation suites also pass | typed tracer |
 
 Testcontainers Rust 0.27.3 owns both fixture lifecycles and ephemeral mapped
-ports. Trust authentication and disabled TLS remain disposable-fixture facts,
-not production defaults or TLS claims.
+ports. Trust authentication and disabled TLS in this historical typed suite
+remain disposable-fixture facts; the separate supported-line TLS suite now
+proves custom roots, server-name verification, mTLS, and downgrade rejection.
 
 ## Verification record
 

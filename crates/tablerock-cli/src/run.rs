@@ -186,8 +186,9 @@ async fn run_session(
                     geometry = Some(ShellView.render_with_geometry(&model, frame, area));
                 })
                 .map_err(RunError::Terminal)?;
-            input.set_geometry(geometry.expect("render publishes shell geometry"));
-            dirty = false;
+            let geometry = geometry.expect("render publishes shell geometry");
+            input.set_geometry(geometry.clone());
+            dirty = update(&mut model, Message::FrameRendered(geometry)).needs_render();
             #[cfg(test)]
             after_frame()?;
         }

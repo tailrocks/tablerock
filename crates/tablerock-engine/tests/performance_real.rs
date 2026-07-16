@@ -67,7 +67,7 @@ async fn current_servers_meet_initial_streaming_budgets() {
         postgres_port,
         text("postgres"),
         text("postgres"),
-        PostgresTlsMode::Disable,
+        PostgresTlsMode::Disabled,
     ))
     .await
     .unwrap();

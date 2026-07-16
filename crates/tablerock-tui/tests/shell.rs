@@ -30,9 +30,9 @@ fn reducer_owns_resize_focus_and_effects() {
     );
 
     let _ = update(&mut model, Message::FocusNext);
-    assert_eq!(model.focus(), FocusRegion::Catalog);
+    assert_eq!(model.focus(), Some(FocusRegion::Catalog));
     let _ = update(&mut model, Message::FocusPrevious);
-    assert_eq!(model.focus(), FocusRegion::Context);
+    assert_eq!(model.focus(), Some(FocusRegion::Context));
 
     let result = update(&mut model, Message::Quit);
     assert_eq!(
@@ -71,7 +71,7 @@ fn pointer_activation_requires_matching_render_authorized_press_and_release() {
     let quit = Some(ShellTarget::Action(ActionId::Quit));
 
     let _ = update(&mut model, Message::PointerPressed(open));
-    assert_eq!(model.focus(), FocusRegion::Actions);
+    assert_eq!(model.focus(), Some(FocusRegion::Actions));
     assert_eq!(model.selected_action(), ActionId::Open);
     let mismatch = update(&mut model, Message::PointerReleased(quit));
     assert!(mismatch.effects().next().is_none());

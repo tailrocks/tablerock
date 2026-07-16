@@ -55,6 +55,12 @@ TermRock's public Picker graduation and exact latest pin are recorded in
 The verified bounded offline Turso backup/restore path and independent manifest
 are recorded in
 [`135-phase-2-persistence-backup-restore.md`](docs/research/135-phase-2-persistence-backup-restore.md).
+Verified PostgreSQL custom roots, independent server name, client identity, and
+TLS cancellation on both supported lines are recorded in
+[`136-phase-2-postgresql-tls-identity.md`](docs/research/136-phase-2-postgresql-tls-identity.md).
+TermRock migration 0026, root-owned per-frame scoped focus registration, its
+public Table graduation, and the exact latest pin are recorded in
+[`137-termrock-scoped-focus-migration.md`](docs/research/137-termrock-scoped-focus-migration.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

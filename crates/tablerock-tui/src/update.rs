@@ -50,6 +50,13 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 Update::render()
             }
         }
+        Message::FrameRendered(geometry) => {
+            if model.reconcile_focus_frame(&geometry) {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
         Message::TerminalFocusChanged(focused) => {
             if model.terminal_focused() == focused {
                 Update::unchanged()
@@ -111,14 +118,22 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
         }
         Message::FocusNext => {
-            model.set_focus(model.focus().next());
-            Update::render()
+            if model.move_focus(false) {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
         }
         Message::FocusPrevious => {
-            model.set_focus(model.focus().previous());
-            Update::render()
+            if model.move_focus(true) {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
         }
-        Message::ActionNext | Message::ActionPrevious if model.focus() == FocusRegion::Actions => {
+        Message::ActionNext | Message::ActionPrevious
+            if model.focus() == Some(FocusRegion::Actions) =>
+        {
             let action = match model.selected_action() {
                 ActionId::Open => ActionId::Quit,
                 ActionId::Quit => ActionId::Open,
@@ -127,7 +142,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::ActionNext | Message::ActionPrevious => Update::unchanged(),
-        Message::Activate if model.focus() == FocusRegion::Actions => {
+        Message::Activate if model.focus() == Some(FocusRegion::Actions) => {
             activate_selected_action(model)
         }
         Message::Activate => Update::unchanged(),
@@ -138,9 +153,11 @@ pub fn update(model: &mut Model, message: Message) -> Update {
 
 fn focus_target(model: &mut Model, target: ShellTarget) {
     match target {
-        ShellTarget::Focus(focus) => model.set_focus(focus),
+        ShellTarget::Focus(focus) => {
+            let _ = model.request_focus(focus);
+        }
         ShellTarget::Action(action) => {
-            model.set_focus(FocusRegion::Actions);
+            let _ = model.request_focus(FocusRegion::Actions);
             model.set_action(action);
         }
     }

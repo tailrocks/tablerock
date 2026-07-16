@@ -13,6 +13,10 @@ It proved driven connection ownership and bounded text-protocol streaming
 against one pinned real server;
 typed binary values, parameters, TLS fixtures, authentication, notices, COPY,
 cancel races, reconnect, connection loss, and ambiguous writes remain required.
+The later TLS/root/client-identity gap is now closed by
+[`136-phase-2-postgresql-tls-identity.md`](136-phase-2-postgresql-tls-identity.md);
+the other listed gaps remain historical blockers unless a later checkpoint
+closes them.
 
 ## Dependency decision
 

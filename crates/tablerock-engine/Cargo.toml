@@ -12,12 +12,15 @@ bytes.workspace = true
 clickhouse.workspace = true
 futures-util.workspace = true
 redis.workspace = true
+rustls.workspace = true
 tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
 tokio.workspace = true
 tokio-postgres.workspace = true
 tokio-postgres-rustls.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
+rcgen = { version = "=0.14.8", features = ["zeroize"] }
 testcontainers = { version = "=0.27.3", default-features = false }
 
 [lints]

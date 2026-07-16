@@ -372,6 +372,7 @@ fn map_postgres(error: PostgresError) -> AdapterError {
         PostgresError::Connection => AdapterFailureClass::Connection,
         PostgresError::Protocol => AdapterFailureClass::Protocol,
         PostgresError::CancellationTransport => AdapterFailureClass::CancellationTransport,
+        PostgresError::TlsConfiguration => AdapterFailureClass::InvalidRequest,
         PostgresError::ServerCancelled => AdapterFailureClass::ServerCancelled,
         PostgresError::InvalidLimits => AdapterFailureClass::InvalidRequest,
         PostgresError::Page(_) => AdapterFailureClass::Page,

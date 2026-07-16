@@ -97,6 +97,9 @@ Engine additions:
 - cancellation remains reachable during stream creation; dispatch transport
   and server confirmation remain separate facts, including PostgreSQL SQLSTATE
   confirmation through the real service path;
+- PostgreSQL 17.10/18.4 require verified custom roots, independent server-name
+  validation, plaintext downgrade rejection, optional mTLS identity, hostile
+  PEM rejection, and cancellation through the identical retained connector;
 - ClickHouse cancellation binds the active query ID, requires synchronous
   `finished` server status, reads no returned query text, and proves the
   terminal mapping across both pinned server lines and compression modes;

@@ -1,25 +1,99 @@
-use std::{error::Error, fmt, pin::Pin};
+use std::{error::Error, fmt, pin::Pin, sync::Arc};
 
 use futures_util::StreamExt;
+use rustls::{
+    ClientConfig, RootCertStore,
+    pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
+};
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, ColumnMetadata, Engine, EngineType, OwnedValue,
     PageDelivery, PageFacts, PageIdentity, PageLimits, PageValidationError, PageWarning,
     PageWarnings, ResultPage, RowTotal, Truncation,
 };
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
 use tokio_postgres::{
     Row,
     config::SslMode,
+    tls::MakeTlsConnect,
     types::{FromSql, Type},
 };
 use tokio_postgres_rustls::MakeRustlsConnect;
+use zeroize::Zeroize;
 
+const MAX_TLS_MATERIAL_BYTES: usize = 65_536;
+const MAX_CA_CERTIFICATES: usize = 16;
+const MAX_CLIENT_CERTIFICATES: usize = 8;
+
+/// PostgreSQL transport-security requirement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PostgresTlsMode {
-    Disable,
-    Prefer,
-    Require,
+    /// Use a plaintext PostgreSQL transport.
+    Disabled,
+    /// Require a verified TLS handshake; plaintext fallback is forbidden.
+    Required,
+}
+
+/// Borrowed client-certificate chain and unencrypted private-key material.
+pub struct PostgresClientIdentity<'a> {
+    certificate_chain_pem: &'a [u8],
+    private_key_pem: &'a [u8],
+}
+
+impl<'a> PostgresClientIdentity<'a> {
+    /// Creates an atomic client identity; validation occurs before connection.
+    #[must_use]
+    pub const fn new(certificate_chain_pem: &'a [u8], private_key_pem: &'a [u8]) -> Self {
+        Self {
+            certificate_chain_pem,
+            private_key_pem,
+        }
+    }
+}
+
+impl fmt::Debug for PostgresClientIdentity<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PostgresClientIdentity")
+            .field("certificate_chain_bytes", &self.certificate_chain_pem.len())
+            .field("private_key_bytes", &self.private_key_pem.len())
+            .finish()
+    }
+}
+
+/// Borrowed custom-root material for one required-TLS connection.
+pub struct PostgresTlsMaterial<'a> {
+    ca_certificates_pem: &'a [u8],
+    client_identity: Option<PostgresClientIdentity<'a>>,
+}
+
+impl<'a> PostgresTlsMaterial<'a> {
+    /// Creates custom-root TLS material without client authentication.
+    #[must_use]
+    pub const fn new(ca_certificates_pem: &'a [u8]) -> Self {
+        Self {
+            ca_certificates_pem,
+            client_identity: None,
+        }
+    }
+
+    /// Adds the client certificate and private key as one atomic identity.
+    #[must_use]
+    pub const fn with_client_identity(mut self, identity: PostgresClientIdentity<'a>) -> Self {
+        self.client_identity = Some(identity);
+        self
+    }
+}
+
+impl fmt::Debug for PostgresTlsMaterial<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PostgresTlsMaterial")
+            .field("ca_certificate_bytes", &self.ca_certificates_pem.len())
+            .field("has_client_identity", &self.client_identity.is_some())
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -63,6 +137,7 @@ impl PostgresProbeQuery {
     }
 }
 
+/// Redacted PostgreSQL endpoint and transport configuration.
 #[derive(Clone, PartialEq, Eq)]
 pub struct PostgresConnectConfig {
     host: BoundedText,
@@ -70,9 +145,11 @@ pub struct PostgresConnectConfig {
     database: BoundedText,
     user: BoundedText,
     tls: PostgresTlsMode,
+    tls_server_name: Option<BoundedText>,
 }
 
 impl PostgresConnectConfig {
+    /// Creates endpoint configuration without a separate TLS server name.
     #[must_use]
     pub const fn new(
         host: BoundedText,
@@ -87,7 +164,15 @@ impl PostgresConnectConfig {
             database,
             user,
             tls,
+            tls_server_name: None,
         }
+    }
+
+    /// Overrides rustls verification/SNI without changing the network host.
+    #[must_use]
+    pub fn with_tls_server_name(mut self, tls_server_name: BoundedText) -> Self {
+        self.tls_server_name = Some(tls_server_name);
+        self
     }
 }
 
@@ -100,6 +185,10 @@ impl fmt::Debug for PostgresConnectConfig {
             .field("database_bytes", &self.database.len())
             .field("user_bytes", &self.user.len())
             .field("tls", &self.tls)
+            .field(
+                "tls_server_name_bytes",
+                &self.tls_server_name.as_ref().map(BoundedText::len),
+            )
             .finish()
     }
 }
@@ -111,6 +200,7 @@ pub enum PostgresError {
     Connection,
     Protocol,
     CancellationTransport,
+    TlsConfiguration,
     ServerCancelled,
     InvalidLimits,
     Page(PageValidationError),
@@ -124,6 +214,7 @@ impl fmt::Display for PostgresError {
             Self::Connection => "PostgreSQL connection ended with an error",
             Self::Protocol => "PostgreSQL returned an unsupported result sequence",
             Self::CancellationTransport => "PostgreSQL cancellation transport failed",
+            Self::TlsConfiguration => "PostgreSQL TLS configuration is invalid",
             Self::ServerCancelled => "PostgreSQL server confirmed query cancellation",
             Self::InvalidLimits => "PostgreSQL stream limits are invalid",
             Self::Page(_) => "PostgreSQL result page failed validation",
@@ -136,49 +227,101 @@ impl Error for PostgresError {}
 pub struct PostgresSession {
     client: tokio_postgres::Client,
     connection: JoinHandle<Result<(), PostgresError>>,
-    tls: PostgresTlsMode,
+    transport: PostgresTransport,
+}
+
+enum PostgresTransport {
+    Plain,
+    Rustls(PostgresRustlsConnector),
+}
+
+#[derive(Clone)]
+struct PostgresRustlsConnector {
+    inner: MakeRustlsConnect,
+    server_name: Option<String>,
+}
+
+impl PostgresRustlsConnector {
+    fn new(inner: MakeRustlsConnect, server_name: Option<&BoundedText>) -> Self {
+        Self {
+            inner,
+            server_name: server_name.map(|name| name.as_str().to_owned()),
+        }
+    }
+}
+
+impl<S> MakeTlsConnect<S> for PostgresRustlsConnector
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    type Stream = <MakeRustlsConnect as MakeTlsConnect<S>>::Stream;
+    type TlsConnect = <MakeRustlsConnect as MakeTlsConnect<S>>::TlsConnect;
+    type Error = <MakeRustlsConnect as MakeTlsConnect<S>>::Error;
+
+    fn make_tls_connect(&mut self, hostname: &str) -> Result<Self::TlsConnect, Self::Error> {
+        <MakeRustlsConnect as MakeTlsConnect<S>>::make_tls_connect(
+            &mut self.inner,
+            self.server_name.as_deref().unwrap_or(hostname),
+        )
+    }
 }
 
 impl PostgresSession {
+    /// Connects with plaintext or native-root required TLS according to `config`.
     pub async fn connect(config: &PostgresConnectConfig) -> Result<Self, PostgresError> {
-        let mut driver = tokio_postgres::Config::new();
-        driver
-            .host(config.host.as_str())
-            .port(config.port)
-            .dbname(config.database.as_str())
-            .user(config.user.as_str())
-            .ssl_mode(match config.tls {
-                PostgresTlsMode::Disable => SslMode::Disable,
-                PostgresTlsMode::Prefer => SslMode::Prefer,
-                PostgresTlsMode::Require => SslMode::Require,
-            });
-        let (client, connection) = if config.tls == PostgresTlsMode::Disable {
-            let (client, connection) = driver
-                .connect(tokio_postgres::NoTls)
-                .await
-                .map_err(|_| PostgresError::Connect)?;
-            let task =
-                tokio::spawn(
-                    async move { connection.await.map_err(|_| PostgresError::Connection) },
-                );
-            (client, task)
-        } else {
-            let (tls, _rejected_native_certificates) =
-                MakeRustlsConnect::with_native_certs().map_err(|_| PostgresError::Connect)?;
-            let (client, connection) = driver
-                .connect(tls)
-                .await
-                .map_err(|_| PostgresError::Connect)?;
-            let task =
-                tokio::spawn(
-                    async move { connection.await.map_err(|_| PostgresError::Connection) },
-                );
-            (client, task)
-        };
+        match config.tls {
+            PostgresTlsMode::Disabled => Self::connect_plain(config).await,
+            PostgresTlsMode::Required => {
+                let (connector, _rejected_native_certificates) =
+                    MakeRustlsConnect::with_native_certs().map_err(|_| PostgresError::Connect)?;
+                Self::connect_rustls(config, connector).await
+            }
+        }
+    }
+
+    /// Connects with required TLS using bounded custom roots and optional mTLS.
+    pub async fn connect_with_tls(
+        config: &PostgresConnectConfig,
+        material: PostgresTlsMaterial<'_>,
+    ) -> Result<Self, PostgresError> {
+        if config.tls != PostgresTlsMode::Required {
+            return Err(PostgresError::TlsConfiguration);
+        }
+        let connector = build_tls_connector(material)?;
+        Self::connect_rustls(config, connector).await
+    }
+
+    async fn connect_plain(config: &PostgresConnectConfig) -> Result<Self, PostgresError> {
+        let driver = driver_config(config);
+        let (client, connection) = driver
+            .connect(tokio_postgres::NoTls)
+            .await
+            .map_err(|_| PostgresError::Connect)?;
+        let connection =
+            tokio::spawn(async move { connection.await.map_err(|_| PostgresError::Connection) });
         Ok(Self {
             client,
             connection,
-            tls: config.tls,
+            transport: PostgresTransport::Plain,
+        })
+    }
+
+    async fn connect_rustls(
+        config: &PostgresConnectConfig,
+        connector: MakeRustlsConnect,
+    ) -> Result<Self, PostgresError> {
+        let connector = PostgresRustlsConnector::new(connector, config.tls_server_name.as_ref());
+        let driver = driver_config(config);
+        let (client, connection) = driver
+            .connect(connector.clone())
+            .await
+            .map_err(|_| PostgresError::Connect)?;
+        let connection =
+            tokio::spawn(async move { connection.await.map_err(|_| PostgresError::Connection) });
+        Ok(Self {
+            client,
+            connection,
+            transport: PostgresTransport::Rustls(connector),
         })
     }
 
@@ -219,7 +362,7 @@ impl PostgresSession {
         let Self {
             client,
             connection,
-            tls: _,
+            transport: _,
         } = self;
         drop(client);
         connection.await.map_err(|_| PostgresError::Connection)??;
@@ -231,14 +374,9 @@ impl PostgresSession {
         let query = self.client.simple_query("SELECT pg_sleep(30)");
         let cancellation = async {
             sleep(Duration::from_millis(150)).await;
-            match self.tls {
-                PostgresTlsMode::Disable => token.cancel_query(tokio_postgres::NoTls).await,
-                PostgresTlsMode::Prefer | PostgresTlsMode::Require => {
-                    let (tls, _rejected_native_certificates) =
-                        MakeRustlsConnect::with_native_certs()
-                            .map_err(|_| PostgresError::CancellationTransport)?;
-                    token.cancel_query(tls).await
-                }
+            match &self.transport {
+                PostgresTransport::Plain => token.cancel_query(tokio_postgres::NoTls).await,
+                PostgresTransport::Rustls(connector) => token.cancel_query(connector.clone()).await,
             }
             .map_err(|_| PostgresError::CancellationTransport)
         };
@@ -259,17 +397,84 @@ impl PostgresSession {
 
     pub async fn dispatch_cancel(&self) -> Result<(), PostgresError> {
         let token = self.client.cancel_token();
-        match self.tls {
-            PostgresTlsMode::Disable => token.cancel_query(tokio_postgres::NoTls).await,
-            PostgresTlsMode::Prefer | PostgresTlsMode::Require => {
-                let (tls, _rejected_native_certificates) =
-                    MakeRustlsConnect::with_native_certs()
-                        .map_err(|_| PostgresError::CancellationTransport)?;
-                token.cancel_query(tls).await
-            }
+        match &self.transport {
+            PostgresTransport::Plain => token.cancel_query(tokio_postgres::NoTls).await,
+            PostgresTransport::Rustls(connector) => token.cancel_query(connector.clone()).await,
         }
         .map_err(|_| PostgresError::CancellationTransport)
     }
+}
+
+fn driver_config(config: &PostgresConnectConfig) -> tokio_postgres::Config {
+    let mut driver = tokio_postgres::Config::new();
+    driver
+        .host(config.host.as_str())
+        .port(config.port)
+        .dbname(config.database.as_str())
+        .user(config.user.as_str())
+        .ssl_mode(match config.tls {
+            PostgresTlsMode::Disabled => SslMode::Disable,
+            PostgresTlsMode::Required => SslMode::Require,
+        });
+    driver
+}
+
+fn build_tls_connector(
+    material: PostgresTlsMaterial<'_>,
+) -> Result<MakeRustlsConnect, PostgresError> {
+    let ca_certificates = parse_certificates(material.ca_certificates_pem, MAX_CA_CERTIFICATES)?;
+    let mut roots = RootCertStore::empty();
+    for certificate in ca_certificates {
+        roots
+            .add(certificate)
+            .map_err(|_| PostgresError::TlsConfiguration)?;
+    }
+    let builder =
+        ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .map_err(|_| PostgresError::TlsConfiguration)?
+            .with_root_certificates(roots);
+    let config = match material.client_identity {
+        Some(identity) => {
+            let certificate_chain =
+                parse_certificates(identity.certificate_chain_pem, MAX_CLIENT_CERTIFICATES)?;
+            let mut keys = parse_private_keys(identity.private_key_pem)?;
+            if keys.len() != 1 {
+                keys.zeroize();
+                return Err(PostgresError::TlsConfiguration);
+            }
+            builder
+                .with_client_auth_cert(certificate_chain, keys.remove(0))
+                .map_err(|_| PostgresError::TlsConfiguration)?
+        }
+        None => builder.with_no_client_auth(),
+    };
+    Ok(MakeRustlsConnect::new(config))
+}
+
+fn parse_certificates(
+    pem: &[u8],
+    maximum: usize,
+) -> Result<Vec<CertificateDer<'static>>, PostgresError> {
+    if pem.is_empty() || pem.len() > MAX_TLS_MATERIAL_BYTES {
+        return Err(PostgresError::TlsConfiguration);
+    }
+    let certificates = CertificateDer::pem_slice_iter(pem)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| PostgresError::TlsConfiguration)?;
+    if certificates.is_empty() || certificates.len() > maximum {
+        return Err(PostgresError::TlsConfiguration);
+    }
+    Ok(certificates)
+}
+
+fn parse_private_keys(pem: &[u8]) -> Result<Vec<PrivateKeyDer<'static>>, PostgresError> {
+    if pem.is_empty() || pem.len() > MAX_TLS_MATERIAL_BYTES {
+        return Err(PostgresError::TlsConfiguration);
+    }
+    PrivateKeyDer::pem_slice_iter(pem)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| PostgresError::TlsConfiguration)
 }
 
 pub struct PostgresRowStream {
@@ -557,13 +762,70 @@ mod tests {
             5432,
             BoundedText::copy_from_str("SECRET_DATABASE", ByteLimit::new(64)).unwrap(),
             BoundedText::copy_from_str("SECRET_USER", ByteLimit::new(64)).unwrap(),
-            PostgresTlsMode::Require,
+            PostgresTlsMode::Required,
+        )
+        .with_tls_server_name(
+            BoundedText::copy_from_str("SECRET_SERVER_NAME", ByteLimit::new(64)).unwrap(),
         );
         let debug = format!("{config:?}");
-        for secret in ["SECRET_HOST", "SECRET_DATABASE", "SECRET_USER"] {
+        for secret in [
+            "SECRET_HOST",
+            "SECRET_DATABASE",
+            "SECRET_USER",
+            "SECRET_SERVER_NAME",
+        ] {
             assert!(!debug.contains(secret));
         }
-        assert!(debug.contains("Require"));
+        assert!(debug.contains("Required"));
+    }
+
+    #[test]
+    fn tls_material_debug_never_exposes_certificate_or_key_bytes() {
+        let material = PostgresTlsMaterial::new(b"SECRET_CA").with_client_identity(
+            PostgresClientIdentity::new(b"SECRET_CERT", b"SECRET_PRIVATE_KEY"),
+        );
+        let debug = format!("{material:?}");
+        for secret in ["SECRET_CA", "SECRET_CERT", "SECRET_PRIVATE_KEY"] {
+            assert!(!debug.contains(secret));
+        }
+        assert!(debug.contains("has_client_identity: true"));
+    }
+
+    #[test]
+    fn tls_material_rejects_empty_and_malformed_roots() {
+        assert!(matches!(
+            build_tls_connector(PostgresTlsMaterial::new(b"")),
+            Err(PostgresError::TlsConfiguration)
+        ));
+        assert!(matches!(
+            build_tls_connector(PostgresTlsMaterial::new(b"not PEM")),
+            Err(PostgresError::TlsConfiguration)
+        ));
+    }
+
+    #[tokio::test]
+    async fn custom_tls_material_requires_the_require_mode() {
+        let config = PostgresConnectConfig::new(
+            BoundedText::copy_from_str("localhost", ByteLimit::new(64)).unwrap(),
+            5432,
+            BoundedText::copy_from_str("postgres", ByteLimit::new(64)).unwrap(),
+            BoundedText::copy_from_str("postgres", ByteLimit::new(64)).unwrap(),
+            PostgresTlsMode::Disabled,
+        );
+        assert!(matches!(
+            PostgresSession::connect_with_tls(
+                &PostgresConnectConfig::new(
+                    config.host.clone(),
+                    config.port,
+                    config.database.clone(),
+                    config.user.clone(),
+                    PostgresTlsMode::Disabled,
+                ),
+                PostgresTlsMaterial::new(b"not reached"),
+            )
+            .await,
+            Err(PostgresError::TlsConfiguration)
+        ));
     }
 
     #[test]

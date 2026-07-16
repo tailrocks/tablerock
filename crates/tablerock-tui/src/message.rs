@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::{ScrollDirection, ShellTarget};
+use crate::{ScrollDirection, ShellGeometry, ShellTarget};
 
 pub const MAX_PASTE_BYTES: usize = 1_048_576;
 
@@ -54,6 +54,7 @@ pub enum Message {
         width: u16,
         height: u16,
     },
+    FrameRendered(ShellGeometry),
     TerminalFocusChanged(bool),
     Paste(PasteText),
     PointerHovered(Option<ShellTarget>),

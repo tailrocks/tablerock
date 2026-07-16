@@ -65,7 +65,7 @@ async fn overlaps_postgres_clickhouse_and_redis_through_one_service() {
         postgres_port,
         text("postgres"),
         text("postgres"),
-        PostgresTlsMode::Disable,
+        PostgresTlsMode::Disabled,
     ))
     .await
     .unwrap();

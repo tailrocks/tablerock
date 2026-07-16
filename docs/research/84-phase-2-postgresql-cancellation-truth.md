@@ -8,9 +8,10 @@ read-only `pg_sleep` probe; arbitrary SQL remains unavailable until the shared
 safety classifier and execution contract exist.
 
 This is not the Phase 2 PostgreSQL spike exit. It proves cancellation truth and
-post-cancel connection reuse on the pinned PostgreSQL 18.4 fixture. TLS cancel
-fixtures, cancellation races, PostgreSQL 17.10, connection loss, reconnect, and
-ambiguous writes remain required.
+post-cancel connection reuse on the pinned PostgreSQL 18.4 fixture. The later
+[`136-phase-2-postgresql-tls-identity.md`](136-phase-2-postgresql-tls-identity.md)
+checkpoint closes TLS cancellation and PostgreSQL 17.10 coverage; completion
+races, connection loss, reconnect, and ambiguous writes remain required.
 
 ## Contract decision
 
@@ -39,10 +40,10 @@ milliseconds so it is in flight, sends a protocol cancellation request, and
 requires SQLSTATE `57014`. It then streams a fresh bounded query on the same
 session, proving the connection remains usable, and shuts the session down.
 
-The disabled-TLS fixture uses `NoTls`. Production `Prefer` and `Require`
-cancellation construct the same native-root rustls connector family as initial
-connection establishment, but no TLS support claim is made until a real TLS
-fixture passes.
+The disabled-TLS fixture uses `NoTls`. The obsolete downgrade-capable `Prefer`
+mode has since been removed. Required TLS cancellation now retains and clones
+the exact connection connector, including custom roots, server name, and client
+identity; both supported-line real fixtures pass in checkpoint 136.
 
 ## Verification record
 

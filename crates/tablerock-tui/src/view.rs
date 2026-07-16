@@ -39,6 +39,16 @@ impl ShellGeometry {
             self.regions.push(HitRegion { id, area });
         }
     }
+
+    pub(crate) fn focus_area(&self, focus: FocusRegion) -> Option<Rect> {
+        self.regions.iter().find_map(|region| {
+            let owns_focus = match region.id {
+                ShellTarget::Focus(candidate) => candidate == focus,
+                ShellTarget::Action(_) => focus == FocusRegion::Actions,
+            };
+            owns_focus.then_some(region.area)
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,7 +96,7 @@ impl ShellView {
             frame,
             rows[0],
             "TableRock — Connections",
-            model.focus() == FocusRegion::Context,
+            model.focus() == Some(FocusRegion::Context),
         );
         geometry.push(ShellTarget::Focus(FocusRegion::Context), rows[0]);
         render_tabs(model, frame, rows[1], &mut geometry);
@@ -99,7 +109,7 @@ impl ShellView {
 }
 
 fn render_tabs(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
-    let label = if model.focus() == FocusRegion::Tabs {
+    let label = if model.focus() == Some(FocusRegion::Tabs) {
         "> Connections"
     } else {
         "Connections"
@@ -114,7 +124,7 @@ fn render_tabs(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut 
     let mut state = TabsState {
         selected: Some(ShellTab::Connections),
         hovered: None,
-        focused: model.focus() == FocusRegion::Tabs,
+        focused: model.focus() == Some(FocusRegion::Tabs),
         regions: Vec::new(),
     };
     frame.render_stateful_widget(Tabs::new(&tabs, &model.theme).gap(1), area, &mut state);
@@ -145,7 +155,7 @@ fn render_body(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut 
                 frame,
                 columns[0],
                 "Catalog",
-                model.focus() == FocusRegion::Catalog,
+                model.focus() == Some(FocusRegion::Catalog),
             );
             geometry.push(ShellTarget::Focus(FocusRegion::Catalog), columns[0]);
             render_panel(
@@ -153,14 +163,14 @@ fn render_body(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut 
                 frame,
                 columns[1],
                 "Workspace",
-                model.focus() == FocusRegion::Content,
+                model.focus() == Some(FocusRegion::Content),
             );
             geometry.push(ShellTarget::Focus(FocusRegion::Content), columns[1]);
         }
         LayoutMode::Narrow => {
             let (title, focused, target) = match model.focus() {
-                FocusRegion::Catalog => ("Catalog", true, FocusRegion::Catalog),
-                FocusRegion::Content => ("Workspace", true, FocusRegion::Content),
+                Some(FocusRegion::Catalog) => ("Catalog", true, FocusRegion::Catalog),
+                Some(FocusRegion::Content) => ("Workspace", true, FocusRegion::Content),
                 _ => ("Connections", false, FocusRegion::Context),
             };
             render_panel(model, frame, area, title, focused);
@@ -171,14 +181,15 @@ fn render_body(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut 
 }
 
 fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
-    let open_label =
-        if model.focus() == FocusRegion::Actions && model.selected_action() == ActionId::Open {
-            "> Open"
-        } else if model.hovered() == Some(ShellTarget::Action(ActionId::Open)) {
-            "~ Open"
-        } else {
-            "Open"
-        };
+    let open_label = if model.focus() == Some(FocusRegion::Actions)
+        && model.selected_action() == ActionId::Open
+    {
+        "> Open"
+    } else if model.hovered() == Some(ShellTarget::Action(ActionId::Open)) {
+        "~ Open"
+    } else {
+        "Open"
+    };
     let actions = [
         Action {
             id: ActionId::Open,
@@ -188,7 +199,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
         },
         Action {
             id: ActionId::Quit,
-            label: if model.focus() == FocusRegion::Actions
+            label: if model.focus() == Some(FocusRegion::Actions)
                 && model.selected_action() == ActionId::Quit
             {
                 "> Quit"
@@ -202,7 +213,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
         },
     ];
     let mut state = ActionBarState {
-        focused: (model.focus() == FocusRegion::Actions).then_some(model.selected_action()),
+        focused: (model.focus() == Some(FocusRegion::Actions)).then_some(model.selected_action()),
         regions: Vec::new(),
     };
     frame.render_stateful_widget(
@@ -217,7 +228,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
 
 fn render_hints(model: &Model, frame: &mut Frame<'_>, area: Rect) {
     let mut keymap = model.keymap().clone();
-    if model.focus() == FocusRegion::Actions {
+    if model.focus() == Some(FocusRegion::Actions) {
         let _ = keymap.disable(ShellKeyAction::FocusPrevious);
         let _ = keymap.disable(ShellKeyAction::Quit);
     } else {
@@ -230,7 +241,7 @@ fn render_hints(model: &Model, frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
-    let focus = if model.focus() == FocusRegion::Footer {
+    let focus = if model.focus() == Some(FocusRegion::Footer) {
         "[FOCUSED] Footer"
     } else {
         "Footer"

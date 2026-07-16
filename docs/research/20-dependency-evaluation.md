@@ -17,6 +17,8 @@ library does not change without a recorded architecture revision.
 | Async stream adapter | [`futures-util`](https://github.com/rust-lang/futures-rs) | 0.3.32 | MIT OR Apache-2.0 | CLI EventStream polling only |
 | PostgreSQL | [`tokio-postgres`](https://github.com/rust-postgres/rust-postgres) | 0.7.18 | MIT OR Apache-2.0 | driver adapter only |
 | PostgreSQL TLS | [`tokio-postgres-rustls`](https://github.com/jbg/tokio-postgres-rustls) | 0.14.0 | MIT | PostgreSQL adapter only |
+| TLS configuration | [`rustls`](https://github.com/rustls/rustls) | 0.23.42 | Apache-2.0 OR ISC OR MIT | PostgreSQL adapter custom roots/client identity; ring/std/TLS 1.2 only |
+| Test certificates | [`rcgen`](https://github.com/rustls/rcgen) | 0.14.8 | MIT OR Apache-2.0 | engine development dependency only; ephemeral TLS fixtures |
 | Real-server fixtures | [`testcontainers`](https://github.com/testcontainers/testcontainers-rs) | 0.27.3 | MIT OR Apache-2.0 | development dependency in driver test crates only |
 | ClickHouse | official [`clickhouse`](https://github.com/ClickHouse/clickhouse-rs) | 0.15.1 | MIT OR Apache-2.0 | driver adapter only |
 | Redis | [`redis`](https://github.com/redis-rs/redis-rs) | 1.4.0 | BSD-3-Clause | driver adapter only |
@@ -112,6 +114,13 @@ artifacts cannot start or control containers.
 Use rustls with explicit platform/project root handling and client identity.
 Invalid-certificate acceptance exists only as a dangerous, visible profile
 setting and is never enabled by default.
+
+The TLS feasibility matrix now uses direct rustls 0.23.42 configuration with a
+deterministic ring provider, bounded custom CA/client identity PEM parsing, and
+an independent server-name wrapper. Development-only rcgen 0.14.8 generates
+ephemeral certificates; no key is committed. `Prefer` was deleted because the
+core has no plaintext-downgrade policy. See
+[`136-phase-2-postgresql-tls-identity.md`](136-phase-2-postgresql-tls-identity.md).
 
 ## ClickHouse
 
