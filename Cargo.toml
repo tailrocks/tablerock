@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/tablerock-cli", "crates/tablerock-core", "crates/tablerock-tui"]
+members = ["crates/tablerock-cli", "crates/tablerock-core", "crates/tablerock-persistence", "crates/tablerock-tui"]
 resolver = "3"
 
 [workspace.package]
@@ -14,8 +14,9 @@ crossterm = { version = "0.29.0", features = ["event-stream"] }
 futures-util = "0.3.32"
 ratatui-core = "0.1.2"
 ratatui-crossterm = { version = "0.1.2", default-features = false, features = ["crossterm_0_29"] }
-termrock = { version = "=0.9.0", git = "https://github.com/tailrocks/termrock.git", rev = "c51e11cf011da3eba836fa368993bf37c14834ba" }
-tokio = { version = "1.52.3", features = ["macros", "rt", "signal", "sync"] }
+termrock = { version = "=0.9.0", git = "https://github.com/tailrocks/termrock.git", rev = "2f441cc00eff7caecedd49a368aec6aa349d7bc1" }
+tokio = { version = "1.52.3", features = ["macros", "rt", "signal", "sync", "time"] }
+turso = { version = "=0.7.0", default-features = false }
 zeroize = { version = "=1.9.0", default-features = false, features = ["alloc"] }
 
 [workspace.lints.rust]

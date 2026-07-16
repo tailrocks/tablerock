@@ -1,0 +1,352 @@
+//! Local-only persistence owned by one serialized worker thread.
+
+use std::{
+    error::Error,
+    fmt,
+    path::{Path, PathBuf},
+    sync::mpsc::{self, Receiver, SyncSender, TrySendError},
+    thread::{self, JoinHandle},
+    time::Duration,
+};
+
+const OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
+const CALLER_TIMEOUT: Duration = Duration::from_secs(35);
+
+const MIGRATIONS: &[(u32, &str)] = &[
+    (1, include_str!("../migrations/0001-bootstrap.sql")),
+    (2, include_str!("../migrations/0002-support-facts.sql")),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PersistenceHealth {
+    pub schema_version: u32,
+    pub foreign_keys_enabled: bool,
+    pub integrity_ok: bool,
+}
+
+pub struct PersistenceActor {
+    sender: SyncSender<Command>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl PersistenceActor {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, PersistenceError> {
+        let path = path.as_ref().to_path_buf();
+        let (sender, receiver) = mpsc::sync_channel(32);
+        let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
+        let worker = thread::Builder::new()
+            .name("tablerock-persistence".to_owned())
+            .spawn(move || worker_main(path, receiver, ready_sender))
+            .map_err(|_| PersistenceError::WorkerStart)?;
+        match ready_receiver.recv_timeout(CALLER_TIMEOUT) {
+            Ok(Ok(())) => Ok(Self {
+                sender,
+                worker: Some(worker),
+            }),
+            Ok(Err(error)) => {
+                drop(worker);
+                Err(error)
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => Err(PersistenceError::Timeout),
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(PersistenceError::WorkerStopped),
+        }
+    }
+
+    pub fn health(&self) -> Result<PersistenceHealth, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::Health(sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn shutdown(mut self) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::Shutdown(sender))?;
+        let result = receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?;
+        drop(self.worker.take());
+        result
+    }
+}
+
+impl Drop for PersistenceActor {
+    fn drop(&mut self) {
+        if self.worker.take().is_some() {
+            let (sender, _receiver) = mpsc::sync_channel(1);
+            let _ = self.sender.try_send(Command::Shutdown(sender));
+        }
+    }
+}
+
+fn submit(sender: &SyncSender<Command>, command: Command) -> Result<(), PersistenceError> {
+    sender.try_send(command).map_err(|error| match error {
+        TrySendError::Full(_) => PersistenceError::QueueFull,
+        TrySendError::Disconnected(_) => PersistenceError::WorkerStopped,
+    })
+}
+
+fn map_receive_error(error: mpsc::RecvTimeoutError) -> PersistenceError {
+    match error {
+        mpsc::RecvTimeoutError::Timeout => PersistenceError::Timeout,
+        mpsc::RecvTimeoutError::Disconnected => PersistenceError::WorkerStopped,
+    }
+}
+
+enum Command {
+    Health(mpsc::SyncSender<Result<PersistenceHealth, PersistenceError>>),
+    Shutdown(mpsc::SyncSender<Result<(), PersistenceError>>),
+}
+
+fn worker_main(
+    path: PathBuf,
+    receiver: Receiver<Command>,
+    ready: mpsc::SyncSender<Result<(), PersistenceError>>,
+) {
+    let runtime = match tokio_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            let _ = ready.send(Err(error));
+            return;
+        }
+    };
+    let opened = runtime.block_on(async {
+        tokio::time::timeout(OPERATION_TIMEOUT, open_database(&path))
+            .await
+            .map_err(|_| PersistenceError::Timeout)?
+    });
+    let (database, connection) = match opened {
+        Ok(value) => {
+            let _ = ready.send(Ok(()));
+            value
+        }
+        Err(error) => {
+            let _ = ready.send(Err(error));
+            return;
+        }
+    };
+    for command in receiver {
+        match command {
+            Command::Health(reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(OPERATION_TIMEOUT, read_health(&connection))
+                        .await
+                        .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::Shutdown(reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(OPERATION_TIMEOUT, checkpoint(&connection))
+                        .await
+                        .map_err(|_| PersistenceError::Timeout)?
+                });
+                drop(connection);
+                drop(database);
+                let _ = reply.send(result);
+                break;
+            }
+        }
+    }
+}
+
+fn tokio_runtime() -> Result<tokio::runtime::Runtime, PersistenceError> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|_| PersistenceError::RuntimeStart)
+}
+
+async fn open_database(
+    path: &Path,
+) -> Result<(turso::Database, turso::Connection), PersistenceError> {
+    let path = path.to_str().ok_or(PersistenceError::InvalidPath)?;
+    let database = turso::Builder::new_local(path)
+        .build()
+        .await
+        .map_err(|_| PersistenceError::DatabaseOpen)?;
+    let mut connection = database
+        .connect()
+        .map_err(|_| PersistenceError::DatabaseOpen)?;
+    connection
+        .pragma_update("foreign_keys", "ON")
+        .await
+        .map_err(|_| PersistenceError::Pragma)?;
+    apply_migrations(&mut connection).await?;
+    Ok((database, connection))
+}
+
+async fn apply_migrations(connection: &mut turso::Connection) -> Result<(), PersistenceError> {
+    let ledger_exists = query_u32(
+        connection,
+        "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'schema_migrations'",
+        (),
+    )
+    .await?
+        == 1;
+    if !ledger_exists {
+        connection
+            .execute_batch(MIGRATIONS[0].1)
+            .await
+            .map_err(|_| PersistenceError::Migration { version: 1 })?;
+    }
+
+    let applied = read_applied_versions(connection).await?;
+    validate_migration_prefix(&applied)?;
+    for &(version, sql) in MIGRATIONS.iter().skip(applied.len()) {
+        if version > 1 {
+            let transaction = connection
+                .transaction()
+                .await
+                .map_err(|_| PersistenceError::Migration { version })?;
+            transaction
+                .execute_batch(sql)
+                .await
+                .map_err(|_| PersistenceError::Migration { version })?;
+            transaction
+                .execute(
+                    "INSERT INTO schema_migrations(version) VALUES (?1)",
+                    (version,),
+                )
+                .await
+                .map_err(|_| PersistenceError::Migration { version })?;
+            transaction
+                .commit()
+                .await
+                .map_err(|_| PersistenceError::Migration { version })?;
+        }
+    }
+    let applied = read_applied_versions(connection).await?;
+    if applied.len() != MIGRATIONS.len() {
+        return Err(PersistenceError::InvalidMigrationLedger);
+    }
+    validate_migration_prefix(&applied)?;
+    Ok(())
+}
+
+async fn read_applied_versions(
+    connection: &turso::Connection,
+) -> Result<Vec<u32>, PersistenceError> {
+    let mut rows = connection
+        .query("SELECT version FROM schema_migrations ORDER BY version", ())
+        .await
+        .map_err(|_| PersistenceError::InvalidMigrationLedger)?;
+    let mut versions = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::InvalidMigrationLedger)?
+    {
+        versions.push(
+            row.get::<u32>(0)
+                .map_err(|_| PersistenceError::InvalidMigrationLedger)?,
+        );
+    }
+    Ok(versions)
+}
+
+fn validate_migration_prefix(applied: &[u32]) -> Result<(), PersistenceError> {
+    if applied.is_empty()
+        || applied.len() > MIGRATIONS.len()
+        || applied
+            .iter()
+            .zip(MIGRATIONS)
+            .any(|(actual, (expected, _))| actual != expected)
+    {
+        return Err(PersistenceError::InvalidMigrationLedger);
+    }
+    Ok(())
+}
+
+async fn read_health(
+    connection: &turso::Connection,
+) -> Result<PersistenceHealth, PersistenceError> {
+    let schema_version = query_u32(
+        connection,
+        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+        (),
+    )
+    .await?;
+    let foreign_keys_enabled = query_u32(connection, "PRAGMA foreign_keys", ()).await? == 1;
+    let integrity = query_text(connection, "PRAGMA integrity_check", ()).await?;
+    Ok(PersistenceHealth {
+        schema_version,
+        foreign_keys_enabled,
+        integrity_ok: integrity == "ok",
+    })
+}
+
+async fn checkpoint(connection: &turso::Connection) -> Result<(), PersistenceError> {
+    let mut rows = connection
+        .query("PRAGMA wal_checkpoint(TRUNCATE)", ())
+        .await
+        .map_err(|_| PersistenceError::Checkpoint)?;
+    while rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::Checkpoint)?
+        .is_some()
+    {}
+    Ok(())
+}
+
+async fn query_u32(
+    connection: &turso::Connection,
+    sql: &str,
+    params: impl turso::IntoParams,
+) -> Result<u32, PersistenceError> {
+    let mut rows = connection
+        .query(sql, params)
+        .await
+        .map_err(|_| PersistenceError::Query)?;
+    let row = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::Query)?
+        .ok_or(PersistenceError::MissingRow)?;
+    row.get::<u32>(0).map_err(|_| PersistenceError::Decode)
+}
+
+async fn query_text(
+    connection: &turso::Connection,
+    sql: &str,
+    params: impl turso::IntoParams,
+) -> Result<String, PersistenceError> {
+    let mut rows = connection
+        .query(sql, params)
+        .await
+        .map_err(|_| PersistenceError::Query)?;
+    let row = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::Query)?
+        .ok_or(PersistenceError::MissingRow)?;
+    row.get::<String>(0).map_err(|_| PersistenceError::Decode)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PersistenceError {
+    WorkerStart,
+    WorkerStopped,
+    QueueFull,
+    RuntimeStart,
+    InvalidPath,
+    DatabaseOpen,
+    Pragma,
+    Migration { version: u32 },
+    InvalidMigrationLedger,
+    Query,
+    MissingRow,
+    Decode,
+    Checkpoint,
+    Timeout,
+}
+
+impl fmt::Display for PersistenceError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("local persistence operation failed")
+    }
+}
+
+impl Error for PersistenceError {}

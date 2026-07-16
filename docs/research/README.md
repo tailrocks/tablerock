@@ -75,6 +75,8 @@ kept in the roadmap.
 - [Phase 2 profile connection snapshot evidence](55-phase-2-profile-snapshot.md)
 - [Phase 2 profile aggregate evidence](56-phase-2-profile-aggregate.md)
 - [TermRock 0.9 styled tab glyph migration evidence](57-termrock-0.9-migration.md)
+- [Phase 2 persistence actor foundation evidence](58-phase-2-persistence-actor-foundation.md)
+- [TermRock 0.9 input and OSC migration evidence](59-termrock-0.9-input-osc-migration.md)
 
 ## Architecture headline
 

@@ -159,6 +159,13 @@ use ordinary transactions plus indexed bounded history. Track upstream gaps
 against [COMPAT.md](https://github.com/tursodatabase/turso/blob/main/COMPAT.md).
 Failure blocks the checkpoint and never activates a fallback persistence crate.
 
+The initial adoption pins 0.7.0 with default features disabled and proves
+`Builder::new_local`, one bounded serialized owner, current-thread runtime,
+transactional sequential migrations, foreign-key enforcement, rollback,
+integrity, checkpoint, copy/reopen, and corruption rejection. Evidence and
+remaining storage gates are recorded in
+[58-phase-2-persistence-actor-foundation.md](58-phase-2-persistence-actor-foundation.md).
+
 Persist profiles, secret references, organization, saved queries, preferences,
 intent-only restoration, bounded history, and support metadata. Do not persist
 resolved secrets, result pages, pending mutations, or automatic retry intent.
