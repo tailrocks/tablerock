@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use crate::{Engine, EngineType, ResultId, Revision, Truncation, ValueKind};
+use crate::{Engine, EngineType, OwnedValue, ResultId, Revision, Truncation, ValueKind, ValueRef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RowTotal {
@@ -176,6 +176,14 @@ pub enum PageValidationError {
     RowsWithoutColumns,
     CellCountUnsupported {
         cells: u64,
+    },
+    CellCountMismatch {
+        expected: u64,
+        actual: u64,
+    },
+    ArenaLengthOverflow,
+    ArenaLengthUnsupported {
+        bytes: u64,
     },
     ColumnCountMismatch {
         expected: u32,
@@ -518,6 +526,114 @@ pub struct ResultPage {
 }
 
 impl ResultPage {
+    /// Converts bounded row-major adapter output into the canonical immutable
+    /// column-major page representation.
+    pub fn from_row_major(
+        identity: PageIdentity,
+        start_row: u64,
+        total_rows: RowTotal,
+        facts: PageFacts,
+        columns: Vec<ColumnMetadata>,
+        values: Vec<OwnedValue>,
+        limits: PageLimits,
+    ) -> Result<Self, PageValidationError> {
+        let column_count =
+            u32::try_from(columns.len()).map_err(|_| PageValidationError::ColumnLimitExceeded {
+                actual: u32::MAX,
+                limit: limits.max_columns,
+            })?;
+        if column_count > limits.max_columns {
+            return Err(PageValidationError::ColumnLimitExceeded {
+                actual: column_count,
+                limit: limits.max_columns,
+            });
+        }
+        if column_count == 0 && !values.is_empty() {
+            return Err(PageValidationError::CellCountMismatch {
+                expected: 0,
+                actual: values.len() as u64,
+            });
+        }
+        if column_count != 0 && !values.len().is_multiple_of(column_count as usize) {
+            let complete_rows = values.len() / column_count as usize;
+            return Err(PageValidationError::CellCountMismatch {
+                expected: (complete_rows as u64 + 1) * column_count as u64,
+                actual: values.len() as u64,
+            });
+        }
+        let row_count = if column_count == 0 {
+            0
+        } else {
+            values.len() / column_count as usize
+        };
+        let row_count =
+            u32::try_from(row_count).map_err(|_| PageValidationError::RowLimitExceeded {
+                actual: u32::MAX,
+                limit: limits.max_rows,
+            })?;
+        if row_count > limits.max_rows {
+            return Err(PageValidationError::RowLimitExceeded {
+                actual: row_count,
+                limit: limits.max_rows,
+            });
+        }
+
+        let arena_byte_len = values.iter().try_fold(0_u64, |total, value| {
+            total.checked_add(value_byte_len(value))
+        });
+        let Some(arena_byte_len) = arena_byte_len else {
+            return Err(PageValidationError::ArenaLengthOverflow);
+        };
+        let arena_capacity = usize::try_from(arena_byte_len).map_err(|_| {
+            PageValidationError::ArenaLengthUnsupported {
+                bytes: arena_byte_len,
+            }
+        })?;
+        let column_text_byte_len = columns.iter().try_fold(0_u64, |total, column| {
+            total.checked_add(column.column_text_byte_len())
+        });
+        let Some(column_text_byte_len) = column_text_byte_len else {
+            return Err(PageValidationError::ColumnTextLengthOverflow);
+        };
+        let envelope = PageEnvelope::new(
+            identity,
+            PageShape::new(
+                start_row,
+                row_count,
+                column_count,
+                total_rows,
+                arena_byte_len,
+                column_text_byte_len,
+            ),
+            facts,
+        );
+        let validated = envelope.validate(limits)?;
+        let cell_count = values.len();
+        let mut offsets = Vec::with_capacity(cell_count + 1);
+        let mut null_bitmap = vec![0; cell_count.div_ceil(8)];
+        let mut kinds = Vec::with_capacity(cell_count);
+        let mut truncations = Vec::with_capacity(cell_count);
+        let mut arena = Vec::with_capacity(arena_capacity);
+        offsets.push(0);
+        for column in 0..column_count as usize {
+            for row in 0..row_count as usize {
+                let value = &values[row * column_count as usize + column];
+                let cell = kinds.len();
+                append_value(value, &mut arena);
+                if value.kind() == ValueKind::Null {
+                    null_bitmap[cell / 8] |= 1 << (cell % 8);
+                }
+                kinds.push(value.kind());
+                truncations.push(value_truncation(value));
+                offsets.push(arena.len() as u64);
+            }
+        }
+        Self::from_parts(
+            validated,
+            PageBuffers::new(columns, offsets, null_bitmap, kinds, truncations, arena),
+        )
+    }
+
     pub fn from_parts(
         validated: ValidatedPageEnvelope,
         buffers: PageBuffers,
@@ -553,6 +669,45 @@ impl ResultPage {
             truncation: self.buffers.truncations[index],
             bytes: &self.buffers.arena[start..end],
         })
+    }
+}
+
+fn value_byte_len(value: &OwnedValue) -> u64 {
+    match value.as_ref() {
+        ValueRef::Null => 0,
+        ValueRef::Boolean(_) => 1,
+        ValueRef::Signed(_) | ValueRef::Unsigned(_) | ValueRef::Float64Bits(_) => 8,
+        ValueRef::Decimal(value) | ValueRef::Text { value, .. } => value.len() as u64,
+        ValueRef::Binary { value, .. }
+        | ValueRef::Invalid { payload: value, .. }
+        | ValueRef::Unknown { payload: value, .. } => value.len() as u64,
+    }
+}
+
+fn value_truncation(value: &OwnedValue) -> Truncation {
+    match value.as_ref() {
+        ValueRef::Text { truncation, .. }
+        | ValueRef::Binary { truncation, .. }
+        | ValueRef::Invalid { truncation, .. }
+        | ValueRef::Unknown { truncation, .. } => truncation,
+        _ => Truncation::Complete,
+    }
+}
+
+fn append_value(value: &OwnedValue, arena: &mut Vec<u8>) {
+    match value.as_ref() {
+        ValueRef::Null => {}
+        ValueRef::Boolean(value) => arena.push(u8::from(value)),
+        ValueRef::Signed(value) => arena.extend_from_slice(&value.to_be_bytes()),
+        ValueRef::Unsigned(value) | ValueRef::Float64Bits(value) => {
+            arena.extend_from_slice(&value.to_be_bytes());
+        }
+        ValueRef::Decimal(value) | ValueRef::Text { value, .. } => {
+            arena.extend_from_slice(value.as_bytes());
+        }
+        ValueRef::Binary { value, .. }
+        | ValueRef::Invalid { payload: value, .. }
+        | ValueRef::Unknown { payload: value, .. } => arena.extend_from_slice(value),
     }
 }
 

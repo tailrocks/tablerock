@@ -109,7 +109,7 @@ architecture decisions.
 | Sorting | Core | Server sort for table browsing, explicit provenance, multi-column order, no unsafe SQL concatenation | Hostile identifier/type fixtures |
 | Filtering | Core | Typed server filters plus clearly labeled resident-page value filters; saved presets later | Parameterization and NULL semantics tests |
 | Selection/copy | Parity | Cell/range/row selection and safe TSV/CSV/JSON/Markdown projections | Clipboard-neutral formatter tests |
-| Paging | Core | Bounded server pages for objects and bounded streams for arbitrary queries; totals may be estimated/unknown | The Phase 2 immutable-page unit contract covers pre-allocation dimensions, ranges, offsets, null/truncation metadata, unknown totals, and hostile buffers; page races, eviction, count budgets, bridge encoding, and real-server evidence remain required |
+| Paging | Core | Bounded server pages for objects and bounded streams for arbitrary queries; totals may be estimated/unknown | The Phase 2 immutable-page unit contract covers pre-allocation dimensions, ranges, offsets, null/truncation metadata, unknown totals, hostile buffers, and checked row-major adapter assembly; page races, eviction, count budgets, bridge encoding, and real-server evidence remain required |
 | Row/value inspector | Core | Full typed values, raw bytes/hex, JSON text/tree, metadata, and stale state | Large/binary/invalid JSON fixtures |
 | Type-specific editors | Parity | Bool, number, temporal, enum, JSON, bytes, array/map/tuple, and explicit unknown fallback | Round-trip and invalid-input tests |
 | Stable editability | Core | Only results with proven base object and stable identity are editable | Joins/aggregates/no-key/duplicate-key tests |

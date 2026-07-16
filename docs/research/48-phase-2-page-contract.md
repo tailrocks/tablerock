@@ -61,6 +61,11 @@ Completion/failure/cancellation states, warning diagnostics, batch assembly,
 eviction, resync, and process-memory accounting remain Phase 2 blockers and are
 not inferred from an immutable page's presence.
 
+The later adapter prerequisite in
+[`79-phase-2-row-major-page-assembly.md`](79-phase-2-row-major-page-assembly.md)
+closes batch assembly through one checked row-major-to-columnar conversion. It
+does not weaken any envelope or buffer validation.
+
 ## Evidence
 
 - Public seam tests prove the accepted 500-row boundary, row-limit rejection,

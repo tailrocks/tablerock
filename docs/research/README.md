@@ -96,6 +96,8 @@ kept in the roadmap.
 - [Phase 2 normalized profile search evidence](76-phase-2-normalized-profile-search.md)
 - [Phase 2 profile endpoint summary evidence](77-phase-2-profile-endpoint-summary.md)
 - [TermRock 0.10 widget construction migration evidence](78-termrock-0.10-widget-construction-migration.md)
+- [Phase 2 row-major page assembly evidence](79-phase-2-row-major-page-assembly.md)
+- [TermRock 0.10 documentation hardening update](80-termrock-0.10-documentation-hardening-update.md)
 
 ## Architecture headline
 

@@ -1,8 +1,8 @@
 use tablerock_core::{
-    BoundedText, ByteLimit, ColumnMetadata, Engine, EngineType, IdParts, PageAccessError,
-    PageBuffers, PageDelivery, PageEnvelope, PageFacts, PageIdentity, PageLimits, PageShape,
-    PageValidationError, PageWarning, PageWarnings, ResultId, ResultPage, Revision, RowTotal,
-    Truncation, ValueKind,
+    BoundedText, ByteLimit, ColumnMetadata, Engine, EngineType, IdParts, OwnedValue,
+    PageAccessError, PageBuffers, PageDelivery, PageEnvelope, PageFacts, PageIdentity, PageLimits,
+    PageShape, PageValidationError, PageWarning, PageWarnings, ResultId, ResultPage, Revision,
+    RowTotal, Truncation, ValueKind,
 };
 
 fn result_id() -> ResultId {
@@ -67,6 +67,72 @@ fn validated_with_arena(arena_byte_len: u64) -> tablerock_core::ValidatedPageEnv
     )
     .validate(page_limits())
     .unwrap()
+}
+
+#[test]
+fn row_major_values_become_validated_column_major_page() {
+    let text = |value: &str| {
+        OwnedValue::text(
+            BoundedText::copy_from_str(value, ByteLimit::new(16)).unwrap(),
+            Truncation::Complete,
+        )
+        .unwrap()
+    };
+    let page = ResultPage::from_row_major(
+        identity(),
+        10,
+        RowTotal::Unknown,
+        facts(),
+        columns_for(Engine::PostgreSql),
+        vec![
+            OwnedValue::signed(7),
+            text("alpha"),
+            OwnedValue::signed(8),
+            OwnedValue::null(),
+        ],
+        page_limits(),
+    )
+    .unwrap();
+
+    assert_eq!(page.envelope().row_count(), 2);
+    assert_eq!(page.cell(0, 0).unwrap().bytes(), &7_i64.to_be_bytes());
+    assert_eq!(page.cell(1, 0).unwrap().bytes(), &8_i64.to_be_bytes());
+    assert_eq!(page.cell(0, 1).unwrap().bytes(), b"alpha");
+    assert!(page.cell(1, 1).unwrap().is_null());
+}
+
+#[test]
+fn row_major_builder_rejects_ragged_or_over_budget_input_before_projection() {
+    assert_eq!(
+        ResultPage::from_row_major(
+            identity(),
+            0,
+            RowTotal::Unknown,
+            facts(),
+            columns_for(Engine::PostgreSql),
+            vec![OwnedValue::signed(1)],
+            page_limits(),
+        ),
+        Err(PageValidationError::CellCountMismatch {
+            expected: 2,
+            actual: 1,
+        })
+    );
+    assert_eq!(
+        ResultPage::from_row_major(
+            identity(),
+            0,
+            RowTotal::Unknown,
+            facts(),
+            columns_for(Engine::PostgreSql),
+            vec![OwnedValue::signed(1), OwnedValue::null()],
+            PageLimits::new(500, 64, 7, 1024),
+        ),
+        Err(PageValidationError::ArenaLimitExceeded {
+            actual: 8,
+            limit: 7,
+        })
+    );
 }
 
 fn buffers(

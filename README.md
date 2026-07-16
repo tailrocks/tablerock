@@ -65,6 +65,8 @@ a least-data, keyset-paginated summary list is capped at 100 items. Exact engine
 favorite, group, and tag filters use scope-bound cursors. Unicode-normalized
 name/group/tag search is bounded by a 10,000-profile durable capacity. List
 summaries expose validated literal endpoints or unresolved secret markers.
+Bounded adapter rows now assemble through one checked immutable result-page
+path; real database drivers remain Phase 2 work.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

@@ -130,6 +130,12 @@ Least-privilege validated profile endpoint summary facts are recorded in
 TermRock's canonical widget-construction migration and exact refreshed main pin
 are recorded in
 [`78-termrock-0.10-widget-construction-migration.md`](docs/research/78-termrock-0.10-widget-construction-migration.md).
+The checked row-major adapter output to immutable columnar page assembler is
+recorded in
+[`79-phase-2-row-major-page-assembly.md`](docs/research/79-phase-2-row-major-page-assembly.md).
+TermRock's additive public-documentation hardening and exact refreshed main pin
+are recorded in
+[`80-termrock-0.10-documentation-hardening-update.md`](docs/research/80-termrock-0.10-documentation-hardening-update.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,
