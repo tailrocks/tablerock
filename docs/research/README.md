@@ -79,6 +79,7 @@ kept in the roadmap.
 - [TermRock 0.9 input and OSC migration evidence](59-termrock-0.9-input-osc-migration.md)
 - [Phase 2 persistence ownership and recovery evidence](60-phase-2-persistence-ownership-recovery.md)
 - [TermRock 0.9 unified key vocabulary migration evidence](61-termrock-0.9-key-vocabulary-migration.md)
+- [Phase 2 persistence crash recovery evidence](62-phase-2-persistence-crash-recovery.md)
 
 ## Architecture headline
 

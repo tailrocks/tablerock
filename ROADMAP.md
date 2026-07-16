@@ -84,6 +84,9 @@ migrations, and initial real-file compatibility evidence are recorded in
 Normalized single-actor ownership and transactional interrupted-migration
 recovery rules are recorded in
 [`60-phase-2-persistence-ownership-recovery.md`](docs/research/60-phase-2-persistence-ownership-recovery.md).
+Abrupt subprocess death without destructor/checkpoint and verified reopen are
+recorded in
+[`62-phase-2-persistence-crash-recovery.md`](docs/research/62-phase-2-persistence-crash-recovery.md).
 
 Pin an exact TermRock revision and Ratatui compatibility tuple. Build the sole
 TEA Model/Message/Update/Effect/Subscription/View shell, terminal lifecycle, focus,

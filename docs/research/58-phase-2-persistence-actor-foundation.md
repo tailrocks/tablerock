@@ -89,7 +89,8 @@ deployment remain required before profile persistence is claimed.
 
 Subsequent checkpoint `60-phase-2-persistence-ownership-recovery.md` closes the
 normalized process-local ownership and interrupted transactional migration
-items while retaining the other listed gates.
+items. Checkpoint `62-phase-2-persistence-crash-recovery.md` closes abrupt
+post-startup process-death reopen while retaining the other listed gates.
 
 ## Verification record
 
