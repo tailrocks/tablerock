@@ -12,6 +12,8 @@ use testcontainers::{GenericImage, ImageExt, core::IntoContainerPort, runners::A
 
 mod support;
 
+const CLICKHOUSE_CANCEL_EVIDENCE_DEADLINE: Duration = Duration::from_secs(15);
+
 fn text(value: &str) -> BoundedText {
     BoundedText::copy_from_str(value, ByteLimit::new(128)).unwrap()
 }
@@ -137,18 +139,29 @@ async fn verify_image(image: &str) {
             1.5_f64.to_bits().to_be_bytes()
         );
         assert_eq!(page.columns()[10].engine_type().name(), "Date");
+        assert_eq!(page.cell(0, 10).unwrap().kind(), ValueKind::Temporal);
+        assert_eq!(page.cell(0, 10).unwrap().bytes(), b"2024-02-29");
         assert_eq!(page.columns()[11].engine_type().name(), "Date32");
+        assert_eq!(page.cell(0, 11).unwrap().kind(), ValueKind::Temporal);
+        assert_eq!(page.cell(0, 11).unwrap().bytes(), b"1900-01-01");
         assert!(
             page.columns()[12]
                 .engine_type()
                 .name()
                 .starts_with("DateTime")
         );
+        assert_eq!(page.cell(0, 12).unwrap().kind(), ValueKind::Temporal);
+        assert_eq!(page.cell(0, 12).unwrap().bytes(), b"2024-02-29T12:34:56Z");
         assert!(
             page.columns()[13]
                 .engine_type()
                 .name()
                 .starts_with("DateTime64(9")
+        );
+        assert_eq!(page.cell(0, 13).unwrap().kind(), ValueKind::Temporal);
+        assert_eq!(
+            page.cell(0, 13).unwrap().bytes(),
+            b"2024-02-29T12:34:56.123456789Z"
         );
         assert_eq!(page.cell(0, 14).unwrap().kind(), ValueKind::Binary);
         assert_eq!(page.cell(0, 14).unwrap().bytes().len(), 16);
@@ -213,6 +226,18 @@ async fn verify_image(image: &str) {
                 .contains(tablerock_core::PageWarning::ByteLimitReached)
         );
         assert_eq!(bounded_page.cell(0, 9).unwrap().kind(), ValueKind::Float64);
+        for column in 10..=13 {
+            assert_eq!(
+                bounded_page.cell(0, column).unwrap().kind(),
+                ValueKind::Temporal
+            );
+            assert!(matches!(
+                bounded_page.cell(0, column).unwrap().truncation(),
+                Truncation::Truncated {
+                    original_byte_len: Some(original)
+                } if original > 8
+            ));
+        }
 
         let mut structured = session
             .stream_probe(
@@ -248,6 +273,12 @@ async fn verify_image(image: &str) {
             &structured_page,
             4,
             "[{\"$binary\":\"00ff\"}]",
+            Truncation::Complete,
+        );
+        assert_structured(
+            &structured_page,
+            5,
+            "[\"2024-02-29T12:34:56.123Z\"]",
             Truncation::Complete,
         );
         assert!(structured.next_page(identity(), 1).await.unwrap().is_none());
@@ -347,18 +378,24 @@ async fn verify_service_cancellation(port: u16, compression: ClickHouseCompressi
         .await
         .unwrap();
     assert!(matches!(
-        tokio::time::timeout(Duration::from_secs(5), service.next_update(operation_id))
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap(),
-        EngineServiceUpdate::Started
-    ));
-    match tokio::time::timeout(Duration::from_secs(5), service.next_update(operation_id))
+        tokio::time::timeout(
+            CLICKHOUSE_CANCEL_EVIDENCE_DEADLINE,
+            service.next_update(operation_id),
+        )
         .await
         .unwrap()
         .unwrap()
-        .unwrap()
+        .unwrap(),
+        EngineServiceUpdate::Started
+    ));
+    match tokio::time::timeout(
+        CLICKHOUSE_CANCEL_EVIDENCE_DEADLINE,
+        service.next_update(operation_id),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .unwrap()
     {
         EngineServiceUpdate::Page(_) => {}
         other => panic!("unexpected {image} event before ClickHouse progress: {other:?}"),
@@ -369,7 +406,7 @@ async fn verify_service_cancellation(port: u16, compression: ClickHouseCompressi
         cancel.runtime,
         Some(tablerock_engine::RuntimeCancelOutcome::Queued)
     );
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(CLICKHOUSE_CANCEL_EVIDENCE_DEADLINE, async {
         loop {
             match service.next_update(operation_id).await.unwrap().unwrap() {
                 EngineServiceUpdate::Page(_) => {}
@@ -380,7 +417,7 @@ async fn verify_service_cancellation(port: u16, compression: ClickHouseCompressi
     })
     .await
     .unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(CLICKHOUSE_CANCEL_EVIDENCE_DEADLINE, async {
         loop {
             match service.next_update(operation_id).await.unwrap().unwrap() {
                 EngineServiceUpdate::Page(_) => {}

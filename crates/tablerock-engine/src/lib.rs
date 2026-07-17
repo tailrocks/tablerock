@@ -6,6 +6,7 @@ mod postgres;
 mod redis;
 mod runtime;
 mod service;
+mod temporal;
 
 pub use adapter::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,

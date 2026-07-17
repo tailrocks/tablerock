@@ -306,6 +306,8 @@ timetz/interval/BC/expanded-year coverage are recorded in
 [`176-phase-2-postgresql-temporal-decoder.md`](docs/research/176-phase-2-postgresql-temporal-decoder.md),
 and
 [`177-phase-2-postgresql-temporal-completion.md`](docs/research/177-phase-2-postgresql-temporal-completion.md).
+ClickHouse canonical scalar and recursive temporal projection is recorded in
+[`178-phase-2-clickhouse-temporal-projection.md`](docs/research/178-phase-2-clickhouse-temporal-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

@@ -12,7 +12,8 @@ The decoder now covers:
 - `Float32` and `Float64`, preserving the projected IEEE 754 payload;
 - `Decimal32`, `Decimal64`, `Decimal128`, `Decimal256`, and precision-based
   `Decimal(P,S)`;
-- `Date`, `Date32`, `DateTime`, and timezone-bearing `DateTime64` storage;
+- canonical bounded `Date`, `Date32`, `DateTime`, and timezone-bearing
+  `DateTime64` temporal projections (completed by research 178);
 - `UUID`, `IPv4`, `IPv6`, `Enum8`, `Enum16`, and `LowCardinality(T)`;
 - the existing strings, fixed strings, binary strings, and recursive nullable
   scalars.
@@ -40,7 +41,7 @@ precision.
 The digest-pinned ClickHouse 25.8.28.1 and 26.3.17.4 LTS Testcontainers matrix
 runs every probe with compression disabled and LZ4 enabled. It proves exact
 UInt128/Int128/UInt256/Int256 extrema, Decimal256 scale, Float32 projection,
-temporal metadata, UUID/IP raw values, enums, low-cardinality text, and bounded
+canonical temporal values/metadata, UUID/IP raw values, enums, low-cardinality text, and bounded
 unknown/truncation warnings. Unit tests independently prove full-width
 two's-complement conversion and decimal scale placement around zero.
 

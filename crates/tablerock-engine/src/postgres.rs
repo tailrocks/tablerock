@@ -35,6 +35,8 @@ use tokio_postgres::{
 use tokio_postgres_rustls::MakeRustlsConnect;
 use zeroize::Zeroize;
 
+use crate::temporal::format_date_from_unix_days;
+
 const MAX_TLS_MATERIAL_BYTES: usize = 65_536;
 const MAX_CA_CERTIFICATES: usize = 16;
 const MAX_CLIENT_CERTIFICATES: usize = 8;
@@ -1520,7 +1522,7 @@ fn decode_temporal(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, P
             match i32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]) {
                 i32::MAX => "infinity".to_owned(),
                 i32::MIN => "-infinity".to_owned(),
-                days => format_date(i64::from(days) + POSTGRES_UNIX_EPOCH_DAYS),
+                days => format_date_from_unix_days(i64::from(days) + POSTGRES_UNIX_EPOCH_DAYS),
             }
         }
         Type::TIME if raw.len() == 8 => {
@@ -1543,7 +1545,12 @@ fn decode_temporal(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, P
                     let days = micros.div_euclid(MICROS_PER_DAY) + POSTGRES_UNIX_EPOCH_DAYS;
                     let time = micros.rem_euclid(MICROS_PER_DAY);
                     let suffix = if *type_ == Type::TIMESTAMPTZ { "Z" } else { "" };
-                    format!("{}T{}{}", format_date(days), format_time(time), suffix)
+                    format!(
+                        "{}T{}{}",
+                        format_date_from_unix_days(days),
+                        format_time(time),
+                        suffix
+                    )
                 }
             }
         }
@@ -1598,28 +1605,6 @@ fn bounded_temporal(canonical: &str, limit: u64) -> Result<OwnedValue, PostgresE
     .map_err(|_| PostgresError::Protocol)?;
     OwnedValue::temporal(stored, truncation(stored_len, canonical.len()))
         .map_err(|_| PostgresError::Protocol)
-}
-
-fn format_date(days_since_unix_epoch: i64) -> String {
-    let shifted = days_since_unix_epoch + 719_468;
-    let era = shifted.div_euclid(146_097);
-    let day_of_era = shifted - era * 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let mut year = year_of_era + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_prime = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
-    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
-    year += i64::from(month <= 2);
-    let year = if (0..=9_999).contains(&year) {
-        format!("{year:04}")
-    } else if year > 0 {
-        format!("+{year}")
-    } else {
-        format!("-{absolute:04}", absolute = year.unsigned_abs())
-    };
-    format!("{year}-{month:02}-{day:02}")
 }
 
 fn format_time(micros: i64) -> String {
@@ -2272,8 +2257,8 @@ mod tests {
             ));
         }
 
-        assert_eq!(format_date(-719_528), "0000-01-01");
-        assert_eq!(format_date(2_933_262), "+10000-12-31");
+        assert_eq!(format_date_from_unix_days(-719_528), "0000-01-01");
+        assert_eq!(format_date_from_unix_days(2_933_262), "+10000-12-31");
 
         let mut timetz = Vec::new();
         timetz.extend_from_slice(&45_296_123_456_i64.to_be_bytes());

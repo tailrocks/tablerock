@@ -15,6 +15,8 @@ use tablerock_core::{
     PageWarnings, ResultPage, RowTotal, Truncation, ValueKind,
 };
 
+use crate::temporal::{format_date_from_unix_days, format_unix_timestamp};
+
 const MAX_CLICKHOUSE_TYPE_DEPTH: u8 = 64;
 const MAX_STRUCTURED_NODES: u64 = 1_000_000;
 const MAX_QUERY_ID_BYTES: usize = 256;
@@ -76,7 +78,8 @@ impl ClickHouseProbeQuery {
                  tuple(toInt64(-7), 'quoted\\n', CAST(NULL, 'Nullable(UInt8)')) AS tuple_value, \
                  map('a', toUInt16(1), 'b', toUInt16(2)) AS map_value, \
                  CAST([(1, 'one'), (2, 'two')], 'Array(Tuple(id UInt8, label String))') AS nested_value, \
-                 [CAST(unhex('00FF'), 'FixedString(2)')] AS binary_array"
+                 [CAST(unhex('00FF'), 'FixedString(2)')] AS binary_array, \
+                 [toDateTime64('2024-02-29 12:34:56.123', 3, 'UTC')] AS temporal_array"
             }
             Self::CancellationStream => "SELECT number AS id FROM numbers(1000000000)",
         }
@@ -474,6 +477,10 @@ enum ClickHouseType {
     },
     Float32,
     Float64,
+    Date,
+    Date32,
+    DateTime,
+    DateTime64(u32),
     String,
     Binary(usize),
     Nullable(Box<Self>),
@@ -571,28 +578,50 @@ impl ClickHouseType {
             };
             return Ok(Self::decimal(bytes, scale, raw));
         }
-        if call_argument(raw, "DateTime").is_some() {
-            return Ok(Self::Unsigned(4));
+        if let Some(inner) = call_argument(raw, "DateTime") {
+            let arguments = split_type_arguments(inner)?;
+            if arguments.len() != 1 || !timezone_literal(arguments[0]) {
+                return Err(ClickHouseError::Protocol);
+            }
+            return Ok(Self::DateTime);
         }
-        if call_argument(raw, "DateTime64").is_some() {
-            return Ok(Self::Signed(8));
+        if let Some(inner) = call_argument(raw, "DateTime64") {
+            let arguments = split_type_arguments(inner)?;
+            if arguments.is_empty()
+                || arguments.len() > 2
+                || arguments
+                    .get(1)
+                    .is_some_and(|value| !timezone_literal(value))
+            {
+                return Err(ClickHouseError::Protocol);
+            }
+            let scale = arguments[0]
+                .parse::<u32>()
+                .map_err(|_| ClickHouseError::Protocol)?;
+            if scale > 9 {
+                return Err(ClickHouseError::Protocol);
+            }
+            return Ok(Self::DateTime64(scale));
         }
         match raw {
             "Bool" => Ok(Self::Boolean),
             "UInt8" => Ok(Self::Unsigned(1)),
-            "UInt16" | "Date" => Ok(Self::Unsigned(2)),
-            "UInt32" | "DateTime" => Ok(Self::Unsigned(4)),
+            "UInt16" => Ok(Self::Unsigned(2)),
+            "UInt32" => Ok(Self::Unsigned(4)),
             "UInt64" => Ok(Self::Unsigned(8)),
             "Int8" => Ok(Self::Signed(1)),
             "Int16" => Ok(Self::Signed(2)),
-            "Int32" | "Date32" => Ok(Self::Signed(4)),
-            "Int64" | "DateTime64" => Ok(Self::Signed(8)),
+            "Int32" => Ok(Self::Signed(4)),
+            "Int64" => Ok(Self::Signed(8)),
             "UInt128" => Ok(Self::big_integer(16, false, raw)),
             "UInt256" => Ok(Self::big_integer(32, false, raw)),
             "Int128" => Ok(Self::big_integer(16, true, raw)),
             "Int256" => Ok(Self::big_integer(32, true, raw)),
             "Float32" => Ok(Self::Float32),
             "Float64" => Ok(Self::Float64),
+            "Date" => Ok(Self::Date),
+            "Date32" => Ok(Self::Date32),
+            "DateTime" => Ok(Self::DateTime),
             "String" => Ok(Self::String),
             "IPv4" => Ok(Self::Binary(4)),
             "UUID" | "IPv6" => Ok(Self::Binary(16)),
@@ -673,6 +702,10 @@ impl ClickHouseType {
                     })
                     .await
                 }
+                Self::Date => read_clickhouse_date(reader, limit).await,
+                Self::Date32 => read_clickhouse_date32(reader, limit).await,
+                Self::DateTime => read_clickhouse_datetime(reader, limit).await,
+                Self::DateTime64(scale) => read_clickhouse_datetime64(reader, *scale, limit).await,
                 Self::String => {
                     let original = read_leb128(reader).await?;
                     let (bytes, truncation) = read_bounded(reader, original, limit).await?;
@@ -964,6 +997,10 @@ fn split_type_arguments(raw: &str) -> Result<Vec<&str>, ClickHouseError> {
     Ok(arguments)
 }
 
+fn timezone_literal(raw: &str) -> bool {
+    raw.len() >= 3 && raw.starts_with('\'') && raw.ends_with('\'')
+}
+
 fn top_level_whitespace(raw: &str) -> Option<usize> {
     let mut depth = 0_u32;
     let mut quoted = false;
@@ -1223,6 +1260,75 @@ async fn fixed_value(
     }
 }
 
+async fn read_clickhouse_date(
+    reader: &mut ChunkReader,
+    limit: u64,
+) -> Result<OwnedValue, ClickHouseError> {
+    let mut bytes = [0; 2];
+    reader.read_exact(&mut bytes).await?;
+    bounded_clickhouse_temporal(
+        &format_date_from_unix_days(i64::from(u16::from_le_bytes(bytes))),
+        limit,
+    )
+}
+
+async fn read_clickhouse_date32(
+    reader: &mut ChunkReader,
+    limit: u64,
+) -> Result<OwnedValue, ClickHouseError> {
+    let mut bytes = [0; 4];
+    reader.read_exact(&mut bytes).await?;
+    bounded_clickhouse_temporal(
+        &format_date_from_unix_days(i64::from(i32::from_le_bytes(bytes))),
+        limit,
+    )
+}
+
+async fn read_clickhouse_datetime(
+    reader: &mut ChunkReader,
+    limit: u64,
+) -> Result<OwnedValue, ClickHouseError> {
+    let mut bytes = [0; 4];
+    reader.read_exact(&mut bytes).await?;
+    let ticks = i64::from(u32::from_le_bytes(bytes));
+    let canonical = format_unix_timestamp(ticks, 0).ok_or(ClickHouseError::Protocol)?;
+    bounded_clickhouse_temporal(&canonical, limit)
+}
+
+async fn read_clickhouse_datetime64(
+    reader: &mut ChunkReader,
+    scale: u32,
+    limit: u64,
+) -> Result<OwnedValue, ClickHouseError> {
+    let mut bytes = [0; 8];
+    reader.read_exact(&mut bytes).await?;
+    let ticks = i64::from_le_bytes(bytes);
+    let canonical = format_unix_timestamp(ticks, scale).ok_or(ClickHouseError::Protocol)?;
+    bounded_clickhouse_temporal(&canonical, limit)
+}
+
+fn bounded_clickhouse_temporal(canonical: &str, limit: u64) -> Result<OwnedValue, ClickHouseError> {
+    let stored_len = usize::try_from(limit)
+        .unwrap_or(usize::MAX)
+        .min(canonical.len());
+    let value = BoundedText::copy_from_str(
+        &canonical[..stored_len],
+        ByteLimit::new(u64::try_from(stored_len).unwrap_or(u64::MAX)),
+    )
+    .map_err(|_| ClickHouseError::Protocol)?;
+    OwnedValue::temporal(
+        value,
+        if stored_len == canonical.len() {
+            Truncation::Complete
+        } else {
+            Truncation::Truncated {
+                original_byte_len: Some(u64::try_from(canonical.len()).unwrap_or(u64::MAX)),
+            }
+        },
+    )
+    .map_err(|_| ClickHouseError::Protocol)
+}
+
 async fn read_metadata_string(
     reader: &mut ChunkReader,
     limit: u64,
@@ -1359,6 +1465,32 @@ mod tests {
             ClickHouseType::parse(&deeply_nested),
             Err(super::ClickHouseError::Protocol)
         ));
+    }
+
+    #[test]
+    fn parses_temporal_metadata_and_rejects_invalid_precision() {
+        assert!(matches!(
+            ClickHouseType::parse("Date").unwrap(),
+            ClickHouseType::Date
+        ));
+        assert!(matches!(
+            ClickHouseType::parse("DateTime('Asia/Ho_Chi_Minh')").unwrap(),
+            ClickHouseType::DateTime
+        ));
+        assert!(matches!(
+            ClickHouseType::parse("DateTime64(9, 'UTC')").unwrap(),
+            ClickHouseType::DateTime64(9)
+        ));
+        for invalid in [
+            "DateTime()",
+            "DateTime(UTC)",
+            "DateTime64",
+            "DateTime64(10)",
+            "DateTime64(9, UTC)",
+            "DateTime64(9, 'UTC', 'extra')",
+        ] {
+            assert!(ClickHouseType::parse(invalid).is_err(), "{invalid}");
+        }
     }
 
     #[test]

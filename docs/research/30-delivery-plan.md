@@ -164,6 +164,10 @@ PostgreSQL date, time, timetz, timestamp, timestamptz, and interval results now
 pass both pinned lines as bounded canonical `Temporal`. Evidence preserves UTC
 instant truth, explicit offsets, independent interval components, microseconds,
 24:00, infinities, astronomical BC years, and signed expanded years.
+ClickHouse Date, Date32, DateTime, and DateTime64 now use the same bounded
+`Temporal` value contract. Both LTS lines prove UTC epoch projection, exact
+declared fractional scale, timezone metadata retention, recursive container
+quoting, and honest truncation.
 Rust now drives asynchronous PostgreSQL messages directly. Both pinned lines
 prove bounded redacted notices, UTF-8-safe truncation, ordered retention, and
 explicit overflow without protocol backpressure.
