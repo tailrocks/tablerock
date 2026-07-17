@@ -828,6 +828,91 @@ async fn preserves_unknown_postgresql_commit_outcome_without_retry() {
     }
 }
 
+#[tokio::test]
+async fn preserves_unknown_postgresql_commit_transport_loss_without_retry() {
+    for tag in ["17.10-alpine", "18.4-alpine"] {
+        let container = GenericImage::new("postgres", tag)
+            .with_exposed_port(5432.tcp())
+            .with_wait_for(WaitFor::message_on_stderr(
+                "database system is ready to accept connections",
+            ))
+            .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+            .start()
+            .await
+            .unwrap();
+        let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+        let config = PostgresConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            text("postgres"),
+            text("postgres"),
+            PostgresTlsMode::Disabled,
+        );
+        let session = PostgresSession::connect(&config).await.unwrap();
+        let observer = PostgresSession::connect(&config).await.unwrap();
+        session
+            .prepare_ambiguous_transport_commit_probe()
+            .await
+            .unwrap();
+
+        let write = session.ambiguous_transport_commit_probe();
+        let stop = async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if observer
+                        .ambiguous_transport_commit_waiting_probe()
+                        .await
+                        .unwrap()
+                    {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("deferred COMMIT reaches its server wait");
+            container.stop_with_timeout(Some(1)).await.unwrap();
+        };
+        let (write, ()) = tokio::join!(write, stop);
+        assert_eq!(write, Err(PostgresError::WriteOutcomeUnknown));
+        assert_eq!(observer.shutdown().await, Err(PostgresError::Connection));
+        assert_eq!(session.shutdown().await, Err(PostgresError::Connection));
+
+        container.start().await.unwrap();
+        let recovered_port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+        let recovery_config = PostgresConnectConfig::new(
+            text("127.0.0.1"),
+            recovered_port,
+            text("postgres"),
+            text("postgres"),
+            PostgresTlsMode::Disabled,
+        );
+        let recovered = tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                if let Ok(Ok(session)) = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    PostgresSession::connect(&recovery_config),
+                )
+                .await
+                {
+                    break session;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("PostgreSQL restarts within thirty seconds");
+        assert_eq!(
+            recovered
+                .ambiguous_transport_commit_count_probe()
+                .await
+                .unwrap(),
+            0
+        );
+        recovered.shutdown().await.unwrap();
+    }
+}
+
 async fn verify_typed_values(tag: &str) {
     let container = GenericImage::new("postgres", tag)
         .with_exposed_port(5432.tcp())

@@ -38,9 +38,10 @@ this tracer delays only a deferred trigger fired at transaction completion.
 
 ## Remaining work
 
-This closes applied-after-unobserved-COMMIT feasibility. Connection loss before
-dispatch, mid-request, and after server commit but before response; TLS loss;
-rollback observation; reconnect ownership; reviewed transactional mutation
+This closes applied-after-unobserved-COMMIT feasibility. Research 165
+subsequently closes rollback observation after transport loss during COMMIT.
+Connection loss before dispatch, mid-request, and after server commit but before
+response; TLS loss; reconnect ownership; reviewed transactional mutation
 plans; conflict handling; service/history/UI/UniFFI projection remain open.
 
 ## Provenance

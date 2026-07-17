@@ -113,6 +113,7 @@ kept in the roadmap.
 - [Phase 2 PostgreSQL bounded COPY streaming evidence](162-phase-2-postgresql-bounded-copy-streaming.md)
 - [Phase 2 PostgreSQL ambiguous write evidence](163-phase-2-postgresql-ambiguous-write.md)
 - [Phase 2 PostgreSQL ambiguous commit evidence](164-phase-2-postgresql-ambiguous-commit.md)
+- [Phase 2 PostgreSQL commit transport-loss evidence](165-phase-2-postgresql-commit-transport-loss.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

@@ -928,6 +928,66 @@ impl PostgresSession {
         u64::try_from(count).map_err(|_| PostgresError::Protocol)
     }
 
+    pub async fn prepare_ambiguous_transport_commit_probe(&self) -> Result<(), PostgresError> {
+        self.client
+            .batch_execute(
+                "CREATE TABLE tablerock_ambiguous_transport_commit_probe(\
+                    sequence bigint GENERATED ALWAYS AS IDENTITY, marker integer NOT NULL\
+                 ); \
+                 CREATE FUNCTION tablerock_delay_transport_commit_probe() RETURNS trigger \
+                 LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(10); RETURN NEW; END $$; \
+                 CREATE CONSTRAINT TRIGGER tablerock_delay_transport_commit_probe \
+                 AFTER INSERT ON tablerock_ambiguous_transport_commit_probe \
+                 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW \
+                 EXECUTE FUNCTION tablerock_delay_transport_commit_probe()",
+            )
+            .await
+            .map_err(|_| PostgresError::Query)
+    }
+
+    pub async fn ambiguous_transport_commit_probe(&self) -> Result<(), PostgresError> {
+        self.client
+            .batch_execute(
+                "BEGIN; \
+                 INSERT INTO tablerock_ambiguous_transport_commit_probe(marker) VALUES (1); \
+                 COMMIT",
+            )
+            .await
+            .map_err(|_| PostgresError::WriteOutcomeUnknown)
+    }
+
+    pub async fn ambiguous_transport_commit_waiting_probe(&self) -> Result<bool, PostgresError> {
+        let row = self
+            .client
+            .query_one(
+                "SELECT EXISTS(\
+                    SELECT 1 FROM pg_stat_activity \
+                    WHERE pid <> pg_backend_pid() \
+                      AND state = 'active' \
+                      AND wait_event = 'PgSleep' \
+                      AND query LIKE '%tablerock_ambiguous_transport_commit_probe%'\
+                 )",
+                &[],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        row.try_get(0).map_err(|_| PostgresError::Protocol)
+    }
+
+    pub async fn ambiguous_transport_commit_count_probe(&self) -> Result<u64, PostgresError> {
+        let row = self
+            .client
+            .query_one(
+                "SELECT count(*)::bigint \
+                 FROM tablerock_ambiguous_transport_commit_probe WHERE marker = 1",
+                &[],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        let count: i64 = row.try_get(0).map_err(|_| PostgresError::Protocol)?;
+        u64::try_from(count).map_err(|_| PostgresError::Protocol)
+    }
+
     pub async fn cancel_sleep_probe(&self) -> Result<PostgresCancellationOutcome, PostgresError> {
         self.cancel_probe("SELECT pg_sleep(30)", Duration::from_millis(150))
             .await

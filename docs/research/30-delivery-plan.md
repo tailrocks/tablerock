@@ -167,7 +167,9 @@ transaction-commit ambiguity remain open.
 Both pinned lines also prove explicit COMMIT ambiguity through a deferred
 constraint trigger: response observation ends during commit, exactly one row is
 later durable, the original session drains, and the transaction never replays.
-Transport-loss timing remains open.
+Both lines now also prove activity-gated transport loss during COMMIT: old
+sessions terminate, same-directory restart refreshes endpoint facts, rollback
+is observed, and no replay occurs. Other transport-loss timings remain open.
 
 ### ClickHouse spike
 

@@ -415,6 +415,9 @@ replays automatically, and leaves the original session usable.
 An explicit transaction with deferred commit work preserves the same unknown
 truth, later durable exactly-once observation, protocol drain, and no-replay
 contract.
+Activity-gated transport loss during deferred COMMIT also preserves unknown
+truth while terminating old sessions; explicit same-directory recovery refreshes
+endpoint facts, observes rollback, and never replays.
 
 ### Phase 3 — connection experience
 

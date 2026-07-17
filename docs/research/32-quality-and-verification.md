@@ -150,6 +150,9 @@ Engine additions:
   session retries it;
   an explicit transaction whose deferred commit work outlives response
   observation remains unknown, may commit exactly once, and is never replayed;
+  transport loss gated on active deferred COMMIT leaves old sessions terminal,
+  requires refreshed endpoint facts for explicit recovery, may roll back, and
+  never replays;
 - ClickHouse: nested/nullable/low-cardinality/decimal/large integer/binary,
   partial/late HTTP errors, compression, query IDs, parts, inserts, mutations;
 - Redis: binary keys/values, SCAN families, RESP2/RESP3, logical DB isolation,
