@@ -1108,7 +1108,8 @@ async fn verify_typed_values(tag: &str) {
         u64::from_be_bytes(page.cell(0, 5).unwrap().bytes().try_into().unwrap()),
         (-0.0_f64).to_bits()
     );
-    assert_eq!(page.cell(0, 6).unwrap().kind(), ValueKind::Unknown);
+    assert_eq!(page.cell(0, 6).unwrap().kind(), ValueKind::Decimal);
+    assert_eq!(page.cell(0, 6).unwrap().bytes(), b"123.450");
     assert_eq!(page.cell(0, 7).unwrap().kind(), ValueKind::Text);
     assert_eq!(page.cell(0, 7).unwrap().bytes(), "éééé".as_bytes());
     assert_eq!(page.cell(0, 8).unwrap().kind(), ValueKind::Binary);
@@ -1152,6 +1153,42 @@ async fn verify_typed_values(tag: &str) {
     );
     assert!(stream.next_page(identity(), 1).await.unwrap().is_none());
     drop(stream);
+
+    let mut numerics = session
+        .stream_probe(
+            PostgresProbeQuery::NumericValues,
+            PageLimits::new(1, 7, 256, 512),
+            64,
+        )
+        .await
+        .unwrap();
+    let numeric_page = numerics.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, expected) in [
+        (0_u32, "123.450"),
+        (1_u32, "-0.0012300"),
+        (2_u32, "12345678901234567890.1234567890"),
+        (3_u32, "NaN"),
+        (4_u32, "Infinity"),
+        (5_u32, "-Infinity"),
+        (6_u32, "0.000"),
+    ] {
+        assert_eq!(
+            numeric_page.columns()[column as usize].engine_type().name(),
+            "numeric"
+        );
+        assert_eq!(
+            numeric_page.cell(0, column).unwrap().kind(),
+            ValueKind::Decimal,
+            "numeric column {column}: {:?}",
+            numeric_page.cell(0, column).unwrap().bytes()
+        );
+        assert_eq!(
+            numeric_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+    }
+    assert!(numerics.next_page(identity(), 1).await.unwrap().is_none());
+    drop(numerics);
 
     let mut parameters = session
         .stream_probe(

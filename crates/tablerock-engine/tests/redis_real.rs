@@ -2,8 +2,8 @@ use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 use rcgen::ExtendedKeyUsagePurpose;
 use redis::{
-    AsyncCommands, Client, ClientTlsConfig, ConnectionAddr, IntoConnectionInfo, ProtocolVersion,
-    RedisConnectionInfo, TlsCertificates,
+    AsyncCommands, AsyncConnectionConfig, Client, ClientTlsConfig, ConnectionAddr,
+    IntoConnectionInfo, ProtocolVersion, RedisConnectionInfo, TlsCertificates,
 };
 use tablerock_core::{
     AuthorizedMutationPlan, BoundedBytes, BoundedText, ByteLimit, CancelDispatch, ContextId,
@@ -166,10 +166,20 @@ async fn raw_tls_admin_connection(
         },
     )
     .unwrap();
+    let connection_config = AsyncConnectionConfig::new()
+        .set_connection_timeout(Some(Duration::from_secs(5)))
+        .set_response_timeout(Some(Duration::from_secs(5)));
     tokio::time::timeout(Duration::from_secs(15), async {
         loop {
-            if let Ok(connection) = client.get_multiplexed_async_connection().await {
-                return connection;
+            if let Ok(mut connection) = client
+                .get_multiplexed_async_connection_with_config(&connection_config)
+                .await
+            {
+                let pong: redis::RedisResult<String> =
+                    redis::cmd("PING").query_async(&mut connection).await;
+                if matches!(pong.as_deref(), Ok("PONG")) {
+                    return connection;
+                }
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }

@@ -123,6 +123,9 @@ Engine additions:
 - Redis initial and replacement Pub/Sub generations share one bounded,
   cancellable connection-attempt policy; required-TLS connection deadlines map
   to redacted connect failure while plaintext blackholes retain timeout truth;
+- Redis raw TLS fixture administration uses explicit five-second connection and
+  response budgets plus PING/PONG readiness instead of redis-rs's 500 ms raw
+  response default; product timeout policies remain independently tested;
 - simultaneous PostgreSQL, ClickHouse, and Redis submission before event
   consumption, with independent page identity/data, bounded receives, and
   observed completion for every operation;
@@ -144,6 +147,8 @@ Engine additions:
   exact engine type identity on both pinned lines;
   JSON and JSONB retain deterministic bounded structured projections with
   arbitrary-precision numbers and explicit invalid/over-ceiling behavior;
+  native numeric retains arbitrary precision, scale/trailing zeros, scaled
+  zero, NaN, infinities, and bounded malformed/over-cell-limit behavior;
   `int4range` and anonymous record retain bounded unknown binary bytes with
   exact type/truncation truth, while large `bytea` remains binary;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,

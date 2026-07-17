@@ -120,6 +120,8 @@ kept in the roadmap.
 - [TermRock 0.11 lookbook event update](169-termrock-0.11-lookbook-event-update.md)
 - [Phase 2 Redis atomic revocation fixture](170-phase-2-redis-atomic-revocation-fixture.md)
 - [Phase 2 Redis subscription connect policy](171-phase-2-redis-subscription-connect-policy.md)
+- [Phase 2 PostgreSQL numeric decoder](172-phase-2-postgresql-numeric-decoder.md)
+- [Phase 2 Redis administrative readiness budget](173-phase-2-redis-admin-readiness-budget.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

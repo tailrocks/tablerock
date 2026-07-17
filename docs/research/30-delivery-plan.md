@@ -153,6 +153,10 @@ large `bytea` remains binary. JSON and JSONB now advance to deterministic
 compact bounded `Structured` projections with arbitrary-precision number and
 malformed/version-invalid truth. Other structured decoding and strict
 pre-driver transport allocation remain required.
+Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
+zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
+`Decimal` values. Malformed wire values remain `Invalid`; valid projections over
+the cell limit remain typed bounded `Unknown`.
 Rust now drives asynchronous PostgreSQL messages directly. Both pinned lines
 prove bounded redacted notices, UTF-8-safe truncation, ordered retention, and
 explicit overflow without protocol backpressure.

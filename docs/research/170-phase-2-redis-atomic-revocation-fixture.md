@@ -17,6 +17,9 @@ The fixture now sends both `CLIENT KILL USER` commands in one redis-rs pipeline
 and validates both integer replies. Both commands reach the server before either
 reply is awaited, removing the inter-command reconnect window while preserving
 independent killed-connection counts.
+Research 173 subsequently gives the shared raw administrative connection
+explicit command budgets and protocol readiness, removing redis-rs's 500 ms
+default timeout as a separate source of false fixture failure.
 
 The complete Redis 7.4.9/8.8.0, RESP2/RESP3, TLS/mTLS authentication and active
 channel/pattern revocation matrix passes with the repaired fixture. Product

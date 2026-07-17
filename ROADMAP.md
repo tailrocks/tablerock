@@ -294,6 +294,10 @@ Redis's atomic multi-user revocation fixture repair is recorded in
 Redis's unified initial/replacement subscription connection policy is recorded
 in
 [`171-phase-2-redis-subscription-connect-policy.md`](docs/research/171-phase-2-redis-subscription-connect-policy.md).
+Exact bounded PostgreSQL arbitrary-precision numeric decoding is recorded in
+[`172-phase-2-postgresql-numeric-decoder.md`](docs/research/172-phase-2-postgresql-numeric-decoder.md).
+Redis raw TLS administrative timeout/readiness hardening is recorded in
+[`173-phase-2-redis-admin-readiness-budget.md`](docs/research/173-phase-2-redis-admin-readiness-budget.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

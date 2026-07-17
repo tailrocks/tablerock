@@ -37,8 +37,9 @@ and the pre-DOM input ceiling. Official `postgres:17.10-alpine` and
 `postgres:18.4-alpine` Testcontainers fixtures prove both database types become
 the same exact bounded structured projection through the real binary stream.
 
-Range, composite, array, UUID, numeric, and temporal canonical decoding remains
-open. Research 167 continues to prove their raw preservation where applicable.
+Range, composite, array, UUID, and temporal canonical decoding remains open.
+Research 172 subsequently closes numeric decoding; research 167 continues to
+prove raw preservation where applicable.
 
 Context7 was attempted first and reported its monthly quota exhausted. Latest
 version and feature facts were verified through Cargo registry metadata,

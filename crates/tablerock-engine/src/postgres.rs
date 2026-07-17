@@ -118,6 +118,7 @@ pub enum PostgresProbeQuery {
     BoundedSeries,
     PerformanceSeries,
     TypedValues,
+    NumericValues,
     Parameters,
     CancellationStream,
 }
@@ -339,6 +340,13 @@ impl PostgresProbeQuery {
                  '[1,5)'::int4range AS range_value, \
                  ROW(7::int4, 'é'::text) AS composite_value, \
                  decode(repeat('ab', 16), 'hex')::bytea AS large_binary_value"
+            }
+            Self::NumericValues => {
+                "SELECT 123.450::numeric AS positive_scaled, \
+                 (-0.0012300)::numeric AS negative_scaled, \
+                 12345678901234567890.1234567890::numeric AS arbitrary_precision, \
+                 'NaN'::numeric AS not_a_number, 'Infinity'::numeric AS positive_infinity, \
+                 '-Infinity'::numeric AS negative_infinity, 0.000::numeric AS scaled_zero"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1464,7 +1472,176 @@ fn decode_value(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Post
     if *type_ == Type::JSON || *type_ == Type::JSONB {
         return decode_json(type_, raw, limit);
     }
+    if *type_ == Type::NUMERIC {
+        return decode_numeric(type_, raw, limit);
+    }
     bounded_raw(type_, raw, limit, false)
+}
+
+fn decode_numeric(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
+    let Some(header) = NumericHeader::parse(raw) else {
+        return bounded_raw(type_, raw, limit, true);
+    };
+    let projection = match header.project(limit) {
+        Ok(Some(projection)) => projection,
+        Ok(None) => return bounded_raw(type_, raw, limit, false),
+        Err(()) => return bounded_raw(type_, raw, limit, true),
+    };
+    let decimal = BoundedText::from_string(projection, ByteLimit::new(limit))
+        .map_err(|_| PostgresError::Protocol)?;
+    Ok(OwnedValue::decimal(decimal))
+}
+
+const NUMERIC_POSITIVE: u16 = 0x0000;
+const NUMERIC_NEGATIVE: u16 = 0x4000;
+const NUMERIC_NAN: u16 = 0xC000;
+const NUMERIC_POSITIVE_INFINITY: u16 = 0xD000;
+const NUMERIC_NEGATIVE_INFINITY: u16 = 0xF000;
+const NUMERIC_SCALE_MASK: u16 = 0x3FFF;
+
+struct NumericHeader<'a> {
+    weight: i16,
+    sign: u16,
+    scale: u16,
+    digits: &'a [u8],
+}
+
+impl<'a> NumericHeader<'a> {
+    fn parse(raw: &'a [u8]) -> Option<Self> {
+        let header: [u8; 8] = raw.get(..8)?.try_into().ok()?;
+        let digit_count = usize::from(u16::from_be_bytes([header[0], header[1]]));
+        let expected = 8_usize.checked_add(digit_count.checked_mul(2)?)?;
+        if raw.len() != expected {
+            return None;
+        }
+        let sign = u16::from_be_bytes([header[4], header[5]]);
+        let scale = u16::from_be_bytes([header[6], header[7]]);
+        if !matches!(
+            sign,
+            NUMERIC_POSITIVE
+                | NUMERIC_NEGATIVE
+                | NUMERIC_NAN
+                | NUMERIC_POSITIVE_INFINITY
+                | NUMERIC_NEGATIVE_INFINITY
+        ) || scale & !NUMERIC_SCALE_MASK != 0
+            || raw[8..]
+                .chunks_exact(2)
+                .any(|digit| u16::from_be_bytes([digit[0], digit[1]]) >= 10_000)
+        {
+            return None;
+        }
+        Some(Self {
+            weight: i16::from_be_bytes([header[2], header[3]]),
+            sign,
+            scale,
+            digits: &raw[8..],
+        })
+    }
+
+    fn project(&self, limit: u64) -> Result<Option<String>, ()> {
+        let special = match self.sign {
+            NUMERIC_NAN => Some("NaN"),
+            NUMERIC_POSITIVE_INFINITY => Some("Infinity"),
+            NUMERIC_NEGATIVE_INFINITY => Some("-Infinity"),
+            _ => None,
+        };
+        if let Some(special) = special {
+            return Ok((u64::try_from(special.len()).unwrap_or(u64::MAX) <= limit)
+                .then(|| special.to_owned()));
+        }
+
+        let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+        let mut output = String::with_capacity(limit.min(256));
+        let first_nonzero = self
+            .digits
+            .chunks_exact(2)
+            .position(|digit| u16::from_be_bytes([digit[0], digit[1]]) != 0);
+        let effective_weight = first_nonzero
+            .map(|index| i32::from(self.weight) - i32::try_from(index).unwrap_or(i32::MAX));
+        if let Some(weight) = effective_weight.filter(|weight| *weight >= 0) {
+            let first = self.digit_at_exponent(weight).ok_or(())?.to_string();
+            if !push_decimal(&mut output, &first, limit) {
+                return Ok(None);
+            }
+            for exponent in (0..weight).rev() {
+                if !push_decimal_group(
+                    &mut output,
+                    self.digit_at_exponent(exponent).unwrap_or(0),
+                    4,
+                    limit,
+                ) {
+                    return Ok(None);
+                }
+            }
+        } else if !push_decimal(&mut output, "0", limit) {
+            return Ok(None);
+        }
+
+        if self.scale != 0 {
+            if !push_decimal(&mut output, ".", limit) {
+                return Ok(None);
+            }
+            let groups = usize::from(self.scale).div_ceil(4);
+            for group in 1..=groups {
+                let digits = if group == groups && !self.scale.is_multiple_of(4) {
+                    usize::from(self.scale % 4)
+                } else {
+                    4
+                };
+                let exponent = -i32::try_from(group).unwrap_or(i32::MAX);
+                if !push_decimal_group(
+                    &mut output,
+                    self.digit_at_exponent(exponent).unwrap_or(0),
+                    digits,
+                    limit,
+                ) {
+                    return Ok(None);
+                }
+            }
+        }
+        if self.sign == NUMERIC_NEGATIVE
+            && output
+                .bytes()
+                .any(|byte| byte.is_ascii_digit() && byte != b'0')
+        {
+            if output.len() >= limit {
+                return Ok(None);
+            }
+            output.insert(0, '-');
+        }
+        Ok(Some(output))
+    }
+
+    fn digit_at_exponent(&self, exponent: i32) -> Option<u16> {
+        let index = i32::from(self.weight).checked_sub(exponent)?;
+        let index = usize::try_from(index).ok()?;
+        let offset = index.checked_mul(2)?;
+        let digit = self.digits.get(offset..offset + 2)?;
+        Some(u16::from_be_bytes([digit[0], digit[1]]))
+    }
+}
+
+fn push_decimal(output: &mut String, value: &str, limit: usize) -> bool {
+    if output
+        .len()
+        .checked_add(value.len())
+        .is_none_or(|length| length > limit)
+    {
+        return false;
+    }
+    output.push_str(value);
+    true
+}
+
+fn push_decimal_group(output: &mut String, digit: u16, digits: usize, limit: usize) -> bool {
+    let bytes = [
+        b'0' + u8::try_from(digit / 1_000).unwrap_or(0),
+        b'0' + u8::try_from((digit / 100) % 10).unwrap_or(0),
+        b'0' + u8::try_from((digit / 10) % 10).unwrap_or(0),
+        b'0' + u8::try_from(digit % 10).unwrap_or(0),
+    ];
+    let group = std::str::from_utf8(&bytes[..digits]).unwrap_or("");
+    push_decimal(output, group, limit)
 }
 
 fn decode_json(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
@@ -1758,5 +1935,67 @@ mod tests {
             } => assert_eq!(original, (MAX_JSON_INPUT_BYTES + 1) as u64),
             _ => panic!("expected bounded oversized JSON"),
         }
+    }
+
+    #[test]
+    fn numeric_projection_preserves_scale_sign_and_special_values() {
+        for (raw, expected) in [
+            (
+                numeric_raw(0, NUMERIC_POSITIVE, 3, &[123, 4_500]),
+                "123.450",
+            ),
+            (
+                numeric_raw(-1, NUMERIC_NEGATIVE, 7, &[12, 3_000]),
+                "-0.0012300",
+            ),
+            (numeric_raw(0, NUMERIC_POSITIVE, 3, &[]), "0.000"),
+            (numeric_raw(-1, NUMERIC_NEGATIVE, 2, &[12]), "0.00"),
+            (numeric_raw(0, NUMERIC_NAN, 0, &[]), "NaN"),
+            (
+                numeric_raw(0, NUMERIC_POSITIVE_INFINITY, 32, &[]),
+                "Infinity",
+            ),
+            (
+                numeric_raw(0, NUMERIC_NEGATIVE_INFINITY, 0, &[]),
+                "-Infinity",
+            ),
+        ] {
+            let value = decode_value(&Type::NUMERIC, &raw, 64).unwrap();
+            assert!(matches!(
+                value.as_ref(),
+                tablerock_core::ValueRef::Decimal(value) if value == expected
+            ));
+        }
+    }
+
+    #[test]
+    fn numeric_projection_bounds_and_rejects_malformed_wire_values() {
+        let raw = numeric_raw(1, NUMERIC_POSITIVE, 4, &[1, 2, 3]);
+        let bounded = decode_value(&Type::NUMERIC, &raw, 4).unwrap();
+        assert_eq!(bounded.kind(), tablerock_core::ValueKind::Unknown);
+        assert_eq!(bounded.encoded_byte_len(), 4);
+
+        for raw in [
+            numeric_raw(0, 0x8000, 0, &[]),
+            numeric_raw(0, NUMERIC_POSITIVE, 0, &[10_000]),
+            numeric_raw(0, NUMERIC_POSITIVE, 0x4000, &[]),
+            vec![0; 7],
+        ] {
+            let invalid = decode_value(&Type::NUMERIC, &raw, 64).unwrap();
+            assert_eq!(invalid.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(invalid.engine_type().unwrap().name(), "numeric");
+        }
+    }
+
+    fn numeric_raw(weight: i16, sign: u16, scale: u16, digits: &[u16]) -> Vec<u8> {
+        let mut raw = Vec::with_capacity(8 + digits.len() * 2);
+        raw.extend_from_slice(&u16::try_from(digits.len()).unwrap().to_be_bytes());
+        raw.extend_from_slice(&weight.to_be_bytes());
+        raw.extend_from_slice(&sign.to_be_bytes());
+        raw.extend_from_slice(&scale.to_be_bytes());
+        for digit in digits {
+            raw.extend_from_slice(&digit.to_be_bytes());
+        }
+        raw
     }
 }

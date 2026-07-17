@@ -41,9 +41,9 @@ Testcontainers Rust 0.27.3 owns the official `postgres:17.10-alpine` and
 
 The driver receives a complete PostgreSQL data-row field before TableRock can
 apply the page cell bound. Strict pre-decode transport allocation for one
-unbounded field remains open. Canonical numeric, temporal, UUID, array, range,
-and composite decoding remains open; JSON/JSONB projection is closed by
-research 168.
+unbounded field remains open. Canonical temporal, UUID, array, range, and
+composite decoding remains open; JSON/JSONB projection is closed by research
+168 and numeric decoding by research 172.
 
 ## Verification
 
