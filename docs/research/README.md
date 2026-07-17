@@ -109,6 +109,7 @@ kept in the roadmap.
 - [Phase 2 PostgreSQL NULL and array parameter evidence](158-phase-2-postgresql-null-array-parameters.md)
 - [Phase 2 PostgreSQL bounded notice evidence](159-phase-2-postgresql-bounded-notices.md)
 - [Phase 2 PostgreSQL notice detail/hint evidence](160-phase-2-postgresql-notice-detail-hint.md)
+- [Phase 2 PostgreSQL multiple-statement outcome evidence](161-phase-2-postgresql-multiple-statement-outcomes.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

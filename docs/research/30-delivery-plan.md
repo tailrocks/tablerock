@@ -150,6 +150,9 @@ prove bounded redacted notices, UTF-8-safe truncation, ordered retention, and
 explicit overflow without protocol backpressure.
 Optional notice detail and hint remain independently bounded, preserve absence
 and truncation truth, and stay redacted from Debug.
+Both pinned lines now prove ordered CREATE/INSERT/UPDATE/SELECT outcomes with
+exact command/query kind and row counts while typed rows remain on the binary
+extended-query path.
 
 ### ClickHouse spike
 

@@ -9,7 +9,7 @@ use tablerock_engine::{
     AdapterFailureClass, ClickHouseProbeQuery, DriverPageRequest, DriverSession,
     EngineServiceUpdate, PostgresCancellationOutcome, PostgresClientIdentity,
     PostgresConnectConfig, PostgresError, PostgresNoticeDelivery, PostgresProbeQuery,
-    PostgresSession, PostgresTlsMaterial, PostgresTlsMode,
+    PostgresSession, PostgresStatementKind, PostgresTlsMaterial, PostgresTlsMode,
 };
 
 mod support;
@@ -623,6 +623,46 @@ async fn bounds_postgresql_notices_and_reports_overflow() {
                 format!("table-rock-overflow-{expected_index}")
             );
         }
+        session.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn preserves_ordered_postgresql_statement_outcomes() {
+    for tag in ["17.10-alpine", "18.4-alpine"] {
+        let container = GenericImage::new("postgres", tag)
+            .with_exposed_port(5432.tcp())
+            .with_wait_for(WaitFor::message_on_stderr(
+                "database system is ready to accept connections",
+            ))
+            .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+            .start()
+            .await
+            .unwrap();
+        let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+        let session = PostgresSession::connect(&PostgresConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            text("postgres"),
+            text("postgres"),
+            PostgresTlsMode::Disabled,
+        ))
+        .await
+        .unwrap();
+        let outcomes = session.multiple_statement_probe().await.unwrap();
+        assert_eq!(outcomes.len(), 4);
+        assert_eq!(outcomes[0].ordinal(), 0);
+        assert_eq!(outcomes[0].kind(), PostgresStatementKind::Command);
+        assert_eq!(outcomes[0].row_count(), 0);
+        assert_eq!(outcomes[1].ordinal(), 1);
+        assert_eq!(outcomes[1].kind(), PostgresStatementKind::Command);
+        assert_eq!(outcomes[1].row_count(), 2);
+        assert_eq!(outcomes[2].ordinal(), 2);
+        assert_eq!(outcomes[2].kind(), PostgresStatementKind::Command);
+        assert_eq!(outcomes[2].row_count(), 1);
+        assert_eq!(outcomes[3].ordinal(), 3);
+        assert_eq!(outcomes[3].kind(), PostgresStatementKind::Query);
+        assert_eq!(outcomes[3].row_count(), 2);
         session.shutdown().await.unwrap();
     }
 }

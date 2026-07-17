@@ -138,6 +138,8 @@ Engine additions:
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,
   and Debug redaction on both pinned lines;
+  fixed multiple-statement batches retain ordered command/query outcomes and
+  exact row counts without introducing a second typed-row path;
 - ClickHouse: nested/nullable/low-cardinality/decimal/large integer/binary,
   partial/late HTTP errors, compression, query IDs, parts, inserts, mutations;
 - Redis: binary keys/values, SCAN families, RESP2/RESP3, logical DB isolation,

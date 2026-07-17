@@ -203,6 +203,36 @@ pub enum PostgresNoticeDelivery {
     Overflow { dropped: u64 },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PostgresStatementKind {
+    Query,
+    Command,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PostgresStatementOutcome {
+    ordinal: u32,
+    kind: PostgresStatementKind,
+    row_count: u64,
+}
+
+impl PostgresStatementOutcome {
+    #[must_use]
+    pub const fn ordinal(self) -> u32 {
+        self.ordinal
+    }
+
+    #[must_use]
+    pub const fn kind(self) -> PostgresStatementKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub const fn row_count(self) -> u64 {
+        self.row_count
+    }
+}
+
 impl PostgresProbeQuery {
     const fn sql(self) -> &'static str {
         match self {
@@ -624,6 +654,52 @@ impl PostgresSession {
             )
             .await
             .map_err(|_| PostgresError::Query)
+    }
+
+    pub async fn multiple_statement_probe(
+        &self,
+    ) -> Result<Vec<PostgresStatementOutcome>, PostgresError> {
+        let messages = self
+            .client
+            .simple_query_raw(
+                "CREATE TEMP TABLE tablerock_statement_probe(value integer); \
+                 INSERT INTO tablerock_statement_probe VALUES (1), (2); \
+                 UPDATE tablerock_statement_probe SET value = 3 WHERE value = 2; \
+                 SELECT value FROM tablerock_statement_probe ORDER BY value",
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        tokio::pin!(messages);
+        let mut outcomes = Vec::with_capacity(4);
+        let mut has_rows = false;
+        while let Some(message) = messages.next().await {
+            match message.map_err(|_| PostgresError::Query)? {
+                tokio_postgres::SimpleQueryMessage::RowDescription(_) => has_rows = true,
+                tokio_postgres::SimpleQueryMessage::Row(_) => {}
+                tokio_postgres::SimpleQueryMessage::CommandComplete(row_count) => {
+                    let ordinal =
+                        u32::try_from(outcomes.len()).map_err(|_| PostgresError::Query)?;
+                    outcomes.push(PostgresStatementOutcome {
+                        ordinal,
+                        kind: if has_rows {
+                            PostgresStatementKind::Query
+                        } else {
+                            PostgresStatementKind::Command
+                        },
+                        row_count,
+                    });
+                    has_rows = false;
+                    if outcomes.len() > 4 {
+                        return Err(PostgresError::Query);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if outcomes.len() != 4 {
+            return Err(PostgresError::Query);
+        }
+        Ok(outcomes)
     }
 
     pub async fn cancel_sleep_probe(&self) -> Result<PostgresCancellationOutcome, PostgresError> {
