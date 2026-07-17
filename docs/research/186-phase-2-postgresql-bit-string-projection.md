@@ -36,8 +36,8 @@ identity, and complete canonical `Text` values.
 
 ## Remaining work
 
-Additional scalar families remain separate typed-value work. Bit-string editors
-and type-modifier schema metadata, public parameter plans and request bounds,
+Research 187 subsequently closes unsigned identifier projection. Additional
+scalar families remain separate typed-value work. Bit-string editors and type-modifier schema metadata, public parameter plans and request bounds,
 service/UI projection, and UniFFI remain open. The PostgreSQL driver still
 receives a complete field before TableRock applies its cell bound; strict
 pre-driver field allocation remains open.

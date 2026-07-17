@@ -1660,6 +1660,67 @@ async fn verify_typed_values(tag: &str) {
     );
     drop(bit_strings);
 
+    let mut identifiers = session
+        .stream_probe(
+            PostgresProbeQuery::IdentifierValues,
+            PageLimits::new(1, 15, 512, 512),
+            64,
+        )
+        .await
+        .unwrap();
+    let identifier_page = identifiers.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, engine_type, expected) in [
+        (0_u32, "oid", u64::from(u32::MAX)),
+        (1_u32, "xid", u64::from(u32::MAX)),
+        (3_u32, "xid8", u64::MAX),
+        (4_u32, "regclass", 1_259),
+        (5_u32, "regtype", 23),
+        (6_u32, "regnamespace", 11),
+        (7_u32, "regrole", 10),
+        (8_u32, "regconfig", 3_748),
+        (9_u32, "regdictionary", 3_765),
+        (10_u32, "regcollation", 950),
+        (11_u32, "regproc", 1_299),
+        (12_u32, "regprocedure", 1_299),
+        (13_u32, "regoper", 96),
+        (14_u32, "regoperator", 96),
+    ] {
+        assert_eq!(
+            identifier_page.columns()[column as usize]
+                .engine_type()
+                .name(),
+            engine_type
+        );
+        assert_eq!(
+            identifier_page.cell(0, column).unwrap().kind(),
+            ValueKind::Unsigned
+        );
+        assert_eq!(
+            u64::from_be_bytes(
+                identifier_page
+                    .cell(0, column)
+                    .unwrap()
+                    .bytes()
+                    .try_into()
+                    .unwrap()
+            ),
+            expected
+        );
+    }
+    assert_eq!(identifier_page.columns()[2].engine_type().name(), "cid");
+    assert_eq!(
+        identifier_page.cell(0, 2).unwrap().kind(),
+        ValueKind::Unsigned
+    );
+    assert!(
+        identifiers
+            .next_page(identity(), 1)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    drop(identifiers);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,

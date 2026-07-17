@@ -136,6 +136,7 @@ pub enum PostgresProbeQuery {
     EnumValues,
     NetworkValues,
     BitValues,
+    IdentifierValues,
     Parameters,
     CancellationStream,
 }
@@ -438,6 +439,23 @@ impl PostgresProbeQuery {
                  B'10101'::varbit AS varying_bits, \
                  B''::varbit AS empty_bits, \
                  B'111100001010'::varbit AS multi_byte_bits"
+            }
+            Self::IdentifierValues => {
+                "SELECT '4294967295'::oid AS maximum_oid, \
+                 '4294967295'::xid AS maximum_xid, \
+                 (SELECT cmin FROM pg_class LIMIT 1) AS command_id, \
+                 '18446744073709551615'::xid8 AS maximum_xid8, \
+                 '1259'::regclass AS registered_class, \
+                 '23'::regtype AS registered_type, \
+                 '11'::regnamespace AS registered_namespace, \
+                 '10'::regrole AS registered_role, \
+                 '3748'::regconfig AS registered_config, \
+                 '3765'::regdictionary AS registered_dictionary, \
+                 '950'::regcollation AS registered_collation, \
+                 '1299'::regproc AS registered_proc, \
+                 '1299'::regprocedure AS registered_procedure, \
+                 '96'::regoper AS registered_oper, \
+                 '96'::regoperator AS registered_operator"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1628,6 +1646,12 @@ fn decode_value_at_depth(
     if matches!(*type_, Type::BIT | Type::VARBIT) {
         return decode_bit_string(type_, raw, limit);
     }
+    if is_unsigned_identifier_32(type_) {
+        return decode_unsigned_identifier(type_, raw, limit, 4);
+    }
+    if *type_ == Type::XID8 {
+        return decode_unsigned_identifier(type_, raw, limit, 8);
+    }
     if matches!(
         *type_,
         Type::DATE
@@ -2341,6 +2365,49 @@ fn decode_bit_string(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue,
     let stored = BoundedText::copy_from_str(&stored_text, ByteLimit::new(limit))
         .map_err(|_| PostgresError::Protocol)?;
     OwnedValue::text(stored, truncation(stored_len, bit_count)).map_err(|_| PostgresError::Protocol)
+}
+
+fn is_unsigned_identifier_32(type_: &Type) -> bool {
+    matches!(
+        *type_,
+        Type::OID
+            | Type::XID
+            | Type::CID
+            | Type::REGPROC
+            | Type::REGPROCEDURE
+            | Type::REGOPER
+            | Type::REGOPERATOR
+            | Type::REGCLASS
+            | Type::REGTYPE
+            | Type::REGCONFIG
+            | Type::REGDICTIONARY
+            | Type::REGNAMESPACE
+            | Type::REGROLE
+            | Type::REGCOLLATION
+    )
+}
+
+fn decode_unsigned_identifier(
+    type_: &Type,
+    raw: &[u8],
+    limit: u64,
+    width: usize,
+) -> Result<OwnedValue, PostgresError> {
+    let value = match width {
+        4 if raw.len() == 4 => u64::from(u32::from_be_bytes(
+            raw.try_into().map_err(|_| PostgresError::Protocol)?,
+        )),
+        8 if raw.len() == 8 => {
+            u64::from_be_bytes(raw.try_into().map_err(|_| PostgresError::Protocol)?)
+        }
+        _ => return bounded_raw(type_, raw, limit, true),
+    };
+    let value = OwnedValue::unsigned(value);
+    if value.encoded_byte_len() <= limit {
+        Ok(value)
+    } else {
+        bounded_raw(type_, raw, 0, false)
+    }
 }
 
 fn decode_uuid(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
@@ -3559,6 +3626,55 @@ mod tests {
             assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
             assert_eq!(value.engine_type().unwrap().name(), "varbit");
         }
+    }
+
+    #[test]
+    fn identifier_projection_preserves_unsigned_width_and_type_family() {
+        let maximum = u32::MAX.to_be_bytes();
+        for type_ in [
+            Type::OID,
+            Type::XID,
+            Type::CID,
+            Type::REGPROC,
+            Type::REGPROCEDURE,
+            Type::REGOPER,
+            Type::REGOPERATOR,
+            Type::REGCLASS,
+            Type::REGTYPE,
+            Type::REGCONFIG,
+            Type::REGDICTIONARY,
+            Type::REGNAMESPACE,
+            Type::REGROLE,
+            Type::REGCOLLATION,
+        ] {
+            let value = decode_value(&type_, &maximum, 8).unwrap();
+            assert!(
+                matches!(value.as_ref(), ValueRef::Unsigned(value) if value == u64::from(u32::MAX))
+            );
+        }
+
+        let value = decode_value(&Type::XID8, &u64::MAX.to_be_bytes(), 8).unwrap();
+        assert!(matches!(value.as_ref(), ValueRef::Unsigned(u64::MAX)));
+    }
+
+    #[test]
+    fn identifier_projection_rejects_wrong_width_and_respects_core_bound() {
+        for (type_, malformed) in [
+            (Type::OID, vec![0; 3]),
+            (Type::XID, vec![0; 5]),
+            (Type::CID, vec![]),
+            (Type::REGCLASS, vec![0; 8]),
+            (Type::XID8, vec![0; 7]),
+            (Type::XID8, vec![0; 9]),
+        ] {
+            let value = decode_value(&type_, &malformed, 8).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), type_.name());
+        }
+
+        let bounded = decode_value(&Type::OID, &42_u32.to_be_bytes(), 7).unwrap();
+        assert_eq!(bounded.kind(), tablerock_core::ValueKind::Unknown);
+        assert_eq!(bounded.engine_type().unwrap().name(), "oid");
     }
 
     #[test]

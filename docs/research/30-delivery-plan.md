@@ -179,6 +179,9 @@ framing, and MAC-width validation.
 PostgreSQL fixed `bit` and varying `varbit` now project bounded canonical
 `0`/`1` text after strict signed count, payload-size, framing, and unused-padding
 validation, without expanding beyond the caller limit.
+PostgreSQL `oid`, `xid`, `cid`, `xid8`, and pinned registered-object aliases now
+project exact full-range core `Unsigned` values after strict 32/64-bit framing;
+symbolic catalog names remain separate metadata instead of replacing identity.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
 `Decimal` values. Malformed wire values remain `Invalid`; valid projections over

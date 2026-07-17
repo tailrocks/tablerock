@@ -332,6 +332,9 @@ text with PostgreSQL 17/18 evidence in
 PostgreSQL fixed and varying bit strings now project as strictly framed,
 padding-validated bounded canonical text with PostgreSQL 17/18 evidence in
 [`186-phase-2-postgresql-bit-string-projection.md`](docs/research/186-phase-2-postgresql-bit-string-projection.md).
+PostgreSQL unsigned object, transaction, command, and registered-object
+identifiers now retain their full numeric ranges with PostgreSQL 17/18 evidence
+in [`187-phase-2-postgresql-identifier-projection.md`](docs/research/187-phase-2-postgresql-identifier-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

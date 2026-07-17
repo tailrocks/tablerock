@@ -38,6 +38,7 @@ that accepts every PostgreSQL type. It then makes one lossless classification:
 | user-defined enum | catalog-validated bounded UTF-8 text with exact column type identity; research 184 |
 | `inet`, `cidr`, `macaddr`, `macaddr8` | strictly validated bounded canonical network text; research 185 |
 | fixed `bit`, varying `varbit` | length/padding-validated bounded canonical bit text; research 186 |
+| `oid`, `xid`, `cid`, `xid8`, pinned `reg*` aliases | exact full-range unsigned identity with strict width; research 187 |
 | valid unsupported type | unknown with PostgreSQL type name and raw binary payload |
 | malformed payload for a known type | invalid with PostgreSQL type name and raw payload |
 
@@ -60,6 +61,8 @@ Research 185 projects PostgreSQL network address families as canonical bounded
 text after strict binary-envelope and CIDR-network validation.
 Research 186 projects fixed/varying bit strings without expanding beyond the
 caller bound and rejects invalid counts, framing, or unused padding.
+Research 187 projects unsigned identifier families without signed-range loss
+and keeps symbolic object names in future catalog metadata, not binary cells.
 Malformed known values are never silently treated as valid.
 
 Column metadata carries the server type name and conservatively marks columns

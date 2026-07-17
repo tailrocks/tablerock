@@ -170,6 +170,8 @@ Engine additions:
   reject invalid family, prefix, CIDR flag/network, framing, and width truth;
   fixed/varying bit strings retain logical length as bounded canonical text and
   reject invalid count, payload size, framing, and unused padding;
+  unsigned object/transaction/command and registered-object identifiers retain
+  exact 32/64-bit range, type identity, and wrong-width/bound failure truth;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,
