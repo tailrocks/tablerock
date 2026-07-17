@@ -1062,7 +1062,7 @@ async fn verify_typed_values(tag: &str) {
     let mut stream = session
         .stream_probe(
             PostgresProbeQuery::TypedValues,
-            PageLimits::new(2, 16, 256, 512),
+            PageLimits::new(2, 20, 256, 1_024),
             8,
         )
         .await
@@ -1117,6 +1117,34 @@ async fn verify_typed_values(tag: &str) {
     assert!(page.cell(0, 9).unwrap().bytes().len() <= 8);
     assert_eq!(page.cell(0, 10).unwrap().kind(), ValueKind::Unknown);
     assert!(page.cell(0, 11).unwrap().is_null());
+    for (column, type_name) in [
+        (12_u32, "json"),
+        (13_u32, "jsonb"),
+        (14_u32, "int4range"),
+        (15_u32, "record"),
+    ] {
+        assert_eq!(
+            page.columns()[column as usize].engine_type().name(),
+            type_name
+        );
+        assert_eq!(page.cell(0, column).unwrap().kind(), ValueKind::Unknown);
+        match page.cell(0, column).unwrap().truncation() {
+            Truncation::Truncated {
+                original_byte_len: Some(original),
+            } => assert!(original > 8),
+            other => panic!("expected bounded complex value, got {other:?}"),
+        }
+        assert_eq!(page.cell(0, column).unwrap().bytes().len(), 8);
+    }
+    assert_eq!(page.columns()[16].engine_type().name(), "bytea");
+    assert_eq!(page.cell(0, 16).unwrap().kind(), ValueKind::Binary);
+    assert_eq!(page.cell(0, 16).unwrap().bytes(), &[0xab; 8]);
+    assert_eq!(
+        page.cell(0, 16).unwrap().truncation(),
+        Truncation::Truncated {
+            original_byte_len: Some(16)
+        }
+    );
     assert!(stream.next_page(identity(), 1).await.unwrap().is_none());
     drop(stream);
 

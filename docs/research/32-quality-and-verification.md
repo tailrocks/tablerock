@@ -136,6 +136,8 @@ Engine additions:
   through bounded pages on both pinned lines;
   declared NULL remains null and `int4[]` retains bounded unknown bytes with
   exact engine type identity on both pinned lines;
+  JSON, JSONB, `int4range`, and anonymous record retain bounded unknown binary
+  bytes with exact type/truncation truth, while large `bytea` remains binary;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,

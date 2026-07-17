@@ -147,6 +147,10 @@ pinned lines through the bounded typed stream seam without exposing client types
 Declared text NULL and `int4[]` parameters also pass both pinned lines; arrays
 retain bounded unknown bytes and exact engine type identity until structured
 decoding is implemented.
+JSON, JSONB, `int4range`, and anonymous-record results now pass both pinned
+lines as bounded unknown binary values with exact engine type and original-byte
+length truth. Large `bytea` remains binary under the same cell bound. Structured
+decoding and strict pre-decode transport allocation remain required.
 Rust now drives asynchronous PostgreSQL messages directly. Both pinned lines
 prove bounded redacted notices, UTF-8-safe truncation, ordered retention, and
 explicit overflow without protocol backpressure.

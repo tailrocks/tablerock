@@ -7,9 +7,9 @@ frames decoded from binary protocol values into bounded, immutable core pages.
 The earlier simple-query text stream has been removed. Driver `Row`, `Column`,
 `Type`, `Statement`, and `RowStream` types remain private to the adapter.
 
-This is not the complete PostgreSQL spike. Decimal decoding,
-temporal interpretation, authentication taxonomy, COPY, late errors,
-connection loss, reconnect, and ambiguous writes remain required. Verified TLS
+This is not the complete PostgreSQL spike. Decimal and temporal decoding,
+structured complex-value decoding, authentication taxonomy, late errors, and
+reconnect ownership remain required. Verified TLS
 and client identity later pass in
 [`136-phase-2-postgresql-tls-identity.md`](136-phase-2-postgresql-tls-identity.md).
 Typed scalar parameters subsequently pass in research 157.
@@ -31,9 +31,11 @@ that accepts every PostgreSQL type. It then makes one lossless classification:
 | valid unsupported type | unknown with PostgreSQL type name and raw binary payload |
 | malformed payload for a known type | invalid with PostgreSQL type name and raw payload |
 
-Unsupported does not mean discarded. Numeric, UUID, and array probes retain
-their binary representation as `UnknownValues`; later type-specific decoders
-can replace that classification without changing the page or adapter boundary.
+Unsupported does not mean discarded. Numeric, UUID, array, JSON, JSONB, range,
+and anonymous-record probes retain their binary representation as
+`UnknownValues`; later type-specific decoders can replace that classification
+without changing the page or adapter boundary. Research 167 adds the complex
+value and large-binary matrix.
 Malformed known values are never silently treated as valid.
 
 Column metadata carries the server type name and conservatively marks columns
@@ -58,7 +60,7 @@ nullable because PostgreSQL row descriptions do not carry nullability facts.
 
 | Server | Real fixture evidence | Claim |
 |---|---|---|
-| PostgreSQL 17.10 | official `postgres:17.10-alpine`; extended-query preparation and streaming; Boolean, signed integers, Float32/Float64, text, binary, NULL, numeric/UUID/array unknown preservation, truncation | typed tracer |
+| PostgreSQL 17.10 | official `postgres:17.10-alpine`; extended-query preparation and streaming; Boolean, signed integers, Float32/Float64, text, binary, NULL, numeric/UUID/array/JSON/JSONB/range/record unknown preservation, truncation | typed tracer |
 | PostgreSQL 18.4 | same typed suite on official `postgres:18.4-alpine`; existing bounded paging and cancellation suites also pass | typed tracer |
 
 Testcontainers Rust 0.27.3 owns both fixture lifecycles and ephemeral mapped

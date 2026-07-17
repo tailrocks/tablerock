@@ -332,7 +332,12 @@ impl PostgresProbeQuery {
                  123.450::numeric AS numeric_value, repeat('é', 10)::text AS text_value, \
                  decode('0001ff', 'hex')::bytea AS binary_value, \
                  '123e4567-e89b-12d3-a456-426614174000'::uuid AS uuid_value, \
-                 ARRAY[1, 2, 3]::int4[] AS array_value, NULL::uuid AS absent"
+                 ARRAY[1, 2, 3]::int4[] AS array_value, NULL::uuid AS absent, \
+                 '{\"a\":[1,true]}'::json AS json_value, \
+                 '{\"a\":[1,true]}'::jsonb AS jsonb_value, \
+                 '[1,5)'::int4range AS range_value, \
+                 ROW(7::int4, 'é'::text) AS composite_value, \
+                 decode(repeat('ab', 16), 'hex')::bytea AS large_binary_value"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \

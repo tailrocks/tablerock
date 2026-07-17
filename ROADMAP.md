@@ -281,6 +281,9 @@ recorded in
 The sole PostgreSQL extended-query typed stream and PostgreSQL 17.10/18.4
 Testcontainers evidence are recorded in
 [`87-phase-2-postgresql-typed-stream.md`](docs/research/87-phase-2-postgresql-typed-stream.md).
+Bounded JSON, JSONB, range, anonymous-record, and large-binary preservation on
+both PostgreSQL lines is recorded in
+[`167-phase-2-postgresql-complex-raw-values.md`](docs/research/167-phase-2-postgresql-complex-raw-values.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).
