@@ -1,7 +1,9 @@
 use std::{collections::BTreeSet, time::Duration};
 
+use rcgen::ExtendedKeyUsagePurpose;
 use redis::{
-    AsyncCommands, ConnectionAddr, IntoConnectionInfo, ProtocolVersion, RedisConnectionInfo,
+    AsyncCommands, Client, ClientTlsConfig, ConnectionAddr, IntoConnectionInfo, ProtocolVersion,
+    RedisConnectionInfo, TlsCertificates,
 };
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity,
@@ -9,16 +11,59 @@ use tablerock_core::{
 };
 use tablerock_engine::{
     AdapterFailureClass, DriverPageRequest, DriverSession, EngineServiceUpdate,
-    RedisCollectionScanKind, RedisCollectionScanOptions, RedisConnectConfig, RedisProtocol,
-    RedisRuntimePolicy, RedisSession, RedisTlsMode,
+    RedisClientIdentity, RedisCollectionScanKind, RedisCollectionScanOptions, RedisConnectConfig,
+    RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisRuntimePolicy, RedisSession,
+    RedisTlsMaterial, RedisTlsMode,
 };
 
+struct RedisTlsFixture {
+    ca_pem: String,
+    wrong_ca_pem: String,
+    server_certificate_pem: String,
+    server_private_key_pem: String,
+    client_certificate_pem: String,
+    client_private_key_pem: String,
+}
+
+impl RedisTlsFixture {
+    fn generate() -> Self {
+        let ca = certificate_authority("TableRock Redis test CA");
+        let wrong_ca = certificate_authority("Untrusted TableRock Redis test CA");
+        let (server_certificate_pem, server_private_key_pem) =
+            leaf_certificate("127.0.0.1", ExtendedKeyUsagePurpose::ServerAuth, &ca);
+        let (client_certificate_pem, client_private_key_pem) =
+            leaf_certificate("tablerock-client", ExtendedKeyUsagePurpose::ClientAuth, &ca);
+        Self {
+            ca_pem: ca.pem(),
+            wrong_ca_pem: wrong_ca.pem(),
+            server_certificate_pem,
+            server_private_key_pem,
+            client_certificate_pem,
+            client_private_key_pem,
+        }
+    }
+}
+
+const REDIS_TEST_USERNAME: &str = "tablerock-test-user";
+const REDIS_TEST_PASSWORD: &str = "synthetic-test-password";
+const REDIS_ADMIN_USERNAME: &str = "tablerock-test-admin";
+const REDIS_ADMIN_PASSWORD: &str = "synthetic-admin-password";
+
+fn redis_acl_file() -> Vec<u8> {
+    format!(
+        "user default off\nuser {REDIS_TEST_USERNAME} on >{REDIS_TEST_PASSWORD} ~* +@all\nuser {REDIS_ADMIN_USERNAME} on >{REDIS_ADMIN_PASSWORD} ~* +@all\n"
+    )
+        .into_bytes()
+}
+
 mod support;
+mod tls_support;
 use testcontainers::{
-    GenericImage,
+    CopyDataSource, CopyTargetOptions, GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
     runners::AsyncRunner,
 };
+use tls_support::{certificate_authority, leaf_certificate};
 
 fn text(value: &str) -> BoundedText {
     BoundedText::copy_from_str(value, ByteLimit::new(128)).unwrap()
@@ -30,6 +75,44 @@ fn bytes(value: &[u8]) -> BoundedBytes {
 
 fn identity() -> PageIdentity {
     support::identity(Engine::Redis, 2)
+}
+
+async fn raw_tls_admin_connection(
+    port: u16,
+    protocol: RedisProtocol,
+    fixture: &RedisTlsFixture,
+    use_client_identity: bool,
+) -> redis::aio::MultiplexedConnection {
+    let protocol = match protocol {
+        RedisProtocol::Resp2 => ProtocolVersion::RESP2,
+        RedisProtocol::Resp3 => ProtocolVersion::RESP3,
+    };
+    let info = ConnectionAddr::TcpTls {
+        host: "127.0.0.1".to_owned(),
+        port,
+        insecure: false,
+        tls_params: None,
+    }
+    .into_connection_info()
+    .unwrap()
+    .set_redis_settings(
+        RedisConnectionInfo::default()
+            .set_protocol(protocol)
+            .set_username(REDIS_ADMIN_USERNAME)
+            .set_password(REDIS_ADMIN_PASSWORD),
+    );
+    let client = Client::build_with_tls(
+        info,
+        TlsCertificates {
+            client_tls: use_client_identity.then(|| ClientTlsConfig {
+                client_cert: fixture.client_certificate_pem.as_bytes().to_vec(),
+                client_key: fixture.client_private_key_pem.as_bytes().to_vec(),
+            }),
+            root_cert: Some(fixture.ca_pem.as_bytes().to_vec()),
+        },
+    )
+    .unwrap();
+    client.get_multiplexed_async_connection().await.unwrap()
 }
 
 #[tokio::test]
@@ -88,11 +171,242 @@ async fn bounds_connection_handshake_timeout() {
             RedisTlsMode::Disable,
         )
         .with_runtime_policy(policy),
+        RedisConnectionSecurity::new(),
     )
     .await;
     assert!(matches!(result, Err(tablerock_engine::RedisError::Timeout)));
     assert!(started.elapsed() < Duration::from_secs(1));
     server.abort();
+}
+
+#[tokio::test]
+async fn verifies_tls_acl_authentication_and_optional_client_identity() {
+    for tag in [
+        "7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+        "8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005",
+    ] {
+        for protocol in [RedisProtocol::Resp2, RedisProtocol::Resp3] {
+            verify_tls_auth_version(tag, protocol, false).await;
+            verify_tls_auth_version(tag, protocol, true).await;
+        }
+    }
+}
+
+async fn verify_tls_auth_version(
+    tag: &str,
+    protocol: RedisProtocol,
+    require_client_identity: bool,
+) {
+    let fixture = RedisTlsFixture::generate();
+    let auth_clients = if require_client_identity { "yes" } else { "no" };
+    let container = GenericImage::new("redis", tag)
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .with_copy_to(
+            CopyTargetOptions::new("/tablerock-tls/server.crt").with_mode(0o644),
+            CopyDataSource::Data(fixture.server_certificate_pem.as_bytes().to_vec()),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/tablerock-tls/server.key").with_mode(0o600),
+            CopyDataSource::Data(fixture.server_private_key_pem.as_bytes().to_vec()),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/tablerock-tls/ca.crt").with_mode(0o644),
+            CopyDataSource::Data(fixture.ca_pem.as_bytes().to_vec()),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/tablerock-tls/users.acl").with_mode(0o600),
+            CopyDataSource::Data(redis_acl_file()),
+        )
+        .with_cmd([
+            "sh".to_owned(),
+            "-c".to_owned(),
+            format!(
+                "chown -R redis:redis /tablerock-tls && exec setpriv --reuid redis --regid redis --clear-groups redis-server --port 0 --tls-port 6379 --tls-cert-file /tablerock-tls/server.crt --tls-key-file /tablerock-tls/server.key --tls-ca-cert-file /tablerock-tls/ca.crt --tls-auth-clients {auth_clients} --aclfile /tablerock-tls/users.acl"
+            ),
+        ])
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let config =
+        RedisConnectConfig::new(text("127.0.0.1"), port, 1, protocol, RedisTlsMode::Require);
+    let credentials = RedisCredentials::new(Some(REDIS_TEST_USERNAME), REDIS_TEST_PASSWORD);
+    let mut tls = RedisTlsMaterial::custom_roots(fixture.ca_pem.as_bytes());
+    if require_client_identity {
+        tls = tls.with_client_identity(RedisClientIdentity::new(
+            fixture.client_certificate_pem.as_bytes(),
+            fixture.client_private_key_pem.as_bytes(),
+        ));
+    }
+    let security = RedisConnectionSecurity::new()
+        .with_credentials(credentials)
+        .with_tls(tls);
+    let session = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            match RedisSession::connect(&config, security).await {
+                Ok(session) => break session,
+                Err(tablerock_engine::RedisError::Connect) => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                Err(error) => panic!(
+                    "Redis TLS connect failed for {tag}, {protocol:?}, mTLS={require_client_identity}: {error:?}"
+                ),
+            }
+        }
+    })
+    .await
+    .expect("Redis TLS fixture becomes reachable");
+    let original_client_id = session.observed_client_id().await.unwrap();
+    let mut admin =
+        raw_tls_admin_connection(port, protocol, &fixture, require_client_identity).await;
+    let _: () = redis::cmd("SELECT")
+        .arg(1)
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("SET")
+        .arg(b"tls-reconnect-database-one")
+        .arg(&[0_u8, 255])
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    let killed: u64 = redis::cmd("CLIENT")
+        .arg("KILL")
+        .arg("ID")
+        .arg(original_client_id)
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    assert_eq!(killed, 1);
+    let reconnected_client_id = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match session.observed_client_id().await {
+                Ok(client_id) if client_id != original_client_id => break client_id,
+                Ok(_) | Err(tablerock_engine::RedisError::Connection) => {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                Err(error) => panic!("TLS reconnect failed: {error:?}"),
+            }
+        }
+    })
+    .await
+    .expect("TLS-authenticated future call reconnects");
+    assert_ne!(reconnected_client_id, original_client_id);
+    let restored = session
+        .read_binary(&bytes(b"tls-reconnect-database-one"), 16)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        restored.as_ref(),
+        tablerock_core::ValueRef::Binary {
+            value: [0, 255],
+            truncation: Truncation::Complete,
+        }
+    ));
+
+    let mut blocking = session
+        .blocking_pop(
+            bytes(b"tablerock-tls-cancellation"),
+            PageLimits::new(1, 2, 256, 128),
+            128,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        session.dispatch_cancel().await.unwrap(),
+        tablerock_engine::RedisCancelDispatch::RequestSent
+    );
+    assert_eq!(
+        blocking.next_page(identity(), 0).await,
+        Err(tablerock_engine::RedisError::ServerCancelled)
+    );
+
+    if require_client_identity {
+        let without_identity = RedisConnectionSecurity::new()
+            .with_credentials(credentials)
+            .with_tls(RedisTlsMaterial::custom_roots(fixture.ca_pem.as_bytes()));
+        assert!(matches!(
+            RedisSession::connect(&config, without_identity).await,
+            Err(tablerock_engine::RedisError::Connect)
+        ));
+    }
+
+    let mut wrong_password_tls = RedisTlsMaterial::custom_roots(fixture.ca_pem.as_bytes());
+    if require_client_identity {
+        wrong_password_tls = wrong_password_tls.with_client_identity(RedisClientIdentity::new(
+            fixture.client_certificate_pem.as_bytes(),
+            fixture.client_private_key_pem.as_bytes(),
+        ));
+    }
+    let wrong_password = RedisConnectionSecurity::new()
+        .with_credentials(RedisCredentials::new(
+            Some(REDIS_TEST_USERNAME),
+            "wrong-synthetic-password",
+        ))
+        .with_tls(wrong_password_tls);
+    let authentication_started = tokio::time::Instant::now();
+    assert_eq!(
+        RedisSession::connect(&config, wrong_password)
+            .await
+            .map(|_| ()),
+        Err(tablerock_engine::RedisError::Authentication)
+    );
+    assert!(authentication_started.elapsed() < Duration::from_secs(1));
+
+    let mut wrong_ca_tls = RedisTlsMaterial::custom_roots(fixture.wrong_ca_pem.as_bytes());
+    if require_client_identity {
+        wrong_ca_tls = wrong_ca_tls.with_client_identity(RedisClientIdentity::new(
+            fixture.client_certificate_pem.as_bytes(),
+            fixture.client_private_key_pem.as_bytes(),
+        ));
+    }
+    let wrong_ca = RedisConnectionSecurity::new()
+        .with_credentials(credentials)
+        .with_tls(wrong_ca_tls);
+    assert!(matches!(
+        RedisSession::connect(&config, wrong_ca).await,
+        Err(tablerock_engine::RedisError::Connect)
+    ));
+
+    let hostname_mismatch =
+        RedisConnectConfig::new(text("localhost"), port, 1, protocol, RedisTlsMode::Require);
+    let mut hostname_tls = RedisTlsMaterial::custom_roots(fixture.ca_pem.as_bytes());
+    if require_client_identity {
+        hostname_tls = hostname_tls.with_client_identity(RedisClientIdentity::new(
+            fixture.client_certificate_pem.as_bytes(),
+            fixture.client_private_key_pem.as_bytes(),
+        ));
+    }
+    assert!(matches!(
+        RedisSession::connect(
+            &hostname_mismatch,
+            RedisConnectionSecurity::new()
+                .with_credentials(credentials)
+                .with_tls(hostname_tls),
+        )
+        .await,
+        Err(tablerock_engine::RedisError::Connect)
+    ));
+
+    let plaintext =
+        RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable)
+            .with_runtime_policy(
+                RedisRuntimePolicy::new(
+                    Duration::from_millis(250),
+                    Duration::from_millis(250),
+                    1,
+                    Duration::from_millis(1),
+                    Duration::from_millis(1),
+                )
+                .unwrap(),
+            );
+    assert!(
+        RedisSession::connect(&plaintext, RedisConnectionSecurity::new())
+            .await
+            .is_err()
+    );
 }
 
 async fn verify_timeout_reconnect_version(tag: &str) {
@@ -123,6 +437,7 @@ async fn verify_timeout_reconnect_version(tag: &str) {
         let session = RedisSession::connect(
             &RedisConnectConfig::new(text("127.0.0.1"), port, 1, protocol, RedisTlsMode::Disable)
                 .with_runtime_policy(policy),
+            RedisConnectionSecurity::new(),
         )
         .await
         .unwrap();
@@ -212,13 +527,10 @@ async fn verify_scan_mutation_version(tag: &str) {
     for protocol in [RedisProtocol::Resp2, RedisProtocol::Resp3] {
         let mut mutator = raw_connection(port, protocol).await;
         let stable = seed_scan_race(&mut mutator).await;
-        let session = RedisSession::connect(&RedisConnectConfig::new(
-            text("127.0.0.1"),
-            port,
-            0,
-            protocol,
-            RedisTlsMode::Disable,
-        ))
+        let session = RedisSession::connect(
+            &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable),
+            RedisConnectionSecurity::new(),
+        )
         .await
         .unwrap();
 
@@ -482,13 +794,10 @@ async fn verify_version(tag: &str) {
     seed(port).await;
 
     for protocol in [RedisProtocol::Resp2, RedisProtocol::Resp3] {
-        let session = RedisSession::connect(&RedisConnectConfig::new(
-            text("127.0.0.1"),
-            port,
-            0,
-            protocol,
-            RedisTlsMode::Disable,
-        ))
+        let session = RedisSession::connect(
+            &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable),
+            RedisConnectionSecurity::new(),
+        )
         .await
         .unwrap();
         assert_eq!(session.negotiated_protocol().await.unwrap(), protocol);
@@ -565,13 +874,10 @@ async fn verify_version(tag: &str) {
             .sum();
         assert!(stored_bytes <= 4);
 
-        let isolated = RedisSession::connect(&RedisConnectConfig::new(
-            text("127.0.0.1"),
-            port,
-            1,
-            protocol,
-            RedisTlsMode::Disable,
-        ))
+        let isolated = RedisSession::connect(
+            &RedisConnectConfig::new(text("127.0.0.1"), port, 1, protocol, RedisTlsMode::Disable),
+            RedisConnectionSecurity::new(),
+        )
         .await
         .unwrap();
         let mut isolated_scan = isolated
@@ -887,13 +1193,10 @@ async fn verify_service_cancellation(
     tag: &str,
     wait_for_server_dispatch: bool,
 ) {
-    let session = RedisSession::connect(&RedisConnectConfig::new(
-        text("127.0.0.1"),
-        port,
-        0,
-        protocol,
-        RedisTlsMode::Disable,
-    ))
+    let session = RedisSession::connect(
+        &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable),
+        RedisConnectionSecurity::new(),
+    )
     .await
     .unwrap();
     let operation_id = support::operation(60);
@@ -982,13 +1285,10 @@ async fn wait_until_blocked(port: u16, client_id: Option<u64>) {
 }
 
 async fn verify_blocking_completion(port: u16, protocol: RedisProtocol) {
-    let session = RedisSession::connect(&RedisConnectConfig::new(
-        text("127.0.0.1"),
-        port,
-        0,
-        protocol,
-        RedisTlsMode::Disable,
-    ))
+    let session = RedisSession::connect(
+        &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable),
+        RedisConnectionSecurity::new(),
+    )
     .await
     .unwrap();
     let mut stream = session

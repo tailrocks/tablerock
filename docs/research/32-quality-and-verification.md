@@ -147,6 +147,13 @@ proactive reconnect allowance, logical database retention, and disposable
 blocking-operation client identity. Server restart, DNS change, and write
 ambiguity remain separate required gates.
 
+Redis 7.4.9/8.8.0 under RESP2/RESP3 also pass generated custom-root TLS and
+required-mTLS fixtures. Wrong roots, hostname mismatch, and plaintext fallback
+fail closed; wrong initial ACL credentials stop before reconnect policy and map
+to a redacted authentication class. TLS-authenticated future-call reconnect and
+blocking cancellation also pass. Live credential revocation across reconnect
+remains required. TLS/auth material has explicit pre-I/O bounds and Debug redaction tests.
+
 A support claim is exactly the continuously passing real-server matrix.
 
 ## TUI render and interaction matrix

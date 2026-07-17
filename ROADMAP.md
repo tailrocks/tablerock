@@ -79,6 +79,10 @@ across both supported lines and protocols are recorded in
 Redis bounded response timing, confirmed-drop future-call reconnect, logical DB
 retention, and disposable blocking-connection identity are recorded in
 [`143-phase-2-redis-timeout-reconnect.md`](docs/research/143-phase-2-redis-timeout-reconnect.md).
+Redis verified custom-root TLS, optional client identity, ACL authentication,
+and bounded initial authentication-stop behavior across both supported lines and
+protocols are recorded in
+[`144-phase-2-redis-tls-authentication.md`](docs/research/144-phase-2-redis-tls-authentication.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

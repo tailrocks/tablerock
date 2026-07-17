@@ -159,8 +159,10 @@ The supported-line RESP2/RESP3 matrix now proves per-command pipeline outcomes,
 continued execution after a runtime response error, and `MULTI`/`EXEC`
 no-rollback truth. It also proves exact missing/persistent/finite-millisecond
 key TTL facts through one Rust-owned contract. Bounded binary HSCAN, SSCAN, and
-ZSCAN pages now pass both supported lines under RESP2 and RESP3. TLS, Pub/Sub,
-reviewed TTL writes and remaining failure races stay required. The supported
+ZSCAN pages now pass both supported lines under RESP2 and RESP3. Verified
+custom-root TLS, optional mTLS identity, ACL authentication, and bounded
+initial authentication-stop behavior also pass that supported-line/protocol matrix.
+Pub/Sub, reviewed TTL writes and remaining failure races stay required. The supported
 matrix proves bounded response timeout and confirmed-drop future-call reconnect
 without automatic command replay, plus Redis's stable-throughout and
 absent-throughout guarantees during concurrent

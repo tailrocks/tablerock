@@ -57,9 +57,11 @@ does not misrepresent it as that transport cap.
 
 This closes the functional Phase 2 SCAN-family breadth tracer. It does not
 close the strict transport-memory gate, complete Redis value views, mutation
-review, TLS/authentication, Pub/Sub, timeout/reconnect, the TUI, or native
-presentation. Concurrent mutation races are subsequently closed by
-[research 142](142-phase-2-redis-scan-mutation-races.md).
+review, Pub/Sub, the TUI, or native presentation. Concurrent mutation races,
+timeout/reconnect, and TLS/authentication are subsequently closed by
+[research 142](142-phase-2-redis-scan-mutation-races.md),
+[research 143](143-phase-2-redis-timeout-reconnect.md), and
+[research 144](144-phase-2-redis-tls-authentication.md), respectively.
 
 Context7 was attempted first and reported its monthly quota exhausted. The
 redis-rs query conversion was verified against exact pinned 1.4.0 source.

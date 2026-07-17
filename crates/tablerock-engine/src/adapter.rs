@@ -113,6 +113,7 @@ pub enum AdapterFailureClass {
     Query,
     Connection,
     Timeout,
+    Authentication,
     Protocol,
     Decode,
     ResourceLimit,
@@ -434,6 +435,8 @@ fn map_redis(error: RedisError) -> AdapterError {
         RedisError::Connect => AdapterFailureClass::Connection,
         RedisError::Connection => AdapterFailureClass::Connection,
         RedisError::Timeout => AdapterFailureClass::Timeout,
+        RedisError::Authentication => AdapterFailureClass::Authentication,
+        RedisError::TlsConfiguration => AdapterFailureClass::InvalidRequest,
         RedisError::Command => AdapterFailureClass::Query,
         RedisError::ClientCancelled => AdapterFailureClass::ClientCancelled,
         RedisError::ServerCancelled => AdapterFailureClass::ServerCancelled,
@@ -460,6 +463,14 @@ mod redis_mapping_tests {
         assert_eq!(
             map_redis(RedisError::Connection).class(),
             AdapterFailureClass::Connection
+        );
+        assert_eq!(
+            map_redis(RedisError::Authentication).class(),
+            AdapterFailureClass::Authentication
+        );
+        assert_eq!(
+            map_redis(RedisError::TlsConfiguration).class(),
+            AdapterFailureClass::InvalidRequest
         );
     }
 }

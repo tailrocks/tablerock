@@ -10,10 +10,163 @@ use std::{
 };
 
 use redis::{
-    AsyncConnectionConfig, Client, ConnectionAddr, IntoConnectionInfo, ProtocolVersion,
-    RedisConnectionInfo,
+    AsyncConnectionConfig, Client, ClientTlsConfig, ConnectionAddr, ErrorKind, IntoConnectionInfo,
+    ProtocolVersion, RedisConnectionInfo, TlsCertificates,
     aio::{ConnectionManager, ConnectionManagerConfig},
 };
+use rustls::{
+    RootCertStore,
+    pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
+};
+
+const MAX_REDIS_CREDENTIAL_BYTES: usize = 4_096;
+const MAX_REDIS_TLS_MATERIAL_BYTES: usize = 65_536;
+
+#[derive(Clone, Copy)]
+pub struct RedisCredentials<'a> {
+    username: Option<&'a str>,
+    password: &'a str,
+}
+
+impl<'a> RedisCredentials<'a> {
+    #[must_use]
+    pub const fn new(username: Option<&'a str>, password: &'a str) -> Self {
+        Self { username, password }
+    }
+}
+
+impl fmt::Debug for RedisCredentials<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RedisCredentials")
+            .field("has_username", &self.username.is_some())
+            .field("username_bytes", &self.username.map(str::len))
+            .field("password_bytes", &self.password.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct RedisClientIdentity<'a> {
+    certificate_chain_pem: &'a [u8],
+    private_key_pem: &'a [u8],
+}
+
+impl<'a> RedisClientIdentity<'a> {
+    #[must_use]
+    pub const fn new(certificate_chain_pem: &'a [u8], private_key_pem: &'a [u8]) -> Self {
+        Self {
+            certificate_chain_pem,
+            private_key_pem,
+        }
+    }
+}
+
+impl fmt::Debug for RedisClientIdentity<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RedisClientIdentity")
+            .field("certificate_chain_bytes", &self.certificate_chain_pem.len())
+            .field("private_key_bytes", &self.private_key_pem.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct RedisTlsMaterial<'a> {
+    trust_roots: RedisTrustRoots<'a>,
+    client_identity: Option<RedisClientIdentity<'a>>,
+}
+
+#[derive(Clone, Copy)]
+enum RedisTrustRoots<'a> {
+    Platform,
+    Custom(&'a [u8]),
+}
+
+impl<'a> RedisTlsMaterial<'a> {
+    #[must_use]
+    pub const fn platform_roots() -> Self {
+        Self {
+            trust_roots: RedisTrustRoots::Platform,
+            client_identity: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn custom_roots(ca_certificates_pem: &'a [u8]) -> Self {
+        Self {
+            trust_roots: RedisTrustRoots::Custom(ca_certificates_pem),
+            client_identity: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_client_identity(mut self, identity: RedisClientIdentity<'a>) -> Self {
+        self.client_identity = Some(identity);
+        self
+    }
+}
+
+impl fmt::Debug for RedisTlsMaterial<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RedisTlsMaterial")
+            .field(
+                "trust_roots",
+                &match self.trust_roots {
+                    RedisTrustRoots::Platform => "platform",
+                    RedisTrustRoots::Custom(_) => "custom",
+                },
+            )
+            .field("has_client_identity", &self.client_identity.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct RedisConnectionSecurity<'a> {
+    credentials: Option<RedisCredentials<'a>>,
+    tls: Option<RedisTlsMaterial<'a>>,
+}
+
+impl<'a> RedisConnectionSecurity<'a> {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            credentials: None,
+            tls: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_credentials(mut self, credentials: RedisCredentials<'a>) -> Self {
+        self.credentials = Some(credentials);
+        self
+    }
+
+    #[must_use]
+    pub const fn with_tls(mut self, tls: RedisTlsMaterial<'a>) -> Self {
+        self.tls = Some(tls);
+        self
+    }
+}
+
+impl Default for RedisConnectionSecurity<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Debug for RedisConnectionSecurity<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RedisConnectionSecurity")
+            .field("credentials", &self.credentials)
+            .field("tls", &self.tls)
+            .finish()
+    }
+}
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, ColumnMetadata, Engine, EngineType, OwnedValue,
     PageDelivery, PageFacts, PageIdentity, PageLimits, PageValidationError, PageWarning,
@@ -133,6 +286,14 @@ impl RedisRuntimePolicy {
             .set_pipeline_buffer_size(1)
             .set_concurrency_limit(1)
     }
+
+    fn handshake_config(self) -> AsyncConnectionConfig {
+        AsyncConnectionConfig::new()
+            .set_connection_timeout(Some(self.connection_timeout))
+            .set_response_timeout(Some(self.response_timeout))
+            .set_pipeline_buffer_size(1)
+            .set_concurrency_limit(1)
+    }
 }
 
 impl Default for RedisRuntimePolicy {
@@ -224,6 +385,8 @@ pub enum RedisError {
     Connection,
     Timeout,
     Command,
+    Authentication,
+    TlsConfiguration,
     ClientCancelled,
     ServerCancelled,
     SessionBusy,
@@ -248,6 +411,8 @@ impl fmt::Display for RedisError {
             Self::Connection => "Redis connection was lost",
             Self::Timeout => "Redis operation timed out",
             Self::Command => "Redis command failed",
+            Self::Authentication => "Redis authentication failed",
+            Self::TlsConfiguration => "Redis TLS configuration is invalid",
             Self::ClientCancelled => "Redis operation was cancelled before dispatch",
             Self::ServerCancelled => "Redis server confirmed client unblocking",
             Self::SessionBusy => "Redis session already owns a blocking operation",
@@ -356,7 +521,11 @@ impl Drop for RedisBlockingClaim {
 }
 
 impl RedisSession {
-    pub async fn connect(config: &RedisConnectConfig) -> Result<Self, RedisError> {
+    pub async fn connect(
+        config: &RedisConnectConfig,
+        security: RedisConnectionSecurity<'_>,
+    ) -> Result<Self, RedisError> {
+        validate_security(config.tls, security)?;
         let addr = match config.tls {
             RedisTlsMode::Disable => {
                 ConnectionAddr::Tcp(config.host.as_str().to_owned(), config.port)
@@ -372,15 +541,41 @@ impl RedisSession {
             RedisProtocol::Resp2 => ProtocolVersion::RESP2,
             RedisProtocol::Resp3 => ProtocolVersion::RESP3,
         };
-        let redis = RedisConnectionInfo::default()
+        let mut redis = RedisConnectionInfo::default()
             .set_db(config.database)
             .set_protocol(protocol)
             .set_lib_name("tablerock", env!("CARGO_PKG_VERSION"));
+        if let Some(credentials) = security.credentials {
+            if let Some(username) = credentials.username {
+                redis = redis.set_username(username);
+            }
+            redis = redis.set_password(credentials.password);
+        }
         let info = addr
             .into_connection_info()
             .map_err(|_| RedisError::Connect)?
             .set_redis_settings(redis);
-        let client = Client::open(info).map_err(|_| RedisError::Connect)?;
+        let client = match security.tls {
+            Some(tls) => Client::build_with_tls(
+                info,
+                TlsCertificates {
+                    client_tls: tls.client_identity.map(|identity| ClientTlsConfig {
+                        client_cert: identity.certificate_chain_pem.to_vec(),
+                        client_key: identity.private_key_pem.to_vec(),
+                    }),
+                    root_cert: match tls.trust_roots {
+                        RedisTrustRoots::Platform => None,
+                        RedisTrustRoots::Custom(certificates) => Some(certificates.to_vec()),
+                    },
+                },
+            )
+            .map_err(map_client_build_error)?,
+            None => Client::open(info).map_err(map_client_build_error)?,
+        };
+        client
+            .get_multiplexed_async_connection_with_config(&config.runtime_policy.handshake_config())
+            .await
+            .map_err(map_connect_error)?;
         let connection = ConnectionManager::new_with_config(
             client.clone(),
             config.runtime_policy.manager_config(),
@@ -639,19 +834,90 @@ impl RedisSession {
 fn map_connect_error(error: redis::RedisError) -> RedisError {
     if error.is_timeout() {
         RedisError::Timeout
+    } else if is_authentication_error(&error) {
+        RedisError::Authentication
     } else {
         RedisError::Connect
     }
 }
 
+fn map_client_build_error(error: redis::RedisError) -> RedisError {
+    if error.kind() == ErrorKind::InvalidClientConfig {
+        RedisError::TlsConfiguration
+    } else {
+        map_connect_error(error)
+    }
+}
+
+fn validate_security(
+    tls_mode: RedisTlsMode,
+    security: RedisConnectionSecurity<'_>,
+) -> Result<(), RedisError> {
+    if (tls_mode == RedisTlsMode::Disable) == security.tls.is_some() {
+        return Err(RedisError::TlsConfiguration);
+    }
+    if let Some(credentials) = security.credentials
+        && (credentials.password.is_empty()
+            || credentials.password.len() > MAX_REDIS_CREDENTIAL_BYTES
+            || credentials.username.is_some_and(|username| {
+                username.is_empty() || username.len() > MAX_REDIS_CREDENTIAL_BYTES
+            }))
+    {
+        return Err(RedisError::Authentication);
+    }
+    if let Some(tls) = security.tls
+        && (matches!(
+            tls.trust_roots,
+            RedisTrustRoots::Custom(certificates)
+                if certificates.is_empty()
+                    || certificates.len() > MAX_REDIS_TLS_MATERIAL_BYTES
+                    || !valid_custom_roots(certificates)
+        ) || tls.client_identity.is_some_and(|identity| {
+            identity.certificate_chain_pem.is_empty()
+                || identity.certificate_chain_pem.len() > MAX_REDIS_TLS_MATERIAL_BYTES
+                || identity.private_key_pem.is_empty()
+                || identity.private_key_pem.len() > MAX_REDIS_TLS_MATERIAL_BYTES
+                || CertificateDer::pem_slice_iter(identity.certificate_chain_pem)
+                    .next()
+                    .is_none_or(|certificate| certificate.is_err())
+                || PrivateKeyDer::from_pem_slice(identity.private_key_pem).is_err()
+        }))
+    {
+        return Err(RedisError::TlsConfiguration);
+    }
+    Ok(())
+}
+
+fn valid_custom_roots(certificates: &[u8]) -> bool {
+    let mut roots = RootCertStore::empty();
+    let mut count = 0_usize;
+    for certificate in CertificateDer::pem_slice_iter(certificates) {
+        let Ok(certificate) = certificate else {
+            return false;
+        };
+        if roots.add(certificate).is_err() {
+            return false;
+        }
+        count += 1;
+    }
+    count > 0
+}
+
 fn map_command_error(error: redis::RedisError) -> RedisError {
     if error.is_timeout() {
         RedisError::Timeout
+    } else if is_authentication_error(&error) {
+        RedisError::Authentication
     } else if error.is_connection_dropped() || error.is_io_error() {
         RedisError::Connection
     } else {
         RedisError::Command
     }
+}
+
+fn is_authentication_error(error: &redis::RedisError) -> bool {
+    error.kind() == ErrorKind::AuthenticationFailed
+        || matches!(error.code(), Some("WRONGPASS" | "NOAUTH"))
 }
 
 fn validate_collection_limits(
@@ -1183,6 +1449,145 @@ mod tests {
         assert!(!debug.contains("SECRET_HOST"));
         assert!(debug.contains("Resp3"));
         assert!(debug.contains("Require"));
+    }
+
+    #[test]
+    fn security_debug_redacts_credentials_and_private_material() {
+        let security = RedisConnectionSecurity::new()
+            .with_credentials(RedisCredentials::new(
+                Some("SECRET_USERNAME"),
+                "SECRET_PASSWORD",
+            ))
+            .with_tls(
+                RedisTlsMaterial::custom_roots(b"SECRET_CA").with_client_identity(
+                    RedisClientIdentity::new(b"SECRET_CERTIFICATE", b"SECRET_PRIVATE_KEY"),
+                ),
+            );
+        let debug = format!("{security:?}");
+        for secret in [
+            "SECRET_USERNAME",
+            "SECRET_PASSWORD",
+            "SECRET_CA",
+            "SECRET_CERTIFICATE",
+            "SECRET_PRIVATE_KEY",
+        ] {
+            assert!(!debug.contains(secret));
+        }
+        assert!(debug.contains("has_username: true"));
+        assert!(debug.contains("has_client_identity: true"));
+    }
+
+    #[test]
+    fn command_path_preserves_authentication_failure_class() {
+        let error = redis::RedisError::from((
+            ErrorKind::AuthenticationFailed,
+            "synthetic authentication failure",
+        ));
+        assert_eq!(map_command_error(error), RedisError::Authentication);
+    }
+
+    #[test]
+    fn security_rejects_invalid_credentials_tls_material_and_downgrade() {
+        let oversized_tls = vec![0_u8; MAX_REDIS_TLS_MATERIAL_BYTES + 1];
+        let oversized_credential = "x".repeat(MAX_REDIS_CREDENTIAL_BYTES + 1);
+        let maximum_credential = "x".repeat(MAX_REDIS_CREDENTIAL_BYTES);
+        let key = rcgen::KeyPair::generate().unwrap();
+        let certificate = rcgen::CertificateParams::new(vec!["client.test".to_owned()])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        let certificate_pem = certificate.pem();
+        let key_pem = key.serialize_pem();
+        assert_eq!(
+            validate_security(
+                RedisTlsMode::Disable,
+                RedisConnectionSecurity::new().with_tls(RedisTlsMaterial::custom_roots(b"ca")),
+            ),
+            Err(RedisError::TlsConfiguration)
+        );
+        assert_eq!(
+            validate_security(RedisTlsMode::Require, RedisConnectionSecurity::new(),),
+            Err(RedisError::TlsConfiguration)
+        );
+        for credentials in [
+            RedisCredentials::new(None, ""),
+            RedisCredentials::new(None, &oversized_credential),
+            RedisCredentials::new(Some(""), "password"),
+            RedisCredentials::new(Some(&oversized_credential), "password"),
+        ] {
+            assert_eq!(
+                validate_security(
+                    RedisTlsMode::Require,
+                    RedisConnectionSecurity::new()
+                        .with_credentials(credentials)
+                        .with_tls(RedisTlsMaterial::platform_roots()),
+                ),
+                Err(RedisError::Authentication)
+            );
+        }
+        assert_eq!(
+            validate_security(
+                RedisTlsMode::Require,
+                RedisConnectionSecurity::new()
+                    .with_credentials(RedisCredentials::new(
+                        Some(&maximum_credential),
+                        &maximum_credential,
+                    ))
+                    .with_tls(RedisTlsMaterial::platform_roots()),
+            ),
+            Ok(())
+        );
+        for tls in [
+            RedisTlsMaterial::custom_roots(b""),
+            RedisTlsMaterial::custom_roots(&oversized_tls),
+            RedisTlsMaterial::custom_roots(certificate_pem.as_bytes())
+                .with_client_identity(RedisClientIdentity::new(b"", b"key")),
+            RedisTlsMaterial::custom_roots(certificate_pem.as_bytes())
+                .with_client_identity(RedisClientIdentity::new(b"cert", b"")),
+            RedisTlsMaterial::custom_roots(certificate_pem.as_bytes())
+                .with_client_identity(RedisClientIdentity::new(&oversized_tls, b"key")),
+            RedisTlsMaterial::custom_roots(certificate_pem.as_bytes())
+                .with_client_identity(RedisClientIdentity::new(b"cert", &oversized_tls)),
+        ] {
+            assert_eq!(
+                validate_security(
+                    RedisTlsMode::Require,
+                    RedisConnectionSecurity::new().with_tls(tls),
+                ),
+                Err(RedisError::TlsConfiguration)
+            );
+        }
+        assert_eq!(
+            validate_security(
+                RedisTlsMode::Require,
+                RedisConnectionSecurity::new().with_tls(
+                    RedisTlsMaterial::platform_roots().with_client_identity(
+                        RedisClientIdentity::new(certificate_pem.as_bytes(), key_pem.as_bytes(),)
+                    ),
+                ),
+            ),
+            Ok(())
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_custom_root_fails_before_network_io() {
+        let config = RedisConnectConfig::new(
+            BoundedText::copy_from_str("127.0.0.1", ByteLimit::new(64)).unwrap(),
+            1,
+            0,
+            RedisProtocol::Resp3,
+            RedisTlsMode::Require,
+        );
+        assert!(matches!(
+            RedisSession::connect(
+                &config,
+                RedisConnectionSecurity::new()
+                    .with_tls(RedisTlsMaterial::custom_roots(b"not a PEM certificate")),
+            )
+            .await,
+            Err(RedisError::TlsConfiguration)
+        ));
     }
 
     #[test]

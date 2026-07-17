@@ -11,7 +11,7 @@ use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession,
     ClickHouseTlsMode, DriverPageRequest, DriverSession, EngineService, EngineServiceUpdate,
     PostgresConnectConfig, PostgresProbeQuery, PostgresSession, PostgresTlsMode,
-    RedisConnectConfig, RedisProtocol, RedisSession, RedisTlsMode,
+    RedisConnectConfig, RedisConnectionSecurity, RedisProtocol, RedisSession, RedisTlsMode,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -70,13 +70,16 @@ async fn overlaps_postgres_clickhouse_and_redis_through_one_service() {
     .await
     .unwrap();
     let clickhouse = ready_clickhouse(clickhouse_port).await;
-    let redis = RedisSession::connect(&RedisConnectConfig::new(
-        text("127.0.0.1"),
-        redis_port,
-        0,
-        RedisProtocol::Resp3,
-        RedisTlsMode::Disable,
-    ))
+    let redis = RedisSession::connect(
+        &RedisConnectConfig::new(
+            text("127.0.0.1"),
+            redis_port,
+            0,
+            RedisProtocol::Resp3,
+            RedisTlsMode::Disable,
+        ),
+        RedisConnectionSecurity::new(),
+    )
     .await
     .unwrap();
 

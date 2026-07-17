@@ -17,7 +17,7 @@ library does not change without a recorded architecture revision.
 | Async stream adapter | [`futures-util`](https://github.com/rust-lang/futures-rs) | 0.3.32 | MIT OR Apache-2.0 | CLI EventStream polling only |
 | PostgreSQL | [`tokio-postgres`](https://github.com/rust-postgres/rust-postgres) | 0.7.18 | MIT OR Apache-2.0 | driver adapter only |
 | PostgreSQL TLS | [`tokio-postgres-rustls`](https://github.com/jbg/tokio-postgres-rustls) | 0.14.0 | MIT | PostgreSQL adapter only |
-| TLS configuration | [`rustls`](https://github.com/rustls/rustls) | 0.23.42 | Apache-2.0 OR ISC OR MIT | PostgreSQL adapter custom roots/client identity; ring/std/TLS 1.2 only |
+| TLS configuration | [`rustls`](https://github.com/rustls/rustls) | 0.23.42 | Apache-2.0 OR ISC OR MIT | PostgreSQL transport plus Redis root/identity validation; ring/std/TLS 1.2 only |
 | Test certificates | [`rcgen`](https://github.com/rustls/rcgen) | 0.14.8 | MIT OR Apache-2.0 | engine development dependency only; ephemeral TLS fixtures |
 | Real-server fixtures | [`testcontainers`](https://github.com/testcontainers/testcontainers-rs) | 0.27.3 | MIT OR Apache-2.0 | development dependency in driver test crates only |
 | ClickHouse | official [`clickhouse`](https://github.com/ClickHouse/clickhouse-rs) | 0.15.1 | MIT OR Apache-2.0 | driver adapter only |
@@ -164,7 +164,11 @@ activated locked transitives are `backon` 1.6.0 (Rust 1.85, Apache-2.0),
 `arc-swap` 1.9.2 (no declared `rust-version`, MIT OR Apache-2.0), and
 `futures-channel` 0.3.32 (Rust 1.71, MIT OR Apache-2.0). Workspace Rust 1.97,
 `cargo deny check`, and the full locked test/clippy/doc gates verify this graph.
-TLS/auth behavior remains a later Redis checkpoint. See
+The same rustls feature now passes generated custom-root and optional mTLS
+identity fixtures plus ACL authentication without adding a dependency or an
+insecure verifier. See
+[`144-phase-2-redis-tls-authentication.md`](144-phase-2-redis-tls-authentication.md)
+and
 [`90-phase-2-redis-binary-scan-foundation.md`](90-phase-2-redis-binary-scan-foundation.md).
 The official client unconditionally brings `xxhash-rust` 0.8.17 for value
 digests. Its permissive OSI-approved BSL-1.0 license is explicitly accepted;

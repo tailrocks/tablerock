@@ -1,9 +1,6 @@
 use std::time::Duration;
 
-use rcgen::{
-    BasicConstraints, CertificateParams, CertifiedIssuer, DnType, ExtendedKeyUsagePurpose, IsCa,
-    KeyPair, KeyUsagePurpose,
-};
+use rcgen::ExtendedKeyUsagePurpose;
 use tablerock_core::{
     BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity, PageLimits,
     PageWarning, Truncation, ValueKind,
@@ -16,11 +13,13 @@ use tablerock_engine::{
 };
 
 mod support;
+mod tls_support;
 use testcontainers::{
     CopyDataSource, CopyTargetOptions, GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
     runners::AsyncRunner,
 };
+use tls_support::{certificate_authority, leaf_certificate};
 
 struct PostgresTlsFixture {
     ca_pem: String,
@@ -51,32 +50,6 @@ impl PostgresTlsFixture {
             client_private_key_pem,
         }
     }
-}
-
-fn certificate_authority(name: &str) -> CertifiedIssuer<'static, KeyPair> {
-    let mut parameters = CertificateParams::new(Vec::new()).unwrap();
-    parameters.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-    parameters.distinguished_name.push(DnType::CommonName, name);
-    parameters.key_usages = vec![
-        KeyUsagePurpose::DigitalSignature,
-        KeyUsagePurpose::KeyCertSign,
-        KeyUsagePurpose::CrlSign,
-    ];
-    CertifiedIssuer::self_signed(parameters, KeyPair::generate().unwrap()).unwrap()
-}
-
-fn leaf_certificate(
-    name: &str,
-    usage: ExtendedKeyUsagePurpose,
-    issuer: &CertifiedIssuer<'_, KeyPair>,
-) -> (String, String) {
-    let mut parameters = CertificateParams::new(vec![name.to_owned()]).unwrap();
-    parameters.distinguished_name.push(DnType::CommonName, name);
-    parameters.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    parameters.extended_key_usages = vec![usage];
-    let key = KeyPair::generate().unwrap();
-    let certificate = parameters.signed_by(&key, issuer).unwrap();
-    (certificate.pem(), key.serialize_pem())
 }
 
 fn tls_init_script() -> Vec<u8> {

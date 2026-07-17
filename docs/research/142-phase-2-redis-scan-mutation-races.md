@@ -49,10 +49,12 @@ duplicates cannot make the test or product consumer fail. No assertion is made
 for the transient or late identifier because Redis defines that outcome as
 undefined.
 
-This closes the Phase 2 concurrent SCAN-family mutation-race gate. The strict
-pre-decode transport allocation cap, TLS/authentication, Pub/Sub,
-timeout/reconnect, reviewed TTL mutation, complete type views, service/UI
-integration, and native presentation remain open.
+This closes the Phase 2 concurrent SCAN-family mutation-race gate. Timeout/
+reconnect and TLS/authentication are subsequently closed by
+[research 143](143-phase-2-redis-timeout-reconnect.md) and
+[research 144](144-phase-2-redis-tls-authentication.md). The strict pre-decode
+transport allocation cap, Pub/Sub, reviewed TTL mutation, complete type views,
+service/UI integration, and native presentation remain open.
 
 Context7 was attempted first and reported its monthly quota exhausted. The
 redis-rs 1.4.0 command/reply path was verified from exact pinned source. Redis

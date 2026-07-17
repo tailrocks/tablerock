@@ -65,8 +65,9 @@ An inert TCP peer proves the RESP3 connection/handshake path returns `Timeout`
 inside the configured bound. Unit tests prove every runtime-policy boundary,
 exact manager projection, stable adapter error mapping, and stale-token safety.
 This closes the Phase 2 Redis response-timeout and dropped-connection reconnect
-tracer. DNS changes, server restart during active work, TLS/authentication,
-Pub/Sub resubscription, strict pre-decode transport allocation, reviewed TTL
+tracer. TLS/authentication is subsequently closed by
+[research 144](144-phase-2-redis-tls-authentication.md). DNS changes, server
+restart during active work, Pub/Sub resubscription, strict pre-decode transport allocation, reviewed TTL
 mutation, complete type views, service/UI integration, and native presentation
 remain open.
 

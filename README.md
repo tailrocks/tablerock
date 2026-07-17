@@ -75,10 +75,11 @@ verified custom-root TLS, independent server-name verification, client
 certificate identity, plaintext downgrade rejection, and TLS cancellation on
 PostgreSQL 17.10 and 18.4; the remaining driver matrix stays Phase 2 work.
 The Redis supported-line RESP2/RESP3 matrix also proves bounded per-command
-pipeline partial failures, `MULTI`/`EXEC` no-rollback behavior, and exact
-missing/persistent/finite-millisecond key TTL facts; broader Redis TLS,
-command-family, Pub/Sub, reviewed TTL mutation, timeout, and reconnect evidence
-remains open.
+pipeline partial failures, `MULTI`/`EXEC` no-rollback behavior, exact
+missing/persistent/finite-millisecond key TTL facts, bounded timeout/reconnect,
+verified custom-root TLS, optional mTLS identity, and ACL authentication.
+Broader command-family, Pub/Sub, reviewed TTL mutation, DNS/server-restart, and
+write-ambiguity evidence remains open.
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
 

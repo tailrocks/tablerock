@@ -20,9 +20,10 @@ pub use postgres::{
     PostgresProbeQuery, PostgresRowStream, PostgresSession, PostgresTlsMaterial, PostgresTlsMode,
 };
 pub use redis::{
-    RedisBlockingPopStream, RedisCancelDispatch, RedisCollectionScanKind,
-    RedisCollectionScanOptions, RedisCollectionStream, RedisConnectConfig, RedisError,
-    RedisKeyStream, RedisProtocol, RedisRuntimePolicy, RedisSession, RedisTlsMode,
+    RedisBlockingPopStream, RedisCancelDispatch, RedisClientIdentity, RedisCollectionScanKind,
+    RedisCollectionScanOptions, RedisCollectionStream, RedisConnectConfig, RedisConnectionSecurity,
+    RedisCredentials, RedisError, RedisKeyStream, RedisProtocol, RedisRuntimePolicy, RedisSession,
+    RedisTlsMaterial, RedisTlsMode,
 };
 pub use runtime::{
     DriverOperationEvent, DriverOperationEvents, DriverRuntime, DriverRuntimeError,

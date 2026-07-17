@@ -10,8 +10,8 @@ use tablerock_core::{
 use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession,
     ClickHouseTlsMode, DriverPageRequest, DriverSession, PostgresConnectConfig, PostgresProbeQuery,
-    PostgresSession, PostgresTlsMode, RedisConnectConfig, RedisProtocol, RedisSession,
-    RedisTlsMode,
+    PostgresSession, PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity, RedisProtocol,
+    RedisSession, RedisTlsMode,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -72,13 +72,16 @@ async fn current_servers_meet_initial_streaming_budgets() {
     .await
     .unwrap();
     let clickhouse = ready_clickhouse(clickhouse_port).await;
-    let redis = RedisSession::connect(&RedisConnectConfig::new(
-        text("127.0.0.1"),
-        redis_port,
-        0,
-        RedisProtocol::Resp3,
-        RedisTlsMode::Disable,
-    ))
+    let redis = RedisSession::connect(
+        &RedisConnectConfig::new(
+            text("127.0.0.1"),
+            redis_port,
+            0,
+            RedisProtocol::Resp3,
+            RedisTlsMode::Disable,
+        ),
+        RedisConnectionSecurity::new(),
+    )
     .await
     .unwrap();
 

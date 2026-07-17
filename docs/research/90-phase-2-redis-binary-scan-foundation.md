@@ -10,8 +10,10 @@ pages. All driver clients, connections, commands, and response values remain
 private.
 
 This is not the complete Redis spike. HSCAN, SSCAN, and ZSCAN were subsequently
-closed by [research 141](141-phase-2-redis-collection-scans.md). TLS fixtures,
-authentication, reviewed TTL mutations, and Pub/Sub remain. Response timeout
+closed by [research 141](141-phase-2-redis-collection-scans.md). TLS fixtures
+and authentication are closed by
+[research 144](144-phase-2-redis-tls-authentication.md); reviewed TTL mutations
+and Pub/Sub remain. Response timeout
 and confirmed-drop reconnect are subsequently closed by
 [research 143](143-phase-2-redis-timeout-reconnect.md).
 Key-level TTL read truth is proved in
