@@ -57,3 +57,13 @@ vendor was introduced, so the stale-pin step did not need extension.
 - Revisit `performance_real` at plan 018.
 - Optional: cache (`Swatinem/rust-cache`) if wall-clock cost becomes a problem;
   skipped here to avoid an extra pinned action.
+
+## CI follow-up (same checkpoint)
+
+First `checks` run on the introducing commit failed
+`tablerock-cli` `high_rate_mouse_and_resize_do_not_starve_terminal_quit` on
+`ubuntu-latest` only (`TableRock PTY child exceeded 5s`). The same suite passed
+on `macos-15` and passes repeatedly locally (~0.5s). Decision: raise the PTY
+lifecycle wall-clock bound from 5s to 30s so shared-runner flood drain can
+finish without weakening the starvation property (still fail-closed, still
+finite).

@@ -10,7 +10,10 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 mod support;
 
-const TIMEOUT: Duration = Duration::from_secs(5);
+// Shared GitHub runners can take longer than a local workstation to drain a
+// high-rate mouse/resize flood after Ctrl-C. Bound is still finite and fails
+// closed; it is not a correctness relaxation of the starvation property.
+const TIMEOUT: Duration = Duration::from_secs(30);
 
 #[test]
 fn semantic_quit_restores_terminal_modes() {
