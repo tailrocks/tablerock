@@ -335,6 +335,9 @@ padding-validated bounded canonical text with PostgreSQL 17/18 evidence in
 PostgreSQL unsigned object, transaction, command, and registered-object
 identifiers now retain their full numeric ranges with PostgreSQL 17/18 evidence
 in [`187-phase-2-postgresql-identifier-projection.md`](docs/research/187-phase-2-postgresql-identifier-projection.md).
+PostgreSQL WAL log sequence numbers now retain their canonical domain form with
+strict eight-byte framing and PostgreSQL 17/18 evidence in
+[`188-phase-2-postgresql-lsn-projection.md`](docs/research/188-phase-2-postgresql-lsn-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

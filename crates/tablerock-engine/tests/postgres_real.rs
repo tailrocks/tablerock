@@ -1721,6 +1721,37 @@ async fn verify_typed_values(tag: &str) {
     );
     drop(identifiers);
 
+    let mut lsns = session
+        .stream_probe(
+            PostgresProbeQuery::LsnValues,
+            PageLimits::new(1, 3, 256, 512),
+            64,
+        )
+        .await
+        .unwrap();
+    let lsn_page = lsns.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, expected) in [
+        (0_u32, "0/0"),
+        (1_u32, "16/B374D848"),
+        (2_u32, "FFFFFFFF/FFFFFFFF"),
+    ] {
+        assert_eq!(
+            lsn_page.columns()[column as usize].engine_type().name(),
+            "pg_lsn"
+        );
+        assert_eq!(lsn_page.cell(0, column).unwrap().kind(), ValueKind::Text);
+        assert_eq!(
+            lsn_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            lsn_page.cell(0, column).unwrap().truncation(),
+            Truncation::Complete
+        );
+    }
+    assert!(lsns.next_page(identity(), 1).await.unwrap().is_none());
+    drop(lsns);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,

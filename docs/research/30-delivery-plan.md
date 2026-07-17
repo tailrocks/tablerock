@@ -182,6 +182,9 @@ validation, without expanding beyond the caller limit.
 PostgreSQL `oid`, `xid`, `cid`, `xid8`, and pinned registered-object aliases now
 project exact full-range core `Unsigned` values after strict 32/64-bit framing;
 symbolic catalog names remain separate metadata instead of replacing identity.
+PostgreSQL `pg_lsn` now projects bounded canonical uppercase `HIGH/LOW` text
+after strict eight-byte framing, preserving WAL-location semantics rather than
+reducing the value to a generic unsigned integer.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
 `Decimal` values. Malformed wire values remain `Invalid`; valid projections over

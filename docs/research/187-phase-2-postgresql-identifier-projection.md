@@ -40,8 +40,8 @@ metadata and numeric identity.
 
 ## Remaining work
 
-Tuple identifiers, OID vectors, LSNs, snapshots, and additional scalar families
-remain separate typed-value work. Symbolic catalog enrichment, identifier
+Research 188 subsequently closes LSN projection. Tuple identifiers, OID
+vectors, snapshots, and additional scalar families remain separate typed-value work. Symbolic catalog enrichment, identifier
 editors, public parameter plans and request bounds, service/UI projection, and
 UniFFI remain open.
 

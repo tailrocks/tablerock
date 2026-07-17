@@ -136,6 +136,7 @@ kept in the roadmap.
 - [Phase 2 PostgreSQL network projection](185-phase-2-postgresql-network-projection.md)
 - [Phase 2 PostgreSQL bit-string projection](186-phase-2-postgresql-bit-string-projection.md)
 - [Phase 2 PostgreSQL identifier projection](187-phase-2-postgresql-identifier-projection.md)
+- [Phase 2 PostgreSQL LSN projection](188-phase-2-postgresql-lsn-projection.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

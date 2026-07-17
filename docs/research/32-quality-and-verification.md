@@ -172,6 +172,8 @@ Engine additions:
   reject invalid count, payload size, framing, and unused padding;
   unsigned object/transaction/command and registered-object identifiers retain
   exact 32/64-bit range, type identity, and wrong-width/bound failure truth;
+  `pg_lsn` retains canonical bounded WAL-location text, full unsigned range,
+  and strict eight-byte framing;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,

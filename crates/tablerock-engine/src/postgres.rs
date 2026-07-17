@@ -137,6 +137,7 @@ pub enum PostgresProbeQuery {
     NetworkValues,
     BitValues,
     IdentifierValues,
+    LsnValues,
     Parameters,
     CancellationStream,
 }
@@ -456,6 +457,11 @@ impl PostgresProbeQuery {
                  '1299'::regprocedure AS registered_procedure, \
                  '96'::regoper AS registered_oper, \
                  '96'::regoperator AS registered_operator"
+            }
+            Self::LsnValues => {
+                "SELECT '0/0'::pg_lsn AS zero_lsn, \
+                 '16/B374D848'::pg_lsn AS representative_lsn, \
+                 'FFFFFFFF/FFFFFFFF'::pg_lsn AS maximum_lsn"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1652,6 +1658,9 @@ fn decode_value_at_depth(
     if *type_ == Type::XID8 {
         return decode_unsigned_identifier(type_, raw, limit, 8);
     }
+    if *type_ == Type::PG_LSN {
+        return decode_lsn(type_, raw, limit);
+    }
     if matches!(
         *type_,
         Type::DATE
@@ -2408,6 +2417,17 @@ fn decode_unsigned_identifier(
     } else {
         bounded_raw(type_, raw, 0, false)
     }
+}
+
+fn decode_lsn(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
+    let value = match <[u8; 8]>::try_from(raw) {
+        Ok(bytes) => u64::from_be_bytes(bytes),
+        Err(_) => return bounded_raw(type_, raw, limit, true),
+    };
+    bounded_canonical_text(
+        format!("{:X}/{:X}", value >> 32, value & u64::from(u32::MAX)),
+        limit,
+    )
 }
 
 fn decode_uuid(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
@@ -3675,6 +3695,44 @@ mod tests {
         let bounded = decode_value(&Type::OID, &42_u32.to_be_bytes(), 7).unwrap();
         assert_eq!(bounded.kind(), tablerock_core::ValueKind::Unknown);
         assert_eq!(bounded.engine_type().unwrap().name(), "oid");
+    }
+
+    #[test]
+    fn lsn_projection_preserves_canonical_wal_location_and_bounds() {
+        for (wire, expected) in [
+            (0_u64, "0/0"),
+            ((0x16_u64 << 32) | 0xB374_D848, "16/B374D848"),
+            (u64::MAX, "FFFFFFFF/FFFFFFFF"),
+        ] {
+            let value = decode_value(&Type::PG_LSN, &wire.to_be_bytes(), 32).unwrap();
+            assert!(matches!(
+                value.as_ref(),
+                ValueRef::Text {
+                    value,
+                    truncation: Truncation::Complete
+                } if value == expected
+            ));
+        }
+
+        let bounded = decode_value(&Type::PG_LSN, &u64::MAX.to_be_bytes(), 9).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            ValueRef::Text {
+                value: "FFFFFFFF/",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(17)
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn lsn_projection_rejects_wrong_width() {
+        for malformed in [vec![], vec![0; 7], vec![0; 9]] {
+            let value = decode_value(&Type::PG_LSN, &malformed, 32).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), "pg_lsn");
+        }
     }
 
     #[test]
