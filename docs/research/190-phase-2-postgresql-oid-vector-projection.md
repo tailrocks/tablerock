@@ -33,7 +33,8 @@ with exact `oidvector` identity and complete structured values.
 
 ## Remaining work
 
-Snapshots and additional scalar families remain separate typed-value work.
+Additional scalar families remain separate typed-value work. Snapshot
+projection is now delivered by research 191.
 OID-vector catalog interpretation/editing, public parameter plans and request
 bounds, service/UI projection, and UniFFI remain open.
 

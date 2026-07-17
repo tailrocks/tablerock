@@ -191,6 +191,9 @@ and are forbidden as durable identity or automatic mutation locators.
 PostgreSQL special `oidvector` now projects a bounded ordered unsigned list
 after enforcing one dimension, zero lower bound, no NULLs, OID element identity,
 exact member framing, and the shared one-million-element ceiling.
+PostgreSQL modern `pg_snapshot` and legacy `txid_snapshot` now project one
+bounded xmin/xmax/in-progress transaction structure after strict nonzero bounds,
+ordering, range, framing, and shared one-million-member validation.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
 `Decimal` values. Malformed wire values remain `Invalid`; valid projections over

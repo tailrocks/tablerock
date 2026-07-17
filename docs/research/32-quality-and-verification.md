@@ -178,6 +178,8 @@ Engine additions:
   framing and is never accepted as durable logical identity;
   `oidvector` retains bounded ordered unsigned members with strict specialized
   dimension/lower-bound/null/element/framing/count invariants;
+  modern and legacy transaction snapshots retain bounded xmin/xmax and ordered
+  in-progress truth with strict bound/range/framing/count invariants;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,

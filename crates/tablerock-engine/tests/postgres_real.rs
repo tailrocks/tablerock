@@ -1829,6 +1829,54 @@ async fn verify_typed_values(tag: &str) {
     );
     drop(oid_vectors);
 
+    let mut snapshots = session
+        .stream_probe(
+            PostgresProbeQuery::SnapshotValues,
+            PageLimits::new(1, 3, 512, 512),
+            128,
+        )
+        .await
+        .unwrap();
+    let snapshot_page = snapshots.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, type_name, expected) in [
+        (
+            0_u32,
+            "pg_snapshot",
+            "{\"$snapshot\":{\"xmin\":10,\"xmax\":20,\"in_progress\":[10,14,15]}}",
+        ),
+        (
+            1_u32,
+            "txid_snapshot",
+            "{\"$snapshot\":{\"xmin\":10,\"xmax\":20,\"in_progress\":[10,14,15]}}",
+        ),
+        (
+            2_u32,
+            "pg_snapshot",
+            "{\"$snapshot\":{\"xmin\":10,\"xmax\":20,\"in_progress\":[]}}",
+        ),
+    ] {
+        assert_eq!(
+            snapshot_page.columns()[column as usize]
+                .engine_type()
+                .name(),
+            type_name
+        );
+        assert_eq!(
+            snapshot_page.cell(0, column).unwrap().kind(),
+            ValueKind::Structured
+        );
+        assert_eq!(
+            snapshot_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            snapshot_page.cell(0, column).unwrap().truncation(),
+            Truncation::Complete
+        );
+    }
+    assert!(snapshots.next_page(identity(), 1).await.unwrap().is_none());
+    drop(snapshots);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,

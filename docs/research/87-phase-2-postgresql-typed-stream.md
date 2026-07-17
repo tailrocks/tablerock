@@ -42,6 +42,7 @@ that accepts every PostgreSQL type. It then makes one lossless classification:
 | `pg_lsn` | strict-width bounded canonical uppercase WAL location text; research 188 |
 | `tid` | strict-width bounded structured physical block/offset pair; research 189 |
 | `oidvector` | specialized bounded ordered unsigned list with strict array invariants; research 190 |
+| `pg_snapshot`, `txid_snapshot` | bounded xmin/xmax and ordered in-progress transaction structure; research 191 |
 | valid unsupported type | unknown with PostgreSQL type name and raw binary payload |
 | malformed payload for a known type | invalid with PostgreSQL type name and raw payload |
 
@@ -72,6 +73,8 @@ Research 189 projects `tid` as a structured physical row-version location while
 forbidding durable identity or automatic mutation-locator use.
 Research 190 projects special `oidvector` values as bounded ordered unsigned
 lists after strict dimension, lower-bound, NULL, element, and framing checks.
+Research 191 projects modern and legacy transaction snapshots through one
+semantic structure after strict bound, ordering, member, and framing checks.
 Malformed known values are never silently treated as valid.
 
 Column metadata carries the server type name and conservatively marks columns

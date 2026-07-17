@@ -140,6 +140,7 @@ pub enum PostgresProbeQuery {
     LsnValues,
     TidValues,
     OidVectorValues,
+    SnapshotValues,
     Parameters,
     CancellationStream,
 }
@@ -474,6 +475,11 @@ impl PostgresProbeQuery {
                 "SELECT '23 25 1043'::oidvector AS representative_vector, \
                  ''::oidvector AS empty_vector, \
                  '4294967295 0'::oidvector AS boundary_vector"
+            }
+            Self::SnapshotValues => {
+                "SELECT '10:20:10,14,15'::pg_snapshot AS pg_snapshot_value, \
+                 '10:20:10,14,15'::txid_snapshot AS txid_snapshot_value, \
+                 '10:20:'::pg_snapshot AS empty_snapshot"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1683,6 +1689,13 @@ fn decode_value_at_depth(
             Err(()) => bounded_raw(type_, raw, limit, true),
         };
     }
+    if matches!(*type_, Type::PG_SNAPSHOT | Type::TXID_SNAPSHOT) {
+        return match decode_snapshot(raw, limit) {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => bounded_raw(type_, raw, limit, false),
+            Err(()) => bounded_raw(type_, raw, limit, true),
+        };
+    }
     if matches!(
         *type_,
         Type::DATE
@@ -2155,6 +2168,12 @@ impl<'a> PostgresBinaryCursor<'a> {
         ))
     }
 
+    fn read_u64(&mut self) -> Result<u64, ()> {
+        Ok(u64::from_be_bytes(
+            self.read_exact(8)?.try_into().map_err(|_| ())?,
+        ))
+    }
+
     fn read_exact(&mut self, length: usize) -> Result<&'a [u8], ()> {
         let (value, remaining) = self.remaining.split_at_checked(length).ok_or(())?;
         self.remaining = remaining;
@@ -2495,6 +2514,44 @@ fn decode_oid_vector(raw: &[u8], limit: u64) -> Result<Option<OwnedValue>, ()> {
         return Err(());
     }
     projection.push("]}")?;
+    projection.finish().map(Some).map_err(|_| ())
+}
+
+fn decode_snapshot(raw: &[u8], limit: u64) -> Result<Option<OwnedValue>, ()> {
+    let mut cursor = PostgresBinaryCursor::new(raw);
+    let count = usize::try_from(cursor.read_i32()?).map_err(|_| ())?;
+    if count > MAX_POSTGRES_ARRAY_ELEMENTS {
+        return Ok(None);
+    }
+    let xmin = cursor.read_u64()?;
+    let xmax = cursor.read_u64()?;
+    if xmin == 0 || xmax == 0 || xmax < xmin {
+        return Err(());
+    }
+
+    let mut projection = BoundedJsonWriter::new(limit);
+    projection.push(&format!(
+        "{{\"$snapshot\":{{\"xmin\":{xmin},\"xmax\":{xmax},\"in_progress\":["
+    ))?;
+    let mut previous = None;
+    for index in 0..count {
+        let transaction = cursor.read_u64()?;
+        if transaction < xmin
+            || transaction > xmax
+            || previous.is_some_and(|previous| transaction <= previous)
+        {
+            return Err(());
+        }
+        if index != 0 {
+            projection.push(",")?;
+        }
+        projection.push(&transaction.to_string())?;
+        previous = Some(transaction);
+    }
+    if cursor.remaining() != 0 {
+        return Err(());
+    }
+    projection.push("]}}")?;
     projection.finish().map(Some).map_err(|_| ())
 }
 
@@ -3932,6 +3989,92 @@ mod tests {
             0,
         );
         let value = decode_value(&Type::OID_VECTOR, &excessive, 64).unwrap();
+        assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
+    }
+
+    #[test]
+    fn snapshot_projection_preserves_bounds_and_in_progress_transactions() {
+        fn raw(xmin: u64, xmax: u64, transactions: &[u64]) -> Vec<u8> {
+            let mut raw = Vec::new();
+            raw.extend_from_slice(&i32::try_from(transactions.len()).unwrap().to_be_bytes());
+            raw.extend_from_slice(&xmin.to_be_bytes());
+            raw.extend_from_slice(&xmax.to_be_bytes());
+            for transaction in transactions {
+                raw.extend_from_slice(&transaction.to_be_bytes());
+            }
+            raw
+        }
+
+        for type_ in [Type::PG_SNAPSHOT, Type::TXID_SNAPSHOT] {
+            let value = decode_value(&type_, &raw(10, 20, &[10, 14, 15]), 128).unwrap();
+            assert!(matches!(
+                value.as_ref(),
+                ValueRef::Structured {
+                    value: "{\"$snapshot\":{\"xmin\":10,\"xmax\":20,\"in_progress\":[10,14,15]}}",
+                    truncation: Truncation::Complete
+                }
+            ));
+            let empty = decode_value(&type_, &raw(1, u64::MAX, &[]), 128).unwrap();
+            assert!(matches!(
+                empty.as_ref(),
+                ValueRef::Structured {
+                    value: "{\"$snapshot\":{\"xmin\":1,\"xmax\":18446744073709551615,\"in_progress\":[]}}",
+                    truncation: Truncation::Complete
+                }
+            ));
+            let bounded = decode_value(&type_, &raw(10, 20, &[10]), 12).unwrap();
+            assert!(matches!(
+                bounded.as_ref(),
+                ValueRef::Structured {
+                    value: "{\"$snapshot\"",
+                    truncation: Truncation::Truncated {
+                        original_byte_len: Some(original)
+                    }
+                } if original > 12
+            ));
+        }
+    }
+
+    #[test]
+    fn snapshot_projection_rejects_invalid_semantics_and_framing() {
+        fn raw(count: i32, xmin: u64, xmax: u64, transactions: &[u64]) -> Vec<u8> {
+            let mut raw = Vec::new();
+            raw.extend_from_slice(&count.to_be_bytes());
+            raw.extend_from_slice(&xmin.to_be_bytes());
+            raw.extend_from_slice(&xmax.to_be_bytes());
+            for transaction in transactions {
+                raw.extend_from_slice(&transaction.to_be_bytes());
+            }
+            raw
+        }
+
+        let mut trailing = raw(0, 10, 20, &[]);
+        trailing.push(0);
+        for malformed in [
+            vec![],
+            raw(-1, 10, 20, &[]),
+            raw(0, 0, 20, &[]),
+            raw(0, 10, 0, &[]),
+            raw(0, 20, 10, &[]),
+            raw(1, 10, 20, &[]),
+            raw(1, 10, 20, &[9]),
+            raw(1, 10, 20, &[21]),
+            raw(2, 10, 20, &[14, 13]),
+            raw(2, 10, 20, &[14, 14]),
+            trailing,
+        ] {
+            let value = decode_value(&Type::PG_SNAPSHOT, &malformed, 128).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), "pg_snapshot");
+        }
+
+        let excessive = raw(
+            i32::try_from(MAX_POSTGRES_ARRAY_ELEMENTS + 1).unwrap(),
+            10,
+            20,
+            &[],
+        );
+        let value = decode_value(&Type::PG_SNAPSHOT, &excessive, 128).unwrap();
         assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
     }
 
