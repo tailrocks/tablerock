@@ -141,6 +141,12 @@ pre-decode transport allocation cap remains a separate required gate. Accepted
 decoded collection batches and all retained pending state have explicit entry
 and byte bounds.
 
+The Redis matrix also proves configured response timeout, distinct timeout and
+connection-loss categories, confirmed-drop future-call reconnect, RESP3
+proactive reconnect allowance, logical database retention, and disposable
+blocking-operation client identity. Server restart, DNS change, and write
+ambiguity remain separate required gates.
+
 A support claim is exactly the continuously passing real-server matrix.
 
 ## TUI render and interaction matrix

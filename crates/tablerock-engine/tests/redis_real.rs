@@ -10,7 +10,7 @@ use tablerock_core::{
 use tablerock_engine::{
     AdapterFailureClass, DriverPageRequest, DriverSession, EngineServiceUpdate,
     RedisCollectionScanKind, RedisCollectionScanOptions, RedisConnectConfig, RedisProtocol,
-    RedisSession, RedisTlsMode,
+    RedisRuntimePolicy, RedisSession, RedisTlsMode,
 };
 
 mod support;
@@ -52,6 +52,154 @@ async fn scan_families_preserve_full_iteration_guarantees_during_mutation() {
     }
 }
 
+#[tokio::test]
+async fn bounds_response_timeouts_and_reconnects_future_reads() {
+    for tag in [
+        "7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+        "8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005",
+    ] {
+        verify_timeout_reconnect_version(tag).await;
+    }
+}
+
+#[tokio::test]
+async fn bounds_connection_handshake_timeout() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = tokio::spawn(async move {
+        let (_connection, _) = listener.accept().await.unwrap();
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    });
+    let policy = RedisRuntimePolicy::new(
+        Duration::from_millis(100),
+        Duration::from_millis(100),
+        1,
+        Duration::from_millis(1),
+        Duration::from_millis(1),
+    )
+    .unwrap();
+    let started = tokio::time::Instant::now();
+    let result = RedisSession::connect(
+        &RedisConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            0,
+            RedisProtocol::Resp3,
+            RedisTlsMode::Disable,
+        )
+        .with_runtime_policy(policy),
+    )
+    .await;
+    assert!(matches!(result, Err(tablerock_engine::RedisError::Timeout)));
+    assert!(started.elapsed() < Duration::from_secs(1));
+    server.abort();
+}
+
+async fn verify_timeout_reconnect_version(tag: &str) {
+    let container = GenericImage::new("redis", tag)
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let policy = RedisRuntimePolicy::new(
+        Duration::from_millis(250),
+        Duration::from_millis(100),
+        8,
+        Duration::from_millis(10),
+        Duration::from_millis(100),
+    )
+    .unwrap();
+
+    for protocol in [RedisProtocol::Resp2, RedisProtocol::Resp3] {
+        let mut fixture = raw_connection_in_database(port, protocol, 1).await;
+        let _: () = redis::cmd("SET")
+            .arg(b"reconnect-key")
+            .arg(&[0_u8, 255])
+            .query_async(&mut fixture)
+            .await
+            .unwrap();
+        let session = RedisSession::connect(
+            &RedisConnectConfig::new(text("127.0.0.1"), port, 1, protocol, RedisTlsMode::Disable)
+                .with_runtime_policy(policy),
+        )
+        .await
+        .unwrap();
+
+        let _: () = redis::cmd("CLIENT")
+            .arg("PAUSE")
+            .arg(300_u64)
+            .arg("ALL")
+            .query_async(&mut fixture)
+            .await
+            .unwrap();
+        assert_eq!(
+            session.read_binary(&bytes(b"reconnect-key"), 16).await,
+            Err(tablerock_engine::RedisError::Timeout),
+            "response timeout {tag} {protocol:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        assert!(matches!(
+            session
+                .read_binary(&bytes(b"reconnect-key"), 16)
+                .await
+                .unwrap()
+                .unwrap()
+                .as_ref(),
+            tablerock_core::ValueRef::Binary {
+                value: [0, 255],
+                truncation: Truncation::Complete,
+            }
+        ));
+
+        let client_id = session.observed_client_id().await.unwrap();
+        let killed: u64 = redis::cmd("CLIENT")
+            .arg("KILL")
+            .arg("ID")
+            .arg(client_id)
+            .query_async(&mut fixture)
+            .await
+            .unwrap();
+        assert_eq!(killed, 1);
+        let first_post_drop = session.read_binary(&bytes(b"reconnect-key"), 16).await;
+        if matches!(protocol, RedisProtocol::Resp2) {
+            assert_eq!(
+                first_post_drop,
+                Err(tablerock_engine::RedisError::Connection)
+            );
+        }
+        match first_post_drop {
+            Ok(Some(value)) => assert!(matches!(
+                value.as_ref(),
+                tablerock_core::ValueRef::Binary {
+                    value: [0, 255],
+                    truncation: Truncation::Complete,
+                }
+            )),
+            Err(tablerock_engine::RedisError::Connection) => {}
+            other => panic!("unexpected first post-drop read: {other:?}"),
+        }
+        let value = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match session.read_binary(&bytes(b"reconnect-key"), 16).await {
+                    Ok(Some(value)) => break value,
+                    Ok(None) | Err(_) => tokio::time::sleep(Duration::from_millis(25)).await,
+                }
+            }
+        })
+        .await
+        .expect("future reads reconnect within five seconds");
+        assert!(matches!(
+            value.as_ref(),
+            tablerock_core::ValueRef::Binary {
+                value: [0, 255],
+                truncation: Truncation::Complete,
+            }
+        ));
+    }
+}
+
 async fn verify_scan_mutation_version(tag: &str) {
     let container = GenericImage::new("redis", tag)
         .with_exposed_port(6379.tcp())
@@ -87,8 +235,16 @@ async fn verify_scan_mutation_version(tag: &str) {
 }
 
 async fn raw_connection(port: u16, protocol: RedisProtocol) -> redis::aio::MultiplexedConnection {
+    raw_connection_in_database(port, protocol, 0).await
+}
+
+async fn raw_connection_in_database(
+    port: u16,
+    protocol: RedisProtocol,
+    database: i64,
+) -> redis::aio::MultiplexedConnection {
     let redis = RedisConnectionInfo::default()
-        .set_db(0)
+        .set_db(database)
         .set_protocol(match protocol {
             RedisProtocol::Resp2 => ProtocolVersion::RESP2,
             RedisProtocol::Resp3 => ProtocolVersion::RESP3,
@@ -342,7 +498,8 @@ async fn verify_version(tag: &str) {
         verify_sorted_set_scan(&session, protocol, tag).await;
         verify_empty_collection_scans(&session, protocol, tag).await;
         verify_pipeline_partial_failure(port, protocol, tag).await;
-        verify_service_cancellation(port, protocol, tag).await;
+        verify_service_cancellation(port, protocol, tag, false).await;
+        verify_service_cancellation(port, protocol, tag, true).await;
         verify_blocking_completion(port, protocol).await;
 
         let value = session
@@ -724,7 +881,12 @@ async fn verify_pipeline_partial_failure(port: u16, protocol: RedisProtocol, tag
     }
 }
 
-async fn verify_service_cancellation(port: u16, protocol: RedisProtocol, tag: &str) {
+async fn verify_service_cancellation(
+    port: u16,
+    protocol: RedisProtocol,
+    tag: &str,
+    wait_for_server_dispatch: bool,
+) {
     let session = RedisSession::connect(&RedisConnectConfig::new(
         text("127.0.0.1"),
         port,
@@ -734,7 +896,6 @@ async fn verify_service_cancellation(port: u16, protocol: RedisProtocol, tag: &s
     ))
     .await
     .unwrap();
-    let blocked_client_id = session.client_id();
     let operation_id = support::operation(60);
     let mut service = support::service(1, 2);
     service
@@ -759,7 +920,9 @@ async fn verify_service_cancellation(port: u16, protocol: RedisProtocol, tag: &s
             .unwrap(),
         EngineServiceUpdate::Started
     ));
-    wait_until_blocked(port, blocked_client_id).await;
+    if wait_for_server_dispatch {
+        wait_until_blocked(port, None).await;
+    }
     let cancel = service.cancel(operation_id).unwrap();
     assert_eq!(cancel.core, tablerock_core::CancelRequestOutcome::Requested);
     assert_eq!(
@@ -772,7 +935,12 @@ async fn verify_service_cancellation(port: u16, protocol: RedisProtocol, tag: &s
             .unwrap()
             .unwrap()
             .unwrap(),
-        EngineServiceUpdate::CancelDispatched(CancelDispatch::RequestSent)
+        EngineServiceUpdate::CancelDispatched(dispatch)
+            if dispatch == if wait_for_server_dispatch {
+                CancelDispatch::RequestSent
+            } else {
+                CancelDispatch::PreventedBeforeDispatch
+            }
     ));
     assert!(
         matches!(
@@ -781,26 +949,28 @@ async fn verify_service_cancellation(port: u16, protocol: RedisProtocol, tag: &s
                 .unwrap()
                 .unwrap()
                 .unwrap(),
-            EngineServiceUpdate::Terminal(
-                tablerock_core::OperationOutcome::ServerConfirmedCancelled
-            )
+            EngineServiceUpdate::Terminal(outcome)
+                if outcome == if wait_for_server_dispatch {
+                    tablerock_core::OperationOutcome::ServerConfirmedCancelled
+                } else {
+                    tablerock_core::OperationOutcome::ClientStopped
+                }
         ),
         "Redis cancellation outcome {tag} {protocol:?}"
     );
 }
 
-async fn wait_until_blocked(port: u16, client_id: u64) {
+async fn wait_until_blocked(port: u16, client_id: Option<u64>) {
     let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
     let mut inspector = client.get_multiplexed_async_connection().await.unwrap();
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            let state: String = redis::cmd("CLIENT")
-                .arg("LIST")
-                .arg("ID")
-                .arg(client_id)
-                .query_async(&mut inspector)
-                .await
-                .unwrap();
+            let mut command = redis::cmd("CLIENT");
+            command.arg("LIST");
+            if let Some(client_id) = client_id {
+                command.arg("ID").arg(client_id);
+            }
+            let state: String = command.query_async(&mut inspector).await.unwrap();
             if state.split_whitespace().any(|field| field == "flags=b") {
                 break;
             }
@@ -821,23 +991,26 @@ async fn verify_blocking_completion(port: u16, protocol: RedisProtocol) {
     ))
     .await
     .unwrap();
-    let client_id = session.client_id();
     let mut stream = session
         .blocking_pop(
             bytes(b"tablerock-blocking-completion"),
             PageLimits::new(1, 2, 256, 128),
             128,
         )
+        .await
         .unwrap();
+    let client_id = session.active_blocking_client_id().unwrap();
     assert!(matches!(
-        session.blocking_pop(
-            bytes(b"second-blocking-operation"),
-            PageLimits::new(1, 2, 256, 128),
-            128,
-        ),
+        session
+            .blocking_pop(
+                bytes(b"second-blocking-operation"),
+                PageLimits::new(1, 2, 256, 128),
+                128,
+            )
+            .await,
         Err(tablerock_engine::RedisError::SessionBusy)
     ));
-    wait_until_blocked(port, client_id).await;
+    wait_until_blocked(port, Some(client_id)).await;
     let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
     let mut producer = client.get_multiplexed_async_connection().await.unwrap();
     let pushed: u64 = redis::cmd("RPUSH")
@@ -852,6 +1025,7 @@ async fn verify_blocking_completion(port: u16, protocol: RedisProtocol) {
         .unwrap()
         .unwrap()
         .unwrap();
+    assert_eq!(session.active_blocking_client_id(), None);
     assert_eq!(page.envelope().delivery(), PageDelivery::Final);
     assert_eq!(
         page.cell(0, 0).unwrap().bytes(),

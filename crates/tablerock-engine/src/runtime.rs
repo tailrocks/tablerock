@@ -431,16 +431,19 @@ impl StreamStartControl<'_> {
 }
 
 fn terminal_event(error: AdapterError) -> (DriverOperationEvent, DriverTaskExit) {
-    if error.class() == AdapterFailureClass::ServerCancelled {
-        (
+    match error.class() {
+        AdapterFailureClass::ServerCancelled => (
             DriverOperationEvent::ServerConfirmedCancelled,
             DriverTaskExit::ServerConfirmedCancelled,
-        )
-    } else {
-        (
+        ),
+        AdapterFailureClass::ClientCancelled => (
+            DriverOperationEvent::ClientStopped,
+            DriverTaskExit::ClientStopped,
+        ),
+        _ => (
             DriverOperationEvent::Failed(error),
             DriverTaskExit::Failed(error),
-        )
+        ),
     }
 }
 

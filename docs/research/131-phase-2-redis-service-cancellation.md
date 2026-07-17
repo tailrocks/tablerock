@@ -22,6 +22,12 @@ connection must also observe the server-generated error before the terminal
 outcome becomes `ServerConfirmedCancelled`. Dropping a redis-rs request future
 or stopping the client is never mislabeled as server cancellation.
 
+The later timeout/reconnect checkpoint also covers cancellation while the
+disposable connection is still being created. That path records the distinct
+`PreventedBeforeDispatch` fact, prevents `BLPOP`, and terminates as
+`ClientStopped`; it never claims that Redis received `CLIENT UNBLOCK`. See
+[`143-phase-2-redis-timeout-reconnect.md`](143-phase-2-redis-timeout-reconnect.md).
+
 The blocking key is bounded binary data. Debug output records only its byte
 length. One session admits one active blocking operation, and stream completion
 or drop clears ownership. SQL, Redis arguments, returned values, and server
@@ -42,8 +48,9 @@ it unblocks the target client. redis-rs 1.4.0 documents that dropping a
 can retain a blocking connection. Context7 was requested first but unavailable
 because its monthly quota was exhausted.
 
-Remaining Redis Phase 2 proof includes TLS/authentication, SCAN-family breadth,
-pipelines/partial failures, Pub/Sub isolation, timeouts, and reconnect races.
+Remaining Redis Phase 2 proof includes TLS/authentication and Pub/Sub
+isolation. SCAN-family breadth, pipelines/partial failures, timeouts, and
+reconnect races are now covered by their later evidence checkpoints.
 No external-product source or protected expression influenced this checkpoint.
 
 Public sources:

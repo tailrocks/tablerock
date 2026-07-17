@@ -11,7 +11,9 @@ private.
 
 This is not the complete Redis spike. HSCAN, SSCAN, and ZSCAN were subsequently
 closed by [research 141](141-phase-2-redis-collection-scans.md). TLS fixtures,
-authentication, reviewed TTL mutations, Pub/Sub, timeout, and reconnect remain.
+authentication, reviewed TTL mutations, and Pub/Sub remain. Response timeout
+and confirmed-drop reconnect are subsequently closed by
+[research 143](143-phase-2-redis-timeout-reconnect.md).
 Key-level TTL read truth is proved in
 [`139-phase-2-redis-ttl-truth.md`](139-phase-2-redis-ttl-truth.md). Pipeline partial
 failures are proved in

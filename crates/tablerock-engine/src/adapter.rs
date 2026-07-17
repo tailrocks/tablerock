@@ -112,11 +112,13 @@ pub enum AdapterFailureClass {
     InvalidRequest,
     Query,
     Connection,
+    Timeout,
     Protocol,
     Decode,
     ResourceLimit,
     Page,
     CancellationTransport,
+    ClientCancelled,
     ServerCancelled,
 }
 
@@ -367,6 +369,7 @@ impl DriverSession for RedisSession {
                     max_cell_bytes,
                 } => self
                     .blocking_pop(key, limits, max_cell_bytes)
+                    .await
                     .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
                     .map_err(map_redis),
                 _ => Err(AdapterError::new(
@@ -380,8 +383,11 @@ impl DriverSession for RedisSession {
     fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
         Box::pin(async {
             match self.dispatch_cancel().await {
-                Ok(true) => CancelDispatch::RequestSent,
-                Ok(false) => CancelDispatch::ServerRejected,
+                Ok(crate::RedisCancelDispatch::PreventedBeforeDispatch) => {
+                    CancelDispatch::PreventedBeforeDispatch
+                }
+                Ok(crate::RedisCancelDispatch::RequestSent) => CancelDispatch::RequestSent,
+                Ok(crate::RedisCancelDispatch::ServerRejected) => CancelDispatch::ServerRejected,
                 Err(_) => CancelDispatch::TransportFailed,
             }
         })
@@ -426,7 +432,10 @@ fn map_clickhouse(error: ClickHouseError) -> AdapterError {
 fn map_redis(error: RedisError) -> AdapterError {
     let class = match error {
         RedisError::Connect => AdapterFailureClass::Connection,
+        RedisError::Connection => AdapterFailureClass::Connection,
+        RedisError::Timeout => AdapterFailureClass::Timeout,
         RedisError::Command => AdapterFailureClass::Query,
+        RedisError::ClientCancelled => AdapterFailureClass::ClientCancelled,
         RedisError::ServerCancelled => AdapterFailureClass::ServerCancelled,
         RedisError::SessionBusy => AdapterFailureClass::InvalidRequest,
         RedisError::InvalidLimits => AdapterFailureClass::InvalidRequest,
@@ -436,4 +445,21 @@ fn map_redis(error: RedisError) -> AdapterError {
         RedisError::Page(_) => AdapterFailureClass::Page,
     };
     AdapterError::new(Engine::Redis, class)
+}
+
+#[cfg(test)]
+mod redis_mapping_tests {
+    use super::*;
+
+    #[test]
+    fn redis_transport_failures_keep_their_stable_adapter_classes() {
+        assert_eq!(
+            map_redis(RedisError::Timeout).class(),
+            AdapterFailureClass::Timeout
+        );
+        assert_eq!(
+            map_redis(RedisError::Connection).class(),
+            AdapterFailureClass::Connection
+        );
+    }
 }

@@ -151,14 +151,20 @@ signatures and emits bounded canonical structured projections; see
 Use `redis-rs/redis-rs` with the minimum async, TLS, and protocol features needed
 for the supported standalone deployment. Multiplexed connections handle normal
 commands; dedicated connections isolate Pub/Sub and blocking commands. Contract
-tests prove byte safety, all SCAN variants, logical database isolation,
+tests must prove byte safety, all SCAN variants, logical database isolation,
 post-dispatch cancellation truth, command metadata, TLS, timeout, and reconnect.
 
-Its BSD-3-Clause license and transitive graph are recorded when adopted.
-
-The first adoption checkpoint pins `redis` 1.4.0 with only
-`tokio-rustls-comp` and proves binary GET/SCAN, RESP2/RESP3, and logical database
-isolation against immutable Redis 7.4.9 and 8.8.0 Testcontainers fixtures. See
+The first adoption checkpoint pinned `redis` 1.4.0 with
+`tokio-rustls-comp`; the bounded reconnect checkpoint adds only the official
+`connection-manager` feature. Binary GET/SCAN, RESP2/RESP3, logical database
+isolation, bounded connect/response handshakes, immediate setup cancellation,
+and confirmed-drop reconnect pass immutable Redis 7.4.9 and 8.8.0
+Testcontainers fixtures. `redis` declares Rust 1.88 and BSD-3-Clause. The newly
+activated locked transitives are `backon` 1.6.0 (Rust 1.85, Apache-2.0),
+`arc-swap` 1.9.2 (no declared `rust-version`, MIT OR Apache-2.0), and
+`futures-channel` 0.3.32 (Rust 1.71, MIT OR Apache-2.0). Workspace Rust 1.97,
+`cargo deny check`, and the full locked test/clippy/doc gates verify this graph.
+TLS/auth behavior remains a later Redis checkpoint. See
 [`90-phase-2-redis-binary-scan-foundation.md`](90-phase-2-redis-binary-scan-foundation.md).
 The official client unconditionally brings `xxhash-rust` 0.8.17 for value
 digests. Its permissive OSI-approved BSL-1.0 license is explicitly accepted;

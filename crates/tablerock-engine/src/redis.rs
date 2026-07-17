@@ -3,14 +3,16 @@ use std::{
     error::Error,
     fmt,
     sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use redis::{
-    Client, ConnectionAddr, IntoConnectionInfo, ProtocolVersion, RedisConnectionInfo,
-    aio::MultiplexedConnection,
+    AsyncConnectionConfig, Client, ConnectionAddr, IntoConnectionInfo, ProtocolVersion,
+    RedisConnectionInfo,
+    aio::{ConnectionManager, ConnectionManagerConfig},
 };
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, ColumnMetadata, Engine, EngineType, OwnedValue,
@@ -47,6 +49,104 @@ pub struct RedisCollectionScanOptions {
     max_scan_rounds: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RedisRuntimePolicy {
+    connection_timeout: Duration,
+    response_timeout: Duration,
+    reconnect_attempts: usize,
+    reconnect_min_delay: Duration,
+    reconnect_max_delay: Duration,
+}
+
+impl RedisRuntimePolicy {
+    pub const MAX_DURATION: Duration = Duration::from_secs(300);
+
+    pub fn new(
+        connection_timeout: Duration,
+        response_timeout: Duration,
+        reconnect_attempts: usize,
+        reconnect_min_delay: Duration,
+        reconnect_max_delay: Duration,
+    ) -> Result<Self, RedisError> {
+        if connection_timeout.is_zero()
+            || connection_timeout > Self::MAX_DURATION
+            || response_timeout.is_zero()
+            || response_timeout > Self::MAX_DURATION
+            || reconnect_attempts == 0
+            || reconnect_attempts > 32
+            || reconnect_min_delay.is_zero()
+            || reconnect_min_delay > Self::MAX_DURATION
+            || reconnect_max_delay < reconnect_min_delay
+            || reconnect_max_delay > Self::MAX_DURATION
+        {
+            return Err(RedisError::InvalidLimits);
+        }
+        Ok(Self {
+            connection_timeout,
+            response_timeout,
+            reconnect_attempts,
+            reconnect_min_delay,
+            reconnect_max_delay,
+        })
+    }
+
+    #[must_use]
+    pub const fn connection_timeout(self) -> Duration {
+        self.connection_timeout
+    }
+
+    #[must_use]
+    pub const fn response_timeout(self) -> Duration {
+        self.response_timeout
+    }
+
+    #[must_use]
+    pub const fn reconnect_attempts(self) -> usize {
+        self.reconnect_attempts
+    }
+
+    #[must_use]
+    pub const fn reconnect_min_delay(self) -> Duration {
+        self.reconnect_min_delay
+    }
+
+    #[must_use]
+    pub const fn reconnect_max_delay(self) -> Duration {
+        self.reconnect_max_delay
+    }
+
+    fn manager_config(self) -> ConnectionManagerConfig {
+        ConnectionManagerConfig::new()
+            .set_connection_timeout(Some(self.connection_timeout))
+            .set_response_timeout(Some(self.response_timeout))
+            .set_number_of_retries(self.reconnect_attempts)
+            .set_min_delay(self.reconnect_min_delay)
+            .set_max_delay(self.reconnect_max_delay)
+            .set_pipeline_buffer_size(50)
+            .set_concurrency_limit(64)
+    }
+
+    fn blocking_config(self) -> AsyncConnectionConfig {
+        AsyncConnectionConfig::new()
+            .set_connection_timeout(Some(self.connection_timeout))
+            .set_response_timeout(None)
+            .set_pipeline_buffer_size(1)
+            .set_concurrency_limit(1)
+    }
+}
+
+impl Default for RedisRuntimePolicy {
+    fn default() -> Self {
+        Self {
+            connection_timeout: Duration::from_secs(5),
+            response_timeout: Duration::from_secs(30),
+            reconnect_attempts: 8,
+            reconnect_min_delay: Duration::from_millis(100),
+            reconnect_max_delay: Duration::from_secs(2),
+        }
+    }
+}
+
 impl RedisCollectionScanOptions {
     #[must_use]
     pub const fn new(
@@ -75,11 +175,12 @@ pub struct RedisConnectConfig {
     database: i64,
     protocol: RedisProtocol,
     tls: RedisTlsMode,
+    runtime_policy: RedisRuntimePolicy,
 }
 
 impl RedisConnectConfig {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         host: BoundedText,
         port: u16,
         database: i64,
@@ -92,7 +193,14 @@ impl RedisConnectConfig {
             database,
             protocol,
             tls,
+            runtime_policy: RedisRuntimePolicy::default(),
         }
+    }
+
+    #[must_use]
+    pub const fn with_runtime_policy(mut self, runtime_policy: RedisRuntimePolicy) -> Self {
+        self.runtime_policy = runtime_policy;
+        self
     }
 }
 
@@ -105,6 +213,7 @@ impl fmt::Debug for RedisConnectConfig {
             .field("database", &self.database)
             .field("protocol", &self.protocol)
             .field("tls", &self.tls)
+            .field("runtime_policy", &self.runtime_policy)
             .finish()
     }
 }
@@ -112,7 +221,10 @@ impl fmt::Debug for RedisConnectConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RedisError {
     Connect,
+    Connection,
+    Timeout,
     Command,
+    ClientCancelled,
     ServerCancelled,
     SessionBusy,
     InvalidLimits,
@@ -122,11 +234,21 @@ pub enum RedisError {
     Page(PageValidationError),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RedisCancelDispatch {
+    PreventedBeforeDispatch,
+    RequestSent,
+    ServerRejected,
+}
+
 impl fmt::Display for RedisError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::Connect => "Redis connection failed",
+            Self::Connection => "Redis connection was lost",
+            Self::Timeout => "Redis operation timed out",
             Self::Command => "Redis command failed",
+            Self::ClientCancelled => "Redis operation was cancelled before dispatch",
             Self::ServerCancelled => "Redis server confirmed client unblocking",
             Self::SessionBusy => "Redis session already owns a blocking operation",
             Self::InvalidLimits => "Redis stream limits are invalid",
@@ -141,16 +263,96 @@ impl fmt::Display for RedisError {
 impl Error for RedisError {}
 
 pub struct RedisSession {
-    connection: MultiplexedConnection,
-    control: MultiplexedConnection,
-    client_id: u64,
-    blocking: Arc<RedisBlockingState>,
+    client: Client,
+    connection: ConnectionManager,
+    control: ConnectionManager,
+    runtime_policy: RedisRuntimePolicy,
+    blocking: Arc<RedisBlockingRegistry>,
 }
 
 #[derive(Default)]
-struct RedisBlockingState {
-    active: AtomicBool,
+struct RedisBlockingRegistry {
+    active: Mutex<Option<Arc<RedisBlockingOperation>>>,
+}
+
+#[derive(Default)]
+struct RedisBlockingOperation {
+    client_id: AtomicU64,
     server_confirmed: AtomicBool,
+    cancel_requested: AtomicBool,
+}
+
+impl RedisBlockingRegistry {
+    fn claim(&self) -> Result<Arc<RedisBlockingOperation>, RedisError> {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if active.is_some() {
+            return Err(RedisError::SessionBusy);
+        }
+        let operation = Arc::new(RedisBlockingOperation::default());
+        *active = Some(Arc::clone(&operation));
+        Ok(operation)
+    }
+
+    fn active(&self) -> Option<Arc<RedisBlockingOperation>> {
+        self.active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
+    fn is_active(&self, operation: &Arc<RedisBlockingOperation>) -> bool {
+        self.active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, operation))
+    }
+
+    fn release(&self, operation: &Arc<RedisBlockingOperation>) {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if active
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, operation))
+        {
+            *active = None;
+        }
+    }
+}
+
+struct RedisBlockingClaim {
+    registry: Arc<RedisBlockingRegistry>,
+    operation: Arc<RedisBlockingOperation>,
+    armed: bool,
+}
+
+impl RedisBlockingClaim {
+    fn new(registry: Arc<RedisBlockingRegistry>) -> Result<Self, RedisError> {
+        let operation = registry.claim()?;
+        Ok(Self {
+            registry,
+            operation,
+            armed: true,
+        })
+    }
+
+    fn commit(mut self) -> Arc<RedisBlockingOperation> {
+        self.armed = false;
+        Arc::clone(&self.operation)
+    }
+}
+
+impl Drop for RedisBlockingClaim {
+    fn drop(&mut self) {
+        if self.armed {
+            self.registry.release(&self.operation);
+        }
+    }
 }
 
 impl RedisSession {
@@ -179,33 +381,43 @@ impl RedisSession {
             .map_err(|_| RedisError::Connect)?
             .set_redis_settings(redis);
         let client = Client::open(info).map_err(|_| RedisError::Connect)?;
-        let mut connection = client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|_| RedisError::Connect)?;
-        let client_id: u64 = redis::cmd("CLIENT")
-            .arg("ID")
-            .query_async(&mut connection)
-            .await
-            .map_err(|_| RedisError::Connect)?;
-        let control = client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|_| RedisError::Connect)?;
+        let connection = ConnectionManager::new_with_config(
+            client.clone(),
+            config.runtime_policy.manager_config(),
+        )
+        .await
+        .map_err(map_connect_error)?;
+        let control = ConnectionManager::new_with_config(
+            client.clone(),
+            config.runtime_policy.manager_config(),
+        )
+        .await
+        .map_err(map_connect_error)?;
         Ok(Self {
+            client,
             connection,
             control,
-            client_id,
-            blocking: Arc::new(RedisBlockingState::default()),
+            runtime_policy: config.runtime_policy,
+            blocking: Arc::new(RedisBlockingRegistry::default()),
         })
     }
 
     #[must_use]
-    pub const fn client_id(&self) -> u64 {
-        self.client_id
+    pub fn active_blocking_client_id(&self) -> Option<u64> {
+        let client_id = self.blocking.active()?.client_id.load(Ordering::Acquire);
+        (client_id != 0).then_some(client_id)
     }
 
-    pub fn blocking_pop(
+    pub async fn observed_client_id(&self) -> Result<u64, RedisError> {
+        let mut connection = self.connection.clone();
+        redis::cmd("CLIENT")
+            .arg("ID")
+            .query_async(&mut connection)
+            .await
+            .map_err(map_command_error)
+    }
+
+    pub async fn blocking_pop(
         &self,
         key: BoundedBytes,
         limits: PageLimits,
@@ -219,13 +431,31 @@ impl RedisSession {
         {
             return Err(RedisError::InvalidLimits);
         }
-        if self.blocking.active.swap(true, Ordering::AcqRel) {
-            return Err(RedisError::SessionBusy);
+        let claim = RedisBlockingClaim::new(Arc::clone(&self.blocking))?;
+        let mut connection = match self
+            .client
+            .get_multiplexed_async_connection_with_config(&self.runtime_policy.blocking_config())
+            .await
+        {
+            Ok(connection) => connection,
+            Err(error) => return Err(map_connect_error(error)),
+        };
+        let mut identity_command = redis::cmd("CLIENT");
+        identity_command.arg("ID");
+        let identity = identity_command.query_async(&mut connection);
+        let client_id: u64 =
+            match tokio::time::timeout(self.runtime_policy.response_timeout(), identity).await {
+                Ok(Ok(client_id)) => client_id,
+                Ok(Err(error)) => return Err(map_command_error(error)),
+                Err(_) => return Err(RedisError::Timeout),
+            };
+        claim
+            .operation
+            .client_id
+            .store(client_id, Ordering::Release);
+        if claim.operation.cancel_requested.load(Ordering::Acquire) {
+            return Err(RedisError::ClientCancelled);
         }
-        self.blocking
-            .server_confirmed
-            .store(false, Ordering::Release);
-        let mut connection = self.connection.clone();
         let command_key = key.clone();
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
         let task = tokio::spawn(async move {
@@ -234,9 +464,10 @@ impl RedisSession {
                 .arg(0)
                 .query_async(&mut connection)
                 .await
-                .map_err(|_| RedisError::Command);
+                .map_err(map_command_error);
             let _ = result_tx.send(result);
         });
+        let operation = claim.commit();
         Ok(RedisBlockingPopStream {
             result: result_rx,
             task,
@@ -244,28 +475,48 @@ impl RedisSession {
             max_cell_bytes,
             complete: false,
             blocking: Arc::clone(&self.blocking),
+            operation,
         })
     }
 
-    pub async fn dispatch_cancel(&self) -> Result<bool, RedisError> {
-        if !self.blocking.active.load(Ordering::Acquire) {
-            return Ok(false);
+    pub async fn dispatch_cancel(&self) -> Result<RedisCancelDispatch, RedisError> {
+        let Some(operation) = self.blocking.active() else {
+            return Ok(RedisCancelDispatch::ServerRejected);
+        };
+        operation.cancel_requested.store(true, Ordering::Release);
+        let client_id = operation.client_id.load(Ordering::Acquire);
+        if client_id == 0 {
+            return Ok(RedisCancelDispatch::PreventedBeforeDispatch);
         }
-        let mut control = self.control.clone();
-        let unblocked: u64 = redis::cmd("CLIENT")
-            .arg("UNBLOCK")
-            .arg(self.client_id)
-            .arg("ERROR")
-            .query_async(&mut control)
-            .await
-            .map_err(|_| RedisError::Command)?;
-        if unblocked == 1 {
-            self.blocking
-                .server_confirmed
-                .store(true, Ordering::Release);
-            Ok(true)
-        } else {
-            Ok(false)
+        let deadline = tokio::time::Instant::now() + self.runtime_policy.response_timeout();
+        loop {
+            if !self.blocking.is_active(&operation) {
+                return Ok(RedisCancelDispatch::ServerRejected);
+            }
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(RedisError::Timeout);
+            }
+            let mut control = self.control.clone();
+            let mut unblock_command = redis::cmd("CLIENT");
+            unblock_command.arg("UNBLOCK").arg(client_id).arg("ERROR");
+            let request = unblock_command.query_async(&mut control);
+            let unblocked: u64 = tokio::time::timeout(remaining, request)
+                .await
+                .map_err(|_| RedisError::Timeout)?
+                .map_err(map_command_error)?;
+            if unblocked == 1 {
+                operation.server_confirmed.store(true, Ordering::Release);
+                return Ok(RedisCancelDispatch::RequestSent);
+            }
+            if !self.blocking.is_active(&operation) {
+                return Ok(RedisCancelDispatch::ServerRejected);
+            }
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(RedisError::Timeout);
+            }
+            tokio::time::sleep(Duration::from_millis(5).min(remaining)).await;
         }
     }
 
@@ -330,7 +581,7 @@ impl RedisSession {
             .arg("INFO")
             .query_async(&mut connection)
             .await
-            .map_err(|_| RedisError::Command)?;
+            .map_err(map_command_error)?;
         let info = match &info {
             redis::Value::BulkString(value) => value.as_slice(),
             redis::Value::SimpleString(value)
@@ -365,7 +616,7 @@ impl RedisSession {
             .arg(key.as_slice())
             .query_async(&mut connection)
             .await
-            .map_err(|_| RedisError::Command)?;
+            .map_err(map_command_error)?;
         value
             .map(|value| bounded_binary(&value, max_bytes))
             .transpose()
@@ -380,8 +631,26 @@ impl RedisSession {
             .arg(key.as_slice())
             .query_async(&mut connection)
             .await
-            .map_err(|_| RedisError::Command)?;
+            .map_err(map_command_error)?;
         decode_time_to_live(remaining)
+    }
+}
+
+fn map_connect_error(error: redis::RedisError) -> RedisError {
+    if error.is_timeout() {
+        RedisError::Timeout
+    } else {
+        RedisError::Connect
+    }
+}
+
+fn map_command_error(error: redis::RedisError) -> RedisError {
+    if error.is_timeout() {
+        RedisError::Timeout
+    } else if error.is_connection_dropped() || error.is_io_error() {
+        RedisError::Connection
+    } else {
+        RedisError::Command
     }
 }
 
@@ -433,7 +702,7 @@ enum RedisCollectionEntry {
 type RedisPairScanReply = (u64, Vec<(Vec<u8>, Vec<u8>)>);
 
 pub struct RedisCollectionStream {
-    connection: MultiplexedConnection,
+    connection: ConnectionManager,
     key: BoundedBytes,
     kind: RedisCollectionScanKind,
     cursor: u64,
@@ -491,7 +760,7 @@ impl RedisCollectionStream {
                         .arg(self.scan_count)
                         .query_async(&mut self.connection)
                         .await
-                        .map_err(|_| RedisError::Command)?;
+                        .map_err(map_command_error)?;
                     validate_scan_batch(
                         entries.len(),
                         entries.iter().try_fold(0_u64, |total, (field, value)| {
@@ -518,7 +787,7 @@ impl RedisCollectionStream {
                         .arg(self.scan_count)
                         .query_async(&mut self.connection)
                         .await
-                        .map_err(|_| RedisError::Command)?;
+                        .map_err(map_command_error)?;
                     validate_scan_batch(
                         entries.len(),
                         entries.iter().try_fold(0_u64, |total, member| {
@@ -543,7 +812,7 @@ impl RedisCollectionStream {
                         .arg(self.scan_count)
                         .query_async(&mut self.connection)
                         .await
-                        .map_err(|_| RedisError::Command)?;
+                        .map_err(map_command_error)?;
                     validate_scan_batch(
                         entries.len(),
                         entries.iter().try_fold(0_u64, |total, (member, score)| {
@@ -694,7 +963,8 @@ pub struct RedisBlockingPopStream {
     limits: PageLimits,
     max_cell_bytes: u64,
     complete: bool,
-    blocking: Arc<RedisBlockingState>,
+    blocking: Arc<RedisBlockingRegistry>,
+    operation: Arc<RedisBlockingOperation>,
 }
 
 impl RedisBlockingPopStream {
@@ -708,13 +978,13 @@ impl RedisBlockingPopStream {
         }
         let result = (&mut self.result).await.map_err(|_| RedisError::Command)?;
         self.complete = true;
-        self.blocking.active.store(false, Ordering::Release);
+        self.blocking.release(&self.operation);
         let (key, value) = match result {
             Ok(value) => value,
-            Err(_) if self.blocking.server_confirmed.load(Ordering::Acquire) => {
+            Err(_) if self.operation.server_confirmed.load(Ordering::Acquire) => {
                 return Err(RedisError::ServerCancelled);
             }
-            Err(_) => return Err(RedisError::Command),
+            Err(error) => return Err(error),
         };
         let key = bounded_binary(&key, self.max_cell_bytes)?;
         let remaining = self
@@ -755,12 +1025,12 @@ impl RedisBlockingPopStream {
 impl Drop for RedisBlockingPopStream {
     fn drop(&mut self) {
         self.task.abort();
-        self.blocking.active.store(false, Ordering::Release);
+        self.blocking.release(&self.operation);
     }
 }
 
 pub struct RedisKeyStream {
-    connection: MultiplexedConnection,
+    connection: ConnectionManager,
     cursor: u64,
     pending: VecDeque<Vec<u8>>,
     started: bool,
@@ -807,7 +1077,7 @@ impl RedisKeyStream {
                 .arg(self.scan_count)
                 .query_async(&mut self.connection)
                 .await
-                .map_err(|_| RedisError::Command)?;
+                .map_err(map_command_error)?;
             self.started = true;
             self.cursor = cursor;
             self.remaining_rounds -= 1;
@@ -881,6 +1151,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn blocking_registry_rejects_stale_release_and_confirmation() {
+        let registry = RedisBlockingRegistry::default();
+        let old = registry.claim().unwrap();
+        old.client_id.store(1, Ordering::Release);
+        registry.release(&old);
+
+        let current = registry.claim().unwrap();
+        current.client_id.store(2, Ordering::Release);
+        registry.release(&old);
+        old.server_confirmed.store(true, Ordering::Release);
+
+        let active = registry.active().unwrap();
+        assert!(Arc::ptr_eq(&active, &current));
+        assert!(!registry.is_active(&old));
+        assert!(registry.is_active(&current));
+        assert_eq!(active.client_id.load(Ordering::Acquire), 2);
+        assert!(!active.server_confirmed.load(Ordering::Acquire));
+    }
+
+    #[test]
     fn config_debug_redacts_host_text() {
         let config = RedisConnectConfig::new(
             BoundedText::copy_from_str("SECRET_HOST", ByteLimit::new(64)).unwrap(),
@@ -893,6 +1183,109 @@ mod tests {
         assert!(!debug.contains("SECRET_HOST"));
         assert!(debug.contains("Resp3"));
         assert!(debug.contains("Require"));
+    }
+
+    #[test]
+    fn runtime_policy_rejects_unbounded_or_invalid_reconnect_settings() {
+        let valid = RedisRuntimePolicy::new(
+            RedisRuntimePolicy::MAX_DURATION,
+            RedisRuntimePolicy::MAX_DURATION,
+            32,
+            RedisRuntimePolicy::MAX_DURATION,
+            RedisRuntimePolicy::MAX_DURATION,
+        )
+        .unwrap();
+        assert_eq!(valid.connection_timeout(), RedisRuntimePolicy::MAX_DURATION);
+        assert_eq!(valid.response_timeout(), RedisRuntimePolicy::MAX_DURATION);
+        assert_eq!(valid.reconnect_attempts(), 32);
+        assert_eq!(
+            valid.reconnect_min_delay(),
+            RedisRuntimePolicy::MAX_DURATION
+        );
+        assert_eq!(
+            valid.reconnect_max_delay(),
+            RedisRuntimePolicy::MAX_DURATION
+        );
+        let manager = valid.manager_config();
+        assert_eq!(
+            manager.connection_timeout(),
+            Some(RedisRuntimePolicy::MAX_DURATION)
+        );
+        assert_eq!(
+            manager.response_timeout(),
+            Some(RedisRuntimePolicy::MAX_DURATION)
+        );
+        assert_eq!(manager.number_of_retries(), 32);
+        assert_eq!(manager.min_delay(), RedisRuntimePolicy::MAX_DURATION);
+        assert_eq!(manager.max_delay(), Some(RedisRuntimePolicy::MAX_DURATION));
+
+        for invalid in [
+            RedisRuntimePolicy::new(
+                Duration::ZERO,
+                Duration::from_millis(1),
+                1,
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+            ),
+            RedisRuntimePolicy::new(
+                Duration::from_millis(1),
+                Duration::ZERO,
+                1,
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+            ),
+            RedisRuntimePolicy::new(
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+                0,
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+            ),
+            RedisRuntimePolicy::new(
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+                33,
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+            ),
+            RedisRuntimePolicy::new(
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+                1,
+                Duration::ZERO,
+                Duration::from_millis(1),
+            ),
+            RedisRuntimePolicy::new(
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+                1,
+                Duration::from_millis(2),
+                Duration::from_millis(1),
+            ),
+            RedisRuntimePolicy::new(
+                RedisRuntimePolicy::MAX_DURATION + Duration::from_nanos(1),
+                Duration::from_millis(1),
+                1,
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+            ),
+            RedisRuntimePolicy::new(
+                Duration::from_millis(1),
+                RedisRuntimePolicy::MAX_DURATION + Duration::from_nanos(1),
+                1,
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+            ),
+            RedisRuntimePolicy::new(
+                Duration::from_millis(1),
+                Duration::from_millis(1),
+                1,
+                Duration::from_millis(1),
+                RedisRuntimePolicy::MAX_DURATION + Duration::from_nanos(1),
+            ),
+        ] {
+            assert_eq!(invalid, Err(RedisError::InvalidLimits));
+        }
     }
 
     #[test]

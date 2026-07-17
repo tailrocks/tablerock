@@ -160,9 +160,10 @@ continued execution after a runtime response error, and `MULTI`/`EXEC`
 no-rollback truth. It also proves exact missing/persistent/finite-millisecond
 key TTL facts through one Rust-owned contract. Bounded binary HSCAN, SSCAN, and
 ZSCAN pages now pass both supported lines under RESP2 and RESP3. TLS, Pub/Sub,
-timeout/reconnect, reviewed TTL writes, and remaining failure races stay
-required. The supported matrix proves
-Redis's stable-throughout and absent-throughout guarantees during concurrent
+reviewed TTL writes and remaining failure races stay required. The supported
+matrix proves bounded response timeout and confirmed-drop future-call reconnect
+without automatic command replay, plus Redis's stable-throughout and
+absent-throughout guarantees during concurrent
 SCAN/HSCAN/SSCAN/ZSCAN mutation; transient membership remains intentionally
 undefined and duplicates remain legal.
 

@@ -17,7 +17,7 @@ clickhouse = { version = "=0.15.1", default-features = false, features = ["lz4",
 futures-util = "0.3.32"
 ratatui-core = "0.1.2"
 ratatui-crossterm = { version = "0.1.2", default-features = false, features = ["crossterm_0_29"] }
-redis = { version = "=1.4.0", default-features = false, features = ["tokio-rustls-comp"] }
+redis = { version = "=1.4.0", default-features = false, features = ["connection-manager", "tokio-rustls-comp"] }
 rustls = { version = "=0.23.42", default-features = false, features = ["ring", "std", "tls12"] }
 sha2 = { version = "=0.11.0", default-features = false }
 termrock = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "5ff94ee117fd4a1b72fdd0d1b1847815055a93ac", features = ["crossterm", "serde"] }
