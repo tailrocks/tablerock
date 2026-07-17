@@ -158,6 +158,10 @@ remains binary. JSON and JSONB now advance to deterministic
 compact bounded `Structured` projections with arbitrary-precision number and
 malformed/version-invalid truth. Record decoding and strict
 pre-driver transport allocation remain required.
+Generic binary multiranges now compose ordered canonical range projections
+inside one bounded `Structured` value. A one-million-member structural ceiling,
+exact length/end validation, and whole-value invalid/unknown fallback prevent
+partial member lists from appearing complete.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
 `Decimal` values. Malformed wire values remain `Invalid`; valid projections over

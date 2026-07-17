@@ -32,6 +32,7 @@ that accepts every PostgreSQL type. It then makes one lossless classification:
 | `uuid` | canonical lowercase hyphenated text; research 174 |
 | generic array of supported values | canonical structured dimensions, lower bounds, and nested row-major values; research 179 |
 | generic range of supported values | canonical structured empty state and explicit bound kinds/values; research 180 |
+| generic multirange of supported values | ordered canonical structured range members; research 181 |
 | valid unsupported type | unknown with PostgreSQL type name and raw binary payload |
 | malformed payload for a known type | invalid with PostgreSQL type name and raw payload |
 
@@ -43,6 +44,7 @@ large-binary matrix; research 168 subsequently promotes JSON/JSONB to bounded
 canonical `Structured` projections, research 179 promotes generic arrays while
 preserving their PostgreSQL dimensions and lower bounds, and research 180
 promotes generic ranges with explicit bound truth.
+Research 181 composes the same range truth through generic multiranges.
 Malformed known values are never silently treated as valid.
 
 Column metadata carries the server type name and conservatively marks columns

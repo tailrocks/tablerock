@@ -1401,6 +1401,66 @@ async fn verify_typed_values(tag: &str) {
     assert!(ranges.next_page(identity(), 1).await.unwrap().is_none());
     drop(ranges);
 
+    let mut multiranges = session
+        .stream_probe(
+            PostgresProbeQuery::MultirangeValues,
+            PageLimits::new(1, 5, 8_192, 512),
+            1_024,
+        )
+        .await
+        .unwrap();
+    let multirange_page = multiranges.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, engine_type, expected) in [
+        (0_u32, "int4multirange", "{\"$multirange\":[]}"),
+        (
+            1_u32,
+            "int4multirange",
+            "{\"$multirange\":[{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":1},\"upper\":{\"kind\":\"exclusive\",\"value\":3}}},{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":5},\"upper\":{\"kind\":\"exclusive\",\"value\":8}}}]}",
+        ),
+        (
+            2_u32,
+            "int8multirange",
+            "{\"$multirange\":[{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"unbounded\"},\"upper\":{\"kind\":\"exclusive\",\"value\":0}}},{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":10},\"upper\":{\"kind\":\"unbounded\"}}}]}",
+        ),
+        (
+            3_u32,
+            "nummultirange",
+            "{\"$multirange\":[{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"exclusive\",\"value\":{\"$decimal\":\"1.20\"}},\"upper\":{\"kind\":\"inclusive\",\"value\":{\"$decimal\":\"2.30\"}}}},{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":{\"$decimal\":\"5.00\"}},\"upper\":{\"kind\":\"exclusive\",\"value\":{\"$decimal\":\"6.00\"}}}}]}",
+        ),
+        (
+            4_u32,
+            "datemultirange",
+            "{\"$multirange\":[{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":\"2024-02-29\"},\"upper\":{\"kind\":\"exclusive\",\"value\":\"2024-03-02\"}}},{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":\"2024-03-10\"},\"upper\":{\"kind\":\"exclusive\",\"value\":\"2024-03-11\"}}}]}",
+        ),
+    ] {
+        assert_eq!(
+            multirange_page.columns()[column as usize]
+                .engine_type()
+                .name(),
+            engine_type
+        );
+        assert_eq!(
+            multirange_page.cell(0, column).unwrap().kind(),
+            ValueKind::Structured
+        );
+        assert_eq!(
+            multirange_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            multirange_page.cell(0, column).unwrap().truncation(),
+            Truncation::Complete
+        );
+    }
+    assert!(
+        multiranges
+            .next_page(identity(), 1)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    drop(multiranges);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,

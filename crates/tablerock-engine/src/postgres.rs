@@ -127,6 +127,7 @@ pub enum PostgresProbeQuery {
     TemporalValues,
     ArrayValues,
     RangeValues,
+    MultirangeValues,
     Parameters,
     CancellationStream,
 }
@@ -389,6 +390,14 @@ impl PostgresProbeQuery {
                  '[2024-02-29 12:00:00+07,2024-02-29 13:00:00+07)'::tstzrange \
                     AS timestamp_range, \
                  'empty'::tstzrange AS empty_range"
+            }
+            Self::MultirangeValues => {
+                "SELECT '{}'::int4multirange AS empty_multirange, \
+                 '{[1,3),[5,8)}'::int4multirange AS integer_multirange, \
+                 '{(,0),[10,)}'::int8multirange AS unbounded_multirange, \
+                 '{(1.20,2.30],[5.00,6.00)}'::nummultirange AS numeric_multirange, \
+                 '{[2024-02-29,2024-03-02),[2024-03-10,2024-03-11)}'::datemultirange \
+                    AS date_multirange"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1545,7 +1554,49 @@ fn decode_value(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Post
             Err(()) => bounded_raw(type_, raw, limit, true),
         };
     }
+    if let Kind::Multirange(element_type) = type_.kind() {
+        return match decode_multirange(element_type, raw, limit) {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => bounded_raw(type_, raw, limit, false),
+            Err(()) => bounded_raw(type_, raw, limit, true),
+        };
+    }
     bounded_raw(type_, raw, limit, false)
+}
+
+fn decode_multirange(
+    element_type: &Type,
+    raw: &[u8],
+    limit: u64,
+) -> Result<Option<OwnedValue>, ()> {
+    let mut cursor = PostgresBinaryCursor::new(raw);
+    let count = usize::try_from(cursor.read_u32()?).map_err(|_| ())?;
+    if count > MAX_POSTGRES_ARRAY_ELEMENTS {
+        return Ok(None);
+    }
+    let mut projection = BoundedJsonWriter::new(limit);
+    projection.push("{\"$multirange\":[")?;
+    let component_limit = u64::try_from(MAX_JSON_INPUT_BYTES).unwrap_or(u64::MAX);
+    for index in 0..count {
+        if index != 0 {
+            projection.push(",")?;
+        }
+        let length = usize::try_from(cursor.read_u32()?).map_err(|_| ())?;
+        let payload = cursor.read_exact(length)?;
+        let value = match decode_range(element_type, payload, component_limit) {
+            Ok(Some(value)) => value,
+            Ok(None) => return Ok(None),
+            Err(()) => return Err(()),
+        };
+        if value.is_truncated() || !project_structured_value(&value, &mut projection)? {
+            return Ok(None);
+        }
+    }
+    if cursor.remaining() != 0 {
+        return Err(());
+    }
+    projection.push("]}")?;
+    projection.finish().map(Some).map_err(|_| ())
 }
 
 const RANGE_EMPTY: u8 = 0x01;
@@ -2793,6 +2844,79 @@ mod tests {
     }
 
     #[test]
+    fn multirange_projection_preserves_order_and_range_truth() {
+        let empty = multirange_raw(&[]);
+        let value = decode_value(&Type::INT4MULTI_RANGE, &empty, 128).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$multirange\":[]}",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let first = range_raw(
+            RANGE_LOWER_INCLUSIVE,
+            Some(&1_i32.to_be_bytes()),
+            Some(&3_i32.to_be_bytes()),
+        );
+        let second = range_raw(
+            RANGE_UPPER_UNBOUNDED | RANGE_LOWER_INCLUSIVE,
+            Some(&10_i32.to_be_bytes()),
+            None,
+        );
+        let raw = multirange_raw(&[&first, &second]);
+        let value = decode_value(&Type::INT4MULTI_RANGE, &raw, 512).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$multirange\":[{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":1},\"upper\":{\"kind\":\"exclusive\",\"value\":3}}},{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":10},\"upper\":{\"kind\":\"unbounded\"}}}]}",
+                truncation: Truncation::Complete
+            }
+        ));
+    }
+
+    #[test]
+    fn multirange_projection_bounds_output_and_rejects_malformed_wire() {
+        let range = range_raw(
+            RANGE_LOWER_INCLUSIVE,
+            Some(&1_i32.to_be_bytes()),
+            Some(&3_i32.to_be_bytes()),
+        );
+        let raw = multirange_raw(&[&range]);
+        let bounded = decode_value(&Type::INT4MULTI_RANGE, &raw, 8).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$multi",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(original)
+                }
+            } if original > 8
+        ));
+
+        let mut trailing = multirange_raw(&[]);
+        trailing.push(0);
+        let malformed_range = multirange_raw(&[&[RANGE_EMPTY, 0]]);
+        for malformed in [
+            vec![],
+            vec![0, 0, 0],
+            vec![0, 0, 0, 1],
+            vec![0, 0, 0, 1, 0, 0, 0, 4, RANGE_EMPTY],
+            trailing,
+            malformed_range,
+        ] {
+            let value = decode_value(&Type::INT4MULTI_RANGE, &malformed, 16).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), "int4multirange");
+        }
+
+        let excessive = (u32::try_from(MAX_POSTGRES_ARRAY_ELEMENTS).unwrap() + 1).to_be_bytes();
+        let value = decode_value(&Type::INT4MULTI_RANGE, &excessive, 16).unwrap();
+        assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
+    }
+
+    #[test]
     fn array_projection_bounds_output_and_rejects_malformed_wire() {
         let raw = array_raw(&[(3, 1)], false, &[Some(1), Some(2), Some(3)]);
         let bounded = decode_value(&Type::INT4_ARRAY, &raw, 8).unwrap();
@@ -2886,6 +3010,16 @@ mod tests {
         for bound in [lower, upper].into_iter().flatten() {
             raw.extend_from_slice(&i32::try_from(bound.len()).unwrap().to_be_bytes());
             raw.extend_from_slice(bound);
+        }
+        raw
+    }
+
+    fn multirange_raw(ranges: &[&[u8]]) -> Vec<u8> {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&u32::try_from(ranges.len()).unwrap().to_be_bytes());
+        for range in ranges {
+            raw.extend_from_slice(&u32::try_from(range.len()).unwrap().to_be_bytes());
+            raw.extend_from_slice(range);
         }
         raw
     }

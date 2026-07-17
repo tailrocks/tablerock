@@ -129,6 +129,7 @@ kept in the roadmap.
 - [Phase 2 ClickHouse temporal projection](178-phase-2-clickhouse-temporal-projection.md)
 - [Phase 2 PostgreSQL array projection](179-phase-2-postgresql-array-projection.md)
 - [Phase 2 PostgreSQL range projection](180-phase-2-postgresql-range-projection.md)
+- [Phase 2 PostgreSQL multirange projection](181-phase-2-postgresql-multirange-projection.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

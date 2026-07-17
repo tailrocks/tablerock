@@ -314,6 +314,9 @@ preservation is recorded in
 Generic bounded PostgreSQL range projection with explicit bound-kind truth is
 recorded in
 [`180-phase-2-postgresql-range-projection.md`](docs/research/180-phase-2-postgresql-range-projection.md).
+Generic bounded PostgreSQL multirange projection with ordered range-member
+truth is recorded in
+[`181-phase-2-postgresql-multirange-projection.md`](docs/research/181-phase-2-postgresql-multirange-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

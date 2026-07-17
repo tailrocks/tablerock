@@ -156,6 +156,8 @@ Engine additions:
   generic ranges retain explicit empty/unbounded/inclusive/exclusive truth in
   bounded canonical structured values; anonymous records retain bounded unknown
   binary bytes with exact type/truncation truth; large `bytea` remains binary;
+  generic multiranges retain ordered canonical range members, empty truth, a
+  one-million-member ceiling, exact framing, and whole-value fallback;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,
