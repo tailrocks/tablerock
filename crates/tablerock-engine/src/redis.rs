@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::{
     collections::VecDeque,
     error::Error,
@@ -9,9 +10,10 @@ use std::{
     time::Duration,
 };
 
+use futures_util::StreamExt;
 use redis::{
     AsyncConnectionConfig, Client, ClientTlsConfig, ConnectionAddr, ErrorKind, IntoConnectionInfo,
-    ProtocolVersion, RedisConnectionInfo, TlsCertificates,
+    ProtocolVersion, PushInfo, PushKind, RedisConnectionInfo, TlsCertificates,
     aio::{ConnectionManager, ConnectionManagerConfig},
 };
 use rustls::{
@@ -21,6 +23,7 @@ use rustls::{
 
 const MAX_REDIS_CREDENTIAL_BYTES: usize = 4_096;
 const MAX_REDIS_TLS_MATERIAL_BYTES: usize = 65_536;
+const MAX_REDIS_SUBSCRIPTION_MESSAGES: usize = 4_096;
 
 #[derive(Clone, Copy)]
 pub struct RedisCredentials<'a> {
@@ -393,6 +396,7 @@ pub enum RedisError {
     InvalidLimits,
     ScanBudgetExhausted,
     ScanResponseLimitExceeded,
+    SubscriptionOverflow,
     Protocol,
     Page(PageValidationError),
 }
@@ -415,10 +419,11 @@ impl fmt::Display for RedisError {
             Self::TlsConfiguration => "Redis TLS configuration is invalid",
             Self::ClientCancelled => "Redis operation was cancelled before dispatch",
             Self::ServerCancelled => "Redis server confirmed client unblocking",
-            Self::SessionBusy => "Redis session already owns a blocking operation",
+            Self::SessionBusy => "Redis session already owns a long-lived operation",
             Self::InvalidLimits => "Redis stream limits are invalid",
             Self::ScanBudgetExhausted => "Redis scan round budget was exhausted",
             Self::ScanResponseLimitExceeded => "Redis scan response exceeded its safety bound",
+            Self::SubscriptionOverflow => "Redis subscription buffer capacity was exceeded",
             Self::Protocol => "Redis returned an unsupported response",
             Self::Page(_) => "Redis result page failed validation",
         })
@@ -433,6 +438,133 @@ pub struct RedisSession {
     control: ConnectionManager,
     runtime_policy: RedisRuntimePolicy,
     blocking: Arc<RedisBlockingRegistry>,
+    subscription: Arc<RedisSubscriptionRegistry>,
+    long_operation_active: Arc<AtomicBool>,
+    protocol: RedisProtocol,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RedisSubscriptionOptions {
+    limits: PageLimits,
+    max_cell_bytes: u64,
+    max_buffered_messages: usize,
+}
+
+impl RedisSubscriptionOptions {
+    #[must_use]
+    pub const fn new(
+        limits: PageLimits,
+        max_cell_bytes: u64,
+        max_buffered_messages: usize,
+    ) -> Self {
+        Self {
+            limits,
+            max_cell_bytes,
+            max_buffered_messages,
+        }
+    }
+}
+
+#[derive(Default)]
+struct RedisSubscriptionRegistry {
+    active: Mutex<Option<Arc<RedisSubscriptionOperation>>>,
+}
+
+#[derive(Default)]
+struct RedisSubscriptionOperation {
+    cancel_requested: AtomicBool,
+    started: AtomicBool,
+    wake: tokio::sync::Notify,
+}
+
+impl RedisSubscriptionRegistry {
+    fn claim(&self) -> Result<Arc<RedisSubscriptionOperation>, RedisError> {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if active.is_some() {
+            return Err(RedisError::SessionBusy);
+        }
+        let operation = Arc::new(RedisSubscriptionOperation::default());
+        *active = Some(Arc::clone(&operation));
+        Ok(operation)
+    }
+
+    fn active(&self) -> Option<Arc<RedisSubscriptionOperation>> {
+        self.active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
+    fn release(&self, operation: &Arc<RedisSubscriptionOperation>) {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if active
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, operation))
+        {
+            *active = None;
+        }
+    }
+}
+
+fn set_subscription_terminal(terminal: &Mutex<Option<RedisError>>, error: RedisError) -> bool {
+    let mut current = terminal
+        .lock()
+        .unwrap_or_else(|failure| failure.into_inner());
+    if current.is_some() {
+        return false;
+    }
+    *current = Some(error);
+    true
+}
+
+struct RedisSubscriptionClaim {
+    registry: Arc<RedisSubscriptionRegistry>,
+    operation: Arc<RedisSubscriptionOperation>,
+    armed: bool,
+    long_operation_active: Arc<AtomicBool>,
+}
+
+impl RedisSubscriptionClaim {
+    fn new(
+        registry: Arc<RedisSubscriptionRegistry>,
+        long_operation_active: Arc<AtomicBool>,
+    ) -> Result<Self, RedisError> {
+        long_operation_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| RedisError::SessionBusy)?;
+        let operation = match registry.claim() {
+            Ok(operation) => operation,
+            Err(error) => {
+                long_operation_active.store(false, Ordering::Release);
+                return Err(error);
+            }
+        };
+        Ok(Self {
+            registry,
+            operation,
+            armed: true,
+            long_operation_active,
+        })
+    }
+
+    fn commit(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for RedisSubscriptionClaim {
+    fn drop(&mut self) {
+        if self.armed {
+            self.registry.release(&self.operation);
+            self.long_operation_active.store(false, Ordering::Release);
+        }
+    }
 }
 
 #[derive(Default)]
@@ -494,15 +626,29 @@ struct RedisBlockingClaim {
     registry: Arc<RedisBlockingRegistry>,
     operation: Arc<RedisBlockingOperation>,
     armed: bool,
+    long_operation_active: Arc<AtomicBool>,
 }
 
 impl RedisBlockingClaim {
-    fn new(registry: Arc<RedisBlockingRegistry>) -> Result<Self, RedisError> {
-        let operation = registry.claim()?;
+    fn new(
+        registry: Arc<RedisBlockingRegistry>,
+        long_operation_active: Arc<AtomicBool>,
+    ) -> Result<Self, RedisError> {
+        long_operation_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| RedisError::SessionBusy)?;
+        let operation = match registry.claim() {
+            Ok(operation) => operation,
+            Err(error) => {
+                long_operation_active.store(false, Ordering::Release);
+                return Err(error);
+            }
+        };
         Ok(Self {
             registry,
             operation,
             armed: true,
+            long_operation_active,
         })
     }
 
@@ -516,7 +662,26 @@ impl Drop for RedisBlockingClaim {
     fn drop(&mut self) {
         if self.armed {
             self.registry.release(&self.operation);
+            self.long_operation_active.store(false, Ordering::Release);
         }
+    }
+}
+
+async fn await_subscription_setup<T, F>(
+    operation: &RedisSubscriptionOperation,
+    future: F,
+) -> Result<T, RedisError>
+where
+    F: Future<Output = Result<T, RedisError>>,
+{
+    if operation.cancel_requested.load(Ordering::Acquire) {
+        return Err(RedisError::ClientCancelled);
+    }
+    tokio::pin!(future);
+    tokio::select! {
+        biased;
+        () = operation.wake.notified() => Err(RedisError::ClientCancelled),
+        result = &mut future => result,
     }
 }
 
@@ -594,6 +759,9 @@ impl RedisSession {
             control,
             runtime_policy: config.runtime_policy,
             blocking: Arc::new(RedisBlockingRegistry::default()),
+            subscription: Arc::new(RedisSubscriptionRegistry::default()),
+            long_operation_active: Arc::new(AtomicBool::new(false)),
+            protocol: config.protocol,
         })
     }
 
@@ -626,7 +794,10 @@ impl RedisSession {
         {
             return Err(RedisError::InvalidLimits);
         }
-        let claim = RedisBlockingClaim::new(Arc::clone(&self.blocking))?;
+        let claim = RedisBlockingClaim::new(
+            Arc::clone(&self.blocking),
+            Arc::clone(&self.long_operation_active),
+        )?;
         let mut connection = match self
             .client
             .get_multiplexed_async_connection_with_config(&self.runtime_policy.blocking_config())
@@ -671,10 +842,20 @@ impl RedisSession {
             complete: false,
             blocking: Arc::clone(&self.blocking),
             operation,
+            long_operation_active: Arc::clone(&self.long_operation_active),
         })
     }
 
     pub async fn dispatch_cancel(&self) -> Result<RedisCancelDispatch, RedisError> {
+        if let Some(operation) = self.subscription.active() {
+            operation.cancel_requested.store(true, Ordering::Release);
+            operation.wake.notify_one();
+            return Ok(if operation.started.load(Ordering::Acquire) {
+                RedisCancelDispatch::RequestSent
+            } else {
+                RedisCancelDispatch::PreventedBeforeDispatch
+            });
+        }
         let Some(operation) = self.blocking.active() else {
             return Ok(RedisCancelDispatch::ServerRejected);
         };
@@ -713,6 +894,199 @@ impl RedisSession {
             }
             tokio::time::sleep(Duration::from_millis(5).min(remaining)).await;
         }
+    }
+
+    pub async fn subscribe(
+        &self,
+        channel: BoundedBytes,
+        options: RedisSubscriptionOptions,
+    ) -> Result<RedisSubscriptionStream, RedisError> {
+        if channel.is_empty()
+            || options.limits.max_rows() == 0
+            || options.limits.max_columns() < 2
+            || options.limits.max_arena_bytes() == 0
+            || options.max_cell_bytes == 0
+            || options.max_buffered_messages == 0
+            || options.max_buffered_messages > MAX_REDIS_SUBSCRIPTION_MESSAGES
+        {
+            return Err(RedisError::InvalidLimits);
+        }
+        let claim = RedisSubscriptionClaim::new(
+            Arc::clone(&self.subscription),
+            Arc::clone(&self.long_operation_active),
+        )?;
+        let operation = Arc::clone(&claim.operation);
+        let (messages_tx, messages_rx) = tokio::sync::mpsc::channel(options.max_buffered_messages);
+        let terminal = Arc::new(Mutex::new(None));
+        let terminal_wake = Arc::new(tokio::sync::Notify::new());
+        let registry = Arc::clone(&self.subscription);
+        let worker = match self.protocol {
+            RedisProtocol::Resp2 => {
+                let mut pubsub = await_subscription_setup(&operation, async {
+                    self.client
+                        .get_async_pubsub()
+                        .await
+                        .map_err(map_connect_error)
+                })
+                .await?;
+                await_subscription_setup(&operation, async {
+                    pubsub
+                        .subscribe(channel.as_slice())
+                        .await
+                        .map_err(map_command_error)
+                })
+                .await?;
+                operation.started.store(true, Ordering::Release);
+                if operation.cancel_requested.load(Ordering::Acquire) {
+                    operation.wake.notify_one();
+                }
+                let (mut sink, mut stream) = pubsub.split();
+                let operation_worker = Arc::clone(&operation);
+                let terminal_worker = Arc::clone(&terminal);
+                let wake_worker = Arc::clone(&terminal_wake);
+                let long_operation_worker = Arc::clone(&self.long_operation_active);
+                let channel_worker = channel.clone();
+                let teardown_timeout = self.runtime_policy.response_timeout();
+                tokio::spawn(async move {
+                    loop {
+                        tokio::select! {
+                            () = operation_worker.wake.notified() => {
+                                set_subscription_terminal(&terminal_worker, RedisError::ClientCancelled);
+                                let _ = tokio::time::timeout(teardown_timeout, sink.unsubscribe(channel_worker.as_slice())).await;
+                                break;
+                            }
+                            message = stream.next() => match message {
+                                Some(message) => {
+                                    let item = (message.get_channel::<Vec<u8>>(), message.get_payload::<Vec<u8>>());
+                                    match item {
+                                        (Ok(channel), Ok(payload)) => match messages_tx.try_send((channel, payload)) {
+                                            Ok(()) => {}
+                                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                                set_subscription_terminal(&terminal_worker, RedisError::SubscriptionOverflow);
+                                                let _ = tokio::time::timeout(teardown_timeout, sink.unsubscribe(channel_worker.as_slice())).await;
+                                                break;
+                                            }
+                                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => break,
+                                        },
+                                        _ => {
+                                            set_subscription_terminal(&terminal_worker, RedisError::Protocol);
+                                            break;
+                                        }
+                                    }
+                                }
+                                None => {
+                                    set_subscription_terminal(&terminal_worker, RedisError::Connection);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    registry.release(&operation_worker);
+                    long_operation_worker.store(false, Ordering::Release);
+                    wake_worker.notify_one();
+                })
+            }
+            RedisProtocol::Resp3 => {
+                let disconnect = Arc::new(tokio::sync::Notify::new());
+                let disconnect_sender = Arc::clone(&disconnect);
+                let terminal_sender = Arc::clone(&terminal);
+                let wake_sender = Arc::clone(&terminal_wake);
+                let push_sender = move |push: PushInfo| -> Result<(), ()> {
+                    match push.kind {
+                        PushKind::Message if push.data.len() == 2 => {
+                            let mut data = push.data.into_iter();
+                            let decoded =
+                                data.next().zip(data.next()).and_then(|(channel, payload)| {
+                                    Some((
+                                        redis::from_redis_value::<Vec<u8>>(channel).ok()?,
+                                        redis::from_redis_value::<Vec<u8>>(payload).ok()?,
+                                    ))
+                                });
+                            let Some((channel, payload)) = decoded else {
+                                set_subscription_terminal(&terminal_sender, RedisError::Protocol);
+                                disconnect_sender.notify_one();
+                                wake_sender.notify_one();
+                                return Err(());
+                            };
+                            messages_tx.try_send((channel, payload)).map_err(|error| {
+                                let failure = match error {
+                                    tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                                        RedisError::SubscriptionOverflow
+                                    }
+                                    tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                                        RedisError::ClientCancelled
+                                    }
+                                };
+                                set_subscription_terminal(&terminal_sender, failure);
+                                disconnect_sender.notify_one();
+                                wake_sender.notify_one();
+                            })
+                        }
+                        PushKind::Disconnection => {
+                            set_subscription_terminal(&terminal_sender, RedisError::Connection);
+                            disconnect_sender.notify_one();
+                            wake_sender.notify_one();
+                            Ok(())
+                        }
+                        _ => Ok(()),
+                    }
+                };
+                let config = self
+                    .runtime_policy
+                    .blocking_config()
+                    .set_push_sender(push_sender);
+                let mut connection = await_subscription_setup(&operation, async {
+                    self.client
+                        .get_multiplexed_async_connection_with_config(&config)
+                        .await
+                        .map_err(map_connect_error)
+                })
+                .await?;
+                await_subscription_setup(&operation, async {
+                    redis::cmd("SUBSCRIBE")
+                        .arg(channel.as_slice())
+                        .query_async::<()>(&mut connection)
+                        .await
+                        .map_err(map_command_error)
+                })
+                .await?;
+                operation.started.store(true, Ordering::Release);
+                if operation.cancel_requested.load(Ordering::Acquire) {
+                    operation.wake.notify_one();
+                }
+                let operation_worker = Arc::clone(&operation);
+                let terminal_worker = Arc::clone(&terminal);
+                let wake_worker = Arc::clone(&terminal_wake);
+                let long_operation_worker = Arc::clone(&self.long_operation_active);
+                let channel_worker = channel.clone();
+                let teardown_timeout = self.runtime_policy.response_timeout();
+                tokio::spawn(async move {
+                    tokio::select! {
+                        () = operation_worker.wake.notified() => {
+                            set_subscription_terminal(&terminal_worker, RedisError::ClientCancelled);
+                            let mut command = redis::cmd("UNSUBSCRIBE");
+                            command.arg(channel_worker.as_slice());
+                            let unsubscribe = command.query_async::<()>(&mut connection);
+                            let _ = tokio::time::timeout(teardown_timeout, unsubscribe).await;
+                        }
+                        () = disconnect.notified() => {}
+                    }
+                    registry.release(&operation_worker);
+                    long_operation_worker.store(false, Ordering::Release);
+                    wake_worker.notify_one();
+                })
+            }
+        };
+        claim.commit();
+        Ok(RedisSubscriptionStream {
+            messages: messages_rx,
+            terminal,
+            terminal_wake,
+            worker,
+            limits: options.limits,
+            max_cell_bytes: options.max_cell_bytes,
+            operation,
+        })
     }
 
     pub fn scan_keys(
@@ -1231,6 +1605,7 @@ pub struct RedisBlockingPopStream {
     complete: bool,
     blocking: Arc<RedisBlockingRegistry>,
     operation: Arc<RedisBlockingOperation>,
+    long_operation_active: Arc<AtomicBool>,
 }
 
 impl RedisBlockingPopStream {
@@ -1245,6 +1620,7 @@ impl RedisBlockingPopStream {
         let result = (&mut self.result).await.map_err(|_| RedisError::Command)?;
         self.complete = true;
         self.blocking.release(&self.operation);
+        self.long_operation_active.store(false, Ordering::Release);
         let (key, value) = match result {
             Ok(value) => value,
             Err(_) if self.operation.server_confirmed.load(Ordering::Acquire) => {
@@ -1292,7 +1668,111 @@ impl Drop for RedisBlockingPopStream {
     fn drop(&mut self) {
         self.task.abort();
         self.blocking.release(&self.operation);
+        self.long_operation_active.store(false, Ordering::Release);
     }
+}
+
+pub struct RedisSubscriptionStream {
+    messages: tokio::sync::mpsc::Receiver<(Vec<u8>, Vec<u8>)>,
+    terminal: Arc<Mutex<Option<RedisError>>>,
+    terminal_wake: Arc<tokio::sync::Notify>,
+    worker: tokio::task::JoinHandle<()>,
+    limits: PageLimits,
+    max_cell_bytes: u64,
+    operation: Arc<RedisSubscriptionOperation>,
+}
+
+impl RedisSubscriptionStream {
+    pub async fn next_page(
+        &mut self,
+        identity: PageIdentity,
+        start_row: u64,
+    ) -> Result<Option<ResultPage>, RedisError> {
+        let first = loop {
+            if let Ok(message) = self.messages.try_recv() {
+                break message;
+            }
+            let terminal = {
+                self.terminal
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone()
+            };
+            if let Some(error) = terminal {
+                let _ = (&mut self.worker).await;
+                return Err(error);
+            }
+            tokio::select! {
+                message = self.messages.recv() => match message {
+                    Some(message) => break message,
+                    None => continue,
+                },
+                () = self.terminal_wake.notified() => {}
+            }
+        };
+        let mut rows = vec![first];
+        while rows.len() < self.limits.max_rows() as usize {
+            match self.messages.try_recv() {
+                Ok(message) => rows.push(message),
+                Err(_) => break,
+            }
+        }
+        let mut values = Vec::with_capacity(rows.len() * 2);
+        let mut arena_remaining = self.limits.max_arena_bytes();
+        for (channel, payload) in rows {
+            let channel = bounded_binary(&channel, self.max_cell_bytes.min(arena_remaining))?;
+            arena_remaining = arena_remaining.saturating_sub(channel.encoded_byte_len());
+            let payload = bounded_binary(&payload, self.max_cell_bytes.min(arena_remaining))?;
+            arena_remaining = arena_remaining.saturating_sub(payload.encoded_byte_len());
+            values.extend([channel, payload]);
+        }
+        let mut warnings = PageWarnings::none();
+        if values.iter().any(OwnedValue::is_truncated) {
+            warnings = warnings.with(PageWarning::ByteLimitReached);
+        }
+        if values.len() / 2 == self.limits.max_rows() as usize {
+            warnings = warnings.with(PageWarning::RowLimitReached);
+        }
+        ResultPage::from_row_major(
+            identity,
+            start_row,
+            RowTotal::Unknown,
+            PageFacts::new(PageDelivery::Partial, warnings),
+            redis_binary_columns(&["channel", "payload"])?,
+            values,
+            self.limits,
+        )
+        .map(Some)
+        .map_err(RedisError::Page)
+    }
+}
+
+impl Drop for RedisSubscriptionStream {
+    fn drop(&mut self) {
+        self.operation
+            .cancel_requested
+            .store(true, Ordering::Release);
+        self.operation.wake.notify_one();
+    }
+}
+
+fn redis_binary_columns(names: &[&str]) -> Result<Vec<ColumnMetadata>, RedisError> {
+    names
+        .iter()
+        .map(|name| {
+            Ok(ColumnMetadata::new(
+                BoundedText::copy_from_str(name, ByteLimit::new(name.len() as u64))
+                    .map_err(|_| RedisError::Protocol)?,
+                EngineType::new(
+                    Engine::Redis,
+                    BoundedText::copy_from_str("bulk-string", ByteLimit::new(11))
+                        .map_err(|_| RedisError::Protocol)?,
+                )
+                .map_err(|_| RedisError::Protocol)?,
+                false,
+            ))
+        })
+        .collect()
 }
 
 pub struct RedisKeyStream {

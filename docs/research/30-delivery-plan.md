@@ -162,7 +162,10 @@ key TTL facts through one Rust-owned contract. Bounded binary HSCAN, SSCAN, and
 ZSCAN pages now pass both supported lines under RESP2 and RESP3. Verified
 custom-root TLS, optional mTLS identity, ACL authentication, and bounded
 initial authentication-stop behavior also pass that supported-line/protocol matrix.
-Pub/Sub, reviewed TTL writes and remaining failure races stay required. The supported
+Pattern subscriptions, reconnect/resubscription, reviewed TTL writes and remaining
+failure races stay required. Dedicated bounded binary Pub/Sub streams now pass
+both supported lines under RESP2 and RESP3 without changing the shared command
+connection; cancellation is explicitly client-stop. The supported
 matrix proves bounded response timeout and confirmed-drop future-call reconnect
 without automatic command replay, plus Redis's stable-throughout and
 absent-throughout guarantees during concurrent

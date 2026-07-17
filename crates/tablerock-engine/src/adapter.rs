@@ -9,6 +9,7 @@ use crate::{
     ClickHouseError, ClickHouseProbeQuery, ClickHouseRowStream, ClickHouseSession, PostgresError,
     PostgresProbeQuery, PostgresRowStream, PostgresSession, RedisCollectionScanKind,
     RedisCollectionScanOptions, RedisCollectionStream, RedisError, RedisKeyStream, RedisSession,
+    RedisSubscriptionOptions, RedisSubscriptionStream,
 };
 
 pub type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -41,6 +42,10 @@ pub enum DriverPageRequest {
         limits: PageLimits,
         max_cell_bytes: u64,
     },
+    RedisSubscribe {
+        channel: BoundedBytes,
+        options: RedisSubscriptionOptions,
+    },
 }
 
 impl DriverPageRequest {
@@ -51,7 +56,8 @@ impl DriverPageRequest {
             Self::ClickHouseProbe { .. } => Engine::ClickHouse,
             Self::RedisKeyScan { .. }
             | Self::RedisCollectionScan { .. }
-            | Self::RedisBlockingPop { .. } => Engine::Redis,
+            | Self::RedisBlockingPop { .. }
+            | Self::RedisSubscribe { .. } => Engine::Redis,
         }
     }
 }
@@ -101,6 +107,9 @@ impl fmt::Debug for DriverPageRequest {
                 .field("key_bytes", &key.len())
                 .field("limits", limits)
                 .field("max_cell_bytes", max_cell_bytes),
+            Self::RedisSubscribe { channel, options } => debug
+                .field("channel_bytes", &channel.len())
+                .field("options", options),
         };
         debug.finish()
     }
@@ -249,6 +258,20 @@ impl DriverPageStream for crate::RedisBlockingPopStream {
     }
 }
 
+impl DriverPageStream for RedisSubscriptionStream {
+    fn next_page<'a>(
+        &'a mut self,
+        identity: PageIdentity,
+        start_row: u64,
+    ) -> DriverFuture<'a, Result<Option<ResultPage>, AdapterError>> {
+        Box::pin(async move {
+            RedisSubscriptionStream::next_page(self, identity, start_row)
+                .await
+                .map_err(map_redis)
+        })
+    }
+}
+
 impl DriverSession for PostgresSession {
     fn engine(&self) -> Engine {
         Engine::PostgreSql
@@ -373,6 +396,11 @@ impl DriverSession for RedisSession {
                     .await
                     .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
                     .map_err(map_redis),
+                DriverPageRequest::RedisSubscribe { channel, options } => self
+                    .subscribe(channel, options)
+                    .await
+                    .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
+                    .map_err(map_redis),
                 _ => Err(AdapterError::new(
                     Engine::Redis,
                     AdapterFailureClass::EngineMismatch,
@@ -444,6 +472,7 @@ fn map_redis(error: RedisError) -> AdapterError {
         RedisError::InvalidLimits => AdapterFailureClass::InvalidRequest,
         RedisError::ScanBudgetExhausted => AdapterFailureClass::Query,
         RedisError::ScanResponseLimitExceeded => AdapterFailureClass::ResourceLimit,
+        RedisError::SubscriptionOverflow => AdapterFailureClass::ResourceLimit,
         RedisError::Protocol => AdapterFailureClass::Protocol,
         RedisError::Page(_) => AdapterFailureClass::Page,
     };

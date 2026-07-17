@@ -154,6 +154,16 @@ to a redacted authentication class. TLS-authenticated future-call reconnect and
 blocking cancellation also pass. Live credential revocation across reconnect
 remains required. TLS/auth material has explicit pre-I/O bounds and Debug redaction tests.
 
+The Redis 7.4.9/8.8.0 RESP2/RESP3 matrix also proves dedicated Pub/Sub
+connections, exact binary channel/payload delivery, continued ordinary-command
+use, bounded queue configuration, client-stop cancellation, and unsubscribe
+ownership release. The object-safe service path terminates cancellation as
+client-stop; active drop permits a replacement generation; cancellation races a
+server-paused setup without waiting for the server response timeout. Queue
+overflow is an explicit resource-limit failure, never silent loss. Pattern
+subscriptions, reconnect/resubscription, TLS composition,
+and RESP2 pre-decode transport allocation bounds remain required.
+
 A support claim is exactly the continuously passing real-server matrix.
 
 ## TUI render and interaction matrix

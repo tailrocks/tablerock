@@ -23,7 +23,7 @@ pub use redis::{
     RedisBlockingPopStream, RedisCancelDispatch, RedisClientIdentity, RedisCollectionScanKind,
     RedisCollectionScanOptions, RedisCollectionStream, RedisConnectConfig, RedisConnectionSecurity,
     RedisCredentials, RedisError, RedisKeyStream, RedisProtocol, RedisRuntimePolicy, RedisSession,
-    RedisTlsMaterial, RedisTlsMode,
+    RedisSubscriptionOptions, RedisSubscriptionStream, RedisTlsMaterial, RedisTlsMode,
 };
 pub use runtime::{
     DriverOperationEvent, DriverOperationEvents, DriverRuntime, DriverRuntimeError,

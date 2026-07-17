@@ -83,6 +83,9 @@ Redis verified custom-root TLS, optional client identity, ACL authentication,
 and bounded initial authentication-stop behavior across both supported lines and
 protocols are recorded in
 [`144-phase-2-redis-tls-authentication.md`](docs/research/144-phase-2-redis-tls-authentication.md).
+Bounded, binary-safe Redis Pub/Sub isolation and truthful client-stop behavior
+across the supported RESP2/RESP3 matrix are recorded in
+[`145-phase-2-redis-pubsub-isolation.md`](docs/research/145-phase-2-redis-pubsub-isolation.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its
