@@ -360,7 +360,12 @@ impl PostgresProbeQuery {
                  TIME '24:00:00' AS end_of_day, TIME '12:34:56.123456' AS precise_time, \
                  TIMESTAMP '1999-12-31 23:59:59.999999' AS local_timestamp, \
                  TIMESTAMPTZ '2024-02-29 12:34:56.123456+07' AS utc_timestamp, \
-                 'infinity'::date AS infinite_date, '-infinity'::timestamptz AS negative_infinity"
+                 'infinity'::date AS infinite_date, '-infinity'::timestamptz AS negative_infinity, \
+                 TIMETZ '12:34:56.123456+06:30' AS zoned_time, \
+                 INTERVAL '14 months -3 days -14706.123456 seconds' AS mixed_interval, \
+                 DATE '0001-01-01 BC' AS bc_date, DATE '10000-12-31' AS expanded_date, \
+                 'infinity'::interval AS infinite_interval, \
+                 '-infinity'::interval AS negative_infinite_interval"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1494,7 +1499,12 @@ fn decode_value(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Post
     }
     if matches!(
         *type_,
-        Type::DATE | Type::TIME | Type::TIMESTAMP | Type::TIMESTAMPTZ
+        Type::DATE
+            | Type::TIME
+            | Type::TIMETZ
+            | Type::TIMESTAMP
+            | Type::TIMESTAMPTZ
+            | Type::INTERVAL
     ) {
         return decode_temporal(type_, raw, limit);
     }
@@ -1537,7 +1547,39 @@ fn decode_temporal(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, P
                 }
             }
         }
-        Type::DATE | Type::TIME | Type::TIMESTAMP | Type::TIMESTAMPTZ => {
+        Type::TIMETZ if raw.len() == 12 => {
+            let micros = i64::from_be_bytes([
+                raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7],
+            ]);
+            let seconds_west = i32::from_be_bytes([raw[8], raw[9], raw[10], raw[11]]);
+            if !(0..=MICROS_PER_DAY).contains(&micros) {
+                return bounded_raw(type_, raw, limit, true);
+            }
+            let Some(offset) = format_utc_offset(-i64::from(seconds_west)) else {
+                return bounded_raw(type_, raw, limit, true);
+            };
+            format!("{}{}", format_time(micros), offset)
+        }
+        Type::INTERVAL if raw.len() == 16 => {
+            let micros = i64::from_be_bytes([
+                raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7],
+            ]);
+            let days = i32::from_be_bytes([raw[8], raw[9], raw[10], raw[11]]);
+            let months = i32::from_be_bytes([raw[12], raw[13], raw[14], raw[15]]);
+            match (micros, days, months) {
+                (i64::MAX, i32::MAX, i32::MAX) => "infinity".to_owned(),
+                (i64::MIN, i32::MIN, i32::MIN) => "-infinity".to_owned(),
+                (micros, days, months) => {
+                    format!("P{months}M{days}DT{}S", format_interval_seconds(micros))
+                }
+            }
+        }
+        Type::DATE
+        | Type::TIME
+        | Type::TIMETZ
+        | Type::TIMESTAMP
+        | Type::TIMESTAMPTZ
+        | Type::INTERVAL => {
             return bounded_raw(type_, raw, limit, true);
         }
         _ => return bounded_raw(type_, raw, limit, false),
@@ -1589,6 +1631,35 @@ fn format_time(micros: i64) -> String {
         format!("{hours:02}:{minutes:02}:{seconds:02}")
     } else {
         format!("{hours:02}:{minutes:02}:{seconds:02}.{fraction:06}")
+    }
+}
+
+fn format_utc_offset(seconds_east: i64) -> Option<String> {
+    const MAX_OFFSET_SECONDS: i64 = 15 * 3_600 + 59 * 60 + 59;
+    let absolute = seconds_east.abs();
+    if absolute > MAX_OFFSET_SECONDS {
+        return None;
+    }
+    let sign = if seconds_east < 0 { '-' } else { '+' };
+    let hours = absolute / 3_600;
+    let minutes = absolute / 60 % 60;
+    let seconds = absolute % 60;
+    Some(if seconds == 0 {
+        format!("{sign}{hours:02}:{minutes:02}")
+    } else {
+        format!("{sign}{hours:02}:{minutes:02}:{seconds:02}")
+    })
+}
+
+fn format_interval_seconds(micros: i64) -> String {
+    let absolute = micros.unsigned_abs();
+    let seconds = absolute / 1_000_000;
+    let fraction = absolute % 1_000_000;
+    let sign = if micros < 0 { "-" } else { "" };
+    if fraction == 0 {
+        format!("{sign}{seconds}")
+    } else {
+        format!("{sign}{seconds}.{fraction:06}")
     }
 }
 
@@ -2200,6 +2271,45 @@ mod tests {
                 } if value == expected
             ));
         }
+
+        assert_eq!(format_date(-719_528), "0000-01-01");
+        assert_eq!(format_date(2_933_262), "+10000-12-31");
+
+        let mut timetz = Vec::new();
+        timetz.extend_from_slice(&45_296_123_456_i64.to_be_bytes());
+        timetz.extend_from_slice(&(-23_400_i32).to_be_bytes());
+        let zoned = decode_value(&Type::TIMETZ, &timetz, 64).unwrap();
+        assert!(matches!(
+            zoned.as_ref(),
+            tablerock_core::ValueRef::Temporal {
+                value: "12:34:56.123456+06:30",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let mixed =
+            decode_value(&Type::INTERVAL, &interval_raw(-14_706_123_456, -3, 14), 64).unwrap();
+        assert!(matches!(
+            mixed.as_ref(),
+            tablerock_core::ValueRef::Temporal {
+                value: "P14M-3DT-14706.123456S",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        for (raw, expected) in [
+            (interval_raw(i64::MAX, i32::MAX, i32::MAX), "infinity"),
+            (interval_raw(i64::MIN, i32::MIN, i32::MIN), "-infinity"),
+        ] {
+            let value = decode_value(&Type::INTERVAL, &raw, 64).unwrap();
+            assert!(matches!(
+                value.as_ref(),
+                tablerock_core::ValueRef::Temporal {
+                    value,
+                    truncation: Truncation::Complete
+                } if value == expected
+            ));
+        }
     }
 
     #[test]
@@ -2219,6 +2329,14 @@ mod tests {
             (Type::DATE, vec![0; 3]),
             (Type::TIME, (-1_i64).to_be_bytes().to_vec()),
             (Type::TIME, (MICROS_PER_DAY + 1).to_be_bytes().to_vec()),
+            (Type::TIMETZ, vec![0; 11]),
+            (Type::TIMETZ, {
+                let mut raw = Vec::new();
+                raw.extend_from_slice(&0_i64.to_be_bytes());
+                raw.extend_from_slice(&(-57_600_i32).to_be_bytes());
+                raw
+            }),
+            (Type::INTERVAL, vec![0; 15]),
             (Type::TIMESTAMP, vec![0; 7]),
         ] {
             let invalid = decode_value(&type_, &raw, 8).unwrap();
@@ -2236,6 +2354,14 @@ mod tests {
         for digit in digits {
             raw.extend_from_slice(&digit.to_be_bytes());
         }
+        raw
+    }
+
+    fn interval_raw(microseconds: i64, days: i32, months: i32) -> Vec<u8> {
+        let mut raw = Vec::with_capacity(16);
+        raw.extend_from_slice(&microseconds.to_be_bytes());
+        raw.extend_from_slice(&days.to_be_bytes());
+        raw.extend_from_slice(&months.to_be_bytes());
         raw
     }
 }

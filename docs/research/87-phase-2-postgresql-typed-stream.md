@@ -63,7 +63,7 @@ nullable because PostgreSQL row descriptions do not carry nullability facts.
 
 | Server | Real fixture evidence | Claim |
 |---|---|---|
-| PostgreSQL 17.10 | official `postgres:17.10-alpine`; extended-query preparation and streaming; Boolean, signed integers, Float32/Float64, exact numeric, canonical UUID, text, binary, NULL, JSON/JSONB structured projection, array/range/record unknown preservation, truncation | typed tracer |
+| PostgreSQL 17.10 | official `postgres:17.10-alpine`; extended-query preparation and streaming; Boolean, signed integers, Float32/Float64, exact numeric, canonical UUID, complete scalar temporal family, text, binary, NULL, JSON/JSONB structured projection, array/range/record unknown preservation, truncation | typed tracer |
 | PostgreSQL 18.4 | same typed suite on official `postgres:18.4-alpine`; existing bounded paging and cancellation suites also pass | typed tracer |
 
 Testcontainers Rust 0.27.3 owns both fixture lifecycles and ephemeral mapped

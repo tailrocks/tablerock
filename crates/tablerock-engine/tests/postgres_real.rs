@@ -1230,7 +1230,7 @@ async fn verify_typed_values(tag: &str) {
     let mut temporals = session
         .stream_probe(
             PostgresProbeQuery::TemporalValues,
-            PageLimits::new(1, 8, 256, 512),
+            PageLimits::new(1, 14, 256, 896),
             64,
         )
         .await
@@ -1245,6 +1245,12 @@ async fn verify_typed_values(tag: &str) {
         (5_u32, "timestamptz", "2024-02-29T05:34:56.123456Z"),
         (6_u32, "date", "infinity"),
         (7_u32, "timestamptz", "-infinity"),
+        (8_u32, "timetz", "12:34:56.123456+06:30"),
+        (9_u32, "interval", "P14M-3DT-14706.123456S"),
+        (10_u32, "date", "0000-01-01"),
+        (11_u32, "date", "+10000-12-31"),
+        (12_u32, "interval", "infinity"),
+        (13_u32, "interval", "-infinity"),
     ] {
         assert_eq!(
             temporal_page.columns()[column as usize]
@@ -1254,7 +1260,9 @@ async fn verify_typed_values(tag: &str) {
         );
         assert_eq!(
             temporal_page.cell(0, column).unwrap().kind(),
-            ValueKind::Temporal
+            ValueKind::Temporal,
+            "PostgreSQL {tag} temporal column {column} raw {:?}",
+            temporal_page.cell(0, column).unwrap().bytes()
         );
         assert_eq!(
             temporal_page.cell(0, column).unwrap().bytes(),

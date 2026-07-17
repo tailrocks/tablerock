@@ -300,6 +300,12 @@ Redis raw TLS administrative timeout/readiness hardening is recorded in
 [`173-phase-2-redis-admin-readiness-budget.md`](docs/research/173-phase-2-redis-admin-readiness-budget.md).
 Canonical bounded PostgreSQL UUID decoding is recorded in
 [`174-phase-2-postgresql-uuid-decoder.md`](docs/research/174-phase-2-postgresql-uuid-decoder.md).
+The shared temporal kind, PostgreSQL scalar temporal decoder, and completion of
+timetz/interval/BC/expanded-year coverage are recorded in
+[`175-phase-2-temporal-value-contract.md`](docs/research/175-phase-2-temporal-value-contract.md),
+[`176-phase-2-postgresql-temporal-decoder.md`](docs/research/176-phase-2-postgresql-temporal-decoder.md),
+and
+[`177-phase-2-postgresql-temporal-completion.md`](docs/research/177-phase-2-postgresql-temporal-completion.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

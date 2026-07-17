@@ -160,6 +160,10 @@ the cell limit remain typed bounded `Unknown`.
 PostgreSQL representative, nil, and maximum UUIDs now pass both pinned lines as
 canonical lowercase hyphenated bounded `Text`. Truncation records canonical
 length 36; malformed wire lengths remain typed `Invalid`.
+PostgreSQL date, time, timetz, timestamp, timestamptz, and interval results now
+pass both pinned lines as bounded canonical `Temporal`. Evidence preserves UTC
+instant truth, explicit offsets, independent interval components, microseconds,
+24:00, infinities, astronomical BC years, and signed expanded years.
 Rust now drives asynchronous PostgreSQL messages directly. Both pinned lines
 prove bounded redacted notices, UTF-8-safe truncation, ordered retention, and
 explicit overflow without protocol backpressure.

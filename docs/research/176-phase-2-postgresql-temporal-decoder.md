@@ -38,8 +38,8 @@ Official `postgres:17.10-alpine` and `postgres:18.4-alpine` Testcontainers prove
 leap date, precise time, local timestamp, offset-to-UTC timestamptz conversion,
 and positive/negative infinity through immutable result pages.
 
-`timetz`, interval, and live BC/expanded-year coverage remain separate decoder
-work because their native component semantics must not be flattened.
+Research 177 subsequently adds `timetz`, interval, and live BC/expanded-year
+coverage without flattening their native component semantics.
 
 External concepts: PostgreSQL temporal storage domains, UTC timestamptz semantics, and special values
 Public sources: <https://www.postgresql.org/docs/current/datatype-datetime.html>, <https://docs.rs/tokio-postgres/0.7.18>

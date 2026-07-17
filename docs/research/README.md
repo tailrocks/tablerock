@@ -125,6 +125,7 @@ kept in the roadmap.
 - [Phase 2 PostgreSQL UUID decoder](174-phase-2-postgresql-uuid-decoder.md)
 - [Phase 2 temporal value contract](175-phase-2-temporal-value-contract.md)
 - [Phase 2 PostgreSQL temporal decoder](176-phase-2-postgresql-temporal-decoder.md)
+- [Phase 2 PostgreSQL temporal completion](177-phase-2-postgresql-temporal-completion.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)
