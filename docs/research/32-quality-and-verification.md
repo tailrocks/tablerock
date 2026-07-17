@@ -149,6 +149,8 @@ Engine additions:
   arbitrary-precision numbers and explicit invalid/over-ceiling behavior;
   native numeric retains arbitrary precision, scale/trailing zeros, scaled
   zero, NaN, infinities, and bounded malformed/over-cell-limit behavior;
+  UUID retains canonical lowercase 8-4-4-4-12 text, exact truncation length,
+  nil/maximum values, and malformed-length behavior;
   `int4range` and anonymous record retain bounded unknown binary bytes with
   exact type/truncation truth, while large `bytea` remains binary;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,

@@ -157,6 +157,9 @@ Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
 `Decimal` values. Malformed wire values remain `Invalid`; valid projections over
 the cell limit remain typed bounded `Unknown`.
+PostgreSQL representative, nil, and maximum UUIDs now pass both pinned lines as
+canonical lowercase hyphenated bounded `Text`. Truncation records canonical
+length 36; malformed wire lengths remain typed `Invalid`.
 Rust now drives asynchronous PostgreSQL messages directly. Both pinned lines
 prove bounded redacted notices, UTF-8-safe truncation, ordered retention, and
 explicit overflow without protocol backpressure.

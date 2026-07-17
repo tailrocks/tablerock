@@ -1114,8 +1114,14 @@ async fn verify_typed_values(tag: &str) {
     assert_eq!(page.cell(0, 7).unwrap().bytes(), "éééé".as_bytes());
     assert_eq!(page.cell(0, 8).unwrap().kind(), ValueKind::Binary);
     assert_eq!(page.cell(0, 8).unwrap().bytes(), &[0, 1, 255]);
-    assert_eq!(page.cell(0, 9).unwrap().kind(), ValueKind::Unknown);
-    assert!(page.cell(0, 9).unwrap().bytes().len() <= 8);
+    assert_eq!(page.cell(0, 9).unwrap().kind(), ValueKind::Text);
+    assert_eq!(page.cell(0, 9).unwrap().bytes(), b"123e4567");
+    assert_eq!(
+        page.cell(0, 9).unwrap().truncation(),
+        Truncation::Truncated {
+            original_byte_len: Some(36)
+        }
+    );
     assert_eq!(page.cell(0, 10).unwrap().kind(), ValueKind::Unknown);
     assert!(page.cell(0, 11).unwrap().is_null());
     for column in [12_u32, 13_u32] {
@@ -1189,6 +1195,37 @@ async fn verify_typed_values(tag: &str) {
     }
     assert!(numerics.next_page(identity(), 1).await.unwrap().is_none());
     drop(numerics);
+
+    let mut uuids = session
+        .stream_probe(
+            PostgresProbeQuery::UuidValues,
+            PageLimits::new(1, 3, 128, 256),
+            36,
+        )
+        .await
+        .unwrap();
+    let uuid_page = uuids.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, expected) in [
+        (0_u32, "123e4567-e89b-12d3-a456-426614174000"),
+        (1_u32, "00000000-0000-0000-0000-000000000000"),
+        (2_u32, "ffffffff-ffff-ffff-ffff-ffffffffffff"),
+    ] {
+        assert_eq!(
+            uuid_page.columns()[column as usize].engine_type().name(),
+            "uuid"
+        );
+        assert_eq!(uuid_page.cell(0, column).unwrap().kind(), ValueKind::Text);
+        assert_eq!(
+            uuid_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            uuid_page.cell(0, column).unwrap().truncation(),
+            Truncation::Complete
+        );
+    }
+    assert!(uuids.next_page(identity(), 1).await.unwrap().is_none());
+    drop(uuids);
 
     let mut parameters = session
         .stream_probe(

@@ -29,10 +29,11 @@ that accepts every PostgreSQL type. It then makes one lossless classification:
 | `bytea` | binary |
 | NULL of any type | null |
 | `numeric` | exact arbitrary-precision decimal text; research 172 |
+| `uuid` | canonical lowercase hyphenated text; research 174 |
 | valid unsupported type | unknown with PostgreSQL type name and raw binary payload |
 | malformed payload for a known type | invalid with PostgreSQL type name and raw payload |
 
-Unsupported does not mean discarded. UUID, array, range, and
+Unsupported does not mean discarded. Array, range, and
 anonymous-record probes retain their binary representation as `UnknownValues`;
 later type-specific decoders can replace that classification without changing
 the page or adapter boundary. Research 167 adds the raw complex-value and
@@ -62,7 +63,7 @@ nullable because PostgreSQL row descriptions do not carry nullability facts.
 
 | Server | Real fixture evidence | Claim |
 |---|---|---|
-| PostgreSQL 17.10 | official `postgres:17.10-alpine`; extended-query preparation and streaming; Boolean, signed integers, Float32/Float64, exact numeric, text, binary, NULL, JSON/JSONB structured projection, UUID/array/range/record unknown preservation, truncation | typed tracer |
+| PostgreSQL 17.10 | official `postgres:17.10-alpine`; extended-query preparation and streaming; Boolean, signed integers, Float32/Float64, exact numeric, canonical UUID, text, binary, NULL, JSON/JSONB structured projection, array/range/record unknown preservation, truncation | typed tracer |
 | PostgreSQL 18.4 | same typed suite on official `postgres:18.4-alpine`; existing bounded paging and cancellation suites also pass | typed tracer |
 
 Testcontainers Rust 0.27.3 owns both fixture lifecycles and ephemeral mapped

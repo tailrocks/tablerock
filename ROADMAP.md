@@ -298,6 +298,8 @@ Exact bounded PostgreSQL arbitrary-precision numeric decoding is recorded in
 [`172-phase-2-postgresql-numeric-decoder.md`](docs/research/172-phase-2-postgresql-numeric-decoder.md).
 Redis raw TLS administrative timeout/readiness hardening is recorded in
 [`173-phase-2-redis-admin-readiness-budget.md`](docs/research/173-phase-2-redis-admin-readiness-budget.md).
+Canonical bounded PostgreSQL UUID decoding is recorded in
+[`174-phase-2-postgresql-uuid-decoder.md`](docs/research/174-phase-2-postgresql-uuid-decoder.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

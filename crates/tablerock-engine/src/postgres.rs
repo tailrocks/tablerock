@@ -119,6 +119,7 @@ pub enum PostgresProbeQuery {
     PerformanceSeries,
     TypedValues,
     NumericValues,
+    UuidValues,
     Parameters,
     CancellationStream,
 }
@@ -347,6 +348,11 @@ impl PostgresProbeQuery {
                  12345678901234567890.1234567890::numeric AS arbitrary_precision, \
                  'NaN'::numeric AS not_a_number, 'Infinity'::numeric AS positive_infinity, \
                  '-Infinity'::numeric AS negative_infinity, 0.000::numeric AS scaled_zero"
+            }
+            Self::UuidValues => {
+                "SELECT '123e4567-e89b-12d3-a456-426614174000'::uuid AS representative, \
+                 '00000000-0000-0000-0000-000000000000'::uuid AS nil, \
+                 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid AS maximum"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1475,7 +1481,36 @@ fn decode_value(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Post
     if *type_ == Type::NUMERIC {
         return decode_numeric(type_, raw, limit);
     }
+    if *type_ == Type::UUID {
+        return decode_uuid(type_, raw, limit);
+    }
     bounded_raw(type_, raw, limit, false)
+}
+
+fn decode_uuid(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
+    let bytes: [u8; 16] = match raw.try_into() {
+        Ok(bytes) => bytes,
+        Err(_) => return bounded_raw(type_, raw, limit, true),
+    };
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut canonical = String::with_capacity(36);
+    for (index, byte) in bytes.into_iter().enumerate() {
+        if matches!(index, 4 | 6 | 8 | 10) {
+            canonical.push('-');
+        }
+        canonical.push(char::from(HEX[usize::from(byte >> 4)]));
+        canonical.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    let stored_len = usize::try_from(limit)
+        .unwrap_or(usize::MAX)
+        .min(canonical.len());
+    let stored = BoundedText::copy_from_str(
+        &canonical[..stored_len],
+        ByteLimit::new(u64::try_from(stored_len).unwrap_or(u64::MAX)),
+    )
+    .map_err(|_| PostgresError::Protocol)?;
+    OwnedValue::text(stored, truncation(stored_len, canonical.len()))
+        .map_err(|_| PostgresError::Protocol)
 }
 
 fn decode_numeric(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
@@ -1984,6 +2019,39 @@ mod tests {
             let invalid = decode_value(&Type::NUMERIC, &raw, 64).unwrap();
             assert_eq!(invalid.kind(), tablerock_core::ValueKind::Invalid);
             assert_eq!(invalid.engine_type().unwrap().name(), "numeric");
+        }
+    }
+
+    #[test]
+    fn uuid_projection_is_canonical_bounded_and_malformed_safe() {
+        let raw = [
+            0x12, 0x3e, 0x45, 0x67, 0xe8, 0x9b, 0x12, 0xd3, 0xa4, 0x56, 0x42, 0x66, 0x14, 0x17,
+            0x40, 0x00,
+        ];
+        let complete = decode_value(&Type::UUID, &raw, 36).unwrap();
+        assert!(matches!(
+            complete.as_ref(),
+            tablerock_core::ValueRef::Text {
+                value: "123e4567-e89b-12d3-a456-426614174000",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let bounded = decode_value(&Type::UUID, &raw, 9).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            tablerock_core::ValueRef::Text {
+                value: "123e4567-",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(36)
+                }
+            }
+        ));
+
+        for raw in [&raw[..15], &[0_u8; 17][..]] {
+            let invalid = decode_value(&Type::UUID, raw, 8).unwrap();
+            assert_eq!(invalid.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(invalid.engine_type().unwrap().name(), "uuid");
         }
     }
 
