@@ -133,7 +133,7 @@ Engine additions:
   slow-delivery-independent terminal reconstruction, premature completion
   rejection, and exactly-once runtime release;
 
-- PostgreSQL: custom/unknown OIDs, arrays/ranges/composites/JSON/bytes, notices,
+- PostgreSQL: custom/unknown OIDs, ranges/composites/JSON/bytes, notices,
   parameters, COPY, multiple statements, transaction conflicts, cancel races;
   pinned real servers distinguish SQLSTATE-confirmed cancellation from a late
   successfully delivered cancel after normal query completion, and a bounded
@@ -143,6 +143,8 @@ Engine additions:
   cancellation-transport failure followed by terminal session connection loss;
   prepared text, int8, binary, and boolean parameters retain exact typed values
   through bounded pages on both pinned lines;
+  generic arrays retain dimensions, lower bounds, nesting, and NULL elements in
+  bounded canonical structured values on both pinned lines;
   declared NULL remains null and `int4[]` retains bounded unknown bytes with
   exact engine type identity on both pinned lines;
   JSON and JSONB retain deterministic bounded structured projections with

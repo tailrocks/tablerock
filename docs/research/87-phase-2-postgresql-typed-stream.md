@@ -30,15 +30,17 @@ that accepts every PostgreSQL type. It then makes one lossless classification:
 | NULL of any type | null |
 | `numeric` | exact arbitrary-precision decimal text; research 172 |
 | `uuid` | canonical lowercase hyphenated text; research 174 |
+| generic array of supported values | canonical structured dimensions, lower bounds, and nested row-major values; research 179 |
 | valid unsupported type | unknown with PostgreSQL type name and raw binary payload |
 | malformed payload for a known type | invalid with PostgreSQL type name and raw payload |
 
-Unsupported does not mean discarded. Array, range, and
-anonymous-record probes retain their binary representation as `UnknownValues`;
+Unsupported does not mean discarded. Range and anonymous-record probes retain
+their binary representation as `UnknownValues`;
 later type-specific decoders can replace that classification without changing
 the page or adapter boundary. Research 167 adds the raw complex-value and
 large-binary matrix; research 168 subsequently promotes JSON/JSONB to bounded
-canonical `Structured` projections.
+canonical `Structured` projections, and research 179 promotes generic arrays
+while preserving their PostgreSQL dimensions and lower bounds.
 Malformed known values are never silently treated as valid.
 
 Column metadata carries the server type name and conservatively marks columns

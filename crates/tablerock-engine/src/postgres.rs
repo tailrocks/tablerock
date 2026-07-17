@@ -18,7 +18,7 @@ use rustls::{
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, ColumnMetadata, Engine, EngineType, OwnedValue,
     PageDelivery, PageFacts, PageIdentity, PageLimits, PageValidationError, PageWarning,
-    PageWarnings, ResultPage, RowTotal, Truncation,
+    PageWarnings, ResultPage, RowTotal, Truncation, ValueRef,
 };
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
@@ -30,7 +30,7 @@ use tokio_postgres::{
     AsyncMessage, Connection, Row,
     config::SslMode,
     tls::MakeTlsConnect,
-    types::{FromSql, ToSql, Type},
+    types::{FromSql, Kind, ToSql, Type},
 };
 use tokio_postgres_rustls::MakeRustlsConnect;
 use zeroize::Zeroize;
@@ -44,6 +44,8 @@ const POSTGRES_NOTICE_QUEUE_CAPACITY: usize = 64;
 const MAX_POSTGRES_NOTICE_SEVERITY_BYTES: u64 = 32;
 const MAX_POSTGRES_NOTICE_CODE_BYTES: u64 = 5;
 const MAX_POSTGRES_NOTICE_MESSAGE_BYTES: u64 = 1_024;
+const MAX_POSTGRES_ARRAY_DIMENSIONS: usize = 64;
+const MAX_POSTGRES_ARRAY_ELEMENTS: usize = 1_000_000;
 
 /// PostgreSQL transport-security requirement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -123,6 +125,7 @@ pub enum PostgresProbeQuery {
     NumericValues,
     UuidValues,
     TemporalValues,
+    ArrayValues,
     Parameters,
     CancellationStream,
 }
@@ -368,6 +371,13 @@ impl PostgresProbeQuery {
                  DATE '0001-01-01 BC' AS bc_date, DATE '10000-12-31' AS expanded_date, \
                  'infinity'::interval AS infinite_interval, \
                  '-infinity'::interval AS negative_infinite_interval"
+            }
+            Self::ArrayValues => {
+                "SELECT ARRAY[1, NULL, -2]::int4[] AS nullable_vector, \
+                 ARRAY[[1, 2], [3, 4]]::int4[] AS matrix, \
+                 '[0:2]={7,8,9}'::int4[] AS zero_based, \
+                 ARRAY['plain', 'quoted\"', 'NULL', 'é']::text[] AS text_vector, \
+                 ARRAY[DATE '2024-02-29', DATE '2000-01-01']::date[] AS date_vector"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1510,7 +1520,185 @@ fn decode_value(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Post
     ) {
         return decode_temporal(type_, raw, limit);
     }
+    if let Kind::Array(element_type) = type_.kind() {
+        return match decode_array(element_type, raw, limit) {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => bounded_raw(type_, raw, limit, false),
+            Err(()) => bounded_raw(type_, raw, limit, true),
+        };
+    }
     bounded_raw(type_, raw, limit, false)
+}
+
+#[derive(Clone, Copy)]
+struct PostgresArrayDimension {
+    length: usize,
+    lower_bound: i32,
+}
+
+fn decode_array(element_type: &Type, raw: &[u8], limit: u64) -> Result<Option<OwnedValue>, ()> {
+    let mut cursor = PostgresArrayCursor::new(raw);
+    let dimensions = usize::try_from(cursor.read_i32()?).map_err(|_| ())?;
+    let has_null = cursor.read_i32()?;
+    let element_oid = cursor.read_u32()?;
+    if dimensions > MAX_POSTGRES_ARRAY_DIMENSIONS
+        || !matches!(has_null, 0 | 1)
+        || element_oid != element_type.oid()
+    {
+        return Err(());
+    }
+    let mut shape = Vec::with_capacity(dimensions);
+    let mut elements = 1_usize;
+    for _ in 0..dimensions {
+        let length = usize::try_from(cursor.read_i32()?).map_err(|_| ())?;
+        if length == 0 {
+            return Err(());
+        }
+        elements = elements.checked_mul(length).ok_or(())?;
+        if elements > MAX_POSTGRES_ARRAY_ELEMENTS {
+            return Ok(None);
+        }
+        shape.push(PostgresArrayDimension {
+            length,
+            lower_bound: cursor.read_i32()?,
+        });
+    }
+    let mut projection = BoundedJsonWriter::new(limit);
+    projection.push("{\"$array\":{\"dimensions\":[")?;
+    for (index, dimension) in shape.iter().enumerate() {
+        if index != 0 {
+            projection.push(",")?;
+        }
+        projection.push(&format!("[{},{}]", dimension.lower_bound, dimension.length))?;
+    }
+    projection.push("],\"values\":")?;
+    let mut saw_null = false;
+    if dimensions == 0 {
+        projection.push("[]")?;
+    } else if !project_array_values(
+        &shape,
+        0,
+        element_type,
+        &mut cursor,
+        &mut projection,
+        limit,
+        &mut saw_null,
+    )? {
+        return Ok(None);
+    }
+    if cursor.remaining() != 0 || (saw_null && has_null == 0) {
+        return Err(());
+    }
+    projection.push("}}")?;
+    projection.finish().map(Some).map_err(|_| ())
+}
+
+fn project_array_values(
+    shape: &[PostgresArrayDimension],
+    depth: usize,
+    element_type: &Type,
+    cursor: &mut PostgresArrayCursor<'_>,
+    projection: &mut BoundedJsonWriter,
+    limit: u64,
+    saw_null: &mut bool,
+) -> Result<bool, ()> {
+    projection.push("[")?;
+    for index in 0..shape[depth].length {
+        if index != 0 {
+            projection.push(",")?;
+        }
+        if depth + 1 < shape.len() {
+            if !project_array_values(
+                shape,
+                depth + 1,
+                element_type,
+                cursor,
+                projection,
+                limit,
+                saw_null,
+            )? {
+                return Ok(false);
+            }
+            continue;
+        }
+        let length = cursor.read_i32()?;
+        if length == -1 {
+            *saw_null = true;
+            projection.push("null")?;
+            continue;
+        }
+        let length = usize::try_from(length).map_err(|_| ())?;
+        let payload = cursor.read_exact(length)?;
+        let value = decode_value(element_type, payload, limit).map_err(|_| ())?;
+        if value.is_truncated() || !project_array_element(&value, projection)? {
+            return Ok(false);
+        }
+    }
+    projection.push("]")?;
+    Ok(true)
+}
+
+fn project_array_element(
+    value: &OwnedValue,
+    projection: &mut BoundedJsonWriter,
+) -> Result<bool, ()> {
+    match value.as_ref() {
+        ValueRef::Null => projection.push("null")?,
+        ValueRef::Boolean(value) => projection.push(if value { "true" } else { "false" })?,
+        ValueRef::Signed(value) => projection.push(&value.to_string())?,
+        ValueRef::Unsigned(value) => projection.push(&value.to_string())?,
+        ValueRef::Float64Bits(bits) => {
+            projection.push(&format!("{{\"$float64_bits\":\"{bits:016x}\"}}"))?;
+        }
+        ValueRef::Decimal(value) => {
+            projection.push("{\"$decimal\":")?;
+            projection.push_json_string(value)?;
+            projection.push("}")?;
+        }
+        ValueRef::Temporal { value, .. } | ValueRef::Text { value, .. } => {
+            projection.push_json_string(value)?;
+        }
+        ValueRef::Structured { value, .. } => projection.push(value)?,
+        ValueRef::Binary { value, .. } => {
+            projection.push("{\"$binary\":\"")?;
+            projection.push_hex(value)?;
+            projection.push("\"}")?;
+        }
+        ValueRef::Invalid { .. } | ValueRef::Unknown { .. } => return Ok(false),
+    }
+    Ok(true)
+}
+
+struct PostgresArrayCursor<'a> {
+    remaining: &'a [u8],
+}
+
+impl<'a> PostgresArrayCursor<'a> {
+    const fn new(raw: &'a [u8]) -> Self {
+        Self { remaining: raw }
+    }
+
+    const fn remaining(&self) -> usize {
+        self.remaining.len()
+    }
+
+    fn read_i32(&mut self) -> Result<i32, ()> {
+        Ok(i32::from_be_bytes(
+            self.read_exact(4)?.try_into().map_err(|_| ())?,
+        ))
+    }
+
+    fn read_u32(&mut self) -> Result<u32, ()> {
+        Ok(u32::from_be_bytes(
+            self.read_exact(4)?.try_into().map_err(|_| ())?,
+        ))
+    }
+
+    fn read_exact(&mut self, length: usize) -> Result<&'a [u8], ()> {
+        let (value, remaining) = self.remaining.split_at_checked(length).ok_or(())?;
+        self.remaining = remaining;
+        Ok(value)
+    }
 }
 
 const POSTGRES_UNIX_EPOCH_DAYS: i64 = 10_957;
@@ -1876,6 +2064,23 @@ impl BoundedJsonWriter {
             original_byte_len: 0,
             limit,
         }
+    }
+
+    fn push(&mut self, value: &str) -> Result<(), ()> {
+        self.write_all(value.as_bytes()).map_err(|_| ())
+    }
+
+    fn push_json_string(&mut self, value: &str) -> Result<(), ()> {
+        serde_json::to_writer(self, value).map_err(|_| ())
+    }
+
+    fn push_hex(&mut self, value: &[u8]) -> Result<(), ()> {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        for byte in value {
+            self.write_all(&[HEX[usize::from(byte >> 4)], HEX[usize::from(byte & 0x0f)]])
+                .map_err(|_| ())?;
+        }
+        Ok(())
     }
 
     fn finish(mut self) -> Result<OwnedValue, PostgresError> {
@@ -2330,6 +2535,91 @@ mod tests {
         }
     }
 
+    #[test]
+    fn array_projection_preserves_shape_lower_bounds_and_nulls() {
+        let empty = array_raw(&[], false, &[]);
+        let value = decode_value(&Type::INT4_ARRAY, &empty, 128).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            tablerock_core::ValueRef::Structured {
+                value: "{\"$array\":{\"dimensions\":[],\"values\":[]}}",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let vector = array_raw(&[(3, 0)], true, &[Some(7), None, Some(-2)]);
+        let value = decode_value(&Type::INT4_ARRAY, &vector, 256).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            tablerock_core::ValueRef::Structured {
+                value: "{\"$array\":{\"dimensions\":[[0,3]],\"values\":[7,null,-2]}}",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let matrix = array_raw(
+            &[(2, 1), (2, -1)],
+            false,
+            &[Some(1), Some(2), Some(3), Some(4)],
+        );
+        let value = decode_value(&Type::INT4_ARRAY, &matrix, 256).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            tablerock_core::ValueRef::Structured {
+                value: "{\"$array\":{\"dimensions\":[[1,2],[-1,2]],\"values\":[[1,2],[3,4]]}}",
+                truncation: Truncation::Complete
+            }
+        ));
+    }
+
+    #[test]
+    fn array_projection_bounds_output_and_rejects_malformed_wire() {
+        let raw = array_raw(&[(3, 1)], false, &[Some(1), Some(2), Some(3)]);
+        let bounded = decode_value(&Type::INT4_ARRAY, &raw, 8).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            tablerock_core::ValueRef::Structured {
+                value: "{\"$array",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(original)
+                }
+            } if original > 8
+        ));
+
+        let mut wrong_oid = raw.clone();
+        wrong_oid[8..12].copy_from_slice(&Type::TEXT.oid().to_be_bytes());
+        let mut trailing = raw.clone();
+        trailing.push(0);
+        let null_without_flag = array_raw(&[(1, 1)], false, &[None]);
+        let mut invalid_null_flag = raw.clone();
+        invalid_null_flag[4..8].copy_from_slice(&2_i32.to_be_bytes());
+        let mut negative_dimension = raw.clone();
+        negative_dimension[12..16].copy_from_slice(&(-1_i32).to_be_bytes());
+        for malformed in [
+            wrong_oid,
+            trailing,
+            null_without_flag,
+            invalid_null_flag,
+            negative_dimension,
+            vec![0; 11],
+        ] {
+            let value = decode_value(&Type::INT4_ARRAY, &malformed, 16).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), "_int4");
+        }
+
+        let mut excessive = Vec::new();
+        excessive.extend_from_slice(&2_i32.to_be_bytes());
+        excessive.extend_from_slice(&0_i32.to_be_bytes());
+        excessive.extend_from_slice(&Type::INT4.oid().to_be_bytes());
+        for length in [1_001_i32, 1_000_i32] {
+            excessive.extend_from_slice(&length.to_be_bytes());
+            excessive.extend_from_slice(&1_i32.to_be_bytes());
+        }
+        let value = decode_value(&Type::INT4_ARRAY, &excessive, 16).unwrap();
+        assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
+    }
+
     fn numeric_raw(weight: i16, sign: u16, scale: u16, digits: &[u16]) -> Vec<u8> {
         let mut raw = Vec::with_capacity(8 + digits.len() * 2);
         raw.extend_from_slice(&u16::try_from(digits.len()).unwrap().to_be_bytes());
@@ -2347,6 +2637,27 @@ mod tests {
         raw.extend_from_slice(&microseconds.to_be_bytes());
         raw.extend_from_slice(&days.to_be_bytes());
         raw.extend_from_slice(&months.to_be_bytes());
+        raw
+    }
+
+    fn array_raw(dimensions: &[(i32, i32)], has_null: bool, values: &[Option<i32>]) -> Vec<u8> {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&i32::try_from(dimensions.len()).unwrap().to_be_bytes());
+        raw.extend_from_slice(&i32::from(has_null).to_be_bytes());
+        raw.extend_from_slice(&Type::INT4.oid().to_be_bytes());
+        for (length, lower_bound) in dimensions {
+            raw.extend_from_slice(&length.to_be_bytes());
+            raw.extend_from_slice(&lower_bound.to_be_bytes());
+        }
+        for value in values {
+            match value {
+                Some(value) => {
+                    raw.extend_from_slice(&4_i32.to_be_bytes());
+                    raw.extend_from_slice(&value.to_be_bytes());
+                }
+                None => raw.extend_from_slice(&(-1_i32).to_be_bytes()),
+            }
+        }
         raw
     }
 }

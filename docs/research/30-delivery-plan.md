@@ -144,14 +144,16 @@ redacted cancellation-transport failure and terminal session connection loss,
 without a false server-cancel outcome.
 Prepared UTF-8 text, int8, binary-with-NUL, and boolean parameters now pass both
 pinned lines through the bounded typed stream seam without exposing client types.
-Declared text NULL and `int4[]` parameters also pass both pinned lines; arrays
-retain bounded unknown bytes and exact engine type identity until structured
-decoding is implemented.
+Declared text NULL and `int4[]` parameters also pass both pinned lines. Generic
+binary arrays now project as canonical bounded `Structured` values that retain
+dimension lengths, lower bounds, row-major nesting, NULL elements, and supported
+scalar kinds. Malformed structure becomes `Invalid`; a valid unsupported or
+over-budget array remains whole-value `Unknown`.
 `int4range` and anonymous-record results pass both pinned lines as bounded
 unknown binary values with exact engine type and original-byte length truth;
 large `bytea` remains binary. JSON and JSONB now advance to deterministic
 compact bounded `Structured` projections with arbitrary-precision number and
-malformed/version-invalid truth. Other structured decoding and strict
+malformed/version-invalid truth. Range/record decoding and strict
 pre-driver transport allocation remain required.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core

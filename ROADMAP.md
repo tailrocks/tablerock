@@ -308,6 +308,9 @@ and
 [`177-phase-2-postgresql-temporal-completion.md`](docs/research/177-phase-2-postgresql-temporal-completion.md).
 ClickHouse canonical scalar and recursive temporal projection is recorded in
 [`178-phase-2-clickhouse-temporal-projection.md`](docs/research/178-phase-2-clickhouse-temporal-projection.md).
+Generic bounded PostgreSQL array projection with dimension and lower-bound
+preservation is recorded in
+[`179-phase-2-postgresql-array-projection.md`](docs/research/179-phase-2-postgresql-array-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

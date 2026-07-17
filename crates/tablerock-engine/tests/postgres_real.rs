@@ -1122,7 +1122,14 @@ async fn verify_typed_values(tag: &str) {
             original_byte_len: Some(36)
         }
     );
-    assert_eq!(page.cell(0, 10).unwrap().kind(), ValueKind::Unknown);
+    assert_eq!(page.cell(0, 10).unwrap().kind(), ValueKind::Structured);
+    assert_eq!(page.cell(0, 10).unwrap().bytes(), b"{\"$array");
+    assert!(matches!(
+        page.cell(0, 10).unwrap().truncation(),
+        Truncation::Truncated {
+            original_byte_len: Some(original)
+        } if original > 8
+    ));
     assert!(page.cell(0, 11).unwrap().is_null());
     for column in [12_u32, 13_u32] {
         assert_eq!(page.cell(0, column).unwrap().kind(), ValueKind::Structured);
@@ -1272,6 +1279,62 @@ async fn verify_typed_values(tag: &str) {
     assert!(temporals.next_page(identity(), 1).await.unwrap().is_none());
     drop(temporals);
 
+    let mut arrays = session
+        .stream_probe(
+            PostgresProbeQuery::ArrayValues,
+            PageLimits::new(1, 5, 512, 2_048),
+            512,
+        )
+        .await
+        .unwrap();
+    let array_page = arrays.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, engine_type, expected) in [
+        (
+            0_u32,
+            "_int4",
+            "{\"$array\":{\"dimensions\":[[1,3]],\"values\":[1,null,-2]}}",
+        ),
+        (
+            1_u32,
+            "_int4",
+            "{\"$array\":{\"dimensions\":[[1,2],[1,2]],\"values\":[[1,2],[3,4]]}}",
+        ),
+        (
+            2_u32,
+            "_int4",
+            "{\"$array\":{\"dimensions\":[[0,3]],\"values\":[7,8,9]}}",
+        ),
+        (
+            3_u32,
+            "_text",
+            "{\"$array\":{\"dimensions\":[[1,4]],\"values\":[\"plain\",\"quoted\\\"\",\"NULL\",\"é\"]}}",
+        ),
+        (
+            4_u32,
+            "_date",
+            "{\"$array\":{\"dimensions\":[[1,2]],\"values\":[\"2024-02-29\",\"2000-01-01\"]}}",
+        ),
+    ] {
+        assert_eq!(
+            array_page.columns()[column as usize].engine_type().name(),
+            engine_type
+        );
+        assert_eq!(
+            array_page.cell(0, column).unwrap().kind(),
+            ValueKind::Structured
+        );
+        assert_eq!(
+            array_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            array_page.cell(0, column).unwrap().truncation(),
+            Truncation::Complete
+        );
+    }
+    assert!(arrays.next_page(identity(), 1).await.unwrap().is_none());
+    drop(arrays);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,
@@ -1296,9 +1359,12 @@ async fn verify_typed_values(tag: &str) {
     assert_eq!(page.cell(0, 3).unwrap().kind(), ValueKind::Boolean);
     assert_eq!(page.cell(0, 3).unwrap().bytes(), &[0]);
     assert!(page.cell(0, 4).unwrap().is_null());
-    assert_eq!(page.cell(0, 5).unwrap().kind(), ValueKind::Unknown);
+    assert_eq!(page.cell(0, 5).unwrap().kind(), ValueKind::Structured);
     assert_eq!(page.columns()[5].engine_type().name(), "_int4");
-    assert!(!page.cell(0, 5).unwrap().bytes().is_empty());
+    assert_eq!(
+        page.cell(0, 5).unwrap().bytes(),
+        b"{\"$array\":{\"dimensions\":[[1,3]],\"values\":[1,-2,3]}}"
+    );
     assert!(parameters.next_page(identity(), 1).await.unwrap().is_none());
     drop(parameters);
     session.shutdown().await.unwrap();

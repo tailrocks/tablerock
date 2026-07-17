@@ -7,8 +7,9 @@ The sole PostgreSQL binary `RowStream` path now proves bounded preservation for
 PostgreSQL 17.10 and 18.4. No database-client type crosses the adapter boundary.
 
 This checkpoint preserves unsupported complex values. Research 168 subsequently
-promotes JSON and JSONB to bounded canonical `Structured` projections. Range
-and composite navigation remain required.
+promotes JSON and JSONB to bounded canonical `Structured` projections, and
+research 179 does the same for generic arrays while retaining dimensions and
+lower bounds. Range and composite navigation remain required.
 
 ## Decision
 
@@ -41,9 +42,10 @@ Testcontainers Rust 0.27.3 owns the official `postgres:17.10-alpine` and
 
 The driver receives a complete PostgreSQL data-row field before TableRock can
 apply the page cell bound. Strict pre-decode transport allocation for one
-unbounded field remains open. Canonical temporal, array, range, and composite
-decoding remains open; JSON/JSONB projection is closed by research 168, numeric
-decoding by research 172, and UUID decoding by research 174.
+unbounded field remains open. Canonical range and composite decoding remains
+open; JSON/JSONB projection is closed by research 168, numeric decoding by
+research 172, UUID decoding by research 174, scalar temporal decoding by
+research 176/177, and array projection by research 179.
 
 ## Verification
 
