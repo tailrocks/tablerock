@@ -342,6 +342,9 @@ PostgreSQL physical tuple identifiers now project as bounded structured
 block/offset pairs, with explicit non-durable mutation safety and PostgreSQL
 17/18 evidence in
 [`189-phase-2-postgresql-tid-projection.md`](docs/research/189-phase-2-postgresql-tid-projection.md).
+PostgreSQL special OID vectors now project as strictly validated bounded
+ordered unsigned lists with PostgreSQL 17/18 evidence in
+[`190-phase-2-postgresql-oid-vector-projection.md`](docs/research/190-phase-2-postgresql-oid-vector-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

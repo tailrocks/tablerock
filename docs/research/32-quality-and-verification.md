@@ -176,6 +176,8 @@ Engine additions:
   and strict eight-byte framing;
   `tid` retains bounded structured block/offset truth with strict six-byte
   framing and is never accepted as durable logical identity;
+  `oidvector` retains bounded ordered unsigned members with strict specialized
+  dimension/lower-bound/null/element/framing/count invariants;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,

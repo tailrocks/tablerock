@@ -1787,6 +1787,48 @@ async fn verify_typed_values(tag: &str) {
     assert!(tids.next_page(identity(), 1).await.unwrap().is_none());
     drop(tids);
 
+    let mut oid_vectors = session
+        .stream_probe(
+            PostgresProbeQuery::OidVectorValues,
+            PageLimits::new(1, 3, 512, 512),
+            128,
+        )
+        .await
+        .unwrap();
+    let oid_vector_page = oid_vectors.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, expected) in [
+        (0_u32, "{\"$oidvector\":[23,25,1043]}"),
+        (1_u32, "{\"$oidvector\":[]}"),
+        (2_u32, "{\"$oidvector\":[4294967295,0]}"),
+    ] {
+        assert_eq!(
+            oid_vector_page.columns()[column as usize]
+                .engine_type()
+                .name(),
+            "oidvector"
+        );
+        assert_eq!(
+            oid_vector_page.cell(0, column).unwrap().kind(),
+            ValueKind::Structured
+        );
+        assert_eq!(
+            oid_vector_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            oid_vector_page.cell(0, column).unwrap().truncation(),
+            Truncation::Complete
+        );
+    }
+    assert!(
+        oid_vectors
+            .next_page(identity(), 1)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    drop(oid_vectors);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,

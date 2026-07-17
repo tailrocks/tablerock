@@ -36,8 +36,8 @@ pair, and a live `pg_class.ctid` with exact type identity and structured values.
 
 ## Remaining work
 
-OID vectors, snapshots, and additional scalar families remain separate
-typed-value work. TID filtering/inspection, stable-key mutation locators, public
+Research 190 subsequently closes OID-vector projection. Snapshots and
+additional scalar families remain separate typed-value work. TID filtering/inspection, stable-key mutation locators, public
 parameter plans and request bounds, service/UI projection, and UniFFI remain
 open.
 

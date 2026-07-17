@@ -138,6 +138,7 @@ kept in the roadmap.
 - [Phase 2 PostgreSQL identifier projection](187-phase-2-postgresql-identifier-projection.md)
 - [Phase 2 PostgreSQL LSN projection](188-phase-2-postgresql-lsn-projection.md)
 - [Phase 2 PostgreSQL TID projection](189-phase-2-postgresql-tid-projection.md)
+- [Phase 2 PostgreSQL OID-vector projection](190-phase-2-postgresql-oid-vector-projection.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

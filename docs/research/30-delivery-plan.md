@@ -188,6 +188,9 @@ reducing the value to a generic unsigned integer.
 PostgreSQL `tid` now projects bounded structured unsigned block/offset pairs
 after strict six-byte framing. Physical tuple locations remain diagnostic only
 and are forbidden as durable identity or automatic mutation locators.
+PostgreSQL special `oidvector` now projects a bounded ordered unsigned list
+after enforcing one dimension, zero lower bound, no NULLs, OID element identity,
+exact member framing, and the shared one-million-element ceiling.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
 `Decimal` values. Malformed wire values remain `Invalid`; valid projections over

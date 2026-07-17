@@ -139,6 +139,7 @@ pub enum PostgresProbeQuery {
     IdentifierValues,
     LsnValues,
     TidValues,
+    OidVectorValues,
     Parameters,
     CancellationStream,
 }
@@ -468,6 +469,11 @@ impl PostgresProbeQuery {
                 "SELECT '(0,1)'::tid AS first_tuple, \
                  '(4294967295,65535)'::tid AS maximum_tuple, \
                  (SELECT ctid FROM pg_class LIMIT 1) AS live_tuple"
+            }
+            Self::OidVectorValues => {
+                "SELECT '23 25 1043'::oidvector AS representative_vector, \
+                 ''::oidvector AS empty_vector, \
+                 '4294967295 0'::oidvector AS boundary_vector"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1670,6 +1676,13 @@ fn decode_value_at_depth(
     if *type_ == Type::TID {
         return decode_tid(type_, raw, limit);
     }
+    if *type_ == Type::OID_VECTOR {
+        return match decode_oid_vector(raw, limit) {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => bounded_raw(type_, raw, limit, false),
+            Err(()) => bounded_raw(type_, raw, limit, true),
+        };
+    }
     if matches!(
         *type_,
         Type::DATE
@@ -2453,6 +2466,36 @@ fn decode_tid(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Postgr
         ))
         .map_err(|_| PostgresError::Protocol)?;
     projection.finish().map_err(|_| PostgresError::Protocol)
+}
+
+fn decode_oid_vector(raw: &[u8], limit: u64) -> Result<Option<OwnedValue>, ()> {
+    let mut cursor = PostgresBinaryCursor::new(raw);
+    if cursor.read_i32()? != 1 || cursor.read_i32()? != 0 || cursor.read_u32()? != Type::OID.oid() {
+        return Err(());
+    }
+    let count = usize::try_from(cursor.read_i32()?).map_err(|_| ())?;
+    if cursor.read_i32()? != 0 {
+        return Err(());
+    }
+    if count > MAX_POSTGRES_ARRAY_ELEMENTS {
+        return Ok(None);
+    }
+    let mut projection = BoundedJsonWriter::new(limit);
+    projection.push("{\"$oidvector\":[")?;
+    for index in 0..count {
+        if index != 0 {
+            projection.push(",")?;
+        }
+        if cursor.read_i32()? != 4 {
+            return Err(());
+        }
+        projection.push(&cursor.read_u32()?.to_string())?;
+    }
+    if cursor.remaining() != 0 {
+        return Err(());
+    }
+    projection.push("]}")?;
+    projection.finish().map(Some).map_err(|_| ())
 }
 
 fn decode_uuid(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
@@ -3801,6 +3844,95 @@ mod tests {
             assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
             assert_eq!(value.engine_type().unwrap().name(), "tid");
         }
+    }
+
+    #[test]
+    fn oid_vector_projection_preserves_order_empty_and_bounds() {
+        fn raw(values: &[u32]) -> Vec<u8> {
+            let mut raw = Vec::new();
+            raw.extend_from_slice(&1_i32.to_be_bytes());
+            raw.extend_from_slice(&0_i32.to_be_bytes());
+            raw.extend_from_slice(&Type::OID.oid().to_be_bytes());
+            raw.extend_from_slice(&i32::try_from(values.len()).unwrap().to_be_bytes());
+            raw.extend_from_slice(&0_i32.to_be_bytes());
+            for value in values {
+                raw.extend_from_slice(&4_i32.to_be_bytes());
+                raw.extend_from_slice(&value.to_be_bytes());
+            }
+            raw
+        }
+
+        let value = decode_value(&Type::OID_VECTOR, &raw(&[23, 25, 1_043]), 128).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$oidvector\":[23,25,1043]}",
+                truncation: Truncation::Complete
+            }
+        ));
+        let value = decode_value(&Type::OID_VECTOR, &raw(&[]), 128).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$oidvector\":[]}",
+                truncation: Truncation::Complete
+            }
+        ));
+        let bounded = decode_value(&Type::OID_VECTOR, &raw(&[u32::MAX]), 8).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$oidve",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(original)
+                }
+            } if original > 8
+        ));
+    }
+
+    #[test]
+    fn oid_vector_projection_rejects_invalid_shape_and_framing() {
+        fn header(dimensions: i32, has_null: i32, oid: u32, count: i32, lower: i32) -> Vec<u8> {
+            let mut raw = Vec::new();
+            for value in [dimensions, has_null] {
+                raw.extend_from_slice(&value.to_be_bytes());
+            }
+            raw.extend_from_slice(&oid.to_be_bytes());
+            for value in [count, lower] {
+                raw.extend_from_slice(&value.to_be_bytes());
+            }
+            raw
+        }
+
+        let mut wrong_length = header(1, 0, Type::OID.oid(), 1, 0);
+        wrong_length.extend_from_slice(&3_i32.to_be_bytes());
+        wrong_length.extend_from_slice(&[0; 3]);
+        let mut trailing = header(1, 0, Type::OID.oid(), 0, 0);
+        trailing.push(0);
+        for malformed in [
+            vec![],
+            header(0, 0, Type::OID.oid(), 0, 0),
+            header(1, 1, Type::OID.oid(), 0, 0),
+            header(1, 0, Type::INT4.oid(), 0, 0),
+            header(1, 0, Type::OID.oid(), -1, 0),
+            header(1, 0, Type::OID.oid(), 0, 1),
+            wrong_length,
+            trailing,
+        ] {
+            let value = decode_value(&Type::OID_VECTOR, &malformed, 64).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), "oidvector");
+        }
+
+        let excessive = header(
+            1,
+            0,
+            Type::OID.oid(),
+            i32::try_from(MAX_POSTGRES_ARRAY_ELEMENTS + 1).unwrap(),
+            0,
+        );
+        let value = decode_value(&Type::OID_VECTOR, &excessive, 64).unwrap();
+        assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
     }
 
     #[test]
