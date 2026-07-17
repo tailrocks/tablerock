@@ -126,6 +126,8 @@ Engine additions:
 
 - PostgreSQL: custom/unknown OIDs, arrays/ranges/composites/JSON/bytes, notices,
   parameters, COPY, multiple statements, transaction conflicts, cancel races;
+  pinned real servers distinguish SQLSTATE-confirmed cancellation from a late
+  successfully delivered cancel after normal query completion;
 - ClickHouse: nested/nullable/low-cardinality/decimal/large integer/binary,
   partial/late HTTP errors, compression, query IDs, parts, inserts, mutations;
 - Redis: binary keys/values, SCAN families, RESP2/RESP3, logical DB isolation,

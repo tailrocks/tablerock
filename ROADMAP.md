@@ -113,6 +113,8 @@ replacement is verified in
 Untrusted and recredentialed TLS Pub/Sub replacement servers fail closed as
 verified in
 [`154-phase-2-redis-tls-pubsub-replacement-failure.md`](docs/research/154-phase-2-redis-tls-pubsub-replacement-failure.md).
+PostgreSQL server-cancel versus normal-completion race outcomes are verified in
+[`155-phase-2-postgresql-cancellation-completion-race.md`](docs/research/155-phase-2-postgresql-cancellation-completion-race.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

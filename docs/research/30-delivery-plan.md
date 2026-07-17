@@ -133,8 +133,10 @@ writes.
 The full service path distinguishes PostgreSQL cancellation request delivery
 from SQLSTATE-confirmed server cancellation. Verified custom roots, independent
 server name, client identity, downgrade rejection, and TLS cancellation pass on
-both pinned lines; completion races and the remaining protocol/failure matrix
-stay required.
+both pinned lines. The completion race now passes plain and required-mTLS
+transports: SQLSTATE `57014` proves cancellation while a late successful cancel
+after `SELECT 1` preserves normal-completion truth. The remaining
+protocol/failure matrix stays required.
 
 ### ClickHouse spike
 

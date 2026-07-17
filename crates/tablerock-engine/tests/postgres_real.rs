@@ -242,6 +242,10 @@ async fn verify_tls_matrix(tag: &str) {
         session.cancel_sleep_probe().await.unwrap(),
         PostgresCancellationOutcome::ConfirmedByServer
     );
+    assert_eq!(
+        session.cancel_completed_probe().await.unwrap(),
+        PostgresCancellationOutcome::RequestAcceptedButQueryCompleted
+    );
     session.shutdown().await.unwrap();
 }
 
@@ -274,6 +278,10 @@ async fn distinguishes_server_confirmed_cancellation_from_request_delivery() {
     assert_eq!(
         session.cancel_sleep_probe().await.unwrap(),
         PostgresCancellationOutcome::ConfirmedByServer
+    );
+    assert_eq!(
+        session.cancel_completed_probe().await.unwrap(),
+        PostgresCancellationOutcome::RequestAcceptedButQueryCompleted
     );
     let mut follow_up = session
         .stream_probe(

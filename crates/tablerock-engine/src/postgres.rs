@@ -370,10 +370,26 @@ impl PostgresSession {
     }
 
     pub async fn cancel_sleep_probe(&self) -> Result<PostgresCancellationOutcome, PostgresError> {
+        self.cancel_probe("SELECT pg_sleep(30)", Duration::from_millis(150))
+            .await
+    }
+
+    pub async fn cancel_completed_probe(
+        &self,
+    ) -> Result<PostgresCancellationOutcome, PostgresError> {
+        self.cancel_probe("SELECT 1", Duration::from_millis(250))
+            .await
+    }
+
+    async fn cancel_probe(
+        &self,
+        sql: &'static str,
+        cancellation_delay: Duration,
+    ) -> Result<PostgresCancellationOutcome, PostgresError> {
         let token = self.client.cancel_token();
-        let query = self.client.simple_query("SELECT pg_sleep(30)");
+        let query = self.client.simple_query(sql);
         let cancellation = async {
-            sleep(Duration::from_millis(150)).await;
+            sleep(cancellation_delay).await;
             match &self.transport {
                 PostgresTransport::Plain => token.cancel_query(tokio_postgres::NoTls).await,
                 PostgresTransport::Rustls(connector) => token.cancel_query(connector.clone()).await,

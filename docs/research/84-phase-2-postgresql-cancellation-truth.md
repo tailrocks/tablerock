@@ -10,8 +10,9 @@ safety classifier and execution contract exist.
 This is not the Phase 2 PostgreSQL spike exit. It proves cancellation truth and
 post-cancel connection reuse on the pinned PostgreSQL 18.4 fixture. The later
 [`136-phase-2-postgresql-tls-identity.md`](136-phase-2-postgresql-tls-identity.md)
-checkpoint closes TLS cancellation and PostgreSQL 17.10 coverage; completion
-races, connection loss, reconnect, and ambiguous writes remain required.
+checkpoint closes TLS cancellation and PostgreSQL 17.10 coverage. Research 155
+closes completion races; connection loss, reconnect, and ambiguous writes remain
+required.
 
 ## Contract decision
 
@@ -44,6 +45,8 @@ The disabled-TLS fixture uses `NoTls`. The obsolete downgrade-capable `Prefer`
 mode has since been removed. Required TLS cancellation now retains and clones
 the exact connection connector, including custom roots, server name, and client
 identity; both supported-line real fixtures pass in checkpoint 136.
+Research 155 additionally proves the normal-completion side of the race on the
+plain fixture and both required-mTLS supported-line fixtures.
 
 ## Verification record
 
