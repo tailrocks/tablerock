@@ -52,10 +52,12 @@ const REDIS_TEST_USERNAME: &str = "tablerock-test-user";
 const REDIS_TEST_PASSWORD: &str = "synthetic-test-password";
 const REDIS_ADMIN_USERNAME: &str = "tablerock-test-admin";
 const REDIS_ADMIN_PASSWORD: &str = "synthetic-admin-password";
+const REDIS_RESTRICTED_USERNAME: &str = "tablerock-restricted-user";
+const REDIS_RESTRICTED_PASSWORD: &str = "synthetic-restricted-password";
 
 fn redis_acl_file() -> Vec<u8> {
     format!(
-        "user default off\nuser {REDIS_TEST_USERNAME} reset on >{REDIS_TEST_PASSWORD} ~* &* +@all\nuser {REDIS_ADMIN_USERNAME} reset on >{REDIS_ADMIN_PASSWORD} ~* &* +@all\n"
+        "user default off\nuser {REDIS_TEST_USERNAME} reset on >{REDIS_TEST_PASSWORD} ~* &* +@all\nuser {REDIS_ADMIN_USERNAME} reset on >{REDIS_ADMIN_PASSWORD} ~* &* +@all\nuser {REDIS_RESTRICTED_USERNAME} reset on >{REDIS_RESTRICTED_PASSWORD} ~* &allowed:* +@all\n"
     )
         .into_bytes()
 }
@@ -592,6 +594,19 @@ async fn verify_tls_auth_version(
         .await
         .expect("TLS Pub/Sub teardown is server-visible within five seconds");
     }
+
+    let dry_run_denial: String = redis::cmd("ACL")
+        .arg("DRYRUN")
+        .arg(REDIS_RESTRICTED_USERNAME)
+        .arg("SUBSCRIBE")
+        .arg("denied:channel")
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    assert!(
+        dry_run_denial.contains("no permissions to access") && dry_run_denial.contains("channel"),
+        "unexpected ACL DRYRUN denial: {dry_run_denial:?}"
+    );
 
     if require_client_identity {
         let without_identity = RedisConnectionSecurity::new()

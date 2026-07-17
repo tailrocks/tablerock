@@ -175,7 +175,10 @@ The Redis TLS-only 7.4.9/8.8.0 matrix under RESP2/RESP3 proves channel and
 pattern Pub/Sub with custom roots, optional required client identity, ACL
 credentials plus explicit channel patterns, exact binary pages, and
 authenticated client-stop teardown. TLS reconnect during an active subscription
-and live credential revocation remain required.
+and live credential revocation remain required. A restricted `&allowed:*` user
+also proves server-side denial across this matrix. Adapter-level denial remains
+required: the latest redis-rs Pub/Sub setup method discards the server-error
+value, and an administrative `ACL DRYRUN` preflight is not product evidence.
 
 Reviewed Redis TTL mutation consumes exact-once authorized plans and passes the
 Redis 7.4.9/8.8.0 RESP2/RESP3 matrix. Missing/already-persistent no-change,

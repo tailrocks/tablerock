@@ -98,6 +98,9 @@ recorded in
 Redis TLS, mTLS, and ACL composition for channel and pattern Pub/Sub is recorded
 in
 [`149-phase-2-redis-tls-pubsub.md`](docs/research/149-phase-2-redis-tls-pubsub.md).
+The restricted Redis Pub/Sub authorization boundary and current official-client
+acknowledgement gap are recorded in
+[`150-phase-2-redis-pubsub-acl-denial.md`](docs/research/150-phase-2-redis-pubsub-acl-denial.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its
