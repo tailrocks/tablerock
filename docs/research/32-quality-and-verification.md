@@ -206,6 +206,15 @@ also proves server-side denial across this matrix. Adapter-level denial remains
 required: the latest redis-rs Pub/Sub setup method discards the server-error
 value, and an administrative `ACL DRYRUN` preflight is not product evidence.
 
+Fixed-port Redis restart fixtures require bounded protocol readiness after the
+container log wait. They retry only connect, connection-loss, and timeout
+availability failures; authentication, TLS-configuration, and protocol failures
+remain immediate. Negative replacement deadlines cover their configured
+connection, response, retry-count, and backoff ceilings.
+Restart fixtures configure a nontrivial minimum reconnect backoff so immediate
+connection refusal cannot consume the full retry budget before the intentional
+same-endpoint replacement is protocol-ready.
+
 Reviewed Redis TTL mutation consumes exact-once authorized plans and passes the
 Redis 7.4.9/8.8.0 RESP2/RESP3 matrix. Missing/already-persistent no-change,
 applied expiration/persistence, database and plan rejection before I/O, signed

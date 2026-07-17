@@ -29,10 +29,28 @@ Two independent replacement cases then run on the same fixed endpoint:
 - the trusted server identity with a rotated ACL password must terminate it as
   `RedisError::Authentication`.
 
-Both outcomes are required within eight seconds under the bounded 32-attempt
-replacement policy. Because `next_page` returns the terminal error directly,
+Both outcomes are required within 60 seconds under the bounded 32-attempt
+replacement policy; its one-second connection timeout plus 500 ms maximum
+backoff has a 48-second conservative ceiling. A 250 ms minimum backoff prevents fast
+connection-refused results from exhausting the policy during the intentional
+same-endpoint container replacement window. Because `next_page` returns the
+terminal error directly,
 the test also proves no zero-row discontinuity page was queued by a rejected
 generation.
+
+Fixed-host-port Testcontainers readiness is verified at the Redis protocol
+boundary after the container log wait. Adapter setup retries only redacted
+connect, connection-loss, and timeout availability failures for at most fifteen
+seconds; authentication, TLS-configuration, and protocol failures remain
+immediate. Raw TLS fixture setup uses the same bounded protocol-readiness rule.
+Negative replacement fixtures additionally prove the new server is
+protocol-ready using its valid admin trust and credentials before asserting the
+subscriber's old trust/credential outcome. This prevents Docker port-publication
+timing from masquerading as a product reconnect failure.
+
+The exhaustive TLS fixture uses one-second connection and response bounds so
+container scheduling cannot masquerade as initial subscription failure. These
+are verification-harness budgets, not product defaults.
 
 This closes invalid-trust and invalid-credential replacement behavior for TLS
 channel and pattern subscriptions. DNS endpoint changes, restricted initial

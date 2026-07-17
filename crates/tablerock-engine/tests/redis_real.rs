@@ -166,7 +166,39 @@ async fn raw_tls_admin_connection(
         },
     )
     .unwrap();
-    client.get_multiplexed_async_connection().await.unwrap()
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            if let Ok(connection) = client.get_multiplexed_async_connection().await {
+                return connection;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("TLS Redis fixture accepts connections within fifteen seconds")
+}
+
+async fn connect_session_until_ready(
+    config: &RedisConnectConfig,
+    security: RedisConnectionSecurity<'_>,
+) -> RedisSession {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            match RedisSession::connect(config, security).await {
+                Ok(session) => return session,
+                Err(
+                    tablerock_engine::RedisError::Connect
+                    | tablerock_engine::RedisError::Connection
+                    | tablerock_engine::RedisError::Timeout,
+                ) => {
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+                Err(error) => panic!("Redis fixture rejected a valid connection: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("Redis fixture accepts an adapter connection within fifteen seconds")
 }
 
 async fn start_tls_redis(
@@ -264,10 +296,10 @@ async fn resubscribes_with_visible_gap_after_redis_restart() {
     ] {
         let policy = RedisRuntimePolicy::new(
             Duration::from_millis(250),
-            Duration::from_millis(100),
+            Duration::from_millis(500),
             32,
-            Duration::from_millis(10),
             Duration::from_millis(100),
+            Duration::from_millis(500),
         )
         .unwrap();
 
@@ -285,7 +317,7 @@ async fn resubscribes_with_visible_gap_after_redis_restart() {
                     .start()
                     .await
                     .unwrap();
-                let session = RedisSession::connect(
+                let session = connect_session_until_ready(
                     &RedisConnectConfig::new(
                         text("127.0.0.1"),
                         port,
@@ -296,8 +328,7 @@ async fn resubscribes_with_visible_gap_after_redis_restart() {
                     .with_runtime_policy(policy),
                     RedisConnectionSecurity::new(),
                 )
-                .await
-                .unwrap();
+                .await;
                 let (selector, channel, columns) = match kind {
                     RedisSubscriptionKind::Channel => {
                         (bytes(&[0, 42, 255]), bytes(&[0, 42, 255]), 2)
@@ -430,11 +461,11 @@ async fn verify_tls_subscription_restart(
     drop(listener);
     let container = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
     let policy = RedisRuntimePolicy::new(
-        Duration::from_millis(500),
-        Duration::from_millis(250),
+        Duration::from_secs(1),
+        Duration::from_secs(1),
         32,
-        Duration::from_millis(10),
         Duration::from_millis(100),
+        Duration::from_millis(500),
     )
     .unwrap();
     let config =
@@ -448,14 +479,13 @@ async fn verify_tls_subscription_restart(
             fixture.client_private_key_pem.as_bytes(),
         ));
     }
-    let session = RedisSession::connect(
+    let session = connect_session_until_ready(
         &config,
         RedisConnectionSecurity::new()
             .with_credentials(credentials)
             .with_tls(tls),
     )
-    .await
-    .unwrap();
+    .await;
     let (selector, channel, columns) = match kind {
         RedisSubscriptionKind::Channel => (bytes(&[5, 0, 255]), bytes(&[5, 0, 255]), 2),
         RedisSubscriptionKind::Pattern => (bytes(&[5, 0, b'*']), bytes(&[5, 0, 255]), 3),
@@ -578,11 +608,11 @@ async fn verify_rejected_tls_subscription_replacement(
     drop(listener);
     let container = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
     let policy = RedisRuntimePolicy::new(
-        Duration::from_millis(500),
-        Duration::from_millis(250),
+        Duration::from_secs(1),
+        Duration::from_secs(1),
         32,
-        Duration::from_millis(10),
-        Duration::from_millis(100),
+        Duration::from_millis(250),
+        Duration::from_millis(500),
     )
     .unwrap();
     let config =
@@ -596,14 +626,13 @@ async fn verify_rejected_tls_subscription_replacement(
             fixture.client_private_key_pem.as_bytes(),
         ));
     }
-    let session = RedisSession::connect(
+    let session = connect_session_until_ready(
         &config,
         RedisConnectionSecurity::new()
             .with_credentials(credentials)
             .with_tls(tls),
     )
-    .await
-    .unwrap();
+    .await;
     let (selector, columns) = match kind {
         RedisSubscriptionKind::Channel => (bytes(b"replacement:channel"), 2),
         RedisSubscriptionKind::Pattern => (bytes(b"replacement:*"), 3),
@@ -657,6 +686,10 @@ async fn verify_rejected_tls_subscription_replacement(
         replacement_acl,
     )
     .await;
+    let replacement_ready =
+        raw_tls_admin_connection(port, protocol, replacement_fixture, require_client_identity)
+            .await;
+    drop(replacement_ready);
     let expected = if invalid_trust {
         tablerock_engine::RedisError::Connect
     } else {
@@ -664,11 +697,11 @@ async fn verify_rejected_tls_subscription_replacement(
     };
     assert_eq!(
         tokio::time::timeout(
-            Duration::from_secs(8),
+            Duration::from_secs(60),
             subscription.next_page(identity(), 0)
         )
         .await
-        .expect("rejected TLS replacement terminates within eight seconds"),
+        .expect("rejected TLS replacement terminates within policy deadline"),
         Err(expected)
     );
     drop(replacement);
