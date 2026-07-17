@@ -130,6 +130,8 @@ Engine additions:
   successfully delivered cancel after normal query completion;
   forced server loss before cancel-socket delivery remains a distinct redacted
   cancellation-transport failure followed by terminal session connection loss;
+  prepared text, int8, binary, and boolean parameters retain exact typed values
+  through bounded pages on both pinned lines;
 - ClickHouse: nested/nullable/low-cardinality/decimal/large integer/binary,
   partial/late HTTP errors, compression, query IDs, parts, inserts, mutations;
 - Redis: binary keys/values, SCAN families, RESP2/RESP3, logical DB isolation,

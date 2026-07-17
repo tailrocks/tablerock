@@ -65,12 +65,13 @@ adapter diagnostics, Debug output, core contracts, or default logs.
 
 This closes verified roots, client identity, server-name override, plaintext
 downgrade prevention, and TLS cancellation across both supported PostgreSQL
-lines. Encrypted private-key handling, authentication taxonomy, parameters,
+lines. Encrypted private-key handling, authentication taxonomy,
 notices, multiple statements, COPY, connection
 loss/reconnect, and ambiguous-write evidence remain open. Native-system-root
 loading is implemented but is not represented as a disposable custom-root
 fixture claim.
 Cancellation completion races are subsequently closed by research 155.
+Typed scalar parameters are subsequently closed by research 157.
 
 ## Provenance
 

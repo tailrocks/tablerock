@@ -17,7 +17,7 @@ use tokio_postgres::{
     Row,
     config::SslMode,
     tls::MakeTlsConnect,
-    types::{FromSql, Type},
+    types::{FromSql, ToSql, Type},
 };
 use tokio_postgres_rustls::MakeRustlsConnect;
 use zeroize::Zeroize;
@@ -101,6 +101,7 @@ pub enum PostgresProbeQuery {
     BoundedSeries,
     PerformanceSeries,
     TypedValues,
+    Parameters,
     CancellationStream,
 }
 
@@ -128,6 +129,10 @@ impl PostgresProbeQuery {
                  decode('0001ff', 'hex')::bytea AS binary_value, \
                  '123e4567-e89b-12d3-a456-426614174000'::uuid AS uuid_value, \
                  ARRAY[1, 2, 3]::int4[] AS array_value, NULL::uuid AS absent"
+            }
+            Self::Parameters => {
+                "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
+                 $3::bytea AS binary_parameter, $4::bool AS boolean_parameter"
             }
             Self::CancellationStream => {
                 "SELECT value::text FROM generate_series(1, 1000) AS value UNION ALL \
@@ -344,9 +349,23 @@ impl PostgresSession {
             .await
             .map_err(|_| PostgresError::Query)?;
         let columns = decode_columns(statement.columns(), limits)?;
+        let text_parameter = "parameter-é";
+        let integer_parameter = -9_223_372_036_854_775_000_i64;
+        let binary_parameter = [0_u8, 1, 255, 0];
+        let binary_parameter_slice: &[u8] = &binary_parameter;
+        let boolean_parameter = false;
+        let parameters: Vec<&(dyn ToSql + Sync)> = match query {
+            PostgresProbeQuery::Parameters => vec![
+                &text_parameter,
+                &integer_parameter,
+                &binary_parameter_slice,
+                &boolean_parameter,
+            ],
+            _ => Vec::new(),
+        };
         let stream = self
             .client
-            .query_raw(&statement, std::iter::empty::<&str>())
+            .query_raw(&statement, parameters)
             .await
             .map_err(|_| PostgresError::Query)?;
         Ok(PostgresRowStream {

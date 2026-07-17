@@ -140,6 +140,8 @@ protocol/failure matrix stays required.
 Force-stopping both pinned server lines before the cancel socket opens now proves
 redacted cancellation-transport failure and terminal session connection loss,
 without a false server-cancel outcome.
+Prepared UTF-8 text, int8, binary-with-NUL, and boolean parameters now pass both
+pinned lines through the bounded typed stream seam without exposing client types.
 
 ### ClickHouse spike
 

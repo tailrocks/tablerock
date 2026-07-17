@@ -105,6 +105,7 @@ kept in the roadmap.
 - [Phase 2 Redis TLS Pub/Sub replacement failure evidence](154-phase-2-redis-tls-pubsub-replacement-failure.md)
 - [Phase 2 PostgreSQL cancellation completion race evidence](155-phase-2-postgresql-cancellation-completion-race.md)
 - [Phase 2 PostgreSQL cancel transport loss evidence](156-phase-2-postgresql-cancel-transport-loss.md)
+- [Phase 2 PostgreSQL typed parameter evidence](157-phase-2-postgresql-typed-parameters.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

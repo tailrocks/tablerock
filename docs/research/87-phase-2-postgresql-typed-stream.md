@@ -7,11 +7,12 @@ frames decoded from binary protocol values into bounded, immutable core pages.
 The earlier simple-query text stream has been removed. Driver `Row`, `Column`,
 `Type`, `Statement`, and `RowStream` types remain private to the adapter.
 
-This is not the complete PostgreSQL spike. Parameters, decimal decoding,
+This is not the complete PostgreSQL spike. Decimal decoding,
 temporal interpretation, authentication taxonomy, notices, COPY, late errors,
 connection loss, reconnect, and ambiguous writes remain required. Verified TLS
 and client identity later pass in
 [`136-phase-2-postgresql-tls-identity.md`](136-phase-2-postgresql-tls-identity.md).
+Typed scalar parameters subsequently pass in research 157.
 
 ## Type decision
 

@@ -623,5 +623,31 @@ async fn verify_typed_values(tag: &str) {
     assert!(page.cell(0, 11).unwrap().is_null());
     assert!(stream.next_page(identity(), 1).await.unwrap().is_none());
     drop(stream);
+
+    let mut parameters = session
+        .stream_probe(
+            PostgresProbeQuery::Parameters,
+            PageLimits::new(2, 4, 128, 256),
+            32,
+        )
+        .await
+        .unwrap();
+    let page = parameters.next_page(identity(), 0).await.unwrap().unwrap();
+    assert_eq!(page.envelope().row_count(), 1, "PostgreSQL {tag}");
+    assert_eq!(page.envelope().column_count(), 4);
+    assert_eq!(page.envelope().delivery(), PageDelivery::Final);
+    assert_eq!(page.cell(0, 0).unwrap().kind(), ValueKind::Text);
+    assert_eq!(page.cell(0, 0).unwrap().bytes(), "parameter-é".as_bytes());
+    assert_eq!(page.cell(0, 1).unwrap().kind(), ValueKind::Signed);
+    assert_eq!(
+        i64::from_be_bytes(page.cell(0, 1).unwrap().bytes().try_into().unwrap()),
+        -9_223_372_036_854_775_000_i64
+    );
+    assert_eq!(page.cell(0, 2).unwrap().kind(), ValueKind::Binary);
+    assert_eq!(page.cell(0, 2).unwrap().bytes(), &[0, 1, 255, 0]);
+    assert_eq!(page.cell(0, 3).unwrap().kind(), ValueKind::Boolean);
+    assert_eq!(page.cell(0, 3).unwrap().bytes(), &[0]);
+    assert!(parameters.next_page(identity(), 1).await.unwrap().is_none());
+    drop(parameters);
     session.shutdown().await.unwrap();
 }
