@@ -418,6 +418,9 @@ contract.
 Activity-gated transport loss during deferred COMMIT also preserves unknown
 truth while terminating old sessions; explicit same-directory recovery refreshes
 endpoint facts, observes rollback, and never replays.
+Required custom-root TLS and client identity preserve that COMMIT-loss contract
+on both pinned lines: plaintext recovery is rejected, endpoint facts refresh,
+mTLS is revalidated, rollback remains observable, and no replay occurs.
 
 ### Phase 3 — connection experience
 

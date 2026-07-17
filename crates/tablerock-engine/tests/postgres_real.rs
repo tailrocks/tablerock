@@ -252,6 +252,132 @@ async fn verify_tls_matrix(tag: &str) {
     session.shutdown().await.unwrap();
 }
 
+#[tokio::test]
+async fn preserves_unknown_mtls_commit_transport_loss_without_downgrade_or_retry() {
+    for tag in ["17.10-alpine", "18.4-alpine"] {
+        let fixture = PostgresTlsFixture::generate();
+        let container = GenericImage::new("postgres", tag)
+            .with_exposed_port(5432.tcp())
+            .with_wait_for(WaitFor::message_on_stderr(
+                "database system is ready to accept connections",
+            ))
+            .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+            .with_copy_to(
+                CopyTargetOptions::new("/tablerock-tls/server.crt").with_mode(0o644),
+                CopyDataSource::Data(fixture.server_certificate_pem.as_bytes().to_vec()),
+            )
+            .with_copy_to(
+                CopyTargetOptions::new("/tablerock-tls/server.key").with_mode(0o644),
+                CopyDataSource::Data(fixture.server_private_key_pem.as_bytes().to_vec()),
+            )
+            .with_copy_to(
+                CopyTargetOptions::new("/tablerock-tls/ca.crt").with_mode(0o644),
+                CopyDataSource::Data(fixture.ca_pem.as_bytes().to_vec()),
+            )
+            .with_copy_to(
+                CopyTargetOptions::new("/docker-entrypoint-initdb.d/001-tablerock-tls.sh")
+                    .with_mode(0o755),
+                CopyDataSource::Data(tls_init_script()),
+            )
+            .start()
+            .await
+            .unwrap();
+        let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+        let config = PostgresConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            text("postgres"),
+            text("postgres"),
+            PostgresTlsMode::Required,
+        )
+        .with_tls_server_name(text("database.internal"));
+        let identity = || {
+            Some((
+                fixture.client_certificate_pem.as_bytes(),
+                fixture.client_private_key_pem.as_bytes(),
+            ))
+        };
+        let session = connect_custom_tls(&config, fixture.ca_pem.as_bytes(), identity())
+            .await
+            .unwrap();
+        let observer = connect_custom_tls(&config, fixture.ca_pem.as_bytes(), identity())
+            .await
+            .unwrap();
+        session
+            .prepare_ambiguous_transport_commit_probe()
+            .await
+            .unwrap();
+
+        let write = session.ambiguous_transport_commit_probe();
+        let stop = async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if observer
+                        .ambiguous_transport_commit_waiting_probe()
+                        .await
+                        .unwrap()
+                    {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("mTLS deferred COMMIT reaches its server wait");
+            container.stop_with_timeout(Some(1)).await.unwrap();
+        };
+        let (write, ()) = tokio::join!(write, stop);
+        assert_eq!(write, Err(PostgresError::WriteOutcomeUnknown));
+        assert_eq!(observer.shutdown().await, Err(PostgresError::Connection));
+        assert_eq!(session.shutdown().await, Err(PostgresError::Connection));
+
+        container.start().await.unwrap();
+        let recovered_port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+        let recovery_config = PostgresConnectConfig::new(
+            text("127.0.0.1"),
+            recovered_port,
+            text("postgres"),
+            text("postgres"),
+            PostgresTlsMode::Required,
+        )
+        .with_tls_server_name(text("database.internal"));
+        let plaintext = PostgresConnectConfig::new(
+            text("127.0.0.1"),
+            recovered_port,
+            text("postgres"),
+            text("postgres"),
+            PostgresTlsMode::Disabled,
+        );
+        assert!(matches!(
+            PostgresSession::connect(&plaintext).await,
+            Err(PostgresError::Connect)
+        ));
+        let recovered = tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                if let Ok(Ok(session)) = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    connect_custom_tls(&recovery_config, fixture.ca_pem.as_bytes(), identity()),
+                )
+                .await
+                {
+                    break session;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("mTLS PostgreSQL restarts within thirty seconds");
+        assert_eq!(
+            recovered
+                .ambiguous_transport_commit_count_probe()
+                .await
+                .unwrap(),
+            0
+        );
+        recovered.shutdown().await.unwrap();
+    }
+}
+
 fn text(value: &str) -> BoundedText {
     BoundedText::copy_from_str(value, ByteLimit::new(128)).unwrap()
 }

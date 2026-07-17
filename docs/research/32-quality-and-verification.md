@@ -153,6 +153,9 @@ Engine additions:
   transport loss gated on active deferred COMMIT leaves old sessions terminal,
   requires refreshed endpoint facts for explicit recovery, may roll back, and
   never replays;
+  the same active-COMMIT loss under custom-root required mTLS terminates old TLS
+  sessions, rejects plaintext recovery, revalidates identity, preserves rollback
+  observation, and never replays;
 - ClickHouse: nested/nullable/low-cardinality/decimal/large integer/binary,
   partial/late HTTP errors, compression, query IDs, parts, inserts, mutations;
 - Redis: binary keys/values, SCAN families, RESP2/RESP3, logical DB isolation,

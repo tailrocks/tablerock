@@ -46,8 +46,9 @@ behind the same unknown outcome.
 
 ## Remaining work
 
-Connection loss before dispatch and during request transmission, loss after
-durable commit but before response, TLS loss, explicit reconnect ownership in
+Research 166 subsequently closes required-mTLS composition. Connection loss
+before dispatch and during request transmission, loss after durable commit but
+before response, explicit reconnect ownership in
 the shared service, reviewed plans, history/UI/UniFFI projection, and general
 transaction conflicts remain open.
 

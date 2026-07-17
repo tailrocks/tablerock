@@ -170,6 +170,10 @@ later durable, the original session drains, and the transaction never replays.
 Both lines now also prove activity-gated transport loss during COMMIT: old
 sessions terminate, same-directory restart refreshes endpoint facts, rollback
 is observed, and no replay occurs. Other transport-loss timings remain open.
+The same matrix now passes required custom-root TLS and client identity on both
+lines: old TLS sessions terminate, plaintext recovery is rejected, endpoint
+facts refresh, mTLS is revalidated, rollback remains observable, and no replay
+occurs.
 
 ### ClickHouse spike
 
