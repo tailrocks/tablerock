@@ -174,6 +174,8 @@ Engine additions:
   exact 32/64-bit range, type identity, and wrong-width/bound failure truth;
   `pg_lsn` retains canonical bounded WAL-location text, full unsigned range,
   and strict eight-byte framing;
+  `tid` retains bounded structured block/offset truth with strict six-byte
+  framing and is never accepted as durable logical identity;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,

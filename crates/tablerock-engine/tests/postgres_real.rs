@@ -1752,6 +1752,41 @@ async fn verify_typed_values(tag: &str) {
     assert!(lsns.next_page(identity(), 1).await.unwrap().is_none());
     drop(lsns);
 
+    let mut tids = session
+        .stream_probe(
+            PostgresProbeQuery::TidValues,
+            PageLimits::new(1, 3, 512, 512),
+            128,
+        )
+        .await
+        .unwrap();
+    let tid_page = tids.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, expected) in [
+        (0_u32, "{\"$tid\":{\"block\":0,\"offset\":1}}"),
+        (1_u32, "{\"$tid\":{\"block\":4294967295,\"offset\":65535}}"),
+    ] {
+        assert_eq!(
+            tid_page.columns()[column as usize].engine_type().name(),
+            "tid"
+        );
+        assert_eq!(
+            tid_page.cell(0, column).unwrap().kind(),
+            ValueKind::Structured
+        );
+        assert_eq!(
+            tid_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+    }
+    assert_eq!(tid_page.columns()[2].engine_type().name(), "tid");
+    assert_eq!(tid_page.cell(0, 2).unwrap().kind(), ValueKind::Structured);
+    let live_tid: serde_json::Value =
+        serde_json::from_slice(tid_page.cell(0, 2).unwrap().bytes()).unwrap();
+    assert!(live_tid["$tid"]["block"].is_u64());
+    assert!(live_tid["$tid"]["offset"].is_u64());
+    assert!(tids.next_page(identity(), 1).await.unwrap().is_none());
+    drop(tids);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,

@@ -338,6 +338,10 @@ in [`187-phase-2-postgresql-identifier-projection.md`](docs/research/187-phase-2
 PostgreSQL WAL log sequence numbers now retain their canonical domain form with
 strict eight-byte framing and PostgreSQL 17/18 evidence in
 [`188-phase-2-postgresql-lsn-projection.md`](docs/research/188-phase-2-postgresql-lsn-projection.md).
+PostgreSQL physical tuple identifiers now project as bounded structured
+block/offset pairs, with explicit non-durable mutation safety and PostgreSQL
+17/18 evidence in
+[`189-phase-2-postgresql-tid-projection.md`](docs/research/189-phase-2-postgresql-tid-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

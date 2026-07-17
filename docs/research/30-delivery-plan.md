@@ -185,6 +185,9 @@ symbolic catalog names remain separate metadata instead of replacing identity.
 PostgreSQL `pg_lsn` now projects bounded canonical uppercase `HIGH/LOW` text
 after strict eight-byte framing, preserving WAL-location semantics rather than
 reducing the value to a generic unsigned integer.
+PostgreSQL `tid` now projects bounded structured unsigned block/offset pairs
+after strict six-byte framing. Physical tuple locations remain diagnostic only
+and are forbidden as durable identity or automatic mutation locators.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
 `Decimal` values. Malformed wire values remain `Invalid`; valid projections over

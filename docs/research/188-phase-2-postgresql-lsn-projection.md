@@ -29,8 +29,8 @@ payloads. Testcontainers Rust 0.27.3 owns official `postgres:17.10-alpine` and
 
 ## Remaining work
 
-Tuple identifiers, OID vectors, snapshots, and additional scalar families
-remain separate typed-value work. LSN editors, public parameter plans and
+Research 189 subsequently closes tuple-identifier projection. OID vectors,
+snapshots, and additional scalar families remain separate typed-value work. LSN editors, public parameter plans and
 request bounds, service/UI projection, and UniFFI remain open.
 
 Context7 was attempted earlier in this checkpoint sequence and reported its

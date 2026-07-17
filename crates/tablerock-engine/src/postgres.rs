@@ -138,6 +138,7 @@ pub enum PostgresProbeQuery {
     BitValues,
     IdentifierValues,
     LsnValues,
+    TidValues,
     Parameters,
     CancellationStream,
 }
@@ -462,6 +463,11 @@ impl PostgresProbeQuery {
                 "SELECT '0/0'::pg_lsn AS zero_lsn, \
                  '16/B374D848'::pg_lsn AS representative_lsn, \
                  'FFFFFFFF/FFFFFFFF'::pg_lsn AS maximum_lsn"
+            }
+            Self::TidValues => {
+                "SELECT '(0,1)'::tid AS first_tuple, \
+                 '(4294967295,65535)'::tid AS maximum_tuple, \
+                 (SELECT ctid FROM pg_class LIMIT 1) AS live_tuple"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1661,6 +1667,9 @@ fn decode_value_at_depth(
     if *type_ == Type::PG_LSN {
         return decode_lsn(type_, raw, limit);
     }
+    if *type_ == Type::TID {
+        return decode_tid(type_, raw, limit);
+    }
     if matches!(
         *type_,
         Type::DATE
@@ -2428,6 +2437,22 @@ fn decode_lsn(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Postgr
         format!("{:X}/{:X}", value >> 32, value & u64::from(u32::MAX)),
         limit,
     )
+}
+
+fn decode_tid(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
+    let bytes: [u8; 6] = match raw.try_into() {
+        Ok(bytes) => bytes,
+        Err(_) => return bounded_raw(type_, raw, limit, true),
+    };
+    let block = u32::from_be_bytes(bytes[..4].try_into().map_err(|_| PostgresError::Protocol)?);
+    let offset = u16::from_be_bytes(bytes[4..].try_into().map_err(|_| PostgresError::Protocol)?);
+    let mut projection = BoundedJsonWriter::new(limit);
+    projection
+        .push(&format!(
+            "{{\"$tid\":{{\"block\":{block},\"offset\":{offset}}}}}"
+        ))
+        .map_err(|_| PostgresError::Protocol)?;
+    projection.finish().map_err(|_| PostgresError::Protocol)
 }
 
 fn decode_uuid(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
@@ -3732,6 +3757,49 @@ mod tests {
             let value = decode_value(&Type::PG_LSN, &malformed, 32).unwrap();
             assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
             assert_eq!(value.engine_type().unwrap().name(), "pg_lsn");
+        }
+    }
+
+    #[test]
+    fn tid_projection_preserves_physical_tuple_components_and_bounds() {
+        let first = [0, 0, 0, 0, 0, 1];
+        let value = decode_value(&Type::TID, &first, 128).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$tid\":{\"block\":0,\"offset\":1}}",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let maximum = [0xff; 6];
+        let value = decode_value(&Type::TID, &maximum, 128).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$tid\":{\"block\":4294967295,\"offset\":65535}}",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let bounded = decode_value(&Type::TID, &maximum, 8).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$tid\":",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(original)
+                }
+            } if original > 8
+        ));
+    }
+
+    #[test]
+    fn tid_projection_rejects_wrong_width() {
+        for malformed in [vec![], vec![0; 5], vec![0; 7]] {
+            let value = decode_value(&Type::TID, &malformed, 64).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), "tid");
         }
     }
 
