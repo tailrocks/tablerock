@@ -3623,6 +3623,7 @@ dependencies = [
  "rcgen",
  "redis",
  "rustls",
+ "serde_json",
  "tablerock-core",
  "testcontainers",
  "tokio",
@@ -3672,7 +3673,7 @@ dependencies = [
 [[package]]
 name = "termrock"
 version = "0.11.0"
-source = "git+https://github.com/tailrocks/termrock.git?rev=5ff94ee117fd4a1b72fdd0d1b1847815055a93ac#5ff94ee117fd4a1b72fdd0d1b1847815055a93ac"
+source = "git+https://github.com/tailrocks/termrock.git?rev=b7f34da8db5842bb439296fe4cde534de0c1eb3c#b7f34da8db5842bb439296fe4cde534de0c1eb3c"
 dependencies = [
  "anstyle-parse",
  "base64",

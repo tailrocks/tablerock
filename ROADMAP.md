@@ -284,6 +284,16 @@ Testcontainers evidence are recorded in
 Bounded JSON, JSONB, range, anonymous-record, and large-binary preservation on
 both PostgreSQL lines is recorded in
 [`167-phase-2-postgresql-complex-raw-values.md`](docs/research/167-phase-2-postgresql-complex-raw-values.md).
+Deterministic bounded PostgreSQL JSON/JSONB structured projection is recorded in
+[`168-phase-2-postgresql-json-projection.md`](docs/research/168-phase-2-postgresql-json-projection.md).
+TermRock's lookbook event-name convergence and exact refreshed `main` pin are
+recorded in
+[`169-termrock-0.11-lookbook-event-update.md`](docs/research/169-termrock-0.11-lookbook-event-update.md).
+Redis's atomic multi-user revocation fixture repair is recorded in
+[`170-phase-2-redis-atomic-revocation-fixture.md`](docs/research/170-phase-2-redis-atomic-revocation-fixture.md).
+Redis's unified initial/replacement subscription connection policy is recorded
+in
+[`171-phase-2-redis-subscription-connect-policy.md`](docs/research/171-phase-2-redis-subscription-connect-policy.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

@@ -6,8 +6,9 @@ The sole PostgreSQL binary `RowStream` path now proves bounded preservation for
 `json`, `jsonb`, `int4range`, anonymous `record`, and a large `bytea` on
 PostgreSQL 17.10 and 18.4. No database-client type crosses the adapter boundary.
 
-This checkpoint preserves unsupported complex values; it does not claim
-structured decoding. JSON, range, and composite navigation remain required.
+This checkpoint preserves unsupported complex values. Research 168 subsequently
+promotes JSON and JSONB to bounded canonical `Structured` projections. Range
+and composite navigation remain required.
 
 ## Decision
 
@@ -26,9 +27,10 @@ The fixed typed probe returns JSON, JSONB, `int4range`, anonymous `record`, and
 a 16-byte `bytea`. With an eight-byte cell limit, both supported PostgreSQL
 lines prove:
 
-- JSON, JSONB, range, and record are `Unknown` with exact engine type names;
-- each complex payload owns exactly eight bytes and reports an original length
-  greater than eight;
+- range and record are `Unknown` with exact engine type names, own exactly eight
+  bytes, and report an original length greater than eight;
+- JSON and JSONB raw preservation established the safe precursor subsequently
+  replaced by the structured decoder in research 168;
 - `bytea` owns eight `0xab` bytes as `Binary` and reports original length 16;
 - the stream ends normally and creates no alternate text result path.
 
@@ -39,8 +41,9 @@ Testcontainers Rust 0.27.3 owns the official `postgres:17.10-alpine` and
 
 The driver receives a complete PostgreSQL data-row field before TableRock can
 apply the page cell bound. Strict pre-decode transport allocation for one
-unbounded field remains open. Canonical numeric, temporal, UUID, array, JSON,
-range, and composite decoding also remains open.
+unbounded field remains open. Canonical numeric, temporal, UUID, array, range,
+and composite decoding remains open; JSON/JSONB projection is closed by
+research 168.
 
 ## Verification
 

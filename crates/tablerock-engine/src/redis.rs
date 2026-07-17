@@ -449,6 +449,7 @@ pub struct RedisSession {
     long_operation_active: Arc<AtomicBool>,
     protocol: RedisProtocol,
     logical_database: u32,
+    tls_required: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -515,6 +516,7 @@ struct RedisResp3SubscriptionContext {
     messages: tokio::sync::mpsc::Sender<RedisSubscriptionItem>,
     terminal: Arc<Mutex<Option<RedisError>>>,
     terminal_wake: Arc<tokio::sync::Notify>,
+    tls_required: bool,
 }
 
 struct RedisResp3SubscriptionConnection {
@@ -808,12 +810,28 @@ where
         .map_err(|_| RedisError::Timeout)?
 }
 
-async fn reconnect_resp2_subscription(
+async fn await_subscription_connect_phase<T, F>(
+    operation: &RedisSubscriptionOperation,
+    timeout: Duration,
+    tls_required: bool,
+    future: F,
+) -> Result<T, RedisError>
+where
+    F: Future<Output = Result<T, RedisError>>,
+{
+    match await_subscription_phase(operation, timeout, future).await {
+        Err(RedisError::Timeout) if tls_required => Err(RedisError::Connect),
+        result => result,
+    }
+}
+
+async fn connect_resp2_subscription_with_retry(
     client: &Client,
     selector: &BoundedBytes,
     kind: RedisSubscriptionKind,
     policy: RedisRuntimePolicy,
     operation: &RedisSubscriptionOperation,
+    tls_required: bool,
 ) -> Result<redis::aio::PubSub, RedisError> {
     let mut last_error = RedisError::Connection;
     for attempt in 0..policy.reconnect_attempts() {
@@ -824,9 +842,12 @@ async fn reconnect_resp2_subscription(
             })
             .await?;
         }
-        let result = match await_subscription_phase(operation, policy.connection_timeout(), async {
-            client.get_async_pubsub().await.map_err(map_connect_error)
-        })
+        let result = match await_subscription_connect_phase(
+            operation,
+            policy.connection_timeout(),
+            tls_required,
+            async { client.get_async_pubsub().await.map_err(map_connect_error) },
+        )
         .await
         {
             Ok(mut pubsub) => {
@@ -959,9 +980,10 @@ async fn connect_resp3_subscription(
         .policy
         .blocking_config()
         .set_push_sender(push_sender);
-    let mut connection = await_subscription_phase(
+    let mut connection = await_subscription_connect_phase(
         &context.operation,
         context.policy.connection_timeout(),
+        context.tls_required,
         async {
             context
                 .client
@@ -994,8 +1016,9 @@ async fn connect_resp3_subscription(
     })
 }
 
-async fn reconnect_resp3_subscription(
+async fn connect_resp3_subscription_with_retry(
     context: &RedisResp3SubscriptionContext,
+    announce_discontinuity: bool,
 ) -> Result<RedisResp3SubscriptionConnection, RedisError> {
     let mut last_error = RedisError::Connection;
     for attempt in 0..context.policy.reconnect_attempts() {
@@ -1006,7 +1029,7 @@ async fn reconnect_resp3_subscription(
             })
             .await?;
         }
-        match connect_resp3_subscription(context, true).await {
+        match connect_resp3_subscription(context, announce_discontinuity).await {
             Ok(connection) => return Ok(connection),
             Err(error @ (RedisError::Authentication | RedisError::Protocol)) => return Err(error),
             Err(RedisError::ClientCancelled) => return Err(RedisError::ClientCancelled),
@@ -1094,6 +1117,7 @@ impl RedisSession {
             long_operation_active: Arc::new(AtomicBool::new(false)),
             protocol: config.protocol,
             logical_database: config.database,
+            tls_required: matches!(config.tls, RedisTlsMode::Require),
         })
     }
 
@@ -1278,31 +1302,13 @@ impl RedisSession {
         let registry = Arc::clone(&self.subscription);
         let worker = match self.protocol {
             RedisProtocol::Resp2 => {
-                let mut pubsub = await_subscription_phase(
+                let pubsub = connect_resp2_subscription_with_retry(
+                    &self.client,
+                    &selector,
+                    kind,
+                    self.runtime_policy,
                     &operation,
-                    self.runtime_policy.connection_timeout(),
-                    async {
-                        self.client
-                            .get_async_pubsub()
-                            .await
-                            .map_err(map_connect_error)
-                    },
-                )
-                .await?;
-                await_subscription_phase(
-                    &operation,
-                    self.runtime_policy.response_timeout(),
-                    async {
-                        match kind {
-                            RedisSubscriptionKind::Channel => {
-                                pubsub.subscribe(selector.as_slice()).await
-                            }
-                            RedisSubscriptionKind::Pattern => {
-                                pubsub.psubscribe(selector.as_slice()).await
-                            }
-                        }
-                        .map_err(map_command_error)
-                    },
+                    self.tls_required,
                 )
                 .await?;
                 operation.started.store(true, Ordering::Release);
@@ -1318,6 +1324,7 @@ impl RedisSession {
                 let teardown_timeout = self.runtime_policy.response_timeout();
                 let reconnect_policy = self.runtime_policy;
                 let client_worker = self.client.clone();
+                let tls_required = self.tls_required;
                 tokio::spawn(async move {
                     loop {
                         tokio::select! {
@@ -1361,12 +1368,13 @@ impl RedisSession {
                                     }
                                 }
                                 None => {
-                                    match reconnect_resp2_subscription(
+                                    match connect_resp2_subscription_with_retry(
                                         &client_worker,
                                         &selector_worker,
                                         kind,
                                         reconnect_policy,
                                         &operation_worker,
+                                        tls_required,
                                     ).await {
                                         Ok(pubsub) => {
                                             let replacement = pubsub.split();
@@ -1402,8 +1410,10 @@ impl RedisSession {
                     messages: messages_tx.clone(),
                     terminal: Arc::clone(&terminal),
                     terminal_wake: Arc::clone(&terminal_wake),
+                    tls_required: self.tls_required,
                 };
-                let initial = connect_resp3_subscription(&reconnect_context, false).await?;
+                let initial =
+                    connect_resp3_subscription_with_retry(&reconnect_context, false).await?;
                 let mut connection = initial.connection;
                 let mut disconnect = initial.disconnect;
                 let mut active = initial.active;
@@ -1437,7 +1447,7 @@ impl RedisSession {
                                 if terminal_worker.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
                                     break;
                                 }
-                                match reconnect_resp3_subscription(&reconnect_context).await {
+                                match connect_resp3_subscription_with_retry(&reconnect_context, true).await {
                                     Ok(replacement) => {
                                         connection = replacement.connection;
                                         disconnect = replacement.disconnect;
@@ -2494,29 +2504,34 @@ mod tests {
             let operation = Arc::new(RedisSubscriptionOperation::default());
             let started = tokio::time::Instant::now();
             let error = match protocol {
-                RedisProtocol::Resp2 => reconnect_resp2_subscription(
+                RedisProtocol::Resp2 => connect_resp2_subscription_with_retry(
                     &client,
                     &selector,
                     RedisSubscriptionKind::Channel,
                     policy,
                     &operation,
+                    false,
                 )
                 .await
                 .err()
                 .unwrap(),
                 RedisProtocol::Resp3 => {
                     let (messages, _) = tokio::sync::mpsc::channel(2);
-                    reconnect_resp3_subscription(&RedisResp3SubscriptionContext {
-                        client,
-                        selector: selector.clone(),
-                        kind: RedisSubscriptionKind::Channel,
-                        policy,
-                        max_field_bytes: 16,
-                        operation,
-                        messages,
-                        terminal: Arc::new(Mutex::new(None)),
-                        terminal_wake: Arc::new(tokio::sync::Notify::new()),
-                    })
+                    connect_resp3_subscription_with_retry(
+                        &RedisResp3SubscriptionContext {
+                            client,
+                            selector: selector.clone(),
+                            kind: RedisSubscriptionKind::Channel,
+                            policy,
+                            max_field_bytes: 16,
+                            operation,
+                            messages,
+                            terminal: Arc::new(Mutex::new(None)),
+                            terminal_wake: Arc::new(tokio::sync::Notify::new()),
+                            tls_required: false,
+                        },
+                        false,
+                    )
                     .await
                     .err()
                     .unwrap()

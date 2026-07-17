@@ -1117,12 +1117,17 @@ async fn verify_typed_values(tag: &str) {
     assert!(page.cell(0, 9).unwrap().bytes().len() <= 8);
     assert_eq!(page.cell(0, 10).unwrap().kind(), ValueKind::Unknown);
     assert!(page.cell(0, 11).unwrap().is_null());
-    for (column, type_name) in [
-        (12_u32, "json"),
-        (13_u32, "jsonb"),
-        (14_u32, "int4range"),
-        (15_u32, "record"),
-    ] {
+    for column in [12_u32, 13_u32] {
+        assert_eq!(page.cell(0, column).unwrap().kind(), ValueKind::Structured);
+        assert_eq!(page.cell(0, column).unwrap().bytes(), b"{\"a\":[1,");
+        assert_eq!(
+            page.cell(0, column).unwrap().truncation(),
+            Truncation::Truncated {
+                original_byte_len: Some(14)
+            }
+        );
+    }
+    for (column, type_name) in [(14_u32, "int4range"), (15_u32, "record")] {
         assert_eq!(
             page.columns()[column as usize].engine_type().name(),
             type_name

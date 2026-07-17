@@ -29,6 +29,8 @@ RESP2 rebuilds a dedicated redis-rs `PubSub` connection and repeats
 connection and push callback before repeating the command. Both retain binary
 selectors, logical database, TLS/authentication client construction, field
 bounds, cancellation ownership, and redaction behavior.
+Research 171 subsequently makes initial and replacement dedicated generations
+share this bounded connection-attempt policy; initial setup cannot emit a gap.
 
 Each RESP3 attempt owns an RAII generation token. Every error, cancellation, or
 timeout exit deactivates that callback, including the ambiguous case where the

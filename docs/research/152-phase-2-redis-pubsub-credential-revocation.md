@@ -22,6 +22,9 @@ bounded channel and pattern subscriptions under independent users, requires
 `PUBSUB NUMSUB` and `PUBSUB NUMPAT` to observe exactly one registration each,
 rotates both passwords, and requires `CLIENT KILL USER` to terminate each
 user's established sockets.
+Research 170 subsequently dispatches both user terminations in one pipeline
+before awaiting either reply, removing an inter-command reconnect race from the
+fixture without changing product behavior.
 
 Both pending pages then terminate as `RedisError::Authentication` within five
 seconds. The ordinary command connection independently reaches the same result,

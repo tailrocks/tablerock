@@ -31,11 +31,12 @@ that accepts every PostgreSQL type. It then makes one lossless classification:
 | valid unsupported type | unknown with PostgreSQL type name and raw binary payload |
 | malformed payload for a known type | invalid with PostgreSQL type name and raw payload |
 
-Unsupported does not mean discarded. Numeric, UUID, array, JSON, JSONB, range,
-and anonymous-record probes retain their binary representation as
-`UnknownValues`; later type-specific decoders can replace that classification
-without changing the page or adapter boundary. Research 167 adds the complex
-value and large-binary matrix.
+Unsupported does not mean discarded. Numeric, UUID, array, range, and
+anonymous-record probes retain their binary representation as `UnknownValues`;
+later type-specific decoders can replace that classification without changing
+the page or adapter boundary. Research 167 adds the raw complex-value and
+large-binary matrix; research 168 subsequently promotes JSON/JSONB to bounded
+canonical `Structured` projections.
 Malformed known values are never silently treated as valid.
 
 Column metadata carries the server type name and conservatively marks columns
@@ -60,7 +61,7 @@ nullable because PostgreSQL row descriptions do not carry nullability facts.
 
 | Server | Real fixture evidence | Claim |
 |---|---|---|
-| PostgreSQL 17.10 | official `postgres:17.10-alpine`; extended-query preparation and streaming; Boolean, signed integers, Float32/Float64, text, binary, NULL, numeric/UUID/array/JSON/JSONB/range/record unknown preservation, truncation | typed tracer |
+| PostgreSQL 17.10 | official `postgres:17.10-alpine`; extended-query preparation and streaming; Boolean, signed integers, Float32/Float64, text, binary, NULL, JSON/JSONB structured projection, numeric/UUID/array/range/record unknown preservation, truncation | typed tracer |
 | PostgreSQL 18.4 | same typed suite on official `postgres:18.4-alpine`; existing bounded paging and cancellation suites also pass | typed tracer |
 
 Testcontainers Rust 0.27.3 owns both fixture lifecycles and ephemeral mapped

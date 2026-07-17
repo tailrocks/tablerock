@@ -1113,21 +1113,19 @@ async fn verify_tls_auth_version(
         .query_async(&mut admin)
         .await
         .unwrap();
-    let killed: u64 = redis::cmd("CLIENT")
+    let (killed, pattern_killed): (u64, u64) = redis::pipe()
+        .cmd("CLIENT")
         .arg("KILL")
         .arg("USER")
         .arg(REDIS_TEST_USERNAME)
-        .query_async(&mut admin)
-        .await
-        .unwrap();
-    assert!(killed >= 1);
-    let pattern_killed: u64 = redis::cmd("CLIENT")
+        .cmd("CLIENT")
         .arg("KILL")
         .arg("USER")
         .arg(REDIS_PATTERN_USERNAME)
         .query_async(&mut admin)
         .await
         .unwrap();
+    assert!(killed >= 1);
     assert!(pattern_killed >= 1);
     assert_eq!(
         tokio::time::timeout(

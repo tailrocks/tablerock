@@ -146,6 +146,11 @@ It also parses recursive `Array`, `Tuple`, `Map`, and named `Nested` type
 signatures and emits bounded canonical structured projections; see
 [`100-phase-2-clickhouse-structured-containers.md`](100-phase-2-clickhouse-structured-containers.md).
 
+PostgreSQL JSON/JSONB projection pins `serde_json` 1.0.150 with `std` and
+`arbitrary_precision`. A bounded counting writer avoids a full projected output
+allocation, while an 8 MiB input ceiling bounds DOM allocation. See
+[`168-phase-2-postgresql-json-projection.md`](168-phase-2-postgresql-json-projection.md).
+
 ## Redis
 
 Use `redis-rs/redis-rs` with the minimum async, TLS, and protocol features needed

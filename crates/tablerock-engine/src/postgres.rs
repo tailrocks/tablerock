@@ -1,6 +1,7 @@
 use std::{
     error::Error,
     fmt,
+    io::Write,
     pin::Pin,
     sync::{
         Arc,
@@ -1460,7 +1461,90 @@ fn decode_value(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Post
         return OwnedValue::binary(stored, truncation(stored_len, raw.len()))
             .map_err(|_| PostgresError::Protocol);
     }
+    if *type_ == Type::JSON || *type_ == Type::JSONB {
+        return decode_json(type_, raw, limit);
+    }
     bounded_raw(type_, raw, limit, false)
+}
+
+fn decode_json(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
+    let payload = if *type_ == Type::JSONB {
+        match raw.split_first() {
+            Some((&1, payload)) => payload,
+            _ => return bounded_raw(type_, raw, limit, true),
+        }
+    } else {
+        raw
+    };
+    if payload.len() > MAX_JSON_INPUT_BYTES {
+        return bounded_raw(type_, raw, limit, false);
+    }
+    let parsed = match serde_json::from_slice::<serde_json::Value>(payload) {
+        Ok(parsed) => parsed,
+        Err(_) => return bounded_raw(type_, raw, limit, true),
+    };
+    let mut projection = BoundedJsonWriter::new(limit);
+    serde_json::to_writer(&mut projection, &parsed).map_err(|_| PostgresError::Protocol)?;
+    projection.finish()
+}
+
+const MAX_JSON_INPUT_BYTES: usize = 8 * 1_024 * 1_024;
+
+struct BoundedJsonWriter {
+    stored: Vec<u8>,
+    original_byte_len: u64,
+    limit: u64,
+}
+
+impl BoundedJsonWriter {
+    fn new(limit: u64) -> Self {
+        Self {
+            stored: Vec::new(),
+            original_byte_len: 0,
+            limit,
+        }
+    }
+
+    fn finish(mut self) -> Result<OwnedValue, PostgresError> {
+        while std::str::from_utf8(&self.stored).is_err() {
+            self.stored.pop();
+        }
+        let stored = String::from_utf8(self.stored).map_err(|_| PostgresError::Protocol)?;
+        let stored_len = u64::try_from(stored.len()).unwrap_or(u64::MAX);
+        let truncation = if stored_len == self.original_byte_len {
+            Truncation::Complete
+        } else {
+            Truncation::Truncated {
+                original_byte_len: Some(self.original_byte_len),
+            }
+        };
+        OwnedValue::structured(
+            BoundedText::from_string(stored, ByteLimit::new(self.limit))
+                .map_err(|_| PostgresError::Protocol)?,
+            truncation,
+        )
+        .map_err(|_| PostgresError::Protocol)
+    }
+}
+
+impl Write for BoundedJsonWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.original_byte_len = self
+            .original_byte_len
+            .saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+        let remaining = self
+            .limit
+            .saturating_sub(u64::try_from(self.stored.len()).unwrap_or(u64::MAX));
+        let take = usize::try_from(remaining)
+            .unwrap_or(usize::MAX)
+            .min(bytes.len());
+        self.stored.extend_from_slice(&bytes[..take]);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 fn bounded_raw(
@@ -1608,5 +1692,71 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn json_projection_is_compact_sorted_and_bounded() {
+        let value = decode_value(
+            &Type::JSON,
+            r#"{ "z": "éé", "a": [1, true] }"#.as_bytes(),
+            18,
+        )
+        .unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            tablerock_core::ValueRef::Structured {
+                value: "{\"a\":[1,true],\"z\":",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(25)
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn jsonb_requires_version_one_and_valid_json() {
+        let valid = decode_value(&Type::JSONB, b"\x01{\"a\":1}", 64).unwrap();
+        assert_eq!(valid.kind(), tablerock_core::ValueKind::Structured);
+        for raw in [&b"\x02{\"a\":1}"[..], &b"\x01{"[..]] {
+            let invalid = decode_value(&Type::JSONB, raw, 64).unwrap();
+            assert_eq!(invalid.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(invalid.engine_type().unwrap().name(), "jsonb");
+        }
+    }
+
+    #[test]
+    fn json_projection_preserves_arbitrary_precision_numbers() {
+        let value = decode_value(
+            &Type::JSON,
+            b"12345678901234567890.12345678901234567890",
+            64,
+        )
+        .unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            tablerock_core::ValueRef::Structured {
+                value: "12345678901234567890.12345678901234567890",
+                truncation: Truncation::Complete
+            }
+        ));
+    }
+
+    #[test]
+    fn oversized_json_stays_bounded_unknown_without_dom_allocation() {
+        let raw = vec![b' '; MAX_JSON_INPUT_BYTES + 1];
+        let value = decode_value(&Type::JSON, &raw, 8).unwrap();
+        assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
+        assert_eq!(value.encoded_byte_len(), 8);
+        match value.as_ref() {
+            tablerock_core::ValueRef::Unknown {
+                payload: b"        ",
+                truncation:
+                    Truncation::Truncated {
+                        original_byte_len: Some(original),
+                    },
+                ..
+            } => assert_eq!(original, (MAX_JSON_INPUT_BYTES + 1) as u64),
+            _ => panic!("expected bounded oversized JSON"),
+        }
     }
 }

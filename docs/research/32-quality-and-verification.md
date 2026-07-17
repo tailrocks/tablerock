@@ -117,6 +117,12 @@ Engine additions:
 - Redis blocking cancellation uses a separate control connection, waits until
   the operation connection is observably blocked, and proves both successful
   `CLIENT UNBLOCK` dispatch and the operation-side server error under RESP2/3;
+- Redis multi-user live-revocation fixtures pipeline all administrative kills
+  before awaiting replies, preventing stale reconnect activity from racing the
+  remaining revocation commands;
+- Redis initial and replacement Pub/Sub generations share one bounded,
+  cancellable connection-attempt policy; required-TLS connection deadlines map
+  to redacted connect failure while plaintext blackholes retain timeout truth;
 - simultaneous PostgreSQL, ClickHouse, and Redis submission before event
   consumption, with independent page identity/data, bounded receives, and
   observed completion for every operation;
@@ -136,8 +142,10 @@ Engine additions:
   through bounded pages on both pinned lines;
   declared NULL remains null and `int4[]` retains bounded unknown bytes with
   exact engine type identity on both pinned lines;
-  JSON, JSONB, `int4range`, and anonymous record retain bounded unknown binary
-  bytes with exact type/truncation truth, while large `bytea` remains binary;
+  JSON and JSONB retain deterministic bounded structured projections with
+  arbitrary-precision numbers and explicit invalid/over-ceiling behavior;
+  `int4range` and anonymous record retain bounded unknown binary bytes with
+  exact type/truncation truth, while large `bytea` remains binary;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,

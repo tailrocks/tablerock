@@ -14,6 +14,9 @@ An untrusted replacement maps to the redacted connect class. A replacement that
 no longer accepts the immutable session credential maps to the redacted
 authentication class. Neither condition retries commands, falls back to
 plaintext, or exposes server detail.
+Research 171 makes this classification timing-independent: required-TLS
+connection-phase deadline exhaustion maps to the same `Connect` class as an
+immediate TLS validation failure, while plaintext blackholes remain `Timeout`.
 
 ## Evidence
 
@@ -51,6 +54,8 @@ timing from masquerading as a product reconnect failure.
 The exhaustive TLS fixture uses one-second connection and response bounds so
 container scheduling cannot masquerade as initial subscription failure. These
 are verification-harness budgets, not product defaults.
+Initial dedicated Pub/Sub setup now shares the bounded connection-attempt policy
+with replacement generations, but never emits a recovery-gap marker.
 
 This closes invalid-trust and invalid-credential replacement behavior for TLS
 channel and pattern subscriptions. DNS endpoint changes, restricted initial
