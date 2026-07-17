@@ -164,6 +164,12 @@ overflow is an explicit resource-limit failure, never silent loss. Pattern
 subscriptions, reconnect/resubscription, TLS composition,
 and RESP2 pre-decode transport allocation bounds remain required.
 
+Reviewed Redis TTL mutation consumes exact-once authorized plans and passes the
+Redis 7.4.9/8.8.0 RESP2/RESP3 matrix. Missing/already-persistent no-change,
+applied expiration/persistence, database and plan rejection before I/O, signed
+duration bounds, and a write-applied-after-client-timeout ambiguity are covered.
+Unknown write outcomes are never automatically retried.
+
 A support claim is exactly the continuously passing real-server matrix.
 
 ## TUI render and interaction matrix

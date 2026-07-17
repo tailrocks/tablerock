@@ -171,9 +171,10 @@ impl fmt::Debug for RedisConnectionSecurity<'_> {
     }
 }
 use tablerock_core::{
-    BoundedBytes, BoundedText, ByteLimit, ColumnMetadata, Engine, EngineType, OwnedValue,
-    PageDelivery, PageFacts, PageIdentity, PageLimits, PageValidationError, PageWarning,
-    PageWarnings, RedisTimeToLive, ResultPage, RowTotal, Truncation,
+    AuthorizedMutationPlan, BoundedBytes, BoundedText, ByteLimit, ColumnMetadata, Engine,
+    EngineType, MutationChange, MutationId, MutationTarget, OwnedValue, PageDelivery, PageFacts,
+    PageIdentity, PageLimits, PageValidationError, PageWarning, PageWarnings, RedisExpiration,
+    RedisTimeToLive, ResultPage, ReviewTokenId, RowTotal, Truncation,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -336,7 +337,7 @@ impl RedisCollectionScanOptions {
 pub struct RedisConnectConfig {
     host: BoundedText,
     port: u16,
-    database: i64,
+    database: u32,
     protocol: RedisProtocol,
     tls: RedisTlsMode,
     runtime_policy: RedisRuntimePolicy,
@@ -347,7 +348,7 @@ impl RedisConnectConfig {
     pub fn new(
         host: BoundedText,
         port: u16,
-        database: i64,
+        database: u32,
         protocol: RedisProtocol,
         tls: RedisTlsMode,
     ) -> Self {
@@ -397,6 +398,9 @@ pub enum RedisError {
     ScanBudgetExhausted,
     ScanResponseLimitExceeded,
     SubscriptionOverflow,
+    InvalidMutation,
+    LogicalDatabaseMismatch,
+    WriteOutcomeUnknown,
     Protocol,
     Page(PageValidationError),
 }
@@ -424,6 +428,9 @@ impl fmt::Display for RedisError {
             Self::ScanBudgetExhausted => "Redis scan round budget was exhausted",
             Self::ScanResponseLimitExceeded => "Redis scan response exceeded its safety bound",
             Self::SubscriptionOverflow => "Redis subscription buffer capacity was exceeded",
+            Self::InvalidMutation => "Redis mutation plan is unsupported",
+            Self::LogicalDatabaseMismatch => "Redis mutation targets another logical database",
+            Self::WriteOutcomeUnknown => "Redis write outcome is unknown",
             Self::Protocol => "Redis returned an unsupported response",
             Self::Page(_) => "Redis result page failed validation",
         })
@@ -441,6 +448,37 @@ pub struct RedisSession {
     subscription: Arc<RedisSubscriptionRegistry>,
     long_operation_active: Arc<AtomicBool>,
     protocol: RedisProtocol,
+    logical_database: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RedisTtlApplication {
+    Applied,
+    NotApplied,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RedisTtlMutationOutcome {
+    mutation_id: MutationId,
+    review_token_id: ReviewTokenId,
+    application: RedisTtlApplication,
+}
+
+impl RedisTtlMutationOutcome {
+    #[must_use]
+    pub const fn mutation_id(&self) -> MutationId {
+        self.mutation_id
+    }
+
+    #[must_use]
+    pub const fn review_token_id(&self) -> ReviewTokenId {
+        self.review_token_id
+    }
+
+    #[must_use]
+    pub const fn application(&self) -> RedisTtlApplication {
+        self.application
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -707,7 +745,7 @@ impl RedisSession {
             RedisProtocol::Resp3 => ProtocolVersion::RESP3,
         };
         let mut redis = RedisConnectionInfo::default()
-            .set_db(config.database)
+            .set_db(i64::from(config.database))
             .set_protocol(protocol)
             .set_lib_name("tablerock", env!("CARGO_PKG_VERSION"));
         if let Some(credentials) = security.credentials {
@@ -762,6 +800,7 @@ impl RedisSession {
             subscription: Arc::new(RedisSubscriptionRegistry::default()),
             long_operation_active: Arc::new(AtomicBool::new(false)),
             protocol: config.protocol,
+            logical_database: config.database,
         })
     }
 
@@ -1203,6 +1242,63 @@ impl RedisSession {
             .map_err(map_command_error)?;
         decode_time_to_live(remaining)
     }
+
+    pub async fn apply_reviewed_ttl_mutation(
+        &self,
+        authorized: AuthorizedMutationPlan,
+    ) -> Result<RedisTtlMutationOutcome, RedisError> {
+        let plan = authorized.plan();
+        let (logical_database, key) = match plan.target() {
+            MutationTarget::RedisKey {
+                logical_database,
+                key,
+            } => (*logical_database, key),
+            _ => return Err(RedisError::InvalidMutation),
+        };
+        if logical_database != self.logical_database {
+            return Err(RedisError::LogicalDatabaseMismatch);
+        }
+        if plan.changes().len() != 1
+            || plan.changes().iter().any(|change| {
+                !matches!(
+                    change,
+                    MutationChange::RedisSetExpiration(
+                        RedisExpiration::Persist | RedisExpiration::ExpireAfterMillis(_)
+                    )
+                )
+            })
+        {
+            return Err(RedisError::InvalidMutation);
+        }
+
+        let mut connection = self.connection.clone();
+        let applied: i64 = match &plan.changes()[0] {
+            MutationChange::RedisSetExpiration(RedisExpiration::Persist) => redis::cmd("PERSIST")
+                .arg(key.as_slice())
+                .query_async(&mut connection)
+                .await
+                .map_err(map_mutation_error)?,
+            MutationChange::RedisSetExpiration(RedisExpiration::ExpireAfterMillis(
+                milliseconds,
+            )) => redis::cmd("PEXPIRE")
+                .arg(key.as_slice())
+                .arg(*milliseconds)
+                .query_async(&mut connection)
+                .await
+                .map_err(map_mutation_error)?,
+            _ => unreachable!("all mutation changes were validated before dispatch"),
+        };
+        let application = match applied {
+            0 => RedisTtlApplication::NotApplied,
+            1 => RedisTtlApplication::Applied,
+            _ => return Err(RedisError::Protocol),
+        };
+        Ok(RedisTtlMutationOutcome {
+            mutation_id: plan.mutation_id(),
+            review_token_id: authorized.token_id(),
+            application,
+        })
+    }
 }
 
 fn map_connect_error(error: redis::RedisError) -> RedisError {
@@ -1286,6 +1382,14 @@ fn map_command_error(error: redis::RedisError) -> RedisError {
         RedisError::Connection
     } else {
         RedisError::Command
+    }
+}
+
+fn map_mutation_error(error: redis::RedisError) -> RedisError {
+    if error.is_timeout() || error.is_connection_dropped() || error.is_io_error() {
+        RedisError::WriteOutcomeUnknown
+    } else {
+        map_command_error(error)
     }
 }
 

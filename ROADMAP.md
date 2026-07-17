@@ -86,6 +86,9 @@ protocols are recorded in
 Bounded, binary-safe Redis Pub/Sub isolation and truthful client-stop behavior
 across the supported RESP2/RESP3 matrix are recorded in
 [`145-phase-2-redis-pubsub-isolation.md`](docs/research/145-phase-2-redis-pubsub-isolation.md).
+Reviewed Redis key TTL mutation and post-dispatch ambiguity evidence are
+recorded in
+[`146-phase-2-redis-reviewed-ttl-mutation.md`](docs/research/146-phase-2-redis-reviewed-ttl-mutation.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

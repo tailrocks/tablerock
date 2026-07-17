@@ -130,6 +130,7 @@ pub enum AdapterFailureClass {
     CancellationTransport,
     ClientCancelled,
     ServerCancelled,
+    WriteOutcomeUnknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -473,6 +474,10 @@ fn map_redis(error: RedisError) -> AdapterError {
         RedisError::ScanBudgetExhausted => AdapterFailureClass::Query,
         RedisError::ScanResponseLimitExceeded => AdapterFailureClass::ResourceLimit,
         RedisError::SubscriptionOverflow => AdapterFailureClass::ResourceLimit,
+        RedisError::InvalidMutation | RedisError::LogicalDatabaseMismatch => {
+            AdapterFailureClass::InvalidRequest
+        }
+        RedisError::WriteOutcomeUnknown => AdapterFailureClass::WriteOutcomeUnknown,
         RedisError::Protocol => AdapterFailureClass::Protocol,
         RedisError::Page(_) => AdapterFailureClass::Page,
     };
@@ -499,6 +504,14 @@ mod redis_mapping_tests {
         );
         assert_eq!(
             map_redis(RedisError::TlsConfiguration).class(),
+            AdapterFailureClass::InvalidRequest
+        );
+        assert_eq!(
+            map_redis(RedisError::WriteOutcomeUnknown).class(),
+            AdapterFailureClass::WriteOutcomeUnknown
+        );
+        assert_eq!(
+            map_redis(RedisError::LogicalDatabaseMismatch).class(),
             AdapterFailureClass::InvalidRequest
         );
     }

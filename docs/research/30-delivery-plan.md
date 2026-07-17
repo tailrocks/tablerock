@@ -162,8 +162,10 @@ key TTL facts through one Rust-owned contract. Bounded binary HSCAN, SSCAN, and
 ZSCAN pages now pass both supported lines under RESP2 and RESP3. Verified
 custom-root TLS, optional mTLS identity, ACL authentication, and bounded
 initial authentication-stop behavior also pass that supported-line/protocol matrix.
-Pattern subscriptions, reconnect/resubscription, reviewed TTL writes and remaining
-failure races stay required. Dedicated bounded binary Pub/Sub streams now pass
+Pattern subscriptions, reconnect/resubscription, and remaining failure races
+stay required. Reviewed single-command TTL mutation now proves exact-once
+authorization, applied/not-applied truth, and unknown post-dispatch outcomes.
+Dedicated bounded binary Pub/Sub streams pass
 both supported lines under RESP2 and RESP3 without changing the shared command
 connection; cancellation is explicitly client-stop. The supported
 matrix proves bounded response timeout and confirmed-drop future-call reconnect

@@ -755,7 +755,10 @@ fn validate_fields(
 }
 
 fn validate_expiration(expiration: RedisExpiration, change: u32) -> Result<(), MutationBuildError> {
-    if matches!(expiration, RedisExpiration::ExpireAfterMillis(0)) {
+    if matches!(
+        expiration,
+        RedisExpiration::ExpireAfterMillis(0 | 9_223_372_036_854_775_808..)
+    ) {
         Err(MutationBuildError::InvalidExpiration { change })
     } else {
         Ok(())

@@ -94,6 +94,7 @@ kept in the roadmap.
 - [Phase 2 Redis timeout and reconnect evidence](143-phase-2-redis-timeout-reconnect.md)
 - [Phase 2 Redis TLS and authentication evidence](144-phase-2-redis-tls-authentication.md)
 - [Phase 2 Redis Pub/Sub isolation evidence](145-phase-2-redis-pubsub-isolation.md)
+- [Phase 2 Redis reviewed TTL mutation evidence](146-phase-2-redis-reviewed-ttl-mutation.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

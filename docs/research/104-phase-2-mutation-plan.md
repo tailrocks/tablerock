@@ -17,8 +17,9 @@ add exact variants rather than approximate them through strings.
 
 Construction enforces nonzero limits for changes, fields per change, aggregate
 text bytes, aggregate value bytes, and review lifetime. It rejects empty plans,
-empty field sets, duplicate fields, cross-engine changes, zero expiration,
-mixed ClickHouse insert/mutation work, and unsafe target state.
+empty field sets, duplicate fields, cross-engine changes, expiration outside
+Redis's positive signed 64-bit millisecond range, mixed ClickHouse
+insert/mutation work, and unsafe target state.
 
 `Invalid`, `Unknown`, truncated, and `Structured` values are inspectable but
 not executable. Null assignments remain valid; null locators do not. One

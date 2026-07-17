@@ -6,14 +6,17 @@ use redis::{
     RedisConnectionInfo, TlsCertificates,
 };
 use tablerock_core::{
-    BoundedBytes, BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity,
-    PageLimits, PageWarning, ResultPage, Truncation, ValueKind,
+    AuthorizedMutationPlan, BoundedBytes, BoundedText, ByteLimit, CancelDispatch, ContextId,
+    Engine, IdParts, MutationChange, MutationId, MutationPlan, MutationPlanLimits,
+    MutationReviewRegistry, MutationTarget, OperationScope, PageDelivery, PageIdentity, PageLimits,
+    PageWarning, ProfileId, RedisExpiration, ResultPage, ReviewTokenId, Revision, SessionId,
+    Truncation, ValueKind,
 };
 use tablerock_engine::{
     AdapterFailureClass, DriverPageRequest, DriverSession, EngineServiceUpdate,
     RedisClientIdentity, RedisCollectionScanKind, RedisCollectionScanOptions, RedisConnectConfig,
     RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisRuntimePolicy, RedisSession,
-    RedisSubscriptionOptions, RedisTlsMaterial, RedisTlsMode,
+    RedisSubscriptionOptions, RedisTlsMaterial, RedisTlsMode, RedisTtlApplication,
 };
 
 struct RedisTlsFixture {
@@ -71,6 +74,45 @@ fn text(value: &str) -> BoundedText {
 
 fn bytes(value: &[u8]) -> BoundedBytes {
     BoundedBytes::copy_from_slice(value, ByteLimit::new(128)).unwrap()
+}
+
+fn opaque<T>(
+    low: u64,
+    build: impl FnOnce(IdParts) -> Result<T, tablerock_core::IdDecodeError>,
+) -> T {
+    build(IdParts::new(0, low).unwrap()).unwrap()
+}
+
+fn authorized_ttl_plan(
+    logical_database: u32,
+    key: &[u8],
+    changes: Vec<MutationChange>,
+) -> AuthorizedMutationPlan {
+    let scope = OperationScope::new(
+        opaque(801, ProfileId::from_parts),
+        opaque(802, SessionId::from_parts),
+        opaque(803, ContextId::from_parts),
+    );
+    let token_id = opaque(805, ReviewTokenId::from_parts);
+    let reviewed = MutationPlan::new(
+        opaque(804, MutationId::from_parts),
+        scope,
+        Revision::INITIAL,
+        MutationTarget::RedisKey {
+            logical_database,
+            key: bytes(key),
+        },
+        changes,
+        MutationPlanLimits::new(8, 1, 256, 256, 1_000).unwrap(),
+    )
+    .unwrap()
+    .review(token_id, 100, 200)
+    .unwrap();
+    let mut registry = MutationReviewRegistry::new(1).unwrap();
+    registry.insert(reviewed, 100).unwrap();
+    registry
+        .authorize(token_id, 150, scope, Revision::INITIAL)
+        .unwrap()
 }
 
 fn identity() -> PageIdentity {
@@ -804,6 +846,7 @@ async fn verify_version(tag: &str) {
         verify_pubsub_isolation(&session, port, protocol, tag).await;
         verify_pubsub_service_cancellation(port, protocol).await;
         verify_ttl_states(&session, protocol, tag).await;
+        verify_ttl_mutations(&session, port, protocol, tag).await;
         verify_hash_scan(&session, protocol, tag).await;
         verify_set_scan(&session, protocol, tag).await;
         verify_sorted_set_scan(&session, protocol, tag).await;
@@ -1355,6 +1398,258 @@ async fn verify_ttl_states(session: &RedisSession, protocol: RedisProtocol, tag:
         ),
         "finite TTL {tag} {protocol:?}: {expiring:?}"
     );
+}
+
+async fn verify_ttl_mutations(
+    session: &RedisSession,
+    port: u16,
+    protocol: RedisProtocol,
+    tag: &str,
+) {
+    let mut fixture = raw_connection_in_database(port, protocol, 0).await;
+    let persistent_key = format!("tablerock-ttl-mutation-{tag}-{protocol:?}");
+    let _: () = redis::cmd("SET")
+        .arg(persistent_key.as_bytes())
+        .arg(b"value")
+        .query_async(&mut fixture)
+        .await
+        .unwrap();
+
+    let missing = session
+        .apply_reviewed_ttl_mutation(authorized_ttl_plan(
+            0,
+            b"tablerock-missing-ttl-mutation",
+            vec![MutationChange::RedisSetExpiration(
+                RedisExpiration::ExpireAfterMillis(10_000),
+            )],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(missing.application(), RedisTtlApplication::NotApplied);
+
+    let already_persistent = session
+        .apply_reviewed_ttl_mutation(authorized_ttl_plan(
+            0,
+            persistent_key.as_bytes(),
+            vec![MutationChange::RedisSetExpiration(RedisExpiration::Persist)],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        already_persistent.application(),
+        RedisTtlApplication::NotApplied
+    );
+
+    let expiring = session
+        .apply_reviewed_ttl_mutation(authorized_ttl_plan(
+            0,
+            persistent_key.as_bytes(),
+            vec![MutationChange::RedisSetExpiration(
+                RedisExpiration::ExpireAfterMillis(60_000),
+            )],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(expiring.application(), RedisTtlApplication::Applied);
+    assert!(matches!(
+        session
+            .read_time_to_live(&bytes(persistent_key.as_bytes()))
+            .await
+            .unwrap(),
+        tablerock_core::RedisTimeToLive::Expiring {
+            remaining_millis: 1..=60_000
+        }
+    ));
+    let persisted = session
+        .apply_reviewed_ttl_mutation(authorized_ttl_plan(
+            0,
+            persistent_key.as_bytes(),
+            vec![MutationChange::RedisSetExpiration(RedisExpiration::Persist)],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(persisted.application(), RedisTtlApplication::Applied);
+    assert_eq!(
+        session
+            .read_time_to_live(&bytes(persistent_key.as_bytes()))
+            .await
+            .unwrap(),
+        tablerock_core::RedisTimeToLive::Persistent
+    );
+
+    let binary_key = [0_u8, 255, 0, b't'];
+    let _: () = redis::cmd("SET")
+        .arg(&binary_key)
+        .arg(&[1_u8, 0, 255])
+        .query_async(&mut fixture)
+        .await
+        .unwrap();
+    let binary_expiry = session
+        .apply_reviewed_ttl_mutation(authorized_ttl_plan(
+            0,
+            &binary_key,
+            vec![MutationChange::RedisSetExpiration(
+                RedisExpiration::ExpireAfterMillis(60_000),
+            )],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(binary_expiry.application(), RedisTtlApplication::Applied);
+    let binary_persist = session
+        .apply_reviewed_ttl_mutation(authorized_ttl_plan(
+            0,
+            &binary_key,
+            vec![MutationChange::RedisSetExpiration(RedisExpiration::Persist)],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(binary_persist.application(), RedisTtlApplication::Applied);
+    let binary_value: Vec<u8> = redis::cmd("GET")
+        .arg(&binary_key)
+        .query_async(&mut fixture)
+        .await
+        .unwrap();
+    assert_eq!(binary_value, &[1, 0, 255]);
+
+    let _: () = redis::cmd("PEXPIRE")
+        .arg(persistent_key.as_bytes())
+        .arg(45_000_u64)
+        .query_async(&mut fixture)
+        .await
+        .unwrap();
+    let mut database_one = raw_connection_in_database(port, protocol, 1).await;
+    let _: () = redis::cmd("SET")
+        .arg(persistent_key.as_bytes())
+        .arg(b"database-one-sentinel")
+        .arg("PX")
+        .arg(90_000_u64)
+        .query_async(&mut database_one)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        session
+            .apply_reviewed_ttl_mutation(authorized_ttl_plan(
+                1,
+                persistent_key.as_bytes(),
+                vec![MutationChange::RedisSetExpiration(RedisExpiration::Persist)],
+            ))
+            .await,
+        Err(tablerock_engine::RedisError::LogicalDatabaseMismatch)
+    );
+    let database_one_value: Vec<u8> = redis::cmd("GET")
+        .arg(persistent_key.as_bytes())
+        .query_async(&mut database_one)
+        .await
+        .unwrap();
+    let database_one_ttl: i64 = redis::cmd("PTTL")
+        .arg(persistent_key.as_bytes())
+        .query_async(&mut database_one)
+        .await
+        .unwrap();
+    assert_eq!(database_one_value, b"database-one-sentinel");
+    assert!((1..=90_000).contains(&database_one_ttl));
+    assert_eq!(
+        session
+            .apply_reviewed_ttl_mutation(authorized_ttl_plan(
+                0,
+                persistent_key.as_bytes(),
+                vec![
+                    MutationChange::RedisSetExpiration(RedisExpiration::ExpireAfterMillis(1_000),),
+                    MutationChange::RedisSetExpiration(RedisExpiration::Persist),
+                ],
+            ))
+            .await,
+        Err(tablerock_engine::RedisError::InvalidMutation)
+    );
+    assert_eq!(
+        session
+            .apply_reviewed_ttl_mutation(authorized_ttl_plan(
+                0,
+                persistent_key.as_bytes(),
+                vec![MutationChange::RedisSetString {
+                    value: bytes(b"replacement"),
+                    expiration: RedisExpiration::Preserve,
+                }],
+            ))
+            .await,
+        Err(tablerock_engine::RedisError::InvalidMutation)
+    );
+    let unchanged_value: Vec<u8> = redis::cmd("GET")
+        .arg(persistent_key.as_bytes())
+        .query_async(&mut fixture)
+        .await
+        .unwrap();
+    let unchanged_ttl: i64 = redis::cmd("PTTL")
+        .arg(persistent_key.as_bytes())
+        .query_async(&mut fixture)
+        .await
+        .unwrap();
+    assert_eq!(unchanged_value, b"value");
+    assert!((1..=45_000).contains(&unchanged_ttl));
+
+    let ambiguous_key = format!("tablerock-ttl-ambiguous-{tag}-{protocol:?}");
+    let _: () = redis::cmd("SET")
+        .arg(ambiguous_key.as_bytes())
+        .arg(b"value")
+        .query_async(&mut fixture)
+        .await
+        .unwrap();
+    let policy = RedisRuntimePolicy::new(
+        Duration::from_millis(100),
+        Duration::from_millis(100),
+        1,
+        Duration::from_millis(1),
+        Duration::from_millis(1),
+    )
+    .unwrap();
+    let ambiguity_session = RedisSession::connect(
+        &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable)
+            .with_runtime_policy(policy),
+        RedisConnectionSecurity::new(),
+    )
+    .await
+    .unwrap();
+    let _: () = redis::cmd("CLIENT")
+        .arg("PAUSE")
+        .arg(300_u64)
+        .arg("WRITE")
+        .query_async(&mut fixture)
+        .await
+        .unwrap();
+    assert_eq!(
+        ambiguity_session
+            .apply_reviewed_ttl_mutation(authorized_ttl_plan(
+                0,
+                ambiguous_key.as_bytes(),
+                vec![MutationChange::RedisSetExpiration(
+                    RedisExpiration::ExpireAfterMillis(60_000),
+                )],
+            ))
+            .await,
+        Err(tablerock_engine::RedisError::WriteOutcomeUnknown)
+    );
+    tokio::time::sleep(Duration::from_millis(350)).await;
+    let remaining: i64 = redis::cmd("PTTL")
+        .arg(ambiguous_key.as_bytes())
+        .query_async(&mut fixture)
+        .await
+        .unwrap();
+    assert!((1..=60_000).contains(&remaining));
+    let deleted: u64 = redis::cmd("DEL")
+        .arg(persistent_key.as_bytes())
+        .arg(ambiguous_key.as_bytes())
+        .arg(&binary_key)
+        .query_async(&mut fixture)
+        .await
+        .unwrap();
+    assert_eq!(deleted, 3);
+    let database_one_deleted: u64 = redis::cmd("DEL")
+        .arg(persistent_key.as_bytes())
+        .query_async(&mut database_one)
+        .await
+        .unwrap();
+    assert_eq!(database_one_deleted, 1);
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -187,6 +187,22 @@ fn redis_plan_keeps_raw_key_value_ttl_and_no_rollback_truth() {
                 key: bytes(b"key")
             },
             vec![MutationChange::RedisSetExpiration(
+                RedisExpiration::ExpireAfterMillis(i64::MAX as u64 + 1)
+            )],
+            limits(),
+        ),
+        Err(MutationBuildError::InvalidExpiration { change: 0 })
+    ));
+    assert!(matches!(
+        MutationPlan::new(
+            mutation_id(),
+            scope(1),
+            Revision::INITIAL,
+            MutationTarget::RedisKey {
+                logical_database: 0,
+                key: bytes(b"key")
+            },
+            vec![MutationChange::RedisSetExpiration(
                 RedisExpiration::Preserve
             )],
             limits(),
