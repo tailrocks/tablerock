@@ -44,8 +44,8 @@ stored table columns prove top-level RowDescription flattening to base types.
 
 ## Remaining work
 
-Enum and additional scalar-family projection remain separate typed-value
-checkpoints. Domain editors, public parameter plans and request bounds,
+Research 184 subsequently closes enum projection. Additional scalar-family
+projection remains separate typed-value work. Domain editors, public parameter plans and request bounds,
 service/UI projection, and UniFFI remain open. The PostgreSQL driver still
 receives a complete field before TableRock applies its cell bound; strict
 pre-driver field allocation remains open.

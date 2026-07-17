@@ -323,6 +323,9 @@ structure limits is recorded in
 Recursive PostgreSQL domain projection and top-level RowDescription flattening
 truth are recorded in
 [`183-phase-2-postgresql-domain-projection.md`](docs/research/183-phase-2-postgresql-domain-projection.md).
+User-defined enums now project as catalog-validated bounded text with exact
+column type identity and PostgreSQL 17/18 evidence in
+[`184-phase-2-postgresql-enum-projection.md`](docs/research/184-phase-2-postgresql-enum-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

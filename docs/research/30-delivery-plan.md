@@ -170,6 +170,9 @@ Domains now reuse underlying scalar/structured semantics while retaining outer
 domain identity for invalid/unknown fallback and inside composite metadata.
 PostgreSQL RowDescription flattens top-level domain outputs to base types; the
 adapter records that protocol limit instead of inventing unavailable identity.
+User-defined enums now project catalog-validated ASCII and Unicode labels as
+bounded UTF-8-safe `Text`, retaining exact enum column identity and classifying
+invalid UTF-8 or unknown catalog labels as `Invalid`.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
 `Decimal` values. Malformed wire values remain `Invalid`; valid projections over

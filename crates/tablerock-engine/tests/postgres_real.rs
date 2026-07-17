@@ -1556,6 +1556,34 @@ async fn verify_typed_values(tag: &str) {
     assert!(domains.next_page(identity(), 1).await.unwrap().is_none());
     drop(domains);
 
+    session.prepare_enum_probe().await.unwrap();
+    let mut enums = session
+        .stream_probe(
+            PostgresProbeQuery::EnumValues,
+            PageLimits::new(1, 2, 256, 512),
+            64,
+        )
+        .await
+        .unwrap();
+    let enum_page = enums.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, expected) in [(0_u32, "ready"), (1_u32, "café")] {
+        assert_eq!(
+            enum_page.columns()[column as usize].engine_type().name(),
+            "tablerock_status"
+        );
+        assert_eq!(enum_page.cell(0, column).unwrap().kind(), ValueKind::Text);
+        assert_eq!(
+            enum_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            enum_page.cell(0, column).unwrap().truncation(),
+            Truncation::Complete
+        );
+    }
+    assert!(enums.next_page(identity(), 1).await.unwrap().is_none());
+    drop(enums);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,

@@ -164,6 +164,8 @@ Engine additions:
   domains reuse underlying scalar/structured semantics, retain outer identity
   on failure and in composite fields, and explicitly prove RowDescription's
   top-level domain flattening;
+  enums retain exact user-defined column identity and catalog-validated bounded
+  ASCII/Unicode text, with invalid UTF-8 and unknown labels rejected;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,

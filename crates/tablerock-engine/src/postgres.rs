@@ -132,6 +132,7 @@ pub enum PostgresProbeQuery {
     MultirangeValues,
     CompositeValues,
     DomainValues,
+    EnumValues,
     Parameters,
     CancellationStream,
 }
@@ -415,6 +416,10 @@ impl PostgresProbeQuery {
                         '[2024-03-10,2024-03-11)'::daterange\
                     )::tablerock_composite_probe\
                  )::tablerock_domain_container AS domain_container"
+            }
+            Self::EnumValues => {
+                "SELECT 'ready'::tablerock_status AS ascii_label, \
+                 'café'::tablerock_status AS unicode_label"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -798,6 +803,13 @@ impl PostgresSession {
                     composite_domain tablerock_composite_domain\
                  )",
             )
+            .await
+            .map_err(|_| PostgresError::Query)
+    }
+
+    pub async fn prepare_enum_probe(&self) -> Result<(), PostgresError> {
+        self.client
+            .batch_execute("CREATE TYPE tablerock_status AS ENUM ('ready', 'café', 'blocked')")
             .await
             .map_err(|_| PostgresError::Query)
     }
@@ -1599,6 +1611,19 @@ fn decode_value_at_depth(
             | Type::INTERVAL
     ) {
         return decode_temporal(type_, raw, limit);
+    }
+    if let Kind::Enum(variants) = type_.kind() {
+        let Ok(label) = std::str::from_utf8(raw) else {
+            return bounded_raw(type_, raw, limit, true);
+        };
+        if !variants.iter().any(|variant| variant == label) {
+            return bounded_raw(type_, raw, limit, true);
+        }
+        let stored_len = utf8_prefix(label, limit);
+        let stored = BoundedText::copy_from_str(&label[..stored_len], ByteLimit::new(limit))
+            .map_err(|_| PostgresError::Protocol)?;
+        return OwnedValue::text(stored, truncation(stored_len, raw.len()))
+            .map_err(|_| PostgresError::Protocol);
     }
     if let Kind::Domain(underlying_type) = type_.kind() {
         let value =
@@ -3244,6 +3269,45 @@ mod tests {
         .unwrap();
         assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
         assert_eq!(value.engine_type().unwrap().name(), "positive");
+    }
+
+    #[test]
+    fn enum_projection_validates_and_bounds_catalog_labels() {
+        let enum_type = Type::new(
+            "status".to_owned(),
+            900_007,
+            Kind::Enum(vec![
+                "ready".to_owned(),
+                "café".to_owned(),
+                "blocked".to_owned(),
+            ]),
+            "public".to_owned(),
+        );
+        let value = decode_value(&enum_type, "café".as_bytes(), 16).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Text {
+                value: "café",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let bounded = decode_value(&enum_type, "café".as_bytes(), 4).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            ValueRef::Text {
+                value: "caf",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(5)
+                }
+            }
+        ));
+
+        for malformed in [b"unknown".as_slice(), &[0xff]] {
+            let value = decode_value(&enum_type, malformed, 16).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), "status");
+        }
     }
 
     #[test]
