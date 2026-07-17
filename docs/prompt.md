@@ -27,8 +27,14 @@ architecture is [`application-pattern.md`](architecture/application-pattern.md),
 [`delivery-plan.md`](architecture/delivery-plan.md); verification is
 [`quality-and-verification.md`](architecture/quality-and-verification.md);
 delivery is [`main-branch-delivery.md`](architecture/main-branch-delivery.md).
+The dependency-ordered implementation plans are
+[`../plans/README.md`](../plans/README.md) (plans 001-021); each plan is the
+checkpoint-level specification for its roadmap phase, with verification
+commands, scope boundaries, and evidence requirements. Keep each plan's
+status row current as work lands.
 Conflicts resolve by `AGENTS.md`, then `fixed-decisions.md`, then
-`delivery-plan.md`; repair stale text in the same checkpoint.
+`delivery-plan.md`, then the plan files; repair stale text in the same
+checkpoint.
 
 In scope: the entire three-database ledger, Rust engine, both UIs, reusable
 TermRock components, distribution, tests, and docs. Excluded: other databases,
@@ -57,8 +63,14 @@ provenance.
 
 ## Execution Loop
 
-Follow `ROADMAP.md` and [`delivery-plan.md`](architecture/delivery-plan.md)
-dependencies exactly. For each smallest buildable checkpoint:
+Follow `ROADMAP.md`, [`delivery-plan.md`](architecture/delivery-plan.md), and
+the plan order in [`../plans/README.md`](../plans/README.md) exactly. Execute
+plans in index order, running independent plans in parallel where their
+dependency rows allow. Honor every plan's verification gates. A plan STOP
+condition is a decision point, not an operator question: resolve it under
+this prompt's decision authority by inspection, tests, or research; record
+the evidence-backed decision in the plan file and its evidence document;
+then continue. For each smallest buildable checkpoint:
 
 1. Inspect code, prerequisites, gates, and primary docs; resolve unknowns by
    inspection, tests, or research.
@@ -99,5 +111,7 @@ Never claim completion because work is large, slow, or spans sessions.
 ## Git
 
 Work only on `main`; never create branches or pull requests. Preserve unrelated
-changes. Use atomic Conventional Commits, DCO sign-off, and
-`Co-authored-by: Codex <codex@openai.com>`. Push every commit immediately.
+changes. Use atomic Conventional Commits, DCO sign-off, and the executing
+agent's co-author trailer per `CONTRIBUTING.md`. Push every commit
+immediately, verify `HEAD == origin/main`, and continue without waiting for
+operator input.
