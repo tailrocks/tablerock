@@ -55,6 +55,7 @@ future-operation credential revocation by research 151, and active channel and
 pattern revocation by research 152. DNS endpoint changes,
 strict RESP2 pre-decode allocation bounds, UI presentation, and clean-machine
 release evidence remain open.
+TLS/mTLS server replacement is subsequently closed by research 153.
 
 Context7 selected `/redis-rs/redis-rs`; redis-rs documentation identifies RESP2
 dedicated Pub/Sub, RESP3 push senders, and connection-drop classification. The

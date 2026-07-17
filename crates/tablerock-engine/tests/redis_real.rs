@@ -67,7 +67,7 @@ fn redis_acl_file() -> Vec<u8> {
 mod support;
 mod tls_support;
 use testcontainers::{
-    CopyDataSource, CopyTargetOptions, GenericImage, ImageExt,
+    ContainerAsync, CopyDataSource, CopyTargetOptions, GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
     runners::AsyncRunner,
 };
@@ -160,6 +160,46 @@ async fn raw_tls_admin_connection(
     )
     .unwrap();
     client.get_multiplexed_async_connection().await.unwrap()
+}
+
+async fn start_tls_redis(
+    tag: &str,
+    fixture: &RedisTlsFixture,
+    require_client_identity: bool,
+    host_port: Option<u16>,
+) -> ContainerAsync<GenericImage> {
+    let auth_clients = if require_client_identity { "yes" } else { "no" };
+    let request = GenericImage::new("redis", tag)
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .with_copy_to(
+            CopyTargetOptions::new("/tablerock-tls/server.crt").with_mode(0o644),
+            CopyDataSource::Data(fixture.server_certificate_pem.as_bytes().to_vec()),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/tablerock-tls/server.key").with_mode(0o600),
+            CopyDataSource::Data(fixture.server_private_key_pem.as_bytes().to_vec()),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/tablerock-tls/ca.crt").with_mode(0o644),
+            CopyDataSource::Data(fixture.ca_pem.as_bytes().to_vec()),
+        )
+        .with_copy_to(
+            CopyTargetOptions::new("/tablerock-tls/users.acl").with_mode(0o600),
+            CopyDataSource::Data(redis_acl_file()),
+        )
+        .with_cmd([
+            "sh".to_owned(),
+            "-c".to_owned(),
+            format!(
+                "chown -R redis:redis /tablerock-tls && exec setpriv --reuid redis --regid redis --clear-groups redis-server --port 0 --tls-port 6379 --tls-cert-file /tablerock-tls/server.crt --tls-key-file /tablerock-tls/server.key --tls-ca-cert-file /tablerock-tls/ca.crt --tls-auth-clients {auth_clients} --acl-pubsub-default resetchannels --aclfile /tablerock-tls/users.acl"
+            ),
+        ]);
+    let request = match host_port {
+        Some(port) => request.with_mapped_port(port, 6379.tcp()),
+        None => request,
+    };
+    request.start().await.unwrap()
 }
 
 #[tokio::test]
@@ -335,6 +375,144 @@ async fn resubscribes_with_visible_gap_after_redis_restart() {
 }
 
 #[tokio::test]
+async fn resubscribes_with_visible_gap_after_tls_redis_restart() {
+    for tag in [
+        "7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+        "8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005",
+    ] {
+        for protocol in [RedisProtocol::Resp2, RedisProtocol::Resp3] {
+            for require_client_identity in [false, true] {
+                for kind in [
+                    RedisSubscriptionKind::Channel,
+                    RedisSubscriptionKind::Pattern,
+                ] {
+                    verify_tls_subscription_restart(tag, protocol, require_client_identity, kind)
+                        .await;
+                }
+            }
+        }
+    }
+}
+
+async fn verify_tls_subscription_restart(
+    tag: &str,
+    protocol: RedisProtocol,
+    require_client_identity: bool,
+    kind: RedisSubscriptionKind,
+) {
+    let fixture = RedisTlsFixture::generate();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let container = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
+    let policy = RedisRuntimePolicy::new(
+        Duration::from_millis(500),
+        Duration::from_millis(250),
+        32,
+        Duration::from_millis(10),
+        Duration::from_millis(100),
+    )
+    .unwrap();
+    let config =
+        RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Require)
+            .with_runtime_policy(policy);
+    let credentials = RedisCredentials::new(Some(REDIS_TEST_USERNAME), REDIS_TEST_PASSWORD);
+    let mut tls = RedisTlsMaterial::custom_roots(fixture.ca_pem.as_bytes());
+    if require_client_identity {
+        tls = tls.with_client_identity(RedisClientIdentity::new(
+            fixture.client_certificate_pem.as_bytes(),
+            fixture.client_private_key_pem.as_bytes(),
+        ));
+    }
+    let session = RedisSession::connect(
+        &config,
+        RedisConnectionSecurity::new()
+            .with_credentials(credentials)
+            .with_tls(tls),
+    )
+    .await
+    .unwrap();
+    let (selector, channel, columns) = match kind {
+        RedisSubscriptionKind::Channel => (bytes(&[5, 0, 255]), bytes(&[5, 0, 255]), 2),
+        RedisSubscriptionKind::Pattern => (bytes(&[5, 0, b'*']), bytes(&[5, 0, 255]), 3),
+    };
+    let options = RedisSubscriptionOptions::new(PageLimits::new(1, columns, 192, 64), 64, 4);
+    let mut subscription = match kind {
+        RedisSubscriptionKind::Channel => session.subscribe(selector.clone(), options).await,
+        RedisSubscriptionKind::Pattern => session.psubscribe(selector.clone(), options).await,
+    }
+    .unwrap();
+
+    drop(container);
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let replacement = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
+    let mut publisher =
+        raw_tls_admin_connection(port, protocol, &fixture, require_client_identity).await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let receivers: usize = redis::cmd("PUBLISH")
+                .arg(channel.as_slice())
+                .arg(&[8_u8, 0, 8])
+                .query_async(&mut publisher)
+                .await
+                .unwrap();
+            if receivers == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("TLS subscription restores within five seconds");
+
+    let gap = tokio::time::timeout(
+        Duration::from_secs(5),
+        subscription.next_page(identity(), 0),
+    )
+    .await
+    .expect("TLS reconnect gap arrives")
+    .unwrap()
+    .unwrap();
+    assert_eq!(gap.envelope().row_count(), 0);
+    assert_eq!(gap.envelope().column_count(), columns);
+    assert!(
+        gap.envelope()
+            .warnings()
+            .contains(PageWarning::DeliveryDiscontinuity)
+    );
+    let message = subscription
+        .next_page(identity(), 0)
+        .await
+        .unwrap()
+        .unwrap();
+    match kind {
+        RedisSubscriptionKind::Channel => {
+            assert_eq!(message.cell(0, 0).unwrap().bytes(), channel.as_slice());
+            assert_eq!(message.cell(0, 1).unwrap().bytes(), &[8, 0, 8]);
+        }
+        RedisSubscriptionKind::Pattern => {
+            assert_eq!(message.cell(0, 0).unwrap().bytes(), selector.as_slice());
+            assert_eq!(message.cell(0, 1).unwrap().bytes(), channel.as_slice());
+            assert_eq!(message.cell(0, 2).unwrap().bytes(), &[8, 0, 8]);
+        }
+    }
+    assert_eq!(
+        session.dispatch_cancel().await.unwrap(),
+        tablerock_engine::RedisCancelDispatch::RequestSent
+    );
+    assert_eq!(
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            subscription.next_page(identity(), 1)
+        )
+        .await
+        .expect("TLS reconnect cancellation terminates promptly"),
+        Err(tablerock_engine::RedisError::ClientCancelled)
+    );
+    drop(replacement);
+}
+
+#[tokio::test]
 async fn bounds_connection_handshake_timeout() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -387,36 +565,7 @@ async fn verify_tls_auth_version(
     require_client_identity: bool,
 ) {
     let fixture = RedisTlsFixture::generate();
-    let auth_clients = if require_client_identity { "yes" } else { "no" };
-    let container = GenericImage::new("redis", tag)
-        .with_exposed_port(6379.tcp())
-        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
-        .with_copy_to(
-            CopyTargetOptions::new("/tablerock-tls/server.crt").with_mode(0o644),
-            CopyDataSource::Data(fixture.server_certificate_pem.as_bytes().to_vec()),
-        )
-        .with_copy_to(
-            CopyTargetOptions::new("/tablerock-tls/server.key").with_mode(0o600),
-            CopyDataSource::Data(fixture.server_private_key_pem.as_bytes().to_vec()),
-        )
-        .with_copy_to(
-            CopyTargetOptions::new("/tablerock-tls/ca.crt").with_mode(0o644),
-            CopyDataSource::Data(fixture.ca_pem.as_bytes().to_vec()),
-        )
-        .with_copy_to(
-            CopyTargetOptions::new("/tablerock-tls/users.acl").with_mode(0o600),
-            CopyDataSource::Data(redis_acl_file()),
-        )
-        .with_cmd([
-            "sh".to_owned(),
-            "-c".to_owned(),
-            format!(
-                "chown -R redis:redis /tablerock-tls && exec setpriv --reuid redis --regid redis --clear-groups redis-server --port 0 --tls-port 6379 --tls-cert-file /tablerock-tls/server.crt --tls-key-file /tablerock-tls/server.key --tls-ca-cert-file /tablerock-tls/ca.crt --tls-auth-clients {auth_clients} --acl-pubsub-default resetchannels --aclfile /tablerock-tls/users.acl"
-            ),
-        ])
-        .start()
-        .await
-        .unwrap();
+    let container = start_tls_redis(tag, &fixture, require_client_identity, None).await;
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
     let config =
         RedisConnectConfig::new(text("127.0.0.1"), port, 1, protocol, RedisTlsMode::Require)
