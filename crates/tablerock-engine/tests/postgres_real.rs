@@ -1072,7 +1072,8 @@ async fn verify_typed_values(tag: &str) {
     assert_eq!(page.envelope().row_count(), 1, "PostgreSQL {tag}");
     assert_eq!(page.envelope().delivery(), PageDelivery::Final);
     assert!(
-        page.envelope()
+        !page
+            .envelope()
             .warnings()
             .contains(PageWarning::UnknownValues)
     );
@@ -1151,8 +1152,8 @@ async fn verify_typed_values(tag: &str) {
         } if original > 8
     ));
     assert_eq!(page.columns()[15].engine_type().name(), "record");
-    assert_eq!(page.cell(0, 15).unwrap().kind(), ValueKind::Unknown);
-    assert_eq!(page.cell(0, 15).unwrap().bytes().len(), 8);
+    assert_eq!(page.cell(0, 15).unwrap().kind(), ValueKind::Structured);
+    assert_eq!(page.cell(0, 15).unwrap().bytes(), b"{\"$compo");
     assert!(matches!(
         page.cell(0, 15).unwrap().truncation(),
         Truncation::Truncated {
@@ -1460,6 +1461,50 @@ async fn verify_typed_values(tag: &str) {
             .is_none()
     );
     drop(multiranges);
+
+    session.prepare_composite_probe().await.unwrap();
+    let mut composites = session
+        .stream_probe(
+            PostgresProbeQuery::CompositeValues,
+            PageLimits::new(1, 2, 8_192, 512),
+            4_096,
+        )
+        .await
+        .unwrap();
+    let composite_page = composites.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, engine_type, expected) in [
+        (
+            0_u32,
+            "tablerock_composite_probe",
+            "{\"$composite\":{\"fields\":[{\"name\":\"id\",\"oid\":23,\"type\":\"int4\",\"value\":7},{\"name\":\"label\",\"oid\":25,\"type\":\"text\",\"value\":\"é\"},{\"name\":\"absent\",\"oid\":25,\"type\":\"text\",\"value\":null},{\"name\":\"numbers\",\"oid\":1007,\"type\":\"_int4\",\"value\":{\"$array\":{\"dimensions\":[[1,2]],\"values\":[1,2]}}},{\"name\":\"span\",\"oid\":3912,\"type\":\"daterange\",\"value\":{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":\"2024-02-29\"},\"upper\":{\"kind\":\"exclusive\",\"value\":\"2024-03-02\"}}}}]}}",
+        ),
+        (
+            1_u32,
+            "record",
+            "{\"$composite\":{\"fields\":[{\"name\":null,\"oid\":23,\"type\":\"int4\",\"value\":7},{\"name\":null,\"oid\":25,\"type\":\"text\",\"value\":\"é\"},{\"name\":null,\"oid\":25,\"type\":\"text\",\"value\":null},{\"name\":null,\"oid\":1007,\"type\":\"_int4\",\"value\":{\"$array\":{\"dimensions\":[[1,2]],\"values\":[1,2]}}}]}}",
+        ),
+    ] {
+        assert_eq!(
+            composite_page.columns()[column as usize]
+                .engine_type()
+                .name(),
+            engine_type
+        );
+        assert_eq!(
+            composite_page.cell(0, column).unwrap().kind(),
+            ValueKind::Structured
+        );
+        assert_eq!(
+            composite_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            composite_page.cell(0, column).unwrap().truncation(),
+            Truncation::Complete
+        );
+    }
+    assert!(composites.next_page(identity(), 1).await.unwrap().is_none());
+    drop(composites);
 
     let mut parameters = session
         .stream_probe(

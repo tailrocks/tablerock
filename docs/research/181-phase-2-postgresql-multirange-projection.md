@@ -43,8 +43,9 @@ empty and nonempty `int4multirange`, unbounded `int8multirange`, exact decimal
 
 ## Remaining work
 
-Composite and domain projection remain adapter-private unknown values.
-Multirange editors, public parameter plans and request bounds, service/UI
+Research 182 subsequently closes composite projection. Domain projection
+remains adapter-private unknown. Multirange editors, public parameter plans and
+request bounds, service/UI
 projection, and UniFFI remain open. The PostgreSQL driver still receives a
 complete field before TableRock applies its cell bound; strict pre-driver field
 allocation remains open.

@@ -133,7 +133,7 @@ Engine additions:
   slow-delivery-independent terminal reconstruction, premature completion
   rejection, and exactly-once runtime release;
 
-- PostgreSQL: custom/unknown OIDs, composites/JSON/bytes, notices,
+- PostgreSQL: custom/unknown OIDs, JSON/bytes, notices,
   parameters, COPY, multiple statements, transaction conflicts, cancel races;
   pinned real servers distinguish SQLSTATE-confirmed cancellation from a late
   successfully delivered cancel after normal query completion, and a bounded
@@ -158,6 +158,9 @@ Engine additions:
   binary bytes with exact type/truncation truth; large `bytea` remains binary;
   generic multiranges retain ordered canonical range members, empty truth, a
   one-million-member ceiling, exact framing, and whole-value fallback;
+  named composites and anonymous records retain ordered name/null-name,
+  OID/type, NULL, and nested-value truth with strict framing, 1,664 fields, and
+  a shared 64-level structured nesting cap;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,

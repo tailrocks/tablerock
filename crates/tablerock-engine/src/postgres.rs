@@ -30,7 +30,7 @@ use tokio_postgres::{
     AsyncMessage, Connection, Row,
     config::SslMode,
     tls::MakeTlsConnect,
-    types::{FromSql, Kind, ToSql, Type},
+    types::{Field, FromSql, Kind, ToSql, Type},
 };
 use tokio_postgres_rustls::MakeRustlsConnect;
 use zeroize::Zeroize;
@@ -46,6 +46,8 @@ const MAX_POSTGRES_NOTICE_CODE_BYTES: u64 = 5;
 const MAX_POSTGRES_NOTICE_MESSAGE_BYTES: u64 = 1_024;
 const MAX_POSTGRES_ARRAY_DIMENSIONS: usize = 64;
 const MAX_POSTGRES_ARRAY_ELEMENTS: usize = 1_000_000;
+const MAX_POSTGRES_COMPOSITE_FIELDS: usize = 1_664;
+const MAX_POSTGRES_NESTING_DEPTH: usize = 64;
 
 /// PostgreSQL transport-security requirement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -128,6 +130,7 @@ pub enum PostgresProbeQuery {
     ArrayValues,
     RangeValues,
     MultirangeValues,
+    CompositeValues,
     Parameters,
     CancellationStream,
 }
@@ -398,6 +401,11 @@ impl PostgresProbeQuery {
                  '{(1.20,2.30],[5.00,6.00)}'::nummultirange AS numeric_multirange, \
                  '{[2024-02-29,2024-03-02),[2024-03-10,2024-03-11)}'::datemultirange \
                     AS date_multirange"
+            }
+            Self::CompositeValues => {
+                "SELECT ROW(7, 'é', NULL, ARRAY[1,2], '[2024-02-29,2024-03-02)'::daterange) \
+                    ::tablerock_composite_probe AS named_composite, \
+                 ROW(7::int4, 'é'::text, NULL::text, ARRAY[1,2]::int4[]) AS anonymous_record"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -752,6 +760,17 @@ impl PostgresSession {
             max_cell_bytes,
             complete: false,
         })
+    }
+
+    pub async fn prepare_composite_probe(&self) -> Result<(), PostgresError> {
+        self.client
+            .batch_execute(
+                "CREATE TYPE tablerock_composite_probe AS (\
+                    id int4, label text, absent text, numbers int4[], span daterange\
+                )",
+            )
+            .await
+            .map_err(|_| PostgresError::Query)
     }
 
     pub async fn shutdown(self) -> Result<(), PostgresError> {
@@ -1460,6 +1479,18 @@ fn postgres_engine_type(type_: &Type, limit: u64) -> Result<EngineType, Postgres
 }
 
 fn decode_value(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
+    decode_value_at_depth(type_, raw, limit, 0)
+}
+
+fn decode_value_at_depth(
+    type_: &Type,
+    raw: &[u8],
+    limit: u64,
+    nesting_depth: usize,
+) -> Result<OwnedValue, PostgresError> {
+    if nesting_depth > MAX_POSTGRES_NESTING_DEPTH {
+        return bounded_raw(type_, raw, limit, false);
+    }
     let fixed = match *type_ {
         Type::BOOL if raw == [0] || raw == [1] => Some(OwnedValue::boolean(raw[0] != 0)),
         Type::INT2 if raw.len() == 2 => Some(OwnedValue::signed(
@@ -1541,21 +1572,35 @@ fn decode_value(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Post
         return decode_temporal(type_, raw, limit);
     }
     if let Kind::Array(element_type) = type_.kind() {
-        return match decode_array(element_type, raw, limit) {
+        return match decode_array(element_type, raw, limit, nesting_depth) {
             Ok(Some(value)) => Ok(value),
             Ok(None) => bounded_raw(type_, raw, limit, false),
             Err(()) => bounded_raw(type_, raw, limit, true),
         };
     }
     if let Kind::Range(element_type) = type_.kind() {
-        return match decode_range(element_type, raw, limit) {
+        return match decode_range(element_type, raw, limit, nesting_depth) {
             Ok(Some(value)) => Ok(value),
             Ok(None) => bounded_raw(type_, raw, limit, false),
             Err(()) => bounded_raw(type_, raw, limit, true),
         };
     }
     if let Kind::Multirange(element_type) = type_.kind() {
-        return match decode_multirange(element_type, raw, limit) {
+        return match decode_multirange(element_type, raw, limit, nesting_depth) {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => bounded_raw(type_, raw, limit, false),
+            Err(()) => bounded_raw(type_, raw, limit, true),
+        };
+    }
+    if let Kind::Composite(fields) = type_.kind() {
+        return match decode_composite(Some(fields), raw, limit, nesting_depth) {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => bounded_raw(type_, raw, limit, false),
+            Err(()) => bounded_raw(type_, raw, limit, true),
+        };
+    }
+    if *type_ == Type::RECORD {
+        return match decode_composite(None, raw, limit, nesting_depth) {
             Ok(Some(value)) => Ok(value),
             Ok(None) => bounded_raw(type_, raw, limit, false),
             Err(()) => bounded_raw(type_, raw, limit, true),
@@ -1568,6 +1613,7 @@ fn decode_multirange(
     element_type: &Type,
     raw: &[u8],
     limit: u64,
+    nesting_depth: usize,
 ) -> Result<Option<OwnedValue>, ()> {
     let mut cursor = PostgresBinaryCursor::new(raw);
     let count = usize::try_from(cursor.read_u32()?).map_err(|_| ())?;
@@ -1583,7 +1629,12 @@ fn decode_multirange(
         }
         let length = usize::try_from(cursor.read_u32()?).map_err(|_| ())?;
         let payload = cursor.read_exact(length)?;
-        let value = match decode_range(element_type, payload, component_limit) {
+        let value = match decode_range(
+            element_type,
+            payload,
+            component_limit,
+            nesting_depth.saturating_add(1),
+        ) {
             Ok(Some(value)) => value,
             Ok(None) => return Ok(None),
             Err(()) => return Err(()),
@@ -1599,6 +1650,80 @@ fn decode_multirange(
     projection.finish().map(Some).map_err(|_| ())
 }
 
+fn decode_composite(
+    declared_fields: Option<&[Field]>,
+    raw: &[u8],
+    limit: u64,
+    nesting_depth: usize,
+) -> Result<Option<OwnedValue>, ()> {
+    let mut cursor = PostgresBinaryCursor::new(raw);
+    let field_count = usize::try_from(cursor.read_u32()?).map_err(|_| ())?;
+    if field_count > MAX_POSTGRES_COMPOSITE_FIELDS {
+        return Ok(None);
+    }
+    if declared_fields.is_some_and(|fields| fields.len() != field_count) {
+        return Err(());
+    }
+    let mut projection = BoundedJsonWriter::new(limit);
+    projection.push("{\"$composite\":{\"fields\":[")?;
+    let component_limit = u64::try_from(MAX_JSON_INPUT_BYTES).unwrap_or(u64::MAX);
+    for index in 0..field_count {
+        if index != 0 {
+            projection.push(",")?;
+        }
+        let wire_oid = cursor.read_u32()?;
+        let (name, field_type) = if let Some(fields) = declared_fields {
+            let field = &fields[index];
+            if wire_oid != field.type_().oid() {
+                return Err(());
+            }
+            (Some(field.name()), field.type_().clone())
+        } else {
+            let Some(field_type) = Type::from_oid(wire_oid) else {
+                return Ok(None);
+            };
+            (None, field_type)
+        };
+        projection.push("{\"name\":")?;
+        match name {
+            Some(name) => projection.push_json_string(name)?,
+            None => projection.push("null")?,
+        }
+        projection.push(&format!(",\"oid\":{wire_oid},\"type\":"))?;
+        projection.push_json_string(field_type.name())?;
+        projection.push(",\"value\":")?;
+        let length = cursor.read_i32()?;
+        if length == -1 {
+            projection.push("null}")?;
+            continue;
+        }
+        let length = usize::try_from(length).map_err(|_| ())?;
+        let payload = cursor.read_exact(length)?;
+        let value = decode_value_at_depth(
+            &field_type,
+            payload,
+            component_limit,
+            nesting_depth.saturating_add(1),
+        )
+        .map_err(|_| ())?;
+        if matches!(value.as_ref(), ValueRef::Invalid { .. }) {
+            return Err(());
+        }
+        if value.is_truncated()
+            || matches!(value.as_ref(), ValueRef::Unknown { .. })
+            || !project_structured_value(&value, &mut projection)?
+        {
+            return Ok(None);
+        }
+        projection.push("}")?;
+    }
+    if cursor.remaining() != 0 {
+        return Err(());
+    }
+    projection.push("]}}")?;
+    projection.finish().map(Some).map_err(|_| ())
+}
+
 const RANGE_EMPTY: u8 = 0x01;
 const RANGE_LOWER_INCLUSIVE: u8 = 0x02;
 const RANGE_UPPER_INCLUSIVE: u8 = 0x04;
@@ -1610,7 +1735,12 @@ const RANGE_KNOWN_FLAGS: u8 = RANGE_EMPTY
     | RANGE_LOWER_UNBOUNDED
     | RANGE_UPPER_UNBOUNDED;
 
-fn decode_range(element_type: &Type, raw: &[u8], limit: u64) -> Result<Option<OwnedValue>, ()> {
+fn decode_range(
+    element_type: &Type,
+    raw: &[u8],
+    limit: u64,
+    nesting_depth: usize,
+) -> Result<Option<OwnedValue>, ()> {
     let mut cursor = PostgresBinaryCursor::new(raw);
     let flags = cursor.read_u8()?;
     if flags & !RANGE_KNOWN_FLAGS != 0 {
@@ -1635,6 +1765,7 @@ fn decode_range(element_type: &Type, raw: &[u8], limit: u64) -> Result<Option<Ow
         element_type,
         &mut cursor,
         &mut projection,
+        nesting_depth,
         flags & RANGE_LOWER_UNBOUNDED != 0,
         flags & RANGE_LOWER_INCLUSIVE != 0,
     )? {
@@ -1645,6 +1776,7 @@ fn decode_range(element_type: &Type, raw: &[u8], limit: u64) -> Result<Option<Ow
         element_type,
         &mut cursor,
         &mut projection,
+        nesting_depth,
         flags & RANGE_UPPER_UNBOUNDED != 0,
         flags & RANGE_UPPER_INCLUSIVE != 0,
     )? {
@@ -1661,6 +1793,7 @@ fn project_range_bound(
     element_type: &Type,
     cursor: &mut PostgresBinaryCursor<'_>,
     projection: &mut BoundedJsonWriter,
+    nesting_depth: usize,
     unbounded: bool,
     inclusive: bool,
 ) -> Result<bool, ()> {
@@ -1671,7 +1804,13 @@ fn project_range_bound(
     let length = usize::try_from(cursor.read_i32()?).map_err(|_| ())?;
     let payload = cursor.read_exact(length)?;
     let component_limit = u64::try_from(MAX_JSON_INPUT_BYTES).unwrap_or(u64::MAX);
-    let value = decode_value(element_type, payload, component_limit).map_err(|_| ())?;
+    let value = decode_value_at_depth(
+        element_type,
+        payload,
+        component_limit,
+        nesting_depth.saturating_add(1),
+    )
+    .map_err(|_| ())?;
     if matches!(value.as_ref(), ValueRef::Invalid { .. }) {
         return Err(());
     }
@@ -1696,7 +1835,12 @@ struct PostgresArrayDimension {
     lower_bound: i32,
 }
 
-fn decode_array(element_type: &Type, raw: &[u8], limit: u64) -> Result<Option<OwnedValue>, ()> {
+fn decode_array(
+    element_type: &Type,
+    raw: &[u8],
+    limit: u64,
+    nesting_depth: usize,
+) -> Result<Option<OwnedValue>, ()> {
     let mut cursor = PostgresBinaryCursor::new(raw);
     let dimensions = usize::try_from(cursor.read_i32()?).map_err(|_| ())?;
     let has_null = cursor.read_i32()?;
@@ -1733,16 +1877,20 @@ fn decode_array(element_type: &Type, raw: &[u8], limit: u64) -> Result<Option<Ow
     }
     projection.push("],\"values\":")?;
     let mut saw_null = false;
+    let context = PostgresArrayProjectionContext {
+        element_type,
+        limit,
+        nesting_depth,
+    };
     if dimensions == 0 {
         projection.push("[]")?;
     } else if !project_array_values(
         &shape,
         0,
-        element_type,
         &mut cursor,
         &mut projection,
-        limit,
         &mut saw_null,
+        context,
     )? {
         return Ok(None);
     }
@@ -1756,11 +1904,10 @@ fn decode_array(element_type: &Type, raw: &[u8], limit: u64) -> Result<Option<Ow
 fn project_array_values(
     shape: &[PostgresArrayDimension],
     depth: usize,
-    element_type: &Type,
     cursor: &mut PostgresBinaryCursor<'_>,
     projection: &mut BoundedJsonWriter,
-    limit: u64,
     saw_null: &mut bool,
+    context: PostgresArrayProjectionContext<'_>,
 ) -> Result<bool, ()> {
     projection.push("[")?;
     for index in 0..shape[depth].length {
@@ -1768,15 +1915,7 @@ fn project_array_values(
             projection.push(",")?;
         }
         if depth + 1 < shape.len() {
-            if !project_array_values(
-                shape,
-                depth + 1,
-                element_type,
-                cursor,
-                projection,
-                limit,
-                saw_null,
-            )? {
+            if !project_array_values(shape, depth + 1, cursor, projection, saw_null, context)? {
                 return Ok(false);
             }
             continue;
@@ -1789,13 +1928,26 @@ fn project_array_values(
         }
         let length = usize::try_from(length).map_err(|_| ())?;
         let payload = cursor.read_exact(length)?;
-        let value = decode_value(element_type, payload, limit).map_err(|_| ())?;
+        let value = decode_value_at_depth(
+            context.element_type,
+            payload,
+            context.limit,
+            context.nesting_depth.saturating_add(1),
+        )
+        .map_err(|_| ())?;
         if value.is_truncated() || !project_structured_value(&value, projection)? {
             return Ok(false);
         }
     }
     projection.push("]")?;
     Ok(true)
+}
+
+#[derive(Clone, Copy)]
+struct PostgresArrayProjectionContext<'a> {
+    element_type: &'a Type,
+    limit: u64,
+    nesting_depth: usize,
 }
 
 fn project_structured_value(
@@ -2917,6 +3069,97 @@ mod tests {
     }
 
     #[test]
+    fn composite_projection_preserves_named_and_anonymous_fields() {
+        let named_type = Type::new(
+            "probe_composite".to_owned(),
+            900_002,
+            Kind::Composite(vec![
+                Field::new("id".to_owned(), Type::INT4),
+                Field::new("label\"é".to_owned(), Type::TEXT),
+                Field::new("absent".to_owned(), Type::TEXT),
+            ]),
+            "public".to_owned(),
+        );
+        let id = 7_i32.to_be_bytes();
+        let raw = composite_raw(&[
+            (Type::INT4.oid(), Some(id.as_slice())),
+            (Type::TEXT.oid(), Some("é".as_bytes())),
+            (Type::TEXT.oid(), None),
+        ]);
+        let value = decode_value(&named_type, &raw, 512).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$composite\":{\"fields\":[{\"name\":\"id\",\"oid\":23,\"type\":\"int4\",\"value\":7},{\"name\":\"label\\\"é\",\"oid\":25,\"type\":\"text\",\"value\":\"é\"},{\"name\":\"absent\",\"oid\":25,\"type\":\"text\",\"value\":null}]}}",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let raw = composite_raw(&[
+            (Type::INT4.oid(), Some(id.as_slice())),
+            (Type::TEXT.oid(), None),
+        ]);
+        let value = decode_value(&Type::RECORD, &raw, 512).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$composite\":{\"fields\":[{\"name\":null,\"oid\":23,\"type\":\"int4\",\"value\":7},{\"name\":null,\"oid\":25,\"type\":\"text\",\"value\":null}]}}",
+                truncation: Truncation::Complete
+            }
+        ));
+    }
+
+    #[test]
+    fn composite_projection_bounds_output_and_rejects_malformed_wire() {
+        let id = 7_i32.to_be_bytes();
+        let raw = composite_raw(&[(Type::INT4.oid(), Some(id.as_slice()))]);
+        let bounded = decode_value(&Type::RECORD, &raw, 8).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$compo",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(original)
+                }
+            } if original > 8
+        ));
+
+        let named_type = Type::new(
+            "probe_composite".to_owned(),
+            900_002,
+            Kind::Composite(vec![Field::new("id".to_owned(), Type::INT4)]),
+            "public".to_owned(),
+        );
+        let wrong_oid = composite_raw(&[(Type::TEXT.oid(), Some(b"7"))]);
+        let malformed_value = composite_raw(&[(Type::INT4.oid(), Some(&[0, 0, 0]))]);
+        let mut trailing = raw.clone();
+        trailing.push(0);
+        for malformed in [
+            vec![],
+            vec![0, 0, 0],
+            composite_raw(&[]),
+            wrong_oid,
+            malformed_value,
+            vec![0, 0, 0, 1, 0, 0, 0, 23, 0xff, 0xff, 0xff, 0xfe],
+            trailing,
+        ] {
+            let value = decode_value(&named_type, &malformed, 32).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), "probe_composite");
+        }
+
+        let unsupported = composite_raw(&[(900_003, Some(b"opaque"))]);
+        let value = decode_value(&Type::RECORD, &unsupported, 32).unwrap();
+        assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
+        let excessive = (u32::try_from(MAX_POSTGRES_COMPOSITE_FIELDS).unwrap() + 1).to_be_bytes();
+        let value = decode_value(&Type::RECORD, &excessive, 32).unwrap();
+        assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
+        let value =
+            decode_value_at_depth(&Type::RECORD, &raw, 32, MAX_POSTGRES_NESTING_DEPTH + 1).unwrap();
+        assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
+    }
+
+    #[test]
     fn array_projection_bounds_output_and_rejects_malformed_wire() {
         let raw = array_raw(&[(3, 1)], false, &[Some(1), Some(2), Some(3)]);
         let bounded = decode_value(&Type::INT4_ARRAY, &raw, 8).unwrap();
@@ -3020,6 +3263,22 @@ mod tests {
         for range in ranges {
             raw.extend_from_slice(&u32::try_from(range.len()).unwrap().to_be_bytes());
             raw.extend_from_slice(range);
+        }
+        raw
+    }
+
+    fn composite_raw(fields: &[(u32, Option<&[u8]>)]) -> Vec<u8> {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&u32::try_from(fields.len()).unwrap().to_be_bytes());
+        for (oid, value) in fields {
+            raw.extend_from_slice(&oid.to_be_bytes());
+            match value {
+                Some(value) => {
+                    raw.extend_from_slice(&i32::try_from(value.len()).unwrap().to_be_bytes());
+                    raw.extend_from_slice(value);
+                }
+                None => raw.extend_from_slice(&(-1_i32).to_be_bytes()),
+            }
         }
         raw
     }

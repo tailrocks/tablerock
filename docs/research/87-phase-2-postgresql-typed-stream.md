@@ -33,11 +33,12 @@ that accepts every PostgreSQL type. It then makes one lossless classification:
 | generic array of supported values | canonical structured dimensions, lower bounds, and nested row-major values; research 179 |
 | generic range of supported values | canonical structured empty state and explicit bound kinds/values; research 180 |
 | generic multirange of supported values | ordered canonical structured range members; research 181 |
+| named composite or anonymous record | canonical ordered fields with name/null-name, OID, type, and nested value; research 182 |
 | valid unsupported type | unknown with PostgreSQL type name and raw binary payload |
 | malformed payload for a known type | invalid with PostgreSQL type name and raw payload |
 
-Unsupported does not mean discarded. Anonymous-record probes retain their
-binary representation as `UnknownValues`;
+Unsupported does not mean discarded. Unknown anonymous field OIDs retain the
+whole record's binary representation as an `UnknownValue`;
 later type-specific decoders can replace that classification without changing
 the page or adapter boundary. Research 167 adds the raw complex-value and
 large-binary matrix; research 168 subsequently promotes JSON/JSONB to bounded
@@ -45,6 +46,8 @@ canonical `Structured` projections, research 179 promotes generic arrays while
 preserving their PostgreSQL dimensions and lower bounds, and research 180
 promotes generic ranges with explicit bound truth.
 Research 181 composes the same range truth through generic multiranges.
+Research 182 promotes named composites and anonymous records while preserving
+self-describing field identity.
 Malformed known values are never silently treated as valid.
 
 Column metadata carries the server type name and conservatively marks columns

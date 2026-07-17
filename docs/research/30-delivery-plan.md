@@ -162,6 +162,10 @@ Generic binary multiranges now compose ordered canonical range projections
 inside one bounded `Structured` value. A one-million-member structural ceiling,
 exact length/end validation, and whole-value invalid/unknown fallback prevent
 partial member lists from appearing complete.
+Named composites and anonymous records now project ordered self-describing
+fields with exact name/null-name, OID, type, NULL, and nested-value truth. A
+1,664-field ceiling and shared 64-level structured nesting cap bound hostile
+self-reference across arrays, ranges, multiranges, and composites.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
 `Decimal` values. Malformed wire values remain `Invalid`; valid projections over

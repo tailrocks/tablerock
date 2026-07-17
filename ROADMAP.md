@@ -317,6 +317,9 @@ recorded in
 Generic bounded PostgreSQL multirange projection with ordered range-member
 truth is recorded in
 [`181-phase-2-postgresql-multirange-projection.md`](docs/research/181-phase-2-postgresql-multirange-projection.md).
+Bounded named-composite and anonymous-record projection with shared recursive
+structure limits is recorded in
+[`182-phase-2-postgresql-composite-projection.md`](docs/research/182-phase-2-postgresql-composite-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

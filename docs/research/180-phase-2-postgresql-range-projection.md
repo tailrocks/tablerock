@@ -49,8 +49,9 @@ reuse UTC normalization.
 ## Remaining work
 
 Research 181 subsequently composes ranges through generic multiranges.
-Composite and domain projection remain adapter-private unknown values. Range
-editors, public parameter plans and request bounds, service/UI
+Research 182 subsequently closes composite projection. Domain projection
+remains adapter-private unknown. Range editors, public parameter plans and
+request bounds, service/UI
 projection, and UniFFI remain open. The PostgreSQL driver still receives a
 complete field before TableRock applies its cell bound; strict pre-driver field
 allocation remains open.
