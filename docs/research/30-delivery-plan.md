@@ -137,6 +137,9 @@ both pinned lines. The completion race now passes plain and required-mTLS
 transports: SQLSTATE `57014` proves cancellation while a late successful cancel
 after `SELECT 1` preserves normal-completion truth. The remaining
 protocol/failure matrix stays required.
+Force-stopping both pinned server lines before the cancel socket opens now proves
+redacted cancellation-transport failure and terminal session connection loss,
+without a false server-cancel outcome.
 
 ### ClickHouse spike
 

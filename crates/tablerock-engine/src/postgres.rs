@@ -381,6 +381,13 @@ impl PostgresSession {
             .await
     }
 
+    pub async fn cancel_transport_loss_probe(
+        &self,
+    ) -> Result<PostgresCancellationOutcome, PostgresError> {
+        self.cancel_probe("SELECT pg_sleep(30)", Duration::from_secs(1))
+            .await
+    }
+
     async fn cancel_probe(
         &self,
         sql: &'static str,

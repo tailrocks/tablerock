@@ -33,6 +33,8 @@ This closes the Phase 2 PostgreSQL cancellation completion race. Cancellation
 during page delivery, connection loss while cancelling, notices, parameters,
 multiple statements, COPY, ambiguous writes, broader typed values, and
 presentation remain open.
+Research 156 subsequently closes connection loss before cancel-request delivery;
+loss after request delivery remains open.
 
 ## Safety contract
 

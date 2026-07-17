@@ -115,6 +115,8 @@ verified in
 [`154-phase-2-redis-tls-pubsub-replacement-failure.md`](docs/research/154-phase-2-redis-tls-pubsub-replacement-failure.md).
 PostgreSQL server-cancel versus normal-completion race outcomes are verified in
 [`155-phase-2-postgresql-cancellation-completion-race.md`](docs/research/155-phase-2-postgresql-cancellation-completion-race.md).
+PostgreSQL server loss before separate cancel delivery is verified in
+[`156-phase-2-postgresql-cancel-transport-loss.md`](docs/research/156-phase-2-postgresql-cancel-transport-loss.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

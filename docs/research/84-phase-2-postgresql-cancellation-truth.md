@@ -13,6 +13,8 @@ post-cancel connection reuse on the pinned PostgreSQL 18.4 fixture. The later
 checkpoint closes TLS cancellation and PostgreSQL 17.10 coverage. Research 155
 closes completion races; connection loss, reconnect, and ambiguous writes remain
 required.
+Research 156 subsequently proves cancellation-transport failure when the server
+disappears before the separate cancel connection can deliver its request.
 
 ## Contract decision
 

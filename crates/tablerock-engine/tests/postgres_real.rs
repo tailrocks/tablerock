@@ -305,6 +305,40 @@ async fn distinguishes_server_confirmed_cancellation_from_request_delivery() {
     session.shutdown().await.unwrap();
 }
 
+#[tokio::test]
+async fn classifies_cancel_transport_loss_before_query_disconnect() {
+    for tag in ["17.10-alpine", "18.4-alpine"] {
+        let container = GenericImage::new("postgres", tag)
+            .with_exposed_port(5432.tcp())
+            .with_wait_for(WaitFor::message_on_stderr(
+                "database system is ready to accept connections",
+            ))
+            .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+            .start()
+            .await
+            .unwrap();
+        let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+        let session = PostgresSession::connect(&PostgresConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            text("postgres"),
+            text("postgres"),
+            PostgresTlsMode::Disabled,
+        ))
+        .await
+        .unwrap();
+
+        let cancellation = session.cancel_transport_loss_probe();
+        let stop = async {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            container.stop_with_timeout(Some(0)).await.unwrap();
+        };
+        let (result, ()) = tokio::join!(cancellation, stop);
+        assert_eq!(result, Err(PostgresError::CancellationTransport));
+        assert_eq!(session.shutdown().await, Err(PostgresError::Connection));
+    }
+}
+
 fn identity() -> PageIdentity {
     support::identity(Engine::PostgreSql, 1)
 }
