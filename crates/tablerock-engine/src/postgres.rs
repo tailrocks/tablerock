@@ -135,6 +135,7 @@ pub enum PostgresProbeQuery {
     DomainValues,
     EnumValues,
     NetworkValues,
+    BitValues,
     Parameters,
     CancellationStream,
 }
@@ -431,6 +432,12 @@ impl PostgresProbeQuery {
                  '2001:db8::/48'::cidr AS ipv6_network, \
                  '08:00:2b:01:02:03'::macaddr AS mac48, \
                  '08:00:2b:01:02:03:04:05'::macaddr8 AS mac64"
+            }
+            Self::BitValues => {
+                "SELECT B'10100101'::bit(8) AS fixed_bits, \
+                 B'10101'::varbit AS varying_bits, \
+                 B''::varbit AS empty_bits, \
+                 B'111100001010'::varbit AS multi_byte_bits"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1618,6 +1625,9 @@ fn decode_value_at_depth(
     if matches!(*type_, Type::MACADDR | Type::MACADDR8) {
         return decode_mac_address(type_, raw, limit);
     }
+    if matches!(*type_, Type::BIT | Type::VARBIT) {
+        return decode_bit_string(type_, raw, limit);
+    }
     if matches!(
         *type_,
         Type::DATE
@@ -2295,6 +2305,42 @@ fn bounded_canonical_text(canonical: String, limit: u64) -> Result<OwnedValue, P
         .map_err(|_| PostgresError::Protocol)?;
     OwnedValue::text(stored, truncation(stored_len, canonical.len()))
         .map_err(|_| PostgresError::Protocol)
+}
+
+fn decode_bit_string(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
+    let Some(length_bytes) = raw.get(..4) else {
+        return bounded_raw(type_, raw, limit, true);
+    };
+    let bit_count = match usize::try_from(i32::from_be_bytes(
+        length_bytes
+            .try_into()
+            .map_err(|_| PostgresError::Protocol)?,
+    )) {
+        Ok(bit_count) => bit_count,
+        Err(_) => return bounded_raw(type_, raw, limit, true),
+    };
+    let payload = &raw[4..];
+    if payload.len() != bit_count.div_ceil(8) {
+        return bounded_raw(type_, raw, limit, true);
+    }
+    let used_last_bits = bit_count % 8;
+    if used_last_bits != 0
+        && payload
+            .last()
+            .is_some_and(|byte| byte & (0xff_u8 >> used_last_bits) != 0)
+    {
+        return bounded_raw(type_, raw, limit, true);
+    }
+    let stored_len = usize::try_from(limit).unwrap_or(usize::MAX).min(bit_count);
+    let mut stored_text = String::with_capacity(stored_len);
+    for bit_index in 0..stored_len {
+        let byte = payload[bit_index / 8];
+        let mask = 1_u8 << (7 - bit_index % 8);
+        stored_text.push(if byte & mask == 0 { '0' } else { '1' });
+    }
+    let stored = BoundedText::copy_from_str(&stored_text, ByteLimit::new(limit))
+        .map_err(|_| PostgresError::Protocol)?;
+    OwnedValue::text(stored, truncation(stored_len, bit_count)).map_err(|_| PostgresError::Protocol)
 }
 
 fn decode_uuid(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
@@ -3461,6 +3507,57 @@ mod tests {
             let value = decode_value(&type_, &malformed, 64).unwrap();
             assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
             assert_eq!(value.engine_type().unwrap().name(), type_.name());
+        }
+    }
+
+    #[test]
+    fn bit_projection_preserves_logical_length_and_bounds_output() {
+        let fixed = [0, 0, 0, 8, 0b1010_0101];
+        let value = decode_value(&Type::BIT, &fixed, 16).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Text {
+                value: "10100101",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let varying = [0, 0, 0, 12, 0b1111_0000, 0b1010_0000];
+        let bounded = decode_value(&Type::VARBIT, &varying, 9).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            ValueRef::Text {
+                value: "111100001",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(12)
+                }
+            }
+        ));
+
+        let empty = [0, 0, 0, 0];
+        let value = decode_value(&Type::VARBIT, &empty, 16).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Text {
+                value: "",
+                truncation: Truncation::Complete
+            }
+        ));
+    }
+
+    #[test]
+    fn bit_projection_rejects_malformed_wire() {
+        for malformed in [
+            vec![],
+            vec![0, 0, 0],
+            vec![0xff, 0xff, 0xff, 0xff],
+            vec![0, 0, 0, 8],
+            vec![0, 0, 0, 1, 0, 0],
+            vec![0, 0, 0, 1, 0b1000_0001],
+        ] {
+            let value = decode_value(&Type::VARBIT, &malformed, 16).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), "varbit");
         }
     }
 

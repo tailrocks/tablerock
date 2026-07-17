@@ -134,6 +134,7 @@ kept in the roadmap.
 - [Phase 2 PostgreSQL domain projection](183-phase-2-postgresql-domain-projection.md)
 - [Phase 2 PostgreSQL enum projection](184-phase-2-postgresql-enum-projection.md)
 - [Phase 2 PostgreSQL network projection](185-phase-2-postgresql-network-projection.md)
+- [Phase 2 PostgreSQL bit-string projection](186-phase-2-postgresql-bit-string-projection.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

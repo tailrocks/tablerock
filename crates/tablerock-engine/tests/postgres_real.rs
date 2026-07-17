@@ -1622,6 +1622,44 @@ async fn verify_typed_values(tag: &str) {
     assert!(networks.next_page(identity(), 1).await.unwrap().is_none());
     drop(networks);
 
+    let mut bit_strings = session
+        .stream_probe(
+            PostgresProbeQuery::BitValues,
+            PageLimits::new(1, 4, 256, 512),
+            64,
+        )
+        .await
+        .unwrap();
+    let bit_page = bit_strings.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, engine_type, expected) in [
+        (0_u32, "bit", "10100101"),
+        (1_u32, "varbit", "10101"),
+        (2_u32, "varbit", ""),
+        (3_u32, "varbit", "111100001010"),
+    ] {
+        assert_eq!(
+            bit_page.columns()[column as usize].engine_type().name(),
+            engine_type
+        );
+        assert_eq!(bit_page.cell(0, column).unwrap().kind(), ValueKind::Text);
+        assert_eq!(
+            bit_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            bit_page.cell(0, column).unwrap().truncation(),
+            Truncation::Complete
+        );
+    }
+    assert!(
+        bit_strings
+            .next_page(identity(), 1)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    drop(bit_strings);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,

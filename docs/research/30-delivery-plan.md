@@ -176,6 +176,9 @@ invalid UTF-8 or unknown catalog labels as `Invalid`.
 PostgreSQL `inet`, `cidr`, `macaddr`, and `macaddr8` now project bounded
 canonical `Text` after strict family, prefix, CIDR flag/network, address length,
 framing, and MAC-width validation.
+PostgreSQL fixed `bit` and varying `varbit` now project bounded canonical
+`0`/`1` text after strict signed count, payload-size, framing, and unused-padding
+validation, without expanding beyond the caller limit.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
 `Decimal` values. Malformed wire values remain `Invalid`; valid projections over

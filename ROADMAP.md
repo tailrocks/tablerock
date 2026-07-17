@@ -329,6 +329,9 @@ column type identity and PostgreSQL 17/18 evidence in
 PostgreSQL network scalars now project as strictly validated bounded canonical
 text with PostgreSQL 17/18 evidence in
 [`185-phase-2-postgresql-network-projection.md`](docs/research/185-phase-2-postgresql-network-projection.md).
+PostgreSQL fixed and varying bit strings now project as strictly framed,
+padding-validated bounded canonical text with PostgreSQL 17/18 evidence in
+[`186-phase-2-postgresql-bit-string-projection.md`](docs/research/186-phase-2-postgresql-bit-string-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

@@ -40,8 +40,8 @@ column type identity and complete canonical `Text` values.
 
 ## Remaining work
 
-Additional scalar families remain separate typed-value work. Network editors
-and schema metadata, public parameter plans and request bounds, service/UI
+Research 186 subsequently closes bit-string projection. Additional scalar
+families remain separate typed-value work. Network editors and schema metadata, public parameter plans and request bounds, service/UI
 projection, and UniFFI remain open. The PostgreSQL driver still receives a
 complete field before TableRock applies its cell bound; strict pre-driver field
 allocation remains open.
