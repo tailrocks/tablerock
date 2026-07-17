@@ -40,8 +40,8 @@ and complete bounded `Text` values.
 
 ## Remaining work
 
-Additional scalar-family projection remains separate typed-value work. Enum
-editors and schema metadata, public parameter plans and request bounds,
+Research 185 subsequently closes network scalar projection. Additional scalar
+families remain separate typed-value work. Enum editors and schema metadata, public parameter plans and request bounds,
 service/UI projection, and UniFFI remain open. The PostgreSQL driver still
 receives a complete field before TableRock applies its cell bound; strict
 pre-driver field allocation remains open.

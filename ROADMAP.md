@@ -326,6 +326,9 @@ truth are recorded in
 User-defined enums now project as catalog-validated bounded text with exact
 column type identity and PostgreSQL 17/18 evidence in
 [`184-phase-2-postgresql-enum-projection.md`](docs/research/184-phase-2-postgresql-enum-projection.md).
+PostgreSQL network scalars now project as strictly validated bounded canonical
+text with PostgreSQL 17/18 evidence in
+[`185-phase-2-postgresql-network-projection.md`](docs/research/185-phase-2-postgresql-network-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

@@ -173,6 +173,9 @@ adapter records that protocol limit instead of inventing unavailable identity.
 User-defined enums now project catalog-validated ASCII and Unicode labels as
 bounded UTF-8-safe `Text`, retaining exact enum column identity and classifying
 invalid UTF-8 or unknown catalog labels as `Invalid`.
+PostgreSQL `inet`, `cidr`, `macaddr`, and `macaddr8` now project bounded
+canonical `Text` after strict family, prefix, CIDR flag/network, address length,
+framing, and MAC-width validation.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
 `Decimal` values. Malformed wire values remain `Invalid`; valid projections over

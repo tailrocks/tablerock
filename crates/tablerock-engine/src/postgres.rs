@@ -2,6 +2,7 @@ use std::{
     error::Error,
     fmt,
     io::Write,
+    net::{Ipv4Addr, Ipv6Addr},
     pin::Pin,
     sync::{
         Arc,
@@ -133,6 +134,7 @@ pub enum PostgresProbeQuery {
     CompositeValues,
     DomainValues,
     EnumValues,
+    NetworkValues,
     Parameters,
     CancellationStream,
 }
@@ -420,6 +422,15 @@ impl PostgresProbeQuery {
             Self::EnumValues => {
                 "SELECT 'ready'::tablerock_status AS ascii_label, \
                  'café'::tablerock_status AS unicode_label"
+            }
+            Self::NetworkValues => {
+                "SELECT '192.0.2.1/24'::inet AS ipv4_network_host, \
+                 '203.0.113.7'::inet AS ipv4_host, \
+                 '2001:db8::1/64'::inet AS ipv6_network_host, \
+                 '192.0.2.0/24'::cidr AS ipv4_network, \
+                 '2001:db8::/48'::cidr AS ipv6_network, \
+                 '08:00:2b:01:02:03'::macaddr AS mac48, \
+                 '08:00:2b:01:02:03:04:05'::macaddr8 AS mac64"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1601,6 +1612,12 @@ fn decode_value_at_depth(
     if *type_ == Type::UUID {
         return decode_uuid(type_, raw, limit);
     }
+    if matches!(*type_, Type::INET | Type::CIDR) {
+        return decode_network(type_, raw, limit);
+    }
+    if matches!(*type_, Type::MACADDR | Type::MACADDR8) {
+        return decode_mac_address(type_, raw, limit);
+    }
     if matches!(
         *type_,
         Type::DATE
@@ -2213,6 +2230,71 @@ fn format_interval_seconds(micros: i64) -> String {
     } else {
         format!("{sign}{seconds}.{fraction:06}")
     }
+}
+
+fn decode_network(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
+    let [family, prefix, is_cidr, address_length, address @ ..] = raw else {
+        return bounded_raw(type_, raw, limit, true);
+    };
+    let expected_cidr = *type_ == Type::CIDR;
+    if *is_cidr != u8::from(expected_cidr) {
+        return bounded_raw(type_, raw, limit, true);
+    }
+    let (canonical_address, maximum_prefix) = match (*family, *address_length, address) {
+        (2, 4, [a, b, c, d]) if *prefix <= 32 => (Ipv4Addr::new(*a, *b, *c, *d).to_string(), 32),
+        (3, 16, address) if address.len() == 16 && *prefix <= 128 => {
+            let mut octets = [0_u8; 16];
+            octets.copy_from_slice(address);
+            (Ipv6Addr::from(octets).to_string(), 128)
+        }
+        _ => return bounded_raw(type_, raw, limit, true),
+    };
+    if expected_cidr && !network_host_bits_are_zero(address, *prefix) {
+        return bounded_raw(type_, raw, limit, true);
+    }
+    let canonical = if expected_cidr || *prefix != maximum_prefix {
+        format!("{canonical_address}/{prefix}")
+    } else {
+        canonical_address
+    };
+    bounded_canonical_text(canonical, limit)
+}
+
+fn network_host_bits_are_zero(address: &[u8], prefix: u8) -> bool {
+    let whole_bytes = usize::from(prefix / 8);
+    let remaining_bits = prefix % 8;
+    let partial_is_zero = remaining_bits == 0
+        || address
+            .get(whole_bytes)
+            .is_some_and(|byte| byte & (0xff_u8 >> remaining_bits) == 0);
+    partial_is_zero
+        && address
+            .get(whole_bytes + usize::from(remaining_bits != 0)..)
+            .is_some_and(|suffix| suffix.iter().all(|byte| *byte == 0))
+}
+
+fn decode_mac_address(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
+    let expected_length = if *type_ == Type::MACADDR { 6 } else { 8 };
+    if raw.len() != expected_length {
+        return bounded_raw(type_, raw, limit, true);
+    }
+    let mut canonical = String::with_capacity(expected_length * 3 - 1);
+    for (index, byte) in raw.iter().enumerate() {
+        if index != 0 {
+            canonical.push(':');
+        }
+        use fmt::Write as _;
+        write!(canonical, "{byte:02x}").map_err(|_| PostgresError::Protocol)?;
+    }
+    bounded_canonical_text(canonical, limit)
+}
+
+fn bounded_canonical_text(canonical: String, limit: u64) -> Result<OwnedValue, PostgresError> {
+    let stored_len = utf8_prefix(&canonical, limit);
+    let stored = BoundedText::copy_from_str(&canonical[..stored_len], ByteLimit::new(limit))
+        .map_err(|_| PostgresError::Protocol)?;
+    OwnedValue::text(stored, truncation(stored_len, canonical.len()))
+        .map_err(|_| PostgresError::Protocol)
 }
 
 fn decode_uuid(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
@@ -3307,6 +3389,78 @@ mod tests {
             let value = decode_value(&enum_type, malformed, 16).unwrap();
             assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
             assert_eq!(value.engine_type().unwrap().name(), "status");
+        }
+    }
+
+    #[test]
+    fn network_projection_canonicalizes_ipv4_ipv6_and_mac_addresses() {
+        let ipv4 = [2, 24, 0, 4, 192, 0, 2, 1];
+        let value = decode_value(&Type::INET, &ipv4, 64).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Text {
+                value: "192.0.2.1/24",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let mut ipv6 = vec![3, 48, 1, 16];
+        ipv6.extend_from_slice(&Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0).octets());
+        let value = decode_value(&Type::CIDR, &ipv6, 64).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Text {
+                value: "2001:db8::/48",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let value = decode_value(&Type::MACADDR, &[8, 0, 43, 1, 2, 3], 64).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Text {
+                value: "08:00:2b:01:02:03",
+                truncation: Truncation::Complete
+            }
+        ));
+        let value = decode_value(&Type::MACADDR8, &[8, 0, 43, 1, 2, 3, 4, 5], 64).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Text {
+                value: "08:00:2b:01:02:03:04:05",
+                truncation: Truncation::Complete
+            }
+        ));
+    }
+
+    #[test]
+    fn network_projection_bounds_output_and_rejects_malformed_wire() {
+        let ipv4 = [2, 24, 0, 4, 192, 0, 2, 1];
+        let bounded = decode_value(&Type::INET, &ipv4, 10).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            ValueRef::Text {
+                value: "192.0.2.1/",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(12)
+                }
+            }
+        ));
+
+        for (type_, malformed) in [
+            (Type::INET, vec![]),
+            (Type::INET, vec![4, 24, 0, 4, 192, 0, 2, 1]),
+            (Type::INET, vec![2, 33, 0, 4, 192, 0, 2, 1]),
+            (Type::INET, vec![2, 24, 1, 4, 192, 0, 2, 1]),
+            (Type::INET, vec![2, 24, 0, 5, 192, 0, 2, 1]),
+            (Type::CIDR, vec![2, 24, 1, 4, 192, 0, 2, 1]),
+            (Type::CIDR, vec![2, 24, 1, 4, 192, 0, 2, 1, 0]),
+            (Type::MACADDR, vec![0; 5]),
+            (Type::MACADDR8, vec![0; 9]),
+        ] {
+            let value = decode_value(&type_, &malformed, 64).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), type_.name());
         }
     }
 

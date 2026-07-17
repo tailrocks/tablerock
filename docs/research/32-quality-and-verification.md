@@ -166,6 +166,8 @@ Engine additions:
   top-level domain flattening;
   enums retain exact user-defined column identity and catalog-validated bounded
   ASCII/Unicode text, with invalid UTF-8 and unknown labels rejected;
+  `inet`, `cidr`, `macaddr`, and `macaddr8` retain canonical bounded text and
+  reject invalid family, prefix, CIDR flag/network, framing, and width truth;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,

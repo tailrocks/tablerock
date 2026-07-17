@@ -1584,6 +1584,44 @@ async fn verify_typed_values(tag: &str) {
     assert!(enums.next_page(identity(), 1).await.unwrap().is_none());
     drop(enums);
 
+    let mut networks = session
+        .stream_probe(
+            PostgresProbeQuery::NetworkValues,
+            PageLimits::new(1, 7, 512, 512),
+            64,
+        )
+        .await
+        .unwrap();
+    let network_page = networks.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, engine_type, expected) in [
+        (0_u32, "inet", "192.0.2.1/24"),
+        (1_u32, "inet", "203.0.113.7"),
+        (2_u32, "inet", "2001:db8::1/64"),
+        (3_u32, "cidr", "192.0.2.0/24"),
+        (4_u32, "cidr", "2001:db8::/48"),
+        (5_u32, "macaddr", "08:00:2b:01:02:03"),
+        (6_u32, "macaddr8", "08:00:2b:01:02:03:04:05"),
+    ] {
+        assert_eq!(
+            network_page.columns()[column as usize].engine_type().name(),
+            engine_type
+        );
+        assert_eq!(
+            network_page.cell(0, column).unwrap().kind(),
+            ValueKind::Text
+        );
+        assert_eq!(
+            network_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            network_page.cell(0, column).unwrap().truncation(),
+            Truncation::Complete
+        );
+    }
+    assert!(networks.next_page(identity(), 1).await.unwrap().is_none());
+    drop(networks);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,
