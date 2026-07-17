@@ -1,0 +1,46 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets
+      - name: Check
+        run: cargo check --workspace --all-targets
+      - name: Container-free tests
+        run: cargo test -p tablerock-core -p tablerock-persistence -p tablerock-tui -p tablerock-cli
+      - name: Engine unit tests
+        run: cargo test -p tablerock-engine --lib
+
+  real-servers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - name: Real-server integration tests
+        run: >
+          cargo test -p tablerock-engine
+          --test postgres_real
+          --test clickhouse_real
+          --test redis_real
+          --test three_engine_overlap_real

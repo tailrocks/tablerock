@@ -155,6 +155,10 @@ How to read an evidence document:
 - 129 — [Phase 2 ClickHouse service cancellation evidence](phase-2/clickhouse/129-phase-2-clickhouse-service-cancellation.md)
 - 178 — [Phase 2 ClickHouse temporal projection](phase-2/clickhouse/178-phase-2-clickhouse-temporal-projection.md)
 
+## Delivery and CI
+
+- 192 — [CI verification baseline](delivery/192-ci-verification-baseline.md)
+
 ## TermRock migrations and updates
 
 - 49 — [TermRock 0.8 canonical API migration evidence](termrock/49-termrock-0.8-migration.md)
