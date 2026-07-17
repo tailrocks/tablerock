@@ -55,7 +55,7 @@ const REDIS_ADMIN_PASSWORD: &str = "synthetic-admin-password";
 
 fn redis_acl_file() -> Vec<u8> {
     format!(
-        "user default off\nuser {REDIS_TEST_USERNAME} on >{REDIS_TEST_PASSWORD} ~* +@all\nuser {REDIS_ADMIN_USERNAME} on >{REDIS_ADMIN_PASSWORD} ~* +@all\n"
+        "user default off\nuser {REDIS_TEST_USERNAME} reset on >{REDIS_TEST_PASSWORD} ~* &* +@all\nuser {REDIS_ADMIN_USERNAME} reset on >{REDIS_ADMIN_PASSWORD} ~* &* +@all\n"
     )
         .into_bytes()
 }
@@ -407,7 +407,7 @@ async fn verify_tls_auth_version(
             "sh".to_owned(),
             "-c".to_owned(),
             format!(
-                "chown -R redis:redis /tablerock-tls && exec setpriv --reuid redis --regid redis --clear-groups redis-server --port 0 --tls-port 6379 --tls-cert-file /tablerock-tls/server.crt --tls-key-file /tablerock-tls/server.key --tls-ca-cert-file /tablerock-tls/ca.crt --tls-auth-clients {auth_clients} --aclfile /tablerock-tls/users.acl"
+                "chown -R redis:redis /tablerock-tls && exec setpriv --reuid redis --regid redis --clear-groups redis-server --port 0 --tls-port 6379 --tls-cert-file /tablerock-tls/server.crt --tls-key-file /tablerock-tls/server.key --tls-ca-cert-file /tablerock-tls/ca.crt --tls-auth-clients {auth_clients} --acl-pubsub-default resetchannels --aclfile /tablerock-tls/users.acl"
             ),
         ])
         .start()
@@ -507,6 +507,91 @@ async fn verify_tls_auth_version(
         blocking.next_page(identity(), 0).await,
         Err(tablerock_engine::RedisError::ServerCancelled)
     );
+
+    for kind in [
+        RedisSubscriptionKind::Channel,
+        RedisSubscriptionKind::Pattern,
+    ] {
+        let (selector, channel, columns) = match kind {
+            RedisSubscriptionKind::Channel => (bytes(&[7, 0, 255]), bytes(&[7, 0, 255]), 2),
+            RedisSubscriptionKind::Pattern => (bytes(&[7, 0, b'*']), bytes(&[7, 0, 255]), 3),
+        };
+        let options = RedisSubscriptionOptions::new(PageLimits::new(1, columns, 192, 64), 64, 2);
+        let mut subscription = match kind {
+            RedisSubscriptionKind::Channel => session.subscribe(selector.clone(), options).await,
+            RedisSubscriptionKind::Pattern => session.psubscribe(selector.clone(), options).await,
+        }
+        .unwrap();
+        let receivers: usize = redis::cmd("PUBLISH")
+            .arg(channel.as_slice())
+            .arg(&[3_u8, 0, 4])
+            .query_async(&mut admin)
+            .await
+            .unwrap();
+        assert_eq!(receivers, 1);
+        let page = tokio::time::timeout(
+            Duration::from_secs(5),
+            subscription.next_page(identity(), 0),
+        )
+        .await
+        .expect("TLS Pub/Sub delivers within five seconds")
+        .unwrap()
+        .unwrap();
+        assert_eq!(page.envelope().column_count(), columns);
+        match kind {
+            RedisSubscriptionKind::Channel => {
+                assert_eq!(page.cell(0, 0).unwrap().bytes(), channel.as_slice());
+                assert_eq!(page.cell(0, 1).unwrap().bytes(), &[3, 0, 4]);
+            }
+            RedisSubscriptionKind::Pattern => {
+                assert_eq!(page.cell(0, 0).unwrap().bytes(), selector.as_slice());
+                assert_eq!(page.cell(0, 1).unwrap().bytes(), channel.as_slice());
+                assert_eq!(page.cell(0, 2).unwrap().bytes(), &[3, 0, 4]);
+            }
+        }
+        assert_eq!(
+            session.dispatch_cancel().await.unwrap(),
+            tablerock_engine::RedisCancelDispatch::RequestSent
+        );
+        assert_eq!(
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                subscription.next_page(identity(), 1)
+            )
+            .await
+            .expect("TLS Pub/Sub cancellation completes within five seconds"),
+            Err(tablerock_engine::RedisError::ClientCancelled)
+        );
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let removed = match kind {
+                    RedisSubscriptionKind::Channel => {
+                        let counts: Vec<(Vec<u8>, u64)> = redis::cmd("PUBSUB")
+                            .arg("NUMSUB")
+                            .arg(selector.as_slice())
+                            .query_async(&mut admin)
+                            .await
+                            .unwrap();
+                        counts == vec![(selector.as_slice().to_vec(), 0)]
+                    }
+                    RedisSubscriptionKind::Pattern => {
+                        redis::cmd("PUBSUB")
+                            .arg("NUMPAT")
+                            .query_async::<u64>(&mut admin)
+                            .await
+                            .unwrap()
+                            == 0
+                    }
+                };
+                if removed {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("TLS Pub/Sub teardown is server-visible within five seconds");
+    }
 
     if require_client_identity {
         let without_identity = RedisConnectionSecurity::new()

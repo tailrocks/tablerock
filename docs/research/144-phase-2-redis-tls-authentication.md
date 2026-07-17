@@ -60,7 +60,8 @@ does not close the product Test Connection row: profile secret resolution,
 server identity/version and elapsed-time projection, live credential
 revocation/restart authentication-stop behavior, platform-root server
 fixtures, SSH composition, UI/native presentation, DNS/server-restart races,
-Pub/Sub, write ambiguity, and clean-machine release evidence remain open.
+write ambiguity, and clean-machine release evidence remain open. Pub/Sub
+composition is subsequently closed by research 149.
 
 Context7 selected the official `/redis-rs/redis-rs` documentation. Exact API
 behavior was cross-checked against the pinned redis-rs 1.4.0 source.

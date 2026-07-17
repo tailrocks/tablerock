@@ -95,6 +95,9 @@ in
 Bounded Redis Pub/Sub resubscription with explicit delivery-gap pages is
 recorded in
 [`148-phase-2-redis-pubsub-reconnect.md`](docs/research/148-phase-2-redis-pubsub-reconnect.md).
+Redis TLS, mTLS, and ACL composition for channel and pattern Pub/Sub is recorded
+in
+[`149-phase-2-redis-tls-pubsub.md`](docs/research/149-phase-2-redis-tls-pubsub.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

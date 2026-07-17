@@ -45,7 +45,7 @@ ownership evidence continues to pass in the same matrix.
 
 This closes pattern subscription transport and paging. Reconnect/resubscription
 with visible delivery gaps and same-endpoint server replacement are subsequently
-closed by research 148. DNS races, TLS Pub/Sub composition,
+closed by research 148; TLS Pub/Sub composition by research 149. DNS races,
 strict RESP2 pre-decode allocation bounds, UI presentation, and clean-machine
 release evidence remain open.
 

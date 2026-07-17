@@ -164,7 +164,8 @@ custom-root TLS, optional mTLS identity, ACL authentication, and bounded
 initial authentication-stop behavior also pass that supported-line/protocol matrix.
 Binary-safe pattern subscriptions now pass the supported-line/protocol matrix;
 bounded reconnect/resubscription now emits an explicit delivery-gap page before
-restored messages. Remaining failure races stay required. Reviewed
+restored messages. TLS/mTLS/ACL channel and pattern composition now passes the
+same matrix. Remaining failure races stay required. Reviewed
 single-command TTL mutation now proves exact-once
 authorization, applied/not-applied truth, and unknown post-dispatch outcomes.
 Dedicated bounded binary Pub/Sub streams pass

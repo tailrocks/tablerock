@@ -39,7 +39,7 @@ unsubscribe.
 This closes the bounded Pub/Sub isolation tracer. Pattern subscriptions are
 subsequently closed by research 147. Reconnect/resubscription and same-endpoint
 server replacement are subsequently closed by research 148. DNS races, strict RESP2
-pre-decode allocation bounds, TLS Pub/Sub composition evidence, UI presentation,
+pre-decode allocation bounds, UI presentation,
 and clean-machine release evidence remain open.
 
 Context7 selected the official `/redis-rs/redis-rs` documentation. API behavior

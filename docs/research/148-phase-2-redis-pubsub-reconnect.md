@@ -50,7 +50,7 @@ and partial-failure warnings. A generation-guard regression proves abandoned
 RESP3 attempts become inactive while committed attempts remain live.
 
 This closes bounded Pub/Sub reconnect/resubscription and visible delivery-gap
-truth. DNS endpoint changes, live credential revocation, TLS Pub/Sub composition,
+truth. TLS Pub/Sub composition is subsequently closed by research 149. DNS endpoint changes, live credential revocation,
 strict RESP2 pre-decode allocation bounds, UI presentation, and clean-machine
 release evidence remain open.
 
