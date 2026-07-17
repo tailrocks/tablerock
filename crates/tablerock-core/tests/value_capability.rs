@@ -200,6 +200,20 @@ fn value_debug_output_never_contains_cell_or_type_content() {
     )
     .unwrap();
     assert_eq!(structured.kind(), ValueKind::Structured);
+
+    let temporal = OwnedValue::temporal(
+        BoundedText::copy_from_str("2024-02-29T12:34:56Z", ByteLimit::new(20)).unwrap(),
+        Truncation::Complete,
+    )
+    .unwrap();
+    assert_eq!(temporal.kind(), ValueKind::Temporal);
+    assert!(matches!(
+        temporal.as_ref(),
+        tablerock_core::ValueRef::Temporal {
+            value: "2024-02-29T12:34:56Z",
+            truncation: Truncation::Complete
+        }
+    ));
     assert!(!format!("{structured:?}").contains("do-not-log"));
 
     let engine_type = EngineType::new(

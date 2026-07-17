@@ -471,6 +471,7 @@ pub enum ValueKind {
     Unsigned,
     Float64,
     Decimal,
+    Temporal,
     Text,
     Structured,
     Binary,
@@ -486,6 +487,10 @@ enum ValueData {
     Unsigned(u64),
     Float64(u64),
     Decimal(BoundedText),
+    Temporal {
+        value: BoundedText,
+        truncation: Truncation,
+    },
     Text {
         value: BoundedText,
         truncation: Truncation,
@@ -521,6 +526,10 @@ pub enum ValueRef<'a> {
     Unsigned(u64),
     Float64Bits(u64),
     Decimal(&'a str),
+    Temporal {
+        value: &'a str,
+        truncation: Truncation,
+    },
     Text {
         value: &'a str,
         truncation: Truncation,
@@ -575,6 +584,12 @@ impl OwnedValue {
     #[must_use]
     pub const fn decimal(value: BoundedText) -> Self {
         Self(ValueData::Decimal(value))
+    }
+
+    /// Stores a bounded canonical projection of a database-native temporal value.
+    pub fn temporal(value: BoundedText, truncation: Truncation) -> Result<Self, ValueBuildError> {
+        validate_truncation(value.len(), truncation)?;
+        Ok(Self(ValueData::Temporal { value, truncation }))
     }
 
     pub fn text(value: BoundedText, truncation: Truncation) -> Result<Self, ValueBuildError> {
@@ -638,6 +653,10 @@ impl OwnedValue {
             ValueData::Unsigned(value) => ValueRef::Unsigned(*value),
             ValueData::Float64(bits) => ValueRef::Float64Bits(*bits),
             ValueData::Decimal(value) => ValueRef::Decimal(value.as_str()),
+            ValueData::Temporal { value, truncation } => ValueRef::Temporal {
+                value: value.as_str(),
+                truncation: *truncation,
+            },
             ValueData::Text { value, truncation } => ValueRef::Text {
                 value: value.as_str(),
                 truncation: *truncation,
@@ -680,6 +699,7 @@ impl OwnedValue {
             ValueData::Unsigned(_) => ValueKind::Unsigned,
             ValueData::Float64(_) => ValueKind::Float64,
             ValueData::Decimal(_) => ValueKind::Decimal,
+            ValueData::Temporal { .. } => ValueKind::Temporal,
             ValueData::Text { .. } => ValueKind::Text,
             ValueData::Structured { .. } => ValueKind::Structured,
             ValueData::Binary { .. } => ValueKind::Binary,
@@ -693,6 +713,9 @@ impl OwnedValue {
         matches!(
             self.0,
             ValueData::Text {
+                truncation: Truncation::Truncated { .. },
+                ..
+            } | ValueData::Temporal {
                 truncation: Truncation::Truncated { .. },
                 ..
             } | ValueData::Structured {
@@ -718,6 +741,7 @@ impl OwnedValue {
             ValueRef::Boolean(_) => 1,
             ValueRef::Signed(_) | ValueRef::Unsigned(_) | ValueRef::Float64Bits(_) => 8,
             ValueRef::Decimal(value)
+            | ValueRef::Temporal { value, .. }
             | ValueRef::Text { value, .. }
             | ValueRef::Structured { value, .. } => portable_byte_len(value.len()),
             ValueRef::Binary { value, .. }

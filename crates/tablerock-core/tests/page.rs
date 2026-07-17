@@ -332,6 +332,7 @@ fn canonical_encoding_matrix_accepts_every_value_kind_and_rejects_malformed_byte
             f64::NAN.to_bits().to_be_bytes().to_vec(),
         ),
         (ValueKind::Decimal, b"-12.50".to_vec()),
+        (ValueKind::Temporal, b"2024-02-29T12:34:56Z".to_vec()),
         (ValueKind::Text, "snowman: \u{2603}".as_bytes().to_vec()),
         (ValueKind::Structured, br#"[1,{"key":true}]"#.to_vec()),
         (ValueKind::Binary, vec![0, 0xff]),
@@ -371,6 +372,11 @@ fn canonical_encoding_matrix_accepts_every_value_kind_and_rejects_malformed_byte
         ),
         (
             ValueKind::Decimal,
+            vec![0xff],
+            PageValidationError::InvalidUtf8Encoding { cell: 0 },
+        ),
+        (
+            ValueKind::Temporal,
             vec![0xff],
             PageValidationError::InvalidUtf8Encoding { cell: 0 },
         ),

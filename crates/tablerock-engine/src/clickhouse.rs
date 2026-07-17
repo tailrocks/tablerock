@@ -841,6 +841,7 @@ impl StructuredProjection {
                 self.push(&f64::from_bits(value).to_string());
             }
             tablerock_core::ValueRef::Decimal(value) => self.push(value),
+            tablerock_core::ValueRef::Temporal { value, .. } => self.push_quoted(value),
             tablerock_core::ValueRef::Text { value, .. } => self.push_quoted(value),
             tablerock_core::ValueRef::Structured { value, .. } => self.push(value),
             tablerock_core::ValueRef::Binary { value, .. } => {
