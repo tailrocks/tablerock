@@ -9,7 +9,8 @@ PostgreSQL 17.10 and 18.4. No database-client type crosses the adapter boundary.
 This checkpoint preserves unsupported complex values. Research 168 subsequently
 promotes JSON and JSONB to bounded canonical `Structured` projections, and
 research 179 does the same for generic arrays while retaining dimensions and
-lower bounds. Range and composite navigation remain required.
+lower bounds. Research 180 promotes generic ranges with explicit bound truth.
+Composite navigation remains required.
 
 ## Decision
 
@@ -28,8 +29,10 @@ The fixed typed probe returns JSON, JSONB, `int4range`, anonymous `record`, and
 a 16-byte `bytea`. With an eight-byte cell limit, both supported PostgreSQL
 lines prove:
 
-- range and record are `Unknown` with exact engine type names, own exactly eight
-  bytes, and report an original length greater than eight;
+- range raw preservation established the safe precursor subsequently replaced
+  by the structured decoder in research 180;
+- record remains `Unknown` with its exact engine type name, owns exactly eight
+  bytes, and reports an original length greater than eight;
 - JSON and JSONB raw preservation established the safe precursor subsequently
   replaced by the structured decoder in research 168;
 - `bytea` owns eight `0xab` bytes as `Binary` and reports original length 16;
@@ -42,10 +45,11 @@ Testcontainers Rust 0.27.3 owns the official `postgres:17.10-alpine` and
 
 The driver receives a complete PostgreSQL data-row field before TableRock can
 apply the page cell bound. Strict pre-decode transport allocation for one
-unbounded field remains open. Canonical range and composite decoding remains
-open; JSON/JSONB projection is closed by research 168, numeric decoding by
+unbounded field remains open. Canonical composite decoding remains open;
+JSON/JSONB projection is closed by research 168, numeric decoding by
 research 172, UUID decoding by research 174, scalar temporal decoding by
-research 176/177, and array projection by research 179.
+research 176/177, array projection by research 179, and range projection by
+research 180.
 
 ## Verification
 

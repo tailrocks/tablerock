@@ -149,11 +149,14 @@ binary arrays now project as canonical bounded `Structured` values that retain
 dimension lengths, lower bounds, row-major nesting, NULL elements, and supported
 scalar kinds. Malformed structure becomes `Invalid`; a valid unsupported or
 over-budget array remains whole-value `Unknown`.
-`int4range` and anonymous-record results pass both pinned lines as bounded
-unknown binary values with exact engine type and original-byte length truth;
-large `bytea` remains binary. JSON and JSONB now advance to deterministic
+Generic binary ranges now project as canonical bounded `Structured` values with
+explicit empty, unbounded, inclusive, and exclusive bounds. Invalid structural
+flags/lengths become `Invalid`; unsupported subtype projection remains
+whole-value `Unknown`. Anonymous-record results retain bounded unknown binary
+values with exact engine type and original-byte length truth; large `bytea`
+remains binary. JSON and JSONB now advance to deterministic
 compact bounded `Structured` projections with arbitrary-precision number and
-malformed/version-invalid truth. Range/record decoding and strict
+malformed/version-invalid truth. Record decoding and strict
 pre-driver transport allocation remain required.
 Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
 zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core

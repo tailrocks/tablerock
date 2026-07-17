@@ -1141,20 +1141,24 @@ async fn verify_typed_values(tag: &str) {
             }
         );
     }
-    for (column, type_name) in [(14_u32, "int4range"), (15_u32, "record")] {
-        assert_eq!(
-            page.columns()[column as usize].engine_type().name(),
-            type_name
-        );
-        assert_eq!(page.cell(0, column).unwrap().kind(), ValueKind::Unknown);
-        match page.cell(0, column).unwrap().truncation() {
-            Truncation::Truncated {
-                original_byte_len: Some(original),
-            } => assert!(original > 8),
-            other => panic!("expected bounded complex value, got {other:?}"),
-        }
-        assert_eq!(page.cell(0, column).unwrap().bytes().len(), 8);
-    }
+    assert_eq!(page.columns()[14].engine_type().name(), "int4range");
+    assert_eq!(page.cell(0, 14).unwrap().kind(), ValueKind::Structured);
+    assert_eq!(page.cell(0, 14).unwrap().bytes(), b"{\"$range");
+    assert!(matches!(
+        page.cell(0, 14).unwrap().truncation(),
+        Truncation::Truncated {
+            original_byte_len: Some(original)
+        } if original > 8
+    ));
+    assert_eq!(page.columns()[15].engine_type().name(), "record");
+    assert_eq!(page.cell(0, 15).unwrap().kind(), ValueKind::Unknown);
+    assert_eq!(page.cell(0, 15).unwrap().bytes().len(), 8);
+    assert!(matches!(
+        page.cell(0, 15).unwrap().truncation(),
+        Truncation::Truncated {
+            original_byte_len: Some(original)
+        } if original > 8
+    ));
     assert_eq!(page.columns()[16].engine_type().name(), "bytea");
     assert_eq!(page.cell(0, 16).unwrap().kind(), ValueKind::Binary);
     assert_eq!(page.cell(0, 16).unwrap().bytes(), &[0xab; 8]);
@@ -1282,7 +1286,7 @@ async fn verify_typed_values(tag: &str) {
     let mut arrays = session
         .stream_probe(
             PostgresProbeQuery::ArrayValues,
-            PageLimits::new(1, 5, 512, 2_048),
+            PageLimits::new(1, 6, 3_072, 512),
             512,
         )
         .await
@@ -1314,6 +1318,11 @@ async fn verify_typed_values(tag: &str) {
             "_date",
             "{\"$array\":{\"dimensions\":[[1,2]],\"values\":[\"2024-02-29\",\"2000-01-01\"]}}",
         ),
+        (
+            5_u32,
+            "_int4range",
+            "{\"$array\":{\"dimensions\":[[1,2]],\"values\":[{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":1},\"upper\":{\"kind\":\"exclusive\",\"value\":3}}},{\"$range\":{\"empty\":true}}]}}",
+        ),
     ] {
         assert_eq!(
             array_page.columns()[column as usize].engine_type().name(),
@@ -1334,6 +1343,63 @@ async fn verify_typed_values(tag: &str) {
     }
     assert!(arrays.next_page(identity(), 1).await.unwrap().is_none());
     drop(arrays);
+
+    let mut ranges = session
+        .stream_probe(
+            PostgresProbeQuery::RangeValues,
+            PageLimits::new(1, 6, 4_096, 512),
+            512,
+        )
+        .await
+        .unwrap();
+    let range_page = ranges.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, engine_type, expected) in [
+        (
+            0_u32,
+            "int4range",
+            "{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":1},\"upper\":{\"kind\":\"exclusive\",\"value\":5}}}",
+        ),
+        (
+            1_u32,
+            "int8range",
+            "{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"unbounded\"},\"upper\":{\"kind\":\"exclusive\",\"value\":43}}}",
+        ),
+        (
+            2_u32,
+            "numrange",
+            "{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"exclusive\",\"value\":{\"$decimal\":\"1.20\"}},\"upper\":{\"kind\":\"inclusive\",\"value\":{\"$decimal\":\"2.30\"}}}}",
+        ),
+        (
+            3_u32,
+            "daterange",
+            "{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":\"2024-02-29\"},\"upper\":{\"kind\":\"exclusive\",\"value\":\"2024-03-02\"}}}",
+        ),
+        (
+            4_u32,
+            "tstzrange",
+            "{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":\"2024-02-29T05:00:00Z\"},\"upper\":{\"kind\":\"exclusive\",\"value\":\"2024-02-29T06:00:00Z\"}}}",
+        ),
+        (5_u32, "tstzrange", "{\"$range\":{\"empty\":true}}"),
+    ] {
+        assert_eq!(
+            range_page.columns()[column as usize].engine_type().name(),
+            engine_type
+        );
+        assert_eq!(
+            range_page.cell(0, column).unwrap().kind(),
+            ValueKind::Structured
+        );
+        assert_eq!(
+            range_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            range_page.cell(0, column).unwrap().truncation(),
+            Truncation::Complete
+        );
+    }
+    assert!(ranges.next_page(identity(), 1).await.unwrap().is_none());
+    drop(ranges);
 
     let mut parameters = session
         .stream_probe(

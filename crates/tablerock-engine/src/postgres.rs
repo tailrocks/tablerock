@@ -126,6 +126,7 @@ pub enum PostgresProbeQuery {
     UuidValues,
     TemporalValues,
     ArrayValues,
+    RangeValues,
     Parameters,
     CancellationStream,
 }
@@ -377,7 +378,17 @@ impl PostgresProbeQuery {
                  ARRAY[[1, 2], [3, 4]]::int4[] AS matrix, \
                  '[0:2]={7,8,9}'::int4[] AS zero_based, \
                  ARRAY['plain', 'quoted\"', 'NULL', 'é']::text[] AS text_vector, \
-                 ARRAY[DATE '2024-02-29', DATE '2000-01-01']::date[] AS date_vector"
+                 ARRAY[DATE '2024-02-29', DATE '2000-01-01']::date[] AS date_vector, \
+                 ARRAY['[1,3)'::int4range, 'empty'::int4range] AS range_vector"
+            }
+            Self::RangeValues => {
+                "SELECT '[1,5)'::int4range AS integer_range, \
+                 '(,42]'::int8range AS unbounded_range, \
+                 '(1.20,2.30]'::numrange AS numeric_range, \
+                 '[2024-02-29,2024-03-02)'::daterange AS date_range, \
+                 '[2024-02-29 12:00:00+07,2024-02-29 13:00:00+07)'::tstzrange \
+                    AS timestamp_range, \
+                 'empty'::tstzrange AS empty_range"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1527,7 +1538,105 @@ fn decode_value(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Post
             Err(()) => bounded_raw(type_, raw, limit, true),
         };
     }
+    if let Kind::Range(element_type) = type_.kind() {
+        return match decode_range(element_type, raw, limit) {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => bounded_raw(type_, raw, limit, false),
+            Err(()) => bounded_raw(type_, raw, limit, true),
+        };
+    }
     bounded_raw(type_, raw, limit, false)
+}
+
+const RANGE_EMPTY: u8 = 0x01;
+const RANGE_LOWER_INCLUSIVE: u8 = 0x02;
+const RANGE_UPPER_INCLUSIVE: u8 = 0x04;
+const RANGE_LOWER_UNBOUNDED: u8 = 0x08;
+const RANGE_UPPER_UNBOUNDED: u8 = 0x10;
+const RANGE_KNOWN_FLAGS: u8 = RANGE_EMPTY
+    | RANGE_LOWER_INCLUSIVE
+    | RANGE_UPPER_INCLUSIVE
+    | RANGE_LOWER_UNBOUNDED
+    | RANGE_UPPER_UNBOUNDED;
+
+fn decode_range(element_type: &Type, raw: &[u8], limit: u64) -> Result<Option<OwnedValue>, ()> {
+    let mut cursor = PostgresBinaryCursor::new(raw);
+    let flags = cursor.read_u8()?;
+    if flags & !RANGE_KNOWN_FLAGS != 0 {
+        return Err(());
+    }
+    let mut projection = BoundedJsonWriter::new(limit);
+    if flags == RANGE_EMPTY {
+        if cursor.remaining() != 0 {
+            return Err(());
+        }
+        projection.push("{\"$range\":{\"empty\":true}}")?;
+        return projection.finish().map(Some).map_err(|_| ());
+    }
+    if flags & RANGE_EMPTY != 0
+        || flags & RANGE_LOWER_UNBOUNDED != 0 && flags & RANGE_LOWER_INCLUSIVE != 0
+        || flags & RANGE_UPPER_UNBOUNDED != 0 && flags & RANGE_UPPER_INCLUSIVE != 0
+    {
+        return Err(());
+    }
+    projection.push("{\"$range\":{\"empty\":false,\"lower\":")?;
+    if !project_range_bound(
+        element_type,
+        &mut cursor,
+        &mut projection,
+        flags & RANGE_LOWER_UNBOUNDED != 0,
+        flags & RANGE_LOWER_INCLUSIVE != 0,
+    )? {
+        return Ok(None);
+    }
+    projection.push(",\"upper\":")?;
+    if !project_range_bound(
+        element_type,
+        &mut cursor,
+        &mut projection,
+        flags & RANGE_UPPER_UNBOUNDED != 0,
+        flags & RANGE_UPPER_INCLUSIVE != 0,
+    )? {
+        return Ok(None);
+    }
+    if cursor.remaining() != 0 {
+        return Err(());
+    }
+    projection.push("}}")?;
+    projection.finish().map(Some).map_err(|_| ())
+}
+
+fn project_range_bound(
+    element_type: &Type,
+    cursor: &mut PostgresBinaryCursor<'_>,
+    projection: &mut BoundedJsonWriter,
+    unbounded: bool,
+    inclusive: bool,
+) -> Result<bool, ()> {
+    if unbounded {
+        projection.push("{\"kind\":\"unbounded\"}")?;
+        return Ok(true);
+    }
+    let length = usize::try_from(cursor.read_i32()?).map_err(|_| ())?;
+    let payload = cursor.read_exact(length)?;
+    let component_limit = u64::try_from(MAX_JSON_INPUT_BYTES).unwrap_or(u64::MAX);
+    let value = decode_value(element_type, payload, component_limit).map_err(|_| ())?;
+    if matches!(value.as_ref(), ValueRef::Invalid { .. }) {
+        return Err(());
+    }
+    if value.is_truncated() || matches!(value.as_ref(), ValueRef::Unknown { .. }) {
+        return Ok(false);
+    }
+    projection.push(if inclusive {
+        "{\"kind\":\"inclusive\",\"value\":"
+    } else {
+        "{\"kind\":\"exclusive\",\"value\":"
+    })?;
+    if !project_structured_value(&value, projection)? {
+        return Ok(false);
+    }
+    projection.push("}")?;
+    Ok(true)
 }
 
 #[derive(Clone, Copy)]
@@ -1537,7 +1646,7 @@ struct PostgresArrayDimension {
 }
 
 fn decode_array(element_type: &Type, raw: &[u8], limit: u64) -> Result<Option<OwnedValue>, ()> {
-    let mut cursor = PostgresArrayCursor::new(raw);
+    let mut cursor = PostgresBinaryCursor::new(raw);
     let dimensions = usize::try_from(cursor.read_i32()?).map_err(|_| ())?;
     let has_null = cursor.read_i32()?;
     let element_oid = cursor.read_u32()?;
@@ -1597,7 +1706,7 @@ fn project_array_values(
     shape: &[PostgresArrayDimension],
     depth: usize,
     element_type: &Type,
-    cursor: &mut PostgresArrayCursor<'_>,
+    cursor: &mut PostgresBinaryCursor<'_>,
     projection: &mut BoundedJsonWriter,
     limit: u64,
     saw_null: &mut bool,
@@ -1630,7 +1739,7 @@ fn project_array_values(
         let length = usize::try_from(length).map_err(|_| ())?;
         let payload = cursor.read_exact(length)?;
         let value = decode_value(element_type, payload, limit).map_err(|_| ())?;
-        if value.is_truncated() || !project_array_element(&value, projection)? {
+        if value.is_truncated() || !project_structured_value(&value, projection)? {
             return Ok(false);
         }
     }
@@ -1638,7 +1747,7 @@ fn project_array_values(
     Ok(true)
 }
 
-fn project_array_element(
+fn project_structured_value(
     value: &OwnedValue,
     projection: &mut BoundedJsonWriter,
 ) -> Result<bool, ()> {
@@ -1669,17 +1778,21 @@ fn project_array_element(
     Ok(true)
 }
 
-struct PostgresArrayCursor<'a> {
+struct PostgresBinaryCursor<'a> {
     remaining: &'a [u8],
 }
 
-impl<'a> PostgresArrayCursor<'a> {
+impl<'a> PostgresBinaryCursor<'a> {
     const fn new(raw: &'a [u8]) -> Self {
         Self { remaining: raw }
     }
 
     const fn remaining(&self) -> usize {
         self.remaining.len()
+    }
+
+    fn read_u8(&mut self) -> Result<u8, ()> {
+        Ok(self.read_exact(1)?[0])
     }
 
     fn read_i32(&mut self) -> Result<i32, ()> {
@@ -2573,6 +2686,113 @@ mod tests {
     }
 
     #[test]
+    fn range_projection_preserves_bound_kinds_and_values() {
+        let empty = decode_value(&Type::INT4_RANGE, &[RANGE_EMPTY], 128).unwrap();
+        assert!(matches!(
+            empty.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$range\":{\"empty\":true}}",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let bounded = range_raw(
+            RANGE_LOWER_INCLUSIVE,
+            Some(&1_i32.to_be_bytes()),
+            Some(&5_i32.to_be_bytes()),
+        );
+        let value = decode_value(&Type::INT4_RANGE, &bounded, 256).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"inclusive\",\"value\":1},\"upper\":{\"kind\":\"exclusive\",\"value\":5}}}",
+                truncation: Truncation::Complete
+            }
+        ));
+
+        let upper = 42_i64.to_be_bytes();
+        let unbounded = range_raw(
+            RANGE_LOWER_UNBOUNDED | RANGE_UPPER_INCLUSIVE,
+            None,
+            Some(&upper),
+        );
+        let value = decode_value(&Type::INT8_RANGE, &unbounded, 256).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$range\":{\"empty\":false,\"lower\":{\"kind\":\"unbounded\"},\"upper\":{\"kind\":\"inclusive\",\"value\":42}}}",
+                truncation: Truncation::Complete
+            }
+        ));
+    }
+
+    #[test]
+    fn range_projection_bounds_output_and_rejects_malformed_wire() {
+        let raw = range_raw(
+            RANGE_LOWER_INCLUSIVE,
+            Some(&1_i32.to_be_bytes()),
+            Some(&5_i32.to_be_bytes()),
+        );
+        let bounded = decode_value(&Type::INT4_RANGE, &raw, 8).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$range",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(original)
+                }
+            } if original > 8
+        ));
+
+        let timestamp = range_raw(
+            RANGE_LOWER_INCLUSIVE,
+            Some(&0_i64.to_be_bytes()),
+            Some(&1_i64.to_be_bytes()),
+        );
+        let bounded = decode_value(&Type::TSTZ_RANGE, &timestamp, 8).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$range",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(original)
+                }
+            } if original > 8
+        ));
+
+        let mut trailing = raw.clone();
+        trailing.push(0);
+        let malformed_subtype = range_raw(0, Some(&[0, 0, 0]), Some(&5_i32.to_be_bytes()));
+        for malformed in [
+            vec![],
+            vec![RANGE_EMPTY, 0],
+            vec![RANGE_EMPTY | RANGE_LOWER_INCLUSIVE],
+            vec![0x80],
+            vec![RANGE_LOWER_UNBOUNDED | RANGE_LOWER_INCLUSIVE],
+            vec![0, 0, 0, 0, 4, 0],
+            vec![0, 0xff, 0xff, 0xff, 0xff],
+            range_raw(0, None, None),
+            trailing,
+            malformed_subtype,
+        ] {
+            let value = decode_value(&Type::INT4_RANGE, &malformed, 16).unwrap();
+            assert_eq!(value.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(value.engine_type().unwrap().name(), "int4range");
+        }
+
+        let unsupported_type = Type::new(
+            "customrange".to_owned(),
+            900_001,
+            Kind::Range(Type::JSONPATH),
+            "public".to_owned(),
+        );
+        let unsupported = range_raw(0, Some(b"$.a"), Some(b"$.z"));
+        let value = decode_value(&unsupported_type, &unsupported, 64).unwrap();
+        assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
+        assert_eq!(value.engine_type().unwrap().name(), "customrange");
+    }
+
+    #[test]
     fn array_projection_bounds_output_and_rejects_malformed_wire() {
         let raw = array_raw(&[(3, 1)], false, &[Some(1), Some(2), Some(3)]);
         let bounded = decode_value(&Type::INT4_ARRAY, &raw, 8).unwrap();
@@ -2657,6 +2877,15 @@ mod tests {
                 }
                 None => raw.extend_from_slice(&(-1_i32).to_be_bytes()),
             }
+        }
+        raw
+    }
+
+    fn range_raw(flags: u8, lower: Option<&[u8]>, upper: Option<&[u8]>) -> Vec<u8> {
+        let mut raw = vec![flags];
+        for bound in [lower, upper].into_iter().flatten() {
+            raw.extend_from_slice(&i32::try_from(bound.len()).unwrap().to_be_bytes());
+            raw.extend_from_slice(bound);
         }
         raw
     }

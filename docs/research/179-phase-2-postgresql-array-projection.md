@@ -41,12 +41,12 @@ and negative lower bounds, multidimensional nesting, bounded output, every
 structural rejection above, and the element budget. Testcontainers Rust 0.27.3
 owns official `postgres:17.10-alpine` and `postgres:18.4-alpine` fixtures. Both
 lines prove nullable integer arrays, a 2x2 matrix, lower bound zero, escaped and
-Unicode text, temporal elements, and a prepared `int4[]` result through the
-same typed stream.
+Unicode text, temporal and range elements, and a prepared `int4[]` result
+through the same typed stream.
 
 ## Remaining work
 
-Composite, range, and domain element projection remain adapter-private unknown
+Composite and domain element projection remain adapter-private unknown
 values. Array editors, public parameter plans and aggregate request bounds,
 service/UI projection, and UniFFI remain open. The PostgreSQL driver still
 receives a complete field before TableRock applies its cell bound; strict

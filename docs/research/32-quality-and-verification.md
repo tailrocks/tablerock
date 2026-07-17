@@ -133,7 +133,7 @@ Engine additions:
   slow-delivery-independent terminal reconstruction, premature completion
   rejection, and exactly-once runtime release;
 
-- PostgreSQL: custom/unknown OIDs, ranges/composites/JSON/bytes, notices,
+- PostgreSQL: custom/unknown OIDs, composites/JSON/bytes, notices,
   parameters, COPY, multiple statements, transaction conflicts, cancel races;
   pinned real servers distinguish SQLSTATE-confirmed cancellation from a late
   successfully delivered cancel after normal query completion, and a bounded
@@ -145,16 +145,17 @@ Engine additions:
   through bounded pages on both pinned lines;
   generic arrays retain dimensions, lower bounds, nesting, and NULL elements in
   bounded canonical structured values on both pinned lines;
-  declared NULL remains null and `int4[]` retains bounded unknown bytes with
-  exact engine type identity on both pinned lines;
+  declared NULL remains null and `int4[]` retains structured array identity on
+  both pinned lines;
   JSON and JSONB retain deterministic bounded structured projections with
   arbitrary-precision numbers and explicit invalid/over-ceiling behavior;
   native numeric retains arbitrary precision, scale/trailing zeros, scaled
   zero, NaN, infinities, and bounded malformed/over-cell-limit behavior;
   UUID retains canonical lowercase 8-4-4-4-12 text, exact truncation length,
   nil/maximum values, and malformed-length behavior;
-  `int4range` and anonymous record retain bounded unknown binary bytes with
-  exact type/truncation truth, while large `bytea` remains binary;
+  generic ranges retain explicit empty/unbounded/inclusive/exclusive truth in
+  bounded canonical structured values; anonymous records retain bounded unknown
+  binary bytes with exact type/truncation truth; large `bytea` remains binary;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,

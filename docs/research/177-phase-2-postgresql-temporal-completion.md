@@ -38,8 +38,9 @@ gives one locale- and `DateStyle`-independent representation.
   mixed-sign interval, both interval infinities, `0001 BC`, and year 10000
   through immutable result pages.
 
-Temporal arrays/ranges, typed edit/parameter round trips, presentation, and
-UniFFI remain later checkpoints.
+Research 179/180 subsequently compose temporal values through generic arrays
+and ranges. Typed edit/parameter round trips, presentation, and UniFFI remain
+later checkpoints.
 
 External concepts: PostgreSQL timetz offset direction, interval binary components/sentinels, proleptic Gregorian calendar
 Public sources: <https://www.postgresql.org/docs/current/datatype-datetime.html>, <https://github.com/postgres/postgres>, <https://docs.rs/tokio-postgres/0.7.18>
