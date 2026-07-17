@@ -120,6 +120,7 @@ pub enum PostgresProbeQuery {
     TypedValues,
     NumericValues,
     UuidValues,
+    TemporalValues,
     Parameters,
     CancellationStream,
 }
@@ -353,6 +354,13 @@ impl PostgresProbeQuery {
                 "SELECT '123e4567-e89b-12d3-a456-426614174000'::uuid AS representative, \
                  '00000000-0000-0000-0000-000000000000'::uuid AS nil, \
                  'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid AS maximum"
+            }
+            Self::TemporalValues => {
+                "SELECT DATE '2000-01-01' AS epoch_date, DATE '2024-02-29' AS leap_date, \
+                 TIME '24:00:00' AS end_of_day, TIME '12:34:56.123456' AS precise_time, \
+                 TIMESTAMP '1999-12-31 23:59:59.999999' AS local_timestamp, \
+                 TIMESTAMPTZ '2024-02-29 12:34:56.123456+07' AS utc_timestamp, \
+                 'infinity'::date AS infinite_date, '-infinity'::timestamptz AS negative_infinity"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -1484,7 +1492,104 @@ fn decode_value(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, Post
     if *type_ == Type::UUID {
         return decode_uuid(type_, raw, limit);
     }
+    if matches!(
+        *type_,
+        Type::DATE | Type::TIME | Type::TIMESTAMP | Type::TIMESTAMPTZ
+    ) {
+        return decode_temporal(type_, raw, limit);
+    }
     bounded_raw(type_, raw, limit, false)
+}
+
+const POSTGRES_UNIX_EPOCH_DAYS: i64 = 10_957;
+const MICROS_PER_DAY: i64 = 86_400_000_000;
+
+fn decode_temporal(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
+    let canonical = match *type_ {
+        Type::DATE if raw.len() == 4 => {
+            match i32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]) {
+                i32::MAX => "infinity".to_owned(),
+                i32::MIN => "-infinity".to_owned(),
+                days => format_date(i64::from(days) + POSTGRES_UNIX_EPOCH_DAYS),
+            }
+        }
+        Type::TIME if raw.len() == 8 => {
+            let micros = i64::from_be_bytes([
+                raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7],
+            ]);
+            if !(0..=MICROS_PER_DAY).contains(&micros) {
+                return bounded_raw(type_, raw, limit, true);
+            }
+            format_time(micros)
+        }
+        Type::TIMESTAMP | Type::TIMESTAMPTZ if raw.len() == 8 => {
+            let micros = i64::from_be_bytes([
+                raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7],
+            ]);
+            match micros {
+                i64::MAX => "infinity".to_owned(),
+                i64::MIN => "-infinity".to_owned(),
+                micros => {
+                    let days = micros.div_euclid(MICROS_PER_DAY) + POSTGRES_UNIX_EPOCH_DAYS;
+                    let time = micros.rem_euclid(MICROS_PER_DAY);
+                    let suffix = if *type_ == Type::TIMESTAMPTZ { "Z" } else { "" };
+                    format!("{}T{}{}", format_date(days), format_time(time), suffix)
+                }
+            }
+        }
+        Type::DATE | Type::TIME | Type::TIMESTAMP | Type::TIMESTAMPTZ => {
+            return bounded_raw(type_, raw, limit, true);
+        }
+        _ => return bounded_raw(type_, raw, limit, false),
+    };
+    bounded_temporal(&canonical, limit)
+}
+
+fn bounded_temporal(canonical: &str, limit: u64) -> Result<OwnedValue, PostgresError> {
+    let stored_len = usize::try_from(limit)
+        .unwrap_or(usize::MAX)
+        .min(canonical.len());
+    let stored = BoundedText::copy_from_str(
+        &canonical[..stored_len],
+        ByteLimit::new(u64::try_from(stored_len).unwrap_or(u64::MAX)),
+    )
+    .map_err(|_| PostgresError::Protocol)?;
+    OwnedValue::temporal(stored, truncation(stored_len, canonical.len()))
+        .map_err(|_| PostgresError::Protocol)
+}
+
+fn format_date(days_since_unix_epoch: i64) -> String {
+    let shifted = days_since_unix_epoch + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    let year = if (0..=9_999).contains(&year) {
+        format!("{year:04}")
+    } else if year > 0 {
+        format!("+{year}")
+    } else {
+        format!("-{absolute:04}", absolute = year.unsigned_abs())
+    };
+    format!("{year}-{month:02}-{day:02}")
+}
+
+fn format_time(micros: i64) -> String {
+    let hours = micros / 3_600_000_000;
+    let minutes = micros / 60_000_000 % 60;
+    let seconds = micros / 1_000_000 % 60;
+    let fraction = micros % 1_000_000;
+    if fraction == 0 {
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{hours:02}:{minutes:02}:{seconds:02}.{fraction:06}")
+    }
 }
 
 fn decode_uuid(type_: &Type, raw: &[u8], limit: u64) -> Result<OwnedValue, PostgresError> {
@@ -2052,6 +2157,73 @@ mod tests {
             let invalid = decode_value(&Type::UUID, raw, 8).unwrap();
             assert_eq!(invalid.kind(), tablerock_core::ValueKind::Invalid);
             assert_eq!(invalid.engine_type().unwrap().name(), "uuid");
+        }
+    }
+
+    #[test]
+    fn temporal_projection_handles_epochs_boundaries_and_infinity() {
+        for (type_, raw, expected) in [
+            (Type::DATE, 0_i32.to_be_bytes().to_vec(), "2000-01-01"),
+            (
+                Type::DATE,
+                (-10_957_i32).to_be_bytes().to_vec(),
+                "1970-01-01",
+            ),
+            (
+                Type::TIME,
+                MICROS_PER_DAY.to_be_bytes().to_vec(),
+                "24:00:00",
+            ),
+            (
+                Type::TIMESTAMP,
+                (-1_i64).to_be_bytes().to_vec(),
+                "1999-12-31T23:59:59.999999",
+            ),
+            (
+                Type::TIMESTAMPTZ,
+                0_i64.to_be_bytes().to_vec(),
+                "2000-01-01T00:00:00Z",
+            ),
+            (Type::DATE, i32::MAX.to_be_bytes().to_vec(), "infinity"),
+            (
+                Type::TIMESTAMPTZ,
+                i64::MIN.to_be_bytes().to_vec(),
+                "-infinity",
+            ),
+        ] {
+            let value = decode_value(&type_, &raw, 64).unwrap();
+            assert!(matches!(
+                value.as_ref(),
+                tablerock_core::ValueRef::Temporal {
+                    value,
+                    truncation: Truncation::Complete
+                } if value == expected
+            ));
+        }
+    }
+
+    #[test]
+    fn temporal_projection_is_bounded_and_malformed_safe() {
+        let bounded = decode_value(&Type::DATE, &0_i32.to_be_bytes(), 7).unwrap();
+        assert!(matches!(
+            bounded.as_ref(),
+            tablerock_core::ValueRef::Temporal {
+                value: "2000-01",
+                truncation: Truncation::Truncated {
+                    original_byte_len: Some(10)
+                }
+            }
+        ));
+
+        for (type_, raw) in [
+            (Type::DATE, vec![0; 3]),
+            (Type::TIME, (-1_i64).to_be_bytes().to_vec()),
+            (Type::TIME, (MICROS_PER_DAY + 1).to_be_bytes().to_vec()),
+            (Type::TIMESTAMP, vec![0; 7]),
+        ] {
+            let invalid = decode_value(&type_, &raw, 8).unwrap();
+            assert_eq!(invalid.kind(), tablerock_core::ValueKind::Invalid);
+            assert_eq!(invalid.engine_type().unwrap().name(), type_.name());
         }
     }
 

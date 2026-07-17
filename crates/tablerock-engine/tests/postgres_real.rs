@@ -1227,6 +1227,43 @@ async fn verify_typed_values(tag: &str) {
     assert!(uuids.next_page(identity(), 1).await.unwrap().is_none());
     drop(uuids);
 
+    let mut temporals = session
+        .stream_probe(
+            PostgresProbeQuery::TemporalValues,
+            PageLimits::new(1, 8, 256, 512),
+            64,
+        )
+        .await
+        .unwrap();
+    let temporal_page = temporals.next_page(identity(), 0).await.unwrap().unwrap();
+    for (column, engine_type, expected) in [
+        (0_u32, "date", "2000-01-01"),
+        (1_u32, "date", "2024-02-29"),
+        (2_u32, "time", "24:00:00"),
+        (3_u32, "time", "12:34:56.123456"),
+        (4_u32, "timestamp", "1999-12-31T23:59:59.999999"),
+        (5_u32, "timestamptz", "2024-02-29T05:34:56.123456Z"),
+        (6_u32, "date", "infinity"),
+        (7_u32, "timestamptz", "-infinity"),
+    ] {
+        assert_eq!(
+            temporal_page.columns()[column as usize]
+                .engine_type()
+                .name(),
+            engine_type
+        );
+        assert_eq!(
+            temporal_page.cell(0, column).unwrap().kind(),
+            ValueKind::Temporal
+        );
+        assert_eq!(
+            temporal_page.cell(0, column).unwrap().bytes(),
+            expected.as_bytes()
+        );
+    }
+    assert!(temporals.next_page(identity(), 1).await.unwrap().is_none());
+    drop(temporals);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,
