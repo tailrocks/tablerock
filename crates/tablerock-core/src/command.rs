@@ -178,24 +178,92 @@ pub enum CommandScope {
     Context(OperationScope),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Maximum UTF-8 byte length for an operator-supplied statement.
+///
+/// Matches the paste bound used by the TUI so one statement cannot exceed the
+/// largest text payload the shell already admits.
+pub const MAX_STATEMENT_BYTES: usize = 1_048_576;
+
+/// Bounded operator statement text. Debug redacts content to length only.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct StatementText {
+    text: String,
+}
+
+impl StatementText {
+    pub fn new(text: impl Into<String>) -> Result<Self, StatementTextError> {
+        let text = text.into();
+        if text.len() > MAX_STATEMENT_BYTES {
+            return Err(StatementTextError::TooLarge {
+                actual: text.len(),
+                limit: MAX_STATEMENT_BYTES,
+            });
+        }
+        Ok(Self { text })
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.text.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+}
+
+impl fmt::Debug for StatementText {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("StatementText")
+            .field("bytes", &self.text.len())
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatementTextError {
+    TooLarge { actual: usize, limit: usize },
+}
+
+impl fmt::Display for StatementTextError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::TooLarge { .. } => "statement text exceeds the maximum byte bound",
+        })
+    }
+}
+
+impl Error for StatementTextError {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CommandIntent {
     TestProfile,
     Connect,
     Disconnect,
     RefreshCatalog,
     FetchPage(PageRequest),
+    /// Operator-supplied statement. Treated as a potential write until a later
+    /// phase classifies statements by engine-specific parse facts.
+    Execute { statement: StatementText },
     Cancel { operation_id: OperationId },
     Shutdown,
 }
 
 impl CommandIntent {
     #[must_use]
-    pub const fn safety(self) -> CommandSafety {
+    pub const fn safety(&self) -> CommandSafety {
         match self {
             Self::TestProfile | Self::RefreshCatalog | Self::FetchPage(_) => {
                 CommandSafety::ReadOnly
             }
+            Self::Execute { .. } => CommandSafety::MayWrite,
             Self::Connect | Self::Disconnect | Self::Cancel { .. } | Self::Shutdown => {
                 CommandSafety::Lifecycle
             }
@@ -203,18 +271,21 @@ impl CommandIntent {
     }
 
     #[must_use]
-    pub const fn redaction(self) -> RedactionClass {
+    pub const fn redaction(&self) -> RedactionClass {
         RedactionClass::MetadataOnly
     }
 
-    const fn scope_matches(self, scope: CommandScope) -> bool {
+    const fn scope_matches(&self, scope: CommandScope) -> bool {
         matches!(
             (self, scope),
             (Self::Shutdown, CommandScope::Application)
                 | (Self::TestProfile | Self::Connect, CommandScope::Profile(_))
                 | (Self::Disconnect, CommandScope::Session { .. })
                 | (
-                    Self::RefreshCatalog | Self::FetchPage(_) | Self::Cancel { .. },
+                    Self::RefreshCatalog
+                        | Self::FetchPage(_)
+                        | Self::Execute { .. }
+                        | Self::Cancel { .. },
                     CommandScope::Context(_)
                 )
         )
@@ -275,6 +346,9 @@ impl PageRequest {
 pub enum CommandSafety {
     ReadOnly,
     Lifecycle,
+    /// Unknown or operator-authored statements; treated as writes until a
+    /// later phase proves read-only classification.
+    MayWrite,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -282,7 +356,7 @@ pub enum RedactionClass {
     MetadataOnly,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CommandEnvelope {
     schema_version: u16,
     request_id: RequestId,
@@ -333,11 +407,11 @@ impl CommandEnvelope {
         if !intent.scope_matches(scope) {
             return Err(CommandBuildError::ScopeMismatch);
         }
-        if let CommandIntent::FetchPage(request) = intent
-            && request.row_count > budget.max_page_rows()
+        if let CommandIntent::FetchPage(request) = &intent
+            && request.row_count() > budget.max_page_rows()
         {
             return Err(CommandBuildError::PageRowsExceedBudget {
-                requested: request.row_count,
+                requested: request.row_count(),
                 limit: budget.max_page_rows(),
             });
         }
@@ -353,47 +427,47 @@ impl CommandEnvelope {
     }
 
     #[must_use]
-    pub const fn schema_version(self) -> u16 {
+    pub const fn schema_version(&self) -> u16 {
         self.schema_version
     }
 
     #[must_use]
-    pub const fn request_id(self) -> RequestId {
+    pub const fn request_id(&self) -> RequestId {
         self.request_id
     }
 
     #[must_use]
-    pub const fn scope(self) -> CommandScope {
+    pub const fn scope(&self) -> CommandScope {
         self.scope
     }
 
     #[must_use]
-    pub const fn expected_revision(self) -> Revision {
+    pub const fn expected_revision(&self) -> Revision {
         self.expected_revision
     }
 
     #[must_use]
-    pub const fn budget(self) -> ValidatedCommandBudget {
+    pub const fn budget(&self) -> ValidatedCommandBudget {
         self.budget
     }
 
     #[must_use]
-    pub const fn parent_operation_id(self) -> Option<OperationId> {
+    pub const fn parent_operation_id(&self) -> Option<OperationId> {
         self.parent_operation_id
     }
 
     #[must_use]
-    pub const fn intent(self) -> CommandIntent {
-        self.intent
+    pub fn intent(&self) -> &CommandIntent {
+        &self.intent
     }
 
     #[must_use]
-    pub const fn safety(self) -> CommandSafety {
+    pub const fn safety(&self) -> CommandSafety {
         self.intent.safety()
     }
 
     #[must_use]
-    pub const fn redaction(self) -> RedactionClass {
+    pub const fn redaction(&self) -> RedactionClass {
         self.intent.redaction()
     }
 }

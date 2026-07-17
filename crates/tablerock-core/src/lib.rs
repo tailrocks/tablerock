@@ -23,8 +23,8 @@ pub use catalog::{
 };
 pub use command::{
     BudgetField, CommandBudget, CommandBudgetError, CommandBudgetLimits, CommandBuildError,
-    CommandEnvelope, CommandIntent, CommandSafety, CommandScope, PageRequest, RedactionClass,
-    ValidatedCommandBudget,
+    CommandEnvelope, CommandIntent, CommandSafety, CommandScope, MAX_STATEMENT_BYTES, PageRequest,
+    RedactionClass, StatementText, StatementTextError, ValidatedCommandBudget,
 };
 pub use diagnostic::{
     ApplicationCode, DiagnosticBuildError, DiagnosticPosition, FailureClass, OperationSafety,

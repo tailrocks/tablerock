@@ -1,8 +1,8 @@
 use tablerock_core::{
     BudgetField, CommandBudget, CommandBudgetError, CommandBudgetLimits, CommandBuildError,
-    CommandEnvelope, CommandIntent, CommandSafety, CommandScope, ContextId, IdParts, OperationId,
-    OperationScope, PageRequest, ProfileId, RedactionClass, RequestId, ResultId, Revision,
-    SessionId,
+    CommandEnvelope, CommandIntent, CommandSafety, CommandScope, ContextId, IdParts,
+    MAX_STATEMENT_BYTES, OperationId, OperationScope, PageRequest, ProfileId, RedactionClass,
+    RequestId, ResultId, Revision, SessionId, StatementText, StatementTextError,
 };
 
 fn limits() -> CommandBudgetLimits {
@@ -128,6 +128,12 @@ fn every_intent_has_one_explicit_scope_shape() {
             3,
         ),
         (
+            CommandIntent::Execute {
+                statement: StatementText::new("select 1").unwrap(),
+            },
+            3,
+        ),
+        (
             CommandIntent::Cancel {
                 operation_id: id(OperationId::from_parts),
             },
@@ -142,7 +148,7 @@ fn every_intent_has_one_explicit_scope_shape() {
                 Revision::INITIAL,
                 budget(),
                 None,
-                intent,
+                intent.clone(),
             );
             if scope_index == required_scope {
                 assert!(result.is_ok(), "valid scope {scope_index} rejected");
@@ -246,4 +252,64 @@ fn cancel_is_lifecycle_metadata_and_preserves_parent_scope() {
     assert_eq!(command.safety(), CommandSafety::Lifecycle);
     assert_eq!(command.redaction(), RedactionClass::MetadataOnly);
     assert_eq!(command.parent_operation_id(), Some(parent));
+}
+
+#[test]
+fn statement_text_bounds_and_redacts_debug() {
+    let statement = StatementText::new("select 1").unwrap();
+    assert_eq!(statement.as_str(), "select 1");
+    assert_eq!(statement.len(), 8);
+    assert!(!statement.is_empty());
+    let debug = format!("{statement:?}");
+    assert!(debug.contains("bytes: 8"));
+    assert!(!debug.contains("select"));
+
+    assert_eq!(
+        StatementText::new("x".repeat(MAX_STATEMENT_BYTES + 1)),
+        Err(StatementTextError::TooLarge {
+            actual: MAX_STATEMENT_BYTES + 1,
+            limit: MAX_STATEMENT_BYTES,
+        })
+    );
+    assert!(StatementText::new("x".repeat(MAX_STATEMENT_BYTES)).is_ok());
+}
+
+#[test]
+fn execute_intent_is_may_write_and_context_scoped() {
+    let statement = StatementText::new("update t set c = 1").unwrap();
+    let command = CommandEnvelope::new(
+        id(RequestId::from_parts),
+        context_scope(),
+        Revision::INITIAL,
+        budget(),
+        None,
+        CommandIntent::Execute {
+            statement: statement.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(command.safety(), CommandSafety::MayWrite);
+    assert_eq!(command.redaction(), RedactionClass::MetadataOnly);
+    match command.intent() {
+        CommandIntent::Execute { statement: body } => {
+            assert_eq!(body.as_str(), "update t set c = 1");
+        }
+        other => panic!("unexpected intent {other:?}"),
+    }
+
+    let debug = format!("{:?}", command.intent());
+    assert!(!debug.contains("update"));
+    assert!(debug.contains("bytes:"));
+
+    assert_eq!(
+        CommandEnvelope::new(
+            id(RequestId::from_parts),
+            CommandScope::Application,
+            Revision::INITIAL,
+            budget(),
+            None,
+            CommandIntent::Execute { statement },
+        ),
+        Err(CommandBuildError::ScopeMismatch)
+    );
 }
