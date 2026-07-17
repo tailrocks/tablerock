@@ -164,7 +164,11 @@ overflow is an explicit resource-limit failure, never silent loss. Pattern
 subscriptions additionally prove exact binary pattern/channel/payload delivery,
 three-column and selector bounds, pre-queue field truncation with original-length
 metadata, adapter transport, client-stop teardown, and zero remaining patterns.
-Reconnect/resubscription, TLS composition, and RESP2 pre-decode
+Server replacement on the same endpoint additionally proves bounded
+reconnect/resubscription, an ordered zero-row delivery-discontinuity page before
+restored channel and pattern messages, per-attempt blackhole timeout, bounded
+attempt exhaustion, and prompt cancellation during a subsequent outage. DNS
+change, TLS composition, live credential revocation, and RESP2 pre-decode
 transport allocation bounds remain required.
 
 Reviewed Redis TTL mutation consumes exact-once authorized plans and passes the

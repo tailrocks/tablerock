@@ -166,6 +166,9 @@ Requirements:
 - database-native containers use a distinct bounded `Structured` projection;
   presentation never guesses structure from ordinary text;
 - pages are independently disposable and safe to decode off the main thread;
+- resumed at-most-once streams expose delivery discontinuities as explicit
+  zero-row warning pages; consumers retain the row offset and never infer
+  continuity;
 - the native adapter publishes only the final immutable page to `@MainActor`;
 - the TableRock versioned columnar byte-arena encoding is the sole native page
   format; Arrow is not part of this architecture.

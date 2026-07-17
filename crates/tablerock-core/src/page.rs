@@ -21,10 +21,11 @@ pub enum PageWarning {
     UnknownValues,
     InvalidValues,
     PartialFailure,
+    DeliveryDiscontinuity,
 }
 
 impl PageWarning {
-    const COUNT: usize = 5;
+    const COUNT: usize = 6;
 
     const fn index(self) -> usize {
         match self {
@@ -33,6 +34,7 @@ impl PageWarning {
             Self::UnknownValues => 2,
             Self::InvalidValues => 3,
             Self::PartialFailure => 4,
+            Self::DeliveryDiscontinuity => 5,
         }
     }
 }

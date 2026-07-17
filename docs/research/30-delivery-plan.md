@@ -163,7 +163,8 @@ ZSCAN pages now pass both supported lines under RESP2 and RESP3. Verified
 custom-root TLS, optional mTLS identity, ACL authentication, and bounded
 initial authentication-stop behavior also pass that supported-line/protocol matrix.
 Binary-safe pattern subscriptions now pass the supported-line/protocol matrix;
-reconnect/resubscription and remaining failure races stay required. Reviewed
+bounded reconnect/resubscription now emits an explicit delivery-gap page before
+restored messages. Remaining failure races stay required. Reviewed
 single-command TTL mutation now proves exact-once
 authorization, applied/not-applied truth, and unknown post-dispatch outcomes.
 Dedicated bounded binary Pub/Sub streams pass

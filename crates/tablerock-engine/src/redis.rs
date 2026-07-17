@@ -500,6 +500,61 @@ struct RedisSubscriptionMessage {
     payload: RedisSubscriptionField,
 }
 
+enum RedisSubscriptionItem {
+    Message(RedisSubscriptionMessage),
+    DeliveryDiscontinuity,
+}
+
+struct RedisResp3SubscriptionContext {
+    client: Client,
+    selector: BoundedBytes,
+    kind: RedisSubscriptionKind,
+    policy: RedisRuntimePolicy,
+    max_field_bytes: u64,
+    operation: Arc<RedisSubscriptionOperation>,
+    messages: tokio::sync::mpsc::Sender<RedisSubscriptionItem>,
+    terminal: Arc<Mutex<Option<RedisError>>>,
+    terminal_wake: Arc<tokio::sync::Notify>,
+}
+
+struct RedisResp3SubscriptionConnection {
+    connection: redis::aio::MultiplexedConnection,
+    disconnect: Arc<tokio::sync::Notify>,
+    active: Arc<AtomicBool>,
+    discontinuity_pending: Arc<AtomicBool>,
+}
+
+struct RedisResp3GenerationGuard {
+    active: Arc<AtomicBool>,
+    armed: bool,
+}
+
+impl RedisResp3GenerationGuard {
+    fn new() -> Self {
+        Self {
+            active: Arc::new(AtomicBool::new(true)),
+            armed: true,
+        }
+    }
+
+    fn active(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.active)
+    }
+
+    fn commit(mut self) -> Arc<AtomicBool> {
+        self.armed = false;
+        Arc::clone(&self.active)
+    }
+}
+
+impl Drop for RedisResp3GenerationGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            self.active.store(false, Ordering::Release);
+        }
+    }
+}
+
 struct RedisSubscriptionField {
     bytes: BoundedBytes,
     original_byte_len: u64,
@@ -738,6 +793,227 @@ where
         () = operation.wake.notified() => Err(RedisError::ClientCancelled),
         result = &mut future => result,
     }
+}
+
+async fn await_subscription_phase<T, F>(
+    operation: &RedisSubscriptionOperation,
+    timeout: Duration,
+    future: F,
+) -> Result<T, RedisError>
+where
+    F: Future<Output = Result<T, RedisError>>,
+{
+    tokio::time::timeout(timeout, await_subscription_setup(operation, future))
+        .await
+        .map_err(|_| RedisError::Timeout)?
+}
+
+async fn reconnect_resp2_subscription(
+    client: &Client,
+    selector: &BoundedBytes,
+    kind: RedisSubscriptionKind,
+    policy: RedisRuntimePolicy,
+    operation: &RedisSubscriptionOperation,
+) -> Result<redis::aio::PubSub, RedisError> {
+    let mut last_error = RedisError::Connection;
+    for attempt in 0..policy.reconnect_attempts() {
+        if attempt > 0 {
+            await_subscription_setup(operation, async {
+                tokio::time::sleep(subscription_retry_delay(policy, attempt - 1)).await;
+                Ok(())
+            })
+            .await?;
+        }
+        let result = match await_subscription_phase(operation, policy.connection_timeout(), async {
+            client.get_async_pubsub().await.map_err(map_connect_error)
+        })
+        .await
+        {
+            Ok(mut pubsub) => {
+                match await_subscription_phase(operation, policy.response_timeout(), async {
+                    match kind {
+                        RedisSubscriptionKind::Channel => {
+                            pubsub.subscribe(selector.as_slice()).await
+                        }
+                        RedisSubscriptionKind::Pattern => {
+                            pubsub.psubscribe(selector.as_slice()).await
+                        }
+                    }
+                    .map_err(map_command_error)
+                })
+                .await
+                {
+                    Ok(()) => Ok(pubsub),
+                    Err(error) => Err(error),
+                }
+            }
+            Err(error) => Err(error),
+        };
+        match result {
+            Ok(pubsub) => return Ok(pubsub),
+            Err(error @ (RedisError::Authentication | RedisError::Protocol)) => return Err(error),
+            Err(RedisError::ClientCancelled) => return Err(RedisError::ClientCancelled),
+            Err(error) => last_error = error,
+        }
+    }
+    Err(last_error)
+}
+
+fn subscription_retry_delay(policy: RedisRuntimePolicy, attempt: usize) -> Duration {
+    let exponent = u32::try_from(attempt).unwrap_or(u32::MAX).min(31);
+    policy
+        .reconnect_min_delay()
+        .saturating_mul(1_u32 << exponent)
+        .min(policy.reconnect_max_delay())
+}
+
+fn send_subscription_discontinuity(
+    pending: &AtomicBool,
+    messages: &tokio::sync::mpsc::Sender<RedisSubscriptionItem>,
+) -> Result<(), RedisError> {
+    if pending.swap(false, Ordering::AcqRel) {
+        messages
+            .try_send(RedisSubscriptionItem::DeliveryDiscontinuity)
+            .map_err(|error| match error {
+                tokio::sync::mpsc::error::TrySendError::Full(_) => RedisError::SubscriptionOverflow,
+                tokio::sync::mpsc::error::TrySendError::Closed(_) => RedisError::ClientCancelled,
+            })?;
+    }
+    Ok(())
+}
+
+async fn connect_resp3_subscription(
+    context: &RedisResp3SubscriptionContext,
+    announce_discontinuity: bool,
+) -> Result<RedisResp3SubscriptionConnection, RedisError> {
+    let generation = RedisResp3GenerationGuard::new();
+    let disconnect = Arc::new(tokio::sync::Notify::new());
+    let disconnect_sender = Arc::clone(&disconnect);
+    let active_sender = generation.active();
+    let discontinuity_pending = Arc::new(AtomicBool::new(announce_discontinuity));
+    let discontinuity_sender = Arc::clone(&discontinuity_pending);
+    let terminal = Arc::clone(&context.terminal);
+    let terminal_wake = Arc::clone(&context.terminal_wake);
+    let messages = context.messages.clone();
+    let kind = context.kind;
+    let max_field_bytes = context.max_field_bytes;
+    let push_sender = move |push: PushInfo| -> Result<(), ()> {
+        if !active_sender.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        match &push.kind {
+            PushKind::Message | PushKind::PMessage => {
+                let Some(message) = redis::Msg::from_push_info(push) else {
+                    set_subscription_terminal(&terminal, RedisError::Protocol);
+                    disconnect_sender.notify_one();
+                    terminal_wake.notify_one();
+                    return Err(());
+                };
+                let decoded = (
+                    message.get_pattern::<Option<Vec<u8>>>(),
+                    message.get_channel::<Vec<u8>>(),
+                    message.get_payload::<Vec<u8>>(),
+                );
+                let (Ok(pattern), Ok(channel), Ok(payload)) = decoded else {
+                    set_subscription_terminal(&terminal, RedisError::Protocol);
+                    disconnect_sender.notify_one();
+                    terminal_wake.notify_one();
+                    return Err(());
+                };
+                if pattern.is_some() != matches!(kind, RedisSubscriptionKind::Pattern) {
+                    set_subscription_terminal(&terminal, RedisError::Protocol);
+                    disconnect_sender.notify_one();
+                    terminal_wake.notify_one();
+                    return Err(());
+                }
+                send_subscription_discontinuity(&discontinuity_sender, &messages)
+                    .and_then(|()| {
+                        bounded_subscription_message(pattern, channel, payload, max_field_bytes)
+                    })
+                    .and_then(|message| {
+                        messages
+                            .try_send(RedisSubscriptionItem::Message(message))
+                            .map_err(|error| match error {
+                                tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                                    RedisError::SubscriptionOverflow
+                                }
+                                tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                                    RedisError::ClientCancelled
+                                }
+                            })
+                    })
+                    .map_err(|error| {
+                        set_subscription_terminal(&terminal, error);
+                        disconnect_sender.notify_one();
+                        terminal_wake.notify_one();
+                    })
+            }
+            PushKind::Disconnection => {
+                disconnect_sender.notify_one();
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    };
+    let config = context
+        .policy
+        .blocking_config()
+        .set_push_sender(push_sender);
+    let mut connection = await_subscription_phase(
+        &context.operation,
+        context.policy.connection_timeout(),
+        async {
+            context
+                .client
+                .get_multiplexed_async_connection_with_config(&config)
+                .await
+                .map_err(map_connect_error)
+        },
+    )
+    .await?;
+    await_subscription_phase(
+        &context.operation,
+        context.policy.response_timeout(),
+        async {
+            redis::cmd(match context.kind {
+                RedisSubscriptionKind::Channel => "SUBSCRIBE",
+                RedisSubscriptionKind::Pattern => "PSUBSCRIBE",
+            })
+            .arg(context.selector.as_slice())
+            .query_async::<()>(&mut connection)
+            .await
+            .map_err(map_command_error)
+        },
+    )
+    .await?;
+    Ok(RedisResp3SubscriptionConnection {
+        connection,
+        disconnect,
+        active: generation.commit(),
+        discontinuity_pending,
+    })
+}
+
+async fn reconnect_resp3_subscription(
+    context: &RedisResp3SubscriptionContext,
+) -> Result<RedisResp3SubscriptionConnection, RedisError> {
+    let mut last_error = RedisError::Connection;
+    for attempt in 0..context.policy.reconnect_attempts() {
+        if attempt > 0 {
+            await_subscription_setup(&context.operation, async {
+                tokio::time::sleep(subscription_retry_delay(context.policy, attempt - 1)).await;
+                Ok(())
+            })
+            .await?;
+        }
+        match connect_resp3_subscription(context, true).await {
+            Ok(connection) => return Ok(connection),
+            Err(error @ (RedisError::Authentication | RedisError::Protocol)) => return Err(error),
+            Err(RedisError::ClientCancelled) => return Err(RedisError::ClientCancelled),
+            Err(error) => last_error = error,
+        }
+    }
+    Err(last_error)
 }
 
 impl RedisSession {
@@ -1002,24 +1278,32 @@ impl RedisSession {
         let registry = Arc::clone(&self.subscription);
         let worker = match self.protocol {
             RedisProtocol::Resp2 => {
-                let mut pubsub = await_subscription_setup(&operation, async {
-                    self.client
-                        .get_async_pubsub()
-                        .await
-                        .map_err(map_connect_error)
-                })
+                let mut pubsub = await_subscription_phase(
+                    &operation,
+                    self.runtime_policy.connection_timeout(),
+                    async {
+                        self.client
+                            .get_async_pubsub()
+                            .await
+                            .map_err(map_connect_error)
+                    },
+                )
                 .await?;
-                await_subscription_setup(&operation, async {
-                    match kind {
-                        RedisSubscriptionKind::Channel => {
-                            pubsub.subscribe(selector.as_slice()).await
+                await_subscription_phase(
+                    &operation,
+                    self.runtime_policy.response_timeout(),
+                    async {
+                        match kind {
+                            RedisSubscriptionKind::Channel => {
+                                pubsub.subscribe(selector.as_slice()).await
+                            }
+                            RedisSubscriptionKind::Pattern => {
+                                pubsub.psubscribe(selector.as_slice()).await
+                            }
                         }
-                        RedisSubscriptionKind::Pattern => {
-                            pubsub.psubscribe(selector.as_slice()).await
-                        }
-                    }
-                    .map_err(map_command_error)
-                })
+                        .map_err(map_command_error)
+                    },
+                )
                 .await?;
                 operation.started.store(true, Ordering::Release);
                 if operation.cancel_requested.load(Ordering::Acquire) {
@@ -1032,6 +1316,8 @@ impl RedisSession {
                 let long_operation_worker = Arc::clone(&self.long_operation_active);
                 let selector_worker = selector.clone();
                 let teardown_timeout = self.runtime_policy.response_timeout();
+                let reconnect_policy = self.runtime_policy;
+                let client_worker = self.client.clone();
                 tokio::spawn(async move {
                     loop {
                         tokio::select! {
@@ -1051,7 +1337,7 @@ impl RedisSession {
                                     let pattern = message.get_pattern::<Option<Vec<u8>>>();
                                     let item = (pattern, message.get_channel::<Vec<u8>>(), message.get_payload::<Vec<u8>>());
                                     match item {
-                                        (Ok(pattern), Ok(channel), Ok(payload)) if pattern.is_some() == matches!(kind, RedisSubscriptionKind::Pattern) => match bounded_subscription_message(pattern, channel, payload, options.max_cell_bytes).and_then(|message| messages_tx.try_send(message).map_err(|error| match error {
+                                        (Ok(pattern), Ok(channel), Ok(payload)) if pattern.is_some() == matches!(kind, RedisSubscriptionKind::Pattern) => match bounded_subscription_message(pattern, channel, payload, options.max_cell_bytes).and_then(|message| messages_tx.try_send(RedisSubscriptionItem::Message(message)).map_err(|error| match error {
                                             tokio::sync::mpsc::error::TrySendError::Full(_) => RedisError::SubscriptionOverflow,
                                             tokio::sync::mpsc::error::TrySendError::Closed(_) => RedisError::ClientCancelled,
                                         })) {
@@ -1075,8 +1361,27 @@ impl RedisSession {
                                     }
                                 }
                                 None => {
-                                    set_subscription_terminal(&terminal_worker, RedisError::Connection);
-                                    break;
+                                    match reconnect_resp2_subscription(
+                                        &client_worker,
+                                        &selector_worker,
+                                        kind,
+                                        reconnect_policy,
+                                        &operation_worker,
+                                    ).await {
+                                        Ok(pubsub) => {
+                                            let replacement = pubsub.split();
+                                            sink = replacement.0;
+                                            stream = replacement.1;
+                                            if messages_tx.try_send(RedisSubscriptionItem::DeliveryDiscontinuity).is_err() {
+                                                set_subscription_terminal(&terminal_worker, RedisError::SubscriptionOverflow);
+                                                break;
+                                            }
+                                        }
+                                        Err(error) => {
+                                            set_subscription_terminal(&terminal_worker, error);
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1087,89 +1392,21 @@ impl RedisSession {
                 })
             }
             RedisProtocol::Resp3 => {
-                let disconnect = Arc::new(tokio::sync::Notify::new());
-                let disconnect_sender = Arc::clone(&disconnect);
-                let terminal_sender = Arc::clone(&terminal);
-                let wake_sender = Arc::clone(&terminal_wake);
-                let push_sender = move |push: PushInfo| -> Result<(), ()> {
-                    match &push.kind {
-                        PushKind::Message | PushKind::PMessage => {
-                            let Some(message) = redis::Msg::from_push_info(push) else {
-                                set_subscription_terminal(&terminal_sender, RedisError::Protocol);
-                                disconnect_sender.notify_one();
-                                wake_sender.notify_one();
-                                return Err(());
-                            };
-                            let decoded = (
-                                message.get_pattern::<Option<Vec<u8>>>(),
-                                message.get_channel::<Vec<u8>>(),
-                                message.get_payload::<Vec<u8>>(),
-                            );
-                            let (Ok(pattern), Ok(channel), Ok(payload)) = decoded else {
-                                set_subscription_terminal(&terminal_sender, RedisError::Protocol);
-                                disconnect_sender.notify_one();
-                                wake_sender.notify_one();
-                                return Err(());
-                            };
-                            if pattern.is_some() != matches!(kind, RedisSubscriptionKind::Pattern) {
-                                set_subscription_terminal(&terminal_sender, RedisError::Protocol);
-                                disconnect_sender.notify_one();
-                                wake_sender.notify_one();
-                                return Err(());
-                            }
-                            bounded_subscription_message(
-                                pattern,
-                                channel,
-                                payload,
-                                options.max_cell_bytes,
-                            )
-                            .and_then(|message| {
-                                messages_tx.try_send(message).map_err(|error| match error {
-                                    tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                                        RedisError::SubscriptionOverflow
-                                    }
-                                    tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-                                        RedisError::ClientCancelled
-                                    }
-                                })
-                            })
-                            .map_err(|error| {
-                                set_subscription_terminal(&terminal_sender, error);
-                                disconnect_sender.notify_one();
-                                wake_sender.notify_one();
-                            })
-                        }
-                        PushKind::Disconnection => {
-                            set_subscription_terminal(&terminal_sender, RedisError::Connection);
-                            disconnect_sender.notify_one();
-                            wake_sender.notify_one();
-                            Ok(())
-                        }
-                        _ => Ok(()),
-                    }
+                let reconnect_context = RedisResp3SubscriptionContext {
+                    client: self.client.clone(),
+                    selector: selector.clone(),
+                    kind,
+                    policy: self.runtime_policy,
+                    max_field_bytes: options.max_cell_bytes,
+                    operation: Arc::clone(&operation),
+                    messages: messages_tx.clone(),
+                    terminal: Arc::clone(&terminal),
+                    terminal_wake: Arc::clone(&terminal_wake),
                 };
-                let config = self
-                    .runtime_policy
-                    .blocking_config()
-                    .set_push_sender(push_sender);
-                let mut connection = await_subscription_setup(&operation, async {
-                    self.client
-                        .get_multiplexed_async_connection_with_config(&config)
-                        .await
-                        .map_err(map_connect_error)
-                })
-                .await?;
-                await_subscription_setup(&operation, async {
-                    redis::cmd(match kind {
-                        RedisSubscriptionKind::Channel => "SUBSCRIBE",
-                        RedisSubscriptionKind::Pattern => "PSUBSCRIBE",
-                    })
-                    .arg(selector.as_slice())
-                    .query_async::<()>(&mut connection)
-                    .await
-                    .map_err(map_command_error)
-                })
-                .await?;
+                let initial = connect_resp3_subscription(&reconnect_context, false).await?;
+                let mut connection = initial.connection;
+                let mut disconnect = initial.disconnect;
+                let mut active = initial.active;
                 operation.started.store(true, Ordering::Release);
                 if operation.cancel_requested.load(Ordering::Acquire) {
                     operation.wake.notify_one();
@@ -1181,18 +1418,46 @@ impl RedisSession {
                 let selector_worker = selector.clone();
                 let teardown_timeout = self.runtime_policy.response_timeout();
                 tokio::spawn(async move {
-                    tokio::select! {
-                        () = operation_worker.wake.notified() => {
-                            set_subscription_terminal(&terminal_worker, RedisError::ClientCancelled);
-                            let mut command = redis::cmd(match kind {
-                                RedisSubscriptionKind::Channel => "UNSUBSCRIBE",
-                                RedisSubscriptionKind::Pattern => "PUNSUBSCRIBE",
-                            });
-                            command.arg(selector_worker.as_slice());
-                            let unsubscribe = command.query_async::<()>(&mut connection);
-                            let _ = tokio::time::timeout(teardown_timeout, unsubscribe).await;
+                    loop {
+                        tokio::select! {
+                            () = operation_worker.wake.notified() => {
+                                active.store(false, Ordering::Release);
+                                set_subscription_terminal(&terminal_worker, RedisError::ClientCancelled);
+                                let mut command = redis::cmd(match kind {
+                                    RedisSubscriptionKind::Channel => "UNSUBSCRIBE",
+                                    RedisSubscriptionKind::Pattern => "PUNSUBSCRIBE",
+                                });
+                                command.arg(selector_worker.as_slice());
+                                let unsubscribe = command.query_async::<()>(&mut connection);
+                                let _ = tokio::time::timeout(teardown_timeout, unsubscribe).await;
+                                break;
+                            }
+                            () = disconnect.notified() => {
+                                active.store(false, Ordering::Release);
+                                if terminal_worker.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+                                    break;
+                                }
+                                match reconnect_resp3_subscription(&reconnect_context).await {
+                                    Ok(replacement) => {
+                                        connection = replacement.connection;
+                                        disconnect = replacement.disconnect;
+                                        active = replacement.active;
+                                        if let Err(error) = send_subscription_discontinuity(
+                                            &replacement.discontinuity_pending,
+                                            &messages_tx,
+                                        ) {
+                                            active.store(false, Ordering::Release);
+                                            set_subscription_terminal(&terminal_worker, error);
+                                            break;
+                                        }
+                                    }
+                                    Err(error) => {
+                                        set_subscription_terminal(&terminal_worker, error);
+                                        break;
+                                    }
+                                }
+                            }
                         }
-                        () = disconnect.notified() => {}
                     }
                     registry.release(&operation_worker);
                     long_operation_worker.store(false, Ordering::Release);
@@ -1209,6 +1474,7 @@ impl RedisSession {
             limits: options.limits,
             operation,
             kind,
+            pending_discontinuity: false,
         })
     }
 
@@ -1861,13 +2127,14 @@ impl Drop for RedisBlockingPopStream {
 }
 
 pub struct RedisSubscriptionStream {
-    messages: tokio::sync::mpsc::Receiver<RedisSubscriptionMessage>,
+    messages: tokio::sync::mpsc::Receiver<RedisSubscriptionItem>,
     terminal: Arc<Mutex<Option<RedisError>>>,
     terminal_wake: Arc<tokio::sync::Notify>,
     worker: tokio::task::JoinHandle<()>,
     limits: PageLimits,
     operation: Arc<RedisSubscriptionOperation>,
     kind: RedisSubscriptionKind,
+    pending_discontinuity: bool,
 }
 
 impl RedisSubscriptionStream {
@@ -1876,9 +2143,12 @@ impl RedisSubscriptionStream {
         identity: PageIdentity,
         start_row: u64,
     ) -> Result<Option<ResultPage>, RedisError> {
+        if std::mem::take(&mut self.pending_discontinuity) {
+            return self.discontinuity_page(identity, start_row).map(Some);
+        }
         let first = loop {
-            if let Ok(message) = self.messages.try_recv() {
-                break message;
+            if let Ok(item) = self.messages.try_recv() {
+                break item;
             }
             let terminal = {
                 self.terminal
@@ -1892,16 +2162,23 @@ impl RedisSubscriptionStream {
             }
             tokio::select! {
                 message = self.messages.recv() => match message {
-                    Some(message) => break message,
+                    Some(item) => break item,
                     None => continue,
                 },
                 () = self.terminal_wake.notified() => {}
             }
         };
+        let RedisSubscriptionItem::Message(first) = first else {
+            return self.discontinuity_page(identity, start_row).map(Some);
+        };
         let mut rows = vec![first];
         while rows.len() < self.limits.max_rows() as usize {
             match self.messages.try_recv() {
-                Ok(message) => rows.push(message),
+                Ok(RedisSubscriptionItem::Message(message)) => rows.push(message),
+                Ok(RedisSubscriptionItem::DeliveryDiscontinuity) => {
+                    self.pending_discontinuity = true;
+                    break;
+                }
                 Err(_) => break,
             }
         }
@@ -1940,6 +2217,30 @@ impl RedisSubscriptionStream {
             self.limits,
         )
         .map(Some)
+        .map_err(RedisError::Page)
+    }
+
+    fn discontinuity_page(
+        &self,
+        identity: PageIdentity,
+        start_row: u64,
+    ) -> Result<ResultPage, RedisError> {
+        let columns = match self.kind {
+            RedisSubscriptionKind::Channel => &["channel", "payload"][..],
+            RedisSubscriptionKind::Pattern => &["pattern", "channel", "payload"][..],
+        };
+        ResultPage::from_row_major(
+            identity,
+            start_row,
+            RowTotal::Unknown,
+            PageFacts::new(
+                PageDelivery::Partial,
+                PageWarnings::none().with(PageWarning::DeliveryDiscontinuity),
+            ),
+            redis_binary_columns(columns)?,
+            Vec::new(),
+            self.limits,
+        )
         .map_err(RedisError::Page)
     }
 }
@@ -2142,6 +2443,90 @@ impl RedisSubscriptionField {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resp3_generation_guard_deactivates_only_abandoned_attempts() {
+        let abandoned = RedisResp3GenerationGuard::new();
+        let abandoned_active = abandoned.active();
+        drop(abandoned);
+        assert!(!abandoned_active.load(Ordering::Acquire));
+
+        let committed = RedisResp3GenerationGuard::new();
+        let committed_active = committed.commit();
+        assert!(committed_active.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn subscription_reconnect_attempts_time_out_against_a_blackhole() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            loop {
+                let Ok((connection, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let _connection = connection;
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                });
+            }
+        });
+        let policy = RedisRuntimePolicy::new(
+            Duration::from_millis(40),
+            Duration::from_millis(40),
+            2,
+            Duration::from_millis(10),
+            Duration::from_millis(10),
+        )
+        .unwrap();
+        let selector = BoundedBytes::copy_from_slice(b"blackhole", ByteLimit::new(9)).unwrap();
+
+        for (protocol, wire_protocol) in [
+            (RedisProtocol::Resp2, ProtocolVersion::RESP2),
+            (RedisProtocol::Resp3, ProtocolVersion::RESP3),
+        ] {
+            let redis = RedisConnectionInfo::default().set_protocol(wire_protocol);
+            let info = ConnectionAddr::Tcp("127.0.0.1".to_owned(), port)
+                .into_connection_info()
+                .unwrap()
+                .set_redis_settings(redis);
+            let client = Client::open(info).unwrap();
+            let operation = Arc::new(RedisSubscriptionOperation::default());
+            let started = tokio::time::Instant::now();
+            let error = match protocol {
+                RedisProtocol::Resp2 => reconnect_resp2_subscription(
+                    &client,
+                    &selector,
+                    RedisSubscriptionKind::Channel,
+                    policy,
+                    &operation,
+                )
+                .await
+                .err()
+                .unwrap(),
+                RedisProtocol::Resp3 => {
+                    let (messages, _) = tokio::sync::mpsc::channel(2);
+                    reconnect_resp3_subscription(&RedisResp3SubscriptionContext {
+                        client,
+                        selector: selector.clone(),
+                        kind: RedisSubscriptionKind::Channel,
+                        policy,
+                        max_field_bytes: 16,
+                        operation,
+                        messages,
+                        terminal: Arc::new(Mutex::new(None)),
+                        terminal_wake: Arc::new(tokio::sync::Notify::new()),
+                    })
+                    .await
+                    .err()
+                    .unwrap()
+                }
+            };
+            assert_eq!(error, RedisError::Timeout);
+            assert!(started.elapsed() < Duration::from_millis(500));
+        }
+        server.abort();
+    }
 
     #[test]
     fn blocking_registry_rejects_stale_release_and_confirmation() {

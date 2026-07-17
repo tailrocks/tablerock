@@ -17,6 +17,16 @@ fn facts() -> PageFacts {
     PageFacts::new(PageDelivery::Partial, PageWarnings::none())
 }
 
+#[test]
+fn page_warnings_preserve_delivery_discontinuity_independently() {
+    let warnings = PageWarnings::none()
+        .with(PageWarning::ByteLimitReached)
+        .with(PageWarning::DeliveryDiscontinuity);
+    assert!(warnings.contains(PageWarning::ByteLimitReached));
+    assert!(warnings.contains(PageWarning::DeliveryDiscontinuity));
+    assert!(!warnings.contains(PageWarning::PartialFailure));
+}
+
 fn columns_for(engine: Engine) -> Vec<ColumnMetadata> {
     vec![
         ColumnMetadata::new(

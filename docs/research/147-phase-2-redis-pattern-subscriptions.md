@@ -27,10 +27,10 @@ count, and the per-field byte limit. Page arena limits can truncate it further
 without losing the original length. A pattern page requires capacity for all
 three columns before network I/O.
 
-Automatic reconnect is deliberately absent. Redis Pub/Sub is at-most-once and
-a disconnected interval can lose messages; a future reconnect contract must
-surface that delivery discontinuity before resubscribing rather than silently
-presenting a continuous stream.
+Research 148 subsequently adds bounded reconnect/resubscription. Redis Pub/Sub
+remains at-most-once: the resumed stream surfaces the disconnected interval as
+an ordered zero-row delivery-discontinuity page rather than presenting false
+continuity.
 
 ## Evidence
 
@@ -44,7 +44,8 @@ ordinary-command isolation, overflow, service cancellation, and generation
 ownership evidence continues to pass in the same matrix.
 
 This closes pattern subscription transport and paging. Reconnect/resubscription
-with visible delivery gaps, server restart and DNS races, TLS Pub/Sub composition,
+with visible delivery gaps and same-endpoint server replacement are subsequently
+closed by research 148. DNS races, TLS Pub/Sub composition,
 strict RESP2 pre-decode allocation bounds, UI presentation, and clean-machine
 release evidence remain open.
 

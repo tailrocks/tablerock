@@ -189,6 +189,148 @@ async fn bounds_response_timeouts_and_reconnects_future_reads() {
 }
 
 #[tokio::test]
+async fn resubscribes_with_visible_gap_after_redis_restart() {
+    for tag in [
+        "7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+        "8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005",
+    ] {
+        let policy = RedisRuntimePolicy::new(
+            Duration::from_millis(250),
+            Duration::from_millis(100),
+            32,
+            Duration::from_millis(10),
+            Duration::from_millis(100),
+        )
+        .unwrap();
+
+        for protocol in [RedisProtocol::Resp2, RedisProtocol::Resp3] {
+            for kind in [
+                RedisSubscriptionKind::Channel,
+                RedisSubscriptionKind::Pattern,
+            ] {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let port = listener.local_addr().unwrap().port();
+                drop(listener);
+                let container = GenericImage::new("redis", tag)
+                    .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+                    .with_mapped_port(port, 6379.tcp())
+                    .start()
+                    .await
+                    .unwrap();
+                let session = RedisSession::connect(
+                    &RedisConnectConfig::new(
+                        text("127.0.0.1"),
+                        port,
+                        0,
+                        protocol,
+                        RedisTlsMode::Disable,
+                    )
+                    .with_runtime_policy(policy),
+                    RedisConnectionSecurity::new(),
+                )
+                .await
+                .unwrap();
+                let (selector, channel, columns) = match kind {
+                    RedisSubscriptionKind::Channel => {
+                        (bytes(&[0, 42, 255]), bytes(&[0, 42, 255]), 2)
+                    }
+                    RedisSubscriptionKind::Pattern => {
+                        (bytes(&[0, 42, b'*']), bytes(&[0, 42, 255]), 3)
+                    }
+                };
+                let options =
+                    RedisSubscriptionOptions::new(PageLimits::new(1, columns, 192, 64), 64, 4);
+                let mut subscription = match kind {
+                    RedisSubscriptionKind::Channel => {
+                        session.subscribe(selector.clone(), options).await
+                    }
+                    RedisSubscriptionKind::Pattern => {
+                        session.psubscribe(selector.clone(), options).await
+                    }
+                }
+                .unwrap();
+
+                drop(container);
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                let replacement = GenericImage::new("redis", tag)
+                    .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+                    .with_mapped_port(port, 6379.tcp())
+                    .start()
+                    .await
+                    .unwrap();
+
+                let mut publisher = raw_connection_in_database(port, protocol, 0).await;
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    loop {
+                        let receivers: usize = redis::cmd("PUBLISH")
+                            .arg(channel.as_slice())
+                            .arg(&[9_u8, 0, 9])
+                            .query_async(&mut publisher)
+                            .await
+                            .unwrap();
+                        if receivers == 1 {
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .expect("subscription restores within five seconds");
+
+                let gap = tokio::time::timeout(
+                    Duration::from_secs(5),
+                    subscription.next_page(identity(), 0),
+                )
+                .await
+                .expect("reconnect gap arrives")
+                .unwrap()
+                .unwrap();
+                assert_eq!(gap.envelope().row_count(), 0);
+                assert_eq!(gap.envelope().column_count(), columns);
+                assert!(
+                    gap.envelope()
+                        .warnings()
+                        .contains(PageWarning::DeliveryDiscontinuity)
+                );
+                let message = subscription
+                    .next_page(identity(), 0)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                match kind {
+                    RedisSubscriptionKind::Channel => {
+                        assert_eq!(message.cell(0, 0).unwrap().bytes(), channel.as_slice());
+                        assert_eq!(message.cell(0, 1).unwrap().bytes(), &[9, 0, 9]);
+                    }
+                    RedisSubscriptionKind::Pattern => {
+                        assert_eq!(message.cell(0, 0).unwrap().bytes(), selector.as_slice());
+                        assert_eq!(message.cell(0, 1).unwrap().bytes(), channel.as_slice());
+                        assert_eq!(message.cell(0, 2).unwrap().bytes(), &[9, 0, 9]);
+                    }
+                }
+                drop(replacement);
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                let started = tokio::time::Instant::now();
+                assert_eq!(
+                    session.dispatch_cancel().await.unwrap(),
+                    tablerock_engine::RedisCancelDispatch::RequestSent
+                );
+                assert_eq!(
+                    tokio::time::timeout(
+                        Duration::from_secs(1),
+                        subscription.next_page(identity(), 1)
+                    )
+                    .await
+                    .expect("reconnect cancellation terminates promptly"),
+                    Err(tablerock_engine::RedisError::ClientCancelled)
+                );
+                assert!(started.elapsed() < Duration::from_secs(1));
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn bounds_connection_handshake_timeout() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -609,7 +751,7 @@ async fn raw_connection_in_database(
         .unwrap()
         .set_redis_settings(redis);
     let client = redis::Client::open(info).unwrap();
-    tokio::time::timeout(Duration::from_millis(2_500), async {
+    tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             if let Ok(connection) = client.get_multiplexed_async_connection().await {
                 return connection;
@@ -618,7 +760,7 @@ async fn raw_connection_in_database(
         }
     })
     .await
-    .expect("Redis fixture accepts connections within 2.5 seconds")
+    .expect("Redis fixture accepts connections within five seconds")
 }
 
 async fn seed_scan_race(connection: &mut redis::aio::MultiplexedConnection) -> BTreeSet<Vec<u8>> {
