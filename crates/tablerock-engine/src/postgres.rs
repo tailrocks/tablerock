@@ -414,6 +414,7 @@ pub enum PostgresError {
     ServerCancelled,
     InvalidLimits,
     CopyLimitExceeded,
+    WriteOutcomeUnknown,
     Page(PageValidationError),
 }
 
@@ -429,6 +430,7 @@ impl fmt::Display for PostgresError {
             Self::ServerCancelled => "PostgreSQL server confirmed query cancellation",
             Self::InvalidLimits => "PostgreSQL stream limits are invalid",
             Self::CopyLimitExceeded => "PostgreSQL COPY limits were exceeded",
+            Self::WriteOutcomeUnknown => "PostgreSQL write outcome is unknown",
             Self::Page(_) => "PostgreSQL result page failed validation",
         })
     }
@@ -850,6 +852,40 @@ impl PostgresSession {
             total_bytes,
             row_count: Some(row_count),
         })
+    }
+
+    pub async fn ambiguous_write_probe(&self) -> Result<(), PostgresError> {
+        self.client
+            .batch_execute(
+                "CREATE TABLE IF NOT EXISTS tablerock_ambiguous_write_probe(\
+                    sequence bigint GENERATED ALWAYS AS IDENTITY, marker integer NOT NULL\
+                 ); TRUNCATE tablerock_ambiguous_write_probe RESTART IDENTITY",
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        let write = self.client.execute(
+            "WITH delay AS MATERIALIZED (SELECT pg_sleep(0.3)) \
+             INSERT INTO tablerock_ambiguous_write_probe(marker) SELECT 1 FROM delay",
+            &[],
+        );
+        match tokio::time::timeout(Duration::from_millis(100), write).await {
+            Err(_) => Err(PostgresError::WriteOutcomeUnknown),
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(_)) => Err(PostgresError::Query),
+        }
+    }
+
+    pub async fn ambiguous_write_count_probe(&self) -> Result<u64, PostgresError> {
+        let row = self
+            .client
+            .query_one(
+                "SELECT count(*)::bigint FROM tablerock_ambiguous_write_probe WHERE marker = 1",
+                &[],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        let count: i64 = row.try_get(0).map_err(|_| PostgresError::Protocol)?;
+        u64::try_from(count).map_err(|_| PostgresError::Protocol)
     }
 
     pub async fn cancel_sleep_probe(&self) -> Result<PostgresCancellationOutcome, PostgresError> {

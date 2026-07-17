@@ -160,6 +160,10 @@ backpressured bounded COPY IN with exact byte facts, server-confirmed import
 rows, explicit limit failures, malformed-input recovery, and payload-redacted
 Debug. Product file effects, cancellation, progress, and arbitrary reviewed
 COPY plans remain open.
+Both pinned lines now prove that a post-dispatch response timeout remains an
+unknown write outcome even when the server later commits exactly one row. The
+original session drains and remains usable; no retry occurs. Transport-loss and
+transaction-commit ambiguity remain open.
 
 ### ClickHouse spike
 

@@ -756,6 +756,42 @@ async fn streams_bounded_postgresql_copy_in_and_out() {
     }
 }
 
+#[tokio::test]
+async fn preserves_unknown_postgresql_write_outcome_without_retry() {
+    for tag in ["17.10-alpine", "18.4-alpine"] {
+        let container = GenericImage::new("postgres", tag)
+            .with_exposed_port(5432.tcp())
+            .with_wait_for(WaitFor::message_on_stderr(
+                "database system is ready to accept connections",
+            ))
+            .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+            .start()
+            .await
+            .unwrap();
+        let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+        let config = PostgresConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            text("postgres"),
+            text("postgres"),
+            PostgresTlsMode::Disabled,
+        );
+        let session = PostgresSession::connect(&config).await.unwrap();
+        let observer = PostgresSession::connect(&config).await.unwrap();
+
+        assert_eq!(
+            session.ambiguous_write_probe().await,
+            Err(PostgresError::WriteOutcomeUnknown)
+        );
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(observer.ambiguous_write_count_probe().await.unwrap(), 1);
+        assert_eq!(session.ambiguous_write_count_probe().await.unwrap(), 1);
+
+        observer.shutdown().await.unwrap();
+        session.shutdown().await.unwrap();
+    }
+}
+
 async fn verify_typed_values(tag: &str) {
     let container = GenericImage::new("postgres", tag)
         .with_exposed_port(5432.tcp())

@@ -145,6 +145,9 @@ Engine additions:
   bounded COPY OUT retains ordered chunk offsets and exact bytes without
   accumulation; bounded backpressured COPY IN returns server-confirmed rows;
   limit and malformed-input failures remain distinct, redacted, and recoverable;
+  a dispatched write with an unobserved completion maps to unknown, an
+  independent observer may see exactly one durable application, and neither
+  session retries it;
 - ClickHouse: nested/nullable/low-cardinality/decimal/large integer/binary,
   partial/late HTTP errors, compression, query IDs, parts, inserts, mutations;
 - Redis: binary keys/values, SCAN families, RESP2/RESP3, logical DB isolation,

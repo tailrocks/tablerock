@@ -409,6 +409,9 @@ PostgreSQL 17.10/18.4 now prove ordered bounded COPY OUT chunks and
 prevalidated, backpressured bounded COPY IN with server-confirmed import rows.
 Product file effects, cancellation/progress, partial-file policy, arbitrary
 reviewed plans, and UI/UniFFI integration remain Phase 4/5/9 work.
+The same pinned lines prove a dispatched write whose completion response times
+out remains explicitly unknown, may later be observed exactly once, never
+replays automatically, and leaves the original session usable.
 
 ### Phase 3 — connection experience
 

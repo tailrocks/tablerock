@@ -453,6 +453,7 @@ fn map_postgres(error: PostgresError) -> AdapterError {
         PostgresError::ServerCancelled => AdapterFailureClass::ServerCancelled,
         PostgresError::InvalidLimits => AdapterFailureClass::InvalidRequest,
         PostgresError::CopyLimitExceeded => AdapterFailureClass::InvalidRequest,
+        PostgresError::WriteOutcomeUnknown => AdapterFailureClass::WriteOutcomeUnknown,
         PostgresError::Page(_) => AdapterFailureClass::Page,
     };
     AdapterError::new(Engine::PostgreSql, class)
