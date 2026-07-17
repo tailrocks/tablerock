@@ -161,6 +161,9 @@ Engine additions:
   named composites and anonymous records retain ordered name/null-name,
   OID/type, NULL, and nested-value truth with strict framing, 1,664 fields, and
   a shared 64-level structured nesting cap;
+  domains reuse underlying scalar/structured semantics, retain outer identity
+  on failure and in composite fields, and explicitly prove RowDescription's
+  top-level domain flattening;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
   optional notice detail/hint retain independent bounds, presence, truncation,

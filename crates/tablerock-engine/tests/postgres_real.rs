@@ -1506,6 +1506,56 @@ async fn verify_typed_values(tag: &str) {
     assert!(composites.next_page(identity(), 1).await.unwrap().is_none());
     drop(composites);
 
+    session.prepare_domain_probe().await.unwrap();
+    let mut domains = session
+        .stream_probe(
+            PostgresProbeQuery::DomainValues,
+            PageLimits::new(1, 1, 8_192, 512),
+            4_096,
+        )
+        .await
+        .unwrap();
+    let domain_page = domains.next_page(identity(), 0).await.unwrap().unwrap();
+    assert_eq!(
+        domain_page.columns()[0].engine_type().name(),
+        "tablerock_domain_container"
+    );
+    assert_eq!(
+        domain_page.cell(0, 0).unwrap().kind(),
+        ValueKind::Structured
+    );
+    let document: serde_json::Value =
+        serde_json::from_slice(domain_page.cell(0, 0).unwrap().bytes()).unwrap();
+    let fields = document["$composite"]["fields"].as_array().unwrap();
+    assert_eq!(fields.len(), 5);
+    for (field, name, type_name) in [
+        (&fields[0], "positive_domain", "tablerock_positive"),
+        (&fields[1], "nested_domain", "tablerock_nested_positive"),
+        (&fields[2], "array_domain", "tablerock_ints"),
+        (&fields[3], "range_domain", "tablerock_dates"),
+        (&fields[4], "composite_domain", "tablerock_composite_domain"),
+    ] {
+        assert_eq!(field["name"], serde_json::Value::String(name.to_owned()));
+        assert_eq!(
+            field["type"],
+            serde_json::Value::String(type_name.to_owned())
+        );
+        assert!(field["oid"].as_u64().is_some_and(|oid| oid >= 16_384));
+    }
+    assert_eq!(fields[0]["value"], serde_json::json!(7));
+    assert_eq!(fields[1]["value"], serde_json::json!(8));
+    assert_eq!(
+        fields[2]["value"],
+        serde_json::json!({"$array":{"dimensions":[[1,2]],"values":[1,2]}})
+    );
+    assert_eq!(
+        fields[3]["value"],
+        serde_json::json!({"$range":{"empty":false,"lower":{"kind":"inclusive","value":"2024-02-29"},"upper":{"kind":"exclusive","value":"2024-03-02"}}})
+    );
+    assert_eq!(fields[4]["value"]["$composite"]["fields"][0]["value"], 9);
+    assert!(domains.next_page(identity(), 1).await.unwrap().is_none());
+    drop(domains);
+
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,

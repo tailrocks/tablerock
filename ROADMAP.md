@@ -320,6 +320,9 @@ truth is recorded in
 Bounded named-composite and anonymous-record projection with shared recursive
 structure limits is recorded in
 [`182-phase-2-postgresql-composite-projection.md`](docs/research/182-phase-2-postgresql-composite-projection.md).
+Recursive PostgreSQL domain projection and top-level RowDescription flattening
+truth are recorded in
+[`183-phase-2-postgresql-domain-projection.md`](docs/research/183-phase-2-postgresql-domain-projection.md).
 TermRock's test-only copy-on-write runtime keymap spike and exact refreshed
 `main` pin are recorded in
 [`88-termrock-0.10-runtime-keymap-spike-update.md`](docs/research/88-termrock-0.10-runtime-keymap-spike-update.md).

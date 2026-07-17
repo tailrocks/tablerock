@@ -46,8 +46,8 @@ through the same typed stream.
 
 ## Remaining work
 
-Research 182 subsequently closes composite element projection. Domain elements
-remain adapter-private unknown values. Array editors, public parameter plans and aggregate request bounds,
+Research 182 subsequently closes composite element projection and research 183
+closes domain elements. Array editors, public parameter plans and aggregate request bounds,
 service/UI projection, and UniFFI remain open. The PostgreSQL driver still
 receives a complete field before TableRock applies its cell bound; strict
 pre-driver field allocation remains open.

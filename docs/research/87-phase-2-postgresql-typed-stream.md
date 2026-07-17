@@ -34,6 +34,7 @@ that accepts every PostgreSQL type. It then makes one lossless classification:
 | generic range of supported values | canonical structured empty state and explicit bound kinds/values; research 180 |
 | generic multirange of supported values | ordered canonical structured range members; research 181 |
 | named composite or anonymous record | canonical ordered fields with name/null-name, OID, type, and nested value; research 182 |
+| domain with supported underlying value | underlying semantic value; domain identity in column/field metadata where PostgreSQL supplies it; research 183 |
 | valid unsupported type | unknown with PostgreSQL type name and raw binary payload |
 | malformed payload for a known type | invalid with PostgreSQL type name and raw payload |
 
@@ -48,6 +49,8 @@ promotes generic ranges with explicit bound truth.
 Research 181 composes the same range truth through generic multiranges.
 Research 182 promotes named composites and anonymous records while preserving
 self-describing field identity.
+Research 183 decodes domains recursively and records PostgreSQL's top-level
+RowDescription domain-flattening limit.
 Malformed known values are never silently treated as valid.
 
 Column metadata carries the server type name and conservatively marks columns

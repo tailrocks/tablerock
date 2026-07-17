@@ -131,6 +131,7 @@ pub enum PostgresProbeQuery {
     RangeValues,
     MultirangeValues,
     CompositeValues,
+    DomainValues,
     Parameters,
     CancellationStream,
 }
@@ -406,6 +407,14 @@ impl PostgresProbeQuery {
                 "SELECT ROW(7, 'é', NULL, ARRAY[1,2], '[2024-02-29,2024-03-02)'::daterange) \
                     ::tablerock_composite_probe AS named_composite, \
                  ROW(7::int4, 'é'::text, NULL::text, ARRAY[1,2]::int4[]) AS anonymous_record"
+            }
+            Self::DomainValues => {
+                "SELECT ROW(\
+                    7, 8, ARRAY[1,2], '[2024-02-29,2024-03-02)'::daterange,\
+                    ROW(9, 'domain', NULL, ARRAY[3,4],\
+                        '[2024-03-10,2024-03-11)'::daterange\
+                    )::tablerock_composite_probe\
+                 )::tablerock_domain_container AS domain_container"
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
@@ -768,6 +777,26 @@ impl PostgresSession {
                 "CREATE TYPE tablerock_composite_probe AS (\
                     id int4, label text, absent text, numbers int4[], span daterange\
                 )",
+            )
+            .await
+            .map_err(|_| PostgresError::Query)
+    }
+
+    pub async fn prepare_domain_probe(&self) -> Result<(), PostgresError> {
+        self.client
+            .batch_execute(
+                "CREATE DOMAIN tablerock_positive AS int4 CHECK (VALUE > 0);\
+                 CREATE DOMAIN tablerock_nested_positive AS tablerock_positive;\
+                 CREATE DOMAIN tablerock_ints AS int4[];\
+                 CREATE DOMAIN tablerock_dates AS daterange;\
+                 CREATE DOMAIN tablerock_composite_domain AS tablerock_composite_probe;\
+                 CREATE TYPE tablerock_domain_container AS (\
+                    positive_domain tablerock_positive,\
+                    nested_domain tablerock_nested_positive,\
+                    array_domain tablerock_ints,\
+                    range_domain tablerock_dates,\
+                    composite_domain tablerock_composite_domain\
+                 )",
             )
             .await
             .map_err(|_| PostgresError::Query)
@@ -1570,6 +1599,15 @@ fn decode_value_at_depth(
             | Type::INTERVAL
     ) {
         return decode_temporal(type_, raw, limit);
+    }
+    if let Kind::Domain(underlying_type) = type_.kind() {
+        let value =
+            decode_value_at_depth(underlying_type, raw, limit, nesting_depth.saturating_add(1))?;
+        return match value.as_ref() {
+            ValueRef::Invalid { .. } => bounded_raw(type_, raw, limit, true),
+            ValueRef::Unknown { .. } => bounded_raw(type_, raw, limit, false),
+            _ => Ok(value),
+        };
     }
     if let Kind::Array(element_type) = type_.kind() {
         return match decode_array(element_type, raw, limit, nesting_depth) {
@@ -3160,6 +3198,55 @@ mod tests {
     }
 
     #[test]
+    fn domain_projection_reuses_underlying_semantics() {
+        let integer_domain = domain_type("positive", 900_004, Type::INT4);
+        let value = decode_value(&integer_domain, &7_i32.to_be_bytes(), 64).unwrap();
+        assert!(matches!(value.as_ref(), ValueRef::Signed(7)));
+
+        let nested_domain = domain_type("nested_positive", 900_005, integer_domain);
+        let value = decode_value(&nested_domain, &8_i32.to_be_bytes(), 64).unwrap();
+        assert!(matches!(value.as_ref(), ValueRef::Signed(8)));
+
+        let array_domain = domain_type("ints", 900_006, Type::INT4_ARRAY);
+        let raw = array_raw(&[(2, 1)], false, &[Some(1), Some(2)]);
+        let value = decode_value(&array_domain, &raw, 256).unwrap();
+        assert!(matches!(
+            value.as_ref(),
+            ValueRef::Structured {
+                value: "{\"$array\":{\"dimensions\":[[1,2]],\"values\":[1,2]}}",
+                truncation: Truncation::Complete
+            }
+        ));
+    }
+
+    #[test]
+    fn domain_projection_preserves_outer_failure_identity_and_depth_bound() {
+        let integer_domain = domain_type("positive", 900_004, Type::INT4);
+        let invalid = decode_value(&integer_domain, &[0, 0, 0], 16).unwrap();
+        assert_eq!(invalid.kind(), tablerock_core::ValueKind::Invalid);
+        assert_eq!(invalid.engine_type().unwrap().name(), "positive");
+
+        let unsupported_domain = domain_type("path_domain", 900_005, Type::JSONPATH);
+        let unknown = decode_value(&unsupported_domain, b"$.a", 16).unwrap();
+        assert_eq!(unknown.kind(), tablerock_core::ValueKind::Unknown);
+        assert_eq!(unknown.engine_type().unwrap().name(), "path_domain");
+
+        let bounded = decode_value(&integer_domain, &7_i32.to_be_bytes(), 4).unwrap();
+        assert_eq!(bounded.kind(), tablerock_core::ValueKind::Unknown);
+        assert_eq!(bounded.engine_type().unwrap().name(), "positive");
+
+        let value = decode_value_at_depth(
+            &integer_domain,
+            &7_i32.to_be_bytes(),
+            16,
+            MAX_POSTGRES_NESTING_DEPTH,
+        )
+        .unwrap();
+        assert_eq!(value.kind(), tablerock_core::ValueKind::Unknown);
+        assert_eq!(value.engine_type().unwrap().name(), "positive");
+    }
+
+    #[test]
     fn array_projection_bounds_output_and_rejects_malformed_wire() {
         let raw = array_raw(&[(3, 1)], false, &[Some(1), Some(2), Some(3)]);
         let bounded = decode_value(&Type::INT4_ARRAY, &raw, 8).unwrap();
@@ -3281,5 +3368,14 @@ mod tests {
             }
         }
         raw
+    }
+
+    fn domain_type(name: &str, oid: u32, underlying: Type) -> Type {
+        Type::new(
+            name.to_owned(),
+            oid,
+            Kind::Domain(underlying),
+            "public".to_owned(),
+        )
     }
 }

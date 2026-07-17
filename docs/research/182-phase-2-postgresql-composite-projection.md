@@ -47,7 +47,7 @@ structured truncation without an unknown-value warning.
 
 ## Remaining work
 
-Domain projection remains adapter-private unknown. Composite editors, public
+Research 183 subsequently closes domain projection. Composite editors, public
 parameter plans and request bounds, service/UI projection, and UniFFI remain
 open. The PostgreSQL driver still receives a complete field before TableRock
 applies its cell bound; strict pre-driver field allocation remains open.
