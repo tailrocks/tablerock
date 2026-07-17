@@ -127,7 +127,9 @@ Engine additions:
 - PostgreSQL: custom/unknown OIDs, arrays/ranges/composites/JSON/bytes, notices,
   parameters, COPY, multiple statements, transaction conflicts, cancel races;
   pinned real servers distinguish SQLSTATE-confirmed cancellation from a late
-  successfully delivered cancel after normal query completion;
+  successfully delivered cancel after normal query completion, and a bounded
+  synchronization barrier prevents pending cancellation from escaping into the
+  next operation;
   forced server loss before cancel-socket delivery remains a distinct redacted
   cancellation-transport failure followed by terminal session connection loss;
   prepared text, int8, binary, and boolean parameters retain exact typed values
@@ -140,6 +142,9 @@ Engine additions:
   and Debug redaction on both pinned lines;
   fixed multiple-statement batches retain ordered command/query outcomes and
   exact row counts without introducing a second typed-row path;
+  bounded COPY OUT retains ordered chunk offsets and exact bytes without
+  accumulation; bounded backpressured COPY IN returns server-confirmed rows;
+  limit and malformed-input failures remain distinct, redacted, and recoverable;
 - ClickHouse: nested/nullable/low-cardinality/decimal/large integer/binary,
   partial/late HTTP errors, compression, query IDs, parts, inserts, mutations;
 - Redis: binary keys/values, SCAN families, RESP2/RESP3, logical DB isolation,

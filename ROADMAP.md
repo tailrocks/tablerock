@@ -405,6 +405,11 @@ Run real-server spikes for `tokio-postgres`, official `clickhouse-rs`, and
 `redis-rs`, proving arbitrary values, bounded streaming, TLS, cancellation
 truth, reconnect, and ambiguous-write behavior before feature claims.
 
+PostgreSQL 17.10/18.4 now prove ordered bounded COPY OUT chunks and
+prevalidated, backpressured bounded COPY IN with server-confirmed import rows.
+Product file effects, cancellation/progress, partial-file policy, arbitrary
+reviewed plans, and UI/UniFFI integration remain Phase 4/5/9 work.
+
 ### Phase 3 — connection experience
 
 Deliver searchable/organized profiles, capability-driven forms, URL and

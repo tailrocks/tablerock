@@ -8,7 +8,8 @@ use std::{
     },
 };
 
-use futures_util::{StreamExt, future::poll_fn};
+use bytes::Bytes;
+use futures_util::{SinkExt, StreamExt, future::poll_fn};
 use rustls::{
     ClientConfig, RootCertStore,
     pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
@@ -216,6 +217,87 @@ pub struct PostgresStatementOutcome {
     row_count: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PostgresCopyLimits {
+    max_chunks: u32,
+    max_chunk_bytes: u64,
+    max_total_bytes: u64,
+}
+
+impl PostgresCopyLimits {
+    #[must_use]
+    pub const fn new(max_chunks: u32, max_chunk_bytes: u64, max_total_bytes: u64) -> Self {
+        Self {
+            max_chunks,
+            max_chunk_bytes,
+            max_total_bytes,
+        }
+    }
+
+    const fn is_valid(self) -> bool {
+        self.max_chunks > 0 && self.max_chunk_bytes > 0 && self.max_total_bytes > 0
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct PostgresCopyChunk {
+    ordinal: u32,
+    byte_offset: u64,
+    payload: BoundedBytes,
+}
+
+impl PostgresCopyChunk {
+    #[must_use]
+    pub const fn ordinal(&self) -> u32 {
+        self.ordinal
+    }
+
+    #[must_use]
+    pub const fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+
+    #[must_use]
+    pub fn payload(&self) -> &[u8] {
+        self.payload.as_slice()
+    }
+}
+
+impl fmt::Debug for PostgresCopyChunk {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PostgresCopyChunk")
+            .field("ordinal", &self.ordinal)
+            .field("byte_offset", &self.byte_offset)
+            .field("payload_bytes", &self.payload.len())
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PostgresCopyOutcome {
+    chunk_count: u32,
+    total_bytes: u64,
+    row_count: Option<u64>,
+}
+
+impl PostgresCopyOutcome {
+    #[must_use]
+    pub const fn chunk_count(self) -> u32 {
+        self.chunk_count
+    }
+
+    #[must_use]
+    pub const fn total_bytes(self) -> u64 {
+        self.total_bytes
+    }
+
+    #[must_use]
+    pub const fn row_count(self) -> Option<u64> {
+        self.row_count
+    }
+}
+
 impl PostgresStatementOutcome {
     #[must_use]
     pub const fn ordinal(self) -> u32 {
@@ -331,6 +413,7 @@ pub enum PostgresError {
     TlsConfiguration,
     ServerCancelled,
     InvalidLimits,
+    CopyLimitExceeded,
     Page(PageValidationError),
 }
 
@@ -345,6 +428,7 @@ impl fmt::Display for PostgresError {
             Self::TlsConfiguration => "PostgreSQL TLS configuration is invalid",
             Self::ServerCancelled => "PostgreSQL server confirmed query cancellation",
             Self::InvalidLimits => "PostgreSQL stream limits are invalid",
+            Self::CopyLimitExceeded => "PostgreSQL COPY limits were exceeded",
             Self::Page(_) => "PostgreSQL result page failed validation",
         })
     }
@@ -702,6 +786,72 @@ impl PostgresSession {
         Ok(outcomes)
     }
 
+    pub async fn copy_out_probe(
+        &self,
+        limits: PostgresCopyLimits,
+    ) -> Result<PostgresCopyOutStream, PostgresError> {
+        if !limits.is_valid() {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let stream = self
+            .client
+            .copy_out(
+                "COPY (SELECT value FROM generate_series(1, 1000) AS value ORDER BY value) \
+                 TO STDOUT WITH (FORMAT csv)",
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        Ok(PostgresCopyOutStream {
+            stream: Box::pin(stream),
+            limits,
+            chunk_count: 0,
+            total_bytes: 0,
+            outcome: None,
+            terminal: false,
+        })
+    }
+
+    pub async fn copy_in_probe(
+        &self,
+        chunks: &[BoundedBytes],
+        limits: PostgresCopyLimits,
+    ) -> Result<PostgresCopyOutcome, PostgresError> {
+        validate_copy_input(chunks, limits)?;
+        self.client
+            .batch_execute(
+                "CREATE TEMP TABLE IF NOT EXISTS tablerock_copy_probe(value integer); \
+                 TRUNCATE tablerock_copy_probe",
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        let sink = self
+            .client
+            .copy_in::<_, Bytes>("COPY tablerock_copy_probe(value) FROM STDIN WITH (FORMAT csv)")
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        tokio::pin!(sink);
+        let mut total_bytes = 0_u64;
+        for chunk in chunks {
+            total_bytes +=
+                u64::try_from(chunk.len()).map_err(|_| PostgresError::CopyLimitExceeded)?;
+            sink.as_mut()
+                .send(Bytes::copy_from_slice(chunk.as_slice()))
+                .await
+                .map_err(|_| PostgresError::Query)?;
+        }
+        let row_count = sink
+            .as_mut()
+            .finish()
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        Ok(PostgresCopyOutcome {
+            chunk_count: u32::try_from(chunks.len())
+                .map_err(|_| PostgresError::CopyLimitExceeded)?,
+            total_bytes,
+            row_count: Some(row_count),
+        })
+    }
+
     pub async fn cancel_sleep_probe(&self) -> Result<PostgresCancellationOutcome, PostgresError> {
         self.cancel_probe("SELECT pg_sleep(30)", Duration::from_millis(150))
             .await
@@ -746,9 +896,28 @@ impl PostgresSession {
             {
                 Ok(PostgresCancellationOutcome::ConfirmedByServer)
             }
-            Ok(_) => Ok(PostgresCancellationOutcome::RequestAcceptedButQueryCompleted),
+            Ok(_) => {
+                self.synchronize_after_late_cancel().await?;
+                Ok(PostgresCancellationOutcome::RequestAcceptedButQueryCompleted)
+            }
             Err(_) => Err(PostgresError::Query),
         }
+    }
+
+    async fn synchronize_after_late_cancel(&self) -> Result<(), PostgresError> {
+        match self.client.simple_query("SELECT pg_sleep(0.05)").await {
+            Ok(_) => {}
+            Err(error)
+                if error
+                    .as_db_error()
+                    .is_some_and(|error| error.code().code() == "57014") => {}
+            Err(_) => return Err(PostgresError::Query),
+        }
+        self.client
+            .simple_query("SELECT 1")
+            .await
+            .map(|_| ())
+            .map_err(|_| PostgresError::Query)
     }
 
     pub async fn dispatch_cancel(&self) -> Result<(), PostgresError> {
@@ -759,6 +928,99 @@ impl PostgresSession {
         }
         .map_err(|_| PostgresError::CancellationTransport)
     }
+}
+
+pub struct PostgresCopyOutStream {
+    stream: Pin<Box<tokio_postgres::CopyOutStream>>,
+    limits: PostgresCopyLimits,
+    chunk_count: u32,
+    total_bytes: u64,
+    outcome: Option<PostgresCopyOutcome>,
+    terminal: bool,
+}
+
+impl PostgresCopyOutStream {
+    pub async fn next_chunk(&mut self) -> Result<Option<PostgresCopyChunk>, PostgresError> {
+        if self.terminal {
+            return Ok(None);
+        }
+        let Some(payload) = self.stream.next().await else {
+            self.terminal = true;
+            self.outcome = Some(PostgresCopyOutcome {
+                chunk_count: self.chunk_count,
+                total_bytes: self.total_bytes,
+                row_count: None,
+            });
+            return Ok(None);
+        };
+        let payload = payload.map_err(|_| {
+            self.terminal = true;
+            PostgresError::Query
+        })?;
+        let payload_bytes = u64::try_from(payload.len()).map_err(|_| {
+            self.terminal = true;
+            PostgresError::CopyLimitExceeded
+        })?;
+        let next_chunk_count = self.chunk_count.checked_add(1).ok_or_else(|| {
+            self.terminal = true;
+            PostgresError::CopyLimitExceeded
+        })?;
+        let next_total_bytes = self.total_bytes.checked_add(payload_bytes).ok_or_else(|| {
+            self.terminal = true;
+            PostgresError::CopyLimitExceeded
+        })?;
+        if next_chunk_count > self.limits.max_chunks
+            || payload_bytes > self.limits.max_chunk_bytes
+            || next_total_bytes > self.limits.max_total_bytes
+        {
+            self.terminal = true;
+            return Err(PostgresError::CopyLimitExceeded);
+        }
+        let chunk = PostgresCopyChunk {
+            ordinal: self.chunk_count,
+            byte_offset: self.total_bytes,
+            payload: BoundedBytes::copy_from_slice(
+                payload.as_ref(),
+                ByteLimit::new(self.limits.max_chunk_bytes),
+            )
+            .map_err(|_| PostgresError::CopyLimitExceeded)?,
+        };
+        self.chunk_count = next_chunk_count;
+        self.total_bytes = next_total_bytes;
+        Ok(Some(chunk))
+    }
+
+    #[must_use]
+    pub const fn outcome(&self) -> Option<PostgresCopyOutcome> {
+        self.outcome
+    }
+}
+
+fn validate_copy_input(
+    chunks: &[BoundedBytes],
+    limits: PostgresCopyLimits,
+) -> Result<(), PostgresError> {
+    if !limits.is_valid() {
+        return Err(PostgresError::InvalidLimits);
+    }
+    if chunks.len() > limits.max_chunks as usize {
+        return Err(PostgresError::CopyLimitExceeded);
+    }
+    let mut total_bytes = 0_u64;
+    for chunk in chunks {
+        let chunk_bytes =
+            u64::try_from(chunk.len()).map_err(|_| PostgresError::CopyLimitExceeded)?;
+        if chunk_bytes > limits.max_chunk_bytes {
+            return Err(PostgresError::CopyLimitExceeded);
+        }
+        total_bytes = total_bytes
+            .checked_add(chunk_bytes)
+            .ok_or(PostgresError::CopyLimitExceeded)?;
+        if total_bytes > limits.max_total_bytes {
+            return Err(PostgresError::CopyLimitExceeded);
+        }
+    }
+    Ok(())
 }
 
 fn driver_config(config: &PostgresConnectConfig) -> tokio_postgres::Config {

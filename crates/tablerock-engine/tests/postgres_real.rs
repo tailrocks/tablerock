@@ -2,14 +2,15 @@ use std::time::Duration;
 
 use rcgen::ExtendedKeyUsagePurpose;
 use tablerock_core::{
-    BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity, PageLimits,
-    PageWarning, Truncation, ValueKind,
+    BoundedBytes, BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity,
+    PageLimits, PageWarning, Truncation, ValueKind,
 };
 use tablerock_engine::{
     AdapterFailureClass, ClickHouseProbeQuery, DriverPageRequest, DriverSession,
     EngineServiceUpdate, PostgresCancellationOutcome, PostgresClientIdentity,
-    PostgresConnectConfig, PostgresError, PostgresNoticeDelivery, PostgresProbeQuery,
-    PostgresSession, PostgresStatementKind, PostgresTlsMaterial, PostgresTlsMode,
+    PostgresConnectConfig, PostgresCopyLimits, PostgresError, PostgresNoticeDelivery,
+    PostgresProbeQuery, PostgresSession, PostgresStatementKind, PostgresTlsMaterial,
+    PostgresTlsMode,
 };
 
 mod support;
@@ -242,15 +243,21 @@ async fn verify_tls_matrix(tag: &str) {
         session.cancel_sleep_probe().await.unwrap(),
         PostgresCancellationOutcome::ConfirmedByServer
     );
-    assert_eq!(
-        session.cancel_completed_probe().await.unwrap(),
-        PostgresCancellationOutcome::RequestAcceptedButQueryCompleted
-    );
+    for _ in 0..3 {
+        assert_eq!(
+            session.cancel_completed_probe().await.unwrap(),
+            PostgresCancellationOutcome::RequestAcceptedButQueryCompleted
+        );
+    }
     session.shutdown().await.unwrap();
 }
 
 fn text(value: &str) -> BoundedText {
     BoundedText::copy_from_str(value, ByteLimit::new(128)).unwrap()
+}
+
+fn bytes(value: &[u8]) -> BoundedBytes {
+    BoundedBytes::copy_from_slice(value, ByteLimit::new(128)).unwrap()
 }
 
 #[tokio::test]
@@ -663,6 +670,88 @@ async fn preserves_ordered_postgresql_statement_outcomes() {
         assert_eq!(outcomes[3].ordinal(), 3);
         assert_eq!(outcomes[3].kind(), PostgresStatementKind::Query);
         assert_eq!(outcomes[3].row_count(), 2);
+        session.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn streams_bounded_postgresql_copy_in_and_out() {
+    for tag in ["17.10-alpine", "18.4-alpine"] {
+        let container = GenericImage::new("postgres", tag)
+            .with_exposed_port(5432.tcp())
+            .with_wait_for(WaitFor::message_on_stderr(
+                "database system is ready to accept connections",
+            ))
+            .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+            .start()
+            .await
+            .unwrap();
+        let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+        let session = PostgresSession::connect(&PostgresConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            text("postgres"),
+            text("postgres"),
+            PostgresTlsMode::Disabled,
+        ))
+        .await
+        .unwrap();
+
+        let limits = PostgresCopyLimits::new(2_048, 16_384, 4_096);
+        let mut stream = session.copy_out_probe(limits).await.unwrap();
+        let mut output = Vec::new();
+        let mut expected_ordinal = 0;
+        while let Some(chunk) = stream.next_chunk().await.unwrap() {
+            assert_eq!(chunk.ordinal(), expected_ordinal);
+            assert_eq!(chunk.byte_offset(), output.len() as u64);
+            assert!(!format!("{chunk:?}").contains("1\n"));
+            output.extend_from_slice(chunk.payload());
+            expected_ordinal += 1;
+        }
+        let expected = (1..=1_000)
+            .map(|value| format!("{value}\n"))
+            .collect::<String>();
+        assert_eq!(output, expected.as_bytes());
+        let outcome = stream.outcome().unwrap();
+        assert_eq!(outcome.chunk_count(), expected_ordinal);
+        assert_eq!(outcome.total_bytes(), expected.len() as u64);
+        assert_eq!(outcome.row_count(), None);
+
+        let input = [bytes(b"1\n2"), bytes(b"\n3\n")];
+        let outcome = session.copy_in_probe(&input, limits).await.unwrap();
+        assert_eq!(outcome.chunk_count(), 2);
+        assert_eq!(outcome.total_bytes(), 6);
+        assert_eq!(outcome.row_count(), Some(3));
+
+        assert_eq!(
+            session
+                .copy_in_probe(&input, PostgresCopyLimits::new(1, 128, 256))
+                .await,
+            Err(PostgresError::CopyLimitExceeded)
+        );
+        let mut limited = session
+            .copy_out_probe(PostgresCopyLimits::new(2_048, 16_384, 1))
+            .await
+            .unwrap();
+        assert_eq!(
+            limited.next_chunk().await,
+            Err(PostgresError::CopyLimitExceeded)
+        );
+        drop(limited);
+
+        let malformed = [bytes(b"not-an-integer\n")];
+        assert_eq!(
+            session.copy_in_probe(&malformed, limits).await,
+            Err(PostgresError::Query)
+        );
+        assert_eq!(
+            session
+                .copy_in_probe(&input, limits)
+                .await
+                .unwrap()
+                .row_count(),
+            Some(3)
+        );
         session.shutdown().await.unwrap();
     }
 }

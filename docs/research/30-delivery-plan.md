@@ -135,7 +135,9 @@ from SQLSTATE-confirmed server cancellation. Verified custom roots, independent
 server name, client identity, downgrade rejection, and TLS cancellation pass on
 both pinned lines. The completion race now passes plain and required-mTLS
 transports: SQLSTATE `57014` proves cancellation while a late successful cancel
-after `SELECT 1` preserves normal-completion truth. The remaining
+after `SELECT 1` preserves normal-completion truth. A bounded synchronization
+barrier consumes a pending late cancel before releasing the session, preventing
+it from striking the next operation. The remaining
 protocol/failure matrix stays required.
 Force-stopping both pinned server lines before the cancel socket opens now proves
 redacted cancellation-transport failure and terminal session connection loss,
@@ -153,6 +155,11 @@ and truncation truth, and stay redacted from Debug.
 Both pinned lines now prove ordered CREATE/INSERT/UPDATE/SELECT outcomes with
 exact command/query kind and row counts while typed rows remain on the binary
 extended-query path.
+Both pinned lines now prove pull-driven bounded COPY OUT chunks and
+backpressured bounded COPY IN with exact byte facts, server-confirmed import
+rows, explicit limit failures, malformed-input recovery, and payload-redacted
+Debug. Product file effects, cancellation, progress, and arbitrary reviewed
+COPY plans remain open.
 
 ### ClickHouse spike
 

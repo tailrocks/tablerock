@@ -12,6 +12,12 @@ TableRock classifies the query result after the cancel request completes:
 - cancellation transport failure and unrelated query failure remain distinct
   redacted errors.
 
+A normally completed query plus successful late cancel delivery enters a
+bounded synchronization barrier before the session is released. The barrier
+accepts either normal completion or SQLSTATE `57014`, then requires a final
+successful `SELECT 1`. This consumes a cancel that reached the backend after the
+original query completed instead of allowing it to strike the next operation.
+
 The probe uses static TableRock-owned SQL only. Cancellation never accepts SQL
 text, credentials, or identifiers from presentation.
 
@@ -22,6 +28,12 @@ cancellation after 150 ms must terminate with SQLSTATE `57014` and
 `ConfirmedByServer`. `SELECT 1` with cancellation after 250 ms must complete
 normally while cancellation transport succeeds, producing
 `RequestAcceptedButQueryCompleted`.
+
+Workspace-matrix execution exposed the protocol gap: cancel-socket completion
+is not backend acknowledgment, and a pending late cancel intermittently struck
+the follow-up query. Three consecutive late-completion races per fixture now
+pass through the synchronization barrier before the existing bounded follow-up
+query. Three isolated repetitions also pass.
 
 The ordinary PostgreSQL 18.4 fixture proves both outcomes and a subsequent
 bounded query on the same session. The custom-root required-mTLS matrix proves
@@ -41,6 +53,8 @@ loss after request delivery remains open.
 - Request delivery never masquerades as server-confirmed cancellation.
 - Only SQLSTATE `57014` proves server cancellation.
 - A normal result remains normal even if a late cancel transport succeeds.
+- A successful late cancel is drained through a bounded server command before
+  another operation may use the session.
 - No query is automatically replayed after an ambiguous transport outcome.
 - Stable errors reveal no SQL text or database response detail.
 
