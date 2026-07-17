@@ -4,12 +4,12 @@
 
 Phase 0 is approved as of 2026-07-16. The operator's end-to-end implementation
 authorization approves every fixed decision in
-[`31-fixed-decisions.md`](31-fixed-decisions.md) and authorizes Roadmap Phases
+[`31-fixed-decisions.md`](../../architecture/fixed-decisions.md) and authorizes Roadmap Phases
 0-15. Application and dependency checkpoints may begin.
 
 The TableRock name and `tablerock-*` namespaces are the sole implementation
 identity. The separate trademark, market, domain, package-registry, and
-distribution clearance in [`05-product-identity.md`](05-product-identity.md)
+distribution clearance in [`05-product-identity.md`](../../architecture/product-identity.md)
 remains a public-release gate; it does not introduce a second implementation
 name or block pre-release engineering.
 

@@ -27,7 +27,7 @@ fixture proves a real delayed query reports `RequestSent` and then
 `ServerConfirmedCancelled`, each within a five-second test deadline.
 
 ClickHouse query-ID cancellation is subsequently proven in
-[`129-phase-2-clickhouse-service-cancellation.md`](129-phase-2-clickhouse-service-cancellation.md).
+[`129-phase-2-clickhouse-service-cancellation.md`](../clickhouse/129-phase-2-clickhouse-service-cancellation.md).
 Redis client-stop/post-dispatch truth remains required. PostgreSQL confirmation
 is not generalized to engines whose protocols provide different evidence.
 

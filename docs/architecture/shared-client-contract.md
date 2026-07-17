@@ -321,5 +321,5 @@ The native client does not begin broad feature work until this suite passes for
 all three engines through the in-process port and UniFFI bridge.
 
 Transport selection and Apple-native ownership are detailed in
-[12-native-macos-path.md](12-native-macos-path.md); primary-source evidence is
-in [13-platform-architecture-sources.md](13-platform-architecture-sources.md).
+[12-native-macos-path.md](native-macos-path.md); primary-source evidence is
+in [13-platform-architecture-sources.md](platform-architecture-sources.md).

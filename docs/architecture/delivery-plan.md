@@ -47,7 +47,7 @@ Before each future implementation commit:
 - relevant local/real-server/render/performance evidence passes;
 - documentation and support claims match the result;
 - the commit is created and pushed directly on `main` following
-  [33-main-branch-delivery.md](33-main-branch-delivery.md).
+  [33-main-branch-delivery.md](main-branch-delivery.md).
 
 If a checkpoint fails, record evidence and make the next forward repair. Do not
 hide failure by rewriting published `main` history.
@@ -64,7 +64,7 @@ hide failure by rewriting published `main` history.
 - approve the SecretSource variants and direct notarized distribution;
 - approve local-only Turso, result-budget measurements, and synchronous UniFFI;
 - verify every selected path in
-  [31-fixed-decisions.md](31-fixed-decisions.md) is reflected consistently in the
+  [31-fixed-decisions.md](fixed-decisions.md) is reflected consistently in the
   roadmap, quality gates, and source ruling.
 
 ### Exit evidence
@@ -294,7 +294,7 @@ undefined and duplicates remain legal.
 
 One contract harness runs overlapping operations against real pinned servers
 (the first simultaneous PostgreSQL/ClickHouse/Redis proof is recorded in
-[`126-phase-2-three-engine-overlap.md`](126-phase-2-three-engine-overlap.md));
+[`126-phase-2-three-engine-overlap.md`](../evidence/phase-2/core/126-phase-2-three-engine-overlap.md));
 engine differences are capabilities, not fake normalization; measured first-row,
 throughput, cancel, allocation, and memory facts define initial budgets;
 rejected dependencies and unsupported claims are recorded.
@@ -493,7 +493,7 @@ unsupported state on other engines. No generic UI invents cross-engine behavior.
 
 ### Exit evidence
 
-The TUI satisfies [32-quality-and-verification.md](32-quality-and-verification.md).
+The TUI satisfies [32-quality-and-verification.md](quality-and-verification.md).
 Every parity-ledger row is implemented, explicitly excluded by boundary, or
 still a visible blocker. Only the first two states permit the corresponding
 parity claim.

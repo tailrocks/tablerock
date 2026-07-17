@@ -1,5 +1,9 @@
 # AGENTS.md
 
+Operating rules for anyone (human or agent) changing this repository.
+`CONTRIBUTING.md` holds the human-facing summary; this file is authoritative
+where they overlap.
+
 ## Trunk-only workflow
 
 - Work directly on `main` only.
@@ -12,10 +16,10 @@
 
 ## Current phase
 
-Phase 0 research decisions are approved. Implement Roadmap Phases 1-15 through
-their dependency-ordered, evidence-gated checkpoints. Do not add behavior or a
-dependency before its relevant roadmap checkpoint is approved and its adoption
-requirements are defined.
+Phase status lives in [`ROADMAP.md`](ROADMAP.md). Implement the roadmap phases
+through their dependency-ordered, evidence-gated checkpoints. Do not add
+behavior or a dependency before its relevant roadmap checkpoint is approved and
+its adoption requirements are defined.
 
 ## Product boundary
 
@@ -23,19 +27,20 @@ requirements are defined.
   query, result, edit, history, and safety behavior.
 - The first UI is a Rust CLI/TUI.
 - The TUI uses The Elm Architecture, TermRock, Ratatui, and Crossterm.
-- The native macOS UI uses SwiftUI/AppKit over embedded Rust through synchronous
-  UniFFI and ships first as a direct notarized Developer ID application.
+- The native macOS UI uses SwiftUI/AppKit over embedded Rust through
+  synchronous UniFFI and ships first as a direct notarized Developer ID
+  application.
 - Shared terminal components come from the independent
-  [`termrock`](https://github.com/tailrocks/termrock) crate;
-  TableRock does not import `jackin` product internals.
+  [`termrock`](https://github.com/tailrocks/termrock) crate; TableRock does not
+  import `jackin` product internals.
 
 ## Clean-room rule
 
 TablePro, TablePlus, and Zedis may establish that a broad problem or workflow
 exists. Never copy or translate their source, tests, comments, identifiers,
-assets, product text, screenshots, layout measurements, colors, or key bindings.
-Implement from this repository's requirements, official database documentation,
-selected library documentation, and direct tests.
+assets, product text, screenshots, layout measurements, colors, or key
+bindings. Implement from this repository's requirements, official database
+documentation, selected library documentation, and direct tests.
 
 Record external-reference provenance in every influenced implementation commit
 and its accompanying requirement/test documentation.
@@ -66,8 +71,8 @@ and its accompanying requirement/test documentation.
 - Enforce read/write safety and redaction below presentation.
 - Never persist resolved 1Password values or log credentials, SQL text, or cell
   values by default.
-- Update research, roadmap, user documentation, and tests with behavioral
-  changes.
+- Update architecture docs, evidence, roadmap, user documentation, and tests
+  with behavioral changes.
 
 ## Commits
 

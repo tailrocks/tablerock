@@ -71,7 +71,7 @@ review, and product compositions local. Every missing presentation-only
 primitive with a neutral state/interaction contract is added to TermRock first
 and remains reusable by TableRock, Jackin, and future products. The detailed
 consume/extend boundary is in
-[13-termrock-integration.md](13-termrock-integration.md).
+[13-termrock-integration.md](termrock-integration.md).
 
 ## Data grid contract
 

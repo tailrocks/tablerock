@@ -52,7 +52,7 @@ as a usage/architecture reference; TableRock imports no Jackin product crate.
 ## TUI application pattern
 
 TableRock uses The Elm Architecture exactly as fixed in
-[07-application-pattern.md](07-application-pattern.md): one root `Model`, one
+[07-application-pattern.md](application-pattern.md): one root `Model`, one
 root `Message` path, deterministic `update`, typed effects, subscriptions merged
 into one message queue, and a pure full-frame view.
 
@@ -310,7 +310,7 @@ migration, update, crash recovery, and uninstall.
 | Distribution | signed Release on clean machines, hardened runtime, notarization/stapling, credentials, update/uninstall |
 
 The full quality matrix is in
-[32-quality-and-verification.md](32-quality-and-verification.md).
+[32-quality-and-verification.md](quality-and-verification.md).
 
 ## Trunk-only execution
 

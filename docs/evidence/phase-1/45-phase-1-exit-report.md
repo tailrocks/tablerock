@@ -71,7 +71,7 @@ performance claim beyond bounded-memory ingress proofs.
 At this historical Phase 1 exit, `origin/feat/canonical-widget-migration` was
 not a published `main` revision and was not a TableRock dependency. It later
 reached TermRock `main`; TableRock's forward re-audit and exact `0.8.0` pin are
-recorded in [`49-termrock-0.8-migration.md`](49-termrock-0.8-migration.md).
+recorded in [`49-termrock-0.8-migration.md`](../termrock/49-termrock-0.8-migration.md).
 
 ## PTY/process matrix audit
 

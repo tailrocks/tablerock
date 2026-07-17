@@ -20,7 +20,7 @@ The minimal `tablerock-tui` consumer proves these public seams:
   inside the model, update, or view.
 
 These historical interfaces were replaced by migration 0024; see
-[`130-termrock-closure-runner-frame-time-migration.md`](130-termrock-closure-runner-frame-time-migration.md).
+[`130-termrock-closure-runner-frame-time-migration.md`](../termrock/130-termrock-closure-runner-frame-time-migration.md).
 
 This checkpoint does not claim an executable shell, input stream, terminal
 restoration, responsive layout, engine subscription, database capability, or

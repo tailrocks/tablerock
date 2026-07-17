@@ -2,7 +2,7 @@
 
 Zedis is useful because it treats Redis as a typed keyspace rather than forcing
 it into a relational table. It is a concepts-only reference under the policy in
-[01-clean-room-reference.md](01-clean-room-reference.md).
+[01-clean-room-reference.md](clean-room-reference.md).
 
 ## Publicly useful concepts
 

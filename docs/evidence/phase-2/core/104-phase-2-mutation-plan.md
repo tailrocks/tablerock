@@ -34,7 +34,7 @@ plans and every engine adapter, removing competing local estimators.
 - Redis commands are sequential and make no rollback claim. The real-server
   pipeline matrix proves successful commands remain applied around a runtime
   response error, including inside `MULTI`/`EXEC`; see
-  [`138-phase-2-redis-pipeline-partial-failure.md`](138-phase-2-redis-pipeline-partial-failure.md).
+  [`138-phase-2-redis-pipeline-partial-failure.md`](../redis/138-phase-2-redis-pipeline-partial-failure.md).
 
 ## Review and authorization
 

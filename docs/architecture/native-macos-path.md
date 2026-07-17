@@ -125,7 +125,7 @@ while entering Rust.
 Swift task cancellation submits `Cancel(OperationId)` and continues observing
 the Rust operation's terminal outcome. It does not claim that PostgreSQL,
 ClickHouse, or Redis stopped. The shared cancellation state machine is defined
-in [14-shared-client-contract.md](14-shared-client-contract.md).
+in [14-shared-client-contract.md](shared-client-contract.md).
 
 ## Credentials and distribution
 
@@ -158,4 +158,4 @@ motion, contrast, large text, light/dark appearance, and multi-window state.
   accessibility, performance, and crash-recovery gates pass.
 
 Primary-source detail and citations are collected in
-[13-platform-architecture-sources.md](13-platform-architecture-sources.md).
+[13-platform-architecture-sources.md](platform-architecture-sources.md).

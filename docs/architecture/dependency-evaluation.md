@@ -46,7 +46,7 @@ is implemented in TermRock.
 TableRock enables all features published by the exact TermRock pin:
 `crossterm` and `serde`. The workspace owns that single feature declaration;
 see
-[`93-termrock-all-features-neutral-input-adoption.md`](93-termrock-all-features-neutral-input-adoption.md).
+[`93-termrock-all-features-neutral-input-adoption.md`](../evidence/termrock/93-termrock-all-features-neutral-input-adoption.md).
 
 ### Secret zeroization
 
@@ -65,7 +65,7 @@ the versioned offline backup manifest; no digest or path crosses into profile
 state. Cargo registry and official RustCrypto metadata report Rust 1.85 minimum
 and MIT OR Apache-2.0. Context7 was attempted first and reported its monthly
 quota exhausted. See
-[`135-phase-2-persistence-backup-restore.md`](135-phase-2-persistence-backup-restore.md).
+[`135-phase-2-persistence-backup-restore.md`](../evidence/phase-2/persistence/135-phase-2-persistence-backup-restore.md).
 
 ### Profile search normalization
 
@@ -103,10 +103,10 @@ The first adoption checkpoint pins `tokio-postgres` 0.7.18 and
 `tokio-postgres-rustls` 0.14.0. The TLS adapter enables `ring` plus
 `native-certs`; the rejected `webpki-roots` candidate was removed because its
 CDLA-Permissive-2.0 data license is outside the approved license policy. See
-[`81-phase-2-postgresql-stream-foundation.md`](81-phase-2-postgresql-stream-foundation.md).
+[`81-phase-2-postgresql-stream-foundation.md`](../evidence/phase-2/postgres/81-phase-2-postgresql-stream-foundation.md).
 The follow-up checkpoint removes the text-only feasibility path and proves
 extended-query binary streaming on PostgreSQL 17.10 and 18.4; see
-[`87-phase-2-postgresql-typed-stream.md`](87-phase-2-postgresql-typed-stream.md).
+[`87-phase-2-postgresql-typed-stream.md`](../evidence/phase-2/postgres/87-phase-2-postgresql-typed-stream.md).
 Real-server lifecycle uses exact Testcontainers Rust 0.27.3 with default
 features disabled. It is a development dependency only; production engine
 artifacts cannot start or control containers.
@@ -120,7 +120,7 @@ deterministic ring provider, bounded custom CA/client identity PEM parsing, and
 an independent server-name wrapper. Development-only rcgen 0.14.8 generates
 ephemeral certificates; no key is committed. `Prefer` was deleted because the
 core has no plaintext-downgrade policy. See
-[`136-phase-2-postgresql-tls-identity.md`](136-phase-2-postgresql-tls-identity.md).
+[`136-phase-2-postgresql-tls-identity.md`](../evidence/phase-2/postgres/136-phase-2-postgresql-tls-identity.md).
 
 ## ClickHouse
 
@@ -138,18 +138,18 @@ native-root support. It consumes the official client's cancellation-safe raw
 chunk cursor, parses `RowBinaryWithNamesAndTypes` metadata, and proves bounded
 typed pages against immutable ClickHouse 25.8 and 26.3 LTS Testcontainers
 fixtures. See
-[`95-phase-2-clickhouse-rowbinary-foundation.md`](95-phase-2-clickhouse-rowbinary-foundation.md).
+[`95-phase-2-clickhouse-rowbinary-foundation.md`](../evidence/phase-2/clickhouse/95-phase-2-clickhouse-rowbinary-foundation.md).
 The same single decoder now covers the complex scalar matrix through 256-bit
 integers and decimals without precision loss; see
-[`97-phase-2-clickhouse-complex-scalars.md`](97-phase-2-clickhouse-complex-scalars.md).
+[`97-phase-2-clickhouse-complex-scalars.md`](../evidence/phase-2/clickhouse/97-phase-2-clickhouse-complex-scalars.md).
 It also parses recursive `Array`, `Tuple`, `Map`, and named `Nested` type
 signatures and emits bounded canonical structured projections; see
-[`100-phase-2-clickhouse-structured-containers.md`](100-phase-2-clickhouse-structured-containers.md).
+[`100-phase-2-clickhouse-structured-containers.md`](../evidence/phase-2/clickhouse/100-phase-2-clickhouse-structured-containers.md).
 
 PostgreSQL JSON/JSONB projection pins `serde_json` 1.0.150 with `std` and
 `arbitrary_precision`. A bounded counting writer avoids a full projected output
 allocation, while an 8 MiB input ceiling bounds DOM allocation. See
-[`168-phase-2-postgresql-json-projection.md`](168-phase-2-postgresql-json-projection.md).
+[`168-phase-2-postgresql-json-projection.md`](../evidence/phase-2/postgres/168-phase-2-postgresql-json-projection.md).
 
 ## Redis
 
@@ -172,9 +172,9 @@ activated locked transitives are `backon` 1.6.0 (Rust 1.85, Apache-2.0),
 The same rustls feature now passes generated custom-root and optional mTLS
 identity fixtures plus ACL authentication without adding a dependency or an
 insecure verifier. See
-[`144-phase-2-redis-tls-authentication.md`](144-phase-2-redis-tls-authentication.md)
+[`144-phase-2-redis-tls-authentication.md`](../evidence/phase-2/redis/144-phase-2-redis-tls-authentication.md)
 and
-[`90-phase-2-redis-binary-scan-foundation.md`](90-phase-2-redis-binary-scan-foundation.md).
+[`90-phase-2-redis-binary-scan-foundation.md`](../evidence/phase-2/redis/90-phase-2-redis-binary-scan-foundation.md).
 The official client unconditionally brings `xxhash-rust` 0.8.17 for value
 digests. Its permissive OSI-approved BSL-1.0 license is explicitly accepted;
 the dependency cannot be feature-disabled without forking the selected client.
@@ -204,7 +204,7 @@ established local stream/endpoint and remain unaware of SSH credentials.
 ## Ratatui and TermRock
 
 TableRock uses Ratatui's **The Elm Architecture** application pattern as fixed
-in [07-application-pattern.md](07-application-pattern.md). TermRock supplies the
+in [07-application-pattern.md](application-pattern.md). TermRock supplies the
 terminal session, theme, input/focus/interaction contracts, reusable widgets,
 runtime result/subscription types, lookbook, and conformance. TableRock supplies
 the root Model/Message/Update/Effect/View and database compositions.
@@ -257,7 +257,7 @@ The initial adoption pins 0.7.0 with default features disabled and proves
 transactional sequential migrations, foreign-key enforcement, rollback,
 integrity, checkpoint, copy/reopen, and corruption rejection. Evidence and
 remaining storage gates are recorded in
-[58-phase-2-persistence-actor-foundation.md](58-phase-2-persistence-actor-foundation.md).
+[58-phase-2-persistence-actor-foundation.md](../evidence/phase-2/persistence/58-phase-2-persistence-actor-foundation.md).
 
 Persist profiles, secret references, organization, saved queries, preferences,
 intent-only restoration, bounded history, and support metadata. Do not persist
