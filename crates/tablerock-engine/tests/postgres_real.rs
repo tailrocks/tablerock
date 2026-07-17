@@ -627,14 +627,14 @@ async fn verify_typed_values(tag: &str) {
     let mut parameters = session
         .stream_probe(
             PostgresProbeQuery::Parameters,
-            PageLimits::new(2, 4, 128, 256),
-            32,
+            PageLimits::new(2, 6, 256, 512),
+            64,
         )
         .await
         .unwrap();
     let page = parameters.next_page(identity(), 0).await.unwrap().unwrap();
     assert_eq!(page.envelope().row_count(), 1, "PostgreSQL {tag}");
-    assert_eq!(page.envelope().column_count(), 4);
+    assert_eq!(page.envelope().column_count(), 6);
     assert_eq!(page.envelope().delivery(), PageDelivery::Final);
     assert_eq!(page.cell(0, 0).unwrap().kind(), ValueKind::Text);
     assert_eq!(page.cell(0, 0).unwrap().bytes(), "parameter-é".as_bytes());
@@ -647,6 +647,10 @@ async fn verify_typed_values(tag: &str) {
     assert_eq!(page.cell(0, 2).unwrap().bytes(), &[0, 1, 255, 0]);
     assert_eq!(page.cell(0, 3).unwrap().kind(), ValueKind::Boolean);
     assert_eq!(page.cell(0, 3).unwrap().bytes(), &[0]);
+    assert!(page.cell(0, 4).unwrap().is_null());
+    assert_eq!(page.cell(0, 5).unwrap().kind(), ValueKind::Unknown);
+    assert_eq!(page.columns()[5].engine_type().name(), "_int4");
+    assert!(!page.cell(0, 5).unwrap().bytes().is_empty());
     assert!(parameters.next_page(identity(), 1).await.unwrap().is_none());
     drop(parameters);
     session.shutdown().await.unwrap();

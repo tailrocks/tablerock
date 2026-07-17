@@ -119,6 +119,8 @@ PostgreSQL server loss before separate cancel delivery is verified in
 [`156-phase-2-postgresql-cancel-transport-loss.md`](docs/research/156-phase-2-postgresql-cancel-transport-loss.md).
 PostgreSQL typed parameter transport is verified in
 [`157-phase-2-postgresql-typed-parameters.md`](docs/research/157-phase-2-postgresql-typed-parameters.md).
+PostgreSQL typed NULL and array parameter transport is verified in
+[`158-phase-2-postgresql-null-array-parameters.md`](docs/research/158-phase-2-postgresql-null-array-parameters.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

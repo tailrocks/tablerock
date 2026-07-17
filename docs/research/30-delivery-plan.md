@@ -142,6 +142,9 @@ redacted cancellation-transport failure and terminal session connection loss,
 without a false server-cancel outcome.
 Prepared UTF-8 text, int8, binary-with-NUL, and boolean parameters now pass both
 pinned lines through the bounded typed stream seam without exposing client types.
+Declared text NULL and `int4[]` parameters also pass both pinned lines; arrays
+retain bounded unknown bytes and exact engine type identity until structured
+decoding is implemented.
 
 ### ClickHouse spike
 

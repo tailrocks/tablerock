@@ -19,15 +19,16 @@ with four positional parameters and execute it through `query_raw`: UTF-8 text
 with a multibyte character, a near-minimum signed `int8`, binary bytes containing
 NUL and `0xff`, and boolean false.
 
-The result must contain one row, four exact engine types, final delivery, and
-exact normalized value kinds/bytes. A following page request returns
+The scalar assertions require four exact engine types in one final row and exact
+normalized value kinds/bytes; research 158 expands that row to six columns. A following page request returns
 end-of-stream. The same session first completes the broader typed-value matrix
 and then shuts down cleanly, proving parameter ownership does not leak beyond
 stream construction.
 
 This closes PostgreSQL typed parameter transport for the Phase 2 feasibility
-gate. Public parameter-plan bounds, NULL parameters, arrays/composites, prepared
-statement lifecycle/cache policy, notices, multiple statements, COPY,
+gate. Research 158 subsequently closes NULL and integer-array parameters. Public
+parameter-plan bounds, composites, prepared statement lifecycle/cache policy,
+notices, multiple statements, COPY,
 connection loss/reconnect, ambiguous writes, presentation, and UniFFI encoding
 remain open.
 

@@ -132,7 +132,8 @@ impl PostgresProbeQuery {
             }
             Self::Parameters => {
                 "SELECT $1::text AS text_parameter, $2::int8 AS integer_parameter, \
-                 $3::bytea AS binary_parameter, $4::bool AS boolean_parameter"
+                 $3::bytea AS binary_parameter, $4::bool AS boolean_parameter, \
+                 $5::text AS null_parameter, $6::int4[] AS array_parameter"
             }
             Self::CancellationStream => {
                 "SELECT value::text FROM generate_series(1, 1000) AS value UNION ALL \
@@ -354,12 +355,16 @@ impl PostgresSession {
         let binary_parameter = [0_u8, 1, 255, 0];
         let binary_parameter_slice: &[u8] = &binary_parameter;
         let boolean_parameter = false;
+        let null_parameter: Option<&str> = None;
+        let array_parameter = vec![1_i32, -2, 3];
         let parameters: Vec<&(dyn ToSql + Sync)> = match query {
             PostgresProbeQuery::Parameters => vec![
                 &text_parameter,
                 &integer_parameter,
                 &binary_parameter_slice,
                 &boolean_parameter,
+                &null_parameter,
+                &array_parameter,
             ],
             _ => Vec::new(),
         };
