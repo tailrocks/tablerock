@@ -134,6 +134,8 @@ Engine additions:
   through bounded pages on both pinned lines;
   declared NULL remains null and `int4[]` retains bounded unknown bytes with
   exact engine type identity on both pinned lines;
+  notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
+  ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
 - ClickHouse: nested/nullable/low-cardinality/decimal/large integer/binary,
   partial/late HTTP errors, compression, query IDs, parts, inserts, mutations;
 - Redis: binary keys/values, SCAN families, RESP2/RESP3, logical DB isolation,

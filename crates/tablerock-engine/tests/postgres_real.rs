@@ -8,8 +8,8 @@ use tablerock_core::{
 use tablerock_engine::{
     AdapterFailureClass, ClickHouseProbeQuery, DriverPageRequest, DriverSession,
     EngineServiceUpdate, PostgresCancellationOutcome, PostgresClientIdentity,
-    PostgresConnectConfig, PostgresError, PostgresProbeQuery, PostgresSession, PostgresTlsMaterial,
-    PostgresTlsMode,
+    PostgresConnectConfig, PostgresError, PostgresNoticeDelivery, PostgresProbeQuery,
+    PostgresSession, PostgresTlsMaterial, PostgresTlsMode,
 };
 
 mod support;
@@ -540,6 +540,81 @@ async fn reports_request_delivery_and_server_confirmed_cancellation_through_serv
 async fn streams_typed_values_from_supported_postgres_lines() {
     for tag in ["17.10-alpine", "18.4-alpine"] {
         verify_typed_values(tag).await;
+    }
+}
+
+#[tokio::test]
+async fn bounds_postgresql_notices_and_reports_overflow() {
+    for tag in ["17.10-alpine", "18.4-alpine"] {
+        let container = GenericImage::new("postgres", tag)
+            .with_exposed_port(5432.tcp())
+            .with_wait_for(WaitFor::message_on_stderr(
+                "database system is ready to accept connections",
+            ))
+            .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+            .start()
+            .await
+            .unwrap();
+        let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+        let session = PostgresSession::connect(&PostgresConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            text("postgres"),
+            text("postgres"),
+            PostgresTlsMode::Disabled,
+        ))
+        .await
+        .unwrap();
+
+        session.emit_notice_probe().await.unwrap();
+        let notice = tokio::time::timeout(Duration::from_secs(5), session.next_notice())
+            .await
+            .unwrap()
+            .unwrap();
+        let PostgresNoticeDelivery::Notice(notice) = notice else {
+            panic!("first PostgreSQL notice cannot overflow");
+        };
+        assert_eq!(notice.severity(), "NOTICE");
+        assert_eq!(notice.code(), "00000");
+        assert_eq!(notice.message(), "table-rock-notice");
+        assert_eq!(notice.message_truncation(), Truncation::Complete);
+        assert!(!format!("{notice:?}").contains("table-rock-notice"));
+
+        session.emit_long_notice_probe().await.unwrap();
+        let notice = tokio::time::timeout(Duration::from_secs(5), session.next_notice())
+            .await
+            .unwrap()
+            .unwrap();
+        let PostgresNoticeDelivery::Notice(notice) = notice else {
+            panic!("long PostgreSQL notice cannot overflow");
+        };
+        assert_eq!(notice.message().len(), 1_024);
+        assert!(notice.message().is_char_boundary(notice.message().len()));
+        assert_eq!(
+            notice.message_truncation(),
+            Truncation::Truncated {
+                original_byte_len: Some(1_200)
+            }
+        );
+
+        session.emit_notice_overflow_probe().await.unwrap();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(5), session.next_notice())
+                .await
+                .unwrap(),
+            Some(PostgresNoticeDelivery::Overflow { dropped: 6 })
+        );
+        for expected_index in 1..=64 {
+            let delivery = session.next_notice().await.unwrap();
+            let PostgresNoticeDelivery::Notice(notice) = delivery else {
+                panic!("queued PostgreSQL notice cannot become a second overflow");
+            };
+            assert_eq!(
+                notice.message(),
+                format!("table-rock-overflow-{expected_index}")
+            );
+        }
+        session.shutdown().await.unwrap();
     }
 }
 

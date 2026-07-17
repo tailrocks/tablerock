@@ -1,6 +1,14 @@
-use std::{error::Error, fmt, pin::Pin, sync::Arc};
+use std::{
+    error::Error,
+    fmt,
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
-use futures_util::StreamExt;
+use futures_util::{StreamExt, future::poll_fn};
 use rustls::{
     ClientConfig, RootCertStore,
     pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
@@ -10,11 +18,14 @@ use tablerock_core::{
     PageDelivery, PageFacts, PageIdentity, PageLimits, PageValidationError, PageWarning,
     PageWarnings, ResultPage, RowTotal, Truncation,
 };
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    sync::{Mutex, mpsc},
+};
 use tokio_postgres::{
-    Row,
+    AsyncMessage, Connection, Row,
     config::SslMode,
     tls::MakeTlsConnect,
     types::{FromSql, ToSql, Type},
@@ -25,6 +36,10 @@ use zeroize::Zeroize;
 const MAX_TLS_MATERIAL_BYTES: usize = 65_536;
 const MAX_CA_CERTIFICATES: usize = 16;
 const MAX_CLIENT_CERTIFICATES: usize = 8;
+const POSTGRES_NOTICE_QUEUE_CAPACITY: usize = 64;
+const MAX_POSTGRES_NOTICE_SEVERITY_BYTES: u64 = 32;
+const MAX_POSTGRES_NOTICE_CODE_BYTES: u64 = 5;
+const MAX_POSTGRES_NOTICE_MESSAGE_BYTES: u64 = 1_024;
 
 /// PostgreSQL transport-security requirement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -109,6 +124,57 @@ pub enum PostgresProbeQuery {
 pub enum PostgresCancellationOutcome {
     ConfirmedByServer,
     RequestAcceptedButQueryCompleted,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct PostgresNotice {
+    severity: BoundedText,
+    code: BoundedText,
+    message: BoundedText,
+    message_truncation: Truncation,
+}
+
+impl PostgresNotice {
+    #[must_use]
+    pub fn severity(&self) -> &str {
+        self.severity.as_str()
+    }
+
+    #[must_use]
+    pub fn code(&self) -> &str {
+        self.code.as_str()
+    }
+
+    #[must_use]
+    pub fn message(&self) -> &str {
+        self.message.as_str()
+    }
+
+    #[must_use]
+    pub const fn message_truncation(&self) -> Truncation {
+        self.message_truncation
+    }
+}
+
+impl fmt::Debug for PostgresNotice {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PostgresNotice")
+            .field("severity_bytes", &self.severity.len())
+            .field("code_bytes", &self.code.len())
+            .field("message_bytes", &self.message.len())
+            .field(
+                "message_truncated",
+                &matches!(self.message_truncation, Truncation::Truncated { .. }),
+            )
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PostgresNoticeDelivery {
+    Notice(PostgresNotice),
+    Overflow { dropped: u64 },
 }
 
 impl PostgresProbeQuery {
@@ -234,6 +300,8 @@ pub struct PostgresSession {
     client: tokio_postgres::Client,
     connection: JoinHandle<Result<(), PostgresError>>,
     transport: PostgresTransport,
+    notices: Mutex<mpsc::Receiver<PostgresNotice>>,
+    dropped_notices: Arc<AtomicU64>,
 }
 
 enum PostgresTransport {
@@ -272,6 +340,75 @@ where
     }
 }
 
+fn notice_channel() -> (
+    mpsc::Sender<PostgresNotice>,
+    mpsc::Receiver<PostgresNotice>,
+    Arc<AtomicU64>,
+) {
+    let (sender, receiver) = mpsc::channel(POSTGRES_NOTICE_QUEUE_CAPACITY);
+    (sender, receiver, Arc::new(AtomicU64::new(0)))
+}
+
+async fn drive_connection<S, T>(
+    mut connection: Connection<S, T>,
+    notices: mpsc::Sender<PostgresNotice>,
+    dropped_notices: Arc<AtomicU64>,
+) -> Result<(), PostgresError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    loop {
+        match poll_fn(|context| connection.poll_message(context)).await {
+            Some(Ok(AsyncMessage::Notice(notice))) => {
+                let notice = bounded_postgres_notice(&notice);
+                match notices.try_send(notice) {
+                    Ok(()) => {}
+                    Err(mpsc::error::TrySendError::Full(_)) => {
+                        dropped_notices.fetch_add(1, Ordering::AcqRel);
+                    }
+                    Err(mpsc::error::TrySendError::Closed(_)) => {}
+                }
+            }
+            Some(Ok(_)) => {}
+            Some(Err(_)) => return Err(PostgresError::Connection),
+            None => return Ok(()),
+        }
+    }
+}
+
+fn bounded_postgres_notice(notice: &tokio_postgres::error::DbError) -> PostgresNotice {
+    let (severity, _) = bounded_notice_text(notice.severity(), MAX_POSTGRES_NOTICE_SEVERITY_BYTES);
+    let (code, _) = bounded_notice_text(notice.code().code(), MAX_POSTGRES_NOTICE_CODE_BYTES);
+    let (message, message_truncation) =
+        bounded_notice_text(notice.message(), MAX_POSTGRES_NOTICE_MESSAGE_BYTES);
+    PostgresNotice {
+        severity,
+        code,
+        message,
+        message_truncation,
+    }
+}
+
+fn bounded_notice_text(value: &str, max_bytes: u64) -> (BoundedText, Truncation) {
+    let max_bytes = usize::try_from(max_bytes).unwrap_or(usize::MAX);
+    let mut stored_bytes = value.len().min(max_bytes);
+    while !value.is_char_boundary(stored_bytes) {
+        stored_bytes -= 1;
+    }
+    let stored = &value[..stored_bytes];
+    let bounded = BoundedText::copy_from_str(stored, ByteLimit::new(max_bytes as u64))
+        .expect("notice truncation enforces its byte limit");
+    let truncation = if stored_bytes == value.len() {
+        Truncation::Complete
+    } else {
+        Truncation::Truncated {
+            original_byte_len: Some(u64::try_from(value.len()).unwrap_or(u64::MAX)),
+        }
+    };
+    (bounded, truncation)
+}
+
 impl PostgresSession {
     /// Connects with plaintext or native-root required TLS according to `config`.
     pub async fn connect(config: &PostgresConnectConfig) -> Result<Self, PostgresError> {
@@ -303,12 +440,18 @@ impl PostgresSession {
             .connect(tokio_postgres::NoTls)
             .await
             .map_err(|_| PostgresError::Connect)?;
-        let connection =
-            tokio::spawn(async move { connection.await.map_err(|_| PostgresError::Connection) });
+        let (notice_sender, notice_receiver, dropped_notices) = notice_channel();
+        let connection = tokio::spawn(drive_connection(
+            connection,
+            notice_sender,
+            Arc::clone(&dropped_notices),
+        ));
         Ok(Self {
             client,
             connection,
             transport: PostgresTransport::Plain,
+            notices: Mutex::new(notice_receiver),
+            dropped_notices,
         })
     }
 
@@ -322,12 +465,18 @@ impl PostgresSession {
             .connect(connector.clone())
             .await
             .map_err(|_| PostgresError::Connect)?;
-        let connection =
-            tokio::spawn(async move { connection.await.map_err(|_| PostgresError::Connection) });
+        let (notice_sender, notice_receiver, dropped_notices) = notice_channel();
+        let connection = tokio::spawn(drive_connection(
+            connection,
+            notice_sender,
+            Arc::clone(&dropped_notices),
+        ));
         Ok(Self {
             client,
             connection,
             transport: PostgresTransport::Rustls(connector),
+            notices: Mutex::new(notice_receiver),
+            dropped_notices,
         })
     }
 
@@ -387,10 +536,49 @@ impl PostgresSession {
             client,
             connection,
             transport: _,
+            notices: _,
+            dropped_notices: _,
         } = self;
         drop(client);
         connection.await.map_err(|_| PostgresError::Connection)??;
         Ok(())
+    }
+
+    pub async fn next_notice(&self) -> Option<PostgresNoticeDelivery> {
+        let dropped = self.dropped_notices.swap(0, Ordering::AcqRel);
+        if dropped > 0 {
+            return Some(PostgresNoticeDelivery::Overflow { dropped });
+        }
+        self.notices
+            .lock()
+            .await
+            .recv()
+            .await
+            .map(PostgresNoticeDelivery::Notice)
+    }
+
+    pub async fn emit_notice_probe(&self) -> Result<(), PostgresError> {
+        self.client
+            .batch_execute("DO $$ BEGIN RAISE NOTICE 'table-rock-notice'; END $$")
+            .await
+            .map_err(|_| PostgresError::Query)
+    }
+
+    pub async fn emit_long_notice_probe(&self) -> Result<(), PostgresError> {
+        self.client
+            .batch_execute("DO $$ BEGIN RAISE NOTICE '%', repeat('é', 600); END $$")
+            .await
+            .map_err(|_| PostgresError::Query)
+    }
+
+    pub async fn emit_notice_overflow_probe(&self) -> Result<(), PostgresError> {
+        self.client
+            .batch_execute(
+                "DO $$ BEGIN FOR notice_index IN 1..70 LOOP \
+                 RAISE NOTICE 'table-rock-overflow-%', notice_index; END LOOP; END $$",
+            )
+            .await
+            .map_err(|_| PostgresError::Query)
     }
 
     pub async fn cancel_sleep_probe(&self) -> Result<PostgresCancellationOutcome, PostgresError> {

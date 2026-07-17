@@ -145,6 +145,9 @@ pinned lines through the bounded typed stream seam without exposing client types
 Declared text NULL and `int4[]` parameters also pass both pinned lines; arrays
 retain bounded unknown bytes and exact engine type identity until structured
 decoding is implemented.
+Rust now drives asynchronous PostgreSQL messages directly. Both pinned lines
+prove bounded redacted notices, UTF-8-safe truncation, ordered retention, and
+explicit overflow without protocol backpressure.
 
 ### ClickHouse spike
 

@@ -17,7 +17,8 @@ pub use clickhouse::{
 };
 pub use postgres::{
     PostgresCancellationOutcome, PostgresClientIdentity, PostgresConnectConfig, PostgresError,
-    PostgresProbeQuery, PostgresRowStream, PostgresSession, PostgresTlsMaterial, PostgresTlsMode,
+    PostgresNotice, PostgresNoticeDelivery, PostgresProbeQuery, PostgresRowStream, PostgresSession,
+    PostgresTlsMaterial, PostgresTlsMode,
 };
 pub use redis::{
     RedisBlockingPopStream, RedisCancelDispatch, RedisClientIdentity, RedisCollectionScanKind,
