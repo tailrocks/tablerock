@@ -180,7 +180,9 @@ pattern Pub/Sub with custom roots, optional required client identity, ACL
 credentials plus explicit channel patterns, exact binary pages, and
 authenticated client-stop teardown. TLS/mTLS same-endpoint server replacement
 also restores both subscription kinds with an ordered discontinuity page before
-binary delivery and prompt cancellation. A restricted `&allowed:*` user
+binary delivery and prompt cancellation. Untrusted and recredentialed
+replacement servers terminate as distinct bounded connect/authentication
+failures before any discontinuity page is emitted. A restricted `&allowed:*` user
 also proves server-side denial across this matrix. Adapter-level denial remains
 required: the latest redis-rs Pub/Sub setup method discards the server-error
 value, and an administrative `ACL DRYRUN` preflight is not product evidence.

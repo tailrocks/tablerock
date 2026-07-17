@@ -102,6 +102,7 @@ kept in the roadmap.
 - [Phase 2 Redis live credential revocation evidence](151-phase-2-redis-live-credential-revocation.md)
 - [Phase 2 Redis Pub/Sub credential revocation evidence](152-phase-2-redis-pubsub-credential-revocation.md)
 - [Phase 2 Redis TLS Pub/Sub reconnect evidence](153-phase-2-redis-tls-pubsub-reconnect.md)
+- [Phase 2 Redis TLS Pub/Sub replacement failure evidence](154-phase-2-redis-tls-pubsub-replacement-failure.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

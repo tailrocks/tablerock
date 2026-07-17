@@ -42,6 +42,7 @@ records the restricted-denial server evidence and official-client blocker.
 Research 151 closes revocation for future ordinary operations.
 Research 152 closes active channel- and pattern-subscription revocation.
 Research 153 closes TLS/mTLS server-replacement resubscription.
+Research 154 closes untrusted and recredentialed replacement failure.
 
 Context7 library documentation was already selected as `/redis-rs/redis-rs`;
 the pinned redis-rs 1.4.0 client construction and official Redis ACL channel

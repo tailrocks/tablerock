@@ -31,9 +31,9 @@ The initial and replacement servers share one TLS fixture factory, preventing
 drift in certificates, client identity, ACLs, or restrictive Pub/Sub defaults.
 
 This closes TLS/mTLS server-replacement resubscription for channels and
-patterns. DNS endpoint changes, replacement with invalid trust or credentials,
-restricted subscription denial, strict RESP2 pre-decode allocation bounds, and
-presentation remain open.
+patterns. Research 154 subsequently closes replacement with invalid trust or
+credentials. DNS endpoint changes, restricted subscription denial, strict RESP2
+pre-decode allocation bounds, and presentation remain open.
 
 ## Safety contract
 

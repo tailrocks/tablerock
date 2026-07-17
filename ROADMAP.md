@@ -110,6 +110,9 @@ verified in
 TLS/mTLS channel and pattern resubscription after same-endpoint server
 replacement is verified in
 [`153-phase-2-redis-tls-pubsub-reconnect.md`](docs/research/153-phase-2-redis-tls-pubsub-reconnect.md).
+Untrusted and recredentialed TLS Pub/Sub replacement servers fail closed as
+verified in
+[`154-phase-2-redis-tls-pubsub-replacement-failure.md`](docs/research/154-phase-2-redis-tls-pubsub-replacement-failure.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

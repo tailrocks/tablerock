@@ -64,6 +64,13 @@ fn redis_acl_file() -> Vec<u8> {
         .into_bytes()
 }
 
+fn redis_rotated_test_acl_file() -> Vec<u8> {
+    format!(
+        "user default off\nuser {REDIS_TEST_USERNAME} reset on >synthetic-replacement-password ~* &* +@all\nuser {REDIS_ADMIN_USERNAME} reset on >{REDIS_ADMIN_PASSWORD} ~* &* +@all\nuser {REDIS_RESTRICTED_USERNAME} reset on >{REDIS_RESTRICTED_PASSWORD} ~* &allowed:* +@all\nuser {REDIS_PATTERN_USERNAME} reset on >{REDIS_PATTERN_PASSWORD} ~* &* +@all\n"
+    )
+    .into_bytes()
+}
+
 mod support;
 mod tls_support;
 use testcontainers::{
@@ -168,6 +175,23 @@ async fn start_tls_redis(
     require_client_identity: bool,
     host_port: Option<u16>,
 ) -> ContainerAsync<GenericImage> {
+    start_tls_redis_with_acl(
+        tag,
+        fixture,
+        require_client_identity,
+        host_port,
+        redis_acl_file(),
+    )
+    .await
+}
+
+async fn start_tls_redis_with_acl(
+    tag: &str,
+    fixture: &RedisTlsFixture,
+    require_client_identity: bool,
+    host_port: Option<u16>,
+    acl_file: Vec<u8>,
+) -> ContainerAsync<GenericImage> {
     let auth_clients = if require_client_identity { "yes" } else { "no" };
     let request = GenericImage::new("redis", tag)
         .with_exposed_port(6379.tcp())
@@ -186,7 +210,7 @@ async fn start_tls_redis(
         )
         .with_copy_to(
             CopyTargetOptions::new("/tablerock-tls/users.acl").with_mode(0o600),
-            CopyDataSource::Data(redis_acl_file()),
+            CopyDataSource::Data(acl_file),
         )
         .with_cmd([
             "sh".to_owned(),
@@ -508,6 +532,144 @@ async fn verify_tls_subscription_restart(
         .await
         .expect("TLS reconnect cancellation terminates promptly"),
         Err(tablerock_engine::RedisError::ClientCancelled)
+    );
+    drop(replacement);
+}
+
+#[tokio::test]
+async fn rejects_untrusted_or_recredentialed_tls_pubsub_replacement() {
+    for tag in [
+        "7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
+        "8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005",
+    ] {
+        for protocol in [RedisProtocol::Resp2, RedisProtocol::Resp3] {
+            for require_client_identity in [false, true] {
+                for kind in [
+                    RedisSubscriptionKind::Channel,
+                    RedisSubscriptionKind::Pattern,
+                ] {
+                    for invalid_trust in [false, true] {
+                        verify_rejected_tls_subscription_replacement(
+                            tag,
+                            protocol,
+                            require_client_identity,
+                            kind,
+                            invalid_trust,
+                        )
+                        .await;
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn verify_rejected_tls_subscription_replacement(
+    tag: &str,
+    protocol: RedisProtocol,
+    require_client_identity: bool,
+    kind: RedisSubscriptionKind,
+    invalid_trust: bool,
+) {
+    let fixture = RedisTlsFixture::generate();
+    let invalid_fixture = RedisTlsFixture::generate();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let container = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
+    let policy = RedisRuntimePolicy::new(
+        Duration::from_millis(500),
+        Duration::from_millis(250),
+        32,
+        Duration::from_millis(10),
+        Duration::from_millis(100),
+    )
+    .unwrap();
+    let config =
+        RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Require)
+            .with_runtime_policy(policy);
+    let credentials = RedisCredentials::new(Some(REDIS_TEST_USERNAME), REDIS_TEST_PASSWORD);
+    let mut tls = RedisTlsMaterial::custom_roots(fixture.ca_pem.as_bytes());
+    if require_client_identity {
+        tls = tls.with_client_identity(RedisClientIdentity::new(
+            fixture.client_certificate_pem.as_bytes(),
+            fixture.client_private_key_pem.as_bytes(),
+        ));
+    }
+    let session = RedisSession::connect(
+        &config,
+        RedisConnectionSecurity::new()
+            .with_credentials(credentials)
+            .with_tls(tls),
+    )
+    .await
+    .unwrap();
+    let (selector, columns) = match kind {
+        RedisSubscriptionKind::Channel => (bytes(b"replacement:channel"), 2),
+        RedisSubscriptionKind::Pattern => (bytes(b"replacement:*"), 3),
+    };
+    let options = RedisSubscriptionOptions::new(PageLimits::new(1, columns, 192, 64), 64, 4);
+    let mut subscription = match kind {
+        RedisSubscriptionKind::Channel => session.subscribe(selector.clone(), options).await,
+        RedisSubscriptionKind::Pattern => session.psubscribe(selector.clone(), options).await,
+    }
+    .unwrap();
+    let mut observer =
+        raw_tls_admin_connection(port, protocol, &fixture, require_client_identity).await;
+    match kind {
+        RedisSubscriptionKind::Channel => {
+            let counts: Vec<(Vec<u8>, u64)> = redis::cmd("PUBSUB")
+                .arg("NUMSUB")
+                .arg(selector.as_slice())
+                .query_async(&mut observer)
+                .await
+                .unwrap();
+            assert_eq!(counts, vec![(selector.as_slice().to_vec(), 1)]);
+        }
+        RedisSubscriptionKind::Pattern => {
+            let patterns: u64 = redis::cmd("PUBSUB")
+                .arg("NUMPAT")
+                .query_async(&mut observer)
+                .await
+                .unwrap();
+            assert_eq!(patterns, 1);
+        }
+    }
+    drop(observer);
+    drop(container);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let replacement_fixture = if invalid_trust {
+        &invalid_fixture
+    } else {
+        &fixture
+    };
+    let replacement_acl = if invalid_trust {
+        redis_acl_file()
+    } else {
+        redis_rotated_test_acl_file()
+    };
+    let replacement = start_tls_redis_with_acl(
+        tag,
+        replacement_fixture,
+        require_client_identity,
+        Some(port),
+        replacement_acl,
+    )
+    .await;
+    let expected = if invalid_trust {
+        tablerock_engine::RedisError::Connect
+    } else {
+        tablerock_engine::RedisError::Authentication
+    };
+    assert_eq!(
+        tokio::time::timeout(
+            Duration::from_secs(8),
+            subscription.next_page(identity(), 0)
+        )
+        .await
+        .expect("rejected TLS replacement terminates within eight seconds"),
+        Err(expected)
     );
     drop(replacement);
 }

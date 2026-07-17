@@ -175,6 +175,8 @@ bounded redacted authentication failure after confirmed credential rotation and
 user-connection termination. TLS and required-mTLS channel/pattern streams prove
 same-endpoint server replacement, ordered discontinuity before restored
 delivery, and prompt cancellation across the supported matrix.
+Untrusted replacement identities and rotated replacement ACL credentials also
+terminate as distinct bounded redacted failures without a false recovery page.
 Remaining failure races stay required. Reviewed
 single-command TTL mutation now proves exact-once
 authorization, applied/not-applied truth, and unknown post-dispatch outcomes.
