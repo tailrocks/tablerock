@@ -161,8 +161,11 @@ ownership release. The object-safe service path terminates cancellation as
 client-stop; active drop permits a replacement generation; cancellation races a
 server-paused setup without waiting for the server response timeout. Queue
 overflow is an explicit resource-limit failure, never silent loss. Pattern
-subscriptions, reconnect/resubscription, TLS composition,
-and RESP2 pre-decode transport allocation bounds remain required.
+subscriptions additionally prove exact binary pattern/channel/payload delivery,
+three-column and selector bounds, pre-queue field truncation with original-length
+metadata, adapter transport, client-stop teardown, and zero remaining patterns.
+Reconnect/resubscription, TLS composition, and RESP2 pre-decode
+transport allocation bounds remain required.
 
 Reviewed Redis TTL mutation consumes exact-once authorized plans and passes the
 Redis 7.4.9/8.8.0 RESP2/RESP3 matrix. Missing/already-persistent no-change,

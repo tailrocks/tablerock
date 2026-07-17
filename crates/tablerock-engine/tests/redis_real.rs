@@ -16,7 +16,8 @@ use tablerock_engine::{
     AdapterFailureClass, DriverPageRequest, DriverSession, EngineServiceUpdate,
     RedisClientIdentity, RedisCollectionScanKind, RedisCollectionScanOptions, RedisConnectConfig,
     RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisRuntimePolicy, RedisSession,
-    RedisSubscriptionOptions, RedisTlsMaterial, RedisTlsMode, RedisTtlApplication,
+    RedisSubscriptionKind, RedisSubscriptionOptions, RedisTlsMaterial, RedisTlsMode,
+    RedisTtlApplication,
 };
 
 struct RedisTlsFixture {
@@ -1195,7 +1196,8 @@ async fn verify_pubsub_isolation(
     let mut overflowing = DriverSession::start_page_stream(
         session,
         DriverPageRequest::RedisSubscribe {
-            channel: overflow_channel.clone(),
+            selector: overflow_channel.clone(),
+            kind: RedisSubscriptionKind::Channel,
             options: RedisSubscriptionOptions::new(PageLimits::new(1, 2, 64, 64), 32, 1),
         },
     )
@@ -1276,6 +1278,115 @@ async fn verify_pubsub_isolation(
     .expect("drop releases ownership within five seconds");
     drop(replacement);
 
+    let pattern = bytes(&[0, 255, b'*']);
+    assert!(matches!(
+        session
+            .psubscribe(
+                pattern.clone(),
+                RedisSubscriptionOptions::new(PageLimits::new(1, 2, 128, 64), 64, 2),
+            )
+            .await,
+        Err(tablerock_engine::RedisError::InvalidLimits)
+    ));
+    assert!(matches!(
+        session
+            .psubscribe(
+                pattern.clone(),
+                RedisSubscriptionOptions::new(PageLimits::new(1, 3, 128, 64), 2, 2),
+            )
+            .await,
+        Err(tablerock_engine::RedisError::InvalidLimits)
+    ));
+    let mut pattern_subscription = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match DriverSession::start_page_stream(
+                session,
+                DriverPageRequest::RedisSubscribe {
+                    selector: pattern.clone(),
+                    kind: RedisSubscriptionKind::Pattern,
+                    options: RedisSubscriptionOptions::new(PageLimits::new(1, 3, 256, 128), 128, 2),
+                },
+            )
+            .await
+            {
+                Ok(stream) => break stream,
+                Err(error) if error.class() == AdapterFailureClass::InvalidRequest => {
+                    tokio::task::yield_now().await;
+                }
+                Err(error) => panic!("pattern subscription failed: {error:?}"),
+            }
+        }
+    })
+    .await
+    .expect("pattern subscription starts within five seconds");
+    let matching_channel = [0_u8, 255, b'x'];
+    let pattern_payload = [255_u8, 0, 1];
+    let receivers: usize = redis::cmd("PUBLISH")
+        .arg(&matching_channel)
+        .arg(&pattern_payload)
+        .query_async(&mut publisher)
+        .await
+        .unwrap();
+    assert_eq!(receivers, 1, "pattern receiver for {tag} {protocol:?}");
+    let page = tokio::time::timeout(
+        Duration::from_secs(5),
+        pattern_subscription.next_page(identity(), 0),
+    )
+    .await
+    .expect("pattern subscription delivers within five seconds")
+    .unwrap()
+    .unwrap();
+    assert_eq!(page.envelope().column_count(), 3);
+    assert_eq!(page.cell(0, 0).unwrap().bytes(), pattern.as_slice());
+    assert_eq!(page.cell(0, 1).unwrap().bytes(), matching_channel);
+    assert_eq!(page.cell(0, 2).unwrap().bytes(), pattern_payload);
+    let oversized_payload = vec![42_u8; 200];
+    let _: usize = redis::cmd("PUBLISH")
+        .arg(&matching_channel)
+        .arg(&oversized_payload)
+        .query_async(&mut publisher)
+        .await
+        .unwrap();
+    let bounded = tokio::time::timeout(
+        Duration::from_secs(5),
+        pattern_subscription.next_page(identity(), 1),
+    )
+    .await
+    .expect("oversized pattern payload delivers within five seconds")
+    .unwrap()
+    .unwrap();
+    assert_eq!(bounded.cell(0, 2).unwrap().bytes().len(), 128);
+    assert_eq!(
+        bounded.cell(0, 2).unwrap().truncation(),
+        Truncation::Truncated {
+            original_byte_len: Some(200)
+        }
+    );
+    assert!(
+        bounded
+            .envelope()
+            .warnings()
+            .contains(PageWarning::ByteLimitReached)
+    );
+    assert_eq!(
+        session.dispatch_cancel().await.unwrap(),
+        tablerock_engine::RedisCancelDispatch::RequestSent
+    );
+    let cancelled = tokio::time::timeout(
+        Duration::from_secs(5),
+        pattern_subscription.next_page(identity(), 2),
+    )
+    .await
+    .expect("pattern cancel terminates subscription")
+    .unwrap_err();
+    assert_eq!(cancelled.class(), AdapterFailureClass::ClientCancelled);
+    let patterns: u64 = redis::cmd("PUBSUB")
+        .arg("NUMPAT")
+        .query_async(&mut publisher)
+        .await
+        .unwrap();
+    assert_eq!(patterns, 0, "pattern removed for {tag} {protocol:?}");
+
     let cancel_session = Arc::new(
         RedisSession::connect(
             &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable),
@@ -1337,7 +1448,8 @@ async fn verify_pubsub_service_cancellation(port: u16, protocol: RedisProtocol) 
             support::command(71),
             Box::new(session),
             DriverPageRequest::RedisSubscribe {
-                channel: channel.clone(),
+                selector: channel.clone(),
+                kind: RedisSubscriptionKind::Channel,
                 options: RedisSubscriptionOptions::new(PageLimits::new(1, 2, 128, 64), 64, 2),
             },
             identity(),

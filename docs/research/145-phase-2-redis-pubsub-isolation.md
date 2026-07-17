@@ -14,7 +14,8 @@ The public stream returns immutable two-column `channel`/`payload` binary pages.
 Page row, arena, cell, and queued-message limits are mandatory. The retained
 queue is bounded to 1..=4096 messages. A full queue terminates with the stable
 `SubscriptionOverflow` resource-limit class; TableRock never silently drops a
-message. Redis-rs's RESP2 decoder has an internal unbounded handoff before the
+message. Research 147 subsequently bounds decoded fields before they enter this
+queue and bounds selectors before I/O. Redis-rs's RESP2 decoder has an internal unbounded handoff before the
 TableRock queue, so a strict pre-decode transport allocation cap remains open
 and is not claimed here.
 
@@ -35,8 +36,9 @@ overflow, object-safe service cancellation terminating as client-stop, active
 drop/replacement generation behavior, and `PUBSUB NUMSUB` returning zero after
 unsubscribe.
 
-This closes the bounded Pub/Sub isolation tracer. Pattern subscriptions,
-reconnect/resubscription policy, server restart and DNS races, strict RESP2
+This closes the bounded Pub/Sub isolation tracer. Pattern subscriptions are
+subsequently closed by research 147. Reconnect/resubscription policy, server
+restart and DNS races, strict RESP2
 pre-decode allocation bounds, TLS Pub/Sub composition evidence, UI presentation,
 and clean-machine release evidence remain open.
 

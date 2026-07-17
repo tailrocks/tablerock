@@ -89,6 +89,9 @@ across the supported RESP2/RESP3 matrix are recorded in
 Reviewed Redis key TTL mutation and post-dispatch ambiguity evidence are
 recorded in
 [`146-phase-2-redis-reviewed-ttl-mutation.md`](docs/research/146-phase-2-redis-reviewed-ttl-mutation.md).
+Binary-safe Redis pattern subscription paging and teardown evidence are recorded
+in
+[`147-phase-2-redis-pattern-subscriptions.md`](docs/research/147-phase-2-redis-pattern-subscriptions.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

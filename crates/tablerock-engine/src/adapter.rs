@@ -9,7 +9,7 @@ use crate::{
     ClickHouseError, ClickHouseProbeQuery, ClickHouseRowStream, ClickHouseSession, PostgresError,
     PostgresProbeQuery, PostgresRowStream, PostgresSession, RedisCollectionScanKind,
     RedisCollectionScanOptions, RedisCollectionStream, RedisError, RedisKeyStream, RedisSession,
-    RedisSubscriptionOptions, RedisSubscriptionStream,
+    RedisSubscriptionKind, RedisSubscriptionOptions, RedisSubscriptionStream,
 };
 
 pub type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -43,7 +43,8 @@ pub enum DriverPageRequest {
         max_cell_bytes: u64,
     },
     RedisSubscribe {
-        channel: BoundedBytes,
+        selector: BoundedBytes,
+        kind: RedisSubscriptionKind,
         options: RedisSubscriptionOptions,
     },
 }
@@ -107,8 +108,13 @@ impl fmt::Debug for DriverPageRequest {
                 .field("key_bytes", &key.len())
                 .field("limits", limits)
                 .field("max_cell_bytes", max_cell_bytes),
-            Self::RedisSubscribe { channel, options } => debug
-                .field("channel_bytes", &channel.len())
+            Self::RedisSubscribe {
+                selector,
+                kind,
+                options,
+            } => debug
+                .field("selector_bytes", &selector.len())
+                .field("kind", kind)
                 .field("options", options),
         };
         debug.finish()
@@ -397,11 +403,16 @@ impl DriverSession for RedisSession {
                     .await
                     .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
                     .map_err(map_redis),
-                DriverPageRequest::RedisSubscribe { channel, options } => self
-                    .subscribe(channel, options)
-                    .await
-                    .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
-                    .map_err(map_redis),
+                DriverPageRequest::RedisSubscribe {
+                    selector,
+                    kind,
+                    options,
+                } => match kind {
+                    RedisSubscriptionKind::Channel => self.subscribe(selector, options).await,
+                    RedisSubscriptionKind::Pattern => self.psubscribe(selector, options).await,
+                }
+                .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
+                .map_err(map_redis),
                 _ => Err(AdapterError::new(
                     Engine::Redis,
                     AdapterFailureClass::EngineMismatch,
