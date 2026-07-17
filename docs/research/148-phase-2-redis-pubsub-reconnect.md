@@ -51,8 +51,8 @@ RESP3 attempts become inactive while committed attempts remain live.
 
 This closes bounded Pub/Sub reconnect/resubscription and visible delivery-gap
 truth. TLS Pub/Sub composition is subsequently closed by research 149 and
-future-operation credential revocation by research 151. DNS endpoint changes,
-active-subscription credential revocation,
+future-operation credential revocation by research 151, and active channel and
+pattern revocation by research 152. DNS endpoint changes,
 strict RESP2 pre-decode allocation bounds, UI presentation, and clean-machine
 release evidence remain open.
 

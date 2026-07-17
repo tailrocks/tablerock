@@ -35,11 +35,12 @@ identity, wrong password, wrong root, hostname mismatch, and plaintext fallback
 fail closed.
 
 This closes TLS/mTLS/ACL composition for channel and pattern Pub/Sub. TLS
-server-replacement resubscription, restricted-channel denial, credential
-revocation during active Pub/Sub, DNS changes, strict RESP2 pre-decode allocation bounds,
+server-replacement resubscription, restricted-channel denial, DNS changes,
+strict RESP2 pre-decode allocation bounds,
 presentation, and clean-machine release evidence remain open. Research 150
 records the restricted-denial server evidence and official-client blocker.
 Research 151 closes revocation for future ordinary operations.
+Research 152 closes active channel- and pattern-subscription revocation.
 
 Context7 library documentation was already selected as `/redis-rs/redis-rs`;
 the pinned redis-rs 1.4.0 client construction and official Redis ACL channel

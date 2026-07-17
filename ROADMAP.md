@@ -104,6 +104,9 @@ acknowledgement gap are recorded in
 Bounded Redis reconnect failure after live ACL credential rotation is verified
 in
 [`151-phase-2-redis-live-credential-revocation.md`](docs/research/151-phase-2-redis-live-credential-revocation.md).
+Active Redis channel subscriptions also stop on revoked reconnect credentials as
+verified in
+[`152-phase-2-redis-pubsub-credential-revocation.md`](docs/research/152-phase-2-redis-pubsub-credential-revocation.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

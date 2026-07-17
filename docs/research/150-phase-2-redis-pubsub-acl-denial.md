@@ -55,10 +55,11 @@ boundary, not an accepted TableRock contract.
 
 Restricted channel and pattern denial through the TableRock adapter remains
 open for RESP2 and RESP3. Allowed restricted-channel delivery, reconnect after
-authorization changes, credential revocation during active Pub/Sub, DNS
+authorization changes, DNS
 changes, strict RESP2 pre-decode allocation bounds, and presentation also
 remain open. Research 151 subsequently closes revocation for future ordinary
 operations.
+Research 152 closes active channel- and pattern-subscription revocation.
 
 ## Provenance
 

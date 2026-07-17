@@ -54,10 +54,12 @@ const REDIS_ADMIN_USERNAME: &str = "tablerock-test-admin";
 const REDIS_ADMIN_PASSWORD: &str = "synthetic-admin-password";
 const REDIS_RESTRICTED_USERNAME: &str = "tablerock-restricted-user";
 const REDIS_RESTRICTED_PASSWORD: &str = "synthetic-restricted-password";
+const REDIS_PATTERN_USERNAME: &str = "tablerock-pattern-user";
+const REDIS_PATTERN_PASSWORD: &str = "synthetic-pattern-password";
 
 fn redis_acl_file() -> Vec<u8> {
     format!(
-        "user default off\nuser {REDIS_TEST_USERNAME} reset on >{REDIS_TEST_PASSWORD} ~* &* +@all\nuser {REDIS_ADMIN_USERNAME} reset on >{REDIS_ADMIN_PASSWORD} ~* &* +@all\nuser {REDIS_RESTRICTED_USERNAME} reset on >{REDIS_RESTRICTED_PASSWORD} ~* &allowed:* +@all\n"
+        "user default off\nuser {REDIS_TEST_USERNAME} reset on >{REDIS_TEST_PASSWORD} ~* &* +@all\nuser {REDIS_ADMIN_USERNAME} reset on >{REDIS_ADMIN_PASSWORD} ~* &* +@all\nuser {REDIS_RESTRICTED_USERNAME} reset on >{REDIS_RESTRICTED_PASSWORD} ~* &allowed:* +@all\nuser {REDIS_PATTERN_USERNAME} reset on >{REDIS_PATTERN_PASSWORD} ~* &* +@all\n"
     )
         .into_bytes()
 }
@@ -703,11 +705,67 @@ async fn verify_tls_auth_version(
             .is_err()
     );
 
+    let revoked_channel = bytes(b"revocation:channel");
+    let mut revoked_subscription = session
+        .subscribe(
+            revoked_channel.clone(),
+            RedisSubscriptionOptions::new(PageLimits::new(1, 2, 192, 64), 64, 2),
+        )
+        .await
+        .unwrap();
+    let counts: Vec<(Vec<u8>, u64)> = redis::cmd("PUBSUB")
+        .arg("NUMSUB")
+        .arg(revoked_channel.as_slice())
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    assert_eq!(counts, vec![(revoked_channel.as_slice().to_vec(), 1)]);
+
+    let pattern_credentials =
+        RedisCredentials::new(Some(REDIS_PATTERN_USERNAME), REDIS_PATTERN_PASSWORD);
+    let mut pattern_tls = RedisTlsMaterial::custom_roots(fixture.ca_pem.as_bytes());
+    if require_client_identity {
+        pattern_tls = pattern_tls.with_client_identity(RedisClientIdentity::new(
+            fixture.client_certificate_pem.as_bytes(),
+            fixture.client_private_key_pem.as_bytes(),
+        ));
+    }
+    let pattern_session = RedisSession::connect(
+        &config,
+        RedisConnectionSecurity::new()
+            .with_credentials(pattern_credentials)
+            .with_tls(pattern_tls),
+    )
+    .await
+    .unwrap();
+    let revoked_pattern = bytes(b"revocation:*");
+    let mut revoked_pattern_subscription = pattern_session
+        .psubscribe(
+            revoked_pattern,
+            RedisSubscriptionOptions::new(PageLimits::new(1, 3, 192, 64), 64, 2),
+        )
+        .await
+        .unwrap();
+    let patterns: u64 = redis::cmd("PUBSUB")
+        .arg("NUMPAT")
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    assert_eq!(patterns, 1);
+
     let _: () = redis::cmd("ACL")
         .arg("SETUSER")
         .arg(REDIS_TEST_USERNAME)
         .arg("resetpass")
         .arg(">synthetic-rotated-password")
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(REDIS_PATTERN_USERNAME)
+        .arg("resetpass")
+        .arg(">synthetic-rotated-pattern-password")
         .query_async(&mut admin)
         .await
         .unwrap();
@@ -719,6 +777,32 @@ async fn verify_tls_auth_version(
         .await
         .unwrap();
     assert!(killed >= 1);
+    let pattern_killed: u64 = redis::cmd("CLIENT")
+        .arg("KILL")
+        .arg("USER")
+        .arg(REDIS_PATTERN_USERNAME)
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    assert!(pattern_killed >= 1);
+    assert_eq!(
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            revoked_subscription.next_page(identity(), 0)
+        )
+        .await
+        .expect("active subscription revocation stops within five seconds"),
+        Err(tablerock_engine::RedisError::Authentication)
+    );
+    assert_eq!(
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            revoked_pattern_subscription.next_page(identity(), 0)
+        )
+        .await
+        .expect("active pattern revocation stops within five seconds"),
+        Err(tablerock_engine::RedisError::Authentication)
+    );
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             match session.observed_client_id().await {

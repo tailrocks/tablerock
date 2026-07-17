@@ -30,7 +30,8 @@ attempts. At least one terminated connection is required, so the test cannot
 pass without exercising an established authenticated session.
 
 This closes live credential revocation for future ordinary Redis operations.
-Revocation during active Pub/Sub, DNS changes, restricted subscription denial,
+Research 152 subsequently closes active channel- and pattern-subscription
+revocation. DNS changes, restricted subscription denial,
 strict RESP2 pre-decode allocation bounds, secret re-resolution presentation,
 and clean-machine evidence remain open.
 

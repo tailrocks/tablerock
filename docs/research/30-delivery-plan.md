@@ -170,7 +170,9 @@ remains required because redis-rs 1.4.0 erases the Pub/Sub setup error reply;
 administrative preflight and a private protocol path are forbidden substitutes.
 Password rotation followed by confirmed user-connection termination now proves
 bounded redacted authentication failure on the next future operation across the
-same matrix; active-subscription revocation remains required.
+same matrix. Active channel and pattern subscriptions now also terminate with bounded redacted
+authentication failure after confirmed credential rotation and user-connection
+termination.
 Remaining failure races stay required. Reviewed
 single-command TTL mutation now proves exact-once
 authorization, applied/not-applied truth, and unknown post-dispatch outcomes.
