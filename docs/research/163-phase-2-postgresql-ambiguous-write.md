@@ -43,9 +43,10 @@ replayed insert would increase the observed count.
 ## Remaining work
 
 This closes the applied-after-timeout ambiguous-write case. Connection loss
-before dispatch, during dispatch, after commit-before-response, TLS loss,
-transaction commit ambiguity, reconnect ownership, reviewed mutation plans,
-service/history projection, TUI/macOS presentation, and UniFFI remain open.
+before dispatch, during dispatch, after commit-before-response, and TLS loss
+remain open. Research 164 subsequently closes transaction commit ambiguity.
+Reconnect ownership, reviewed mutation plans, service/history projection,
+TUI/macOS presentation, and UniFFI remain open.
 
 ## Provenance
 

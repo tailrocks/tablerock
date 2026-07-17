@@ -164,6 +164,10 @@ Both pinned lines now prove that a post-dispatch response timeout remains an
 unknown write outcome even when the server later commits exactly one row. The
 original session drains and remains usable; no retry occurs. Transport-loss and
 transaction-commit ambiguity remain open.
+Both pinned lines also prove explicit COMMIT ambiguity through a deferred
+constraint trigger: response observation ends during commit, exactly one row is
+later durable, the original session drains, and the transaction never replays.
+Transport-loss timing remains open.
 
 ### ClickHouse spike
 

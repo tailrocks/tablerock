@@ -412,6 +412,9 @@ reviewed plans, and UI/UniFFI integration remain Phase 4/5/9 work.
 The same pinned lines prove a dispatched write whose completion response times
 out remains explicitly unknown, may later be observed exactly once, never
 replays automatically, and leaves the original session usable.
+An explicit transaction with deferred commit work preserves the same unknown
+truth, later durable exactly-once observation, protocol drain, and no-replay
+contract.
 
 ### Phase 3 — connection experience
 
