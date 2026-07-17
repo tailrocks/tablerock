@@ -129,113 +129,17 @@ profile persistence. Never add `rusqlite`, `libsql`, or cloud sync as fallback.
 Using `tokio-postgres`, prove driven connection ownership, arbitrary/unknown
 types, incremental `RowStream`, TLS roots/client identity, notices, parameters,
 multiple statements, COPY, cancellation races, connection loss, and ambiguous
-writes.
-The full service path distinguishes PostgreSQL cancellation request delivery
-from SQLSTATE-confirmed server cancellation. Verified custom roots, independent
-server name, client identity, downgrade rejection, and TLS cancellation pass on
-both pinned lines. The completion race now passes plain and required-mTLS
-transports: SQLSTATE `57014` proves cancellation while a late successful cancel
-after `SELECT 1` preserves normal-completion truth. A bounded synchronization
-barrier consumes a pending late cancel before releasing the session, preventing
-it from striking the next operation. The remaining
+writes. Proven so far (detail in the
+[PostgreSQL evidence group](../evidence/README.md#phase-2--postgresql-driver)):
+bounded typed streaming, custom-root TLS and mTLS, SQLSTATE-confirmed
+cancellation versus late-cancel completion truth with a synchronization
+barrier, cancellation-transport failure on server loss, typed/NULL/array
+parameters, bounded notices with detail/hint, ordered multi-statement
+outcomes, bounded COPY IN/OUT, ambiguous write/commit/transport-loss truth
+with no replay, and bounded decoders for the scalar, JSON, array, range,
+multirange, composite, domain, enum, network, bit-string, identifier, LSN,
+TID, OID-vector, snapshot, numeric, UUID, and temporal families. The remaining
 protocol/failure matrix stays required.
-Force-stopping both pinned server lines before the cancel socket opens now proves
-redacted cancellation-transport failure and terminal session connection loss,
-without a false server-cancel outcome.
-Prepared UTF-8 text, int8, binary-with-NUL, and boolean parameters now pass both
-pinned lines through the bounded typed stream seam without exposing client types.
-Declared text NULL and `int4[]` parameters also pass both pinned lines. Generic
-binary arrays now project as canonical bounded `Structured` values that retain
-dimension lengths, lower bounds, row-major nesting, NULL elements, and supported
-scalar kinds. Malformed structure becomes `Invalid`; a valid unsupported or
-over-budget array remains whole-value `Unknown`.
-Generic binary ranges now project as canonical bounded `Structured` values with
-explicit empty, unbounded, inclusive, and exclusive bounds. Invalid structural
-flags/lengths become `Invalid`; unsupported subtype projection remains
-whole-value `Unknown`. Anonymous-record results retain bounded unknown binary
-values with exact engine type and original-byte length truth; large `bytea`
-remains binary. JSON and JSONB now advance to deterministic
-compact bounded `Structured` projections with arbitrary-precision number and
-malformed/version-invalid truth. Record decoding and strict
-pre-driver transport allocation remain required.
-Generic binary multiranges now compose ordered canonical range projections
-inside one bounded `Structured` value. A one-million-member structural ceiling,
-exact length/end validation, and whole-value invalid/unknown fallback prevent
-partial member lists from appearing complete.
-Named composites and anonymous records now project ordered self-describing
-fields with exact name/null-name, OID, type, NULL, and nested-value truth. A
-1,664-field ceiling and shared 64-level structured nesting cap bound hostile
-self-reference across arrays, ranges, multiranges, and composites.
-Domains now reuse underlying scalar/structured semantics while retaining outer
-domain identity for invalid/unknown fallback and inside composite metadata.
-PostgreSQL RowDescription flattens top-level domain outputs to base types; the
-adapter records that protocol limit instead of inventing unavailable identity.
-User-defined enums now project catalog-validated ASCII and Unicode labels as
-bounded UTF-8-safe `Text`, retaining exact enum column identity and classifying
-invalid UTF-8 or unknown catalog labels as `Invalid`.
-PostgreSQL `inet`, `cidr`, `macaddr`, and `macaddr8` now project bounded
-canonical `Text` after strict family, prefix, CIDR flag/network, address length,
-framing, and MAC-width validation.
-PostgreSQL fixed `bit` and varying `varbit` now project bounded canonical
-`0`/`1` text after strict signed count, payload-size, framing, and unused-padding
-validation, without expanding beyond the caller limit.
-PostgreSQL `oid`, `xid`, `cid`, `xid8`, and pinned registered-object aliases now
-project exact full-range core `Unsigned` values after strict 32/64-bit framing;
-symbolic catalog names remain separate metadata instead of replacing identity.
-PostgreSQL `pg_lsn` now projects bounded canonical uppercase `HIGH/LOW` text
-after strict eight-byte framing, preserving WAL-location semantics rather than
-reducing the value to a generic unsigned integer.
-PostgreSQL `tid` now projects bounded structured unsigned block/offset pairs
-after strict six-byte framing. Physical tuple locations remain diagnostic only
-and are forbidden as durable identity or automatic mutation locators.
-PostgreSQL special `oidvector` now projects a bounded ordered unsigned list
-after enforcing one dimension, zero lower bound, no NULLs, OID element identity,
-exact member framing, and the shared one-million-element ceiling.
-PostgreSQL modern `pg_snapshot` and legacy `txid_snapshot` now project one
-bounded xmin/xmax/in-progress transaction structure after strict nonzero bounds,
-ordering, range, framing, and shared one-million-member validation.
-Finite arbitrary-precision PostgreSQL numeric values, declared scale/trailing
-zeros, scaled zero, NaN, and infinities now pass both pinned lines as exact core
-`Decimal` values. Malformed wire values remain `Invalid`; valid projections over
-the cell limit remain typed bounded `Unknown`.
-PostgreSQL representative, nil, and maximum UUIDs now pass both pinned lines as
-canonical lowercase hyphenated bounded `Text`. Truncation records canonical
-length 36; malformed wire lengths remain typed `Invalid`.
-PostgreSQL date, time, timetz, timestamp, timestamptz, and interval results now
-pass both pinned lines as bounded canonical `Temporal`. Evidence preserves UTC
-instant truth, explicit offsets, independent interval components, microseconds,
-24:00, infinities, astronomical BC years, and signed expanded years.
-ClickHouse Date, Date32, DateTime, and DateTime64 now use the same bounded
-`Temporal` value contract. Both LTS lines prove UTC epoch projection, exact
-declared fractional scale, timezone metadata retention, recursive container
-quoting, and honest truncation.
-Rust now drives asynchronous PostgreSQL messages directly. Both pinned lines
-prove bounded redacted notices, UTF-8-safe truncation, ordered retention, and
-explicit overflow without protocol backpressure.
-Optional notice detail and hint remain independently bounded, preserve absence
-and truncation truth, and stay redacted from Debug.
-Both pinned lines now prove ordered CREATE/INSERT/UPDATE/SELECT outcomes with
-exact command/query kind and row counts while typed rows remain on the binary
-extended-query path.
-Both pinned lines now prove pull-driven bounded COPY OUT chunks and
-backpressured bounded COPY IN with exact byte facts, server-confirmed import
-rows, explicit limit failures, malformed-input recovery, and payload-redacted
-Debug. Product file effects, cancellation, progress, and arbitrary reviewed
-COPY plans remain open.
-Both pinned lines now prove that a post-dispatch response timeout remains an
-unknown write outcome even when the server later commits exactly one row. The
-original session drains and remains usable; no retry occurs. Transport-loss and
-transaction-commit ambiguity remain open.
-Both pinned lines also prove explicit COMMIT ambiguity through a deferred
-constraint trigger: response observation ends during commit, exactly one row is
-later durable, the original session drains, and the transaction never replays.
-Both lines now also prove activity-gated transport loss during COMMIT: old
-sessions terminate, same-directory restart refreshes endpoint facts, rollback
-is observed, and no replay occurs. Other transport-loss timings remain open.
-The same matrix now passes required custom-root TLS and client identity on both
-lines: old TLS sessions terminate, plaintext recovery is rejected, endpoint
-facts refresh, mTLS is revalidated, rollback remains observable, and no replay
-occurs.
 
 ### ClickHouse spike
 
@@ -243,52 +147,28 @@ Using official `ClickHouse/clickhouse-rs`, prove a self-describing arbitrary
 `RowBinaryWithNamesAndTypes` result path, bounded streaming, late HTTP errors,
 nested/nullable/decimal/large integer/binary values, compression, TLS,
 progressive insert boundaries, query-ID progress/cancellation, and mutation
-identity.
-The service now binds active query IDs and requires synchronous `finished`
-evidence from `KILL QUERY`; remaining progress, mutation, TLS, and failure-race
-matrix evidence stays required.
+identity. Proven so far (detail in the
+[ClickHouse evidence group](../evidence/README.md#phase-2--clickhouse-driver)):
+RowBinary streaming, complex scalars, structured containers, temporal
+projection, and service cancellation binding the active query ID with
+synchronous `finished` evidence from `KILL QUERY`. Remaining progress,
+mutation, TLS, and failure-race matrix evidence stays required.
 
 ### Redis spike
 
 Using `redis-rs`, prove raw bytes, SCAN families, logical DB isolation,
 RESP2/RESP3, TLS, pipelines/partial failures, Pub/Sub and blocking isolation,
 timeouts/reconnect, and the difference between client stop and server outcome.
-The shared service now uses an isolated blocking-operation connection and
-requires both `CLIENT UNBLOCK` reply `1` and the operation-side server error
-before reporting server-confirmed cancellation.
-The supported-line RESP2/RESP3 matrix now proves per-command pipeline outcomes,
-continued execution after a runtime response error, and `MULTI`/`EXEC`
-no-rollback truth. It also proves exact missing/persistent/finite-millisecond
-key TTL facts through one Rust-owned contract. Bounded binary HSCAN, SSCAN, and
-ZSCAN pages now pass both supported lines under RESP2 and RESP3. Verified
-custom-root TLS, optional mTLS identity, ACL authentication, and bounded
-initial authentication-stop behavior also pass that supported-line/protocol matrix.
-Binary-safe pattern subscriptions now pass the supported-line/protocol matrix;
-bounded reconnect/resubscription now emits an explicit delivery-gap page before
-restored messages. TLS/mTLS/ACL channel and pattern composition now passes the
-same matrix. Restricted-channel server denial is measured, but adapter rejection
-remains required because redis-rs 1.4.0 erases the Pub/Sub setup error reply;
-administrative preflight and a private protocol path are forbidden substitutes.
-Password rotation followed by confirmed user-connection termination now proves
-bounded redacted authentication failure on the next future operation across the
-same matrix. Active channel and pattern subscriptions now also terminate with
-bounded redacted authentication failure after confirmed credential rotation and
-user-connection termination. TLS and required-mTLS channel/pattern streams prove
-same-endpoint server replacement, ordered discontinuity before restored
-delivery, and prompt cancellation across the supported matrix.
-Untrusted replacement identities and rotated replacement ACL credentials also
-terminate as distinct bounded redacted failures without a false recovery page.
-Remaining failure races stay required. Reviewed
-single-command TTL mutation now proves exact-once
-authorization, applied/not-applied truth, and unknown post-dispatch outcomes.
-Dedicated bounded binary Pub/Sub streams pass
-both supported lines under RESP2 and RESP3 without changing the shared command
-connection; cancellation is explicitly client-stop. The supported
-matrix proves bounded response timeout and confirmed-drop future-call reconnect
-without automatic command replay, plus Redis's stable-throughout and
-absent-throughout guarantees during concurrent
-SCAN/HSCAN/SSCAN/ZSCAN mutation; transient membership remains intentionally
-undefined and duplicates remain legal.
+Proven so far (detail in the
+[Redis evidence group](../evidence/README.md#phase-2--redis-driver)): binary
+SCAN/HSCAN/SSCAN/ZSCAN under concurrent mutation, per-command pipeline
+outcomes and MULTI/EXEC no-rollback truth, exact key TTL facts and reviewed
+TTL mutation, timeout/reconnect without replay, custom-root TLS/mTLS/ACL,
+isolated binary Pub/Sub with pattern subscriptions, reconnect with ordered
+delivery-gap pages, live credential revocation, and `CLIENT UNBLOCK`-confirmed
+blocking cancellation. The restricted-channel denial adapter gap, DNS-change
+races, strict RESP2 pre-decode allocation bounds, and remaining failure races
+stay required.
 
 ### Exit evidence
 
@@ -301,14 +181,19 @@ rejected dependencies and unsupported claims are recorded.
 
 ## Phase 3 — profiles and connection experience
 
+Screen behavior: [docs/product/connections.md](../product/connections.md).
+
 ### Deliver
 
-- searchable connection list, engine picker, grouping/tags/favorites/order;
-- create/edit/duplicate/remove and URL-to-reviewable-draft flows;
+- searchable connection list with collapsible groups, environment tags, and
+  engine/target/safety/secret-source facts; create/edit/duplicate/remove and
+  URL-to-reviewable-draft flows;
+- the minimal capability-driven editor: engine, name, group, environment tag,
+  host, port, default database/index, username, password, TLS mode;
+- one password field per profile with prompt-on-connect and acknowledged
+  dangerous plaintext first; 1Password `op://` mapping, Keychain reference
+  shape, and environment references staged after the basic loop;
 - saved and temporary profiles with stable IDs and versioned migration;
-- capability-driven General, TLS, Safety, and engine-specific form sections;
-- 1Password `op://` mapping per needed field, prompt-on-connect, environment
-  references, Keychain reference shape, and acknowledged dangerous plaintext;
 - Test returning server identity/version, TLS outcome, elapsed time, and safe
   diagnostics without saving;
 - Connect/disconnect, context switch, health, bounded reconnect/backoff, and
@@ -324,11 +209,18 @@ profile forms use TermRock `Form`/`Tree` rather than local substitutes.
 
 ## Phase 4 — PostgreSQL read-only vertical slice
 
+Screen behavior: [docs/product/workbench.md](../product/workbench.md) and
+[docs/product/data-grid.md](../product/data-grid.md).
+
 ### Deliver
 
 - session/result lifecycle and revisioned connection state;
-- incremental databases/schemas/tables/views/catalog with subtree refresh;
-- object preview/pin tabs and structure/raw DDL projection;
+- context bar with database selector, PostgreSQL schema selector, environment
+  tag, safety mode, and health;
+- incremental databases/schemas/tables/views/functions catalog with subtree
+  refresh; functions list name and argument signature;
+- object preview/pin tabs (multiple tabs per object allowed) and structure/raw
+  DDL projection;
 - bounded table browsing and arbitrary SQL streaming;
 - typed cells, unknown fallback, full value inspector, binary/JSON views;
 - explicit queued/running/streaming/complete/cancel-requested/cancelled/failed/
@@ -358,10 +250,14 @@ TableRock.
 
 - multiline SQL/Redis editor projection and external syntax diagnostics;
 - selection/current-statement execution with incomplete-input behavior;
-- revisioned catalog/keyword/function/type/command completion;
+- revisioned schema-aware catalog/keyword/function/type/command completion;
 - bound parameters, find/replace, formatting, and raw/structured explain base;
-- grid widths/hide/order/format, range/row selection, TSV/CSV/JSON/Markdown
-  copy, and resident/server filtering distinction;
+- the filter bar: typed per-column conditions plus a raw-WHERE mode, with a
+  clearly labeled resident-page quick filter;
+- column show/hide/reorder/width with one-action reset and stable per-table
+  persistence;
+- range/row selection and TSV/CSV/JSON/Markdown/SQL-INSERT/SQL-UPDATE copy,
+  the SQL formats gated on base-table identity facts;
 - independent query/result tabs and multi-statement outcome states;
 - query files with atomic save/external-change handling;
 - bounded/searchable history with configurable SQL retention/private mode;
@@ -377,11 +273,16 @@ restoration honor retention/redaction policy.
 
 ## Phase 6 — PostgreSQL writes and administration
 
+Screen behavior: [docs/product/editing.md](../product/editing.md).
+
 ### Deliver
 
 - editability proof from base object, stable key, permissions, and result shape;
 - typed cell editors and insert/update/delete mutation reducer;
-- visible staged changes, undo, discard, review, typed operation preview;
+- staged in-memory changes with per-row/per-cell highlighting (inserted,
+  modified, deleted), undo, and discard;
+- the review dialog listing exact parameterized operations, and typed
+  operation preview that never becomes executable text;
 - parameterized transaction apply, conflict handling, rollback, generated-value
   reconciliation, and durable unknown-outcome record;
 - foreign-key navigation, table operations, refresh/rename/truncate/drop gates;
@@ -519,9 +420,14 @@ work starts before cross-adapter conformance passes for all three engines.
 
 ## Phase 13 — native vertical slice
 
+Screen behavior and design language:
+[docs/product/native-macos.md](../product/native-macos.md).
+
 ### Deliver
 
-- SwiftUI `App`, `WindowGroup`, commands, toolbar, Settings, and restoration;
+- SwiftUI `App`, `WindowGroup`, commands, toolbar, Settings, and restoration in
+  the Liquid Glass design language (glass toolbar/sidebar/transient layer,
+  opaque grid/editor content, one cluster per region, tinted primary actions);
 - `@MainActor` presentation store with no database behavior;
 - UniFFI bridge client and immutable event/page decoding;
 - connection/profile flow, AppKit catalog, editor, large grid, result page,

@@ -12,7 +12,8 @@ goal.
 
 Before changes, read `AGENTS.md`, `CONTRIBUTING.md`, `README.md`, `ROADMAP.md`,
 and the documentation under `docs/`; [`docs/README.md`](README.md) maps them.
-The feature baseline is
+Screen behavior is specified in [`product/`](product/README.md); the feature
+baseline is
 [`functional-parity-ledger.md`](architecture/functional-parity-ledger.md); core
 architecture is [`application-pattern.md`](architecture/application-pattern.md),
 [`rust-core-architecture.md`](architecture/rust-core-architecture.md),

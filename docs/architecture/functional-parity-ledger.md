@@ -10,7 +10,9 @@ exist, not a visual or implementation specification.
 equivalent safety, state visibility, and failure handling. It does **not** mean
 the same layout, words, geometry, colors, icons, shortcuts, assets, or internal
 architecture. TableRock requirements come from this repository, official
-database/client/platform documentation, and direct tests.
+database/client/platform documentation, and direct tests. Screen-level behavior
+is specified in [`docs/product/`](../product/README.md); this ledger is the
+capability checklist those screens must satisfy.
 
 This ledger was refreshed on 2026-07-16 from TablePro's public
 [feature index](https://docs.tablepro.app/features/overview),
@@ -61,7 +63,8 @@ architecture decisions.
 | External URL open | Later | Confirm target and safety before opening a temporary or matching saved session | Deep-link threat model and hostile-input tests |
 | Test connection | Core | Show server identity/version, TLS outcome, elapsed time, and redacted diagnostics without saving | Real TLS/auth fixtures for all engines |
 | Temporary connection | Core | Connect without persisting profile or secret | Relaunch proves no durable profile/secret remains |
-| Profile organization | Parity | Groups, tags, favorites, ordering, filters, and environment/safety markers without copied reference presentation | Phase 2 proves profile contracts plus a local-only serialized Turso actor, normalized process-local single ownership, interrupted/crash recovery, sequential profile migrations, atomic CRUD, and a least-data keyset-paginated organization list capped at 100 with cursor-bound filters, bounded Unicode search, and validated literal/unresolved-secret endpoint facts; live health projection, resolution, UI, unrelated-entity retention, and remaining storage proof stay required |
+| Profile organization | Parity | Groups, tags, favorites, ordering, filters, and environment/safety markers without copied reference presentation | Group UI and environment-tag projection in [connections.md](../product/connections.md); Phase 2 profile/group/tag/filter/search evidence in the [profiles group](../evidence/README.md#phase-2--profiles); live health projection, resolution, UI, and unrelated-entity retention remain required |
+| Environment tag | Core | Per-profile environment label (production/staging/development/custom) shown in list, editor, context bar, and tabs; production renders a persistent warning treatment, never color alone | Snapshot fixtures across all four surfaces |
 | Context switcher | Core | Switch connection/database/schema/logical database using engine-correct semantics | Driver contract tests prove no fake cross-engine abstraction |
 | Health and reconnect | Core | Visible state, bounded backoff, authentication stop condition, context restoration, and no automatic ambiguous-write retry | Disconnect/reconnect race harness |
 | Startup actions | Later | Reviewed, bounded startup SQL/commands with explicit reconnect behavior | Safety classification, timeout, and partial-failure tests |
@@ -72,10 +75,10 @@ architecture decisions.
 
 | Capability | Status | TableRock requirement | Acceptance evidence |
 |---|---|---|---|
-| Lazy catalog | Core | Engine-native hierarchy, loading/stale/error nodes, subtree refresh, filtering with ancestors preserved | Phase 2 now proves bounded immutable engine-native preorder snapshots, stable IDs/parents, lazy/loading/stale/partial/failed child states, safe failure diagnostics, 10,001-node synthetic scale, hostile hierarchy/type/text/depth rejection, and stale/gap revision rejection; driver subtree refresh, ancestor-preserving filtering, and UI projection remain required |
-| Object tabs | Core | Preview/pinned/durable object tabs with independent context and state | Restore and close-policy tests |
-| Query/command tabs | Core | Independent text, cursor, context, results, errors, history, and running operation | Phase 2 now proves typed command scopes, finite budgets, scoped operation identity, legal lifecycle/cancellation-outcome edges, stale/duplicate rejection, gap resync, one core-authoritative application-service harness with simultaneous bounded PostgreSQL, ClickHouse, and Redis tasks, three-engine cancellation truth, and initial current-line streaming budgets; execution text, multi-tab behavior, release-profile budgets, and remaining server races are required |
-| Result tabs | Parity | One result per statement/operation, pinning, completion summaries, failure and partial-result states | Phase 2 now proves a message-free safe diagnostic taxonomy with explicit ambiguity/retry facts; multi-statement and real-driver mapping fixtures remain required |
+| Lazy catalog | Core | Engine-native hierarchy including tables, views, and PostgreSQL functions/routines with name and signature; loading/stale/error nodes, subtree refresh, filtering with ancestors preserved | Catalog snapshot contract proven in Phase 2 (see [core evidence](../evidence/README.md#phase-2--core-contracts-and-services)); driver subtree refresh, function listing, ancestor-preserving filtering, and UI projection remain required |
+| Object tabs | Core | Preview/pinned/durable object tabs with independent context and state; the same object may open in several tabs with independent sort/filter/columns/staged changes | Restore, close-policy, and multi-instance independence tests |
+| Query/command tabs | Core | Independent text, cursor, context, results, errors, history, and running operation | Phase 2 command-scope/operation evidence in the [core group](../evidence/README.md#phase-2--core-contracts-and-services); execution text, multi-tab behavior, release-profile budgets, and remaining server races remain required |
+| Result tabs | Parity | One result per statement/operation, pinning, completion summaries, failure and partial-result states | Phase 2 safe-diagnostic taxonomy in the [core group](../evidence/README.md#phase-2--core-contracts-and-services); multi-statement and real-driver mapping fixtures remain required |
 | Responsive layout | Core | Wide split view, medium constrained view, narrow single-region navigation, explicit minimum-size screen | Render fixtures with Unicode and extreme labels |
 | Quick switcher | Parity | Fuzzy switch across visible objects, profiles, tabs, and saved queries using stable IDs | Ranking and stale-index tests |
 | Favorites and saved queries | Parity | Table/object favorites and named query files with explicit scope | Persistence, rename, and missing-target tests |
@@ -104,18 +107,18 @@ architecture decisions.
 | Capability | Status | TableRock requirement | Acceptance evidence |
 |---|---|---|---|
 | Virtualized grid | Core | Render only resident rows/columns; stable two-axis navigation and placeholders; no I/O from render | Million-row synthetic viewport benchmark |
-| Typed display | Core | Distinguish NULL, empty, whitespace, zero, false, bytes, structured containers, unknown, invalid, and truncated values | The Phase 2 owned-value unit contract covers null/empty/whitespace/zero/false/bytes/structured/temporal/unknown/invalid/truncated distinctions; real ClickHouse 25.8/26.3 LTS fixtures now prove booleans, all scalar integer widths through 256 bits, Decimal256, floats, canonical temporal values, UUID/IP, enums, low-cardinality text, nullable text, binary, recursive arrays/tuples/maps/named nested records, bounded structured projection, and bounded unknown fallback; PostgreSQL/Redis breadth remains required |
-| Column controls | Parity | Width, fit, hide, order, format, and stable per-object preferences | Narrow/wide/Unicode geometry tests |
+| Typed display | Core | Distinguish NULL, empty, whitespace, zero, false, bytes, structured containers, unknown, invalid, and truncated values | Phase 2 owned-value contract plus ClickHouse 25.8/26.3 fixtures (see [core](../evidence/README.md#phase-2--core-contracts-and-services) and [ClickHouse](../evidence/README.md#phase-2--clickhouse-driver) groups); PostgreSQL/Redis breadth remains required |
+| Column controls | Parity | Show/hide, reorder, width, fit, format, one-action reset, and stable per-table preferences | Narrow/wide/Unicode geometry and persistence tests |
 | Sorting | Core | Server sort for table browsing, explicit provenance, multi-column order, no unsafe SQL concatenation | Hostile identifier/type fixtures |
-| Filtering | Core | Typed server filters plus clearly labeled resident-page value filters; saved presets later | Parameterization and NULL semantics tests |
-| Selection/copy | Parity | Cell/range/row selection and safe TSV/CSV/JSON/Markdown projections | Clipboard-neutral formatter tests |
-| Paging | Core | Bounded server pages for objects and bounded streams for arbitrary queries; totals may be estimated/unknown | The Phase 2 immutable-page and result-store contracts cover pre-allocation dimensions, ranges, offsets, null/truncation metadata, hostile buffers, explicit result opening, stale/future/overlap rejection, pinned transactional capacity failure, exact resident buffer accounting, and deterministic global LRU eviction; PostgreSQL 17/18, ClickHouse 25.8/26.3, and Redis 7.4/8.8 Testcontainers prove bounded streams through one object-safe adapter/page-stream seam, while driver/store race integration, bridge encoding, and the complete operation matrix remain required |
+| Filtering | Core | Filter bar with typed per-column conditions plus a raw-WHERE mode; clearly labeled resident-page quick filter; saved presets later | Parameterization, operator-per-type, and NULL semantics tests |
+| Selection/copy | Parity | Cell/range/row selection and safe TSV/CSV/JSON/Markdown/SQL-INSERT/SQL-UPDATE projections; INSERT/UPDATE require base-table identity facts | Clipboard-neutral formatter tests including identity-gated SQL formats |
+| Paging | Core | Bounded server pages for objects and bounded streams for arbitrary queries; totals may be estimated/unknown | Phase 2 page/result-store contracts plus real-server bounded streams in the [core group](../evidence/README.md#phase-2--core-contracts-and-services); driver/store race integration, bridge encoding, and the complete operation matrix remain required |
 | Row/value inspector | Core | Full typed values, raw bytes/hex, JSON text/tree, metadata, and stale state | Large/binary/invalid JSON fixtures |
 | Type-specific editors | Parity | Bool, number, temporal, enum, JSON, bytes, array/map/tuple, and explicit unknown fallback | Round-trip and invalid-input tests |
 | Stable editability | Core | Only results with proven base object and stable identity are editable | Joins/aggregates/no-key/duplicate-key tests |
-| Staged changes | Core | Inserts/updates/deletes remain local, visible, undoable, reviewable, and discardable until apply | Phase 2 now provides bounded typed plans, move-only review/authorization, and a bounded exact-once token registry; reducer undo/discard/quit policy and service wiring remain required |
-| Operation preview | Core | Preview is descriptive; execution uses a typed parameter/command plan, never reparsed display text | Phase 2 proves execution retains the exact typed plan; bounded preview formatting and native bridge conformance remain required |
-| Conflict handling | Core | PostgreSQL conflicts roll back; ClickHouse and Redis expose their true non-transactional outcomes | Phase 2 distinguishes PostgreSQL atomic transactions, ClickHouse progressive inserts/asynchronous mutations, and Redis sequential no-rollback work; concurrent real-server tests remain required |
+| Staged changes | Core | Inserts/updates/deletes remain local, visible (per-row/per-cell markers), undoable, reviewable, and discardable until apply | Phase 2 typed plans and review registry in the [core group](../evidence/README.md#phase-2--core-contracts-and-services); reducer undo/discard/quit policy, marker projection, and service wiring remain required |
+| Operation preview | Core | Preview lists the exact parameterized operations; execution uses the typed plan, never reparsed display text | Phase 2 exact-plan retention in the [core group](../evidence/README.md#phase-2--core-contracts-and-services); bounded preview formatting and native bridge conformance remain required |
+| Conflict handling | Core | PostgreSQL conflicts roll back; ClickHouse and Redis expose their true non-transactional outcomes | Phase 2 transaction/mutation/sequential outcome distinction in the [core group](../evidence/README.md#phase-2--core-contracts-and-services); concurrent real-server tests remain required |
 | Foreign-key navigation | Parity | PostgreSQL relationship lookup and navigation with explicit unavailable state elsewhere | Catalog and permission fixtures |
 
 ## Schema, administration, and data movement
@@ -166,7 +169,7 @@ Native parity is behavior parity, not terminal emulation inside a window.
 | Safety | Rust policy plus native review/authentication UI; Swift cannot bypass policy |
 | Files and clipboard | Native panels, security-scoped access where required, pasteboard, drag/drop |
 | Accessibility | Complete VoiceOver labels, focus order, keyboard access, reduced-motion/contrast behavior |
-| Appearance | Native light/dark/system materials and user preferences, not copied reference colors |
+| Appearance | Liquid Glass design language (macOS 26+): glass toolbar/sidebar/transient layer, opaque content surfaces, native light/dark and accessibility degradation, not copied reference colors |
 | Performance | Coarse immutable pages and events; never one Rust/IPC call per cell |
 
 The ownership and transport decision is in

@@ -25,7 +25,9 @@ activate a parallel approach.
 | Telemetry | local `tracing`; opt-in redacted OTLP export, disabled by default |
 | Results | bounded immutable TableRock pages; versioned columnar byte arena across UniFFI |
 | Safety | Rust-enforced ReadOnly/ConfirmWrites plus specific destructive confirmation |
-| References | concepts only; no copied expression/source |
+| References | concepts and screen-structure only; no copied expression/source |
+| Connection form | first version: engine, name, group, environment tag, host, port, database, user, password, TLS mode only |
+| Password | one password field per profile; prompt-on-connect and acknowledged local plaintext first; 1Password/Keychain/env staged later |
 | Delivery | direct forward commits on `main`; no branches or pull requests |
 | Automation | AI/MCP/external-agent database access excluded |
 
@@ -48,6 +50,31 @@ history, telemetry, or crash reports.
 
 The secret abstraction stays TableRock-local. Sharing it requires a separate
 security decision; it is not part of TermRock.
+
+### Password staging (revision 2026-07-18)
+
+The first connection editor ships exactly one password field per profile with
+one selected storage source. Prompt-on-connect and operator-acknowledged local
+plaintext ship first because they add no new security surface. 1Password
+`op://` mapping, Keychain references, and environment references are staged
+after the basic connection loop is proven. The `SecretSource` model already
+carries all variants; this revision changes delivery order, not the model.
+
+## Reference interface boundary (revision 2026-07-18)
+
+TablePro's screen structure and workflows — connection list with groups and
+environment tags, sidebar catalog with tables/views/functions, multi-tab
+workbench, filter bar, staged edits with SQL preview, copy formats — are
+accepted as interface references and market expectations. TableRock implements
+the same workflows from its own product specification in
+[`docs/product/`](../product/README.md).
+
+Still prohibited without exception: copying or translating TablePro source
+(AGPL-3.0), tests, comments, identifiers, assets, text, layout measurements,
+colors, icons, key bindings, or screenshots. Licenses never override this:
+reference products supply ideas, never code. Every implementation commit
+records clean-room provenance per
+[clean-room-reference.md](clean-room-reference.md).
 
 ## Persistence
 

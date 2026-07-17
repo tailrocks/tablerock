@@ -8,14 +8,18 @@ product's implementation or distinctive expression.
 
 The [TablePro repository](https://github.com/TableProApp/TablePro) currently
 uses the [GNU AGPL-3.0 license](https://github.com/TableProApp/TablePro/blob/main/LICENSE).
-Its public documentation may establish broad connection, catalog, tab, grid,
-editor, result, and edit workflows. Its source is not an implementation source
+Its public documentation and screen structure may establish connection,
+catalog, tab, grid, editor, result, and edit workflows as market expectations
+(operator revision 2026-07-18). Its source is never an implementation source
 for Apache-2.0 TableRock.
 
 Do not copy or translate TablePro source, tests, comments, identifiers, assets,
-text, layout measurements, or plugin architecture. TablePro solves a broad
-many-driver Apple-client problem; TableRock deliberately starts with three
-built-in Rust adapters.
+text, layout measurements, or plugin architecture. Screen *structure* (a
+sidebar catalog beside tabbed content, a filter bar above a grid) is a common
+workflow pattern; screen *expression* (geometry, strings, icons, colors,
+shortcuts) is copied from nothing and derived only from TableRock's product
+specification. TablePro solves a broad many-driver Apple-client problem;
+TableRock deliberately starts with three built-in Rust adapters.
 
 ## TablePlus
 

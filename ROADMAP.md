@@ -2,7 +2,10 @@
 
 TableRock builds one Rust-owned PostgreSQL, ClickHouse, and Redis workbench,
 first as a TermRock/Ratatui TUI and later as a native SwiftUI/AppKit macOS
-application. Phase 0 decisions were approved on 2026-07-16.
+application. Phase 0 decisions were approved on 2026-07-16. The
+screen-by-screen product baseline lives in
+[docs/product](docs/product/README.md); it was added on 2026-07-18 and is the
+authority for what each screen does.
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its
@@ -109,30 +112,38 @@ integration, and everything in Phase 3 onward.
 
 ## Phase 3 — connection experience
 
-Deliver searchable/organized profiles, capability-driven forms, URL and
-temporary drafts, Test and Connect, General/TLS/Safety sections, 1Password
-references, explicit plaintext danger, context selection, health, reconnect,
-and safe versioned persistence for all three engines.
+Deliver the [connection screens](docs/product/connections.md): searchable
+grouped profile list with environment tags, the minimal capability-driven
+editor (engine, name, group, environment, host, port, database, user,
+password, TLS mode), URL and temporary drafts, Test and Connect, one password
+field with prompt/acknowledged-plaintext sources first, General/TLS/Safety
+sections, context selection, health, reconnect, and safe versioned persistence
+for all three engines. 1Password `op://` mapping and other secret sources
+stage after the basic loop is proven.
 
 ## Phase 4 — PostgreSQL read-only tracer
 
-Deliver lazy database/schema/object catalog, object and query tabs, structure,
-bounded table pages, arbitrary SQL streaming, typed values, progress, cancel,
-errors, and result inspection. Add TermRock `VirtualGrid` before TableRock
-ships its database-aware grid composition.
+Deliver lazy database/schema/object catalog including tables, views, and
+functions, the context bar with database and schema selectors, object and
+query tabs, structure, bounded table pages, arbitrary SQL streaming, typed
+values, progress, cancel, errors, and result inspection. Add TermRock
+`VirtualGrid` before TableRock ships its database-aware grid composition.
 
 ## Phase 5 — workbench foundation
 
 Add TermRock `TextArea` and `CompletionMenu`; then deliver multiline SQL/Redis
-editing, statement selection, revisioned completion, parameters, find/replace,
-formatting, explain foundations, sorting/filtering, column controls, copy
-formats, query files, query history, favorites, saved queries, quick switching,
-and intent-only session restoration.
+editing, statement selection, revisioned schema-aware completion, parameters,
+find/replace, formatting, explain foundations, server sorting and the filter
+bar (typed column filters plus raw WHERE), column show/hide/reorder/reset with
+per-table persistence, copy formats including SQL INSERT/UPDATE, query files,
+query history, favorites, saved queries, quick switching, and intent-only
+session restoration.
 
 ## Phase 6 — PostgreSQL write/admin slice
 
-Deliver proven editability, typed value editors, inserts/updates/deletes,
-staged review/undo/discard, parameterized transactional apply, conflict and
+Deliver proven editability, typed value editors, inserts/updates/deletes
+staged in memory with visible row/cell highlighting, undo/discard, the review
+dialog with exact parameterized SQL preview, transactional apply, conflict and
 generated-value handling, foreign-key navigation, reviewed table operations,
 activity/dashboard, and PostgreSQL-specific structure facts.
 
@@ -184,10 +195,12 @@ or distribution path is carried in the roadmap.
 
 ## Phase 13 — native vertical slice
 
-Build the SwiftUI `App`/window/commands/settings shell, `@MainActor`
-presentation store, UniFFI Rust bridge, connection experience, AppKit catalog,
-query editor, large grid, result page, cancellation, and accessibility tracer.
-Swift contains no database or safety behavior.
+Build the SwiftUI `App`/window/commands/settings shell in the Liquid Glass
+design language (see [native macOS
+experience](docs/product/native-macos.md)), `@MainActor` presentation store,
+UniFFI Rust bridge, connection experience, AppKit catalog, query editor, large
+grid, result page, cancellation, and accessibility tracer. Swift contains no
+database or safety behavior.
 
 ## Phase 14 — native parity and release evidence
 

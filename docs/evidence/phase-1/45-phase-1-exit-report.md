@@ -29,8 +29,8 @@ completion from aggregate test success.
 | Command or fixture | Result | Artifact |
 |---|---|---|
 | `cargo fmt --all -- --check` | Pass | Workspace sources |
-| `cargo test --workspace --locked -- --test-threads=1` | 34 pass; 3 ignored child fixtures are selected and executed inside parent PTY tests | [`pty_lifecycle.rs`](../../crates/tablerock-cli/tests/pty_lifecycle.rs), [`run.rs`](../../crates/tablerock-cli/src/run.rs), [`ingress.rs`](../../crates/tablerock-cli/tests/ingress.rs), [`shell.rs`](../../crates/tablerock-tui/tests/shell.rs) |
-| `cargo test -p tablerock-tui --test architecture --locked` | 2 pass; reducer/view capabilities and manifest dependencies structurally constrained | [`architecture.rs`](../../crates/tablerock-tui/tests/architecture.rs) |
+| `cargo test --workspace --locked -- --test-threads=1` | 34 pass; 3 ignored child fixtures are selected and executed inside parent PTY tests | [`pty_lifecycle.rs`](../../../crates/tablerock-cli/tests/pty_lifecycle.rs), [`run.rs`](../../../crates/tablerock-cli/src/run.rs), [`ingress.rs`](../../../crates/tablerock-cli/tests/ingress.rs), [`shell.rs`](../../../crates/tablerock-tui/tests/shell.rs) |
+| `cargo test -p tablerock-tui --test architecture --locked` | 2 pass; reducer/view capabilities and manifest dependencies structurally constrained | [`architecture.rs`](../../../crates/tablerock-tui/tests/architecture.rs) |
 | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | Pass | Workspace targets |
 | `cargo doc --workspace --no-deps --locked` | Pass | Generated local rustdoc; not distributed |
 | `cargo deny check` | Advisories/bans/licenses/sources pass; two allowed transitive `hashbrown` versions reported | `deny.toml`, `Cargo.lock` |

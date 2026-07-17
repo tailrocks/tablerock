@@ -19,8 +19,9 @@ owns its profiles, credentials, sessions, results, and safety policy.
 The first complete loop is:
 
 1. Create a PostgreSQL, ClickHouse, or Redis profile.
-2. Map connection properties from a 1Password item or choose another explicit
-   source, configure TLS and safety, then test.
+2. Enter host, port, database, username, and one password (prompt-on-connect
+   or acknowledged local save first; 1Password and Keychain staged later),
+   choose TLS mode, group, environment tag, and safety, then test.
 3. Connect and select database/schema/logical database as supported.
 4. Browse objects or Redis keys.
 5. Inspect typed data in a viewport-backed grid or value-specific view.

@@ -39,8 +39,12 @@ Details: [roadmap](ROADMAP.md) · [evidence index](docs/evidence/README.md)
 
 ## Documentation
 
-Start with the [documentation map](docs/README.md). To execute the complete
-long-running program with an agent, use the single canonical prompt:
+Start with the [documentation map](docs/README.md): the
+[product specification](docs/product/README.md) defines every screen, the
+[architecture](docs/architecture/fixed-decisions.md) defines how, and the
+[evidence index](docs/evidence/README.md) records what is proven. To execute
+the complete long-running program with an agent, use the single canonical
+prompt:
 
 ```text
 /goal Follow docs/prompt.md

@@ -1,5 +1,10 @@
 # Workflow Inventory
 
+> Screen-by-screen behavior now lives in [`docs/product/`](../product/README.md)
+> (added 2026-07-18). This document keeps the underlying workflow constraints
+> and engine-specific rules; where wording differs, the product spec wins on
+> *what* the screen does and this file wins on *why the constraint exists*.
+
 These workflows are independent TableRock designs based on common database
 needs and terminal constraints. Sketches show information hierarchy, not copied
 screen geometry.
