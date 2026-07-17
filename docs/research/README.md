@@ -99,6 +99,7 @@ kept in the roadmap.
 - [Phase 2 Redis Pub/Sub reconnect evidence](148-phase-2-redis-pubsub-reconnect.md)
 - [Phase 2 Redis TLS Pub/Sub composition evidence](149-phase-2-redis-tls-pubsub.md)
 - [Phase 2 Redis Pub/Sub ACL denial boundary](150-phase-2-redis-pubsub-acl-denial.md)
+- [Phase 2 Redis live credential revocation evidence](151-phase-2-redis-live-credential-revocation.md)
 - [Delivery plan](30-delivery-plan.md)
 - [Fixed architecture decisions](31-fixed-decisions.md)
 - [Quality and verification](32-quality-and-verification.md)

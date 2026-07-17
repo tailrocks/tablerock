@@ -168,6 +168,9 @@ restored messages. TLS/mTLS/ACL channel and pattern composition now passes the
 same matrix. Restricted-channel server denial is measured, but adapter rejection
 remains required because redis-rs 1.4.0 erases the Pub/Sub setup error reply;
 administrative preflight and a private protocol path are forbidden substitutes.
+Password rotation followed by confirmed user-connection termination now proves
+bounded redacted authentication failure on the next future operation across the
+same matrix; active-subscription revocation remains required.
 Remaining failure races stay required. Reviewed
 single-command TTL mutation now proves exact-once
 authorization, applied/not-applied truth, and unknown post-dispatch outcomes.

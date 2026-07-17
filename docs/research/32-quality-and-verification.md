@@ -151,8 +151,10 @@ Redis 7.4.9/8.8.0 under RESP2/RESP3 also pass generated custom-root TLS and
 required-mTLS fixtures. Wrong roots, hostname mismatch, and plaintext fallback
 fail closed; wrong initial ACL credentials stop before reconnect policy and map
 to a redacted authentication class. TLS-authenticated future-call reconnect and
-blocking cancellation also pass. Live credential revocation across reconnect
-remains required. TLS/auth material has explicit pre-I/O bounds and Debug redaction tests.
+blocking cancellation also pass. Password rotation followed by confirmed
+user-connection termination stops the next future operation with bounded,
+redacted authentication failure. Active-subscription revocation remains
+required. TLS/auth material has explicit pre-I/O bounds and Debug redaction tests.
 
 The Redis 7.4.9/8.8.0 RESP2/RESP3 matrix also proves dedicated Pub/Sub
 connections, exact binary channel/payload delivery, continued ordinary-command
@@ -168,14 +170,14 @@ Server replacement on the same endpoint additionally proves bounded
 reconnect/resubscription, an ordered zero-row delivery-discontinuity page before
 restored channel and pattern messages, per-attempt blackhole timeout, bounded
 attempt exhaustion, and prompt cancellation during a subsequent outage. DNS
-change, live credential revocation, and RESP2 pre-decode
+change, active-subscription credential revocation, and RESP2 pre-decode
 transport allocation bounds remain required.
 
 The Redis TLS-only 7.4.9/8.8.0 matrix under RESP2/RESP3 proves channel and
 pattern Pub/Sub with custom roots, optional required client identity, ACL
 credentials plus explicit channel patterns, exact binary pages, and
 authenticated client-stop teardown. TLS reconnect during an active subscription
-and live credential revocation remain required. A restricted `&allowed:*` user
+and active-subscription credential revocation remain required. A restricted `&allowed:*` user
 also proves server-side denial across this matrix. Adapter-level denial remains
 required: the latest redis-rs Pub/Sub setup method discards the server-error
 value, and an administrative `ACL DRYRUN` preflight is not product evidence.

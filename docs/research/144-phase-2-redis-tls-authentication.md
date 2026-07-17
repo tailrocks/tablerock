@@ -57,11 +57,12 @@ adapter error mapping remain green.
 
 This closes the Phase 2 Redis TLS/custom-root/mTLS/ACL-authentication tracer. It
 does not close the product Test Connection row: profile secret resolution,
-server identity/version and elapsed-time projection, live credential
-revocation/restart authentication-stop behavior, platform-root server
+server identity/version and elapsed-time projection, remaining restart
+authentication-stop behavior, platform-root server
 fixtures, SSH composition, UI/native presentation, DNS/server-restart races,
 write ambiguity, and clean-machine release evidence remain open. Pub/Sub
-composition is subsequently closed by research 149.
+composition is subsequently closed by research 149; live credential revocation
+for future operations by research 151.
 
 Context7 selected the official `/redis-rs/redis-rs` documentation. Exact API
 behavior was cross-checked against the pinned redis-rs 1.4.0 source.

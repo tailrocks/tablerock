@@ -417,7 +417,17 @@ async fn verify_tls_auth_version(
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
     let config =
-        RedisConnectConfig::new(text("127.0.0.1"), port, 1, protocol, RedisTlsMode::Require);
+        RedisConnectConfig::new(text("127.0.0.1"), port, 1, protocol, RedisTlsMode::Require)
+            .with_runtime_policy(
+                RedisRuntimePolicy::new(
+                    Duration::from_secs(2),
+                    Duration::from_secs(2),
+                    2,
+                    Duration::from_millis(10),
+                    Duration::from_millis(50),
+                )
+                .unwrap(),
+            );
     let credentials = RedisCredentials::new(Some(REDIS_TEST_USERNAME), REDIS_TEST_PASSWORD);
     let mut tls = RedisTlsMaterial::custom_roots(fixture.ca_pem.as_bytes());
     if require_client_identity {
@@ -692,6 +702,36 @@ async fn verify_tls_auth_version(
             .await
             .is_err()
     );
+
+    let _: () = redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg(REDIS_TEST_USERNAME)
+        .arg("resetpass")
+        .arg(">synthetic-rotated-password")
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    let killed: u64 = redis::cmd("CLIENT")
+        .arg("KILL")
+        .arg("USER")
+        .arg(REDIS_TEST_USERNAME)
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    assert!(killed >= 1);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match session.observed_client_id().await {
+                Err(tablerock_engine::RedisError::Authentication) => break,
+                Err(tablerock_engine::RedisError::Connection) => {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                result => panic!("unexpected result after live ACL revocation: {result:?}"),
+            }
+        }
+    })
+    .await
+    .expect("live ACL revocation stops reconnect within five seconds");
 }
 
 async fn verify_timeout_reconnect_version(tag: &str) {
