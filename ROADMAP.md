@@ -123,6 +123,8 @@ PostgreSQL typed NULL and array parameter transport is verified in
 [`158-phase-2-postgresql-null-array-parameters.md`](docs/research/158-phase-2-postgresql-null-array-parameters.md).
 Bounded PostgreSQL notice ownership and overflow are verified in
 [`159-phase-2-postgresql-bounded-notices.md`](docs/research/159-phase-2-postgresql-bounded-notices.md).
+Bounded PostgreSQL notice detail and hint fields are verified in
+[`160-phase-2-postgresql-notice-detail-hint.md`](docs/research/160-phase-2-postgresql-notice-detail-hint.md).
 
 All delivery is direct, forward-only work on `main`. Never create a branch or
 pull request. Each checkpoint must build, pass its evidence gate, update its

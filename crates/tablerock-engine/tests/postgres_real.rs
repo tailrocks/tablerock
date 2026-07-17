@@ -578,7 +578,14 @@ async fn bounds_postgresql_notices_and_reports_overflow() {
         assert_eq!(notice.code(), "00000");
         assert_eq!(notice.message(), "table-rock-notice");
         assert_eq!(notice.message_truncation(), Truncation::Complete);
-        assert!(!format!("{notice:?}").contains("table-rock-notice"));
+        assert_eq!(notice.detail(), Some("table-rock-detail"));
+        assert_eq!(notice.detail_truncation(), Some(Truncation::Complete));
+        assert_eq!(notice.hint(), Some("table-rock-hint"));
+        assert_eq!(notice.hint_truncation(), Some(Truncation::Complete));
+        let debug = format!("{notice:?}");
+        assert!(!debug.contains("table-rock-notice"));
+        assert!(!debug.contains("table-rock-detail"));
+        assert!(!debug.contains("table-rock-hint"));
 
         session.emit_long_notice_probe().await.unwrap();
         let notice = tokio::time::timeout(Duration::from_secs(5), session.next_notice())
@@ -596,6 +603,8 @@ async fn bounds_postgresql_notices_and_reports_overflow() {
                 original_byte_len: Some(1_200)
             }
         );
+        assert_eq!(notice.detail(), None);
+        assert_eq!(notice.hint(), None);
 
         session.emit_notice_overflow_probe().await.unwrap();
         assert_eq!(

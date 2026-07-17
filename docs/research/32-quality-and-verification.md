@@ -136,6 +136,8 @@ Engine additions:
   exact engine type identity on both pinned lines;
   notices retain bounded severity/SQLSTATE/message, UTF-8 truncation truth,
   ordered capacity, redacted Debug, and explicit overflow on both pinned lines;
+  optional notice detail/hint retain independent bounds, presence, truncation,
+  and Debug redaction on both pinned lines;
 - ClickHouse: nested/nullable/low-cardinality/decimal/large integer/binary,
   partial/late HTTP errors, compression, query IDs, parts, inserts, mutations;
 - Redis: binary keys/values, SCAN families, RESP2/RESP3, logical DB isolation,

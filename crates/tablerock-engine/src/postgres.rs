@@ -132,6 +132,10 @@ pub struct PostgresNotice {
     code: BoundedText,
     message: BoundedText,
     message_truncation: Truncation,
+    detail: Option<BoundedText>,
+    detail_truncation: Option<Truncation>,
+    hint: Option<BoundedText>,
+    hint_truncation: Option<Truncation>,
 }
 
 impl PostgresNotice {
@@ -154,6 +158,26 @@ impl PostgresNotice {
     pub const fn message_truncation(&self) -> Truncation {
         self.message_truncation
     }
+
+    #[must_use]
+    pub fn detail(&self) -> Option<&str> {
+        self.detail.as_ref().map(BoundedText::as_str)
+    }
+
+    #[must_use]
+    pub const fn detail_truncation(&self) -> Option<Truncation> {
+        self.detail_truncation
+    }
+
+    #[must_use]
+    pub fn hint(&self) -> Option<&str> {
+        self.hint.as_ref().map(BoundedText::as_str)
+    }
+
+    #[must_use]
+    pub const fn hint_truncation(&self) -> Option<Truncation> {
+        self.hint_truncation
+    }
 }
 
 impl fmt::Debug for PostgresNotice {
@@ -167,6 +191,8 @@ impl fmt::Debug for PostgresNotice {
                 "message_truncated",
                 &matches!(self.message_truncation, Truncation::Truncated { .. }),
             )
+            .field("detail_bytes", &self.detail.as_ref().map(BoundedText::len))
+            .field("hint_bytes", &self.hint.as_ref().map(BoundedText::len))
             .finish()
     }
 }
@@ -382,11 +408,27 @@ fn bounded_postgres_notice(notice: &tokio_postgres::error::DbError) -> PostgresN
     let (code, _) = bounded_notice_text(notice.code().code(), MAX_POSTGRES_NOTICE_CODE_BYTES);
     let (message, message_truncation) =
         bounded_notice_text(notice.message(), MAX_POSTGRES_NOTICE_MESSAGE_BYTES);
+    let (detail, detail_truncation) = bounded_optional_notice_text(notice.detail());
+    let (hint, hint_truncation) = bounded_optional_notice_text(notice.hint());
     PostgresNotice {
         severity,
         code,
         message,
         message_truncation,
+        detail,
+        detail_truncation,
+        hint,
+        hint_truncation,
+    }
+}
+
+fn bounded_optional_notice_text(value: Option<&str>) -> (Option<BoundedText>, Option<Truncation>) {
+    match value {
+        Some(value) => {
+            let (value, truncation) = bounded_notice_text(value, MAX_POSTGRES_NOTICE_MESSAGE_BYTES);
+            (Some(value), Some(truncation))
+        }
+        None => (None, None),
     }
 }
 
@@ -559,7 +601,10 @@ impl PostgresSession {
 
     pub async fn emit_notice_probe(&self) -> Result<(), PostgresError> {
         self.client
-            .batch_execute("DO $$ BEGIN RAISE NOTICE 'table-rock-notice'; END $$")
+            .batch_execute(
+                "DO $$ BEGIN RAISE NOTICE 'table-rock-notice' \
+                 USING DETAIL = 'table-rock-detail', HINT = 'table-rock-hint'; END $$",
+            )
             .await
             .map_err(|_| PostgresError::Query)
     }

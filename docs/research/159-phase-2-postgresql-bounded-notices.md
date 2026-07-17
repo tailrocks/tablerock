@@ -31,9 +31,10 @@ existing required-mTLS query/cancellation tests remain green after the ownership
 change.
 
 This closes bounded PostgreSQL notice capture and overflow semantics for Phase
-2. Notice detail/hint/position fields, notification/LISTEN workflows, service and
+2. Notice position fields, notification/LISTEN workflows, service and
 UniFFI projection, UI presentation, persistence policy, multiple statements,
 COPY, reconnect, and ambiguous writes remain open.
+Research 160 subsequently closes bounded detail and hint fields.
 
 ## Safety contract
 

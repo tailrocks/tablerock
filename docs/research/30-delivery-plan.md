@@ -148,6 +148,8 @@ decoding is implemented.
 Rust now drives asynchronous PostgreSQL messages directly. Both pinned lines
 prove bounded redacted notices, UTF-8-safe truncation, ordered retention, and
 explicit overflow without protocol backpressure.
+Optional notice detail and hint remain independently bounded, preserve absence
+and truncation truth, and stay redacted from Debug.
 
 ### ClickHouse spike
 
