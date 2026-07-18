@@ -1902,7 +1902,26 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
         } else {
             (insp_lines.len() as u16).min(grid_area.height / 3).max(1)
         };
-        let grid_h = grid_area.height.saturating_sub(insp_h);
+        let filter_bar = wb
+            .active_grid()
+            .and_then(|g| g.filter_chip_bar());
+        let filter_h = u16::from(filter_bar.is_some());
+        let grid_h = grid_area
+            .height
+            .saturating_sub(insp_h)
+            .saturating_sub(filter_h);
+        if let (Some(bar), true) = (filter_bar.as_deref(), filter_h > 0) {
+            let clipped: String = bar.chars().take(grid_area.width as usize).collect();
+            Line::from(format!("▣ {clipped}")).render(
+                Rect {
+                    x: grid_area.x,
+                    y: grid_area.y,
+                    width: grid_area.width,
+                    height: 1,
+                },
+                frame.buffer_mut(),
+            );
+        }
         if grid_h > 0 {
             if let Some(grid) = wb.active_grid() {
                 render_data_grid(
@@ -1910,7 +1929,7 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
                     frame,
                     Rect {
                         x: grid_area.x,
-                        y: grid_area.y,
+                        y: grid_area.y.saturating_add(filter_h),
                         width: grid_area.width,
                         height: grid_h,
                     },

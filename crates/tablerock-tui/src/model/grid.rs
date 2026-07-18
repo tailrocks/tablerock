@@ -520,18 +520,11 @@ impl DataGridModel {
                 .collect();
             format!(" · sort {}", parts.join(","))
         };
-        let filt = if self.filters.is_empty() && self.raw_where.is_none() {
-            String::new()
-        } else {
-            format!(
-                " · filters {}",
-                self.filters.len() + usize::from(self.raw_where.is_some())
-            )
-        };
+        let filt = self.filter_status_suffix();
         let quick = if self.quick_filter.is_empty() {
             String::new()
         } else {
-            " · page-local filter".into()
+            format!(" · page-local [{}]", self.quick_filter)
         };
         let staged = self.drafts.status_suffix();
         let edit = if self.editability.is_editable() {
@@ -549,6 +542,61 @@ impl DataGridModel {
             self.totals.label(),
             trunc
         )
+    }
+
+    /// Visual filter chip bar for the workbench (glyph + text, never color alone).
+    ///
+    /// Empty when no server filters, raw WHERE, or page-local quick filter.
+    #[must_use]
+    pub fn filter_chip_bar(&self) -> Option<String> {
+        let mut chips: Vec<String> = self
+            .filters
+            .iter()
+            .take(12)
+            .map(|f| match f.value.as_deref() {
+                Some(v) if !v.is_empty() => format!("[{} {} {}]", f.column, f.operator, v),
+                _ => format!("[{} {}]", f.column, f.operator),
+            })
+            .collect();
+        if let Some(raw) = self.raw_where.as_deref() {
+            if !raw.is_empty() {
+                let clipped: String = raw.chars().take(48).collect();
+                chips.push(format!("[WHERE {clipped}]"));
+            }
+        }
+        if !self.quick_filter.is_empty() {
+            chips.push(format!("[page:{}]", self.quick_filter));
+        }
+        if chips.is_empty() {
+            return None;
+        }
+        if self.filters.len() > 12 {
+            chips.push(format!("[+{} more]", self.filters.len() - 12));
+        }
+        Some(format!("filters: {}", chips.join(" ")))
+    }
+
+    fn filter_status_suffix(&self) -> String {
+        if self.filters.is_empty() && self.raw_where.is_none() {
+            return String::new();
+        }
+        let parts: Vec<String> = self
+            .filters
+            .iter()
+            .take(4)
+            .map(|f| match f.value.as_deref() {
+                Some(v) if !v.is_empty() => format!("{}{}{}", f.column, f.operator, v),
+                _ => format!("{}{}", f.column, f.operator),
+            })
+            .collect();
+        let mut s = format!(" · filters {}", parts.join(","));
+        if self.filters.len() > 4 {
+            s.push_str(&format!(" +{}", self.filters.len() - 4));
+        }
+        if self.raw_where.is_some() {
+            s.push_str(" +WHERE");
+        }
+        s
     }
 
     /// Recompute editability from base identity + profile safety + shape flag.
@@ -1299,8 +1347,31 @@ mod tests {
         g.quick_filter = "alp".into();
         let hits = g.quick_filter_matches();
         assert_eq!(hits, vec![0]);
-        assert!(g.status_line().contains("page-local filter"));
+        assert!(g.status_line().contains("page-local [alp]"));
         assert!(g.status_line().contains("sort"));
+    }
+
+    #[test]
+    fn filter_chip_bar_lists_server_and_page_filters() {
+        let mut g = DataGridModel::default();
+        g.add_filter_chip("status", "=", Some("open".into()));
+        g.add_filter_chip("amount", ">", Some("10".into()));
+        g.raw_where = Some("deleted_at IS NULL".into());
+        g.quick_filter = "acme".into();
+        let bar = g.filter_chip_bar().expect("chips");
+        assert!(bar.contains("[status = open]"), "{bar}");
+        assert!(bar.contains("[amount > 10]"), "{bar}");
+        assert!(bar.contains("[WHERE deleted_at IS NULL]"), "{bar}");
+        assert!(bar.contains("[page:acme]"), "{bar}");
+        let status = g.status_line();
+        assert!(status.contains("filters status=open"), "{status}");
+        assert!(status.contains("+WHERE"), "{status}");
+        assert!(status.contains("page-local [acme]"), "{status}");
+        assert!(g.filter_chip_bar().is_some());
+        g.filters.clear();
+        g.raw_where = None;
+        g.quick_filter.clear();
+        assert!(g.filter_chip_bar().is_none());
     }
 
     #[test]
