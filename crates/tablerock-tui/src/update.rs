@@ -5145,6 +5145,35 @@ fn activate_selected_action(model: &mut Model) -> Update {
             };
             jump_to_row(model, last)
         }
+        ActionId::PageUp if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let step = grid.page_step_rows();
+            let target = grid.cursor_row.saturating_sub(step);
+            if target == grid.cursor_row {
+                return Update::unchanged();
+            }
+            jump_to_row(model, target)
+        }
+        ActionId::PageDown if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let step = grid.page_step_rows();
+            let cur = grid.cursor_row;
+            let target = cur.saturating_add(step);
+            // Cap at known totals when present.
+            let target = match grid.totals {
+                crate::model::grid::GridRowTotal::Exact(n) if n > 0 => target.min(n - 1),
+                crate::model::grid::GridRowTotal::Estimated(n) if n > 0 => target.min(n - 1),
+                _ => target,
+            };
+            if target == cur {
+                return Update::unchanged();
+            }
+            jump_to_row(model, target)
+        }
         ActionId::GoToColumn if model.screen() == Screen::Workbench => {
             if model.workbench().active_grid().is_none() {
                 return Update::unchanged();
@@ -6318,6 +6347,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::GoToRow
         | ActionId::GoToFirstRow
         | ActionId::GoToLastRow
+        | ActionId::PageUp
+        | ActionId::PageDown
         | ActionId::GoToColumn
         | ActionId::GoToIdentityColumn
         | ActionId::GoToLastIdentityColumn
@@ -8084,6 +8115,8 @@ fn cycle_action(
                 ActionId::GoToRow,
                 ActionId::GoToFirstRow,
                 ActionId::GoToLastRow,
+                ActionId::PageUp,
+                ActionId::PageDown,
                 ActionId::GoToColumn,
                 ActionId::GoToIdentityColumn,
                 ActionId::GoToLastIdentityColumn,
@@ -9915,6 +9948,56 @@ mod tests {
             }
             other => panic!("expected layout json copy, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn page_up_down_jump_by_resident_step() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into()];
+            grid.row_count = 20;
+            grid.start_row = 0;
+            grid.cursor_row = 40;
+            grid.viewport_row = 40;
+            grid.result_token = 1;
+            grid.totals = GridRowTotal::Exact(1000);
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::PageUp);
+        let up = update(&mut model, Message::Activate);
+        // May render only or FetchPage depending on resident window.
+        let _ = up;
+        assert_eq!(
+            model.workbench().active_grid().map(|g| g.cursor_row),
+            Some(20)
+        );
+        model.set_action(ActionId::PageDown);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(
+            model.workbench().active_grid().map(|g| g.cursor_row),
+            Some(40)
+        );
+        // At row 0, PageUp no-ops.
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.cursor_row = 0;
+            grid.viewport_row = 0;
+        }
+        model.set_action(ActionId::PageUp);
+        assert!(!update(&mut model, Message::Activate).needs_render()
+            || model.workbench().active_grid().map(|g| g.cursor_row) == Some(0));
+        assert_eq!(
+            model.workbench().active_grid().map(|g| g.cursor_row),
+            Some(0)
+        );
     }
 
     #[test]

@@ -686,6 +686,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let go_row = action_label(model, ActionId::GoToRow, "GoRow");
     let go_first = action_label(model, ActionId::GoToFirstRow, "First");
     let go_last = action_label(model, ActionId::GoToLastRow, "Last");
+    let page_up = action_label(model, ActionId::PageUp, "PgUp");
+    let page_down = action_label(model, ActionId::PageDown, "PgDn");
     let go_col = action_label(model, ActionId::GoToColumn, "GoCol");
     let go_pk = action_label(model, ActionId::GoToIdentityColumn, "GoPk");
     let go_pk_last = action_label(model, ActionId::GoToLastIdentityColumn, "GoPkLast");
@@ -1313,6 +1315,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::GoToLastRow,
                         label: go_last.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PageUp,
+                        label: page_up.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PageDown,
+                        label: page_down.as_str(),
                         enabled: true,
                         style: None,
                     },

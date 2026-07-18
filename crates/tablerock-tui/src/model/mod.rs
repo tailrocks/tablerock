@@ -311,6 +311,10 @@ pub enum ActionId {
     GoToFirstRow,
     /// Jump to last known row (Exact/Estimated totals).
     GoToLastRow,
+    /// Move cursor up by one page of resident rows (fetch if needed).
+    PageUp,
+    /// Move cursor down by one page of resident rows (fetch if needed).
+    PageDown,
     /// Jump to column by name (exact or unique prefix).
     GoToColumn,
     /// Jump cursor to the first identity (pk) column.

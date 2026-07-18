@@ -2086,6 +2086,24 @@ impl DataGridModel {
         self.viewport_col = self.cursor_col;
     }
 
+    /// Rows to jump for PageUp/PageDown (resident page size, min 1, max 100).
+    #[must_use]
+    pub fn page_step_rows(&self) -> u64 {
+        let n = u64::from(self.row_count.max(1));
+        n.min(100).max(1)
+    }
+
+    /// Move cursor by `delta` absolute rows (negative = up). Adjusts viewport.
+    pub fn step_cursor_row(&mut self, delta: i64) {
+        if delta == 0 {
+            return;
+        }
+        let cur = self.cursor_row as i128;
+        let next = (cur + i128::from(delta)).max(0) as u64;
+        self.cursor_row = next;
+        self.viewport_row = next;
+    }
+
     pub fn move_cursor_column(&mut self, dir: i8) -> bool {
         if dir == 0 {
             return false;
@@ -3090,6 +3108,24 @@ mod tests {
         assert_eq!(sql, "ORDER BY \"name\" ASC, \"age\" DESC");
         g.sort.clear();
         assert!(g.order_by_sql().is_none());
+    }
+
+    #[test]
+    fn page_step_and_step_cursor_row() {
+        let mut g = DataGridModel::default();
+        g.row_count = 25;
+        assert_eq!(g.page_step_rows(), 25);
+        g.row_count = 200;
+        assert_eq!(g.page_step_rows(), 100); // capped
+        g.cursor_row = 50;
+        g.viewport_row = 50;
+        g.step_cursor_row(-25);
+        assert_eq!(g.cursor_row, 25);
+        assert_eq!(g.viewport_row, 25);
+        g.step_cursor_row(100);
+        assert_eq!(g.cursor_row, 125);
+        g.step_cursor_row(-1000);
+        assert_eq!(g.cursor_row, 0);
     }
 
     #[test]
