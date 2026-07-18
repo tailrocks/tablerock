@@ -155,6 +155,9 @@ private actor BridgeClient {
     }
 
     func listProfiles() throws -> [BridgeProfileItem] { try bridge.listProfiles() }
+    func searchProfiles(_ search: String?) throws -> [BridgeProfileItem] {
+        try bridge.searchProfiles(search: search)
+    }
     func open(params: OpenParams) throws -> Data { try bridge.open(params: params) }
     func openProfile(id: Data) throws -> Data {
         try bridge.openProfile(profileId: id, passwordOverride: nil)
@@ -389,6 +392,12 @@ enum CatalogRefreshState: Equatable {
     case failed(message: String)
 }
 
+struct ProfileSection: Identifiable {
+    let id: String
+    let title: String
+    let profiles: [BridgeProfileItem]
+}
+
 private func catalogNodeKey(_ id: Data) -> String {
     "node:" + id.map { String(format: "%02x", $0) }.joined()
 }
@@ -417,6 +426,26 @@ final class BridgeModel {
     var status: String = "starting…"
     var bridgeError: String?
     var profiles: [BridgeProfileItem] = []
+    var profileSearch = ""
+    private(set) var profilesLoading = false
+    private(set) var profilesError: String?
+    private var profileSearchGeneration: UInt64 = 0
+    var profileSections: [ProfileSection] {
+        var order: [String] = []
+        var grouped: [String: [BridgeProfileItem]] = [:]
+        for profile in profiles {
+            let group = profile.group ?? ""
+            if grouped[group] == nil { order.append(group) }
+            grouped[group, default: []].append(profile)
+        }
+        return order.map { group in
+            ProfileSection(
+                id: group.isEmpty ? "ungrouped" : group,
+                title: group.isEmpty ? "Ungrouped" : group,
+                profiles: grouped[group] ?? []
+            )
+        }
+    }
     var sessionHex: String?
     var connectError: String?
     var connectingName: String?
@@ -502,15 +531,24 @@ final class BridgeModel {
 
     func refreshProfiles() async {
         guard let client else { return }
+        profileSearchGeneration &+= 1
+        let generation = profileSearchGeneration
+        profilesLoading = true
+        profilesError = nil
         do {
-            profiles = try await client.listProfiles()
+            let search = profileSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+            let loaded = try await client.searchProfiles(search.isEmpty ? nil : search)
+            guard generation == profileSearchGeneration else { return }
+            profiles = loaded
             status = profiles.isEmpty
                 ? "Bridge ready · no saved profiles"
                 : "Bridge ready · \(profiles.count) profile\(profiles.count == 1 ? "" : "s")"
         } catch {
-            bridgeError = "List profiles failed: \(error)"
+            guard generation == profileSearchGeneration else { return }
+            profilesError = "List profiles failed: \(error)"
             status = "error"
         }
+        if generation == profileSearchGeneration { profilesLoading = false }
     }
 
     /// Connect directly from form params (temporary session, no saved profile).
@@ -702,18 +740,44 @@ struct ContentView: View {
         @Bindable var model = model
         NavigationSplitView {
             VStack(spacing: 0) {
-                List(model.profiles, id: \.name) { profile in
-                    Button { Task { await model.connect(profile) } } label: {
-                        ProfileRow(profile: profile)
+                List {
+                    ForEach(model.profileSections) { section in
+                        Section(section.title) {
+                            ForEach(section.profiles, id: \.idBytes) { profile in
+                                Button { Task { await model.connect(profile) } } label: {
+                                    ProfileRow(
+                                        profile: profile,
+                                        connectionState: model.connectingName == profile.name
+                                            ? "Connecting" : "Disconnected"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
-                    .buttonStyle(.plain)
+                }
+                .searchable(text: $model.profileSearch, prompt: "Search connections")
+                .task(id: model.profileSearch) {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    await model.refreshProfiles()
                 }
                 .overlay {
-                    if model.profiles.isEmpty && model.sessionHex == nil {
+                    if model.profilesLoading {
+                        ProgressView("Loading connections…")
+                    } else if let profilesError = model.profilesError {
                         ContentUnavailableView(
-                            model.bridgeError == nil ? "No profiles" : "Error",
-                            systemImage: model.bridgeError == nil ? "tray" : "exclamationmark.triangle",
-                            description: Text(model.bridgeError ?? "Use the connection form to begin.")
+                            "Connections failed",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text(profilesError)
+                        )
+                    } else if model.profiles.isEmpty && model.sessionHex == nil {
+                        ContentUnavailableView(
+                            model.profileSearch.isEmpty ? "No connections" : "No matches",
+                            systemImage: model.profileSearch.isEmpty ? "tray" : "magnifyingglass",
+                            description: Text(model.profileSearch.isEmpty
+                                ? "Create or use a temporary connection."
+                                : "No saved connection matches this search.")
                         )
                     }
                 }
@@ -1363,6 +1427,7 @@ struct SqlTextEditor: NSViewRepresentable {
 
 struct ProfileRow: View {
     let profile: BridgeProfileItem
+    let connectionState: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -1371,11 +1436,34 @@ struct ProfileRow: View {
                     Image(systemName: "star.fill").foregroundStyle(.yellow).font(.caption)
                 }
                 Text(profile.name).font(.body)
+                if profile.productionWarning {
+                    Label("Production", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
-            Text([profile.engine, profile.group].compactMap { $0 }.joined(separator: " · "))
+            Text([
+                profile.engine,
+                [
+                    [profile.host, profile.port].compactMap { $0 }.joined(separator: ":"),
+                    profile.context,
+                ].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "/"),
+                profile.environment,
+                profile.safetyMode == "read_only" ? "Read only" : "Confirm writes",
+            ].compactMap { value in value?.isEmpty == false ? value : nil }.joined(separator: " · "))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Text(connectionState)
+                if profile.dangerousPlaintext {
+                    Label("Plaintext password", systemImage: "exclamationmark.shield")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(profile.dangerousPlaintext
+                ? Color.orange : Color(nsColor: .tertiaryLabelColor))
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
     }
 }

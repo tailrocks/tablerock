@@ -693,6 +693,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func revokeReviewToken(tokenId: Data) throws  -> Bool
     
     /**
+     * Rust-owned normalized profile search across name, endpoint, database, and group.
+     */
+    func searchProfiles(search: String?) throws  -> [BridgeProfileItem]
+    
+    /**
      * Graceful or cancel-active shutdown. `deadline_ms` reserved for future hard caps.
      */
     func shutdown(cancelActive: Bool, deadlineMs: UInt64) throws  -> ShutdownOutcome
@@ -986,6 +991,19 @@ open func revokeReviewToken(tokenId: Data)throws  -> Bool  {
     uniffi_tablerock_ffi_fn_method_tablerockbridge_revoke_review_token(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(tokenId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Rust-owned normalized profile search across name, endpoint, database, and group.
+     */
+open func searchProfiles(search: String?)throws  -> [BridgeProfileItem]  {
+    return try  FfiConverterSequenceTypeBridgeProfileItem.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_search_profiles(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(search),uniffiCallStatus
     )
 })
 }
@@ -1384,18 +1402,32 @@ public struct BridgeProfileItem: Equatable, Hashable {
     public var engine: String
     public var group: String?
     public var favorite: Bool
+    public var host: String?
+    public var port: String?
+    public var context: String?
+    public var safetyMode: String
+    public var environment: String?
+    public var productionWarning: Bool
+    public var dangerousPlaintext: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
          * 16-byte ProfileId (same form `open_profile` accepts).
-         */idBytes: Data, name: String, engine: String, group: String?, favorite: Bool) {
+         */idBytes: Data, name: String, engine: String, group: String?, favorite: Bool, host: String?, port: String?, context: String?, safetyMode: String, environment: String?, productionWarning: Bool, dangerousPlaintext: Bool) {
         self.idBytes = idBytes
         self.name = name
         self.engine = engine
         self.group = group
         self.favorite = favorite
+        self.host = host
+        self.port = port
+        self.context = context
+        self.safetyMode = safetyMode
+        self.environment = environment
+        self.productionWarning = productionWarning
+        self.dangerousPlaintext = dangerousPlaintext
     }
 
     
@@ -1418,7 +1450,14 @@ public struct FfiConverterTypeBridgeProfileItem: FfiConverterRustBuffer {
                 name: FfiConverterString.read(from: &buf), 
                 engine: FfiConverterString.read(from: &buf), 
                 group: FfiConverterOptionString.read(from: &buf), 
-                favorite: FfiConverterBool.read(from: &buf)
+                favorite: FfiConverterBool.read(from: &buf), 
+                host: FfiConverterOptionString.read(from: &buf), 
+                port: FfiConverterOptionString.read(from: &buf), 
+                context: FfiConverterOptionString.read(from: &buf), 
+                safetyMode: FfiConverterString.read(from: &buf), 
+                environment: FfiConverterOptionString.read(from: &buf), 
+                productionWarning: FfiConverterBool.read(from: &buf), 
+                dangerousPlaintext: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -1428,6 +1467,13 @@ public struct FfiConverterTypeBridgeProfileItem: FfiConverterRustBuffer {
         FfiConverterString.write(value.engine, into: &buf)
         FfiConverterOptionString.write(value.group, into: &buf)
         FfiConverterBool.write(value.favorite, into: &buf)
+        FfiConverterOptionString.write(value.host, into: &buf)
+        FfiConverterOptionString.write(value.port, into: &buf)
+        FfiConverterOptionString.write(value.context, into: &buf)
+        FfiConverterString.write(value.safetyMode, into: &buf)
+        FfiConverterOptionString.write(value.environment, into: &buf)
+        FfiConverterBool.write(value.productionWarning, into: &buf)
+        FfiConverterBool.write(value.dangerousPlaintext, into: &buf)
     }
 }
 
@@ -2145,6 +2191,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_review_token() != 712) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_search_profiles() != 41691) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_shutdown() != 28522) {

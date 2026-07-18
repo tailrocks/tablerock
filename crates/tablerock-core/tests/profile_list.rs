@@ -27,6 +27,7 @@ fn item(low: u64) -> ProfileListItem {
         ProfileEndpointSummary::new(
             ProfileEndpointPart::literal_host(text("private.internal")).unwrap(),
             ProfileEndpointPart::secret_source(),
+            None,
         ),
         ProfileSourceFacts::new(true, true),
     )

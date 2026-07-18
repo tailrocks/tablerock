@@ -260,6 +260,11 @@ impl ProfileEndpointPart {
         Ok(Self::Literal(value))
     }
 
+    pub fn literal_context(value: BoundedText) -> Result<Self, ProfilePropertyError> {
+        ProfilePropertyBinding::literal(ProfileProperty::DefaultContext, value.clone())?;
+        Ok(Self::Literal(value))
+    }
+
     #[must_use]
     pub const fn secret_source() -> Self {
         Self::SecretSource
@@ -286,12 +291,21 @@ impl ProfileEndpointPart {
 pub struct ProfileEndpointSummary {
     host: ProfileEndpointPart,
     port: ProfileEndpointPart,
+    context: Option<ProfileEndpointPart>,
 }
 
 impl ProfileEndpointSummary {
     #[must_use]
-    pub const fn new(host: ProfileEndpointPart, port: ProfileEndpointPart) -> Self {
-        Self { host, port }
+    pub const fn new(
+        host: ProfileEndpointPart,
+        port: ProfileEndpointPart,
+        context: Option<ProfileEndpointPart>,
+    ) -> Self {
+        Self {
+            host,
+            port,
+            context,
+        }
     }
 
     #[must_use]
@@ -302,6 +316,11 @@ impl ProfileEndpointSummary {
     #[must_use]
     pub const fn port(&self) -> &ProfileEndpointPart {
         &self.port
+    }
+
+    #[must_use]
+    pub const fn context(&self) -> Option<&ProfileEndpointPart> {
+        self.context.as_ref()
     }
 }
 

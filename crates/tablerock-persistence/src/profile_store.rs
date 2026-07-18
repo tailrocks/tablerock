@@ -483,6 +483,10 @@ async fn list_transaction(
          WHERE p.profile_id = saved_profiles.profile_id AND property = 2), \
         (SELECT text_value FROM saved_profile_properties p \
          WHERE p.profile_id = saved_profiles.profile_id AND property = 2 AND source_kind = 1), \
+        (SELECT source_kind FROM saved_profile_properties p \
+         WHERE p.profile_id = saved_profiles.profile_id AND property = 3), \
+        (SELECT text_value FROM saved_profile_properties p \
+         WHERE p.profile_id = saved_profiles.profile_id AND property = 3 AND source_kind = 1), \
         EXISTS(SELECT 1 FROM saved_profile_properties p \
                WHERE p.profile_id = saved_profiles.profile_id AND source_kind > 1), \
         EXISTS(SELECT 1 FROM saved_profile_properties p \
@@ -491,11 +495,7 @@ async fn list_transaction(
     let projection = if search.is_some() {
         format!(
             "{PROJECTION}, (SELECT group_concat(tag, char(31)) FROM saved_profile_tags search_tag \
-             WHERE search_tag.profile_id = saved_profiles.profile_id), \
-             (SELECT text_value FROM saved_profile_properties p \
-              WHERE p.profile_id = saved_profiles.profile_id AND property = 1 AND source_kind = 1), \
-             (SELECT text_value FROM saved_profile_properties p \
-              WHERE p.profile_id = saved_profiles.profile_id AND property = 3 AND source_kind = 1) "
+             WHERE search_tag.profile_id = saved_profiles.profile_id) "
         )
     } else {
         format!("{PROJECTION} ")
@@ -574,18 +574,20 @@ async fn list_transaction(
         let item = decode_list_item(&row)?;
         let matches = if let Some(search) = search {
             let tags = decode_search_tags(&row)?;
-            let host_literal = get::<Option<String>>(&row, 17)?;
-            let context_literal = get::<Option<String>>(&row, 18)?;
             search.matches(item.name().as_str())
                 || item
                     .group()
                     .is_some_and(|group| search.matches(group.as_str()))
                 || tags.iter().any(|tag| search.matches(tag.as_str()))
-                || host_literal
-                    .as_deref()
+                || item
+                    .endpoint()
+                    .host()
+                    .literal_value()
                     .is_some_and(|host| search.matches(host))
-                || context_literal
-                    .as_deref()
+                || item
+                    .endpoint()
+                    .context()
+                    .and_then(ProfileEndpointPart::literal_value)
                     .is_some_and(|context| search.matches(context))
         } else {
             true
@@ -601,7 +603,7 @@ async fn list_transaction(
 }
 
 fn decode_search_tags(row: &turso::Row) -> Result<Vec<ProfileTag>, PersistenceError> {
-    let Some(tags) = get::<Option<String>>(row, 16)? else {
+    let Some(tags) = get::<Option<String>>(row, 18)? else {
         return Ok(Vec::new());
     };
     let mut decoded = Vec::new();
@@ -628,12 +630,25 @@ fn decode_endpoint_part(
             match property {
                 ProfileProperty::Host => ProfileEndpointPart::literal_host(value),
                 ProfileProperty::Port => ProfileEndpointPart::literal_port(value),
+                ProfileProperty::DefaultContext => ProfileEndpointPart::literal_context(value),
                 _ => return Err(PersistenceError::ProfileDecode),
             }
             .map_err(|_| PersistenceError::ProfileDecode)
         }
         (PropertyValueSource::SecretSource, None) => Ok(ProfileEndpointPart::secret_source()),
         _ => Err(PersistenceError::ProfileDecode),
+    }
+}
+
+fn decode_optional_endpoint_part(
+    property: ProfileProperty,
+    source_kind: Option<u8>,
+    literal: Option<String>,
+) -> Result<Option<ProfileEndpointPart>, PersistenceError> {
+    match source_kind {
+        Some(source_kind) => decode_endpoint_part(property, source_kind, literal).map(Some),
+        None if literal.is_none() => Ok(None),
+        None => Err(PersistenceError::ProfileDecode),
     }
 }
 
@@ -674,10 +689,15 @@ fn decode_list_item(row: &turso::Row) -> Result<ProfileListItem, PersistenceErro
             get::<u8>(row, 12)?,
             get::<Option<String>>(row, 13)?,
         )?,
+        decode_optional_endpoint_part(
+            ProfileProperty::DefaultContext,
+            get::<Option<u8>>(row, 14)?,
+            get::<Option<String>>(row, 15)?,
+        )?,
     );
     let sources = ProfileSourceFacts::new(
-        decode_bool(get::<u8>(row, 14)?)?,
-        decode_bool(get::<u8>(row, 15)?)?,
+        decode_bool(get::<u8>(row, 16)?)?,
+        decode_bool(get::<u8>(row, 17)?)?,
     );
     Ok(ProfileListItem::new(
         id,

@@ -10,7 +10,7 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-19): Plan 020/Phase 13 exit verified; screen parity audit started**
+- **IN PROGRESS (2026-07-19): Plan 020/Phase 13 exit verified; native connection grouping/search and complete target projection landed (evidence 512); actions/editor/group management remain**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

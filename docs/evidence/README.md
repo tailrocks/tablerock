@@ -386,6 +386,7 @@ How to read an evidence document:
 - 509 — [Plan 020 page-decode retained-object proof](delivery/509-plan-020-page-decode-leak-proof.md)
 - 510 — [Plan 020 AppKit accessibility runtime tracer](delivery/510-plan-020-appkit-accessibility-runtime.md)
 - 511 — [Plan 020 typed lazy catalog and Phase 13 exit](delivery/511-plan-020-typed-lazy-catalog-exit.md)
+- 512 — [Plan 021 native connection organization and search](delivery/512-plan-021-native-connection-organization.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

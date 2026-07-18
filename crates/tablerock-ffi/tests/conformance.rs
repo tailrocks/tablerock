@@ -568,6 +568,26 @@ fn open_profile_requires_persistence_and_loads_literals() {
     bridge
         .configure_persistence(path.to_string_lossy().into_owned())
         .unwrap();
+    let listed = bridge.list_profiles().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].name, "bridge-test");
+    assert_eq!(listed[0].group.as_deref(), Some("g"));
+    assert_eq!(listed[0].host.as_deref(), Some("127.0.0.1"));
+    assert_eq!(listed[0].port.as_deref(), Some("1"));
+    assert_eq!(listed[0].context.as_deref(), Some("postgres"));
+    assert_eq!(
+        bridge
+            .search_profiles(Some("POSTGRES".into()))
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        bridge
+            .search_profiles(Some("missing".into()))
+            .unwrap()
+            .is_empty()
+    );
     // Port 1 is unreachable — proves load+connect path without a live server.
     let err = bridge
         .open_profile(profile_id.to_bytes().to_vec(), None)

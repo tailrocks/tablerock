@@ -9,12 +9,12 @@ use std::{
 use tablerock_core::{
     BoundedText, ByteLimit, CatalogChildrenState, CatalogNode, CatalogNodeId, CatalogNodeKind,
     ClickHouseObjectKind, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
-    CommandScope, Engine, FieldValue, MutationChange, MutationPlan, MutationPlanLimits,
-    MutationReviewRegistry, MutationTarget, OperationId, OperationOutcome, OperationScope,
-    OwnedValue, PageIdentity, PageKey, PageRequest, PostgreSqlObjectKind, ProfileId,
-    ProfileListFilter, ProfileListRequest, ProfileProperty, RedisKeyKind, ResultStore,
-    ResultStoreLimits, Revision, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
-    StatementText,
+    CommandScope, Engine, EnvironmentTag, FieldValue, MutationChange, MutationPlan,
+    MutationPlanLimits, MutationReviewRegistry, MutationTarget, OperationId, OperationOutcome,
+    OperationScope, OwnedValue, PageIdentity, PageKey, PageRequest, PostgreSqlObjectKind,
+    ProfileEndpointPart, ProfileId, ProfileListFilter, ProfileListRequest, ProfileProperty,
+    ProfileSafetyMode, ProfileSearchTerm, RedisKeyKind, ResultStore, ResultStoreLimits, Revision,
+    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText,
 };
 use tablerock_engine::{
     CatalogRequest, ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery,
@@ -179,6 +179,13 @@ pub struct BridgeProfileItem {
     pub engine: String,
     pub group: Option<String>,
     pub favorite: bool,
+    pub host: Option<String>,
+    pub port: Option<String>,
+    pub context: Option<String>,
+    pub safety_mode: String,
+    pub environment: Option<String>,
+    pub production_warning: bool,
+    pub dangerous_plaintext: bool,
 }
 
 /// Process-scoped UniFFI facade. One instance owns the multi-thread runtime.
@@ -227,7 +234,15 @@ impl TableRockBridge {
     /// Lists saved profiles (all engines) for the native connection screen.
     /// Requires `configure_persistence` first.
     pub fn list_profiles(&self) -> Result<Vec<BridgeProfileItem>, BridgeError> {
-        catch_entry(|| self.list_profiles_inner())
+        catch_entry(|| self.list_profiles_inner(None))
+    }
+
+    /// Rust-owned normalized profile search across name, endpoint, database, and group.
+    pub fn search_profiles(
+        &self,
+        search: Option<String>,
+    ) -> Result<Vec<BridgeProfileItem>, BridgeError> {
+        catch_entry(|| self.list_profiles_inner(search))
     }
 
     /// Load one typed catalog level. `parent_node_id` is an opaque id previously
@@ -709,7 +724,10 @@ impl TableRockBridge {
         self.open_inner(params)
     }
 
-    fn list_profiles_inner(&self) -> Result<Vec<BridgeProfileItem>, BridgeError> {
+    fn list_profiles_inner(
+        &self,
+        search: Option<String>,
+    ) -> Result<Vec<BridgeProfileItem>, BridgeError> {
         let guard = self
             .inner
             .lock()
@@ -719,7 +737,19 @@ impl TableRockBridge {
             .persistence
             .as_ref()
             .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
-        let request = ProfileListRequest::new(ProfileListFilter::new(None, None), None, 100)
+        let search = search
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| {
+                ProfileSearchTerm::new(
+                    BoundedText::copy_from_str(&value, ByteLimit::new(256)).map_err(|error| {
+                        BridgeError::rejected("profile-search", error.to_string())
+                    })?,
+                )
+                .map_err(|error| BridgeError::rejected("profile-search", error.to_string()))
+            })
+            .transpose()?;
+        let filter = ProfileListFilter::new(None, None).with_search(search);
+        let request = ProfileListRequest::new(filter, None, 100)
             .map_err(|error| BridgeError::rejected("profile-list-request", error.to_string()))?;
         let page = actor
             .list_profiles(request)
@@ -733,6 +763,23 @@ impl TableRockBridge {
                 engine: engine_label(item.engine()).to_owned(),
                 group: item.group().map(|g| g.as_str().to_owned()),
                 favorite: item.favorite(),
+                host: item.endpoint().host().literal_value().map(str::to_owned),
+                port: item.endpoint().port().literal_value().map(str::to_owned),
+                context: item
+                    .endpoint()
+                    .context()
+                    .and_then(ProfileEndpointPart::literal_value)
+                    .map(str::to_owned),
+                safety_mode: match item.safety_mode() {
+                    ProfileSafetyMode::ReadOnly => "read_only",
+                    ProfileSafetyMode::ConfirmWrites => "confirm_writes",
+                }
+                .to_owned(),
+                environment: item.environment().map(environment_label),
+                production_warning: item
+                    .environment()
+                    .is_some_and(EnvironmentTag::is_production_warning),
+                dangerous_plaintext: item.sources().has_dangerous_plaintext(),
             })
             .collect())
     }
@@ -1427,6 +1474,16 @@ impl TableRockBridge {
 fn bounded_catalog_name(name: &str) -> Result<BoundedText, BridgeError> {
     BoundedText::copy_from_str(name, ByteLimit::new(1_024))
         .map_err(|error| BridgeError::rejected("catalog-name", error.to_string()))
+}
+
+fn environment_label(environment: &EnvironmentTag) -> String {
+    match environment {
+        EnvironmentTag::Production => "Production".into(),
+        EnvironmentTag::Staging => "Staging".into(),
+        EnvironmentTag::Development => "Development".into(),
+        EnvironmentTag::Testing => "Testing".into(),
+        EnvironmentTag::Custom(_) => environment.custom_label().unwrap_or("Custom").to_owned(),
+    }
 }
 
 #[derive(Clone, Copy)]
