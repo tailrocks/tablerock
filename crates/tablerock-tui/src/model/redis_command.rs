@@ -284,4 +284,17 @@ mod tests {
             assert!(!s.label().contains("transaction"));
         }
     }
+
+    #[test]
+    fn classify_empty_and_case_insensitive() {
+        // Empty argv classifies as Empty.
+        assert_eq!(classify_command(""), RedisCommandSafety::Empty);
+        // Classification is case-insensitive (Redis commands are).
+        assert_eq!(classify_command("get"), RedisCommandSafety::ReadOnly);
+        assert_eq!(
+            classify_command("blpop"),
+            RedisCommandSafety::BlockingDenied
+        );
+        assert_eq!(classify_command("Keys"), RedisCommandSafety::MayWrite);
+    }
 }
