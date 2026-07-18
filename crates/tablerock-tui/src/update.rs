@@ -4057,6 +4057,18 @@ fn activate_selected_action(model: &mut Model) -> Update {
             Update::unchanged()
         }
         ActionId::EditInsert if model.screen() == Screen::Workbench => open_edit_insert(model),
+        ActionId::DiscardLastInsert if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.drafts.discard_last_insert() {
+                    let empty = grid.drafts.is_empty();
+                    if empty {
+                        model.workbench_mut().mark_active_dirty(false);
+                    }
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::ShowStaged if model.screen() == Screen::Workbench => {
             let text = model
                 .workbench()
@@ -4664,6 +4676,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::InsertRow
         | ActionId::DuplicateRow
         | ActionId::EditInsert
+        | ActionId::DiscardLastInsert
         | ActionId::ShowStaged
         | ActionId::CopyStaged
         | ActionId::ShowNotices
@@ -6220,6 +6233,7 @@ fn cycle_action(
                 ActionId::InsertRow,
                 ActionId::DuplicateRow,
                 ActionId::EditInsert,
+                ActionId::DiscardLastInsert,
                 ActionId::ShowStaged,
                 ActionId::CopyStaged,
                 ActionId::ShowNotices,

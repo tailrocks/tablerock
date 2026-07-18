@@ -192,6 +192,23 @@ impl MutationDraftModel {
         self.inserts.last()
     }
 
+    /// Discard only the last staged insert. Returns true if one was removed.
+    pub fn discard_last_insert(&mut self) -> bool {
+        if !self.staging_allowed || self.inserts.is_empty() {
+            return false;
+        }
+        let removed = self.inserts.pop();
+        // Drop matching undo entry if it is the tip Insert for this draft.
+        if let Some(ins) = removed.as_ref() {
+            if let Some(UndoEntry::Insert(top)) = self.undo.last() {
+                if top.draft_id == ins.draft_id {
+                    self.undo.pop();
+                }
+            }
+        }
+        removed.is_some()
+    }
+
     pub fn stage_delete(&mut self, delete: StagedDelete) -> bool {
         if !self.staging_allowed {
             return false;
@@ -482,6 +499,27 @@ mod tests {
         assert_eq!(last.values[0].1, "1");
         assert_eq!(last.values[1].1, "ada");
         assert!(!draft.replace_insert_values(99, vec![("x".into(), "y".into())]));
+    }
+
+    #[test]
+    fn discard_last_insert_only() {
+        let mut draft = MutationDraftModel::new();
+        draft.apply_editability(&editable());
+        draft
+            .stage_insert(vec![("id".into(), "1".into())])
+            .unwrap();
+        draft
+            .stage_insert(vec![("id".into(), "2".into())])
+            .unwrap();
+        assert!(draft.stage_cell_edit(cell(0, "name", "a", "b")));
+        assert!(draft.discard_last_insert());
+        assert_eq!(draft.inserts.len(), 1);
+        assert_eq!(draft.inserts[0].values[0].1, "1");
+        assert_eq!(draft.cell_edits.len(), 1);
+        assert!(draft.discard_last_insert());
+        assert!(draft.inserts.is_empty());
+        assert!(!draft.discard_last_insert());
+        assert_eq!(draft.cell_edits.len(), 1);
     }
 
     #[test]

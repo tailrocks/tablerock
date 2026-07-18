@@ -231,6 +231,8 @@ pub enum ActionId {
     DuplicateRow,
     /// Edit values of the last staged insert (`col=value` lines).
     EditInsert,
+    /// Discard only the last staged insert draft.
+    DiscardLastInsert,
     /// Open inspector listing all staged drafts for the active grid.
     ShowStaged,
     /// Copy staged draft inventory text to clipboard.
