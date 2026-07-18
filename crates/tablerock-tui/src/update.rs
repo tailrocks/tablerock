@@ -490,11 +490,35 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                         grid.recompute_editability(safety, false);
                     }
                 }
+                // EXPLAIN result: open plan tree inspector from first-column lines.
+                let explain_plan = if start_row == 0
+                    && columns
+                        .iter()
+                        .any(|c| c.eq_ignore_ascii_case("QUERY PLAN") || c.eq_ignore_ascii_case("explain"))
+                {
+                    let col_count = columns.len().max(1);
+                    let mut lines = Vec::new();
+                    for (i, cell) in cells.iter().enumerate() {
+                        if i % col_count == 0 {
+                            lines.push(cell.text.clone());
+                        }
+                    }
+                    Some(lines.join("\n"))
+                } else {
+                    None
+                };
                 grid.replace_page(
                     start_row, columns, cells, row_count, totals, bytes, truncated,
                 );
                 if complete {
                     grid.mark_completed();
+                }
+                if let Some(plan) = explain_plan {
+                    model.workbench_mut().inspector =
+                        crate::model::inspector::InspectorModel::from_explain_text(
+                            "explain",
+                            &plan,
+                        );
                 }
             }
             let selected = model.workbench().selected_tab;
