@@ -3871,6 +3871,23 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyGridWindow if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let text = grid.window_summary();
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied grid window ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyStatus if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -7075,6 +7092,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyColumnIdent
         | ActionId::CopyColumn
         | ActionId::CopyStatus
+        | ActionId::CopyGridWindow
         | ActionId::CopyQueryId
         | ActionId::CopyServerProgress
         | ActionId::CopyResultToken
@@ -8936,6 +8954,7 @@ fn cycle_action(
                 ActionId::CopyColumnIdent,
                 ActionId::CopyColumn,
                 ActionId::CopyStatus,
+                ActionId::CopyGridWindow,
                 ActionId::CopyQueryId,
                 ActionId::CopyServerProgress,
                 ActionId::CopyResultToken,
@@ -10828,6 +10847,21 @@ mod tests {
                 assert!(text.contains("42") || text.contains("rows"), "{text}");
             }
             other => panic!("expected CopyToClipboard, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.start_row = 100;
+            grid.row_count = 50;
+            grid.totals = GridRowTotal::Exact(1000);
+        }
+        model.set_action(ActionId::CopyGridWindow);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("start=100"), "{text}");
+                assert!(text.contains("end=149"), "{text}");
+                assert!(text.contains("resident=50"), "{text}");
+                assert!(text.contains("total 1000"), "{text}");
+            }
+            other => panic!("expected grid window, got {other:?}"),
         }
     }
 

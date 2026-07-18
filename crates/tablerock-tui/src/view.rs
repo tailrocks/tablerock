@@ -760,6 +760,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_col_ident = action_label(model, ActionId::CopyColumnIdent, "CopyColQ");
     let copy_col = action_label(model, ActionId::CopyColumn, "CopyCol");
     let copy_status = action_label(model, ActionId::CopyStatus, "CopyStat");
+    let copy_window = action_label(model, ActionId::CopyGridWindow, "CopyWin");
     let copy_qid = action_label(model, ActionId::CopyQueryId, "CopyQid");
     let copy_progress = action_label(model, ActionId::CopyServerProgress, "CopyProg");
     let copy_result_tok = action_label(model, ActionId::CopyResultToken, "CopyTok");
@@ -1818,6 +1819,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyStatus,
                         label: copy_status.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyGridWindow,
+                        label: copy_window.as_str(),
                         enabled: true,
                         style: None,
                     },

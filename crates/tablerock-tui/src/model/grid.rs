@@ -1108,6 +1108,24 @@ impl DataGridModel {
         )
     }
 
+    /// Compact resident window facts for clipboard (start, length, end, totals).
+    #[must_use]
+    pub fn window_summary(&self) -> String {
+        let end = if self.row_count == 0 {
+            self.start_row
+        } else {
+            self.start_row
+                .saturating_add(u64::from(self.row_count.saturating_sub(1)))
+        };
+        format!(
+            "window start={} end={} resident={} totals={}",
+            self.start_row,
+            end,
+            self.row_count,
+            self.totals.label()
+        )
+    }
+
     /// SQL WHERE fragment from typed filter chips + raw WHERE (presentation aid).
     ///
     /// Values are single-quoted with `'` doubled. Null operators emit IS NULL /
@@ -2978,6 +2996,23 @@ mod tests {
         assert!(!grid.is_resident(11));
         assert_eq!(grid.cell_at(10, 0).text, "1");
         assert_eq!(grid.cell_at(11, 0).distinction, CellDistinction::Pending);
+    }
+
+    #[test]
+    fn window_summary_reports_resident_bounds() {
+        let mut g = DataGridModel::default();
+        g.start_row = 200;
+        g.row_count = 25;
+        g.totals = GridRowTotal::Estimated(5000);
+        let s = g.window_summary();
+        assert!(s.contains("start=200"), "{s}");
+        assert!(s.contains("end=224"), "{s}");
+        assert!(s.contains("resident=25"), "{s}");
+        assert!(s.contains("~5000"), "{s}");
+        g.row_count = 0;
+        let empty = g.window_summary();
+        assert!(empty.contains("end=200"), "{empty}");
+        assert!(empty.contains("resident=0"), "{empty}");
     }
 
     #[test]
