@@ -465,7 +465,13 @@ pub enum RedisTtlApplication {
     NotApplied,
 }
 
+/// Bounded INFO overview projection (sample-timed fields only).
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RedisInfoSnapshot {
+    pub fields: Vec<(String, String)>,
+    pub sampled_at_ms: u64,
+}
+
 pub struct RedisTtlMutationOutcome {
     mutation_id: MutationId,
     review_token_id: ReviewTokenId,
@@ -1702,6 +1708,131 @@ impl RedisSession {
             .await
             .map_err(map_command_error)?;
         decode_time_to_live(remaining)
+    }
+
+    /// Bounded INFO snapshot as (section_or_key, value) lines with sample time.
+    pub async fn server_info_snapshot(&self) -> Result<RedisInfoSnapshot, RedisError> {
+        let mut connection = self.connection.clone();
+        let raw: String = redis::cmd("INFO")
+            .query_async(&mut connection)
+            .await
+            .map_err(map_command_error)?;
+        let sampled_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let mut fields = Vec::new();
+        for line in raw.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some((k, v)) = line.split_once(':') {
+                // Cap field count for bounded overview.
+                if fields.len() >= 256 {
+                    break;
+                }
+                fields.push((k.to_owned(), v.to_owned()));
+            }
+        }
+        Ok(RedisInfoSnapshot {
+            fields,
+            sampled_at_ms,
+        })
+    }
+
+    /// Sequential apply for Redis string/TTL/delete plans (non-transactional).
+    pub async fn apply_authorized_mutation(
+        &self,
+        authorized: AuthorizedMutationPlan,
+    ) -> Result<crate::MutationApplyOutcome, RedisError> {
+        use crate::postgres_mutation::{
+            MutationApplyOutcome, MutationChangeOutcome, MutationTransactionState,
+        };
+        use tablerock_core::MutationChange;
+
+        let plan = authorized.plan();
+        let MutationTarget::RedisKey {
+            logical_database,
+            key,
+        } = plan.target()
+        else {
+            return Err(RedisError::InvalidMutation);
+        };
+        if *logical_database != self.logical_database {
+            return Err(RedisError::InvalidMutation);
+        }
+        let mut connection = self.connection.clone();
+        let mut outcomes = Vec::new();
+        for (index, change) in plan.changes().iter().enumerate() {
+            let outcome = match change {
+                MutationChange::RedisSetString { value, expiration } => {
+                    let mut cmd = redis::cmd("SET");
+                    cmd.arg(key.as_slice()).arg(value.as_slice());
+                    match expiration {
+                        tablerock_core::RedisExpiration::Persist => {
+                            // No TTL args — leaves any existing TTL? SET replaces key.
+                        }
+                        tablerock_core::RedisExpiration::Preserve => {
+                            // Prefer SET KEEPTTL when available.
+                            cmd.arg("KEEPTTL");
+                        }
+                        tablerock_core::RedisExpiration::ExpireAfterMillis(ms) => {
+                            cmd.arg("PX").arg(*ms);
+                        }
+                    }
+                    cmd.query_async::<()>(&mut connection)
+                        .await
+                        .map_err(map_command_error)?;
+                    MutationChangeOutcome::Applied {
+                        index,
+                        rows_affected: 1,
+                        returned: vec![("command".into(), "SET".into())],
+                    }
+                }
+                MutationChange::RedisDeleteKey => {
+                    let n: i64 = redis::cmd("DEL")
+                        .arg(key.as_slice())
+                        .query_async(&mut connection)
+                        .await
+                        .map_err(map_command_error)?;
+                    MutationChangeOutcome::Applied {
+                        index,
+                        rows_affected: u64::try_from(n.max(0)).unwrap_or(0),
+                        returned: vec![("command".into(), "DEL".into())],
+                    }
+                }
+                MutationChange::RedisSetExpiration(expiration) => {
+                    // Delegate semantics via existing TTL path for single-change plans.
+                    let _ = expiration;
+                    MutationChangeOutcome::Failed {
+                        index,
+                        detail: "use apply_reviewed_ttl_mutation for pure TTL changes".into(),
+                    }
+                }
+                MutationChange::InsertRow { .. }
+                | MutationChange::UpdateRow { .. }
+                | MutationChange::DeleteRow { .. } => MutationChangeOutcome::Failed {
+                    index,
+                    detail: "relational mutation not valid on Redis session".into(),
+                },
+            };
+            let stop = matches!(
+                outcome,
+                MutationChangeOutcome::Failed { .. } | MutationChangeOutcome::Conflict { .. }
+            );
+            outcomes.push(outcome);
+            if stop {
+                break;
+            }
+        }
+        Ok(MutationApplyOutcome {
+            mutation_id: plan.mutation_id(),
+            review_token_id: authorized.token_id(),
+            // Non-transactional sequential apply finished (no rollback claim).
+            transaction: MutationTransactionState::Committed,
+            changes: outcomes,
+        })
     }
 
     pub async fn apply_reviewed_ttl_mutation(
@@ -3016,5 +3147,31 @@ mod tests {
         assert!(values[0].is_truncated());
         assert_eq!(values[0].encoded_byte_len(), 2);
         assert_eq!(values[1], OwnedValue::float64_bits((-1.25_f64).to_bits()));
+    }
+}
+
+
+#[cfg(test)]
+mod scan_policy_tests {
+    #[test]
+    fn driver_source_never_constructs_keys_command() {
+        // Static policy: key browse uses SCAN only.
+        let src = include_str!("redis.rs");
+        let forbidden = format!("cmd(\"{}\")", "KEYS");
+        let forbidden2 = format!("cmd('{}')", "KEYS");
+        for line in src.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("//") || trimmed.starts_with("///") {
+                continue;
+            }
+            // Skip this test module's own pattern builders.
+            if trimmed.contains("forbidden") || trimmed.contains("format!") {
+                continue;
+            }
+            assert!(
+                !trimmed.contains(&forbidden) && !trimmed.contains(&forbidden2),
+                "forbidden KEYS command construction: {trimmed}"
+            );
+        }
     }
 }

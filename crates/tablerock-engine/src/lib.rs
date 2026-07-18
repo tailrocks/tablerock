@@ -44,9 +44,10 @@ pub use postgres_mutation::{
 pub use redis::{
     RedisBlockingPopStream, RedisCancelDispatch, RedisClientIdentity, RedisCollectionScanKind,
     RedisCollectionScanOptions, RedisCollectionStream, RedisConnectConfig, RedisConnectionSecurity,
-    RedisCredentials, RedisError, RedisKeyStream, RedisProtocol, RedisRuntimePolicy, RedisSession,
-    RedisSubscriptionKind, RedisSubscriptionOptions, RedisSubscriptionStream, RedisTlsMaterial,
-    RedisTlsMode, RedisTtlApplication, RedisTtlMutationOutcome,
+    RedisCredentials, RedisError, RedisInfoSnapshot, RedisKeyStream, RedisProtocol,
+    RedisRuntimePolicy, RedisSession, RedisSubscriptionKind, RedisSubscriptionOptions,
+    RedisSubscriptionStream, RedisTlsMaterial, RedisTlsMode, RedisTtlApplication,
+    RedisTtlMutationOutcome,
 };
 pub use runtime::{
     DriverOperationEvent, DriverOperationEvents, DriverRuntime, DriverRuntimeError,

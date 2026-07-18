@@ -31,7 +31,7 @@ plan).
 | 012 | Grid controls: server sort, filter bar, columns, copy formats | P1 | L | 009 | DONE |
 | 013 | PostgreSQL writes: staged edits, review, apply, admin (Phase 6) | P1 | L | 011, 012 | DONE |
 | 014 | ClickHouse complete slice (Phase 7) | P2 | L | 011, 012 | DONE |
-| 015 | Redis complete slice (Phase 8) | P2 | L | 007, 011, 013 | TODO |
+| 015 | Redis complete slice (Phase 8) | P2 | L | 007, 011, 013 | IN PROGRESS |
 | 016 | Daily workflows + data movement (Phase 9) | P2 | L | 013, 014, 015 | TODO |
 | 017 | Scoped parity expansion: SSH, pg_dump, DDL, roles, Vim (Phase 10) | P2 | L | 016 | TODO |
 | 018 | TUI hardening + parity release gate (Phase 11) | P2 | L | 017 | TODO |

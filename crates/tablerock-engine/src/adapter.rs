@@ -634,13 +634,12 @@ impl DriverSession for RedisSession {
 
     fn apply_authorized_mutation<'a>(
         &'a self,
-        _authorized: AuthorizedMutationPlan,
+        authorized: AuthorizedMutationPlan,
     ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
-        Box::pin(async {
-            Err(AdapterError::new(
-                Engine::Redis,
-                AdapterFailureClass::EngineMismatch,
-            ))
+        Box::pin(async move {
+            RedisSession::apply_authorized_mutation(self, authorized)
+                .await
+                .map_err(map_redis)
         })
     }
 

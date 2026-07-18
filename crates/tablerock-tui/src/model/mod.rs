@@ -9,6 +9,7 @@ pub mod history;
 pub mod inspector;
 pub mod mutation_draft;
 pub mod mutation_plan_build;
+pub mod redis_namespace;
 pub mod profiles;
 pub mod query_editor;
 pub mod saved_query;
