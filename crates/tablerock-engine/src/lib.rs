@@ -5,6 +5,7 @@ mod clickhouse;
 mod postgres;
 mod redis;
 mod runtime;
+mod secret_resolution;
 mod service;
 mod session_pool;
 mod temporal;
@@ -33,6 +34,10 @@ pub use redis::{
 pub use runtime::{
     DriverOperationEvent, DriverOperationEvents, DriverRuntime, DriverRuntimeError,
     DriverSpawnError, DriverTaskExit, RuntimeCancelOutcome, RuntimeStopOutcome,
+};
+pub use secret_resolution::{
+    ResolvedSecret, SecretPromptPort, SecretResolutionError, SecretSourceKindLabel,
+    resolve_for_connect,
 };
 pub use service::{
     EngineCancelOutcome, EngineService, EngineServiceError, EngineServiceUpdate,

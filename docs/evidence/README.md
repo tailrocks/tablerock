@@ -80,6 +80,7 @@ How to read an evidence document:
 - 76 — [Phase 2 normalized profile search evidence](phase-2/profiles/76-phase-2-normalized-profile-search.md)
 - 77 — [Phase 2 profile endpoint summary evidence](phase-2/profiles/77-phase-2-profile-endpoint-summary.md)
 - 196 — [Phase 2 environment tag](phase-2/profiles/196-phase-2-environment-tag.md)
+- 197 — [Phase 2 profile groups, host search, and secret resolution](phase-2/profiles/197-phase-2-profile-groups-search-secrets.md)
 
 ## Phase 2 — persistence
 

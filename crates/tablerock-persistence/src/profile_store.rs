@@ -451,7 +451,11 @@ async fn list_transaction(
     let projection = if search.is_some() {
         format!(
             "{PROJECTION}, (SELECT group_concat(tag, char(31)) FROM saved_profile_tags search_tag \
-             WHERE search_tag.profile_id = saved_profiles.profile_id) "
+             WHERE search_tag.profile_id = saved_profiles.profile_id), \
+             (SELECT text_value FROM saved_profile_properties p \
+              WHERE p.profile_id = saved_profiles.profile_id AND property = 1 AND source_kind = 1), \
+             (SELECT text_value FROM saved_profile_properties p \
+              WHERE p.profile_id = saved_profiles.profile_id AND property = 3 AND source_kind = 1) "
         )
     } else {
         format!("{PROJECTION} ")
@@ -530,11 +534,19 @@ async fn list_transaction(
         let item = decode_list_item(&row)?;
         let matches = if let Some(search) = search {
             let tags = decode_search_tags(&row)?;
+            let host_literal = get::<Option<String>>(&row, 17)?;
+            let context_literal = get::<Option<String>>(&row, 18)?;
             search.matches(item.name().as_str())
                 || item
                     .group()
                     .is_some_and(|group| search.matches(group.as_str()))
                 || tags.iter().any(|tag| search.matches(tag.as_str()))
+                || host_literal
+                    .as_deref()
+                    .is_some_and(|host| search.matches(host))
+                || context_literal
+                    .as_deref()
+                    .is_some_and(|context| search.matches(context))
         } else {
             true
         };
@@ -1133,6 +1145,82 @@ const fn encode_property(property: ProfileProperty) -> u8 {
     }
 }
 
+pub(crate) async fn rename_group(
+    connection: &mut turso::Connection,
+    old_name: &str,
+    new_name: &str,
+) -> Result<u32, PersistenceError> {
+    if old_name.is_empty() || new_name.is_empty() {
+        return Err(PersistenceError::ProfileWrite);
+    }
+    let transaction = connection
+        .transaction()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    let changed = transaction
+        .execute(
+            "UPDATE saved_profiles SET group_name = ?1, updated_at = CURRENT_TIMESTAMP \
+             WHERE group_name = ?2",
+            (new_name, old_name),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    transaction
+        .commit()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    Ok(u32::try_from(changed).unwrap_or(u32::MAX))
+}
+
+pub(crate) async fn delete_group(
+    connection: &mut turso::Connection,
+    name: &str,
+) -> Result<u32, PersistenceError> {
+    if name.is_empty() {
+        return Err(PersistenceError::ProfileWrite);
+    }
+    let transaction = connection
+        .transaction()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    let changed = transaction
+        .execute(
+            "UPDATE saved_profiles SET group_name = NULL, updated_at = CURRENT_TIMESTAMP \
+             WHERE group_name = ?1",
+            (name,),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    transaction
+        .commit()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    Ok(u32::try_from(changed).unwrap_or(u32::MAX))
+}
+
+pub(crate) async fn list_groups(
+    connection: &turso::Connection,
+) -> Result<Vec<String>, PersistenceError> {
+    let mut rows = connection
+        .query(
+            "SELECT DISTINCT group_name FROM saved_profiles \
+             WHERE group_name IS NOT NULL ORDER BY group_name",
+            (),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?;
+    let mut groups = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?
+    {
+        if let Some(name) = get::<Option<String>>(&row, 0)? {
+            groups.push(name);
+        }
+    }
+    Ok(groups)
+}
 #[cfg(test)]
 mod tests {
     use super::*;

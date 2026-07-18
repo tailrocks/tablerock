@@ -147,6 +147,33 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
+    pub fn rename_group(&self, old_name: &str, new_name: &str) -> Result<u32, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::RenameGroup(old_name.to_owned(), new_name.to_owned(), sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn delete_group(&self, name: &str) -> Result<u32, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::DeleteGroup(name.to_owned(), sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn list_groups(&self) -> Result<Vec<String>, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::ListGroups(sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
     pub fn shutdown(mut self) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::Shutdown(sender))?;
@@ -205,6 +232,13 @@ enum Command {
         ProfileListRequest,
         mpsc::SyncSender<Result<ProfileListPage, PersistenceError>>,
     ),
+    RenameGroup(
+        String,
+        String,
+        mpsc::SyncSender<Result<u32, PersistenceError>>,
+    ),
+    DeleteGroup(String, mpsc::SyncSender<Result<u32, PersistenceError>>),
+    ListGroups(mpsc::SyncSender<Result<Vec<String>, PersistenceError>>),
     Shutdown(mpsc::SyncSender<Result<(), PersistenceError>>),
 }
 
@@ -299,6 +333,36 @@ fn worker_main(
                     )
                     .await
                     .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::RenameGroup(old_name, new_name, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::rename_group(&mut connection, &old_name, &new_name),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::DeleteGroup(name, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::delete_group(&mut connection, &name),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::ListGroups(reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(OPERATION_TIMEOUT, profile_store::list_groups(&connection))
+                        .await
+                        .map_err(|_| PersistenceError::Timeout)?
                 });
                 let _ = reply.send(result);
             }
