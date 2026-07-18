@@ -80,6 +80,10 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 Update::render()
             }
         }
+        Message::Paste(text) if model.screen() == Screen::Editor => {
+            apply_editor_text(model, text.text());
+            Update::render()
+        }
         Message::Paste(_) => Update::unchanged(),
         Message::PointerHovered(target) | Message::PointerDragged(target) => {
             if model.hovered() == target {
@@ -222,6 +226,10 @@ pub fn update(model: &mut Model, message: Message) -> Update {
         Message::Activate if model.focus() == Some(FocusRegion::Actions) => {
             activate_selected_action(model)
         }
+        Message::Activate if model.screen() == Screen::Editor => {
+            model.editor_mut().focus_next();
+            Update::render()
+        }
         Message::Activate => Update::unchanged(),
         Message::RequestRedraw => Update::render(),
         Message::Quit => Update::with_effect(Effect::Exit),
@@ -319,6 +327,44 @@ fn connection_draft_from_editor(
             TlsModeChoice::VerifyFull => TlsModeSpec::VerifyFull,
         },
         plaintext_acknowledged: editor.plaintext_acknowledged,
+    }
+}
+
+fn apply_editor_text(model: &mut Model, text: &str) {
+    use crate::model::editor::EditorField;
+    let editor = model.editor_mut();
+    match editor.focused {
+        EditorField::Engine => editor.cycle_engine(),
+        EditorField::Name => editor.name.push_str(text),
+        EditorField::Group => editor.group.push_str(text),
+        EditorField::Environment => editor.environment.push_str(text),
+        EditorField::Host => editor.host.push_str(text),
+        EditorField::Port => editor.port.push_str(text),
+        EditorField::Database => editor.database.push_str(text),
+        EditorField::Username => editor.username.push_str(text),
+        EditorField::PasswordSource => {
+            editor.password_source = match editor.password_source {
+                crate::model::editor::PasswordSourceChoice::PromptOnConnect => {
+                    crate::model::editor::PasswordSourceChoice::DangerousPlaintext
+                }
+                crate::model::editor::PasswordSourceChoice::DangerousPlaintext => {
+                    crate::model::editor::PasswordSourceChoice::PromptOnConnect
+                }
+            };
+        }
+        EditorField::TlsMode => {
+            editor.tls_mode = match editor.tls_mode {
+                crate::model::editor::TlsModeChoice::Off => {
+                    crate::model::editor::TlsModeChoice::VerifyCa
+                }
+                crate::model::editor::TlsModeChoice::VerifyCa => {
+                    crate::model::editor::TlsModeChoice::VerifyFull
+                }
+                crate::model::editor::TlsModeChoice::VerifyFull => {
+                    crate::model::editor::TlsModeChoice::Off
+                }
+            };
+        }
     }
 }
 
