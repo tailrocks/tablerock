@@ -295,6 +295,8 @@ mod tests {
             classify_command("blpop"),
             RedisCommandSafety::BlockingDenied
         );
-        assert_eq!(classify_command("Keys"), RedisCommandSafety::MayWrite);
+        // KEYS is a read operation in the command classifier (the auto-browse
+        // SCAN-only rule is enforced in the browse path, not here).
+        assert_eq!(classify_command("Keys"), RedisCommandSafety::ReadOnly);
     }
 }
