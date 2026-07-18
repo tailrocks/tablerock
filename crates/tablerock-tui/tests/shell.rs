@@ -284,7 +284,7 @@ fn resize_storm_last_geometry_wins_and_renders() {
     for _ in 0..32 {
         for &(width, height) in sizes {
             let out = update(&mut model, Message::Resize { width, height });
-            assert!(out.render, "every resize must request paint");
+            assert!(out.needs_render(), "every resize must request paint");
         }
     }
     // Last size in the loop is (50, 18).
