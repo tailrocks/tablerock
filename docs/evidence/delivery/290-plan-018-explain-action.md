@@ -20,4 +20,5 @@ cargo test -p tablerock-tui explain
 
 ## Residual
 
-- Structured plan parsers / tree view (still open for full plan UX)
+- Text tree projection: evidence 302
+- Full structured JSON plan parsers per engine: optional polish

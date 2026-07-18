@@ -87,9 +87,33 @@ impl InspectorModel {
         if self.stale {
             out.push("stale: yes".into());
         }
-        out.push(format!("text: {}", self.text));
+        if self.kind_label == "explain" || looks_like_explain_plan(&self.text) {
+            out.push("plan:".into());
+            for line in explain_tree_lines(&self.text) {
+                out.push(line);
+            }
+        } else {
+            out.push(format!("text: {}", self.text));
+        }
         out.push(format!("hex: {}", self.hex));
         out
+    }
+
+    /// Build inspector from EXPLAIN result text (multi-line plan).
+    #[must_use]
+    pub fn from_explain_text(title: impl Into<String>, plan_text: &str) -> Self {
+        Self {
+            open: true,
+            title: title.into(),
+            kind_label: "explain".into(),
+            text: plan_text.to_owned(),
+            hex: String::new(),
+            byte_len: plan_text.len() as u64,
+            original_byte_len: None,
+            stale: false,
+            structure_schema: None,
+            structure_table: None,
+        }
     }
 }
 
@@ -140,6 +164,53 @@ mod tests {
     fn pretty_structured_invalid_falls_back() {
         assert_eq!(pretty_structured("not-json"), "not-json");
     }
+
+    #[test]
+    fn explain_tree_uses_indent_glyphs() {
+        let plan = "Seq Scan on t  (cost=0.00..1.00 rows=1)\n  Filter: (id = 1)\n  ->  Index Scan on t_pkey";
+        let lines = explain_tree_lines(plan);
+        assert!(lines.iter().any(|l| l.contains("Seq Scan")));
+        assert!(lines.iter().any(|l| l.contains("│") || l.contains("└") || l.contains("  ")));
+        let insp = InspectorModel::from_explain_text("explain", plan);
+        let joined = insp.lines().join("\n");
+        assert!(joined.contains("plan:"));
+        assert!(joined.contains("Seq Scan"));
+    }
+}
+
+fn looks_like_explain_plan(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("seq scan")
+        || lower.contains("index scan")
+        || lower.contains("cost=")
+        || lower.contains("hash join")
+        || lower.contains("nested loop")
+}
+
+/// Project PostgreSQL-style EXPLAIN FORMAT TEXT into tree-ish lines.
+fn explain_tree_lines(plan: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for raw in plan.lines() {
+        if raw.trim().is_empty() {
+            continue;
+        }
+        // Count leading spaces (2-space indent convention).
+        let indent = raw.chars().take_while(|c| *c == ' ').count() / 2;
+        let body = raw.trim_start();
+        let mut prefix = String::new();
+        for i in 0..indent {
+            if i + 1 == indent {
+                prefix.push_str("└─ ");
+            } else {
+                prefix.push_str("│  ");
+            }
+        }
+        out.push(format!("{prefix}{body}"));
+    }
+    if out.is_empty() {
+        out.push(plan.to_owned());
+    }
+    out
 }
 
 /// Indent JSON-like structured text for inspector readability (best-effort).
