@@ -2818,3 +2818,108 @@ async fn lists_catalog_logical_databases() {
     ));
     let _ = REDIS_DEFAULT_LOGICAL_DATABASES;
 }
+
+#[tokio::test]
+async fn key_type_list_stream_and_info_snapshot() {
+    use tablerock_core::{BoundedBytes, ByteLimit, RedisKeyKind};
+    use tablerock_engine::{RedisConnectConfig, RedisConnectionSecurity, RedisProtocol, RedisTlsMode};
+
+    let container = GenericImage::new("redis", "8.8.0")
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let session = RedisSession::connect(
+        &RedisConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            0,
+            RedisProtocol::Resp3,
+            RedisTlsMode::Disable,
+        ),
+        RedisConnectionSecurity::new(),
+    )
+    .await
+    .unwrap();
+
+    // Seed fixture via separate redis-rs connection.
+    let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+    let mut con = client.get_multiplexed_async_connection().await.unwrap();
+    let _: () = redis::cmd("SET")
+        .arg(b"s")
+        .arg(b"hello")
+        .query_async(&mut con)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("LPUSH")
+        .arg(b"l")
+        .arg(b"a")
+        .arg(b"b")
+        .query_async(&mut con)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("XADD")
+        .arg(b"st")
+        .arg("*")
+        .arg(b"f")
+        .arg(b"v")
+        .query_async(&mut con)
+        .await
+        .unwrap();
+
+    let key = |s: &[u8]| BoundedBytes::copy_from_slice(s, ByteLimit::new(64)).unwrap();
+    assert_eq!(
+        session.key_type(&key(b"s")).await.unwrap(),
+        RedisKeyKind::String
+    );
+    assert_eq!(
+        session.key_type(&key(b"l")).await.unwrap(),
+        RedisKeyKind::List
+    );
+    assert_eq!(
+        session.key_type(&key(b"st")).await.unwrap(),
+        RedisKeyKind::Stream
+    );
+
+    let list = session
+        .list_range(&key(b"l"), 0, -1, 16, 64)
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 2);
+
+    let stream = session
+        .stream_range(&key(b"st"), "-", "+", 8, 64)
+        .await
+        .unwrap();
+    assert_eq!(stream.len(), 1);
+    assert!(!stream[0].id.is_empty());
+    assert!(!stream[0].fields.is_empty());
+
+    let info = session.server_info_snapshot().await.unwrap();
+    assert!(info.sampled_at_ms > 0);
+    assert!(
+        info.fields
+            .iter()
+            .any(|(k, _)| k == "redis_version" || k == "uptime_in_seconds"),
+        "{:?}",
+        info.fields.iter().take(10).collect::<Vec<_>>()
+    );
+
+    // Blocking commands denied on shared session.
+    assert!(matches!(
+        session
+            .execute_command_argv("BLPOP", &[b"k".to_vec(), b"0".to_vec()])
+            .await,
+        Err(tablerock_engine::RedisError::InvalidMutation)
+    ));
+    let pong = session.execute_command_argv("PING", &[]).await.unwrap();
+    let ok = match &pong {
+        redis::Value::SimpleString(s) => s.eq_ignore_ascii_case("pong"),
+        redis::Value::BulkString(b) => b.eq_ignore_ascii_case(b"PONG"),
+        redis::Value::Okay => true,
+        _ => false,
+    };
+    assert!(ok, "unexpected PING reply: {pong:?}");
+}

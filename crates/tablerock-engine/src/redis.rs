@@ -472,6 +472,15 @@ pub struct RedisInfoSnapshot {
     pub sampled_at_ms: u64,
 }
 
+/// One stream entry for read-only stream key views.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RedisStreamEntry {
+    pub id: String,
+    /// Flattened field/value pairs as bounded display strings (even length).
+    pub fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RedisTtlMutationOutcome {
     mutation_id: MutationId,
     review_token_id: ReviewTokenId,
@@ -1710,6 +1719,117 @@ impl RedisSession {
         decode_time_to_live(remaining)
     }
 
+    /// Redis TYPE for a key → catalog-aligned kind.
+    pub async fn key_type(
+        &self,
+        key: &BoundedBytes,
+    ) -> Result<tablerock_core::RedisKeyKind, RedisError> {
+        let mut connection = self.connection.clone();
+        let kind: String = redis::cmd("TYPE")
+            .arg(key.as_slice())
+            .query_async(&mut connection)
+            .await
+            .map_err(map_command_error)?;
+        Ok(match kind.as_str() {
+            "string" => tablerock_core::RedisKeyKind::String,
+            "hash" => tablerock_core::RedisKeyKind::Hash,
+            "list" => tablerock_core::RedisKeyKind::List,
+            "set" => tablerock_core::RedisKeyKind::Set,
+            "zset" => tablerock_core::RedisKeyKind::SortedSet,
+            "stream" => tablerock_core::RedisKeyKind::Stream,
+            "none" => tablerock_core::RedisKeyKind::Unknown,
+            _ => tablerock_core::RedisKeyKind::Unknown,
+        })
+    }
+
+    /// Bounded LRANGE for list key views (`start`/`stop` inclusive, Redis rules).
+    pub async fn list_range(
+        &self,
+        key: &BoundedBytes,
+        start: i64,
+        stop: i64,
+        max_entries: u32,
+        max_cell_bytes: u64,
+    ) -> Result<Vec<OwnedValue>, RedisError> {
+        if max_entries == 0 || max_cell_bytes == 0 {
+            return Err(RedisError::InvalidLimits);
+        }
+        let mut connection = self.connection.clone();
+        let values: Vec<Vec<u8>> = redis::cmd("LRANGE")
+            .arg(key.as_slice())
+            .arg(start)
+            .arg(stop)
+            .query_async(&mut connection)
+            .await
+            .map_err(map_command_error)?;
+        let mut out = Vec::new();
+        for value in values.into_iter().take(max_entries as usize) {
+            out.push(bounded_binary(&value, max_cell_bytes)?);
+        }
+        Ok(out)
+    }
+
+    /// Bounded XRANGE for stream read-only views.
+    ///
+    /// Returns (id, field_value_pairs_as_flat_bytes_display) rows. Field values
+    /// are truncated per `max_cell_bytes`.
+    pub async fn stream_range(
+        &self,
+        key: &BoundedBytes,
+        start_id: &str,
+        end_id: &str,
+        count: u32,
+        max_cell_bytes: u64,
+    ) -> Result<Vec<RedisStreamEntry>, RedisError> {
+        if count == 0 || max_cell_bytes == 0 || start_id.is_empty() || end_id.is_empty() {
+            return Err(RedisError::InvalidLimits);
+        }
+        let mut connection = self.connection.clone();
+        // XRANGE key start end COUNT n
+        let raw: redis::Value = redis::cmd("XRANGE")
+            .arg(key.as_slice())
+            .arg(start_id)
+            .arg(end_id)
+            .arg("COUNT")
+            .arg(count)
+            .query_async(&mut connection)
+            .await
+            .map_err(map_command_error)?;
+        decode_stream_entries(raw, max_cell_bytes)
+    }
+
+    /// Dispatch a pre-tokenized command. Blocking names are rejected here.
+    ///
+    /// `name` must already be uppercased. Unknown names are allowed (writes).
+    /// The caller (TUI command classifier) must deny KEYS for browse; this path
+    /// still accepts KEYS as a deliberate operator command (not auto-browse).
+    pub async fn execute_command_argv(
+        &self,
+        name: &str,
+        args: &[Vec<u8>],
+    ) -> Result<redis::Value, RedisError> {
+        if name.is_empty() {
+            return Err(RedisError::InvalidLimits);
+        }
+        let upper = name.to_ascii_uppercase();
+        // Shared-session deny list (matches TUI BlockingDenied).
+        const BLOCKING: &[&str] = &[
+            "BLPOP", "BRPOP", "BRPOPLPUSH", "BLMOVE", "BZPOPMIN", "BZPOPMAX", "BZMPOP",
+            "BLMPOP", "XREAD", "XREADGROUP",
+        ];
+        if BLOCKING.contains(&upper.as_str()) {
+            return Err(RedisError::InvalidMutation);
+        }
+        let mut connection = self.connection.clone();
+        let mut cmd = redis::cmd(&upper);
+        for arg in args {
+            cmd.arg(arg.as_slice());
+        }
+        cmd.query_async(&mut connection)
+            .await
+            .map_err(map_command_error)
+    }
+
     /// Bounded INFO snapshot as (section_or_key, value) lines with sample time.
     pub async fn server_info_snapshot(&self) -> Result<RedisInfoSnapshot, RedisError> {
         let mut connection = self.connection.clone();
@@ -2630,6 +2750,76 @@ fn bounded_binary(value: &[u8], limit: u64) -> Result<OwnedValue, RedisError> {
         }
     };
     OwnedValue::binary(bytes, truncation).map_err(|_| RedisError::Protocol)
+}
+
+fn decode_stream_entries(
+    raw: redis::Value,
+    max_cell_bytes: u64,
+) -> Result<Vec<RedisStreamEntry>, RedisError> {
+    let entries = match raw {
+        redis::Value::Array(items) | redis::Value::Set(items) => items,
+        redis::Value::Nil => return Ok(Vec::new()),
+        _ => return Err(RedisError::Protocol),
+    };
+    let mut out = Vec::new();
+    for entry in entries {
+        let redis::Value::Array(parts) = entry else {
+            return Err(RedisError::Protocol);
+        };
+        if parts.len() < 2 {
+            return Err(RedisError::Protocol);
+        }
+        let id = value_as_utf8_lossy(&parts[0]);
+        let mut fields = Vec::new();
+        match &parts[1] {
+            redis::Value::Array(f) | redis::Value::Set(f) => {
+                for item in f {
+                    fields.push(value_as_utf8_lossy_bounded(item, max_cell_bytes));
+                }
+            }
+            redis::Value::Map(pairs) => {
+                for (k, v) in pairs {
+                    fields.push(value_as_utf8_lossy(k));
+                    fields.push(value_as_utf8_lossy_bounded(v, max_cell_bytes));
+                }
+            }
+            _ => return Err(RedisError::Protocol),
+        }
+        out.push(RedisStreamEntry { id, fields });
+    }
+    Ok(out)
+}
+
+fn value_as_utf8_lossy(value: &redis::Value) -> String {
+    match value {
+        redis::Value::BulkString(b) => String::from_utf8_lossy(b).into_owned(),
+        redis::Value::SimpleString(s) | redis::Value::VerbatimString { text: s, .. } => s.clone(),
+        redis::Value::Int(n) => n.to_string(),
+        redis::Value::Nil => "∅".into(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn value_as_utf8_lossy_bounded(value: &redis::Value, max_cell_bytes: u64) -> String {
+    match value {
+        redis::Value::BulkString(b) => {
+            let n = b.len().min(max_cell_bytes as usize);
+            let mut s = String::from_utf8_lossy(&b[..n]).into_owned();
+            if b.len() > n {
+                s.push('…');
+            }
+            s
+        }
+        redis::Value::SimpleString(s) | redis::Value::VerbatimString { text: s, .. } => {
+            let n = s.len().min(max_cell_bytes as usize);
+            let mut out = s.chars().take(n).collect::<String>();
+            if s.len() > n {
+                out.push('…');
+            }
+            out
+        }
+        other => value_as_utf8_lossy(other),
+    }
 }
 
 fn bounded_subscription_message(

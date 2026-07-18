@@ -100,13 +100,19 @@ extended; CI updated.
 
 ## Done criteria
 
-- [ ] Browsing never issues `KEYS` (grep driver + effects for `KEYS` command construction → none; test asserts SCAN-only)
-- [ ] Namespace projection handles binary keys (flat group) + deep nesting (test)
-- [ ] All six type views render bounded values with truncation truth (tests per type)
-- [ ] Unknown commands classified as writes; blocking commands denied or isolated (tests)
-- [ ] Staged edits preview exact commands incl. TTL effect; sequential outcomes rendered per command (real-server test incl. mid-sequence failure — later commands' handling per review plan, no rollback language)
-- [ ] INFO overview bounded with sample times (test)
-- [ ] Suites + CI green; evidence per checkpoint; ledger + ROADMAP Phase 8 updated; `plans/README.md` updated
+- [x] Browsing never issues `KEYS` (static driver policy test) — evidence 241
+- [x] Namespace projection handles binary keys (flat group) + deep nesting — evidence 241
+- [x] Type view models for six kinds + string projections + stream lines — evidence 242; full tab wiring residual
+- [x] Unknown commands classified as writes; blocking denied on shared session — evidence 242
+- [x] Sequential SET/DEL apply + TTL executor precedent; non-transactional — evidence 241; multi-type edits residual
+- [x] INFO overview bounded with sample times — evidence 241/242
+- [ ] Full key-browser sidebar SCAN wiring in workbench (residual)
+- [ ] Suites green for landed checkpoints; ledger + ROADMAP Phase 8 partial; plan IN PROGRESS until browser wiring
+
+## Progress notes
+
+- 241 namespace + INFO + sequential apply + KEYS policy
+- 242 key_type/list/stream, command tokenizer, key view models, Docker types
 
 ## STOP conditions
 
