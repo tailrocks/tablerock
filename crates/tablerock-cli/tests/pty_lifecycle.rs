@@ -1,7 +1,7 @@
 use std::{
     io::{Read, Write},
     process::Command,
-    sync::{Mutex, mpsc},
+    sync::mpsc,
     thread,
     time::{Duration, Instant},
 };
@@ -146,19 +146,9 @@ fn high_rate_mouse_and_resize_do_not_starve_terminal_quit() {
     assert_restored(&output);
 }
 
-/// Serializes PTY lifecycle tests (see `run_pty`).
-static PTY_LOCK: Mutex<()> = Mutex::new(());
-
 fn run_pty(
     action: impl FnOnce(&mut dyn Write, u32, &dyn MasterPty) -> std::io::Result<()>,
 ) -> Vec<u8> {
-    // PTY lifecycle tests spawn the real binary in a PTY; serialize them so the
-    // default concurrent test harness does not run them in parallel (which
-    // starves the spawned children on loaded shared runners and causes timeouts
-    // + broken-pipe races). Each test still drives its own PTY; only concurrency
-    // is removed.
-    let _serial_guard = PTY_LOCK.lock().expect("PTY serialization lock");
-
     let pair = native_pty_system()
         .openpty(PtySize {
             rows: 24,
