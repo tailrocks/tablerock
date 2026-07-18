@@ -213,6 +213,27 @@ impl TableRockBridge {
         catch_entry(|| self.list_profiles_inner())
     }
 
+    /// Stage a probe mutation + register a single-use review token for the
+    /// native edit-safety demo. Returns the token id for `authorize_review_token`
+    /// / `apply_review_token`. Wraps the conformance staging seam with sensible
+    /// defaults (60 s expiry, `public.users`, locator 1).
+    pub fn stage_probe_review(
+        &self,
+        session_id: Vec<u8>,
+        now_ms: u64,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| {
+            self.insert_reviewed_probe_inner(
+                session_id,
+                now_ms,
+                now_ms + 60_000,
+                now_ms,
+                "users".into(),
+                1,
+            )
+        })
+    }
+
     /// Submits a command and returns a 16-byte operation id.
     pub fn submit(&self, spec: SubmitSpec) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| self.submit_inner(spec))

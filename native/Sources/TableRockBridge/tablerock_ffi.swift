@@ -692,6 +692,14 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func shutdown(cancelActive: Bool, deadlineMs: UInt64) throws  -> ShutdownOutcome
     
     /**
+     * Stage a probe mutation + register a single-use review token for the
+     * native edit-safety demo. Returns the token id for `authorize_review_token`
+     * / `apply_review_token`. Wraps the conformance staging seam with sensible
+     * defaults (60 s expiry, `public.users`, locator 1).
+     */
+    func stageProbeReview(sessionId: Data, nowMs: UInt64) throws  -> Data
+    
+    /**
      * Submits a command and returns a 16-byte operation id.
      */
     func submit(spec: SubmitSpec) throws  -> Data
@@ -971,6 +979,23 @@ open func shutdown(cancelActive: Bool, deadlineMs: UInt64)throws  -> ShutdownOut
             self.uniffiCloneHandle(),
         FfiConverterBool.lower(cancelActive),
         FfiConverterUInt64.lower(deadlineMs),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Stage a probe mutation + register a single-use review token for the
+     * native edit-safety demo. Returns the token id for `authorize_review_token`
+     * / `apply_review_token`. Wraps the conformance staging seam with sensible
+     * defaults (60 s expiry, `public.users`, locator 1).
+     */
+open func stageProbeReview(sessionId: Data, nowMs: UInt64)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_stage_probe_review(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterUInt64.lower(nowMs),uniffiCallStatus
     )
 })
 }
@@ -1997,6 +2022,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_shutdown() != 28522) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_probe_review() != 53434) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit() != 59509) {

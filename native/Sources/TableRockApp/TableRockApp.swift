@@ -38,6 +38,8 @@ final class BridgeModel: ObservableObject {
     @Published var catalogError: String?
     @Published var catalogTable: PageV1Table?
     @Published var queryText: String = "SELECT 1;"
+    @Published var reviewOutcome: String?
+    @Published var reviewError: String?
     var bridge: TableRockBridge?
     var sessionData: Data?
 
@@ -164,6 +166,28 @@ final class BridgeModel: ObservableObject {
             catalogError = "Query failed: \(error)"
         }
     }
+
+    /// Stage a probe mutation, authorize it, and apply it through the single-use
+    /// review-token safety gate. Demonstrates the edit/review flow.
+    func applyProbeEdit() {
+        guard let bridge, let session = sessionData else { return }
+        reviewOutcome = nil
+        reviewError = nil
+        do {
+            let now = UInt64(Date().timeIntervalSince1970 * 1000)
+            let token = try bridge.stageProbeReview(sessionId: session, nowMs: now)
+            _ = try bridge.authorizeReviewToken(
+                tokenId: token, nowMs: now, sessionId: session, expectedRevision: 0
+            )
+            let outcome = try bridge.applyReviewToken(
+                tokenId: token, nowMs: now, sessionId: session, expectedRevision: 0
+            )
+            reviewOutcome =
+                "\(outcome.transaction) · \(outcome.appliedCount) applied · \(outcome.conflictCount) conflict · \(outcome.failedCount) failed"
+        } catch {
+            reviewError = "Review/apply failed: \(error)"
+        }
+    }
 }
 
 struct ContentView: View {
@@ -227,6 +251,13 @@ struct ContentView: View {
                                 .buttonStyle(.borderedProminent)
                                 .keyboardShortcut("r", modifiers: .command)
                             Button("Refresh catalog") { model.browse() }
+                            Button("Apply probe edit") { model.applyProbeEdit() }
+                        }
+                        if let reviewOutcome = model.reviewOutcome {
+                            Text(reviewOutcome).foregroundStyle(.green).font(.callout)
+                        }
+                        if let reviewError = model.reviewError {
+                            Text(reviewError).foregroundStyle(.red).font(.callout).textSelection(.enabled)
                         }
                     }
                 }
