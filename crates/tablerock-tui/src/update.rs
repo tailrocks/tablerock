@@ -6013,6 +6013,28 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyStagedStatus if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let text = grid.drafts.status_suffix();
+            if text.is_empty() {
+                return Update::unchanged();
+            }
+            // status_suffix is prefixed with " · "; trim for clipboard.
+            let text = text.trim_start_matches([' ', '·']).trim().to_owned();
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied staged status ({})", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::ToggleBool if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if let Some(edit) = grid.cell_edit.as_mut() {
@@ -7047,6 +7069,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyCellEditBuffer
         | ActionId::CopyCellEditOriginal
         | ActionId::CopyCursorStagedDiff
+        | ActionId::CopyStagedStatus
         | ActionId::ToggleBool
         | ActionId::SetNull
         | ActionId::SetToday
@@ -8901,6 +8924,7 @@ fn cycle_action(
                 ActionId::CopyCellEditBuffer,
                 ActionId::CopyCellEditOriginal,
                 ActionId::CopyCursorStagedDiff,
+                ActionId::CopyStagedStatus,
                 ActionId::ToggleBool,
                 ActionId::SetNull,
                 ActionId::SetToday,
@@ -11020,6 +11044,64 @@ mod tests {
         }
         model.set_action(ActionId::CopyCursorStagedDiff);
         assert!(update(&mut model, Message::Activate).effects().next().is_none());
+    }
+
+    #[test]
+    fn copy_staged_status_action() {
+        use tablerock_core::ProfileSafetyMode;
+        use crate::model::mutation_draft::StagedCellEdit;
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into()];
+            grid.row_count = 1;
+            grid.cells = vec![
+                crate::model::grid::ProjectedCell {
+                    text: "1".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                },
+                crate::model::grid::ProjectedCell {
+                    text: "alice".into(),
+                    distinction: crate::model::grid::CellDistinction::Text,
+                    byte_len: 5,
+                    original_byte_len: None,
+                },
+            ];
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.identity_columns = vec!["id".into()];
+            grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyStagedStatus);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            assert!(grid.drafts.stage_cell_edit(StagedCellEdit {
+                abs_row: 0,
+                column: "name".into(),
+                original_text: "alice".into(),
+                staged_text: "bob".into(),
+                locator: vec![],
+            }));
+        }
+        model.set_action(ActionId::CopyStagedStatus);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("staged 1"), "{text}");
+                assert!(text.contains("1·") || text.contains("·"), "{text}");
+            }
+            other => panic!("expected staged status, got {other:?}"),
+        }
     }
 
     #[test]
