@@ -99,6 +99,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::DropTable { confirm_buffer, .. }
                     | ConfirmDialog::VacuumTable { confirm_buffer, .. }
                     | ConfirmDialog::AnalyzeTable { confirm_buffer, .. }
+                    | ConfirmDialog::OptimizeTable { confirm_buffer, .. }
                     | ConfirmDialog::DdlReview { confirm_buffer, .. }
                     | ConfirmDialog::RenameTable { confirm_buffer, .. }
                     | ConfirmDialog::CancelBackend { confirm_buffer, .. }
@@ -2179,6 +2180,36 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         }),
                     }
                 }
+                ConfirmDialog::OptimizeTable {
+                    schema,
+                    table,
+                    confirm_buffer,
+                } => {
+                    if confirm_buffer != table {
+                        return Update::render();
+                    }
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let token = model.mint_request_token();
+                    let context_revision = model.workbench().context_revision;
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::ExecuteTableOp {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            op: "optimize".into(),
+                            schema,
+                            table,
+                            new_table: String::new(),
+                        }),
+                    }
+                }
                 ConfirmDialog::DdlReview {
                     kind,
                     schema,
@@ -3528,6 +3559,23 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::OptimizeTable if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::OptimizeTable {
+                schema,
+                table,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::RenameTable if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -3870,6 +3918,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DropTable
         | ActionId::VacuumTable
         | ActionId::AnalyzeTable
+        | ActionId::OptimizeTable
         | ActionId::DdlAddColumn
         | ActionId::DdlCreateIndex
         | ActionId::DdlDropColumn
@@ -5069,6 +5118,7 @@ fn cycle_action(
                 ActionId::DropTable,
                 ActionId::VacuumTable,
                 ActionId::AnalyzeTable,
+                ActionId::OptimizeTable,
                 ActionId::DdlAddColumn,
                 ActionId::DdlCreateIndex,
                 ActionId::DdlDropColumn,
@@ -7712,6 +7762,48 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
         assert!(matches!(
             ok.effects().next(),
             Some(Effect::ExecuteTableOp { op, table, .. }) if op == "analyze" && table == "orders"
+        ));
+    }
+
+    #[test]
+    fn optimize_table_confirm_requires_exact_name() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "01".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "ClickHouse".into(),
+            status: None,
+        }));
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("default".into());
+            grid.base_table = Some("events".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::OptimizeTable);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::OptimizeTable { table, schema, .. })
+                if table == "events" && schema == "default"
+        ));
+        model.set_action(ActionId::Submit);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("events".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let ok = update(&mut model, Message::Activate);
+        assert!(matches!(
+            ok.effects().next(),
+            Some(Effect::ExecuteTableOp {
+                op,
+                table,
+                schema,
+                ..
+            }) if op == "optimize" && table == "events" && schema == "default"
         ));
     }
 

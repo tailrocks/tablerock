@@ -185,6 +185,16 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "ANALYZE {schema}.{table}. Paste table name '{table}' to confirm [{confirm_buffer}]"
             ),
         ),
+        crate::model::ConfirmDialog::OptimizeTable {
+            schema,
+            table,
+            confirm_buffer,
+        } => (
+            "Optimize table?",
+            format!(
+                "OPTIMIZE TABLE {schema}.{table}. Paste table name '{table}' to confirm [{confirm_buffer}]"
+            ),
+        ),
         crate::model::ConfirmDialog::CancelBackend { confirm_buffer, .. } => (
             "Cancel backend?",
             format!("Paste pid digits to pg_cancel_backend [{confirm_buffer}]"),
@@ -589,6 +599,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let drop_t = action_label(model, ActionId::DropTable, "Drop");
     let vacuum_t = action_label(model, ActionId::VacuumTable, "Vacuum");
     let analyze_t = action_label(model, ActionId::AnalyzeTable, "Analyze");
+    let optimize_t = action_label(model, ActionId::OptimizeTable, "Optimize");
     let rename_t = action_label(model, ActionId::RenameTable, "Rename");
     let ddl_add = action_label(model, ActionId::DdlAddColumn, "AddCol");
     let ddl_idx = action_label(model, ActionId::DdlCreateIndex, "AddIdx");
@@ -907,6 +918,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::AnalyzeTable,
                         label: analyze_t.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::OptimizeTable,
+                        label: optimize_t.as_str(),
                         enabled: true,
                         style: None,
                     },

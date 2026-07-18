@@ -264,7 +264,7 @@ pub enum Effect {
         request_token: RequestToken,
         session_id_hex: String,
         context_revision: u64,
-        /// "truncate" | "drop" | "rename" | "vacuum" | "analyze"
+        /// "truncate" | "drop" | "rename" | "vacuum" | "analyze" | "optimize"
         op: String,
         schema: String,
         table: String,

@@ -173,6 +173,7 @@ facts, progressive INSERT, async UPDATE/DELETE + `system.mutations` poll, KILL
 MUTATION destructive gate, multi-engine ExecuteSql (CH query_id + summary
 progress on status), four-state cancel UI, EXPLAIN raw/AST + editor tree.
 Custom CA/mTLS upstream-blocked on clickhouse-rs 0.15.1 (private HttpClient).
+OPTIMIZE TABLE exact-name gate (evidence 344).
 
 Deliver databases/objects/DDL, arbitrary dynamic query results through the
 official client, complex values, progress/query IDs, honest cancellation,

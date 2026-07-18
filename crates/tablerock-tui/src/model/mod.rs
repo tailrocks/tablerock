@@ -150,6 +150,8 @@ pub enum ActionId {
     VacuumTable,
     /// ANALYZE active base table (gated: re-type table name).
     AnalyzeTable,
+    /// ClickHouse OPTIMIZE TABLE (gated: re-type table name; schema = database).
+    OptimizeTable,
     /// Snapshot pg_stat_activity into the inspector.
     ShowActivity,
     /// Rename selected connection group (Connections tree).
@@ -256,6 +258,12 @@ pub enum ConfirmDialog {
     },
     /// Require exact table name re-type for ANALYZE (fail closed).
     AnalyzeTable {
+        schema: String,
+        table: String,
+        confirm_buffer: String,
+    },
+    /// Require exact table name re-type for ClickHouse OPTIMIZE (fail closed).
+    OptimizeTable {
         schema: String,
         table: String,
         confirm_buffer: String,

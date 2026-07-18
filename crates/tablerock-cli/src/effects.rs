@@ -3421,13 +3421,7 @@ async fn execute_table_op(
             reason: FailureProjection::Label("session not registered".into()),
         });
     };
-    if session.engine() != CoreEngine::PostgreSql {
-        return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
-            request_token,
-            context_revision,
-            reason: FailureProjection::Label("table ops only for PostgreSQL".into()),
-        });
-    }
+    let engine = session.engine();
     let (qs, qt) = match (quote_ident(&schema), quote_ident(&table)) {
         (Ok(s), Ok(t)) => (s, t),
         _ => {
@@ -3439,14 +3433,23 @@ async fn execute_table_op(
         }
     };
     // Fixed op vocabulary only — never free-form operator SQL.
-    let sql = match op.as_str() {
-        "truncate" => format!("TRUNCATE TABLE {qs}.{qt}"),
-        "drop" => format!("DROP TABLE {qs}.{qt}"),
-        // Maintenance: quote_ident only; VACUUM must not run inside a
-        // transaction (engine page stream uses simple statements, no BEGIN).
-        "vacuum" => format!("VACUUM {qs}.{qt}"),
-        "analyze" => format!("ANALYZE {qs}.{qt}"),
-        "rename" => {
+    let (sql, page_engine) = match (engine, op.as_str()) {
+        (CoreEngine::PostgreSql, "truncate") => (
+            format!("TRUNCATE TABLE {qs}.{qt}"),
+            CoreEngine::PostgreSql,
+        ),
+        (CoreEngine::PostgreSql, "drop") => (
+            format!("DROP TABLE {qs}.{qt}"),
+            CoreEngine::PostgreSql,
+        ),
+        // Maintenance: quote_ident only; VACUUM outside BEGIN (simple statement stream).
+        (CoreEngine::PostgreSql, "vacuum") => {
+            (format!("VACUUM {qs}.{qt}"), CoreEngine::PostgreSql)
+        }
+        (CoreEngine::PostgreSql, "analyze") => {
+            (format!("ANALYZE {qs}.{qt}"), CoreEngine::PostgreSql)
+        }
+        (CoreEngine::PostgreSql, "rename") => {
             let qn = match quote_ident(&new_table) {
                 Ok(n) => n,
                 Err(_) => {
@@ -3457,13 +3460,37 @@ async fn execute_table_op(
                     });
                 }
             };
-            format!("ALTER TABLE {qs}.{qt} RENAME TO {qn}")
+            (
+                format!("ALTER TABLE {qs}.{qt} RENAME TO {qn}"),
+                CoreEngine::PostgreSql,
+            )
         }
-        other => {
+        // ClickHouse table maintenance (schema = database).
+        (CoreEngine::ClickHouse, "optimize") => (
+            format!("OPTIMIZE TABLE {qs}.{qt}"),
+            CoreEngine::ClickHouse,
+        ),
+        (CoreEngine::ClickHouse, _) => {
+            return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(
+                    "ClickHouse table op supports optimize only".into(),
+                ),
+            });
+        }
+        (CoreEngine::PostgreSql, other) => {
             return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
                 request_token,
                 context_revision,
                 reason: FailureProjection::Label(format!("unknown table op: {other}")),
+            });
+        }
+        (CoreEngine::Redis, _) => {
+            return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("table ops not supported for Redis".into()),
             });
         }
     };
@@ -3478,15 +3505,45 @@ async fn execute_table_op(
         }
     };
     let limits = PageLimits::new(1, 1, 1024, 256);
-    let mut stream = match session
-        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
-            statement,
-            parameters: Vec::new(),
-            limits,
-            max_cell_bytes: 256,
-        })
-        .await
-    {
+    let stream = match page_engine {
+        CoreEngine::PostgreSql => {
+            session
+                .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+                    statement,
+                    parameters: Vec::new(),
+                    limits,
+                    max_cell_bytes: 256,
+                })
+                .await
+        }
+        CoreEngine::ClickHouse => {
+            let query_id = tablerock_core::BoundedText::copy_from_str(
+                &format!("tr-opt-{request_token}"),
+                tablerock_core::ByteLimit::new(64),
+            )
+            .map_err(|e| e.to_string());
+            let query_id = match query_id {
+                Ok(id) => id,
+                Err(e) => {
+                    return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                        request_token,
+                        context_revision,
+                        reason: FailureProjection::Label(e),
+                    });
+                }
+            };
+            session
+                .start_page_stream(DriverPageRequest::ClickHouseStatement {
+                    statement,
+                    query_id,
+                    limits,
+                    max_cell_bytes: 256,
+                })
+                .await
+        }
+        CoreEngine::Redis => unreachable!("filtered above"),
+    };
+    let mut stream = match stream {
         Ok(s) => s,
         Err(e) => {
             return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
@@ -3499,7 +3556,7 @@ async fn execute_table_op(
     let identity = PageIdentity::new(
         ResultId::from_parts(IdParts::new(1, 9_004).unwrap()).unwrap(),
         Revision::INITIAL,
-        CoreEngine::PostgreSql,
+        page_engine,
     );
     // Drain: DDL may return empty page or error.
     match stream.next_page(identity, 0).await {
