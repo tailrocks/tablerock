@@ -353,3 +353,116 @@ impl ProfileListState {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(id: &str, name: &str, group: Option<&str>, engine: &str) -> ProfileRowProjection {
+        ProfileRowProjection {
+            id_hex: id.into(),
+            name: name.into(),
+            engine_label: engine.into(),
+            group: group.map(str::to_owned),
+            favorite: false,
+            target_summary: format!("h:5432/db{id}"),
+            environment: None,
+            production_warning: false,
+            safety_label: "Confirm writes".into(),
+            plaintext_secret_warning: false,
+            live_state: LiveConnectionState::Disconnected,
+        }
+    }
+
+    fn loaded(rows: Vec<ProfileRowProjection>) -> ProfileListState {
+        ProfileListState::Loaded {
+            request_token: 1,
+            selected_id: rows.first().map(|r| r.id_hex.clone()),
+            rows,
+            search: String::new(),
+            collapsed: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn search_matches_name_engine_and_group_case_insensitive() {
+        let mut by_name = loaded(vec![
+            row("01", "Orders", Some("shop"), "PostgreSQL"),
+            row("02", "Cache", None, "Redis"),
+        ]);
+        by_name.push_search("ord");
+        assert_eq!(by_name.visible_rows().len(), 1);
+        assert_eq!(by_name.visible_rows()[0].name, "Orders");
+
+        let mut by_engine = loaded(vec![
+            row("01", "Orders", Some("shop"), "PostgreSQL"),
+            row("02", "Cache", None, "Redis"),
+        ]);
+        by_engine.push_search("REDIS");
+        assert_eq!(by_engine.visible_rows().len(), 1);
+        assert_eq!(by_engine.visible_rows()[0].name, "Cache");
+
+        let mut by_group = loaded(vec![
+            row("01", "Orders", Some("shop"), "PostgreSQL"),
+            row("02", "Cache", None, "Redis"),
+        ]);
+        by_group.push_search("shop");
+        assert_eq!(by_group.visible_rows().len(), 1);
+        assert_eq!(by_group.visible_rows()[0].name, "Orders");
+
+        let mut no_match = loaded(vec![
+            row("01", "Orders", Some("shop"), "PostgreSQL"),
+            row("02", "Cache", None, "Redis"),
+        ]);
+        no_match.push_search("zzz");
+        assert!(no_match.visible_rows().is_empty());
+    }
+
+    #[test]
+    fn collapsed_group_leaves_are_skipped_and_selection_wraps() {
+        let mut m = loaded(vec![
+            row("01", "a", Some("g1"), "PostgreSQL"),
+            row("02", "b", Some("g1"), "PostgreSQL"),
+            row("03", "c", Some("g2"), "PostgreSQL"),
+        ]);
+        m.toggle_group("g2");
+        assert!(m.is_group_collapsed("g2"));
+        assert!(!m.is_group_collapsed("g1"));
+        // Collapsing g2 does not drop it from the row set, only from navigation.
+        assert_eq!(m.visible_rows().len(), 3);
+
+        m.set_selected_id(Some("01".into()));
+        m.select_next();
+        assert_eq!(m.selected_row().unwrap().id_hex, "02");
+        m.select_next(); // wrap to first navigable leaf (01)
+        assert_eq!(m.selected_row().unwrap().id_hex, "01");
+        m.select_previous(); // wrap to last navigable leaf (02)
+        assert_eq!(m.selected_row().unwrap().id_hex, "02");
+    }
+
+    #[test]
+    fn search_change_reselects_first_leaf_and_clear_restores() {
+        let mut m = loaded(vec![
+            row("01", "alpha", None, "PostgreSQL"),
+            row("02", "beta", None, "PostgreSQL"),
+        ]);
+        m.set_selected_id(Some("02".into()));
+        m.push_search("beta");
+        assert_eq!(m.selected_row().unwrap().id_hex, "02");
+        m.push_search("nope"); // search becomes "betanope": no match
+        assert!(m.selected_row().is_none());
+        m.clear_search();
+        assert_eq!(m.selected_row().unwrap().id_hex, "01");
+    }
+
+    #[test]
+    fn status_line_reports_visible_and_filtered_counts() {
+        let mut m = loaded(vec![
+            row("01", "alpha", None, "PostgreSQL"),
+            row("02", "beta", None, "PostgreSQL"),
+        ]);
+        assert_eq!(m.status_line(), "Profiles: 2");
+        m.push_search("al");
+        assert_eq!(m.status_line(), "Profiles: 1/2 (filter)");
+    }
+}
