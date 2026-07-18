@@ -206,6 +206,8 @@ pub enum ActionId {
     InvertAllSort,
     /// Swap primary and secondary sort keys.
     SwapSortKeys,
+    /// Reverse the entire multi-key sort list.
+    ReverseSortKeys,
     /// Remove the last server filter chip and re-browse.
     RemoveLastFilter,
     /// Remove the oldest server filter chip and re-browse.

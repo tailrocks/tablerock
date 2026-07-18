@@ -4018,6 +4018,16 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::ReverseSortKeys if model.screen() == Screen::Workbench => {
+            let reversed = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.reverse_sort_keys());
+            if !reversed {
+                return Update::unchanged();
+            }
+            rebrowse_active_table(model)
+        }
         ActionId::ClearSort if model.screen() == Screen::Workbench => {
             let cleared = model
                 .workbench_mut()
@@ -5501,6 +5511,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::PromoteSort
         | ActionId::InvertAllSort
         | ActionId::SwapSortKeys
+        | ActionId::ReverseSortKeys
         | ActionId::ClearSort
         | ActionId::AddFilter
         | ActionId::FilterIsNull
@@ -7238,6 +7249,7 @@ fn cycle_action(
                 ActionId::PromoteSort,
                 ActionId::InvertAllSort,
                 ActionId::SwapSortKeys,
+                ActionId::ReverseSortKeys,
                 ActionId::ClearSort,
                 ActionId::AddFilter,
                 ActionId::FilterIsNull,

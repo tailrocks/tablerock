@@ -1390,6 +1390,15 @@ impl DataGridModel {
         true
     }
 
+    /// Reverse the entire multi-key sort list. Needs ≥2 keys.
+    pub fn reverse_sort_keys(&mut self) -> bool {
+        if self.sort.len() < 2 {
+            return false;
+        }
+        self.sort.reverse();
+        true
+    }
+
     /// Promote `column` to primary ORDER BY without cycling direction.
     ///
     /// - Already primary: no-op (false).
@@ -2742,6 +2751,23 @@ mod tests {
         assert_eq!(g.sort[0].column, "age");
         assert_eq!(g.sort[1].column, "name");
         assert_eq!(g.sort[2].column, "id"); // tertiary untouched
+    }
+
+    #[test]
+    fn reverse_sort_keys_full_list() {
+        let mut g = DataGridModel::default();
+        assert!(!g.reverse_sort_keys());
+        g.push_sort_column("a");
+        assert!(!g.reverse_sort_keys());
+        g.push_sort_column("b");
+        g.push_sort_column("c");
+        assert!(g.reverse_sort_keys());
+        assert_eq!(
+            g.sort.iter().map(|k| k.column.as_str()).collect::<Vec<_>>(),
+            vec!["c", "b", "a"]
+        );
+        assert!(g.reverse_sort_keys());
+        assert_eq!(g.sort[0].column, "a");
     }
 
     #[test]
