@@ -1061,15 +1061,21 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
-        Message::Engine(EngineMsg::GridCancelDispatched { .. }) => {
+        Message::Engine(EngineMsg::GridCancelDispatched { dispatch, .. }) => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                grid.mark_cancel_requested();
+                grid.mark_cancel_dispatch(&dispatch);
             }
             Update::render()
         }
         Message::Engine(EngineMsg::GridCancelled { label, .. }) => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                grid.mark_cancelled();
+                if label.contains("server confirmed") {
+                    grid.mark_server_confirmed_cancelled();
+                } else if label.contains("unknown") {
+                    grid.operation = GridOperationState::CancelUnknown;
+                } else {
+                    grid.mark_cancelled();
+                }
                 grid.error_label = Some(label);
             }
             let selected = model.workbench().selected_tab;
@@ -3475,7 +3481,10 @@ mod tests {
         }
         let requested = update(
             &mut model,
-            Message::Engine(EngineMsg::GridCancelDispatched { request_token: 1 }),
+            Message::Engine(EngineMsg::GridCancelDispatched {
+                request_token: 1,
+                dispatch: "request_sent".into(),
+            }),
         );
         assert!(requested.needs_render());
         assert_eq!(
@@ -3486,6 +3495,23 @@ mod tests {
             model.workbench().active_grid().unwrap().operation.label(),
             "cancel requested"
         );
+        // Transport failure → distinct unknown cancel state.
+        let unknown = update(
+            &mut model,
+            Message::Engine(EngineMsg::GridCancelDispatched {
+                request_token: 2,
+                dispatch: "transport_failed".into(),
+            }),
+        );
+        assert!(unknown.needs_render());
+        assert_eq!(
+            model.workbench().active_grid().unwrap().operation,
+            GridOperationState::CancelUnknown
+        );
+        assert_eq!(
+            model.workbench().active_grid().unwrap().operation.label(),
+            "cancel unknown"
+        );
         let observed = update(
             &mut model,
             Message::Engine(EngineMsg::GridCancelled {
@@ -3495,11 +3521,27 @@ mod tests {
         );
         assert!(observed.needs_render());
         let grid = model.workbench().active_grid().unwrap();
-        assert_eq!(grid.operation, GridOperationState::Cancelled);
-        assert_eq!(grid.operation.label(), "cancelled");
+        assert_eq!(
+            grid.operation,
+            GridOperationState::ServerConfirmedCancelled
+        );
+        assert_eq!(grid.operation.label(), "server confirmed cancelled");
         assert_eq!(
             grid.error_label.as_deref(),
             Some("server confirmed cancelled")
+        );
+        // Client-stopped dispatch.
+        let client = update(
+            &mut model,
+            Message::Engine(EngineMsg::GridCancelDispatched {
+                request_token: 3,
+                dispatch: "prevented".into(),
+            }),
+        );
+        assert!(client.needs_render());
+        assert_eq!(
+            model.workbench().active_grid().unwrap().operation.label(),
+            "client stopped"
         );
     }
 

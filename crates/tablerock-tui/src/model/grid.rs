@@ -113,7 +113,14 @@ pub enum GridOperationState {
     Running,
     Streaming,
     Completed,
+    /// Cancel requested; dispatch not yet classified.
     CancelRequested,
+    /// Client stopped consuming (local) without server confirm.
+    ClientStopped,
+    /// Server confirmed cancel (KILL QUERY finished / server cancel).
+    ServerConfirmedCancelled,
+    /// Cancel outcome unknown (transport loss / incomplete).
+    CancelUnknown,
     Cancelled,
     Failed,
     Disconnected,
@@ -129,6 +136,9 @@ impl GridOperationState {
             Self::Streaming => "streaming",
             Self::Completed => "completed",
             Self::CancelRequested => "cancel requested",
+            Self::ClientStopped => "client stopped",
+            Self::ServerConfirmedCancelled => "server confirmed cancelled",
+            Self::CancelUnknown => "cancel unknown",
             Self::Cancelled => "cancelled",
             Self::Failed => "failed",
             Self::Disconnected => "disconnected",
@@ -350,8 +360,26 @@ impl DataGridModel {
         self.operation = GridOperationState::CancelRequested;
     }
 
+    /// Map cancel-dispatch fact to a distinct presentation state.
+    pub fn mark_cancel_dispatch(&mut self, dispatch_label: &str) {
+        self.operation = match dispatch_label {
+            "request_sent" | "requested" => GridOperationState::CancelRequested,
+            "prevented" | "client_stopped" => GridOperationState::ClientStopped,
+            "server_rejected" | "transport_failed" | "unknown" | "unsupported" => {
+                GridOperationState::CancelUnknown
+            }
+            "server_confirmed" => GridOperationState::ServerConfirmedCancelled,
+            _ => GridOperationState::CancelRequested,
+        };
+        self.error_label = Some(format!("cancel: {dispatch_label}"));
+    }
+
     pub fn mark_cancelled(&mut self) {
         self.operation = GridOperationState::Cancelled;
+    }
+
+    pub fn mark_server_confirmed_cancelled(&mut self) {
+        self.operation = GridOperationState::ServerConfirmedCancelled;
     }
 
     #[must_use]

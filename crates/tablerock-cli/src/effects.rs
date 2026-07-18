@@ -1830,8 +1830,18 @@ async fn cancel_query(
     let dispatch = session.cancel(op).await;
     // Dispatch fact only — terminal race outcome arrives via the stream task
     // (GridCancelled / GridFailed / GridStreamComplete).
-    let _ = dispatch;
-    Message::Engine(tablerock_tui::EngineMsg::GridCancelDispatched { request_token })
+    use tablerock_core::CancelDispatch;
+    let dispatch = match dispatch {
+        CancelDispatch::RequestSent => "request_sent",
+        CancelDispatch::PreventedBeforeDispatch => "prevented",
+        CancelDispatch::TransportFailed => "transport_failed",
+        CancelDispatch::ServerRejected => "server_rejected",
+        CancelDispatch::Unsupported => "unsupported",
+    };
+    Message::Engine(tablerock_tui::EngineMsg::GridCancelDispatched {
+        request_token,
+        dispatch: dispatch.into(),
+    })
 }
 
 fn wall_ms() -> u64 {

@@ -164,6 +164,9 @@ pub enum EngineMsg {
     },
     GridCancelDispatched {
         request_token: u64,
+        /// Distinct dispatch fact: request_sent | prevented | transport_failed |
+        /// server_rejected | unsupported | unknown
+        dispatch: String,
     },
     GridCancelled {
         request_token: u64,
