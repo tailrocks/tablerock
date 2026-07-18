@@ -125,7 +125,7 @@ host them, keep those suites local-only and record the gap — same pattern as
 ## Residual
 
 - Full pg_dump/pg_restore real-server matrix when CI has client binaries (process cancel landed, evidence 275)
-- DDL action bar entries for drop column/index/constraint (add_column/create_index review landed, evidence 278)
+- DDL constraint action bar + structure-panel quick actions (add/drop column/index review landed, evidence 278)
 - Role effective-membership TUI projection (engine expansion landed, evidence 279)
 - Startup Write/Dangerous review UI (executor skip path already enforced)
 

@@ -144,6 +144,10 @@ pub enum ActionId {
     DdlAddColumn,
     /// Review CREATE INDEX: confirm_buffer = "index_name column".
     DdlCreateIndex,
+    /// Review DROP COLUMN: confirm_buffer = column name.
+    DdlDropColumn,
+    /// Review DROP INDEX: confirm_buffer = index name.
+    DdlDropIndex,
     /// SCAN Redis keys in the connected logical DB.
     ScanRedisKeys,
     /// Load Redis INFO overview into the inspector.

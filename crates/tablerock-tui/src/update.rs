@@ -2231,6 +2231,44 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::DdlDropColumn if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::DdlReview {
+                kind: "drop_column".into(),
+                schema: schema.clone(),
+                table: table.clone(),
+                preview: format!("DROP COLUMN on {schema}.{table} (paste: column_name)"),
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::DdlDropIndex if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::DdlReview {
+                kind: "drop_index".into(),
+                schema: schema.clone(),
+                table: table.clone(),
+                preview: format!("DROP INDEX on {schema}.{table} (paste: index_name)"),
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::ShowActivity if model.screen() == Screen::Workbench => {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
@@ -2401,6 +2439,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DropTable
         | ActionId::DdlAddColumn
         | ActionId::DdlCreateIndex
+        | ActionId::DdlDropColumn
+        | ActionId::DdlDropIndex
         | ActionId::RenameTable
         | ActionId::ShowActivity
         | ActionId::CancelBackend
@@ -2893,6 +2933,8 @@ fn cycle_action(
                 ActionId::DropTable,
                 ActionId::DdlAddColumn,
                 ActionId::DdlCreateIndex,
+                ActionId::DdlDropColumn,
+                ActionId::DdlDropIndex,
                 ActionId::RenameTable,
                 ActionId::ShowActivity,
                 ActionId::CancelBackend,
@@ -4357,6 +4399,45 @@ mod tests {
                 && table == "users"
         ));
         assert!(model.confirm().is_none());
+    }
+
+    #[test]
+    fn ddl_drop_column_review_emits_execute_ddl_plan() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::DdlDropColumn);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::DdlReview { kind, .. }) if kind == "drop_column"
+        ));
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("email".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let ok = update(&mut model, Message::Activate);
+        assert!(matches!(
+            ok.effects().next(),
+            Some(Effect::ExecuteDdlPlan {
+                kind,
+                object_name,
+                type_text,
+                ..
+            }) if kind == "drop_column" && object_name == "email" && type_text.is_empty()
+        ));
     }
 
     #[test]
