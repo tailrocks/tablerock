@@ -3352,6 +3352,38 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::render()
         }
+        ActionId::MoveColumnLeft if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.move_cursor_column(-1) {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::MoveColumnRight if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.move_cursor_column(1) {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::NarrowColumn if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.adjust_cursor_column_width(-2) {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::WidenColumn if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.adjust_cursor_column_width(2) {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::UndoStaged if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if grid.drafts.undo() {
@@ -3928,6 +3960,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
         | ActionId::SaveColumns
+        | ActionId::MoveColumnLeft
+        | ActionId::MoveColumnRight
+        | ActionId::NarrowColumn
+        | ActionId::WidenColumn
         | ActionId::UndoStaged
         | ActionId::DiscardStaged
         | ActionId::ReviewMutations
@@ -5130,6 +5166,10 @@ fn cycle_action(
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
                 ActionId::SaveColumns,
+                ActionId::MoveColumnLeft,
+                ActionId::MoveColumnRight,
+                ActionId::NarrowColumn,
+                ActionId::WidenColumn,
                 ActionId::UndoStaged,
                 ActionId::DiscardStaged,
                 ActionId::ReviewMutations,

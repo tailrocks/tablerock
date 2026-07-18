@@ -753,6 +753,67 @@ impl DataGridModel {
         false
     }
 
+    /// Physical column index for a layout/display name.
+    #[must_use]
+    pub fn physical_column_index(&self, name: &str) -> Option<usize> {
+        self.columns.iter().position(|c| c == name)
+    }
+
+    /// Move the cursor's column one step in display layout order (`dir` = -1 left, +1 right).
+    pub fn move_cursor_column(&mut self, dir: i8) -> bool {
+        if dir == 0 {
+            return false;
+        }
+        self.ensure_column_layout();
+        let Some(name) = self.columns.get(self.cursor_col).cloned() else {
+            return false;
+        };
+        let Some(idx) = self.column_layout.iter().position(|c| c.name == name) else {
+            return false;
+        };
+        let target = if dir < 0 {
+            idx.checked_sub(1)
+        } else {
+            idx.checked_add(1)
+        };
+        let Some(target) = target.filter(|&t| t < self.column_layout.len()) else {
+            return false;
+        };
+        self.column_layout.swap(idx, target);
+        true
+    }
+
+    /// Adjust width of the cursor column in layout (`delta` usually ±2). Bounds 4..=64.
+    pub fn adjust_cursor_column_width(&mut self, delta: i16) -> bool {
+        if delta == 0 {
+            return false;
+        }
+        self.ensure_column_layout();
+        let Some(name) = self.columns.get(self.cursor_col).cloned() else {
+            return false;
+        };
+        let Some(entry) = self.column_layout.iter_mut().find(|c| c.name == name) else {
+            return false;
+        };
+        let next = i32::from(entry.width) + i32::from(delta);
+        let clamped = next.clamp(4, 64) as u16;
+        if clamped == entry.width {
+            return false;
+        }
+        entry.width = clamped;
+        true
+    }
+
+    /// Layout width for a column name (default 12).
+    #[must_use]
+    pub fn column_width(&self, name: &str) -> u16 {
+        self.column_layout
+            .iter()
+            .find(|c| c.name == name)
+            .map(|c| c.width.max(4))
+            .unwrap_or(12)
+    }
+
     /// Serialize layout for persistence (names/visible/width only).
     #[must_use]
     pub fn layout_json(&self) -> String {
@@ -1165,6 +1226,38 @@ mod tests {
         // Cannot hide last visible column.
         assert!(g2.toggle_column_visible("id"));
         assert!(!g2.toggle_column_visible("age"));
+    }
+
+    #[test]
+    fn move_and_resize_cursor_column_in_layout() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into(), "age".into()];
+        g.cursor_col = 0; // id
+        g.ensure_column_layout();
+        assert_eq!(
+            g.visible_columns(),
+            vec!["id".to_owned(), "name".to_owned(), "age".to_owned()]
+        );
+        assert!(g.move_cursor_column(1));
+        assert_eq!(
+            g.visible_columns(),
+            vec!["name".to_owned(), "id".to_owned(), "age".to_owned()]
+        );
+        assert!(g.move_cursor_column(1));
+        assert_eq!(
+            g.visible_columns(),
+            vec!["name".to_owned(), "age".to_owned(), "id".to_owned()]
+        );
+        assert!(!g.move_cursor_column(1)); // already rightmost in layout
+        assert_eq!(g.column_width("id"), 12);
+        assert!(g.adjust_cursor_column_width(4));
+        assert_eq!(g.column_width("id"), 16);
+        assert!(g.adjust_cursor_column_width(-100)); // clamp to 4
+        assert_eq!(g.column_width("id"), 4);
+        assert!(!g.adjust_cursor_column_width(-1)); // already min
+        let json = g.layout_json();
+        assert!(json.contains("\"width\":4"));
+        assert!(json.contains("\"name\":\"id\""));
     }
 
     #[test]

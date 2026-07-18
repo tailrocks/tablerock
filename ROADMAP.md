@@ -146,8 +146,8 @@ editor, dialect statement boundaries, revisioned completion, history,
 saved queries, atomic `.sql`, intent restore, typed browse-plan
 sort/filter, column layout persistence, six copy formats + OSC 52, named
 params, find/replace, format SQL, explain tree, inspector type views.
-Residual polish: VirtualGrid header geometry; Redis command editor is
-mirrored via plan 015 command path.
+Column reorder/resize on VirtualGrid (evidence 347). Residual polish:
+header geometry fit; Redis command editor mirrored via plan 015.
 
 ## Phase 6 — PostgreSQL write/admin slice
 

@@ -120,6 +120,14 @@ pub enum ActionId {
     ResetColumns,
     /// Persist column layout for the current base table.
     SaveColumns,
+    /// Move cursor column left in display order.
+    MoveColumnLeft,
+    /// Move cursor column right in display order.
+    MoveColumnRight,
+    /// Narrow cursor column width by 2 (min 4).
+    NarrowColumn,
+    /// Widen cursor column width by 2 (max 64).
+    WidenColumn,
     /// Undo last staged mutation draft action.
     UndoStaged,
     /// Discard all staged mutation drafts on the active tab.

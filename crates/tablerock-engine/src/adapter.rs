@@ -550,7 +550,21 @@ impl DriverSession for PostgresSession {
                 .into_iter()
                 .map(|delivery| match delivery {
                     crate::PostgresNoticeDelivery::Notice(notice) => {
-                        format!("{}: {}", notice.severity(), notice.message())
+                        let mut line =
+                            format!("{}: {}", notice.severity(), notice.message());
+                        if let Some(detail) = notice.detail() {
+                            if !detail.is_empty() {
+                                line.push_str(" · detail: ");
+                                line.push_str(detail);
+                            }
+                        }
+                        if let Some(hint) = notice.hint() {
+                            if !hint.is_empty() {
+                                line.push_str(" · hint: ");
+                                line.push_str(hint);
+                            }
+                        }
+                        line
                     }
                     crate::PostgresNoticeDelivery::Overflow { dropped } => {
                         format!("NOTICE overflow: dropped {dropped}")

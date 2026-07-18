@@ -584,6 +584,13 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let save_intent = action_label(model, ActionId::SaveIntent, "SaveIntent");
     let save_filter = action_label(model, ActionId::SaveFilter, "SaveFilt");
     let apply_filter = action_label(model, ActionId::ApplyFilter, "LoadFilt");
+    let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
+    let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
+    let col_narrow = action_label(model, ActionId::NarrowColumn, "Col-");
+    let col_widen = action_label(model, ActionId::WidenColumn, "Col+");
+    let col_toggle = action_label(model, ActionId::ToggleColumn, "ColVis");
+    let col_reset = action_label(model, ActionId::ResetColumns, "ColRst");
+    let col_save = action_label(model, ActionId::SaveColumns, "ColSave");
     let undo_staged = action_label(model, ActionId::UndoStaged, "UndoEdit");
     let discard_staged = action_label(model, ActionId::DiscardStaged, "DiscardEdits");
     let review_mut = action_label(model, ActionId::ReviewMutations, "Review");
@@ -824,6 +831,48 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ApplyFilter,
                         label: apply_filter.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::MoveColumnLeft,
+                        label: col_left.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::MoveColumnRight,
+                        label: col_right.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::NarrowColumn,
+                        label: col_narrow.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::WidenColumn,
+                        label: col_widen.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ToggleColumn,
+                        label: col_toggle.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ResetColumns,
+                        label: col_reset.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SaveColumns,
+                        label: col_save.as_str(),
                         enabled: true,
                         style: None,
                     },
@@ -1902,19 +1951,25 @@ fn render_data_grid(
         Line::from("(no result)").render(area, frame.buffer_mut());
         return;
     }
-    let columns: Vec<GridColumn<'_, usize>> = grid
-        .columns
+    // Display order + visibility from column_layout (physical matrix order unchanged).
+    let visible = grid.visible_columns();
+    if visible.is_empty() {
+        Line::from("(no visible columns)").render(area, frame.buffer_mut());
+        return;
+    }
+    let columns: Vec<GridColumn<'_, usize>> = visible
         .iter()
         .enumerate()
-        .map(|(i, name)| GridColumn::fixed(i, name.as_str(), 12))
+        .map(|(i, name)| GridColumn::fixed(i, name.as_str(), grid.column_width(name)))
         .collect();
     let body_rows = u64::from(area.height.saturating_sub(1).max(1));
     let first = grid.viewport_row.max(grid.start_row);
     let mut owned_rows: Vec<Vec<String>> = Vec::new();
     for slot in 0..body_rows {
         let abs = first.saturating_add(slot);
-        let mut texts = Vec::with_capacity(grid.columns.len());
-        for col in 0..grid.columns.len() {
+        let mut texts = Vec::with_capacity(visible.len());
+        for name in &visible {
+            let col = grid.physical_column_index(name).unwrap_or(0);
             texts.push(grid.cell_at(abs, col).display());
         }
         owned_rows.push(texts);
