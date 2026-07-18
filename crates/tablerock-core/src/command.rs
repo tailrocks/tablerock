@@ -257,6 +257,10 @@ pub enum CommandIntent {
     Cancel {
         operation_id: OperationId,
     },
+    /// Apply an authorized mutation plan by review-token handle (never plan bytes).
+    ApplyMutations {
+        review_token_id: crate::ReviewTokenId,
+    },
     Shutdown,
 }
 
@@ -267,7 +271,7 @@ impl CommandIntent {
             Self::TestProfile | Self::RefreshCatalog | Self::FetchPage(_) => {
                 CommandSafety::ReadOnly
             }
-            Self::Execute { .. } => CommandSafety::MayWrite,
+            Self::Execute { .. } | Self::ApplyMutations { .. } => CommandSafety::MayWrite,
             Self::Connect | Self::Disconnect | Self::Cancel { .. } | Self::Shutdown => {
                 CommandSafety::Lifecycle
             }
@@ -289,6 +293,7 @@ impl CommandIntent {
                     Self::RefreshCatalog
                         | Self::FetchPage(_)
                         | Self::Execute { .. }
+                        | Self::ApplyMutations { .. }
                         | Self::Cancel { .. },
                     CommandScope::Context(_)
                 )

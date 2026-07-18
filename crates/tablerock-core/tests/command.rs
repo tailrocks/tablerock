@@ -2,7 +2,7 @@ use tablerock_core::{
     BudgetField, CommandBudget, CommandBudgetError, CommandBudgetLimits, CommandBuildError,
     CommandEnvelope, CommandIntent, CommandSafety, CommandScope, ContextId, IdParts,
     MAX_STATEMENT_BYTES, OperationId, OperationScope, PageRequest, ProfileId, RedactionClass,
-    RequestId, ResultId, Revision, SessionId, StatementText, StatementTextError,
+    RequestId, ResultId, ReviewTokenId, Revision, SessionId, StatementText, StatementTextError,
 };
 
 fn limits() -> CommandBudgetLimits {
@@ -130,6 +130,12 @@ fn every_intent_has_one_explicit_scope_shape() {
         (
             CommandIntent::Execute {
                 statement: StatementText::new("select 1").unwrap(),
+            },
+            3,
+        ),
+        (
+            CommandIntent::ApplyMutations {
+                review_token_id: id(ReviewTokenId::from_parts),
             },
             3,
         ),

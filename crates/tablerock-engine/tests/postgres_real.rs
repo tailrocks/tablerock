@@ -2324,3 +2324,215 @@ async fn lists_catalog_databases_schemas_and_relations_with_hostile_names() {
     assert!(function.engine_type().is_some());
     assert_eq!(relations.exactness(), CatalogExactness::Exact);
 }
+
+#[tokio::test]
+async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
+    use tablerock_core::{
+        BoundedText, ByteLimit, ContextId, FieldValue, IdParts, MutationChange, MutationId,
+        MutationPlan, MutationPlanLimits, MutationTarget, OperationScope, OwnedValue, ProfileId,
+        ReviewTokenId, Revision, SessionId, Truncation,
+    };
+    use tablerock_engine::{MutationTransactionState, PostgresSession};
+
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+
+    session
+        .execute_sql(
+            "CREATE TABLE mut_users (id int PRIMARY KEY, name text);
+             INSERT INTO mut_users VALUES (1, 'alice');",
+        )
+        .await
+        .unwrap();
+
+    fn bt(s: &str) -> BoundedText {
+        BoundedText::copy_from_str(s, ByteLimit::new(10_000)).unwrap()
+    }
+    fn field(name: &str, value: OwnedValue) -> FieldValue {
+        FieldValue::new(bt(name), value)
+    }
+    let limits = MutationPlanLimits::new(8, 16, 4096, 4096, 60_000).unwrap();
+    let scope = OperationScope::new(
+        ProfileId::from_parts(IdParts::new(1, 1).unwrap()).unwrap(),
+        SessionId::from_parts(IdParts::new(1, 2).unwrap()).unwrap(),
+        ContextId::from_parts(IdParts::new(1, 3).unwrap()).unwrap(),
+    );
+    let target = MutationTarget::PostgreSqlRelation {
+        database: bt("postgres"),
+        schema: bt("public"),
+        relation: bt("mut_users"),
+    };
+
+    // Happy path: update one row.
+    let plan = MutationPlan::new(
+        MutationId::from_parts(IdParts::new(1, 10).unwrap()).unwrap(),
+        scope,
+        Revision::INITIAL,
+        target.clone(),
+        vec![MutationChange::UpdateRow {
+            locator: vec![field("id", OwnedValue::signed(1))],
+            assignments: vec![field(
+                "name",
+                OwnedValue::text(bt("bob"), Truncation::Complete).unwrap(),
+            )],
+        }],
+        limits,
+    )
+    .unwrap();
+    // Review window must be within MutationPlanLimits.max_review_validity_ms.
+    let reviewed = plan
+        .review(
+            ReviewTokenId::from_parts(IdParts::new(1, 11).unwrap()).unwrap(),
+            1_000,
+            30_000,
+        )
+        .unwrap();
+    let authorized = reviewed
+        .authorize(5_000, scope, Revision::INITIAL)
+        .unwrap();
+    let outcome = session.apply_authorized_mutation(authorized).await.unwrap();
+    assert_eq!(outcome.transaction, MutationTransactionState::Committed);
+    assert!(matches!(
+        &outcome.changes[0],
+        tablerock_engine::MutationChangeOutcome::Applied {
+            rows_affected: 1,
+            ..
+        }
+    ));
+    assert_eq!(outcome.changes.len(), 1);
+
+    // Conflict: update non-existent id → 0 rows → rollback report.
+    let plan2 = MutationPlan::new(
+        MutationId::from_parts(IdParts::new(1, 12).unwrap()).unwrap(),
+        scope,
+        Revision::INITIAL,
+        target,
+        vec![MutationChange::UpdateRow {
+            locator: vec![field("id", OwnedValue::signed(999))],
+            assignments: vec![field(
+                "name",
+                OwnedValue::text(bt("ghost"), Truncation::Complete).unwrap(),
+            )],
+        }],
+        limits,
+    )
+    .unwrap();
+    let reviewed2 = plan2
+        .review(
+            ReviewTokenId::from_parts(IdParts::new(1, 13).unwrap()).unwrap(),
+            1_000,
+            30_000,
+        )
+        .unwrap();
+    let authorized2 = reviewed2
+        .authorize(5_000, scope, Revision::INITIAL)
+        .unwrap();
+    let conflict = session.apply_authorized_mutation(authorized2).await.unwrap();
+    assert_eq!(conflict.transaction, MutationTransactionState::RolledBack);
+    assert!(matches!(
+        &conflict.changes[0],
+        tablerock_engine::MutationChangeOutcome::Conflict { rows_affected: 0, .. }
+    ));
+
+    // Insert + delete happy path in one authorized multi-change plan.
+    let multi = MutationPlan::new(
+        MutationId::from_parts(IdParts::new(1, 14).unwrap()).unwrap(),
+        scope,
+        Revision::INITIAL,
+        MutationTarget::PostgreSqlRelation {
+            database: bt("postgres"),
+            schema: bt("public"),
+            relation: bt("mut_users"),
+        },
+        vec![
+            MutationChange::InsertRow {
+                values: vec![
+                    field("id", OwnedValue::signed(2)),
+                    field(
+                        "name",
+                        OwnedValue::text(bt("carol"), Truncation::Complete).unwrap(),
+                    ),
+                ],
+            },
+            MutationChange::DeleteRow {
+                locator: vec![field("id", OwnedValue::signed(2))],
+            },
+        ],
+        limits,
+    )
+    .unwrap();
+    let multi_auth = multi
+        .review(
+            ReviewTokenId::from_parts(IdParts::new(1, 15).unwrap()).unwrap(),
+            1_000,
+            30_000,
+        )
+        .unwrap()
+        .authorize(5_000, scope, Revision::INITIAL)
+        .unwrap();
+    let multi_out = session
+        .apply_authorized_mutation(multi_auth)
+        .await
+        .unwrap();
+    assert_eq!(multi_out.transaction, MutationTransactionState::Committed);
+    assert_eq!(multi_out.changes.len(), 2);
+
+    // Constraint violation → Failed + rollback; session still usable.
+    let bad = MutationPlan::new(
+        MutationId::from_parts(IdParts::new(1, 16).unwrap()).unwrap(),
+        scope,
+        Revision::INITIAL,
+        MutationTarget::PostgreSqlRelation {
+            database: bt("postgres"),
+            schema: bt("public"),
+            relation: bt("mut_users"),
+        },
+        vec![MutationChange::InsertRow {
+            values: vec![
+                field("id", OwnedValue::signed(1)), // duplicate PK
+                field(
+                    "name",
+                    OwnedValue::text(bt("dup"), Truncation::Complete).unwrap(),
+                ),
+            ],
+        }],
+        limits,
+    )
+    .unwrap();
+    let bad_auth = bad
+        .review(
+            ReviewTokenId::from_parts(IdParts::new(1, 17).unwrap()).unwrap(),
+            1_000,
+            30_000,
+        )
+        .unwrap()
+        .authorize(5_000, scope, Revision::INITIAL)
+        .unwrap();
+    let bad_out = session.apply_authorized_mutation(bad_auth).await.unwrap();
+    assert_eq!(bad_out.transaction, MutationTransactionState::RolledBack);
+    assert!(matches!(
+        &bad_out.changes[0],
+        tablerock_engine::MutationChangeOutcome::Failed { .. }
+    ));
+
+    // Session still usable.
+    let health = session.health_check().await;
+    assert!(health.is_ok());
+}

@@ -591,7 +591,7 @@ impl fmt::Display for PostgresError {
 impl Error for PostgresError {}
 
 pub struct PostgresSession {
-    client: tokio_postgres::Client,
+    pub(crate) client: tokio_postgres::Client,
     connection: JoinHandle<Result<(), PostgresError>>,
     transport: PostgresTransport,
     notices: Mutex<mpsc::Receiver<PostgresNotice>>,

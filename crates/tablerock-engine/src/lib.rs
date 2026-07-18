@@ -6,6 +6,7 @@ mod catalog;
 mod clickhouse;
 mod ident;
 mod postgres;
+mod postgres_mutation;
 mod redis;
 mod runtime;
 mod secret_resolution;
@@ -35,6 +36,9 @@ pub use postgres::{
     PostgresCopyLimits, PostgresCopyOutStream, PostgresCopyOutcome, PostgresError, PostgresNotice,
     PostgresNoticeDelivery, PostgresProbeQuery, PostgresRowStream, PostgresSession,
     PostgresStatementKind, PostgresStatementOutcome, PostgresTlsMaterial, PostgresTlsMode,
+};
+pub use postgres_mutation::{
+    MutationApplyOutcome, MutationChangeOutcome, MutationTransactionState,
 };
 pub use redis::{
     RedisBlockingPopStream, RedisCancelDispatch, RedisClientIdentity, RedisCollectionScanKind,
