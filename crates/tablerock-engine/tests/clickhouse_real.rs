@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use tablerock_core::{
     BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity, PageLimits,
@@ -325,7 +325,7 @@ async fn verify_image(image: &str) {
             .submit(
                 operation_id,
                 support::command(31),
-                Box::new(session),
+                Arc::new(session),
                 DriverPageRequest::ClickHouseProbe {
                     query: ClickHouseProbeQuery::TypedValues,
                     query_id: text(&format!("tablerock-service-{port}-{compression:?}")),
@@ -366,7 +366,7 @@ async fn verify_service_cancellation(port: u16, compression: ClickHouseCompressi
         .submit(
             operation_id,
             support::command(51),
-            Box::new(session),
+            Arc::new(session),
             DriverPageRequest::ClickHouseProbe {
                 query: ClickHouseProbeQuery::CancellationStream,
                 query_id: text(&format!("tablerock-cancel-{port}-{compression:?}")),

@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::Arc,
+};
 
 use tablerock_core::{CancelDispatch, OperationId, PageIdentity, ResultPage};
 use tokio::{
@@ -94,7 +97,7 @@ struct DriverTask {
 
 struct OperationTaskInput {
     operation_id: OperationId,
-    session: Box<dyn DriverSession>,
+    session: Arc<dyn DriverSession>,
     request: DriverPageRequest,
     identity: PageIdentity,
     cancels: mpsc::Receiver<()>,
@@ -124,15 +127,23 @@ impl DriverRuntime {
     pub async fn spawn(
         &mut self,
         operation_id: OperationId,
-        session: Box<dyn DriverSession>,
+        session: Arc<dyn DriverSession>,
         request: DriverPageRequest,
         identity: PageIdentity,
     ) -> Result<DriverOperationEvents, DriverSpawnError> {
+        // Borrowed sessions are never shut down here: the registry (or caller)
+        // retains ownership and disconnects explicitly.
         if self.tasks.contains_key(&operation_id) {
-            return Err(reject_session(session, DriverRuntimeError::DuplicateOperation).await);
+            return Err(DriverSpawnError {
+                reason: DriverRuntimeError::DuplicateOperation,
+                shutdown_error: None,
+            });
         }
         if self.tasks.len() >= self.max_operations {
-            return Err(reject_session(session, DriverRuntimeError::CapacityExhausted).await);
+            return Err(DriverSpawnError {
+                reason: DriverRuntimeError::CapacityExhausted,
+                shutdown_error: None,
+            });
         }
         let (cancel_tx, cancel_rx) = mpsc::channel(1);
         let (stop_tx, stop_rx) = watch::channel(false);
@@ -232,16 +243,6 @@ impl DriverRuntime {
     }
 }
 
-async fn reject_session(
-    session: Box<dyn DriverSession>,
-    reason: DriverRuntimeError,
-) -> DriverSpawnError {
-    DriverSpawnError {
-        reason,
-        shutdown_error: session.shutdown().await.err(),
-    }
-}
-
 async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
     let OperationTaskInput {
         operation_id,
@@ -270,7 +271,8 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
     .await;
     let Some(stream_result) = stream_result else {
         let _ = events.try_send(DriverOperationEvent::ClientStopped);
-        let _ = session.shutdown().await;
+        // Drop the Arc borrow only — session ownership stays with the registry.
+        drop(session);
         return DriverTaskExit::ClientStopped;
     };
     let mut stream = match stream_result {
@@ -283,7 +285,7 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
             }
             let (event, exit) = terminal_event(error);
             let _ = events.send(event).await;
-            let _ = session.shutdown().await;
+            drop(session);
             return exit;
         }
     };
@@ -367,7 +369,7 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
     if stop_client {
         let _ = events.try_send(DriverOperationEvent::ClientStopped);
         drop(stream);
-        let _ = session.shutdown().await;
+        drop(session);
         return DriverTaskExit::ClientStopped;
     }
     while let Some(event) = pending.pop_front() {
@@ -376,9 +378,7 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
         }
     }
     drop(stream);
-    if let Err(error) = session.shutdown().await {
-        terminal_error = Some(error);
-    }
+    drop(session);
     let (event, exit) = match terminal_error {
         Some(error) => terminal_event(error),
         None => (DriverOperationEvent::Completed, DriverTaskExit::Completed),

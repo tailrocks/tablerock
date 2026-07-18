@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use rcgen::ExtendedKeyUsagePurpose;
 use tablerock_core::{
@@ -559,7 +559,7 @@ async fn streams_bounded_pages_from_real_postgres() {
         .submit(
             operation_id,
             support::command(23),
-            Box::new(session),
+            Arc::new(session),
             DriverPageRequest::PostgreSqlProbe {
                 query: PostgresProbeQuery::BoundedSeries,
                 limits: PageLimits::new(2, 8, 32, 256),
@@ -610,7 +610,7 @@ async fn reports_request_delivery_and_server_confirmed_cancellation_through_serv
         .submit(
             operation_id,
             support::command(31),
-            Box::new(session),
+            Arc::new(session),
             DriverPageRequest::PostgreSqlProbe {
                 query: PostgresProbeQuery::CancellationStream,
                 limits: PageLimits::new(1, 2, 128, 128),

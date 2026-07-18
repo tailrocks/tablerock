@@ -149,10 +149,10 @@ fn request() -> DriverPageRequest {
     }
 }
 
-fn session(shutdown: Arc<AtomicBool>) -> (Box<dyn DriverSession>, Arc<AtomicBool>) {
+fn session(shutdown: Arc<AtomicBool>) -> (Arc<dyn DriverSession>, Arc<AtomicBool>) {
     let started = Arc::new(AtomicBool::new(false));
     (
-        Box::new(ControlledSession {
+        Arc::new(ControlledSession {
             release: Arc::new(Notify::new()),
             released: Arc::new(AtomicBool::new(false)),
             started: Arc::clone(&started),
@@ -205,7 +205,8 @@ async fn routes_cancel_while_output_is_backpressured() {
             .unwrap(),
         DriverTaskExit::Completed
     );
-    assert!(shutdown.load(Ordering::SeqCst));
+    // Runtime no longer shuts the session down at terminal.
+    assert!(!shutdown.load(Ordering::SeqCst));
 }
 
 #[tokio::test]
@@ -216,7 +217,7 @@ async fn routes_cancel_while_stream_is_starting() {
     let mut events = runtime
         .spawn(
             operation_id,
-            Box::new(StartingSession {
+            Arc::new(StartingSession {
                 release: Arc::new(Notify::new()),
                 cancelled: Arc::new(AtomicBool::new(false)),
                 shutdown: Arc::clone(&shutdown),
@@ -255,7 +256,7 @@ async fn routes_cancel_while_stream_is_starting() {
             .unwrap(),
         DriverTaskExit::ServerConfirmedCancelled
     );
-    assert!(shutdown.load(Ordering::SeqCst));
+    assert!(!shutdown.load(Ordering::SeqCst));
 }
 
 #[tokio::test]
@@ -277,7 +278,8 @@ async fn bounds_tasks_and_stops_without_waiting_for_slow_event_consumers() {
         .expect("duplicate operation is rejected");
     assert_eq!(duplicate.reason(), DriverRuntimeError::DuplicateOperation);
     assert_eq!(duplicate.shutdown_error(), None);
-    assert!(duplicate_shutdown.load(Ordering::SeqCst));
+    // Rejected spawns no longer consume the session.
+    assert!(!duplicate_shutdown.load(Ordering::SeqCst));
     let overflow_shutdown = Arc::new(AtomicBool::new(false));
     let (overflow_session, _) = session(Arc::clone(&overflow_shutdown));
     let overflow = runtime
@@ -287,8 +289,8 @@ async fn bounds_tasks_and_stops_without_waiting_for_slow_event_consumers() {
         .expect("capacity overflow is rejected");
     assert_eq!(overflow.reason(), DriverRuntimeError::CapacityExhausted);
     assert_eq!(overflow.shutdown_error(), None);
-    assert!(overflow_shutdown.load(Ordering::SeqCst));
-    let failing = Box::new(ControlledSession {
+    assert!(!overflow_shutdown.load(Ordering::SeqCst));
+    let failing: Arc<dyn DriverSession> = Arc::new(ControlledSession {
         release: Arc::new(Notify::new()),
         released: Arc::new(AtomicBool::new(false)),
         started: Arc::new(AtomicBool::new(false)),
@@ -299,11 +301,8 @@ async fn bounds_tasks_and_stops_without_waiting_for_slow_event_consumers() {
         .spawn(second, failing, request(), identity())
         .await
         .err()
-        .expect("capacity rejection reports cleanup failure");
-    assert_eq!(
-        failed_cleanup.shutdown_error().unwrap().class(),
-        AdapterFailureClass::Connection
-    );
+        .expect("capacity rejection keeps the session for the caller");
+    assert_eq!(failed_cleanup.shutdown_error(), None);
     assert_eq!(
         runtime.cancel(second),
         RuntimeCancelOutcome::UnknownOperation

@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeSet,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -92,7 +93,7 @@ async fn overlaps_postgres_clickhouse_and_redis_through_one_service() {
         .submit(
             postgres_operation,
             support::command(111),
-            Box::new(postgres),
+            Arc::new(postgres),
             DriverPageRequest::PostgreSqlProbe {
                 query: PostgresProbeQuery::BoundedSeries,
                 limits: PageLimits::new(2, 8, 256, 256),
@@ -106,7 +107,7 @@ async fn overlaps_postgres_clickhouse_and_redis_through_one_service() {
         .submit(
             clickhouse_operation,
             support::command(112),
-            Box::new(clickhouse),
+            Arc::new(clickhouse),
             DriverPageRequest::ClickHouseProbe {
                 query: ClickHouseProbeQuery::TypedValues,
                 query_id: text(&format!("tablerock-overlap-{clickhouse_port}")),
@@ -121,7 +122,7 @@ async fn overlaps_postgres_clickhouse_and_redis_through_one_service() {
         .submit(
             redis_operation,
             support::command(113),
-            Box::new(redis),
+            Arc::new(redis),
             DriverPageRequest::RedisKeyScan {
                 limits: PageLimits::new(2, 1, 256, 64),
                 max_cell_bytes: 128,

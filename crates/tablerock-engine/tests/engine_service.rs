@@ -208,18 +208,27 @@ fn page() -> ResultPage {
     .unwrap()
 }
 
-fn session(shutdown: Arc<AtomicBool>) -> Box<dyn DriverSession> {
-    Box::new(PageSession {
+fn session(shutdown: Arc<AtomicBool>) -> Arc<dyn DriverSession> {
+    Arc::new(PageSession {
         page: page(),
         shutdown,
     })
+}
+
+fn make_service(max_operations: u32, event_capacity: usize) -> EngineService {
+    EngineService::new(
+        configured_core(max_operations),
+        DriverRuntime::new(max_operations as usize, event_capacity).unwrap(),
+        8,
+    )
+    .unwrap()
 }
 
 #[tokio::test]
 async fn maps_runtime_pages_and_exit_into_core_lifecycle() {
     let operation_id = operation(1);
     let shutdown = Arc::new(AtomicBool::new(false));
-    let mut service = EngineService::new(configured_core(2), DriverRuntime::new(2, 4).unwrap());
+    let mut service = make_service(2, 4);
     service
         .submit(
             operation_id,
@@ -255,13 +264,14 @@ async fn maps_runtime_pages_and_exit_into_core_lifecycle() {
         service.core().operation_phase(operation_id),
         Some(OperationPhase::Terminal(OperationOutcome::Completed))
     );
-    assert!(shutdown.load(Ordering::SeqCst));
+    // Borrowed sessions stay open until explicit disconnect.
+    assert!(!shutdown.load(Ordering::SeqCst));
 }
 
 #[tokio::test]
 async fn immediate_cancel_never_regresses_cancel_requested_to_running() {
     let operation_id = operation(1);
-    let mut service = EngineService::new(configured_core(1), DriverRuntime::new(1, 4).unwrap());
+    let mut service = make_service(1, 4);
     service
         .submit(
             operation_id,
@@ -293,11 +303,12 @@ async fn immediate_cancel_never_regresses_cancel_requested_to_running() {
 }
 
 #[tokio::test]
-async fn core_rejection_consumes_session_shutdown() {
+async fn core_rejection_retains_session_without_shutdown() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let mut core = configured_core(1);
     core.submit(operation(1), command(100)).unwrap();
-    let mut service = EngineService::new(core, DriverRuntime::new(1, 2).unwrap());
+    let mut service =
+        EngineService::new(core, DriverRuntime::new(1, 2).unwrap(), 8).unwrap();
     let error = service
         .submit(
             operation(2),
@@ -309,18 +320,19 @@ async fn core_rejection_consumes_session_shutdown() {
         .await
         .unwrap_err();
     assert!(matches!(error, EngineServiceError::CoreSubmission { .. }));
-    assert!(shutdown.load(Ordering::SeqCst));
+    // Core rejection drops the Arc borrow only; connections stay open.
+    assert!(!shutdown.load(Ordering::SeqCst));
 }
 
 #[tokio::test]
 async fn runtime_panic_becomes_unknown_instead_of_leaving_core_active() {
     let operation_id = operation(1);
-    let mut service = EngineService::new(configured_core(1), DriverRuntime::new(1, 2).unwrap());
+    let mut service = make_service(1, 2);
     service
         .submit(
             operation_id,
             command(100),
-            Box::new(PanicSession),
+            Arc::new(PanicSession),
             request(),
             page_identity(),
         )
@@ -339,13 +351,17 @@ async fn runtime_panic_becomes_unknown_instead_of_leaving_core_active() {
 #[tokio::test]
 async fn cancel_active_shutdown_drains_as_client_stopped_then_releases_runtime() {
     let operation_id = operation(1);
+    let session_id = opaque(50, SessionId::from_parts);
     let shutdown = Arc::new(AtomicBool::new(false));
-    let mut service = EngineService::new(configured_core(1), DriverRuntime::new(1, 1).unwrap());
+    let mut service = make_service(1, 1);
+    let session = service
+        .register_session(session_id, Box::new(HoldSession(Arc::clone(&shutdown))))
+        .unwrap();
     service
         .submit(
             operation_id,
             command(100),
-            Box::new(HoldSession(Arc::clone(&shutdown))),
+            session,
             request(),
             page_identity(),
         )
@@ -367,6 +383,11 @@ async fn cancel_active_shutdown_drains_as_client_stopped_then_releases_runtime()
         service.complete_shutdown().await,
         Err(EngineServiceError::ShutdownStillDraining)
     ));
+    // Active borrow keeps disconnect busy until the operation ends.
+    assert!(matches!(
+        service.disconnect(session_id).await,
+        Err(EngineServiceError::SessionBusy)
+    ));
 
     loop {
         if let Some(EngineServiceUpdate::Terminal(outcome)) =
@@ -381,13 +402,14 @@ async fn cancel_active_shutdown_drains_as_client_stopped_then_releases_runtime()
         tablerock_core::ServicePhase::Stopped
     );
     service.complete_shutdown().await.unwrap();
+    service.disconnect(session_id).await.unwrap();
     assert!(shutdown.load(Ordering::SeqCst));
 }
 
 #[tokio::test]
 async fn graceful_shutdown_allows_completion_without_client_stop() {
     let operation_id = operation(1);
-    let mut service = EngineService::new(configured_core(1), DriverRuntime::new(1, 2).unwrap());
+    let mut service = make_service(1, 2);
     service
         .submit(
             operation_id,

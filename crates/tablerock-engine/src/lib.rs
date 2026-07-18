@@ -6,6 +6,7 @@ mod postgres;
 mod redis;
 mod runtime;
 mod service;
+mod session_pool;
 mod temporal;
 
 pub use adapter::{
@@ -36,4 +37,7 @@ pub use runtime::{
 pub use service::{
     EngineCancelOutcome, EngineService, EngineServiceError, EngineServiceUpdate,
     EngineShutdownOutcome,
+};
+pub use session_pool::{
+    MAX_REGISTERED_SESSIONS, SessionRegistry, SessionRegistryError, SessionSlot,
 };

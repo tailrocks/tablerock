@@ -62,6 +62,7 @@ How to read an evidence document:
 - 133 — [Phase 2 current-line performance budgets](phase-2/core/133-phase-2-current-line-performance-budgets.md)
 - 175 — [Phase 2 temporal value contract](phase-2/core/175-phase-2-temporal-value-contract.md)
 - 193 — [Phase 2 Execute intent and StatementText](phase-2/core/193-phase-2-execute-intent.md)
+- 194 — [Phase 2 session registry and Arc runtime borrow](phase-2/core/194-phase-2-session-registry.md)
 
 ## Phase 2 — profiles
 

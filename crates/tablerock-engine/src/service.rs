@@ -1,27 +1,28 @@
-use std::{collections::BTreeMap, error::Error, fmt};
+use std::{collections::BTreeMap, error::Error, fmt, sync::Arc};
 
 use tablerock_core::{
     CancelDispatch, CommandEnvelope, EventSequence, OperationEvent, OperationId, OperationIdentity,
     OperationOutcome, OperationPhase, OperationRetireError, PageIdentity, ResultPage,
-    ServiceCoordinator, ServiceError, ServicePhase, ShutdownMode, ShutdownOutcome, SubscriptionId,
-    SubscriptionStart,
+    ServiceCoordinator, ServiceError, ServicePhase, SessionId, ShutdownMode, ShutdownOutcome,
+    SubscriptionId, SubscriptionStart,
 };
 
 use crate::{
-    AdapterError, DriverOperationEvent, DriverOperationEvents, DriverPageRequest, DriverRuntime,
+    DriverOperationEvent, DriverOperationEvents, DriverPageRequest, DriverRuntime,
     DriverRuntimeError, DriverSession, DriverSpawnError, DriverTaskExit, RuntimeCancelOutcome,
-    RuntimeStopOutcome,
+    RuntimeStopOutcome, SessionRegistry, SessionRegistryError,
 };
 
 #[derive(Debug)]
 pub enum EngineServiceError {
     CoreSubmission {
         error: ServiceError,
-        shutdown_error: Option<AdapterError>,
     },
     Core(ServiceError),
     Spawn(DriverSpawnError),
     Runtime(DriverRuntimeError),
+    Session(SessionRegistryError),
+    SessionBusy,
     MissingDriverOperation,
     TerminalMismatch,
     ShutdownStillDraining,
@@ -35,6 +36,8 @@ impl fmt::Display for EngineServiceError {
             Self::Core(_) => "core rejected driver lifecycle observation",
             Self::Spawn(_) => "driver runtime rejected operation submission",
             Self::Runtime(_) => "driver runtime operation failed",
+            Self::Session(_) => "session registry rejected the request",
+            Self::SessionBusy => "session still has active operation borrows",
             Self::MissingDriverOperation => "driver operation is not registered",
             Self::TerminalMismatch => "driver event and task exit disagree",
             Self::ShutdownStillDraining => "engine service shutdown is still draining",
@@ -74,16 +77,47 @@ struct EngineOperation {
 pub struct EngineService {
     core: ServiceCoordinator,
     runtime: Option<DriverRuntime>,
+    sessions: SessionRegistry,
     operations: BTreeMap<OperationId, EngineOperation>,
 }
 
 impl EngineService {
-    #[must_use]
-    pub fn new(core: ServiceCoordinator, runtime: DriverRuntime) -> Self {
-        Self {
+    pub fn new(
+        core: ServiceCoordinator,
+        runtime: DriverRuntime,
+        max_sessions: usize,
+    ) -> Result<Self, EngineServiceError> {
+        Ok(Self {
             core,
             runtime: Some(runtime),
+            sessions: SessionRegistry::new(max_sessions).map_err(EngineServiceError::Session)?,
             operations: BTreeMap::new(),
+        })
+    }
+
+    pub fn register_session(
+        &mut self,
+        session_id: SessionId,
+        session: Box<dyn DriverSession>,
+    ) -> Result<Arc<dyn DriverSession>, EngineServiceError> {
+        self.sessions
+            .register(session_id, session)
+            .map_err(EngineServiceError::Session)
+    }
+
+    #[must_use]
+    pub fn session(&self, session_id: SessionId) -> Option<Arc<dyn DriverSession>> {
+        self.sessions.session(session_id)
+    }
+
+    pub async fn disconnect(
+        &mut self,
+        session_id: SessionId,
+    ) -> Result<(), EngineServiceError> {
+        match self.sessions.disconnect(session_id).await {
+            Ok(()) => Ok(()),
+            Err(SessionRegistryError::SessionBusy) => Err(EngineServiceError::SessionBusy),
+            Err(error) => Err(EngineServiceError::Session(error)),
         }
     }
 
@@ -91,18 +125,16 @@ impl EngineService {
         &mut self,
         operation_id: OperationId,
         command: CommandEnvelope,
-        session: Box<dyn DriverSession>,
+        session: Arc<dyn DriverSession>,
         request: DriverPageRequest,
         page_identity: PageIdentity,
     ) -> Result<OperationIdentity, EngineServiceError> {
         let identity = match self.core.submit(operation_id, command) {
             Ok(identity) => identity,
             Err(error) => {
-                let shutdown_error = session.shutdown().await.err();
-                return Err(EngineServiceError::CoreSubmission {
-                    error,
-                    shutdown_error,
-                });
+                // Drop the Arc borrow only; the registry keeps the connection.
+                drop(session);
+                return Err(EngineServiceError::CoreSubmission { error });
             }
         };
         let events = match self

@@ -1664,7 +1664,7 @@ async fn verify_version(tag: &str) {
             .submit(
                 operation_id,
                 support::command(41),
-                Box::new(session),
+                Arc::new(session),
                 DriverPageRequest::RedisKeyScan {
                     limits: PageLimits::new(2, 1, 256, 64),
                     max_cell_bytes: 128,
@@ -2164,7 +2164,7 @@ async fn verify_pubsub_service_cancellation(port: u16, protocol: RedisProtocol) 
         .submit(
             operation_id,
             support::command(71),
-            Box::new(session),
+            Arc::new(session),
             DriverPageRequest::RedisSubscribe {
                 selector: channel.clone(),
                 kind: RedisSubscriptionKind::Channel,
@@ -2580,7 +2580,7 @@ async fn verify_service_cancellation(
         .submit(
             operation_id,
             support::command(61),
-            Box::new(session),
+            Arc::new(session),
             DriverPageRequest::RedisBlockingPop {
                 key: bytes(b"tablerock-cancellation-empty-list"),
                 limits: PageLimits::new(1, 2, 256, 128),

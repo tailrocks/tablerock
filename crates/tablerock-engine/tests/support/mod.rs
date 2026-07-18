@@ -46,7 +46,9 @@ pub fn service(max_operations: u32, event_capacity: usize) -> EngineService {
     EngineService::new(
         core,
         DriverRuntime::new(max_operations as usize, event_capacity).unwrap(),
+        8,
     )
+    .unwrap()
 }
 
 pub fn command(request_low: u64) -> CommandEnvelope {

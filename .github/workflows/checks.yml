@@ -28,8 +28,14 @@ jobs:
         run: cargo check --workspace --all-targets
       - name: Container-free tests
         run: cargo test -p tablerock-core -p tablerock-persistence -p tablerock-tui -p tablerock-cli
-      - name: Engine unit tests
-        run: cargo test -p tablerock-engine --lib
+      - name: Engine unit and container-free integration tests
+        run: >
+          cargo test -p tablerock-engine
+          --lib
+          --test engine_service
+          --test driver_runtime
+          --test session_registry
+          --test adapter_contract
 
   real-servers:
     runs-on: ubuntu-latest
