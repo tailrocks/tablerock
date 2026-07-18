@@ -107,10 +107,9 @@ Done so far:
 - Performance: current-line 10,000-row streaming, first-page, throughput,
   page-residency, and process-RSS budgets.
 
-Still open: catalog listing, product file effects, UI/UniFFI integration, and
-everything in Phase 3 onward. Engine sessions are now reusable across
-operations with operator-supplied SQL (PG/CH) and per-engine health checks;
-see evidence 193–195.
+Still open: product file effects, UI/UniFFI integration, and everything in
+Phase 3 onward. Engine sessions are reusable with operator SQL and health
+(193–195); lazy catalog listing works for PG/CH/Redis (198).
 
 ## Phase 3 — connection experience
 

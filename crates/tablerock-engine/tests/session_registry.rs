@@ -56,6 +56,18 @@ impl DriverSession for CountingSession {
         })
     }
 
+    fn catalog<'a>(
+        &'a self,
+        _request: tablerock_engine::CatalogRequest,
+    ) -> DriverFuture<'a, Result<tablerock_engine::CatalogSubtree, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::PostgreSql,
+                tablerock_engine::AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move {
             self.shutdowns.fetch_add(1, Ordering::SeqCst);

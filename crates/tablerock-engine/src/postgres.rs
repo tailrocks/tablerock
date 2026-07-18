@@ -17,9 +17,10 @@ use rustls::{
     pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
 };
 use tablerock_core::{
-    BoundedBytes, BoundedText, ByteLimit, ColumnMetadata, Engine, EngineType, OwnedValue,
-    PageDelivery, PageFacts, PageIdentity, PageLimits, PageValidationError, PageWarning,
-    PageWarnings, ResultPage, RowTotal, Truncation, ValueRef,
+    BoundedBytes, BoundedText, ByteLimit, CatalogChildrenState, CatalogNodeKind, ColumnMetadata,
+    Engine, EngineType, OwnedValue, PageDelivery, PageFacts, PageIdentity, PageLimits,
+    PageValidationError, PageWarning, PageWarnings, PostgreSqlObjectKind, ResultPage, RowTotal,
+    Truncation, ValueRef,
 };
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
@@ -36,7 +37,11 @@ use tokio_postgres::{
 use tokio_postgres_rustls::MakeRustlsConnect;
 use zeroize::Zeroize;
 
-use crate::temporal::format_date_from_unix_days;
+use crate::{
+    CatalogExactness, CatalogRequest, CatalogSubtree,
+    catalog::{catalog_name_list, catalog_seed},
+    temporal::format_date_from_unix_days,
+};
 
 const MAX_TLS_MATERIAL_BYTES: usize = 65_536;
 const MAX_CA_CERTIFICATES: usize = 16;
@@ -878,6 +883,196 @@ impl PostgresSession {
             .await
             .map(|_| ())
             .map_err(|_| PostgresError::Connection)
+    }
+
+    /// Fixture / administration SQL (DDL) for tests and controlled tooling.
+    pub async fn execute_sql(&self, sql: &str) -> Result<(), PostgresError> {
+        self.client
+            .batch_execute(sql)
+            .await
+            .map_err(|_| PostgresError::Query)
+    }
+
+    pub async fn list_catalog(
+        &self,
+        request: CatalogRequest,
+    ) -> Result<CatalogSubtree, PostgresError> {
+        match request {
+            CatalogRequest::PostgreSqlDatabases { limits } => {
+                self.catalog_databases(limits.max_rows()).await
+            }
+            CatalogRequest::PostgreSqlSchemas { limits, .. } => {
+                // Connection is already database-scoped; database name is retained for
+                // client identity checks only.
+                self.catalog_schemas(limits.max_rows()).await
+            }
+            CatalogRequest::PostgreSqlRelations { schema, limits, .. } => {
+                self.catalog_relations(schema.as_str(), limits.max_rows())
+                    .await
+            }
+            _ => Err(PostgresError::Query),
+        }
+    }
+
+    async fn catalog_databases(&self, limit: u32) -> Result<CatalogSubtree, PostgresError> {
+        if limit == 0 {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let fetch = limit.saturating_add(1);
+        let rows = self
+            .client
+            .query(
+                "SELECT datname::text FROM pg_catalog.pg_database \
+                 WHERE datallowconn ORDER BY 1 LIMIT $1::int4",
+                &[&i32::try_from(fetch).unwrap_or(i32::MAX)],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        let names = rows
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>();
+        Ok(catalog_name_list(
+            Engine::PostgreSql,
+            names,
+            CatalogNodeKind::PostgreSqlDatabase,
+            CatalogChildrenState::Unrequested,
+            limit,
+        ))
+    }
+
+    async fn catalog_schemas(&self, limit: u32) -> Result<CatalogSubtree, PostgresError> {
+        if limit == 0 {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let fetch = limit.saturating_add(1);
+        let rows = self
+            .client
+            .query(
+                "SELECT nspname::text FROM pg_catalog.pg_namespace \
+                 WHERE nspname NOT LIKE 'pg_toast%' \
+                   AND nspname NOT LIKE 'pg_temp_%' \
+                 ORDER BY 1 LIMIT $1::int4",
+                &[&i32::try_from(fetch).unwrap_or(i32::MAX)],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        let names = rows
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>();
+        Ok(catalog_name_list(
+            Engine::PostgreSql,
+            names,
+            CatalogNodeKind::PostgreSqlSchema,
+            CatalogChildrenState::Unrequested,
+            limit,
+        ))
+    }
+
+    async fn catalog_relations(
+        &self,
+        schema: &str,
+        limit: u32,
+    ) -> Result<CatalogSubtree, PostgresError> {
+        if limit == 0 || schema.is_empty() {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let fetch = limit.saturating_add(1);
+        let relation_rows = self
+            .client
+            .query(
+                "SELECT c.relname::text, c.relkind::text \
+                 FROM pg_catalog.pg_class c \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                 WHERE n.nspname = $1 \
+                   AND c.relkind = ANY(ARRAY['r','p','v','m','f','S']) \
+                 ORDER BY 1 LIMIT $2::int4",
+                &[&schema, &i32::try_from(fetch).unwrap_or(i32::MAX)],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        let function_rows = self
+            .client
+            .query(
+                "SELECT p.proname::text, pg_catalog.pg_get_function_arguments(p.oid)::text \
+                 FROM pg_catalog.pg_proc p \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace \
+                 WHERE n.nspname = $1 \
+                 ORDER BY 1 LIMIT $2::int4",
+                &[&schema, &i32::try_from(fetch).unwrap_or(i32::MAX)],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+
+        let mut nodes = Vec::new();
+        let mut truncated = false;
+        for row in relation_rows {
+            if nodes.len() as u32 >= limit {
+                truncated = true;
+                break;
+            }
+            let name: String = row.get(0);
+            let relkind: String = row.get(1);
+            let kind = match relkind.as_str() {
+                "r" => PostgreSqlObjectKind::Table,
+                "p" => PostgreSqlObjectKind::PartitionedTable,
+                "v" => PostgreSqlObjectKind::View,
+                "m" => PostgreSqlObjectKind::MaterializedView,
+                "f" => PostgreSqlObjectKind::ForeignTable,
+                "S" => PostgreSqlObjectKind::Sequence,
+                _ => continue,
+            };
+            let Some(seed) = catalog_seed(
+                CatalogNodeKind::PostgreSqlObject(kind),
+                &name,
+                CatalogChildrenState::Unrequested,
+                None,
+            ) else {
+                continue;
+            };
+            nodes.push(seed);
+        }
+        for row in function_rows {
+            if nodes.len() as u32 >= limit {
+                truncated = true;
+                break;
+            }
+            let name: String = row.get(0);
+            let args: String = row.get(1);
+            let engine_type = EngineType::new(
+                Engine::PostgreSql,
+                BoundedText::copy_from_str(&args, ByteLimit::new(1_024)).unwrap_or_else(|_| {
+                    BoundedText::copy_from_str("…", ByteLimit::new(8)).expect("ellipsis")
+                }),
+            )
+            .ok();
+            let Some(seed) = catalog_seed(
+                CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::Function),
+                &name,
+                CatalogChildrenState::NotApplicable,
+                engine_type,
+            ) else {
+                continue;
+            };
+            nodes.push(seed);
+        }
+        // Stable name order across relations+functions
+        nodes.sort_by(|a, b| a.name().cmp(b.name()));
+        if nodes.len() as u32 > limit {
+            nodes.truncate(limit as usize);
+            truncated = true;
+        }
+        Ok(CatalogSubtree::new(
+            Engine::PostgreSql,
+            nodes,
+            !truncated,
+            if truncated {
+                CatalogExactness::Truncated
+            } else {
+                CatalogExactness::Exact
+            },
+        ))
     }
 
     pub async fn prepare_composite_probe(&self) -> Result<(), PostgresError> {

@@ -2771,3 +2771,50 @@ async fn seed(port: u16) {
         }
     }
 }
+
+#[tokio::test]
+async fn lists_catalog_logical_databases() {
+    use tablerock_core::{CatalogNodeKind, PageLimits};
+    use tablerock_engine::{
+        CatalogExactness, CatalogRequest, DriverSession, REDIS_DEFAULT_LOGICAL_DATABASES,
+    };
+
+    let container = GenericImage::new("redis", "8.8.0")
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let session = RedisSession::connect(
+        &RedisConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            0,
+            RedisProtocol::Resp3,
+            RedisTlsMode::Disable,
+        ),
+        RedisConnectionSecurity::new(),
+    )
+    .await
+    .unwrap();
+    let subtree = session
+        .catalog(CatalogRequest::RedisLogicalDatabases {
+            limits: PageLimits::new(64, 1, 1024, 64),
+        })
+        .await
+        .unwrap();
+    assert!(!subtree.nodes().is_empty());
+    assert!(
+        subtree
+            .nodes()
+            .iter()
+            .all(|n| n.kind() == CatalogNodeKind::RedisLogicalDatabase)
+    );
+    assert!(subtree.nodes().iter().any(|n| n.name() == "db0"));
+    assert!(matches!(
+        subtree.exactness(),
+        CatalogExactness::Exact | CatalogExactness::DefaultAssumed
+    ));
+    let _ = REDIS_DEFAULT_LOGICAL_DATABASES;
+}

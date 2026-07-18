@@ -6,10 +6,11 @@ use tablerock_core::{
 };
 
 use crate::{
-    ClickHouseError, ClickHouseProbeQuery, ClickHouseRowStream, ClickHouseSession, PostgresError,
-    PostgresProbeQuery, PostgresRowStream, PostgresSession, RedisCollectionScanKind,
-    RedisCollectionScanOptions, RedisCollectionStream, RedisError, RedisKeyStream, RedisSession,
-    RedisSubscriptionKind, RedisSubscriptionOptions, RedisSubscriptionStream,
+    CatalogRequest, CatalogSubtree, ClickHouseError, ClickHouseProbeQuery, ClickHouseRowStream,
+    ClickHouseSession, PostgresError, PostgresProbeQuery, PostgresRowStream, PostgresSession,
+    RedisCollectionScanKind, RedisCollectionScanOptions, RedisCollectionStream, RedisError,
+    RedisKeyStream, RedisSession, RedisSubscriptionKind, RedisSubscriptionOptions,
+    RedisSubscriptionStream,
 };
 
 pub type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -260,6 +261,12 @@ pub trait DriverSession: Send + Sync {
     /// Cheap round-trip proving the session can still reach the server.
     fn health<'a>(&'a self) -> DriverFuture<'a, Result<SessionHealth, AdapterError>>;
 
+    /// Lazy catalog level listing for the workbench sidebar.
+    fn catalog<'a>(
+        &'a self,
+        request: CatalogRequest,
+    ) -> DriverFuture<'a, Result<CatalogSubtree, AdapterError>>;
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>>;
 }
 
@@ -418,6 +425,13 @@ impl DriverSession for PostgresSession {
         })
     }
 
+    fn catalog<'a>(
+        &'a self,
+        request: CatalogRequest,
+    ) -> DriverFuture<'a, Result<CatalogSubtree, AdapterError>> {
+        Box::pin(async move { self.list_catalog(request).await.map_err(map_postgres) })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move { (*self).shutdown().await.map_err(map_postgres) })
     }
@@ -476,6 +490,13 @@ impl DriverSession for ClickHouseSession {
         measure_health(Engine::ClickHouse, || async {
             self.health_check().await.map_err(map_clickhouse)
         })
+    }
+
+    fn catalog<'a>(
+        &'a self,
+        request: CatalogRequest,
+    ) -> DriverFuture<'a, Result<CatalogSubtree, AdapterError>> {
+        Box::pin(async move { self.list_catalog(request).await.map_err(map_clickhouse) })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
@@ -554,6 +575,13 @@ impl DriverSession for RedisSession {
         measure_health(Engine::Redis, || async {
             self.health_check().await.map_err(map_redis)
         })
+    }
+
+    fn catalog<'a>(
+        &'a self,
+        request: CatalogRequest,
+    ) -> DriverFuture<'a, Result<CatalogSubtree, AdapterError>> {
+        Box::pin(async move { self.list_catalog(request).await.map_err(map_redis) })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {

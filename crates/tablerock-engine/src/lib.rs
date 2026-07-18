@@ -1,6 +1,7 @@
 //! Database adapters and operation runtime for TableRock.
 
 mod adapter;
+mod catalog;
 mod clickhouse;
 mod postgres;
 mod redis;
@@ -13,6 +14,10 @@ mod temporal;
 pub use adapter::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
     DriverSession, SessionHealth,
+};
+pub use catalog::{
+    CatalogExactness, CatalogNodeSeed, CatalogRequest, CatalogSubtree,
+    REDIS_DEFAULT_LOGICAL_DATABASES,
 };
 pub use clickhouse::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseError, ClickHouseProbeQuery,

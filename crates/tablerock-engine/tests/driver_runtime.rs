@@ -90,6 +90,18 @@ impl DriverSession for StartingSession {
         })
     }
 
+    fn catalog<'a>(
+        &'a self,
+        _request: tablerock_engine::CatalogRequest,
+    ) -> DriverFuture<'a, Result<tablerock_engine::CatalogSubtree, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::PostgreSql,
+                tablerock_engine::AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move {
             self.shutdown.store(true, Ordering::SeqCst);
@@ -134,6 +146,18 @@ impl DriverSession for ControlledSession {
                 Engine::PostgreSql,
                 true,
                 0,
+            ))
+        })
+    }
+
+    fn catalog<'a>(
+        &'a self,
+        _request: tablerock_engine::CatalogRequest,
+    ) -> DriverFuture<'a, Result<tablerock_engine::CatalogSubtree, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::PostgreSql,
+                tablerock_engine::AdapterFailureClass::InvalidRequest,
             ))
         })
     }

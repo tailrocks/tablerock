@@ -10,12 +10,17 @@ use std::{
 use bytes::Bytes;
 use clickhouse::{Client, Compression, query::BytesCursor};
 use tablerock_core::{
-    BoundedBytes, BoundedText, ByteLimit, ColumnMetadata, Engine, EngineType, OwnedValue,
-    PageDelivery, PageFacts, PageIdentity, PageLimits, PageValidationError, PageWarning,
-    PageWarnings, ResultPage, RowTotal, Truncation, ValueKind,
+    BoundedBytes, BoundedText, ByteLimit, CatalogChildrenState, CatalogNodeKind,
+    ClickHouseObjectKind, ColumnMetadata, Engine, EngineType, OwnedValue, PageDelivery, PageFacts,
+    PageIdentity, PageLimits, PageValidationError, PageWarning, PageWarnings, ResultPage, RowTotal,
+    Truncation, ValueKind,
 };
 
-use crate::temporal::{format_date_from_unix_days, format_unix_timestamp};
+use crate::{
+    CatalogRequest, CatalogSubtree,
+    catalog::{catalog_name_list, catalog_seed},
+    temporal::{format_date_from_unix_days, format_unix_timestamp},
+};
 
 const MAX_CLICKHOUSE_TYPE_DEPTH: u8 = 64;
 const MAX_STRUCTURED_NODES: u64 = 1_000_000;
@@ -332,6 +337,183 @@ impl ClickHouseSession {
         let mut buf = [0_u8; 1];
         reader.read_exact(&mut buf).await?;
         Ok(())
+    }
+
+    /// Fixture / administration SQL (DDL) for tests and controlled tooling.
+    pub async fn execute_sql(&self, sql: &str) -> Result<(), ClickHouseError> {
+        self.client
+            .query(sql)
+            .execute()
+            .await
+            .map_err(|_| ClickHouseError::Query)
+    }
+
+    pub async fn list_catalog(
+        &self,
+        request: CatalogRequest,
+    ) -> Result<CatalogSubtree, ClickHouseError> {
+        match request {
+            CatalogRequest::ClickHouseDatabases { limits } => {
+                self.catalog_databases(limits.max_rows()).await
+            }
+            CatalogRequest::ClickHouseObjects { database, limits } => {
+                self.catalog_objects(database.as_str(), limits.max_rows())
+                    .await
+            }
+            _ => Err(ClickHouseError::Query),
+        }
+    }
+
+    async fn catalog_databases(&self, limit: u32) -> Result<CatalogSubtree, ClickHouseError> {
+        if limit == 0 {
+            return Err(ClickHouseError::InvalidLimits);
+        }
+        let fetch = limit.saturating_add(1);
+        let sql = format!("SELECT name FROM system.databases ORDER BY name LIMIT {fetch}");
+        let names = self.fetch_name_column(&sql).await?;
+        Ok(catalog_name_list(
+            Engine::ClickHouse,
+            names,
+            CatalogNodeKind::ClickHouseDatabase,
+            CatalogChildrenState::Unrequested,
+            limit,
+        ))
+    }
+
+    async fn catalog_objects(
+        &self,
+        database: &str,
+        limit: u32,
+    ) -> Result<CatalogSubtree, ClickHouseError> {
+        if limit == 0 || database.is_empty() {
+            return Err(ClickHouseError::InvalidLimits);
+        }
+        let fetch = limit.saturating_add(1);
+        // Identifiers are single-quoted with escaping; never interpolated as SQL identifiers.
+        let db = escape_ch_string(database);
+        let tables_sql = format!(
+            "SELECT name, engine FROM system.tables WHERE database = '{db}' ORDER BY name LIMIT {fetch}"
+        );
+        let dict_sql = format!(
+            "SELECT name FROM system.dictionaries WHERE database = '{db}' ORDER BY name LIMIT {fetch}"
+        );
+        let table_rows = self.fetch_name_engine_pairs(&tables_sql).await?;
+        let dict_names = self.fetch_name_column(&dict_sql).await?;
+
+        let mut nodes = Vec::new();
+        let mut truncated = false;
+        for (name, engine_name) in table_rows {
+            if nodes.len() as u32 >= limit {
+                truncated = true;
+                break;
+            }
+            let kind = clickhouse_object_kind(&engine_name);
+            if let Some(seed) = catalog_seed(
+                CatalogNodeKind::ClickHouseObject(kind),
+                &name,
+                CatalogChildrenState::Unrequested,
+                None,
+            ) {
+                nodes.push(seed);
+            }
+        }
+        for name in dict_names {
+            if nodes.len() as u32 >= limit {
+                truncated = true;
+                break;
+            }
+            if let Some(seed) = catalog_seed(
+                CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Dictionary),
+                &name,
+                CatalogChildrenState::NotApplicable,
+                None,
+            ) {
+                nodes.push(seed);
+            }
+        }
+        nodes.sort_by(|a, b| a.name().cmp(b.name()));
+        if nodes.len() as u32 > limit {
+            nodes.truncate(limit as usize);
+            truncated = true;
+        }
+        Ok(CatalogSubtree::new(
+            Engine::ClickHouse,
+            nodes,
+            !truncated,
+            if truncated {
+                crate::CatalogExactness::Truncated
+            } else {
+                crate::CatalogExactness::Exact
+            },
+        ))
+    }
+
+    async fn fetch_name_column(&self, sql: &str) -> Result<Vec<String>, ClickHouseError> {
+        // Use TabSeparated for simple single-column string lists.
+        let cursor = self
+            .client
+            .query(sql)
+            .fetch_bytes("TabSeparated")
+            .map_err(|_| ClickHouseError::Query)?;
+        let mut reader = ChunkReader::new(cursor);
+        let mut raw = Vec::new();
+        let mut buf = [0_u8; 4096];
+        loop {
+            let n = reader
+                .read(&mut buf)
+                .await
+                .map_err(|_| ClickHouseError::Protocol)?;
+            if n == 0 {
+                break;
+            }
+            raw.extend_from_slice(&buf[..n]);
+            if raw.len() > 4 * 1024 * 1024 {
+                return Err(ClickHouseError::Protocol);
+            }
+        }
+        Ok(String::from_utf8_lossy(&raw)
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect())
+    }
+
+    async fn fetch_name_engine_pairs(
+        &self,
+        sql: &str,
+    ) -> Result<Vec<(String, String)>, ClickHouseError> {
+        let cursor = self
+            .client
+            .query(sql)
+            .fetch_bytes("TabSeparated")
+            .map_err(|_| ClickHouseError::Query)?;
+        let mut reader = ChunkReader::new(cursor);
+        let mut raw = Vec::new();
+        let mut buf = [0_u8; 4096];
+        loop {
+            let n = reader
+                .read(&mut buf)
+                .await
+                .map_err(|_| ClickHouseError::Protocol)?;
+            if n == 0 {
+                break;
+            }
+            raw.extend_from_slice(&buf[..n]);
+            if raw.len() > 4 * 1024 * 1024 {
+                return Err(ClickHouseError::Protocol);
+            }
+        }
+        let mut pairs = Vec::new();
+        for line in String::from_utf8_lossy(&raw).lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let mut parts = line.splitn(2, '\t');
+            let name = parts.next().unwrap_or("").to_owned();
+            let engine = parts.next().unwrap_or("").to_owned();
+            pairs.push((name, engine));
+        }
+        Ok(pairs)
     }
 
     pub async fn dispatch_cancel(&self) -> Result<bool, ClickHouseError> {
@@ -1472,6 +1654,39 @@ impl ChunkReader {
             offset += take;
         }
         Ok(())
+    }
+
+    async fn read(&mut self, output: &mut [u8]) -> Result<usize, ClickHouseError> {
+        if output.is_empty() {
+            return Ok(0);
+        }
+        if !self.has_data().await? {
+            return Ok(0);
+        }
+        let take = output.len().min(self.chunk.len());
+        output[..take].copy_from_slice(&self.chunk.split_to(take));
+        Ok(take)
+    }
+}
+
+fn escape_ch_string(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+fn clickhouse_object_kind(engine_name: &str) -> ClickHouseObjectKind {
+    match engine_name {
+        "View" | "LiveView" => ClickHouseObjectKind::View,
+        "MaterializedView" => ClickHouseObjectKind::MaterializedView,
+        "Dictionary" => ClickHouseObjectKind::Dictionary,
+        _ => ClickHouseObjectKind::Table,
     }
 }
 

@@ -16,6 +16,7 @@ use redis::{
     ProtocolVersion, PushInfo, PushKind, RedisConnectionInfo, TlsCertificates,
     aio::{ConnectionManager, ConnectionManagerConfig},
 };
+
 use rustls::{
     RootCertStore,
     pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
@@ -171,10 +172,16 @@ impl fmt::Debug for RedisConnectionSecurity<'_> {
     }
 }
 use tablerock_core::{
-    AuthorizedMutationPlan, BoundedBytes, BoundedText, ByteLimit, ColumnMetadata, Engine,
-    EngineType, MutationChange, MutationId, MutationTarget, OwnedValue, PageDelivery, PageFacts,
-    PageIdentity, PageLimits, PageValidationError, PageWarning, PageWarnings, RedisExpiration,
-    RedisTimeToLive, ResultPage, ReviewTokenId, RowTotal, Truncation,
+    AuthorizedMutationPlan, BoundedBytes, BoundedText, ByteLimit, CatalogChildrenState,
+    CatalogNodeKind, ColumnMetadata, Engine, EngineType, MutationChange, MutationId,
+    MutationTarget, OwnedValue, PageDelivery, PageFacts, PageIdentity, PageLimits,
+    PageValidationError, PageWarning, PageWarnings, RedisExpiration, RedisTimeToLive, ResultPage,
+    ReviewTokenId, RowTotal, Truncation,
+};
+
+use crate::{
+    CatalogExactness, CatalogRequest, CatalogSubtree, REDIS_DEFAULT_LOGICAL_DATABASES,
+    catalog::catalog_name_list,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1209,6 +1216,69 @@ impl RedisSession {
             .await
             .map(|_| ())
             .map_err(|_| RedisError::Connection)
+    }
+
+    pub async fn list_catalog(
+        &self,
+        request: CatalogRequest,
+    ) -> Result<CatalogSubtree, RedisError> {
+        match request {
+            CatalogRequest::RedisLogicalDatabases { limits } => {
+                self.catalog_logical_databases(limits.max_rows()).await
+            }
+            _ => Err(RedisError::Command),
+        }
+    }
+
+    async fn catalog_logical_databases(&self, limit: u32) -> Result<CatalogSubtree, RedisError> {
+        if limit == 0 {
+            return Err(RedisError::InvalidLimits);
+        }
+        let mut control = self.control.clone();
+        let (count, exactness) = match redis::cmd("CONFIG")
+            .arg("GET")
+            .arg("databases")
+            .query_async::<Vec<String>>(&mut control)
+            .await
+        {
+            Ok(pairs) => {
+                let value = pairs
+                    .windows(2)
+                    .find(|window| window[0].eq_ignore_ascii_case("databases"))
+                    .map(|window| window[1].as_str())
+                    .or_else(|| pairs.get(1).map(String::as_str))
+                    .unwrap_or("16");
+                let parsed = value
+                    .parse::<u32>()
+                    .unwrap_or(REDIS_DEFAULT_LOGICAL_DATABASES)
+                    .max(1);
+                (parsed, CatalogExactness::Exact)
+            }
+            Err(_) => (
+                REDIS_DEFAULT_LOGICAL_DATABASES,
+                CatalogExactness::DefaultAssumed,
+            ),
+        };
+        let take = count.min(limit);
+        let truncated = count > limit;
+        let names = (0..take).map(|index| format!("db{index}"));
+        let subtree = catalog_name_list(
+            Engine::Redis,
+            names,
+            CatalogNodeKind::RedisLogicalDatabase,
+            CatalogChildrenState::Unrequested,
+            limit,
+        );
+        Ok(CatalogSubtree::new(
+            Engine::Redis,
+            subtree.into_nodes(),
+            !truncated,
+            if truncated {
+                CatalogExactness::Truncated
+            } else {
+                exactness
+            },
+        ))
     }
 
     pub async fn dispatch_cancel(&self) -> Result<RedisCancelDispatch, RedisError> {

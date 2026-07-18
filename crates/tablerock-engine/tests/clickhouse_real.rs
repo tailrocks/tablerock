@@ -569,3 +569,68 @@ async fn ready_clickhouse_session(
         }
     }
 }
+
+#[tokio::test]
+async fn lists_catalog_databases_and_objects() {
+    use tablerock_core::{
+        BoundedText, ByteLimit, CatalogNodeKind, ClickHouseObjectKind, PageLimits,
+    };
+    use tablerock_engine::{CatalogRequest, DriverSession};
+
+    let image =
+        "26.3.17.4-jammy@sha256:158dcce6f6fdc59309650aad6b79484abf4eed07d4e0bdba31d732e64b5a25fb";
+    let container = GenericImage::new("clickhouse", image)
+        .with_exposed_port(8123.tcp())
+        .with_env_var("CLICKHOUSE_SKIP_USER_SETUP", "1")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
+    let session = ready_clickhouse_session(port, ClickHouseCompression::None).await;
+    session
+        .execute_sql("CREATE DATABASE IF NOT EXISTS catalog_fixture")
+        .await
+        .unwrap();
+    session
+        .execute_sql("CREATE TABLE IF NOT EXISTS catalog_fixture.t (id UInt8) ENGINE = Memory")
+        .await
+        .unwrap();
+    session
+        .execute_sql("CREATE VIEW IF NOT EXISTS catalog_fixture.v AS SELECT 1 AS id")
+        .await
+        .unwrap();
+
+    let limits = PageLimits::new(500, 8, 64 * 1024, 256);
+    let databases = session
+        .catalog(CatalogRequest::ClickHouseDatabases { limits })
+        .await
+        .unwrap();
+    assert!(
+        databases
+            .nodes()
+            .iter()
+            .any(|n| n.kind() == CatalogNodeKind::ClickHouseDatabase
+                && n.name() == "catalog_fixture")
+    );
+
+    let objects = session
+        .catalog(CatalogRequest::ClickHouseObjects {
+            database: BoundedText::copy_from_str("catalog_fixture", ByteLimit::new(64)).unwrap(),
+            limits,
+        })
+        .await
+        .unwrap();
+    let names: Vec<_> = objects
+        .nodes()
+        .iter()
+        .map(|n| n.name().to_owned())
+        .collect();
+    assert!(names.contains(&"t".to_owned()), "{names:?}");
+    assert!(names.contains(&"v".to_owned()), "{names:?}");
+    assert!(objects.nodes().iter().any(|n| {
+        matches!(
+            n.kind(),
+            CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Table)
+        )
+    }));
+}

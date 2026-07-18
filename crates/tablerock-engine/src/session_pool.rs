@@ -6,8 +6,8 @@ use tablerock_core::{CancelDispatch, Engine, OperationId, SessionId};
 use tokio::sync::RwLock;
 
 use crate::{
-    AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
-    DriverSession, SessionHealth,
+    AdapterError, AdapterFailureClass, CatalogRequest, CatalogSubtree, DriverFuture,
+    DriverPageRequest, DriverPageStream, DriverSession, SessionHealth,
 };
 
 /// Upper bound for concurrent registered sessions (ServiceLimits scale).
@@ -103,6 +103,22 @@ impl DriverSession for SessionSlot {
             let guard = self.state.read().await;
             match &*guard {
                 SessionState::Open(session) => session.health().await,
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
+    fn catalog<'a>(
+        &'a self,
+        request: CatalogRequest,
+    ) -> DriverFuture<'a, Result<CatalogSubtree, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => session.catalog(request).await,
                 SessionState::Closed => Err(AdapterError::new(
                     self.engine,
                     AdapterFailureClass::Connection,

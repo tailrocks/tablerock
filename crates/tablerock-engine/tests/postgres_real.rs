@@ -2085,3 +2085,101 @@ async fn persistent_session_runs_statement_cancel_health_and_reuses_connection()
     drop(handle);
     service.disconnect(session_id).await.unwrap();
 }
+
+#[tokio::test]
+async fn lists_catalog_databases_schemas_and_relations_with_hostile_names() {
+    use tablerock_core::{
+        BoundedText, ByteLimit, CatalogChildrenState, CatalogNodeKind, PageLimits,
+        PostgreSqlObjectKind,
+    };
+    use tablerock_engine::{CatalogExactness, CatalogRequest, DriverSession};
+
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+
+    session
+        .execute_sql(
+            r#"
+            DROP SCHEMA IF EXISTS "カタログ" CASCADE;
+            CREATE SCHEMA "カタログ";
+            CREATE TABLE "カタログ"."users" (id int);
+            CREATE VIEW "カタログ"."v_users" AS SELECT 1 AS id;
+            CREATE TABLE "カタログ"."semi;--x" (id int);
+            CREATE FUNCTION "カタログ".add_one(x int) RETURNS int LANGUAGE sql AS $$ SELECT x + 1 $$;
+            "#,
+        )
+        .await
+        .unwrap();
+
+    let limits = PageLimits::new(500, 8, 64 * 1024, 256);
+    let databases = session
+        .catalog(CatalogRequest::PostgreSqlDatabases { limits })
+        .await
+        .unwrap();
+    assert!(
+        databases
+            .nodes()
+            .iter()
+            .any(|n| n.name() == "postgres" && n.kind() == CatalogNodeKind::PostgreSqlDatabase)
+    );
+
+    let schemas = session
+        .catalog(CatalogRequest::PostgreSqlSchemas {
+            database: BoundedText::copy_from_str("postgres", ByteLimit::new(64)).unwrap(),
+            limits,
+        })
+        .await
+        .unwrap();
+    assert!(schemas.nodes().iter().any(|n| n.name() == "カタログ"));
+    assert!(schemas.nodes().iter().any(|n| n.name() == "public"));
+
+    let relations = session
+        .catalog(CatalogRequest::PostgreSqlRelations {
+            database: BoundedText::copy_from_str("postgres", ByteLimit::new(64)).unwrap(),
+            schema: BoundedText::copy_from_str("カタログ", ByteLimit::new(64)).unwrap(),
+            limits,
+        })
+        .await
+        .unwrap();
+    let names: Vec<_> = relations
+        .nodes()
+        .iter()
+        .map(|n| n.name().to_owned())
+        .collect();
+    assert!(names.contains(&"users".to_owned()));
+    assert!(names.contains(&"v_users".to_owned()));
+    assert!(
+        names.contains(&"semi;--x".to_owned()),
+        "hostile name listed: {names:?}"
+    );
+    assert!(names.contains(&"add_one".to_owned()));
+    let function = relations
+        .nodes()
+        .iter()
+        .find(|n| n.name() == "add_one")
+        .unwrap();
+    assert_eq!(
+        function.kind(),
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::Function)
+    );
+    assert_eq!(function.children(), CatalogChildrenState::NotApplicable);
+    assert!(function.engine_type().is_some());
+    assert_eq!(relations.exactness(), CatalogExactness::Exact);
+}

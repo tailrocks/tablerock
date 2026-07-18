@@ -1,16 +1,18 @@
 use std::{collections::BTreeMap, error::Error, fmt, sync::Arc};
 
 use tablerock_core::{
-    CancelDispatch, CommandEnvelope, EventSequence, OperationEvent, OperationId, OperationIdentity,
-    OperationOutcome, OperationPhase, OperationRetireError, PageIdentity, ResultPage,
-    ServiceCoordinator, ServiceError, ServicePhase, SessionId, ShutdownMode, ShutdownOutcome,
-    SubscriptionId, SubscriptionStart,
+    CancelDispatch, CatalogCursor, CatalogIdentity, CatalogLimits, CatalogNode, CatalogNodeId,
+    CatalogSnapshot, CommandEnvelope, CommandIntent, CommandScope, EventSequence, IdParts,
+    OperationEvent, OperationId, OperationIdentity, OperationOutcome, OperationPhase,
+    OperationRetireError, PageIdentity, ResultPage, ServiceCoordinator, ServiceError, ServicePhase,
+    SessionId, ShutdownMode, ShutdownOutcome, SubscriptionId, SubscriptionStart,
 };
 
 use crate::{
-    DriverOperationEvent, DriverOperationEvents, DriverPageRequest, DriverRuntime,
-    DriverRuntimeError, DriverSession, DriverSpawnError, DriverTaskExit, RuntimeCancelOutcome,
-    RuntimeStopOutcome, SessionRegistry, SessionRegistryError,
+    AdapterError, CatalogRequest, CatalogSubtree, DriverOperationEvent, DriverOperationEvents,
+    DriverPageRequest, DriverRuntime, DriverRuntimeError, DriverSession, DriverSpawnError,
+    DriverTaskExit, RuntimeCancelOutcome, RuntimeStopOutcome, SessionRegistry,
+    SessionRegistryError,
 };
 
 #[derive(Debug)]
@@ -25,6 +27,10 @@ pub enum EngineServiceError {
     TerminalMismatch,
     ShutdownStillDraining,
     RuntimeUnavailable,
+    IntentMismatch,
+    Catalog(AdapterError),
+    CatalogBuild,
+    CatalogCursor(tablerock_core::CatalogRejection),
 }
 
 impl fmt::Display for EngineServiceError {
@@ -40,6 +46,10 @@ impl fmt::Display for EngineServiceError {
             Self::TerminalMismatch => "driver event and task exit disagree",
             Self::ShutdownStillDraining => "engine service shutdown is still draining",
             Self::RuntimeUnavailable => "engine service runtime is unavailable",
+            Self::IntentMismatch => "command intent is not a catalog refresh",
+            Self::Catalog(_) => "catalog listing failed",
+            Self::CatalogBuild => "catalog snapshot failed validation",
+            Self::CatalogCursor(_) => "catalog cursor rejected the snapshot",
         })
     }
 }
@@ -114,6 +124,49 @@ impl EngineService {
             Err(SessionRegistryError::SessionBusy) => Err(EngineServiceError::SessionBusy),
             Err(error) => Err(EngineServiceError::Session(error)),
         }
+    }
+
+    /// List one catalog level, assemble a validated snapshot, and advance scope revision.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn refresh_catalog(
+        &mut self,
+        session: Arc<dyn DriverSession>,
+        command: CommandEnvelope,
+        request: CatalogRequest,
+        cursor: CatalogCursor,
+        limits: CatalogLimits,
+        id_seed: u64,
+        parent: Option<(CatalogNodeId, u16)>,
+    ) -> Result<(CatalogSnapshot, CatalogCursor), EngineServiceError> {
+        if !matches!(command.intent(), CommandIntent::RefreshCatalog) {
+            return Err(EngineServiceError::IntentMismatch);
+        }
+        let CommandScope::Context(scope) = command.scope() else {
+            return Err(EngineServiceError::IntentMismatch);
+        };
+        let expected = command.expected_revision();
+        let subtree = session
+            .catalog(request)
+            .await
+            .map_err(EngineServiceError::Catalog)?;
+        if subtree.engine() != session.engine() {
+            return Err(EngineServiceError::Catalog(AdapterError::new(
+                session.engine(),
+                crate::AdapterFailureClass::EngineMismatch,
+            )));
+        }
+        let next_revision = self
+            .core
+            .advance_scope(CommandScope::Context(scope), expected)
+            .map_err(EngineServiceError::Core)?;
+        let identity = CatalogIdentity::new(scope, subtree.engine(), next_revision);
+        let nodes = assemble_catalog_nodes(subtree, parent, id_seed);
+        let snapshot = CatalogSnapshot::new(identity, nodes, limits)
+            .map_err(|_| EngineServiceError::CatalogBuild)?;
+        let next_cursor = cursor
+            .accept(&snapshot)
+            .map_err(EngineServiceError::CatalogCursor)?;
+        Ok((snapshot, next_cursor))
     }
 
     pub async fn submit(
@@ -412,4 +465,42 @@ impl EngineService {
             .await
             .map_err(EngineServiceError::Runtime)
     }
+}
+
+fn assemble_catalog_nodes(
+    subtree: CatalogSubtree,
+    parent: Option<(CatalogNodeId, u16)>,
+    id_seed: u64,
+) -> Vec<CatalogNode> {
+    let (parent_id, parent_depth) = match parent {
+        Some((id, depth)) => (Some(id), depth),
+        None => (None, 0),
+    };
+    let depth = if parent_id.is_some() {
+        parent_depth.saturating_add(1)
+    } else {
+        0
+    };
+    subtree
+        .into_nodes()
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, seed)| {
+            let id = CatalogNodeId::from_parts(
+                IdParts::new(0, id_seed.saturating_add(index as u64 + 1)).ok()?,
+            )
+            .ok()?;
+            let name = seed.clone().into_name();
+            let engine_type = seed.clone().take_engine_type();
+            Some(CatalogNode::new(
+                id,
+                parent_id,
+                depth,
+                seed.kind(),
+                name,
+                engine_type,
+                seed.children(),
+            ))
+        })
+        .collect()
 }

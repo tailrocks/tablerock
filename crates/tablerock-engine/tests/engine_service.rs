@@ -77,6 +77,18 @@ impl DriverSession for HoldSession {
         })
     }
 
+    fn catalog<'a>(
+        &'a self,
+        _request: tablerock_engine::CatalogRequest,
+    ) -> DriverFuture<'a, Result<tablerock_engine::CatalogSubtree, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::PostgreSql,
+                tablerock_engine::AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move {
             self.0.store(true, Ordering::SeqCst);
@@ -113,6 +125,18 @@ impl DriverSession for PanicSession {
         })
     }
 
+    fn catalog<'a>(
+        &'a self,
+        _request: tablerock_engine::CatalogRequest,
+    ) -> DriverFuture<'a, Result<tablerock_engine::CatalogSubtree, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::PostgreSql,
+                tablerock_engine::AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async { Ok(()) })
     }
@@ -145,6 +169,18 @@ impl DriverSession for PageSession {
                 Engine::PostgreSql,
                 true,
                 0,
+            ))
+        })
+    }
+
+    fn catalog<'a>(
+        &'a self,
+        _request: tablerock_engine::CatalogRequest,
+    ) -> DriverFuture<'a, Result<tablerock_engine::CatalogSubtree, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::PostgreSql,
+                tablerock_engine::AdapterFailureClass::InvalidRequest,
             ))
         })
     }
@@ -468,4 +504,143 @@ async fn graceful_shutdown_allows_completion_without_client_stop() {
         }
     }
     service.complete_shutdown().await.unwrap();
+}
+
+struct CatalogSession;
+
+impl DriverSession for CatalogSession {
+    fn engine(&self) -> Engine {
+        Engine::PostgreSql
+    }
+
+    fn start_page_stream<'a>(
+        &'a self,
+        _request: DriverPageRequest,
+    ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::PostgreSql,
+                tablerock_engine::AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
+    fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
+        Box::pin(async { CancelDispatch::Unsupported })
+    }
+
+    fn health<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::SessionHealth, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::SessionHealth::new(
+                Engine::PostgreSql,
+                true,
+                0,
+            ))
+        })
+    }
+
+    fn catalog<'a>(
+        &'a self,
+        request: tablerock_engine::CatalogRequest,
+    ) -> DriverFuture<'a, Result<tablerock_engine::CatalogSubtree, AdapterError>> {
+        Box::pin(async move {
+            assert!(matches!(
+                request,
+                tablerock_engine::CatalogRequest::PostgreSqlDatabases { .. }
+            ));
+            let name = tablerock_core::BoundedText::copy_from_str(
+                "app",
+                tablerock_core::ByteLimit::new(32),
+            )
+            .unwrap();
+            Ok(tablerock_engine::CatalogSubtree::new(
+                Engine::PostgreSql,
+                vec![tablerock_engine::CatalogNodeSeed::new(
+                    tablerock_core::CatalogNodeKind::PostgreSqlDatabase,
+                    name,
+                    tablerock_core::CatalogChildrenState::Unrequested,
+                    None,
+                )],
+                true,
+                tablerock_engine::CatalogExactness::Exact,
+            ))
+        })
+    }
+
+    fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+#[tokio::test]
+async fn refresh_catalog_advances_scope_and_rejects_stale_cursor() {
+    use tablerock_core::{CatalogCursor, CatalogIdentity, CatalogLimits, CommandIntent, Revision};
+    use tablerock_engine::CatalogRequest;
+
+    let mut service = make_service(2, 2);
+    let session: Arc<dyn DriverSession> = Arc::new(CatalogSession);
+    let scope = scope();
+    let cursor = CatalogCursor::new(CatalogIdentity::new(
+        scope,
+        Engine::PostgreSql,
+        Revision::INITIAL,
+    ));
+    let budget = CommandBudget::new(10_000, 8, 1024, 128)
+        .unwrap()
+        .validate(CommandBudgetLimits::new(10_000, 8, 1024, 128).unwrap())
+        .unwrap();
+    let command = CommandEnvelope::new(
+        opaque(700, RequestId::from_parts),
+        CommandScope::Context(scope),
+        Revision::INITIAL,
+        budget,
+        None,
+        CommandIntent::RefreshCatalog,
+    )
+    .unwrap();
+    let (snapshot, next_cursor) = service
+        .refresh_catalog(
+            Arc::clone(&session),
+            command,
+            CatalogRequest::PostgreSqlDatabases {
+                limits: PageLimits::new(100, 8, 4096, 256),
+            },
+            cursor,
+            CatalogLimits::new(1_000, 16, 100_000).unwrap(),
+            10,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(snapshot.nodes().len(), 1);
+    assert_eq!(snapshot.nodes()[0].name(), "app");
+    assert_eq!(next_cursor.revision(), Revision::from_wire_u64(1));
+
+    // Stale: same revision again fails at advance_scope (expected was advanced).
+    let stale = CommandEnvelope::new(
+        opaque(701, RequestId::from_parts),
+        CommandScope::Context(scope),
+        Revision::INITIAL,
+        budget,
+        None,
+        CommandIntent::RefreshCatalog,
+    )
+    .unwrap();
+    let err = service
+        .refresh_catalog(
+            session,
+            stale,
+            CatalogRequest::PostgreSqlDatabases {
+                limits: PageLimits::new(100, 8, 4096, 256),
+            },
+            next_cursor,
+            CatalogLimits::new(1_000, 16, 100_000).unwrap(),
+            20,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, EngineServiceError::Core(_)));
 }
