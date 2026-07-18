@@ -166,6 +166,7 @@ How to read an evidence document:
 - 192 — [CI verification baseline](delivery/192-ci-verification-baseline.md)
 - 199 — [TUI effect executor and engine/persistence bridge](delivery/199-tui-effect-executor-bridge.md)
 - 200 — [Connection editor Test Connection effect](delivery/200-connection-test-effect.md)
+- 201 — [Connect session registration and stub workbench](delivery/201-connect-session-workbench.md)
 
 ## TermRock migrations and updates
 

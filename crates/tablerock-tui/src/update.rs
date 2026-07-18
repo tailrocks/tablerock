@@ -4,7 +4,10 @@ use crate::{
     ActionId, Effect, FocusRegion, Message, Model, Screen, ShellTarget,
     effect::ProfileListFilterSpec,
     message::{EngineMsg, ProfilesMsg},
-    model::profiles::{FailureProjection, ProfileListState},
+    model::{
+        SessionFacts,
+        profiles::{FailureProjection, ProfileListState},
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,6 +214,52 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             model.editor_mut().test_status = Some(format!("failed: {label}"));
             Update::render()
         }
+        Message::Engine(EngineMsg::ConnectOk {
+            session_id_hex,
+            identity,
+            temporary,
+            engine_label,
+            ..
+        }) => {
+            model.set_session(Some(SessionFacts {
+                session_id_hex,
+                identity,
+                temporary,
+                engine_label,
+                status: Some("connected".into()),
+            }));
+            model.set_screen(Screen::Workbench);
+            model.set_action(ActionId::Disconnect);
+            Update::render()
+        }
+        Message::Engine(EngineMsg::ConnectFailed { reason, .. }) => {
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            model.editor_mut().test_status = Some(format!("connect failed: {label}"));
+            if let Some(session) = model.session().cloned() {
+                let mut session = session;
+                session.status = Some(format!("failed: {label}"));
+                model.set_session(Some(session));
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::DisconnectOk { .. }) => {
+            model.set_session(None);
+            model.set_screen(Screen::Connections);
+            model.set_action(ActionId::Open);
+            Update::render()
+        }
+        Message::Engine(EngineMsg::DisconnectFailed { reason, .. }) => {
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(mut session) = model.session().cloned() {
+                session.status = Some(format!("disconnect failed: {label}"));
+                model.set_session(Some(session));
+            }
+            Update::render()
+        }
         Message::FocusNext => {
             if model.move_focus(false) {
                 Update::render()
@@ -305,13 +354,50 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::Connect if model.screen() == Screen::Editor => {
+            if !model.editor_mut().validate() {
+                return Update::render();
+            }
+            let token = model.mint_request_token();
+            model.editor_mut().test_status = Some("connecting…".into());
+            Update {
+                render: true,
+                effect: Some(Effect::ConnectSession {
+                    request_token: token,
+                    draft: connection_draft_from_editor(model.editor()),
+                    // Editor Connect is temporary until list-row Open saves first.
+                    temporary: true,
+                }),
+            }
+        }
+        ActionId::Disconnect if model.screen() == Screen::Workbench => {
+            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(mut facts) = model.session().cloned() {
+                facts.status = Some("disconnecting…".into());
+                model.set_session(Some(facts));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::DisconnectSession {
+                    request_token: token,
+                    session_id_hex,
+                }),
+            }
+        }
         ActionId::Cancel if model.screen() == Screen::Editor => {
             model.set_screen(Screen::Connections);
             model.set_action(ActionId::Open);
             Update::render()
         }
         ActionId::Quit => Update::with_effect(Effect::Exit),
-        ActionId::Save | ActionId::Test | ActionId::Cancel => Update::unchanged(),
+        ActionId::Save
+        | ActionId::Test
+        | ActionId::Connect
+        | ActionId::Disconnect
+        | ActionId::Cancel => Update::unchanged(),
     }
 }
 
@@ -320,9 +406,11 @@ fn cycle_action(screen: Screen, current: ActionId, reverse: bool) -> ActionId {
         Screen::Editor => &[
             ActionId::Save,
             ActionId::Test,
+            ActionId::Connect,
             ActionId::Cancel,
             ActionId::Quit,
         ],
+        Screen::Workbench => &[ActionId::Disconnect, ActionId::Quit],
         Screen::Connections | Screen::ConnectionPicker => {
             &[ActionId::Open, ActionId::New, ActionId::Quit]
         }
@@ -554,5 +642,34 @@ mod tests {
             model.editor().test_status.as_deref(),
             Some("failed: connect")
         );
+    }
+
+    #[test]
+    fn connect_opens_workbench_and_disconnect_returns() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Editor);
+        let _ = update(
+            &mut model,
+            Message::Engine(EngineMsg::ConnectOk {
+                request_token: 1,
+                session_id_hex: "00000000000000010000000000000001".into(),
+                identity: "PostgreSQL 17".into(),
+                temporary: true,
+                engine_label: "PostgreSQL".into(),
+            }),
+        );
+        assert_eq!(model.screen(), Screen::Workbench);
+        assert!(model.session().is_some());
+        assert_eq!(model.selected_action(), ActionId::Disconnect);
+
+        let _ = update(
+            &mut model,
+            Message::Engine(EngineMsg::DisconnectOk {
+                request_token: 2,
+                session_id_hex: "00000000000000010000000000000001".into(),
+            }),
+        );
+        assert_eq!(model.screen(), Screen::Connections);
+        assert!(model.session().is_none());
     }
 }

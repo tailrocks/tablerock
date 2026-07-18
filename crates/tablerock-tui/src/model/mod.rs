@@ -46,6 +46,8 @@ pub enum ActionId {
     New,
     Save,
     Test,
+    Connect,
+    Disconnect,
     Cancel,
     Quit,
 }
@@ -56,6 +58,18 @@ pub enum Screen {
     ConnectionPicker,
     /// First-version connection editor (new/edit).
     Editor,
+    /// Stub workbench after Connect (session facts only until plan 007).
+    Workbench,
+}
+
+/// Live session facts projected into the stub workbench.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SessionFacts {
+    pub session_id_hex: String,
+    pub identity: String,
+    pub temporary: bool,
+    pub engine_label: String,
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,6 +106,9 @@ impl FocusRegion {
 
     pub(crate) const EDITOR_ORDER: [Self; 4] =
         [Self::Context, Self::Content, Self::Actions, Self::Footer];
+
+    pub(crate) const WORKBENCH_ORDER: [Self; 4] =
+        [Self::Context, Self::Content, Self::Actions, Self::Footer];
 }
 
 #[derive(Debug)]
@@ -111,6 +128,7 @@ pub struct Model {
     next_request_token: RequestToken,
     profiles: ProfileListState,
     editor: ConnectionFormModel,
+    session: Option<SessionFacts>,
     bootstrapped: bool,
 }
 
@@ -131,6 +149,7 @@ impl Default for Model {
             next_request_token: 1,
             profiles: ProfileListState::default(),
             editor: ConnectionFormModel::default(),
+            session: None,
             bootstrapped: false,
         }
     }
@@ -243,6 +262,7 @@ impl Model {
             Screen::Connections => &FocusRegion::CONNECTION_ORDER,
             Screen::ConnectionPicker => &FocusRegion::PICKER_ORDER,
             Screen::Editor => &FocusRegion::EDITOR_ORDER,
+            Screen::Workbench => &FocusRegion::WORKBENCH_ORDER,
         };
         let enabled = self.layout_mode() != LayoutMode::TooSmall;
         self.focus.register_order(
@@ -304,6 +324,15 @@ impl Model {
 
     pub(crate) fn reset_editor(&mut self) {
         self.editor = ConnectionFormModel::default();
+    }
+
+    #[must_use]
+    pub const fn session(&self) -> Option<&SessionFacts> {
+        self.session.as_ref()
+    }
+
+    pub(crate) fn set_session(&mut self, session: Option<SessionFacts>) {
+        self.session = session;
     }
 
     pub(crate) const fn set_bootstrapped(&mut self, value: bool) {

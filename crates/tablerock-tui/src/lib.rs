@@ -15,7 +15,7 @@ pub use effect::{
 pub use keymap::{ShellKeyAction, default_keymap};
 pub use message::{EngineMsg, MAX_PASTE_BYTES, Message, PasteText, ProfilesMsg};
 pub use model::{
-    ActionId, FocusRegion, LayoutMode, Model, Screen, ScrollDirection, ShellTarget,
+    ActionId, FocusRegion, LayoutMode, Model, Screen, ScrollDirection, SessionFacts, ShellTarget,
     profiles::{FailureProjection, LiveConnectionState, ProfileListState, ProfileRowProjection},
 };
 pub use update::{Update, update};

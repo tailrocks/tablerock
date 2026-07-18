@@ -77,4 +77,15 @@ pub enum Effect {
         request_token: RequestToken,
         draft: ConnectionDraft,
     },
+    /// Connect, describe, register session; optional temporary (no save).
+    ConnectSession {
+        request_token: RequestToken,
+        draft: ConnectionDraft,
+        temporary: bool,
+    },
+    /// Shut down and remove a registered session.
+    DisconnectSession {
+        request_token: RequestToken,
+        session_id_hex: String,
+    },
 }

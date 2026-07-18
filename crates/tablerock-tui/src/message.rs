@@ -87,6 +87,25 @@ pub enum EngineMsg {
         request_token: u64,
         reason: FailureProjection,
     },
+    ConnectOk {
+        request_token: u64,
+        session_id_hex: String,
+        identity: String,
+        temporary: bool,
+        engine_label: String,
+    },
+    ConnectFailed {
+        request_token: u64,
+        reason: FailureProjection,
+    },
+    DisconnectOk {
+        request_token: u64,
+        session_id_hex: String,
+    },
+    DisconnectFailed {
+        request_token: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

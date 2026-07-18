@@ -8,8 +8,9 @@ use tablerock_core::{
     ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits, ProfileListFilter,
     ProfileListRequest, ProfileName, ProfileOrganization, ProfilePolicy, ProfilePreferences,
     ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag,
-    ReconnectPreference, Revision, SecretSource, SecretSourceKind, TlsPolicy,
+    ReconnectPreference, Revision, SecretSource, SecretSourceKind, SessionId, TlsPolicy,
 };
+use tablerock_engine::{DriverSession, SessionRegistry};
 use tablerock_persistence::PersistenceActor;
 use tablerock_tui::{
     ConnectionDraft, Effect, EngineKind, FailureProjection, Message, PasswordSourceSpec,
@@ -20,10 +21,12 @@ use tokio::sync::Mutex;
 use crate::{RootMessageSender, projection};
 
 static NEXT_PROFILE_LOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+static NEXT_SESSION_LOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// Owns process-local handles used by effect tasks.
 pub struct EffectExecutor {
     persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    sessions: Arc<Mutex<SessionRegistry>>,
     ingress: RootMessageSender,
 }
 
@@ -32,6 +35,9 @@ impl EffectExecutor {
     pub fn new(persistence: PersistenceActor, ingress: RootMessageSender) -> Self {
         Self {
             persistence: Arc::new(Mutex::new(Some(persistence))),
+            sessions: Arc::new(Mutex::new(
+                SessionRegistry::new(64).expect("valid session registry capacity"),
+            )),
             ingress,
         }
     }
@@ -93,6 +99,29 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::ConnectSession {
+                request_token,
+                draft,
+                temporary,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = connect_session(sessions, request_token, draft, temporary).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::DisconnectSession {
+                request_token,
+                session_id_hex,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = disconnect_session(sessions, request_token, session_id_hex).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
         }
     }
 }
@@ -133,21 +162,112 @@ async fn load_profile_list(
 }
 
 async fn test_connection(request_token: RequestToken, draft: ConnectionDraft) -> Message {
-    use tablerock_engine::{
-        ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
-        DriverSession, PostgresConnectConfig, PostgresSession, PostgresTlsMode, RedisConnectConfig,
-        RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession, RedisTlsMode,
-    };
-    let host = draft.host.clone();
-    let port: u16 = match draft.port.parse() {
-        Ok(port) => port,
-        Err(_) => {
-            return Message::Engine(tablerock_tui::EngineMsg::TestFailed {
+    match open_described_session(draft).await {
+        Ok((session, identity, elapsed_millis)) => {
+            let _ = session.shutdown().await;
+            Message::Engine(tablerock_tui::EngineMsg::TestOk {
                 request_token,
-                reason: FailureProjection::Label("invalid port".into()),
+                identity,
+                elapsed_millis,
+            })
+        }
+        Err(label) => Message::Engine(tablerock_tui::EngineMsg::TestFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+    }
+}
+
+async fn connect_session(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    draft: ConnectionDraft,
+    temporary: bool,
+) -> Message {
+    let engine_label = match draft.engine {
+        EngineKind::PostgreSql => "PostgreSQL",
+        EngineKind::ClickHouse => "ClickHouse",
+        EngineKind::Redis => "Redis",
+    }
+    .to_owned();
+    match open_described_session(draft).await {
+        Ok((session, identity, _elapsed)) => {
+            let session_id = match mint_session_id() {
+                Ok(id) => id,
+                Err(label) => {
+                    let _ = session.shutdown().await;
+                    return Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
+                        request_token,
+                        reason: FailureProjection::Label(label),
+                    });
+                }
+            };
+            let mut registry = sessions.lock().await;
+            match registry.register(session_id, session) {
+                Ok(_) => Message::Engine(tablerock_tui::EngineMsg::ConnectOk {
+                    request_token,
+                    session_id_hex: session_id.to_string(),
+                    identity,
+                    temporary,
+                    engine_label,
+                }),
+                Err(error) => Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
+                    request_token,
+                    reason: FailureProjection::Label(error.to_string()),
+                }),
+            }
+        }
+        Err(label) => Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+    }
+}
+
+async fn disconnect_session(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+) -> Message {
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::DisconnectFailed {
+                request_token,
+                reason: FailureProjection::Label("invalid session id".into()),
             });
         }
     };
+    let mut registry = sessions.lock().await;
+    match registry.disconnect(session_id).await {
+        Ok(()) => Message::Engine(tablerock_tui::EngineMsg::DisconnectOk {
+            request_token,
+            session_id_hex,
+        }),
+        Err(error) => Message::Engine(tablerock_tui::EngineMsg::DisconnectFailed {
+            request_token,
+            reason: FailureProjection::Label(error.to_string()),
+        }),
+    }
+}
+
+fn mint_session_id() -> Result<SessionId, String> {
+    let low = NEXT_SESSION_LOW.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    SessionId::from_parts(IdParts::new(1, low).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
+
+/// Connect + describe. Caller owns shutdown/register.
+async fn open_described_session(
+    draft: ConnectionDraft,
+) -> Result<(Box<dyn DriverSession>, String, u64), String> {
+    use tablerock_engine::{
+        ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
+        PostgresConnectConfig, PostgresSession, PostgresTlsMode, RedisConnectConfig,
+        RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession, RedisTlsMode,
+    };
+    let host = draft.host.clone();
+    let port: u16 = draft.port.parse().map_err(|_| "invalid port".to_owned())?;
     let text = |value: &str| {
         tablerock_core::BoundedText::copy_from_str(value, tablerock_core::ByteLimit::new(128))
             .map_err(|e| e.to_string())
@@ -164,96 +284,87 @@ async fn test_connection(request_token: RequestToken, draft: ConnectionDraft) ->
         TlsModeSpec::Off => RedisTlsMode::Disable,
         TlsModeSpec::VerifyCa | TlsModeSpec::VerifyFull => RedisTlsMode::Require,
     };
-    let result = async {
-        match draft.engine {
-            EngineKind::PostgreSql => {
-                // Password is not yet on PostgresConnectConfig; trust/peer fixtures work
-                // without it. Wire authenticated connect when engine grows a secret bag.
-                let session = PostgresSession::connect(&PostgresConnectConfig::new(
-                    text(&host)?,
-                    port,
-                    text(if draft.database.is_empty() {
-                        "postgres"
-                    } else {
-                        &draft.database
-                    })?,
-                    text(if draft.username.is_empty() {
-                        "postgres"
-                    } else {
-                        &draft.username
-                    })?,
-                    pg_tls,
-                ))
-                .await
-                .map_err(|e| e.to_string())?;
-                let described = session.describe().await.map_err(|e| e.to_string())?;
-                let _ = session.shutdown().await;
-                Ok((described.identity().to_owned(), described.elapsed_millis()))
-            }
-            EngineKind::ClickHouse => {
-                // ClickHouse connect is lazy; describe_server performs the round-trip.
-                // Password wiring waits on connect config secret bag (engine gap).
-                let _ = &draft.password;
-                let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
-                    text(&host)?,
-                    port,
-                    text(if draft.database.is_empty() {
-                        "default"
-                    } else {
-                        &draft.database
-                    })?,
-                    text(if draft.username.is_empty() {
-                        "default"
-                    } else {
-                        &draft.username
-                    })?,
-                    ch_tls,
-                    ClickHouseCompression::None,
-                ));
-                let described = session.describe().await.map_err(|e| e.to_string())?;
-                let _ = Box::new(session).shutdown().await;
-                Ok((described.identity().to_owned(), described.elapsed_millis()))
-            }
-            EngineKind::Redis => {
-                let mut security = RedisConnectionSecurity::new();
-                if !draft.password.is_empty() || !draft.username.is_empty() {
-                    let username = if draft.username.is_empty() {
-                        None
-                    } else {
-                        Some(draft.username.as_str())
-                    };
-                    security = security
-                        .with_credentials(RedisCredentials::new(username, draft.password.as_str()));
-                }
-                let session = RedisSession::connect(
-                    &RedisConnectConfig::new(
-                        text(&host)?,
-                        port,
-                        draft.database.parse().unwrap_or(0),
-                        RedisProtocol::Resp3,
-                        redis_tls,
-                    ),
-                    security,
-                )
-                .await
-                .map_err(|e| e.to_string())?;
-                let described = session.describe().await.map_err(|e| e.to_string())?;
-                let _ = Box::new(session).shutdown().await;
-                Ok((described.identity().to_owned(), described.elapsed_millis()))
-            }
+    match draft.engine {
+        EngineKind::PostgreSql => {
+            let session = PostgresSession::connect(&PostgresConnectConfig::new(
+                text(&host)?,
+                port,
+                text(if draft.database.is_empty() {
+                    "postgres"
+                } else {
+                    &draft.database
+                })?,
+                text(if draft.username.is_empty() {
+                    "postgres"
+                } else {
+                    &draft.username
+                })?,
+                pg_tls,
+            ))
+            .await
+            .map_err(|e| e.to_string())?;
+            let described = session.describe().await.map_err(|e| e.to_string())?;
+            Ok((
+                Box::new(session) as Box<dyn DriverSession>,
+                described.identity().to_owned(),
+                described.elapsed_millis(),
+            ))
         }
-    }
-    .await;
-    match result {
-        Ok((identity, elapsed_millis)) => Message::Engine(tablerock_tui::EngineMsg::TestOk {
-            request_token,
-            identity,
-            elapsed_millis,
-        }),
-        Err(label) => Message::Engine(tablerock_tui::EngineMsg::TestFailed {
-            request_token,
-            reason: FailureProjection::Label(label),
-        }),
+        EngineKind::ClickHouse => {
+            let _ = &draft.password;
+            let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
+                text(&host)?,
+                port,
+                text(if draft.database.is_empty() {
+                    "default"
+                } else {
+                    &draft.database
+                })?,
+                text(if draft.username.is_empty() {
+                    "default"
+                } else {
+                    &draft.username
+                })?,
+                ch_tls,
+                ClickHouseCompression::None,
+            ));
+            let described = session.describe().await.map_err(|e| e.to_string())?;
+            Ok((
+                Box::new(session) as Box<dyn DriverSession>,
+                described.identity().to_owned(),
+                described.elapsed_millis(),
+            ))
+        }
+        EngineKind::Redis => {
+            let mut security = RedisConnectionSecurity::new();
+            if !draft.password.is_empty() || !draft.username.is_empty() {
+                let username = if draft.username.is_empty() {
+                    None
+                } else {
+                    Some(draft.username.as_str())
+                };
+                security = security
+                    .with_credentials(RedisCredentials::new(username, draft.password.as_str()));
+            }
+            let session = RedisSession::connect(
+                &RedisConnectConfig::new(
+                    text(&host)?,
+                    port,
+                    draft.database.parse().unwrap_or(0),
+                    RedisProtocol::Resp3,
+                    redis_tls,
+                ),
+                security,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            let described = session.describe().await.map_err(|e| e.to_string())?;
+            Ok((
+                Box::new(session) as Box<dyn DriverSession>,
+                described.identity().to_owned(),
+                described.elapsed_millis(),
+            ))
+        }
     }
 }
 

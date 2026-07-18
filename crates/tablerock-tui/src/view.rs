@@ -185,6 +185,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let new = action_label(model, ActionId::New, "New");
     let save = action_label(model, ActionId::Save, "Save");
     let test = action_label(model, ActionId::Test, "Test");
+    let connect = action_label(model, ActionId::Connect, "Connect");
+    let disconnect = action_label(model, ActionId::Disconnect, "Disconnect");
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
     let quit = action_label(model, ActionId::Quit, "Quit");
     let actions: Vec<Action<'_, ActionId>> = match model.screen() {
@@ -202,8 +204,28 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                 style: None,
             },
             Action {
+                id: ActionId::Connect,
+                label: connect.as_str(),
+                enabled: true,
+                style: None,
+            },
+            Action {
                 id: ActionId::Cancel,
                 label: cancel.as_str(),
+                enabled: true,
+                style: None,
+            },
+            Action {
+                id: ActionId::Quit,
+                label: quit.as_str(),
+                enabled: true,
+                style: None,
+            },
+        ],
+        crate::Screen::Workbench => vec![
+            Action {
+                id: ActionId::Disconnect,
+                label: disconnect.as_str(),
                 enabled: true,
                 style: None,
             },
@@ -315,7 +337,22 @@ fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mu
 fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, focused: bool) {
     let focused_title = focused.then(|| format!("> {title}"));
     let body = if title == "Workspace" || title.ends_with("Workspace") {
-        Some(model.profiles().status_line())
+        if model.screen() == crate::Screen::Workbench {
+            model.session().map(|session| {
+                format!(
+                    "{} · {}{}",
+                    session.engine_label,
+                    session.identity,
+                    if session.temporary {
+                        " · temporary"
+                    } else {
+                        ""
+                    }
+                )
+            })
+        } else {
+            Some(model.profiles().status_line())
+        }
     } else {
         None
     };
@@ -448,6 +485,44 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
                     },
                     frame.buffer_mut(),
                 );
+            }
+        }
+        if model.screen() == crate::Screen::Workbench
+            && (title == "Workspace" || title.ends_with("Workspace"))
+            && let Some(session) = model.session()
+        {
+            for line in [
+                format!("session: {}", session.session_id_hex),
+                format!("engine: {}", session.engine_label),
+                format!("identity: {}", session.identity),
+                format!(
+                    "durability: {}",
+                    if session.temporary {
+                        "temporary"
+                    } else {
+                        "saved"
+                    }
+                ),
+                session
+                    .status
+                    .as_ref()
+                    .map(|status| format!("status: {status}"))
+                    .unwrap_or_default(),
+            ] {
+                if y >= max_y || line.is_empty() {
+                    continue;
+                }
+                let clipped: String = line.chars().take(width as usize).collect();
+                ratatui_core::text::Line::from(clipped).render(
+                    Rect {
+                        x,
+                        y,
+                        width,
+                        height: 1,
+                    },
+                    frame.buffer_mut(),
+                );
+                y = y.saturating_add(1);
             }
         }
     }
