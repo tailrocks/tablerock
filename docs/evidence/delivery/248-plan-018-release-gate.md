@@ -21,7 +21,8 @@ Date: 2026-07-18
 - Performance budgets
   - partial: local-rig release cold-start + binary size (evidence 288)
   - partial: unit first-paint &lt; 50 ms (evidence 297)
-  - residual: fixed-spec CI runners + first-row query latency
+  - partial: Docker first-page/stream budgets PG/CH/Redis (evidence 301)
+  - residual: fixed-spec CI runners (host matrix publish)
 - Ledger three-state export: landed CSV + counts (evidence 286)
 
 ## Parity claim status
