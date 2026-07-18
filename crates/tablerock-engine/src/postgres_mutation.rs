@@ -18,6 +18,8 @@ pub enum MutationChangeOutcome {
     Applied {
         index: usize,
         rows_affected: u64,
+        /// RETURNING projections as (column, display text) for generated values.
+        returned: Vec<(String, String)>,
     },
     Conflict {
         index: usize,
@@ -176,15 +178,16 @@ async fn apply_one_change(
                 .map(|(i, p)| sql_placeholder(i + 1, p))
                 .collect();
             let sql = format!(
-                "INSERT INTO {qualified} ({}) VALUES ({})",
+                "INSERT INTO {qualified} ({}) VALUES ({}) RETURNING *",
                 cols.join(", "),
                 placeholders.join(", ")
             );
-            let rows = execute_bound(session, &sql, &params).await?;
+            let (rows, returned) = execute_bound_returning(session, &sql, &params).await?;
             if rows == 1 {
                 Ok(MutationChangeOutcome::Applied {
                     index,
                     rows_affected: rows,
+                    returned,
                 })
             } else {
                 Ok(MutationChangeOutcome::Conflict {
@@ -230,15 +233,16 @@ async fn apply_one_change(
             let where_parts = where_parts.map_err(|_| PostgresError::Query)?;
             params.extend(locator_params);
             let sql = format!(
-                "UPDATE {qualified} SET {} WHERE {}",
+                "UPDATE {qualified} SET {} WHERE {} RETURNING *",
                 set_parts.join(", "),
                 where_parts.join(" AND ")
             );
-            let rows = execute_bound(session, &sql, &params).await?;
+            let (rows, returned) = execute_bound_returning(session, &sql, &params).await?;
             if rows == 1 {
                 Ok(MutationChangeOutcome::Applied {
                     index,
                     rows_affected: rows,
+                    returned,
                 })
             } else {
                 Ok(MutationChangeOutcome::Conflict {
@@ -267,14 +271,15 @@ async fn apply_one_change(
                 .collect();
             let where_parts = where_parts.map_err(|_| PostgresError::Query)?;
             let sql = format!(
-                "DELETE FROM {qualified} WHERE {}",
+                "DELETE FROM {qualified} WHERE {} RETURNING *",
                 where_parts.join(" AND ")
             );
-            let rows = execute_bound(session, &sql, &params).await?;
+            let (rows, returned) = execute_bound_returning(session, &sql, &params).await?;
             if rows == 1 {
                 Ok(MutationChangeOutcome::Applied {
                     index,
                     rows_affected: rows,
+                    returned,
                 })
             } else {
                 Ok(MutationChangeOutcome::Conflict {
@@ -340,12 +345,8 @@ fn bind_value(value: &OwnedValue) -> Result<Bound, PostgresError> {
     }
 }
 
-async fn execute_bound(
-    session: &PostgresSession,
-    sql: &str,
-    params: &[Bound],
-) -> Result<u64, PostgresError> {
-    let owned: Vec<Box<dyn ToSql + Sync + Send>> = params
+fn bind_params(params: &[Bound]) -> Vec<Box<dyn ToSql + Sync + Send>> {
+    params
         .iter()
         .map(|p| -> Box<dyn ToSql + Sync + Send> {
             match p {
@@ -359,16 +360,48 @@ async fn execute_bound(
                 Bound::Bytes(b) => Box::new(b.clone()),
             }
         })
-        .collect();
+        .collect()
+}
+
+/// Execute DML with RETURNING *; rows_affected is the returned row count.
+async fn execute_bound_returning(
+    session: &PostgresSession,
+    sql: &str,
+    params: &[Bound],
+) -> Result<(u64, Vec<(String, String)>), PostgresError> {
+    let owned = bind_params(params);
     let refs: Vec<&(dyn ToSql + Sync)> = owned
         .iter()
         .map(|p| p.as_ref() as &(dyn ToSql + Sync))
         .collect();
-    session
+    let rows = session
         .client
-        .execute(sql, &refs[..])
+        .query(sql, &refs[..])
         .await
-        .map_err(|_| PostgresError::Query)
+        .map_err(|_| PostgresError::Query)?;
+    let count = rows.len() as u64;
+    let mut returned = Vec::new();
+    if let Some(row) = rows.first() {
+        for (i, col) in row.columns().iter().enumerate() {
+            let name = col.name().to_owned();
+            // Best-effort display across common PG integer/text/bool wires.
+            let display = if let Ok(v) = row.try_get::<_, Option<String>>(i) {
+                v.unwrap_or_else(|| "∅".into())
+            } else if let Ok(v) = row.try_get::<_, Option<i64>>(i) {
+                v.map(|n| n.to_string()).unwrap_or_else(|| "∅".into())
+            } else if let Ok(v) = row.try_get::<_, Option<i32>>(i) {
+                v.map(|n| n.to_string()).unwrap_or_else(|| "∅".into())
+            } else if let Ok(v) = row.try_get::<_, Option<i16>>(i) {
+                v.map(|n| n.to_string()).unwrap_or_else(|| "∅".into())
+            } else if let Ok(v) = row.try_get::<_, Option<bool>>(i) {
+                v.map(|b| b.to_string()).unwrap_or_else(|| "∅".into())
+            } else {
+                "?".into()
+            };
+            returned.push((name, display));
+        }
+    }
+    Ok((count, returned))
 }
 
 #[cfg(test)]

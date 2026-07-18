@@ -2409,13 +2409,21 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
         .unwrap();
     let outcome = session.apply_authorized_mutation(authorized).await.unwrap();
     assert_eq!(outcome.transaction, MutationTransactionState::Committed);
-    assert!(matches!(
-        &outcome.changes[0],
+    match &outcome.changes[0] {
         tablerock_engine::MutationChangeOutcome::Applied {
             rows_affected: 1,
+            returned,
             ..
+        } => {
+            assert!(
+                returned
+                    .iter()
+                    .any(|(n, v)| n == "name" && v == "bob"),
+                "RETURNING should include updated name: {returned:?}"
+            );
         }
-    ));
+        other => panic!("expected Applied, got {other:?}"),
+    }
     assert_eq!(outcome.changes.len(), 1);
 
     // Conflict: update non-existent id → 0 rows → rollback report.
@@ -2531,6 +2539,56 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
         &bad_out.changes[0],
         tablerock_engine::MutationChangeOutcome::Failed { .. }
     ));
+
+    // INSERT … RETURNING reconciles generated identity values.
+    session
+        .execute_sql(
+            "CREATE TABLE mut_serial (
+                id int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                label text NOT NULL
+             );",
+        )
+        .await
+        .unwrap();
+    let gen_plan = MutationPlan::new(
+        MutationId::from_parts(IdParts::new(1, 20).unwrap()).unwrap(),
+        scope,
+        Revision::INITIAL,
+        MutationTarget::PostgreSqlRelation {
+            database: bt("postgres"),
+            schema: bt("public"),
+            relation: bt("mut_serial"),
+        },
+        vec![MutationChange::InsertRow {
+            values: vec![field(
+                "label",
+                OwnedValue::text(bt("auto"), Truncation::Complete).unwrap(),
+            )],
+        }],
+        limits,
+    )
+    .unwrap();
+    let gen_auth = gen_plan
+        .review(
+            ReviewTokenId::from_parts(IdParts::new(1, 21).unwrap()).unwrap(),
+            1_000,
+            30_000,
+        )
+        .unwrap()
+        .authorize(5_000, scope, Revision::INITIAL)
+        .unwrap();
+    let gen_out = session.apply_authorized_mutation(gen_auth).await.unwrap();
+    assert_eq!(gen_out.transaction, MutationTransactionState::Committed);
+    match &gen_out.changes[0] {
+        tablerock_engine::MutationChangeOutcome::Applied { returned, .. } => {
+            assert!(
+                returned.iter().any(|(n, v)| n == "id" && v == "1"),
+                "RETURNING should include generated id: {returned:?}"
+            );
+            assert!(returned.iter().any(|(n, v)| n == "label" && v == "auto"));
+        }
+        other => panic!("expected Applied with RETURNING, got {other:?}"),
+    }
 
     // Primary-key column proof for editability.
     let pk = session
