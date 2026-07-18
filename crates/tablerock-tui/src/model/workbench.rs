@@ -748,6 +748,50 @@ impl WorkbenchModel {
         CloseTabOutcome::Closed
     }
 
+    /// Close tabs strictly to the right of the active tab. Fails closed on dirty.
+    pub fn close_tabs_to_right(&mut self) -> CloseTabOutcome {
+        if self.selected_tab + 1 >= self.tabs.len() {
+            return CloseTabOutcome::Empty;
+        }
+        if let Some((index, tab)) = self
+            .tabs
+            .iter()
+            .enumerate()
+            .find(|(i, t)| *i > self.selected_tab && t.dirty)
+        {
+            return CloseTabOutcome::NeedsConfirm {
+                title: format!("right dirty: {}", tab.title),
+                index,
+            };
+        }
+        self.tabs.truncate(self.selected_tab + 1);
+        self.recompute_pending();
+        CloseTabOutcome::Closed
+    }
+
+    /// Close tabs strictly to the left of the active tab. Fails closed on dirty.
+    pub fn close_tabs_to_left(&mut self) -> CloseTabOutcome {
+        if self.selected_tab == 0 {
+            return CloseTabOutcome::Empty;
+        }
+        if let Some((index, tab)) = self
+            .tabs
+            .iter()
+            .enumerate()
+            .find(|(i, t)| *i < self.selected_tab && t.dirty)
+        {
+            return CloseTabOutcome::NeedsConfirm {
+                title: format!("left dirty: {}", tab.title),
+                index,
+            };
+        }
+        let keep = self.selected_tab;
+        self.tabs.drain(0..keep);
+        self.selected_tab = 0;
+        self.recompute_pending();
+        CloseTabOutcome::Closed
+    }
+
     /// Mark every live tab/operation disconnected without dropping content.
     ///
     /// Completed/failed grids stay inspectable with their prior terminal state;
@@ -966,6 +1010,39 @@ mod tests {
             CloseTabOutcome::NeedsConfirm { .. }
         ));
         assert!(wb.tabs.len() >= 2);
+    }
+
+    #[test]
+    fn close_tabs_to_left_and_right() {
+        let mut wb = WorkbenchModel::default();
+        // Default Welcome + three previews → use titles for selection.
+        wb.open_preview_tab("a");
+        wb.open_preview_tab("b");
+        wb.open_preview_tab("c");
+        // Select middle preview "b".
+        assert!(wb.select_tab_by_title("b"));
+        let before = wb.tabs.len();
+        assert!(matches!(wb.close_tabs_to_right(), CloseTabOutcome::Closed));
+        assert!(wb.tabs.iter().all(|t| t.title != "c"));
+        assert!(wb.tabs.iter().any(|t| t.title == "b"));
+        assert!(wb.tabs.len() < before);
+        // Re-open c and dirty it while active is b → right close fails closed.
+        wb.open_preview_tab("c2");
+        wb.mark_active_dirty(true);
+        assert!(wb.select_tab_by_title("b"));
+        assert!(matches!(
+            wb.close_tabs_to_right(),
+            CloseTabOutcome::NeedsConfirm { .. }
+        ));
+        // Left close with clean left tabs.
+        assert!(wb.select_tab_by_title("b"));
+        let left_before = wb.selected_tab;
+        assert!(left_before > 0);
+        assert!(matches!(wb.close_tabs_to_left(), CloseTabOutcome::Closed));
+        assert_eq!(wb.selected_tab, 0);
+        assert_eq!(wb.tabs[0].title, "b");
+        assert!(!wb.tabs.iter().any(|t| t.title == "a"));
+        assert!(matches!(wb.close_tabs_to_left(), CloseTabOutcome::Empty));
     }
 
     #[test]

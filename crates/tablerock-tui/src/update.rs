@@ -3315,6 +3315,28 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 CloseTabOutcome::Closed | CloseTabOutcome::Empty => Update::render(),
             }
         }
+        ActionId::CloseTabsToRight if model.screen() == Screen::Workbench => {
+            use crate::model::workbench::CloseTabOutcome;
+            match model.workbench_mut().close_tabs_to_right() {
+                CloseTabOutcome::NeedsConfirm { title, index } => {
+                    model.set_confirm(Some(ConfirmDialog::CloseDirtyTab { title, index }));
+                    model.set_action(ActionId::Submit);
+                    Update::render()
+                }
+                CloseTabOutcome::Closed | CloseTabOutcome::Empty => Update::render(),
+            }
+        }
+        ActionId::CloseTabsToLeft if model.screen() == Screen::Workbench => {
+            use crate::model::workbench::CloseTabOutcome;
+            match model.workbench_mut().close_tabs_to_left() {
+                CloseTabOutcome::NeedsConfirm { title, index } => {
+                    model.set_confirm(Some(ConfirmDialog::CloseDirtyTab { title, index }));
+                    model.set_action(ActionId::Submit);
+                    Update::render()
+                }
+                CloseTabOutcome::Closed | CloseTabOutcome::Empty => Update::render(),
+            }
+        }
         ActionId::RenameTab if model.screen() == Screen::Workbench => {
             let Some(tab) = model.workbench().active_tab() else {
                 return Update::unchanged();
@@ -5241,6 +5263,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::PrevTab
         | ActionId::CloseTab
         | ActionId::CloseOtherTabs
+        | ActionId::CloseTabsToRight
+        | ActionId::CloseTabsToLeft
         | ActionId::RenameTab
         | ActionId::MoveTabLeft
         | ActionId::MoveTabRight
@@ -6949,6 +6973,8 @@ fn cycle_action(
                 ActionId::NextTab,
                 ActionId::PrevTab,
                 ActionId::CloseOtherTabs,
+                ActionId::CloseTabsToRight,
+                ActionId::CloseTabsToLeft,
                 ActionId::RenameTab,
                 ActionId::MoveTabLeft,
                 ActionId::MoveTabRight,

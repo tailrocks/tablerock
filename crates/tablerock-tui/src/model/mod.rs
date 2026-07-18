@@ -77,6 +77,10 @@ pub enum ActionId {
     CloseTab,
     /// Close all tabs except the active one (fails closed if others dirty).
     CloseOtherTabs,
+    /// Close tabs to the right of the active tab (fails closed if dirty).
+    CloseTabsToRight,
+    /// Close tabs to the left of the active tab (fails closed if dirty).
+    CloseTabsToLeft,
     /// Rename the active workbench tab title.
     RenameTab,
     /// Move active tab one slot left in the strip.

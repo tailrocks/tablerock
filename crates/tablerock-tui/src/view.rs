@@ -784,6 +784,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let close_insp = action_label(model, ActionId::CloseInspector, "CloseInsp");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
     let close_others = action_label(model, ActionId::CloseOtherTabs, "CloseOthers");
+    let close_right = action_label(model, ActionId::CloseTabsToRight, "CloseRight");
+    let close_left = action_label(model, ActionId::CloseTabsToLeft, "CloseLeft");
     let rename_tab = action_label(model, ActionId::RenameTab, "RenTab");
     let tab_left = action_label(model, ActionId::MoveTabLeft, "TabL");
     let tab_right = action_label(model, ActionId::MoveTabRight, "TabR");
@@ -1854,6 +1856,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CloseOtherTabs,
                         label: close_others.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CloseTabsToRight,
+                        label: close_right.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CloseTabsToLeft,
+                        label: close_left.as_str(),
                         enabled: true,
                         style: None,
                     },
