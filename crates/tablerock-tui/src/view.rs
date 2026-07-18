@@ -192,15 +192,24 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             known_names,
             confirm_buffer,
         } => {
+            let ranked = crate::model::saved_filter::rank_preset_names(
+                known_names,
+                confirm_buffer,
+                8,
+            );
             let known = if known_names.is_empty() {
                 "(none saved)".into()
-            } else {
+            } else if confirm_buffer.trim().is_empty() {
                 known_names.join(", ")
+            } else if ranked.is_empty() {
+                "(no fuzzy match)".into()
+            } else {
+                ranked.join(", ")
             };
             (
                 "Apply filter preset?",
                 format!(
-                    "Load preset for {schema}.{table}. Known: {known}. Paste name [{confirm_buffer}]"
+                    "Load preset for {schema}.{table}. Matches: {known}. Paste name [{confirm_buffer}]"
                 ),
             )
         }

@@ -144,6 +144,84 @@ pub fn is_safe_preset_name(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
 }
 
+/// Case-insensitive subsequence score: lower is better; `None` = no match.
+///
+/// Contiguous matches score better than sparse; prefix bonus when query is a
+/// prefix of the candidate. Empty query ranks all candidates equally (0).
+#[must_use]
+pub fn fuzzy_score(query: &str, candidate: &str) -> Option<u32> {
+    let q = query.to_ascii_lowercase();
+    let c = candidate.to_ascii_lowercase();
+    if q.is_empty() {
+        return Some(0);
+    }
+    if c.starts_with(&q) {
+        return Some(0);
+    }
+    let qb = q.as_bytes();
+    let cb = c.as_bytes();
+    let mut qi = 0usize;
+    let mut last = 0usize;
+    let mut gaps = 0u32;
+    for (ci, &ch) in cb.iter().enumerate() {
+        if qi < qb.len() && ch == qb[qi] {
+            if qi > 0 {
+                gaps = gaps.saturating_add((ci.saturating_sub(last + 1)) as u32);
+            }
+            last = ci;
+            qi += 1;
+            if qi == qb.len() {
+                // Prefer shorter candidates and early finishes.
+                let tail = (cb.len().saturating_sub(ci + 1)) as u32;
+                return Some(gaps.saturating_add(tail));
+            }
+        }
+    }
+    None
+}
+
+/// Rank known preset names by fuzzy match against `query` (best first, capped).
+#[must_use]
+pub fn rank_preset_names(known: &[String], query: &str, limit: usize) -> Vec<String> {
+    let mut scored: Vec<(u32, &String)> = known
+        .iter()
+        .filter_map(|n| fuzzy_score(query, n).map(|s| (s, n)))
+        .collect();
+    scored.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)));
+    scored
+        .into_iter()
+        .take(limit.max(1))
+        .map(|(_, n)| n.clone())
+        .collect()
+}
+
+/// Resolve ApplyFilter buffer: exact safe name, else unique fuzzy match.
+#[must_use]
+pub fn resolve_preset_name(known: &[String], buffer: &str) -> Option<String> {
+    let trimmed = buffer.trim();
+    if is_safe_preset_name(trimmed) && known.iter().any(|n| n == trimmed) {
+        return Some(trimmed.to_owned());
+    }
+    if trimmed.is_empty() {
+        return None;
+    }
+    let ranked = rank_preset_names(known, trimmed, 2);
+    if ranked.len() == 1 {
+        return Some(ranked[0].clone());
+    }
+    // Exact case-insensitive unique hit among ranked.
+    let lower = trimmed.to_ascii_lowercase();
+    let case_hits: Vec<_> = known
+        .iter()
+        .filter(|n| n.eq_ignore_ascii_case(&lower))
+        .cloned()
+        .collect();
+    if case_hits.len() == 1 {
+        return Some(case_hits[0].clone());
+    }
+    None
+}
+
 fn escape_json(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -247,6 +325,33 @@ mod tests {
             raw_where: None,
         });
         assert_eq!(lib.names_for_table("public", "users"), vec!["a".to_owned()]);
+    }
+
+    #[test]
+    fn fuzzy_rank_and_unique_resolve() {
+        let known = vec![
+            "active_only".into(),
+            "active_all".into(),
+            "archived".into(),
+            "default".into(),
+        ];
+        let ranked = rank_preset_names(&known, "act", 8);
+        assert!(ranked[0].starts_with("active"), "{ranked:?}");
+        assert!(!ranked.iter().any(|n| n == "default"));
+        // Unique subsequence → resolve.
+        assert_eq!(
+            resolve_preset_name(&known, "arch"),
+            Some("archived".into())
+        );
+        // Ambiguous "act" → no resolve.
+        assert_eq!(resolve_preset_name(&known, "act"), None);
+        // Exact still works.
+        assert_eq!(
+            resolve_preset_name(&known, "default"),
+            Some("default".into())
+        );
+        // Empty never resolves.
+        assert_eq!(resolve_preset_name(&known, ""), None);
     }
 
     #[test]

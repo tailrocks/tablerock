@@ -2426,13 +2426,16 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 ConfirmDialog::ApplyFilter {
                     schema,
                     table,
+                    known_names,
                     confirm_buffer,
-                    ..
                 } => {
-                    let name = confirm_buffer.trim().to_owned();
-                    if !crate::model::saved_filter::is_safe_preset_name(&name) {
+                    let Some(name) = crate::model::saved_filter::resolve_preset_name(
+                        &known_names,
+                        &confirm_buffer,
+                    ) else {
+                        // Ambiguous / empty / unsafe: keep dialog open for refine.
                         return Update::render();
-                    }
+                    };
                     let preset = model
                         .workbench()
                         .filter_library
@@ -5409,6 +5412,85 @@ mod tests {
         assert_eq!(grid.filters.len(), 1);
         assert_eq!(grid.filters[0].column, "status");
         assert_eq!(grid.filters[0].value.as_deref(), Some("active"));
+        // Unique fuzzy resolve: partial buffer → single match.
+        model.workbench_mut().filter_library.upsert(
+            crate::model::saved_filter::SavedFilterPreset {
+                name: "archived".into(),
+                schema: "public".into(),
+                table: "users".into(),
+                filters: vec![crate::model::grid::GridFilterChip {
+                    column: "status".into(),
+                    operator: "eq".into(),
+                    value: Some("archived".into()),
+                }],
+                raw_where: None,
+            },
+        );
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.clear_server_controls();
+        }
+        model.set_action(ActionId::ApplyFilter);
+        let _ = update(&mut model, Message::Activate);
+        if let Some(ConfirmDialog::ApplyFilter {
+            confirm_buffer, ..
+        }) = model.confirm_mut()
+        {
+            *confirm_buffer = "arch".into();
+        }
+        model.set_action(ActionId::Submit);
+        let fuzzy = update(&mut model, Message::Activate);
+        assert!(matches!(
+            fuzzy.effects().next(),
+            Some(Effect::BrowseTable { .. })
+        ));
+        assert_eq!(
+            model
+                .workbench()
+                .active_grid()
+                .unwrap()
+                .filters
+                .first()
+                .and_then(|f| f.value.as_deref()),
+            Some("archived")
+        );
+    }
+
+    #[test]
+    fn apply_filter_ambiguous_fuzzy_keeps_dialog() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.workbench_mut().open_preview_tab("users");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+        }
+        for name in ["active_only", "active_all"] {
+            model.workbench_mut().filter_library.upsert(
+                crate::model::saved_filter::SavedFilterPreset {
+                    name: name.into(),
+                    schema: "public".into(),
+                    table: "users".into(),
+                    filters: Vec::new(),
+                    raw_where: None,
+                },
+            );
+        }
+        model.set_action(ActionId::ApplyFilter);
+        let _ = model.request_focus(FocusRegion::Actions);
+        let _ = update(&mut model, Message::Activate);
+        if let Some(ConfirmDialog::ApplyFilter {
+            confirm_buffer, ..
+        }) = model.confirm_mut()
+        {
+            *confirm_buffer = "act".into();
+        }
+        model.set_action(ActionId::Submit);
+        let out = update(&mut model, Message::Activate);
+        assert!(out.effects().next().is_none());
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::ApplyFilter { .. })
+        ));
     }
 
     #[test]

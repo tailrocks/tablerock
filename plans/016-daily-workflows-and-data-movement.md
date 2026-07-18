@@ -117,6 +117,7 @@ Standard suites + Docker engine suites; new import/export tests live in
 - ~~Persistence actor API for filter presets~~ (closed: evidence 306–307, 310)
 - ~~Multi-statement UI wiring into QueryEditorModel run path~~
   (closed: evidence 292 selection path + 318 explicit RunScript full buffer)
+- ~~Fuzzy multi-preset filter picker~~ (closed: evidence 319 rank + unique resolve)
 - ~~TUI Effect wiring for import apply / stream export actions~~
   (ImportCsv + ExportStreamCsv/Json/Tsv → effects; unit-tested)
 

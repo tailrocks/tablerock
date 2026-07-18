@@ -26,4 +26,4 @@ cargo test -p tablerock-tui --lib filter
 
 ## Remaining work
 
-- Fuzzy picker UI for many presets (optional polish).
+- ~~Fuzzy picker UI for many presets~~ (closed: evidence 319)
