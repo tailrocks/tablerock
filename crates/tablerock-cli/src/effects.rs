@@ -4137,9 +4137,19 @@ async fn open_described_session(
             draft.ssh_username.clone()
         };
         let auth = if !draft.ssh_private_key.trim().is_empty() {
+            // When a private key is set, ssh_password is the key passphrase (if any).
+            let passphrase = if draft.ssh_password.is_empty() {
+                None
+            } else {
+                Some(draft.ssh_password.as_str())
+            };
             SshAuthMaterial::PublicKey(
-                SshPublicKeyAuth::from_openssh_private_key(&username, &draft.ssh_private_key)
-                    .map_err(|e| e.to_string())?,
+                SshPublicKeyAuth::from_openssh_private_key_with_passphrase(
+                    &username,
+                    &draft.ssh_private_key,
+                    passphrase,
+                )
+                .map_err(|e| e.to_string())?,
             )
         } else if !draft.ssh_password.is_empty() {
             SshAuthMaterial::Password(SshPasswordAuth::new(username, draft.ssh_password.clone()))

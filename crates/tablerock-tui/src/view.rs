@@ -1020,6 +1020,7 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
     let ssh_port = editor.field_value(EditorField::SshPort);
     let ssh_username = editor.field_value(EditorField::SshUsername);
     let ssh_password = editor.field_value(EditorField::SshPassword);
+    let ssh_private_key = editor.field_value(EditorField::SshPrivateKey);
     let ssh_known_hosts = editor.field_value(EditorField::SshKnownHostsPath);
 
     let general = [
@@ -1104,8 +1105,13 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         ),
         FormField::new(
             EditorField::SshPassword,
-            Line::from("SSH password"),
+            Line::from("SSH password/passphrase"),
             Line::from(ssh_password.as_str()),
+        ),
+        FormField::new(
+            EditorField::SshPrivateKey,
+            Line::from("SSH private key"),
+            Line::from(ssh_private_key.as_str()),
         ),
         FormField::new(
             EditorField::SshKnownHostsPath,

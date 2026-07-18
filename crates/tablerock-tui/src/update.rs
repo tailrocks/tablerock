@@ -3092,7 +3092,7 @@ fn connection_draft_from_editor(
         ssh_port: editor.ssh_port.clone(),
         ssh_username: editor.ssh_username.clone(),
         ssh_password: editor.ssh_password.clone(),
-        ssh_private_key: String::new(),
+        ssh_private_key: editor.ssh_private_key.clone(),
         ssh_known_hosts_path: editor.ssh_known_hosts_path.clone(),
     }
 }
@@ -3137,6 +3137,7 @@ fn apply_editor_text(model: &mut Model, text: &str) {
         EditorField::SshPort => editor.ssh_port.push_str(text),
         EditorField::SshUsername => editor.ssh_username.push_str(text),
         EditorField::SshPassword => editor.ssh_password.push_str(text),
+        EditorField::SshPrivateKey => editor.ssh_private_key.push_str(text),
         EditorField::SshKnownHostsPath => editor.ssh_known_hosts_path.push_str(text),
     }
 }

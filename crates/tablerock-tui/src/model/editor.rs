@@ -19,6 +19,7 @@ pub enum EditorField {
     SshPort,
     SshUsername,
     SshPassword,
+    SshPrivateKey,
     SshKnownHostsPath,
 }
 
@@ -52,6 +53,8 @@ pub struct ConnectionFormModel {
     pub ssh_port: String,
     pub ssh_username: String,
     pub ssh_password: String,
+    /// OpenSSH private key PEM (plaintext or encrypted; password = passphrase).
+    pub ssh_private_key: String,
     pub ssh_known_hosts_path: String,
     pub focused: EditorField,
     pub plaintext_acknowledged: bool,
@@ -77,6 +80,7 @@ impl Default for ConnectionFormModel {
             ssh_port: "22".into(),
             ssh_username: String::new(),
             ssh_password: String::new(),
+            ssh_private_key: String::new(),
             ssh_known_hosts_path: String::new(),
             focused: EditorField::Name,
             plaintext_acknowledged: false,
@@ -124,6 +128,13 @@ impl ConnectionFormModel {
                     "••••".into()
                 }
             }
+            EditorField::SshPrivateKey => {
+                if self.ssh_private_key.is_empty() {
+                    String::new()
+                } else {
+                    "•••• key present".into()
+                }
+            }
             EditorField::SshKnownHostsPath => self.ssh_known_hosts_path.clone(),
         }
     }
@@ -164,7 +175,8 @@ impl ConnectionFormModel {
             EditorField::SshHost => EditorField::SshPort,
             EditorField::SshPort => EditorField::SshUsername,
             EditorField::SshUsername => EditorField::SshPassword,
-            EditorField::SshPassword => EditorField::SshKnownHostsPath,
+            EditorField::SshPassword => EditorField::SshPrivateKey,
+            EditorField::SshPrivateKey => EditorField::SshKnownHostsPath,
             EditorField::SshKnownHostsPath => EditorField::Engine,
         };
     }
@@ -206,13 +218,54 @@ impl ConnectionFormModel {
                 self.validation_error = Some("SSH known_hosts path required".into());
                 return false;
             }
-            if self.ssh_password.is_empty() {
-                self.validation_error = Some("SSH password required (key path residual)".into());
+            if self.ssh_password.is_empty() && self.ssh_private_key.trim().is_empty() {
+                self.validation_error =
+                    Some("SSH password or private key required".into());
                 return false;
             }
         }
         self.validation_error = None;
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ssh_validate_accepts_private_key_without_password() {
+        let mut editor = ConnectionFormModel {
+            name: "demo".into(),
+            host: "db.internal".into(),
+            port: "5432".into(),
+            ssh_host: "bastion".into(),
+            ssh_port: "22".into(),
+            ssh_private_key: "-----BEGIN OPENSSH PRIVATE KEY-----\nx\n-----END OPENSSH PRIVATE KEY-----"
+                .into(),
+            ssh_known_hosts_path: "/tmp/known_hosts".into(),
+            ..ConnectionFormModel::default()
+        };
+        assert!(editor.validate());
+    }
+
+    #[test]
+    fn ssh_validate_requires_auth_material() {
+        let mut editor = ConnectionFormModel {
+            name: "demo".into(),
+            host: "db.internal".into(),
+            port: "5432".into(),
+            ssh_host: "bastion".into(),
+            ssh_port: "22".into(),
+            ssh_known_hosts_path: "/tmp/known_hosts".into(),
+            ..ConnectionFormModel::default()
+        };
+        assert!(!editor.validate());
+        assert!(editor
+            .validation_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("password or private key"));
     }
 }
 

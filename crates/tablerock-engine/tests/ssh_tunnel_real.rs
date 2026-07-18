@@ -91,8 +91,8 @@ wBAgM=
 const TEST_CLIENT_PUBLIC: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIKxjd6YM8L0u+DdGltNIOFP53pKREgM+EltwJPQ+PYI test@tablerock";
 
-/// Bastion that accepts only the test public key (password auth off).
-fn pubkey_sshd_bootstrap() -> String {
+/// Bastion that accepts only the given public key (password auth off).
+fn pubkey_sshd_bootstrap(authorized_public_key: &str) -> String {
     format!(
         r#"
 set -eu
@@ -116,9 +116,23 @@ Subsystem sftp /usr/lib/ssh/sftp-server
 CFG
 exec /usr/sbin/sshd -D -e
 "#,
-        pub = TEST_CLIENT_PUBLIC
+        pub = authorized_public_key
     )
 }
+
+/// Encrypted aes256-ctr OpenSSH key; passphrase `test-pass-phrase`.
+const TEST_CLIENT_ENCRYPTED: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAAABBONFrUJM
+IqwobiDgim6S+oAAAAGAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIHHw5gseHBmFD4Fj
+Bt//7cH6sWnFVekyGEm7PeF6ADHtAAAAoBaUP2fvUaHrxI4SdOIb3QMGjhxuqJKyAcL92C
+52c0Hbf/YcY9SvUttZ7KNvIgtEAVXUa0afrEK20RNo0gsbrBaHnbfTf4oUD7JNerQjmvIY
+IVnTpRrUT/0otbJ9Rvhk/0J/Qecd1XlPC6mVtFeLiRv/vOzXcJTsL/219lIP58PEQXLUvx
+C/h2ADG+GuOY1seMXSQeOkWcDlPhdQ0QU8eeA=
+-----END OPENSSH PRIVATE KEY-----
+";
+
+const TEST_CLIENT_ENCRYPTED_PUBLIC: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHHw5gseHBmFD4FjBt//7cH6sWnFVekyGEm7PeF6ADHt tablerock-test";
 
 async fn open_tunnel_retry(
     config: &SshTunnelConfig,
@@ -373,11 +387,21 @@ async fn clickhouse_driver_connects_through_local_forward_only() {
     drop(tunnel);
 }
 
+async fn wait_connect(config: &SshTunnelConfig) -> bool {
+    for _ in 0..40 {
+        match connect_session(config).await {
+            Ok(_) => return true,
+            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
+        }
+    }
+    false
+}
+
 #[tokio::test]
 async fn public_key_auth_to_bastion() {
     let tag = unique_tag();
     let network = format!("tablerock-ssh-pubkey-{tag}");
-    let bootstrap = pubkey_sshd_bootstrap();
+    let bootstrap = pubkey_sshd_bootstrap(TEST_CLIENT_PUBLIC);
     let ssh = GenericImage::new("alpine", "3.21")
         .with_exposed_port(22.tcp())
         .with_wait_for(WaitFor::message_on_stderr("Server listening on 0.0.0.0 port 22"))
@@ -397,18 +421,7 @@ async fn public_key_auth_to_bastion() {
         auth: SshAuthMaterial::PublicKey(key_auth),
         host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
     };
-
-    let mut ok = false;
-    for _ in 0..40 {
-        match connect_session(&config).await {
-            Ok(_) => {
-                ok = true;
-                break;
-            }
-            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
-        }
-    }
-    assert!(ok, "public-key auth to bastion must succeed");
+    assert!(wait_connect(&config).await, "public-key auth to bastion must succeed");
 
     // Password auth must fail on this bastion (password disabled).
     let password_cfg = SshTunnelConfig {
@@ -422,6 +435,40 @@ async fn public_key_auth_to_bastion() {
         password_result,
         Some(SshTunnelError::Auth),
         "password auth must fail when bastion disables passwords"
+    );
+}
+
+#[tokio::test]
+async fn encrypted_private_key_auth_to_bastion() {
+    let tag = unique_tag();
+    let network = format!("tablerock-ssh-enc-{tag}");
+    let bootstrap = pubkey_sshd_bootstrap(TEST_CLIENT_ENCRYPTED_PUBLIC);
+    let ssh = GenericImage::new("alpine", "3.21")
+        .with_exposed_port(22.tcp())
+        .with_wait_for(WaitFor::message_on_stderr("Server listening on 0.0.0.0 port 22"))
+        .with_entrypoint("sh")
+        .with_cmd(["-c", bootstrap.as_str()])
+        .with_network(network.as_str())
+        .start()
+        .await
+        .expect("encrypted-key bastion");
+    let ssh_port = ssh.get_host_port_ipv4(22.tcp()).await.unwrap();
+
+    let key_auth = SshPublicKeyAuth::from_openssh_private_key_with_passphrase(
+        "root",
+        TEST_CLIENT_ENCRYPTED,
+        Some("test-pass-phrase"),
+    )
+    .expect("decrypt encrypted client key");
+    let config = SshTunnelConfig {
+        bastion_host: "127.0.0.1".into(),
+        bastion_port: ssh_port,
+        auth: SshAuthMaterial::PublicKey(key_auth),
+        host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
+    };
+    assert!(
+        wait_connect(&config).await,
+        "encrypted private-key auth must succeed"
     );
 }
 

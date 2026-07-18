@@ -56,8 +56,21 @@ impl SshPublicKeyAuth {
         username: impl Into<String>,
         openssh_private_key: &str,
     ) -> Result<Self, SshTunnelError> {
-        let private_key = PrivateKey::from_openssh(openssh_private_key.trim())
-            .map_err(|_| SshTunnelError::Auth)?;
+        Self::from_openssh_private_key_with_passphrase(username, openssh_private_key, None)
+    }
+
+    /// Parse OpenSSH private key; optional passphrase decrypts encrypted keys.
+    ///
+    /// Passphrase is never stored after parse. Wrong/missing passphrase → `Auth`.
+    pub fn from_openssh_private_key_with_passphrase(
+        username: impl Into<String>,
+        openssh_private_key: &str,
+        passphrase: Option<&str>,
+    ) -> Result<Self, SshTunnelError> {
+        let private_key =
+            keys::decode_secret_key(openssh_private_key.trim(), passphrase).map_err(|_| {
+                SshTunnelError::Auth
+            })?;
         Ok(Self {
             username: username.into(),
             private_key: Arc::new(private_key),
@@ -401,6 +414,44 @@ wBAgM=
         assert!(!debug.contains("b3BlbnNzaC1rZXktdjE"));
         assert!(debug.contains("<redacted>"));
         assert!(auth.public_key_openssh().unwrap().starts_with("ssh-ed25519 "));
+    }
+
+    /// Encrypted with passphrase `test-pass-phrase` (aes256-ctr); fixture only.
+    const TEST_OPENSSH_ENCRYPTED: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAAABBONFrUJM
+IqwobiDgim6S+oAAAAGAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIHHw5gseHBmFD4Fj
+Bt//7cH6sWnFVekyGEm7PeF6ADHtAAAAoBaUP2fvUaHrxI4SdOIb3QMGjhxuqJKyAcL92C
+52c0Hbf/YcY9SvUttZ7KNvIgtEAVXUa0afrEK20RNo0gsbrBaHnbfTf4oUD7JNerQjmvIY
+IVnTpRrUT/0otbJ9Rvhk/0J/Qecd1XlPC6mVtFeLiRv/vOzXcJTsL/219lIP58PEQXLUvx
+C/h2ADG+GuOY1seMXSQeOkWcDlPhdQ0QU8eeA=
+-----END OPENSSH PRIVATE KEY-----
+";
+
+    #[test]
+    fn encrypted_private_key_requires_passphrase() {
+        assert!(
+            SshPublicKeyAuth::from_openssh_private_key("root", TEST_OPENSSH_ENCRYPTED).is_err(),
+            "encrypted key without passphrase must fail"
+        );
+        assert!(
+            SshPublicKeyAuth::from_openssh_private_key_with_passphrase(
+                "root",
+                TEST_OPENSSH_ENCRYPTED,
+                Some("wrong-pass"),
+            )
+            .is_err(),
+            "wrong passphrase must fail"
+        );
+        let auth = SshPublicKeyAuth::from_openssh_private_key_with_passphrase(
+            "root",
+            TEST_OPENSSH_ENCRYPTED,
+            Some("test-pass-phrase"),
+        )
+        .expect("correct passphrase decrypts");
+        assert!(auth.public_key_openssh().unwrap().starts_with("ssh-ed25519 "));
+        let debug = format!("{auth:?}");
+        assert!(!debug.contains("test-pass-phrase"));
+        assert!(!debug.contains("aes256"));
     }
 
     #[test]
