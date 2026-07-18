@@ -86,3 +86,76 @@ impl HistoryPanel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(id: i64, preview: &str) -> HistoryRowProjection {
+        HistoryRowProjection {
+            history_id: id,
+            engine_label: "PostgreSQL".into(),
+            database: "db".into(),
+            schema: Some("public".into()),
+            statement_preview: preview.into(),
+            outcome: "ok".into(),
+            created_at: "2026-07-18".into(),
+        }
+    }
+
+    fn open(entries: Vec<HistoryRowProjection>) -> HistoryPanel {
+        HistoryPanel::Open {
+            request_token: 1,
+            entries,
+            selected: 0,
+            search: String::new(),
+        }
+    }
+
+    #[test]
+    fn closed_loading_failed_status_and_openness() {
+        let closed = HistoryPanel::Closed;
+        assert!(!closed.is_open());
+        assert_eq!(closed.status_line(), "");
+        assert!(closed.selected_entry().is_none());
+
+        let loading = HistoryPanel::Loading { request_token: 2 };
+        assert!(loading.is_open());
+        assert_eq!(loading.status_line(), "History: loading…");
+        assert!(loading.selected_entry().is_none());
+
+        let failed = HistoryPanel::Failed {
+            request_token: 3,
+            reason: "disk".into(),
+        };
+        assert!(failed.is_open());
+        assert_eq!(failed.status_line(), "History: error (disk)");
+        assert!(failed.selected_entry().is_none());
+    }
+
+    #[test]
+    fn selection_wraps_and_status_tracks_position() {
+        let mut m = open(vec![row(1, "select 1"), row(2, "select 2"), row(3, "select 3")]);
+        assert_eq!(m.selected_entry().unwrap().history_id, 1);
+        assert_eq!(m.status_line(), "History: 1/3");
+
+        m.select_next();
+        assert_eq!(m.selected_entry().unwrap().history_id, 2);
+        assert_eq!(m.status_line(), "History: 2/3");
+
+        m.select_next();
+        m.select_next(); // 2 -> 3 -> wrap to 1
+        assert_eq!(m.selected_entry().unwrap().history_id, 1);
+
+        m.select_prev(); // wrap back to 3
+        assert_eq!(m.selected_entry().unwrap().history_id, 3);
+    }
+
+    #[test]
+    fn empty_open_navigation_is_safe_without_selection() {
+        let mut m = open(Vec::new());
+        m.select_next();
+        m.select_prev();
+        assert!(m.selected_entry().is_none());
+    }
+}
