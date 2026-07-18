@@ -215,6 +215,19 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::RenameGroup {
+                request_token,
+                old_name,
+                new_name,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        rename_group(persistence, request_token, old_name, new_name).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::LoadCatalog {
                 request_token,
                 session_id_hex,
@@ -5455,6 +5468,37 @@ async fn delete_group(
     })
     .await;
     match joined {
+        Ok(Ok(())) => Message::Profiles(ProfilesMsg::Deleted { request_token }),
+        Ok(Err(label)) => Message::Profiles(ProfilesMsg::DeleteFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Profiles(ProfilesMsg::DeleteFailed {
+            request_token,
+            reason: FailureProjection::Label("task-failed".into()),
+        }),
+    }
+}
+
+async fn rename_group(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    old_name: String,
+    new_name: String,
+) -> Message {
+    let joined = tokio::task::spawn_blocking(move || {
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .rename_group(&old_name, &new_name)
+            .map_err(|error| error.to_string())
+            .map(|_| ())
+    })
+    .await;
+    match joined {
+        // Reuse Deleted → reloads list (same as delete/rename success path).
         Ok(Ok(())) => Message::Profiles(ProfilesMsg::Deleted { request_token }),
         Ok(Err(label)) => Message::Profiles(ProfilesMsg::DeleteFailed {
             request_token,

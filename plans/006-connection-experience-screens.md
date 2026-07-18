@@ -9,7 +9,7 @@
 
 ## Status
 
-- **Status**: DONE (evidence 200–206; residual: group rename dialog UI,
+- **Status**: DONE (evidence 200–206, 331 group rename; residual:
   auto reconnect delayed re-dispatch loop, URL drafts deferred by product)
 - **Priority**: P1
 - **Effort**: L

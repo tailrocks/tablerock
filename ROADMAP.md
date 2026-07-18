@@ -113,13 +113,13 @@ connection shell. Engine sessions are reusable with operator SQL and health
 
 ## Phase 3 — connection experience
 
-**Status: complete.** Exit evidence: 199–206 (effect bridge, Test/Connect,
+**Status: complete.** Exit evidence: 199–206, 331 (effect bridge, Test/Connect,
 list/search/Open, Form/Tree, password prompt + reconnect policy,
-describe_server real matrix). Residual deferred by product: URL import,
-1Password/Keychain/env sources, group rename dialog polish, delayed
-reconnect auto re-dispatch. Temporary Connect, save, Test without save,
-prompt-on-connect fail-closed, Remove confirm, and TermRock Form/Tree are
-proven on trunk.
+describe_server real matrix, group rename dialog). Residual deferred by
+product: 1Password/Keychain/env sources, delayed reconnect auto re-dispatch.
+URL import landed later (evidence 289). Temporary Connect, save, Test without
+save, prompt-on-connect fail-closed, Remove confirm, and TermRock Form/Tree
+are proven on trunk.
 
 ## Phase 4 — PostgreSQL read-only tracer
 

@@ -106,6 +106,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::ApplyFilter { confirm_buffer, .. }
                     | ConfirmDialog::StageRedis { confirm_buffer, .. }
                     | ConfirmDialog::RedisSubscribe { confirm_buffer, .. }
+                    | ConfirmDialog::RenameGroup { confirm_buffer, .. }
                     | ConfirmDialog::StartupReview { confirm_buffer, .. }
                     | ConfirmDialog::PgTool { confirm_buffer, .. }
                     | ConfirmDialog::ImportUrl { confirm_buffer, .. }
@@ -1978,6 +1979,28 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         }),
                     }
                 }
+                ConfirmDialog::RenameGroup {
+                    old_name,
+                    confirm_buffer,
+                } => {
+                    let new_name = confirm_buffer.trim().to_owned();
+                    if !is_safe_group_name(&new_name) || new_name == old_name {
+                        return Update::render();
+                    }
+                    let token = model.mint_request_token();
+                    model.set_profiles(ProfileListState::Loading {
+                        request_token: token,
+                    });
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::RenameGroup {
+                            request_token: token,
+                            old_name,
+                            new_name,
+                        }),
+                    }
+                }
                 ConfirmDialog::CloseDirtyTab { index, .. } => {
                     model.set_confirm(None);
                     model.workbench_mut().force_close_tab(index);
@@ -2653,6 +2676,12 @@ fn activate_selected_action(model: &mut Model) -> Update {
             Update::render()
         }
         ActionId::Remove if model.screen() == Screen::Connections => {
+            // Group branch selection (g:name) → remove group.
+            if let Some(group) = selected_connection_group(model) {
+                model.set_confirm(Some(ConfirmDialog::RemoveGroup { name: group }));
+                model.set_action(ActionId::Submit);
+                return Update::render();
+            }
             if let Some(row) = model.profiles().selected_row() {
                 if model.session().is_some() {
                     // Active session present: still ask (spec: ask when active sessions).
@@ -2665,6 +2694,17 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 return Update::render();
             }
             Update::unchanged()
+        }
+        ActionId::RenameGroup if model.screen() == Screen::Connections => {
+            let Some(old_name) = selected_connection_group(model) else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::RenameGroup {
+                old_name,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
         }
         ActionId::Open if model.screen() == Screen::Connections => {
             let Some(profile_id_hex) = model
@@ -3592,6 +3632,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::Connect
         | ActionId::Disconnect
         | ActionId::Remove
+        | ActionId::RenameGroup
         | ActionId::NextDatabase
         | ActionId::NextTab
         | ActionId::CloseTab
@@ -4334,6 +4375,33 @@ fn show_structure(model: &mut Model) -> Update {
 }
 
 /// Resolve schema/table for DDL: grid base first, then structure inspector target.
+/// Selected tree node is a group branch (`g:name`).
+fn selected_connection_group(model: &Model) -> Option<String> {
+    match model.profiles() {
+        ProfileListState::Loaded {
+            selected_id: Some(id),
+            ..
+        } if id.starts_with("g:") => {
+            let name = id.strip_prefix("g:").unwrap_or("").to_owned();
+            if name.is_empty() {
+                None
+            } else {
+                Some(name)
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Group names: 1–64 of [A-Za-z0-9._- ] (space allowed mid-name after trim).
+fn is_safe_group_name(name: &str) -> bool {
+    let t = name.trim();
+    !t.is_empty()
+        && t.len() <= 64
+        && t.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ' '))
+}
+
 fn relation_ddl_target(model: &Model) -> Option<(String, String)> {
     if let Some(grid) = model.workbench().active_grid() {
         if let (Some(schema), Some(table)) =
@@ -4796,6 +4864,7 @@ fn cycle_action(
                 ActionId::OpenExternalUrl,
                 ActionId::QuickSwitch,
                 ActionId::Remove,
+                ActionId::RenameGroup,
                 ActionId::Quit,
             ],
         }
@@ -6261,6 +6330,88 @@ mod tests {
             }
             other => panic!("expected cleared BrowseTable, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn rename_group_dialog_emits_effect() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Connections);
+        model.set_profiles(ProfileListState::Loaded {
+            request_token: 1,
+            rows: vec![crate::model::profiles::ProfileRowProjection {
+                id_hex: "aa".into(),
+                name: "local".into(),
+                engine_label: "PostgreSQL".into(),
+                group: Some("dev".into()),
+                favorite: false,
+                target_summary: "127.0.0.1".into(),
+                environment: None,
+                production_warning: false,
+                safety_label: "Confirm writes".into(),
+                plaintext_secret_warning: false,
+                live_state: crate::model::profiles::LiveConnectionState::Disconnected,
+            }],
+            selected_id: Some("g:dev".into()),
+            search: String::new(),
+            collapsed: Vec::new(),
+        });
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::RenameGroup);
+        let ask = update(&mut model, Message::Activate);
+        assert!(ask.effects().next().is_none());
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::RenameGroup {
+                old_name,
+                ..
+            }) if old_name == "dev"
+        ));
+        if let Some(ConfirmDialog::RenameGroup {
+            confirm_buffer, ..
+        }) = model.confirm_mut()
+        {
+            *confirm_buffer = "prod".into();
+        }
+        model.set_action(ActionId::Submit);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::RenameGroup {
+                old_name,
+                new_name,
+                ..
+            }) => {
+                assert_eq!(old_name, "dev");
+                assert_eq!(new_name, "prod");
+            }
+            other => panic!("expected RenameGroup, got {other:?}"),
+        }
+        // Remove on group branch → RemoveGroup confirm.
+        model.set_profiles(ProfileListState::Loaded {
+            request_token: 2,
+            rows: vec![crate::model::profiles::ProfileRowProjection {
+                id_hex: "aa".into(),
+                name: "local".into(),
+                engine_label: "PostgreSQL".into(),
+                group: Some("dev".into()),
+                favorite: false,
+                target_summary: "127.0.0.1".into(),
+                environment: None,
+                production_warning: false,
+                safety_label: "Confirm writes".into(),
+                plaintext_secret_warning: false,
+                live_state: crate::model::profiles::LiveConnectionState::Disconnected,
+            }],
+            selected_id: Some("g:dev".into()),
+            search: String::new(),
+            collapsed: Vec::new(),
+        });
+        model.set_action(ActionId::Remove);
+        let rem = update(&mut model, Message::Activate);
+        assert!(rem.effects().next().is_none());
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::RemoveGroup { name }) if name == "dev"
+        ));
     }
 
     #[test]

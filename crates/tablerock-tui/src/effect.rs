@@ -175,6 +175,12 @@ pub enum Effect {
         request_token: RequestToken,
         group_name: String,
     },
+    /// Rename a group (updates all members' group_name).
+    RenameGroup {
+        request_token: RequestToken,
+        old_name: String,
+        new_name: String,
+    },
     /// Load one catalog level from a registered session.
     LoadCatalog {
         request_token: RequestToken,

@@ -134,6 +134,13 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             "Remove group?",
             format!("Remove group '{name}'? Members become ungrouped."),
         ),
+        crate::model::ConfirmDialog::RenameGroup {
+            old_name,
+            confirm_buffer,
+        } => (
+            "Rename group?",
+            format!("Rename group '{old_name}' to new name. Paste name [{confirm_buffer}]"),
+        ),
         crate::model::ConfirmDialog::CloseDirtyTab { title, .. } => (
             "Close tab?",
             format!("Close '{title}' with unsaved changes?"),
@@ -592,6 +599,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
     let quit = action_label(model, ActionId::Quit, "Quit");
     let remove = action_label(model, ActionId::Remove, "Remove");
+    let rename_group = action_label(model, ActionId::RenameGroup, "RenGroup");
     let actions: Vec<Action<'_, ActionId>> =
         if model.password_prompt().is_some() || model.confirm().is_some() {
             vec![
@@ -1074,6 +1082,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::Remove,
                         label: remove.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RenameGroup,
+                        label: rename_group.as_str(),
                         enabled: true,
                         style: None,
                     },

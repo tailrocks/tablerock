@@ -145,6 +145,8 @@ pub enum ActionId {
     DropTable,
     /// Snapshot pg_stat_activity into the inspector.
     ShowActivity,
+    /// Rename selected connection group (Connections tree).
+    RenameGroup,
     /// Redis Pub/Sub: subscribe to a channel (isolated connection).
     RedisSubscribe,
     /// Redis Pub/Sub: pattern subscribe (PSUBSCRIBE).
@@ -217,6 +219,11 @@ pub enum ActionId {
 pub enum ConfirmDialog {
     RemoveProfile { id_hex: String, name: String },
     RemoveGroup { name: String },
+    /// Rename group: paste new name (non-empty, safe charset).
+    RenameGroup {
+        old_name: String,
+        confirm_buffer: String,
+    },
     CloseDirtyTab { title: String, index: usize },
     /// Require exact table name re-type for truncate (fail closed).
     TruncateTable {
