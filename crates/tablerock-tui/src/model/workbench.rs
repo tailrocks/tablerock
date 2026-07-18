@@ -215,6 +215,10 @@ impl WorkbenchModel {
         self.tabs.get(self.selected_tab)
     }
 
+    pub fn active_tab_mut(&mut self) -> Option<&mut WorkbenchTab> {
+        self.tabs.get_mut(self.selected_tab)
+    }
+
     pub fn select_next_tab(&mut self) {
         if self.tabs.is_empty() {
             return;

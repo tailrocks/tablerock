@@ -111,6 +111,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::EditQuickFilter { confirm_buffer, .. }
                     | ConfirmDialog::GoToRow { confirm_buffer, .. }
                     | ConfirmDialog::GoToColumn { confirm_buffer, .. }
+                    | ConfirmDialog::RenameTab { confirm_buffer, .. }
                     | ConfirmDialog::PickDate { confirm_buffer, .. }
                     | ConfirmDialog::CopyPick { confirm_buffer, .. }
                     | ConfirmDialog::EditInsertValues { confirm_buffer, .. }
@@ -2899,6 +2900,22 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     }
                     Update::render()
                 }
+                ConfirmDialog::RenameTab { confirm_buffer } => {
+                    let title = confirm_buffer.trim();
+                    if title.is_empty() || title.len() > 128 {
+                        return Update::render();
+                    }
+                    // Reject control characters.
+                    if title.chars().any(|c| c.is_control()) {
+                        return Update::render();
+                    }
+                    model.set_confirm(None);
+                    if let Some(tab) = model.workbench_mut().active_tab_mut() {
+                        tab.title = title.to_owned();
+                        tab.preview = false;
+                    }
+                    Update::render()
+                }
                 ConfirmDialog::PickDate {
                     year,
                     month,
@@ -3284,6 +3301,16 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }
                 CloseTabOutcome::Closed | CloseTabOutcome::Empty => Update::render(),
             }
+        }
+        ActionId::RenameTab if model.screen() == Screen::Workbench => {
+            let Some(tab) = model.workbench().active_tab() else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::RenameTab {
+                confirm_buffer: tab.title.clone(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
         }
         ActionId::NewSql if model.screen() == Screen::Workbench => {
             model.workbench_mut().open_sql_tab();
@@ -4845,6 +4872,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::PrevTab
         | ActionId::CloseTab
         | ActionId::CloseOtherTabs
+        | ActionId::RenameTab
         | ActionId::PinTab
         | ActionId::NewSql
         | ActionId::RunSql
@@ -6481,6 +6509,8 @@ fn cycle_action(
                 ActionId::NextTab,
                 ActionId::PrevTab,
                 ActionId::CloseOtherTabs,
+                ActionId::RenameTab,
+                ActionId::CloseTab,
                 ActionId::QuickSwitch,
                 ActionId::PinTab,
                 ActionId::NewSql,
@@ -8176,6 +8206,32 @@ mod tests {
             }
             other => panic!("expected CopyToClipboard, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn rename_tab_dialog_sets_title() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("old");
+        assert!(model.workbench().active_tab().unwrap().preview);
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::RenameTab);
+        let _ = update(&mut model, Message::Activate);
+        if let Some(ConfirmDialog::RenameTab { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = "renamed query".into();
+        }
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        let tab = model.workbench().active_tab().unwrap();
+        assert_eq!(tab.title, "renamed query");
+        assert!(!tab.preview);
     }
 
     #[test]

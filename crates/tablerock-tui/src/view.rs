@@ -290,6 +290,10 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             "Go to column?",
             format!("Paste column name or unique prefix [{confirm_buffer}]"),
         ),
+        crate::model::ConfirmDialog::RenameTab { confirm_buffer } => (
+            "Rename tab?",
+            format!("Paste new tab title (1–128 chars) [{confirm_buffer}]"),
+        ),
         crate::model::ConfirmDialog::PickDate {
             year,
             month,
@@ -755,6 +759,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let close_insp = action_label(model, ActionId::CloseInspector, "CloseInsp");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
     let close_others = action_label(model, ActionId::CloseOtherTabs, "CloseOthers");
+    let rename_tab = action_label(model, ActionId::RenameTab, "RenTab");
     let submit = action_label(model, ActionId::Submit, "Submit");
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
     let quit = action_label(model, ActionId::Quit, "Quit");
@@ -1692,6 +1697,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CloseOtherTabs,
                         label: close_others.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RenameTab,
+                        label: rename_tab.as_str(),
                         enabled: true,
                         style: None,
                     },

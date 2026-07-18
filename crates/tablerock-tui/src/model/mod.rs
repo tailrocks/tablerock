@@ -77,6 +77,8 @@ pub enum ActionId {
     CloseTab,
     /// Close all tabs except the active one (fails closed if others dirty).
     CloseOtherTabs,
+    /// Rename the active workbench tab title.
+    RenameTab,
     PinTab,
     NewSql,
     RunSql,
@@ -463,6 +465,10 @@ pub enum ConfirmDialog {
     },
     /// Jump to column by name (case-sensitive exact or unique prefix).
     GoToColumn {
+        confirm_buffer: String,
+    },
+    /// Rename active tab: confirm_buffer is the new title.
+    RenameTab {
         confirm_buffer: String,
     },
     /// Text month calendar for temporal edit: paste day 1-31 (or full YYYY-MM-DD).
