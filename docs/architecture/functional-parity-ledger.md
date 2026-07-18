@@ -58,7 +58,7 @@ architecture decisions.
 |---|---|---|---|
 | Connection list | Core | Searchable profiles with engine, endpoint, safety, secret source, health, and explicit empty/loading/failure states | Keyboard and mouse conformance fixtures at narrow/normal/wide sizes |
 | Create/edit/duplicate/remove | Core | One capability-driven form for the three engines; removing a profile never silently removes unrelated history or active work | Pure reducer tests plus persistence migration tests |
-| Engine chooser | Core | Exactly PostgreSQL, ClickHouse, and Redis; no dormant plugin affordance | Snapshot and schema tests reject unknown engines |
+| Engine chooser | Core | Exactly PostgreSQL, ClickHouse, and Redis; no dormant plugin affordance | `Engine` enum is exactly `{PostgreSql, ClickHouse, Redis}` (`tablerock-core/src/value.rs`); schema test rejects unknown engine type (`CatalogBuildError::InvalidEngineType`, `crates/tablerock-core/tests/catalog.rs`) |
 | URL import | Parity | Parse supported database URLs into a reviewable draft; credentials remain transient unless the operator selects a secret destination | Parser fixtures + ImportUrl dialog (evidence 289); percent encoding, TLS, hostile reject |
 | External URL open | Later | Confirm target and safety before opening a temporary or matching saved session | Deep-link hostile-input tests + OPEN confirm temporary connect (evidence 296) |
 | Test connection | Core | Show server identity/version, TLS outcome, elapsed time, and redacted diagnostics without saving | Real TLS/auth fixtures for all engines |
