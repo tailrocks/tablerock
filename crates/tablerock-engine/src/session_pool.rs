@@ -7,7 +7,8 @@ use tokio::sync::RwLock;
 
 use crate::{
     AdapterError, AdapterFailureClass, CatalogRequest, CatalogSubtree, DriverFuture,
-    DriverPageRequest, DriverPageStream, DriverSession, ServerDescribe, SessionHealth,
+    DriverPageRequest, DriverPageStream, DriverSession, LocalForwardTunnel, ServerDescribe,
+    SessionHealth,
 };
 
 /// Upper bound for concurrent registered sessions (ServiceLimits scale).
@@ -45,25 +46,34 @@ enum SessionState {
 
 /// Shared session slot. Operations borrow `Arc` clones; disconnect shuts down
 /// only when the registry holds the last reference.
+///
+/// Optional SSH local-forward tunnel is owned here so it outlives the driver
+/// connection and drops (closing bastion channels) on session shutdown.
 pub struct SessionSlot {
     engine: Engine,
     state: RwLock<SessionState>,
+    tunnel: std::sync::Mutex<Option<LocalForwardTunnel>>,
 }
 
 impl SessionSlot {
-    fn new(session: Box<dyn DriverSession>) -> Self {
+    fn with_tunnel(session: Box<dyn DriverSession>, tunnel: Option<LocalForwardTunnel>) -> Self {
         Self {
             engine: session.engine(),
             state: RwLock::new(SessionState::Open(session)),
+            tunnel: std::sync::Mutex::new(tunnel),
         }
     }
 
     async fn shutdown_exclusive(&self) -> Result<(), AdapterError> {
         let mut guard = self.state.write().await;
-        match std::mem::replace(&mut *guard, SessionState::Closed) {
+        let result = match std::mem::replace(&mut *guard, SessionState::Closed) {
             SessionState::Open(session) => session.shutdown().await,
             SessionState::Closed => Ok(()),
+        };
+        if let Ok(mut tunnel) = self.tunnel.lock() {
+            tunnel.take();
         }
+        result
     }
 }
 
@@ -213,13 +223,24 @@ impl SessionRegistry {
         session_id: SessionId,
         session: Box<dyn DriverSession>,
     ) -> Result<Arc<dyn DriverSession>, SessionRegistryError> {
+        self.register_with_tunnel(session_id, session, None)
+    }
+
+    /// Register a session that was opened through an SSH local-forward tunnel.
+    /// The tunnel is held until the session is disconnected/shutdown.
+    pub fn register_with_tunnel(
+        &mut self,
+        session_id: SessionId,
+        session: Box<dyn DriverSession>,
+        tunnel: Option<LocalForwardTunnel>,
+    ) -> Result<Arc<dyn DriverSession>, SessionRegistryError> {
         if self.sessions.contains_key(&session_id) {
             return Err(SessionRegistryError::DuplicateSession);
         }
         if self.sessions.len() >= self.max_sessions {
             return Err(SessionRegistryError::CapacityExceeded);
         }
-        let slot = Arc::new(SessionSlot::new(session));
+        let slot = Arc::new(SessionSlot::with_tunnel(session, tunnel));
         self.sessions.insert(session_id, Arc::clone(&slot));
         Ok(slot as Arc<dyn DriverSession>)
     }

@@ -3088,6 +3088,13 @@ fn connection_draft_from_editor(
             TlsModeChoice::VerifyFull => TlsModeSpec::VerifyFull,
         },
         plaintext_acknowledged: editor.plaintext_acknowledged,
+        // SSH editor section residual — empty means direct connect.
+        ssh_host: String::new(),
+        ssh_port: String::new(),
+        ssh_username: String::new(),
+        ssh_password: String::new(),
+        ssh_private_key: String::new(),
+        ssh_known_hosts_path: String::new(),
     }
 }
 

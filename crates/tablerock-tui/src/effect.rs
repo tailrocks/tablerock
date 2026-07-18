@@ -79,6 +79,15 @@ pub struct ConnectionDraft {
     pub password_source: PasswordSourceSpec,
     pub tls_mode: TlsModeSpec,
     pub plaintext_acknowledged: bool,
+    /// Bastion host; empty means direct connect (no SSH tunnel).
+    pub ssh_host: String,
+    pub ssh_port: String,
+    pub ssh_username: String,
+    pub ssh_password: String,
+    /// OpenSSH private key PEM (unencrypted) when using public-key auth.
+    pub ssh_private_key: String,
+    /// Absolute OpenSSH known_hosts path (required when `ssh_host` is set).
+    pub ssh_known_hosts_path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

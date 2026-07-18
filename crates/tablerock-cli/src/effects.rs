@@ -1345,8 +1345,9 @@ async fn load_profile_list(
 
 async fn test_connection(request_token: RequestToken, draft: ConnectionDraft) -> Message {
     match open_described_session(draft).await {
-        Ok((session, identity, elapsed_millis)) => {
+        Ok((session, identity, elapsed_millis, tunnel)) => {
             let _ = session.shutdown().await;
+            drop(tunnel);
             Message::Engine(tablerock_tui::EngineMsg::TestOk {
                 request_token,
                 identity,
@@ -1374,11 +1375,12 @@ async fn connect_session(
     }
     .to_owned();
     match open_described_session(draft).await {
-        Ok((session, identity, _elapsed)) => {
+        Ok((session, identity, _elapsed, tunnel)) => {
             let session_id = match mint_session_id() {
                 Ok(id) => id,
                 Err(label) => {
                     let _ = session.shutdown().await;
+                    drop(tunnel);
                     return Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
                         request_token,
                         reason: FailureProjection::Label(label),
@@ -1386,7 +1388,7 @@ async fn connect_session(
                 }
             };
             let mut registry = sessions.lock().await;
-            match registry.register(session_id, session) {
+            match registry.register_with_tunnel(session_id, session, tunnel) {
                 Ok(_) => Message::Engine(tablerock_tui::EngineMsg::ConnectOk {
                     request_token,
                     session_id_hex: session_id.to_string(),
@@ -3910,11 +3912,12 @@ async fn reconnect_session(
     // Delay is declarative (next_backoff_ms); executor may sleep before re-dispatch.
     // This attempt connects immediately so auth-stop never burns wall-clock in tests.
     match open_described_session(draft.clone()).await {
-        Ok((session, identity, _)) => {
+        Ok((session, identity, _, tunnel)) => {
             let session_id = match mint_session_id() {
                 Ok(id) => id,
                 Err(label) => {
                     let _ = session.shutdown().await;
+                    drop(tunnel);
                     return Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
                         request_token,
                         reason: FailureProjection::Label(label),
@@ -3922,7 +3925,7 @@ async fn reconnect_session(
                 }
             };
             let mut registry = sessions.lock().await;
-            match registry.register(session_id, session) {
+            match registry.register_with_tunnel(session_id, session, tunnel) {
                 Ok(_) => Message::Engine(tablerock_tui::EngineMsg::ConnectOk {
                     request_token,
                     session_id_hex: session_id.to_string(),
@@ -4039,6 +4042,32 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
             TlsModeSpec::VerifyFull
         }
     };
+    let mut ssh_password = String::new();
+    if let Some(binding) = props.binding(ProfileProperty::SshPassword) {
+        match resolve_for_connect(binding, connection.name(), &mut prompt) {
+            Ok(Some(secret)) => {
+                ssh_password = String::from_utf8_lossy(secret.as_bytes()).into_owned();
+            }
+            Ok(None) => {}
+            Err(SecretResolutionError::PromptFailed) => {
+                return Err("SSH password prompt required".into());
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    let mut ssh_private_key = String::new();
+    if let Some(binding) = props.binding(ProfileProperty::SshPrivateKey) {
+        match resolve_for_connect(binding, connection.name(), &mut prompt) {
+            Ok(Some(secret)) => {
+                ssh_private_key = String::from_utf8_lossy(secret.as_bytes()).into_owned();
+            }
+            Ok(None) => {}
+            Err(SecretResolutionError::PromptFailed) => {
+                return Err("SSH private key prompt required".into());
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
     Ok(ConnectionDraft {
         engine,
         name: connection.name().as_str().to_owned(),
@@ -4056,20 +4085,82 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
         password_source: PasswordSourceSpec::DangerousPlaintext,
         tls_mode,
         plaintext_acknowledged: true,
+        ssh_host: literal(ProfileProperty::SshHost).unwrap_or_default(),
+        ssh_port: literal(ProfileProperty::SshPort).unwrap_or_else(|| "22".to_owned()),
+        ssh_username: literal(ProfileProperty::SshUsername).unwrap_or_default(),
+        ssh_password,
+        ssh_private_key,
+        ssh_known_hosts_path: literal(ProfileProperty::SshKnownHostsPath).unwrap_or_default(),
     })
 }
 
 /// Connect + describe. Caller owns shutdown/register.
+///
+/// When `draft.ssh_host` is set, opens a fail-closed known_hosts bastion tunnel
+/// and rewrites the driver endpoint to `127.0.0.1:local_port`. The tunnel is
+/// returned so the caller can keep it alive with the session.
 async fn open_described_session(
     draft: ConnectionDraft,
-) -> Result<(Box<dyn DriverSession>, String, u64), String> {
+) -> Result<
+    (
+        Box<dyn DriverSession>,
+        String,
+        u64,
+        Option<tablerock_engine::LocalForwardTunnel>,
+    ),
+    String,
+> {
     use tablerock_engine::{
         ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
-        PostgresConnectConfig, PostgresSession, PostgresTlsMode, RedisConnectConfig,
-        RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession, RedisTlsMode,
+        LocalForwardTunnel, PostgresConnectConfig, PostgresSession, PostgresTlsMode,
+        RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
+        RedisTlsMode, SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth, SshPublicKeyAuth,
+        SshTunnelConfig, open_local_forward_tunnel,
     };
-    let host = draft.host.clone();
-    let port: u16 = draft.port.parse().map_err(|_| "invalid port".to_owned())?;
+    let mut host = draft.host.clone();
+    let mut port: u16 = draft.port.parse().map_err(|_| "invalid port".to_owned())?;
+    let mut tunnel = None;
+    if !draft.ssh_host.trim().is_empty() {
+        if draft.ssh_known_hosts_path.trim().is_empty() {
+            return Err("SSH known_hosts path required for tunnel connect".to_owned());
+        }
+        let bastion_port: u16 = if draft.ssh_port.trim().is_empty() {
+            22
+        } else {
+            draft.ssh_port
+                .parse()
+                .map_err(|_| "invalid SSH port".to_owned())?
+        };
+        let username = if draft.ssh_username.is_empty() {
+            "root".to_owned()
+        } else {
+            draft.ssh_username.clone()
+        };
+        let auth = if !draft.ssh_private_key.trim().is_empty() {
+            SshAuthMaterial::PublicKey(
+                SshPublicKeyAuth::from_openssh_private_key(&username, &draft.ssh_private_key)
+                    .map_err(|e| e.to_string())?,
+            )
+        } else if !draft.ssh_password.is_empty() {
+            SshAuthMaterial::Password(SshPasswordAuth::new(username, draft.ssh_password.clone()))
+        } else {
+            return Err("SSH password or private key required".to_owned());
+        };
+        let config = SshTunnelConfig {
+            bastion_host: draft.ssh_host.clone(),
+            bastion_port,
+            auth,
+            host_key_policy: SshHostKeyPolicy::KnownHostsPath(
+                std::path::PathBuf::from(draft.ssh_known_hosts_path.trim()),
+            ),
+        };
+        let opened = open_local_forward_tunnel(&config, host.as_str(), port)
+            .await
+            .map_err(|e| e.to_string())?;
+        host = LocalForwardTunnel::local_host().to_owned();
+        port = opened.local_port();
+        tunnel = Some(opened);
+    }
     let text = |value: &str| {
         tablerock_core::BoundedText::copy_from_str(value, tablerock_core::ByteLimit::new(128))
             .map_err(|e| e.to_string())
@@ -4110,6 +4201,7 @@ async fn open_described_session(
                 Box::new(session) as Box<dyn DriverSession>,
                 described.identity().to_owned(),
                 described.elapsed_millis(),
+                tunnel,
             ))
         }
         EngineKind::ClickHouse => {
@@ -4135,6 +4227,7 @@ async fn open_described_session(
                 Box::new(session) as Box<dyn DriverSession>,
                 described.identity().to_owned(),
                 described.elapsed_millis(),
+                tunnel,
             ))
         }
         EngineKind::Redis => {
@@ -4165,6 +4258,7 @@ async fn open_described_session(
                 Box::new(session) as Box<dyn DriverSession>,
                 described.identity().to_owned(),
                 described.elapsed_millis(),
+                tunnel,
             ))
         }
     }
@@ -4231,6 +4325,66 @@ fn draft_to_aggregate(draft: &ConnectionDraft) -> Result<ProfileAggregate, Strin
             ProfilePropertyBinding::literal(ProfileProperty::Username, text(&draft.username)?)
                 .map_err(|error| error.to_string())?,
         );
+    }
+    if !draft.ssh_host.trim().is_empty() {
+        let ssh_path_text = |value: &str| {
+            BoundedText::copy_from_str(value, ByteLimit::new(4_096)).map_err(|e| e.to_string())
+        };
+        bindings.push(
+            ProfilePropertyBinding::literal(ProfileProperty::SshHost, text(&draft.ssh_host)?)
+                .map_err(|error| error.to_string())?,
+        );
+        let ssh_port = if draft.ssh_port.trim().is_empty() {
+            "22"
+        } else {
+            draft.ssh_port.trim()
+        };
+        bindings.push(
+            ProfilePropertyBinding::literal(ProfileProperty::SshPort, text(ssh_port)?)
+                .map_err(|error| error.to_string())?,
+        );
+        if !draft.ssh_username.trim().is_empty() {
+            bindings.push(
+                ProfilePropertyBinding::literal(
+                    ProfileProperty::SshUsername,
+                    text(&draft.ssh_username)?,
+                )
+                .map_err(|error| error.to_string())?,
+            );
+        }
+        if !draft.ssh_known_hosts_path.trim().is_empty() {
+            bindings.push(
+                ProfilePropertyBinding::literal(
+                    ProfileProperty::SshKnownHostsPath,
+                    ssh_path_text(draft.ssh_known_hosts_path.trim())?,
+                )
+                .map_err(|error| error.to_string())?,
+            );
+        }
+        if !draft.ssh_password.is_empty() {
+            bindings.push(ProfilePropertyBinding::secret(
+                ProfileProperty::SshPassword,
+                SecretSource::new(SecretSourceKind::DangerousPlaintext(
+                    DangerousPlaintext::new(
+                        draft.ssh_password.as_bytes().to_vec(),
+                        PlaintextAcknowledgement::LocalTestingOnly,
+                    )
+                    .map_err(|error| error.to_string())?,
+                )),
+            ));
+        }
+        if !draft.ssh_private_key.trim().is_empty() {
+            bindings.push(ProfilePropertyBinding::secret(
+                ProfileProperty::SshPrivateKey,
+                SecretSource::new(SecretSourceKind::DangerousPlaintext(
+                    DangerousPlaintext::new(
+                        draft.ssh_private_key.as_bytes().to_vec(),
+                        PlaintextAcknowledgement::LocalTestingOnly,
+                    )
+                    .map_err(|error| error.to_string())?,
+                )),
+            ));
+        }
     }
     let password_source = match draft.password_source {
         PasswordSourceSpec::PromptOnConnect => SecretSourceKind::PromptOnConnect,

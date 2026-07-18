@@ -100,7 +100,8 @@ host them, keep those suites local-only and record the gap — same pattern as
 - [x] SSH known_hosts fail-closed (evidence 261)
 - [x] PG/CH/Redis drivers through local-forward tunnel matrix (evidence 262–263)
 - [x] SSH public-key auth (evidence 264)
-- [x] Profile SSH property bindings (evidence 265; resolve+connect auto-wrap + TUI residual)
+- [x] Profile SSH property bindings (evidence 265)
+- [x] Connect-path SSH auto-wrap + session-owned tunnel (evidence 266; TUI SSH section residual)
 - [x] pg_dump discovery + argv never carries password (tool_discovery tests)
 - [x] DDL plans typed (DdlPlan) + PG execute_ddl_plan add/drop column + vacuum/analyze; Redis unsupported
 - [x] Roles: list_roles read-only Docker test
@@ -111,7 +112,7 @@ host them, keep those suites local-only and record the gap — same pattern as
 
 ## Residual
 
-- SSH agent auth, encrypted private-key passphrase, resolve SSH secrets → tunnel on connect, TUI SSH editor section
+- SSH agent auth, encrypted private-key passphrase, TUI connection editor SSH section
 - Full pg_dump/pg_restore process cancel + version matrix CI
 - DDL review UI + index/constraint ops
 - Role membership/grant inspection depth
