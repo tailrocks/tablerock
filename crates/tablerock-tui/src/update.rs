@@ -104,6 +104,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::StartupReview { confirm_buffer, .. }
                     | ConfirmDialog::PgTool { confirm_buffer, .. }
                     | ConfirmDialog::ImportUrl { confirm_buffer, .. }
+                    | ConfirmDialog::OpenExternalUrl { confirm_buffer, .. }
                     | ConfirmDialog::QuickSwitch { confirm_buffer, .. }
                     | ConfirmDialog::BindParams { confirm_buffer, .. }
                     | ConfirmDialog::FindReplace { confirm_buffer, .. } => {
@@ -1798,6 +1799,78 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         }
                     }
                 }
+                ConfirmDialog::OpenExternalUrl {
+                    url,
+                    confirm_buffer,
+                    ..
+                } => {
+                    // Two-phase: empty buffer receives URL paste; OPEN confirms connect.
+                    let trimmed = confirm_buffer.trim();
+                    if trimmed.eq_ignore_ascii_case("OPEN") || trimmed.eq_ignore_ascii_case("YES") {
+                        let parse_src = if url.trim().is_empty() {
+                            // Fallback: operator pasted URL then OPEN in same buffer incorrectly.
+                            return Update::render();
+                        } else {
+                            url.as_str()
+                        };
+                        match tablerock_core::parse_connection_url(parse_src) {
+                            Ok(draft) => {
+                                model.reset_editor();
+                                model.editor_mut().apply_connection_url(&draft);
+                                model.set_confirm(None);
+                                model.set_screen(Screen::Editor);
+                                if !model.editor_mut().validate() {
+                                    return Update::render();
+                                }
+                                let token = model.mint_request_token();
+                                Update {
+                                    render: true,
+                                    effect: Some(Effect::ConnectSession {
+                                        request_token: token,
+                                        draft: connection_draft_from_editor(model.editor()),
+                                        temporary: true,
+                                    }),
+                                }
+                            }
+                            Err(error) => {
+                                model.set_confirm(None);
+                                model.editor_mut().validation_error = Some(error.to_string());
+                                model.set_screen(Screen::Editor);
+                                Update::render()
+                            }
+                        }
+                    } else if trimmed.contains("://") {
+                        // First paste: parse URL into summary, keep for OPEN confirm.
+                        match tablerock_core::parse_connection_url(trimmed) {
+                            Ok(draft) => {
+                                let summary = draft.safety_summary();
+                                if let Some(secret) = draft.password.as_deref() {
+                                    if !secret.is_empty() && summary.contains(secret) {
+                                        model.set_confirm(None);
+                                        model.editor_mut().validation_error =
+                                            Some("refusing to show password in summary".into());
+                                        return Update::render();
+                                    }
+                                }
+                                model.set_confirm(Some(ConfirmDialog::OpenExternalUrl {
+                                    url: trimmed.to_owned(),
+                                    summary,
+                                    confirm_buffer: String::new(),
+                                }));
+                                model.set_action(ActionId::Submit);
+                                Update::render()
+                            }
+                            Err(error) => {
+                                model.set_confirm(None);
+                                model.editor_mut().validation_error = Some(error.to_string());
+                                Update::render()
+                            }
+                        }
+                    } else {
+                        // Stay open for OPEN token.
+                        Update::render()
+                    }
+                }
                 ConfirmDialog::QuickSwitch { confirm_buffer } => {
                     let needle = confirm_buffer.trim();
                     let tabs = &model.workbench().tabs;
@@ -2041,6 +2114,20 @@ fn activate_selected_action(model: &mut Model) -> Update {
             ) =>
         {
             model.set_confirm(Some(ConfirmDialog::ImportUrl {
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::OpenExternalUrl
+            if matches!(
+                model.screen(),
+                Screen::Connections | Screen::ConnectionPicker | Screen::Editor
+            ) =>
+        {
+            model.set_confirm(Some(ConfirmDialog::OpenExternalUrl {
+                url: String::new(),
+                summary: String::new(),
                 confirm_buffer: String::new(),
             }));
             model.set_action(ActionId::Submit);
@@ -2841,6 +2928,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::PgDump
         | ActionId::PgRestore
         | ActionId::ImportUrl
+        | ActionId::OpenExternalUrl
         | ActionId::Explain
         | ActionId::QuickSwitch
         | ActionId::FindReplace
@@ -3533,6 +3621,7 @@ fn cycle_action(
                 ActionId::Test,
                 ActionId::Connect,
                 ActionId::ImportUrl,
+                ActionId::OpenExternalUrl,
                 ActionId::Cancel,
                 ActionId::Quit,
             ],
@@ -3610,6 +3699,7 @@ fn cycle_action(
                 ActionId::Open,
                 ActionId::New,
                 ActionId::ImportUrl,
+                ActionId::OpenExternalUrl,
                 ActionId::Remove,
                 ActionId::Quit,
             ],
@@ -5353,6 +5443,77 @@ mod tests {
             .active_grid()
             .and_then(|g| g.error_label.as_ref())
             .is_some_and(|e| e.contains("unsupported")));
+    }
+
+    #[test]
+    fn open_external_url_requires_open_then_connects_temporary() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Connections);
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::OpenExternalUrl);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::OpenExternalUrl { summary, .. }) if summary.is_empty()
+        ));
+        // Phase 1: paste URL
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded(
+                "postgres://alice:s3cret@db.example:5432/app".into(),
+            )),
+        );
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        match model.confirm() {
+            Some(ConfirmDialog::OpenExternalUrl { summary, url, .. }) => {
+                assert!(summary.contains("PostgreSQL"));
+                assert!(summary.contains("password=present"));
+                assert!(!summary.contains("s3cret"));
+                assert!(url.contains("s3cret")); // retained for re-parse only
+            }
+            other => panic!("expected OpenExternalUrl summary, got {other:?}"),
+        }
+        // Phase 2: paste OPEN → temporary connect effect
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("OPEN".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::ConnectSession {
+                temporary: true,
+                draft,
+                ..
+            }) if draft.host == "db.example"
+                && draft.database == "app"
+                && draft.username == "alice"
+                && draft.password == "s3cret"
+        ));
+        assert!(model.confirm().is_none());
+    }
+
+    #[test]
+    fn open_external_url_rejects_hostile_scheme() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Connections);
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::OpenExternalUrl);
+        let _ = update(&mut model, Message::Activate);
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("javascript://alert(1)".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        assert!(model.confirm().is_none());
+        assert!(model
+            .editor()
+            .validation_error
+            .as_deref()
+            .is_some_and(|e| e.contains("hostile") || e.contains("unsupported")));
     }
 
     #[test]

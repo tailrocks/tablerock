@@ -178,6 +178,8 @@ pub enum ActionId {
     PgRestore,
     /// Paste a connection URL into the editor (reviewable draft).
     ImportUrl,
+    /// Open an external/deep-link URL as a temporary session after confirm.
+    OpenExternalUrl,
     /// Run EXPLAIN on the active SQL editor statement (PG/CH only).
     Explain,
     /// Fuzzy switch across open tabs (stable titles).
@@ -252,6 +254,15 @@ pub enum ConfirmDialog {
     },
     /// Import connection URL: paste URL into buffer, Submit applies to editor.
     ImportUrl {
+        confirm_buffer: String,
+    },
+    /// External URL open: paste URL, then paste OPEN to confirm temporary connect.
+    ///
+    /// `summary` is redacted (no password text). `url` retained only for re-parse.
+    OpenExternalUrl {
+        /// Raw URL (not shown in status by default; used on confirm).
+        url: String,
+        summary: String,
         confirm_buffer: String,
     },
     /// Quick switch: paste filter or 1-based index, Submit selects matching tab.

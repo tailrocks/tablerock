@@ -54,15 +54,50 @@ impl fmt::Debug for ConnectionUrlDraft {
     }
 }
 
+impl ConnectionUrlDraft {
+    /// Operator-facing summary for confirm dialogs — never includes password text.
+    #[must_use]
+    pub fn safety_summary(&self) -> String {
+        let engine = match self.engine {
+            Engine::PostgreSql => "PostgreSQL",
+            Engine::ClickHouse => "ClickHouse",
+            Engine::Redis => "Redis",
+        };
+        let user = if self.username.is_empty() {
+            "(none)"
+        } else {
+            self.username.as_str()
+        };
+        let secret = if self.password.is_some() {
+            "present"
+        } else {
+            "absent"
+        };
+        let tls = match self.tls {
+            ConnectionUrlTls::Off => "off",
+            ConnectionUrlTls::Required => "required",
+        };
+        format!(
+            "{engine} {host}:{port}/{db} user={user} password={secret} tls={tls}",
+            host = self.host,
+            port = self.port,
+            db = self.database,
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionUrlError {
     Empty,
     TooLarge { actual: usize, maximum: usize },
     UnsupportedScheme { scheme: String },
     MissingHost,
+    InvalidHost,
     InvalidPort { value: String },
     InvalidEncoding,
     Malformed,
+    /// Control characters or other hostile bytes in the input.
+    HostileInput,
 }
 
 impl fmt::Display for ConnectionUrlError {
@@ -76,9 +111,11 @@ impl fmt::Display for ConnectionUrlError {
                 write!(f, "unsupported URL scheme '{scheme}'")
             }
             Self::MissingHost => f.write_str("connection URL is missing host"),
+            Self::InvalidHost => f.write_str("connection URL host is invalid"),
             Self::InvalidPort { value } => write!(f, "invalid port '{value}'"),
             Self::InvalidEncoding => f.write_str("invalid percent-encoding in URL"),
             Self::Malformed => f.write_str("malformed connection URL"),
+            Self::HostileInput => f.write_str("connection URL contains hostile input"),
         }
     }
 }
@@ -97,6 +134,10 @@ pub fn parse_connection_url(input: &str) -> Result<ConnectionUrlDraft, Connectio
             maximum: MAX_CONNECTION_URL_BYTES,
         });
     }
+    // Hostile: C0 controls (except tab is still rejected), DEL, and NULs.
+    if trimmed.bytes().any(|b| b < 0x20 || b == 0x7f) {
+        return Err(ConnectionUrlError::HostileInput);
+    }
 
     let (scheme, rest) = split_scheme(trimmed)?;
     let scheme_lower = scheme.to_ascii_lowercase();
@@ -107,6 +148,14 @@ pub fn parse_connection_url(input: &str) -> Result<ConnectionUrlDraft, Connectio
         "https" => (Engine::ClickHouse, 8443, ConnectionUrlTls::Required),
         "redis" => (Engine::Redis, 6379, ConnectionUrlTls::Off),
         "rediss" => (Engine::Redis, 6379, ConnectionUrlTls::Required),
+        // Explicit reject list for common deep-link attack schemes.
+        other if matches!(
+            other,
+            "javascript" | "data" | "file" | "about" | "blob" | "vbscript" | "mailto"
+        ) =>
+        {
+            return Err(ConnectionUrlError::HostileInput);
+        }
         other => {
             return Err(ConnectionUrlError::UnsupportedScheme {
                 scheme: other.into(),
@@ -169,6 +218,7 @@ pub fn parse_connection_url(input: &str) -> Result<ConnectionUrlDraft, Connectio
             _ => (hostport.to_owned(), default_port),
         }
     };
+    validate_host(&host)?;
 
     let database = match path {
         Some(p) if !p.is_empty() => {
@@ -303,6 +353,32 @@ fn hex_nibble(b: u8) -> Result<u8, ConnectionUrlError> {
     }
 }
 
+/// Host must be non-empty DNS/IPv4/IPv6-ish without spaces or path separators.
+fn validate_host(host: &str) -> Result<(), ConnectionUrlError> {
+    if host.is_empty() || host.len() > 253 {
+        return Err(ConnectionUrlError::InvalidHost);
+    }
+    if host.contains([' ', '/', '\\', '?', '#', '@']) {
+        return Err(ConnectionUrlError::InvalidHost);
+    }
+    if host.bytes().any(|b| b < 0x20 || b == 0x7f) {
+        return Err(ConnectionUrlError::HostileInput);
+    }
+    // Reject clearly non-host forms used in deep-link abuse.
+    if host.eq_ignore_ascii_case("localhost")
+        || host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':'))
+    {
+        return Ok(());
+    }
+    // Allow broader unicode hostnames but reject shell metacharacters.
+    if host.chars().any(|c| matches!(c, ';' | '|' | '&' | '`' | '$' | '(' | ')' | '<' | '>' | '\n' | '\r')) {
+        return Err(ConnectionUrlError::HostileInput);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,5 +465,40 @@ mod tests {
             parse_connection_url(&big),
             Err(ConnectionUrlError::TooLarge { .. })
         ));
+    }
+
+    #[test]
+    fn hostile_schemes_and_controls_rejected() {
+        assert!(matches!(
+            parse_connection_url("javascript:alert(1)"),
+            Err(ConnectionUrlError::HostileInput | ConnectionUrlError::Malformed)
+        ));
+        // Explicit scheme with ://
+        assert!(matches!(
+            parse_connection_url("javascript://evil"),
+            Err(ConnectionUrlError::HostileInput)
+        ));
+        assert!(matches!(
+            parse_connection_url("file:///etc/passwd"),
+            Err(ConnectionUrlError::HostileInput)
+        ));
+        assert!(matches!(
+            parse_connection_url("postgres://h\0ost/db"),
+            Err(ConnectionUrlError::HostileInput)
+        ));
+        assert!(matches!(
+            parse_connection_url("postgres://host;rm/db"),
+            Err(ConnectionUrlError::HostileInput)
+        ));
+    }
+
+    #[test]
+    fn safety_summary_never_includes_password() {
+        let d = parse_connection_url("postgres://u:s3cret@h:1/db").unwrap();
+        let s = d.safety_summary();
+        assert!(!s.contains("s3cret"));
+        assert!(s.contains("password=present"));
+        assert!(s.contains("PostgreSQL"));
+        assert!(s.contains("h:1/db"));
     }
 }

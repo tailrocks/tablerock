@@ -97,6 +97,6 @@ nothing durable remains after quit.
 
 ## Deferred to later phases
 
-URL import, external URL open, 1Password field mapping, SSH tunnel, startup
-actions, custom CA/mTLS editing UI, tags/favorites beyond groups. Each is an
-extension of this screen, tracked in the parity ledger.
+1Password field mapping, custom CA/mTLS editing UI. URL import, external URL
+open, SSH tunnel, and startup actions landed (see delivery evidence 260–274,
+289, 296). Each extension is tracked in the parity ledger.

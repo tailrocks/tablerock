@@ -3,7 +3,7 @@ Connection,Connection list,Core,implemented,list/search/empty/loading/fail state
 Connection,Create/edit/duplicate/remove,Core,implemented,form + persistence CAS,plans 004-006
 Connection,Engine chooser,Core,implemented,PG/CH/Redis only,plan 006
 Connection,URL import,Parity,implemented,parse_connection_url + ImportUrl dialog,evidence 289
-Connection,External URL open,Later,gap,deliberately deferred,
+Connection,External URL open,Later,implemented,OPEN confirm + temporary connect + hostile reject,evidence 296
 Connection,Test connection,Core,implemented,describe + startup summary,plans 006/017
 Connection,Temporary connection,Core,implemented,no durable profile/secret,plan 006
 Connection,Profile organization,Parity,implemented,groups/tags/favorites/filters,plans 004-006

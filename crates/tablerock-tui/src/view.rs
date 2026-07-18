@@ -237,6 +237,28 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "Paste postgres/redis/clickhouse URL then Submit [{confirm_buffer}]"
             ),
         ),
+        crate::model::ConfirmDialog::OpenExternalUrl {
+            summary,
+            confirm_buffer,
+            url,
+        } => {
+            if summary.is_empty() {
+                (
+                    "Open external URL?",
+                    format!(
+                        "Paste connection URL then Submit; then paste OPEN to connect temporary [{confirm_buffer}]"
+                    ),
+                )
+            } else {
+                let _ = url; // never display raw URL (may embed credentials)
+                (
+                    "Confirm temporary connect?",
+                    format!(
+                        "{summary}. Paste OPEN to connect temporary (never saves) [{confirm_buffer}]"
+                    ),
+                )
+            }
+        }
         crate::model::ConfirmDialog::QuickSwitch { confirm_buffer } => {
             let tabs = &model.workbench().tabs;
             let preview: Vec<String> = tabs
@@ -388,6 +410,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let open = action_label(model, ActionId::Open, "Open");
     let new = action_label(model, ActionId::New, "New");
     let import_url = action_label(model, ActionId::ImportUrl, "URL");
+    let open_ext = action_label(model, ActionId::OpenExternalUrl, "OpenURL");
     let save = action_label(model, ActionId::Save, "Save");
     let test = action_label(model, ActionId::Test, "Test");
     let connect = action_label(model, ActionId::Connect, "Connect");
@@ -494,6 +517,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ImportUrl,
                         label: import_url.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::OpenExternalUrl,
+                        label: open_ext.as_str(),
                         enabled: true,
                         style: None,
                     },
@@ -852,6 +881,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ImportUrl,
                         label: import_url.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::OpenExternalUrl,
+                        label: open_ext.as_str(),
                         enabled: true,
                         style: None,
                     },
