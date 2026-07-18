@@ -34,7 +34,8 @@
   Settings scene. Evidence 408 adds actor-owned bridge I/O, off-main pump/page
   decode, operation-ID cancellation UI, and a strict Swift 6 build gate;
   evidence 409 replaces the SwiftUI result renderer with the required reusable
-  AppKit `NSTableView`; remaining criteria stay open.
+  AppKit `NSTableView`; evidence 410 replaces `TextEditor` with the required
+  IME-safe AppKit `NSTextView`/TextKit editor. Remaining criteria stay open.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED

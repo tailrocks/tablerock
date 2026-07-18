@@ -434,8 +434,7 @@ struct ContentView: View {
                 if model.sessionHex != nil {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("SQL").font(.headline)
-                        TextEditor(text: $model.queryText)
-                            .font(.system(.body, design: .monospaced))
+                        SqlTextEditor(text: $model.queryText)
                             .frame(minHeight: 56, maxHeight: 80)
                         HStack {
                             Button("Run query") { Task { await model.runQuery() } }
@@ -600,6 +599,64 @@ struct CatalogGrid: NSViewRepresentable {
             cell.setAccessibilityLabel("\(snapshot.columns[column]), row \(row + 1)")
             cell.setAccessibilityValue(value)
             return cell
+        }
+    }
+}
+
+struct SqlTextEditor: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let editor = NSTextView()
+        editor.delegate = context.coordinator
+        editor.isRichText = false
+        editor.importsGraphics = false
+        editor.allowsUndo = true
+        editor.isAutomaticQuoteSubstitutionEnabled = false
+        editor.isAutomaticDashSubstitutionEnabled = false
+        editor.isAutomaticTextReplacementEnabled = false
+        editor.font = NSFont.monospacedSystemFont(
+            ofSize: NSFont.systemFontSize, weight: .regular)
+        editor.textContainerInset = NSSize(width: 6, height: 6)
+        editor.string = text
+        editor.setAccessibilityLabel("SQL editor")
+
+        let scroll = NSScrollView()
+        scroll.documentView = editor
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.borderType = .bezelBorder
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let editor = scroll.documentView as? NSTextView else { return }
+        context.coordinator.text = $text
+        // Never replace storage while an input method owns marked text.
+        guard !editor.hasMarkedText(), editor.string != text else { return }
+        let selection = editor.selectedRanges
+        editor.string = text
+        let maximum = (text as NSString).length
+        editor.selectedRanges = selection.map { value in
+            let range = value.rangeValue
+            return NSValue(range: NSRange(
+                location: min(range.location, maximum),
+                length: min(range.length, max(0, maximum - min(range.location, maximum)))
+            ))
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) { self.text = text }
+
+        func textDidChange(_ notification: Notification) {
+            guard let editor = notification.object as? NSTextView else { return }
+            text.wrappedValue = editor.string
         }
     }
 }
