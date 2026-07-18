@@ -911,6 +911,39 @@ impl PostgresSession {
             .map_err(|_| PostgresError::Query)
     }
 
+    /// Primary-key column names for a relation, ordered by key position.
+    ///
+    /// Empty when the relation has no PRIMARY KEY (views, heaps without PK).
+    /// Parameters are bound; identifiers never concatenated raw.
+    pub async fn relation_primary_key_columns(
+        &self,
+        schema: &str,
+        table: &str,
+    ) -> Result<Vec<String>, PostgresError> {
+        if schema.is_empty() || table.is_empty() {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let rows = self
+            .client
+            .query(
+                "SELECT a.attname::text \
+                 FROM pg_catalog.pg_index i \
+                 JOIN pg_catalog.pg_class c ON c.oid = i.indrelid \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                 JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true \
+                 JOIN pg_catalog.pg_attribute a \
+                   ON a.attrelid = c.oid AND a.attnum = k.attnum AND NOT a.attisdropped \
+                 WHERE i.indisprimary \
+                   AND n.nspname = $1 \
+                   AND c.relname = $2 \
+                 ORDER BY k.ord",
+                &[&schema, &table],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        Ok(rows.into_iter().map(|row| row.get(0)).collect())
+    }
+
     pub async fn describe_server(&self) -> Result<ServerDescribe, PostgresError> {
         let started = std::time::Instant::now();
         let row = self

@@ -271,6 +271,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let load_q = action_label(model, ActionId::LoadQuery, "LoadQ");
     let save_file = action_label(model, ActionId::SaveFile, "SaveFile");
     let save_intent = action_label(model, ActionId::SaveIntent, "SaveIntent");
+    let undo_staged = action_label(model, ActionId::UndoStaged, "UndoEdit");
+    let discard_staged = action_label(model, ActionId::DiscardStaged, "DiscardEdits");
+    let review_mut = action_label(model, ActionId::ReviewMutations, "Review");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
@@ -410,6 +413,24 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::SaveIntent,
                         label: save_intent.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::UndoStaged,
+                        label: undo_staged.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DiscardStaged,
+                        label: discard_staged.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ReviewMutations,
+                        label: review_mut.as_str(),
                         enabled: true,
                         style: None,
                     },
@@ -949,6 +970,21 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
         wb.active_grid()
             .map(|g| g.status_line())
             .unwrap_or_else(|| wb.status.summary()),
+        wb.mutation_review
+            .as_ref()
+            .map(|r| {
+                let n = r.lines.len();
+                format!(
+                    "review {}.{} · {n} stmt(s) · first: {}",
+                    r.schema,
+                    r.table,
+                    r.lines
+                        .first()
+                        .map(|l| l.sql.as_str())
+                        .unwrap_or("—")
+                )
+            })
+            .unwrap_or_default(),
     ];
     for line in header {
         if y >= max_y || line.is_empty() {

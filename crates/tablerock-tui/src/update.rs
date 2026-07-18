@@ -410,6 +410,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             bytes,
             truncated,
             complete,
+            identity_columns,
         }) => {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
@@ -421,10 +422,19 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             } else {
                 GridRowTotal::Unknown
             };
+            let safety = safety_mode_from_label(&model.workbench().context.safety_label);
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 // First page from Execute/Browse stamps the result_token seed.
                 if start_row == 0 {
                     grid.result_token = request_token;
+                }
+                if let Some(identity) = identity_columns {
+                    grid.identity_columns = identity;
+                    // Browse sets base_schema/table before the first page arrives.
+                    // Ad-hoc SQL leaves base unset → stays read-only.
+                    if grid.base_schema.is_some() && grid.base_table.is_some() {
+                        grid.recompute_editability(safety, false);
+                    }
                 }
                 grid.replace_page(
                     start_row, columns, cells, row_count, totals, bytes, truncated,
@@ -840,6 +850,15 @@ pub fn update(model: &mut Model, message: Message) -> Update {
         Message::Activate => Update::unchanged(),
         Message::RequestRedraw => Update::render(),
         Message::Quit => Update::with_effect(Effect::Exit),
+    }
+}
+
+fn safety_mode_from_label(label: &str) -> tablerock_core::ProfileSafetyMode {
+    let lower = label.to_ascii_lowercase();
+    if lower.contains("read only") || lower.contains("readonly") {
+        tablerock_core::ProfileSafetyMode::ReadOnly
+    } else {
+        tablerock_core::ProfileSafetyMode::ConfirmWrites
     }
 }
 
@@ -1343,6 +1362,53 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::render()
         }
+        ActionId::UndoStaged if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.drafts.undo() {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::DiscardStaged if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if !grid.drafts.is_empty() {
+                    grid.drafts.discard_all();
+                    model.workbench_mut().mutation_review = None;
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::ReviewMutations if model.screen() == Screen::Workbench => {
+            use crate::model::mutation_plan_build::review_from_drafts;
+            let (schema, table, database, drafts) = {
+                let Some(grid) = model.workbench().active_grid() else {
+                    return Update::unchanged();
+                };
+                if !grid.editability.is_editable() || grid.drafts.is_empty() {
+                    return Update::unchanged();
+                }
+                (
+                    grid.base_schema.clone().unwrap_or_default(),
+                    grid.base_table.clone().unwrap_or_default(),
+                    model.workbench().context.database.clone(),
+                    grid.drafts.clone(),
+                )
+            };
+            match review_from_drafts(&drafts, &schema, &table, &database) {
+                Ok(view) => {
+                    model.workbench_mut().mutation_review = Some(view);
+                    Update::render()
+                }
+                Err(error) => {
+                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                        grid.error_label = Some(error.to_string());
+                    }
+                    Update::render()
+                }
+            }
+        }
         ActionId::SaveColumns if model.screen() == Screen::Workbench => {
             let profile_id_hex = model.workbench().profile_id_hex.clone();
             let database = model.workbench().context.database.clone();
@@ -1412,6 +1478,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
         | ActionId::SaveColumns
+        | ActionId::UndoStaged
+        | ActionId::DiscardStaged
+        | ActionId::ReviewMutations
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -1606,6 +1675,9 @@ fn cycle_action(
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
                 ActionId::SaveColumns,
+                ActionId::UndoStaged,
+                ActionId::DiscardStaged,
+                ActionId::ReviewMutations,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,
@@ -2642,6 +2714,8 @@ mod tests {
         model.workbench_mut().open_preview_tab("users");
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.operation = GridOperationState::Running;
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
         }
         let stale = update(
             &mut model,
@@ -2662,6 +2736,7 @@ mod tests {
                 bytes: 8,
                 truncated: false,
                 complete: true,
+                identity_columns: None,
             }),
         );
         assert!(!stale.needs_render());
@@ -2684,6 +2759,7 @@ mod tests {
                 bytes: 8,
                 truncated: false,
                 complete: true,
+                identity_columns: Some(vec!["id".into()]),
             }),
         );
         assert!(ok.needs_render());
@@ -2692,6 +2768,8 @@ mod tests {
         assert_eq!(grid.columns, ["id"]);
         assert_eq!(grid.operation, GridOperationState::Completed);
         assert!(grid.is_resident(0));
+        assert_eq!(grid.identity_columns, vec!["id".to_owned()]);
+        assert!(grid.editability.is_editable());
     }
 
     #[test]

@@ -154,6 +154,8 @@ pub enum EngineMsg {
         bytes: u64,
         truncated: bool,
         complete: bool,
+        /// When present (browse first page), proven primary-key column names.
+        identity_columns: Option<Vec<String>>,
     },
     GridFailed {
         request_token: u64,

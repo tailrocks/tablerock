@@ -284,6 +284,7 @@ impl EffectExecutor {
                         context_revision,
                         statement,
                         Vec::new(),
+                        None::<(String, String)>, // ad-hoc SQL: no base-table identity
                     )
                     .await;
                     let _ = ingress.try_send_event(message);
@@ -1396,6 +1397,8 @@ async fn browse_table(
             });
         }
     };
+    let schema_for_pk = plan.schema.clone();
+    let table_for_pk = plan.table.clone();
     execute_sql(
         sessions,
         results,
@@ -1405,6 +1408,8 @@ async fn browse_table(
         context_revision,
         rendered.sql,
         rendered.parameters,
+        // PK proof runs inside execute when session is already resolved.
+        Some((schema_for_pk, table_for_pk)),
     )
     .await
 }
@@ -1421,6 +1426,8 @@ async fn execute_sql(
     context_revision: u64,
     statement: String,
     parameters: Vec<tablerock_engine::FilterValue>,
+    // When set (browse), load primary-key columns for editability.
+    identity_relation: Option<(String, String)>,
 ) -> Message {
     use tablerock_core::{
         Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
@@ -1445,6 +1452,12 @@ async fn execute_sql(
             context_revision,
             reason: FailureProjection::Label("session not registered".into()),
         });
+    };
+    let identity_columns = match identity_relation {
+        Some((schema, table)) if session.engine() == CoreEngine::PostgreSql => {
+            fetch_primary_key_columns(session.as_ref(), &schema, &table).await
+        }
+        _ => None,
     };
     let statement = match StatementText::new(statement) {
         Ok(s) => s,
@@ -1525,6 +1538,7 @@ async fn execute_sql(
                         context_revision,
                         page,
                         false,
+                        identity_columns.clone(),
                     );
                     let _ = ingress.try_send_event(msg);
                     first_sent = true;
@@ -1568,6 +1582,7 @@ async fn execute_sql(
             bytes: 0,
             truncated: false,
             complete: true,
+            identity_columns,
         });
     }
 
@@ -1616,7 +1631,7 @@ async fn fetch_page(
     };
     // complete=false: FetchPage only swaps the resident window; terminal
     // completion already arrived (or will) via GridStreamComplete.
-    project_page_message(request_token, context_revision, page, false)
+    project_page_message(request_token, context_revision, page, false, None)
 }
 
 async fn cancel_query(
@@ -1655,11 +1670,65 @@ async fn cancel_query(
     Message::Engine(tablerock_tui::EngineMsg::GridCancelDispatched { request_token })
 }
 
+/// Load PRIMARY KEY column names via the driver page stream (bound params).
+async fn fetch_primary_key_columns(
+    session: &dyn tablerock_engine::DriverSession,
+    schema: &str,
+    table: &str,
+) -> Option<Vec<String>> {
+    use tablerock_core::{
+        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
+    };
+    use tablerock_engine::{DriverPageRequest, FilterValue};
+    let sql = "SELECT a.attname::text \
+         FROM pg_catalog.pg_index i \
+         JOIN pg_catalog.pg_class c ON c.oid = i.indrelid \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true \
+         JOIN pg_catalog.pg_attribute a \
+           ON a.attrelid = c.oid AND a.attnum = k.attnum AND NOT a.attisdropped \
+         WHERE i.indisprimary \
+           AND n.nspname = $1 \
+           AND c.relname = $2 \
+         ORDER BY k.ord";
+    let statement = StatementText::new(sql).ok()?;
+    let limits = PageLimits::new(32, 8, 64 * 1024, 4 * 1024);
+    let mut stream = session
+        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+            statement,
+            parameters: vec![
+                FilterValue::Text(schema.to_owned()),
+                FilterValue::Text(table.to_owned()),
+            ],
+            limits,
+            max_cell_bytes: 4 * 1024,
+        })
+        .await
+        .ok()?;
+    let identity = PageIdentity::new(
+        ResultId::from_parts(IdParts::new(1, 9_001).ok()?).ok()?,
+        Revision::INITIAL,
+        CoreEngine::PostgreSql,
+    );
+    let page = stream.next_page(identity, 0).await.ok()??;
+    let mut names = Vec::new();
+    let rows = page.envelope().row_count();
+    for row in 0..rows {
+        if let Ok(cell) = page.cell(row, 0) {
+            if !cell.is_null() {
+                names.push(String::from_utf8_lossy(cell.bytes()).into_owned());
+            }
+        }
+    }
+    Some(names)
+}
+
 fn project_page_message(
     request_token: RequestToken,
     context_revision: u64,
     page: tablerock_core::ResultPage,
     complete: bool,
+    identity_columns: Option<Vec<String>>,
 ) -> Message {
     use tablerock_core::{RowTotal, Truncation, ValueKind};
     let envelope = page.envelope();
@@ -1770,6 +1839,7 @@ fn project_page_message(
         bytes: envelope.arena_byte_len(),
         truncated,
         complete,
+        identity_columns,
     })
 }
 

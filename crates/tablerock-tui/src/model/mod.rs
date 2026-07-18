@@ -8,6 +8,7 @@ pub mod grid;
 pub mod history;
 pub mod inspector;
 pub mod mutation_draft;
+pub mod mutation_plan_build;
 pub mod profiles;
 pub mod query_editor;
 pub mod saved_query;
@@ -105,6 +106,12 @@ pub enum ActionId {
     ResetColumns,
     /// Persist column layout for the current base table.
     SaveColumns,
+    /// Undo last staged mutation draft action.
+    UndoStaged,
+    /// Discard all staged mutation drafts on the active tab.
+    DiscardStaged,
+    /// Open review dialog for staged mutations (typed plan preview).
+    ReviewMutations,
     Submit,
     Cancel,
     Quit,

@@ -5,6 +5,7 @@ use super::completion::CompletionSession;
 use super::grid::DataGridModel;
 use super::history::HistoryPanel;
 use super::inspector::InspectorModel;
+use super::mutation_plan_build::MutationReviewView;
 use super::query_editor::QueryEditorModel;
 use super::saved_query::{BoundSqlFile, SavedQueryPanel};
 use tablerock_core::SqlDialect;
@@ -110,6 +111,8 @@ pub struct WorkbenchModel {
     pub saved_queries: SavedQueryPanel,
     /// Profile id for intent-only session restore (hex), when non-temporary.
     pub profile_id_hex: Option<String>,
+    /// Open mutation review dialog (typed plan preview; never executed text).
+    pub mutation_review: Option<MutationReviewView>,
 }
 
 impl Default for WorkbenchModel {
@@ -152,6 +155,7 @@ impl Default for WorkbenchModel {
             history_retention: "full".into(),
             saved_queries: SavedQueryPanel::Closed,
             profile_id_hex: None,
+            mutation_review: None,
         }
     }
 }

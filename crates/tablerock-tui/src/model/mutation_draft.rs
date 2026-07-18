@@ -70,7 +70,6 @@ pub struct StagedDelete {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum UndoEntry {
-    Cell(StagedCellEdit),
     /// Prior cell edit replaced by a newer one (for undo restore).
     CellReplaced {
         previous: Option<StagedCellEdit>,
@@ -198,7 +197,10 @@ impl MutationDraftModel {
             return false;
         };
         match entry {
-            UndoEntry::Cell(edit) | UndoEntry::CellReplaced { current: edit, previous: None } => {
+            UndoEntry::CellReplaced {
+                previous: None,
+                current: edit,
+            } => {
                 self.cell_edits
                     .retain(|e| !(e.abs_row == edit.abs_row && e.column == edit.column));
             }

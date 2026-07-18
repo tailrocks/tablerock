@@ -2532,6 +2532,18 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
         tablerock_engine::MutationChangeOutcome::Failed { .. }
     ));
 
+    // Primary-key column proof for editability.
+    let pk = session
+        .relation_primary_key_columns("public", "mut_users")
+        .await
+        .unwrap();
+    assert_eq!(pk, vec!["id".to_owned()]);
+    let no_pk = session
+        .relation_primary_key_columns("public", "does_not_exist")
+        .await
+        .unwrap();
+    assert!(no_pk.is_empty());
+
     // Session still usable.
     let health = session.health_check().await;
     assert!(health.is_ok());
