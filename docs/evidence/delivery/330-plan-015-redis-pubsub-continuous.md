@@ -33,4 +33,5 @@ cargo check -p tablerock-cli
 
 ## Remaining work
 
-- Optional: operator-controlled “listen until Cancel” without idle stop
+- ~~Optional: operator-controlled “listen until Cancel” without idle stop~~
+  (closed: evidence 335)

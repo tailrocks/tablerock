@@ -125,7 +125,8 @@ extended; CI updated.
   curated open-command names, not redis-doc dump; wired into CompletionMenu)
 - ~~Disposable-connection BLPOP/BRPOP from command editor~~ (closed: evidence 322)
 - ~~Pub/Sub Sub/PSub first-page UI~~ (closed: evidence 329)
-- ~~Continuous Pub/Sub multi-page pump~~ (closed: evidence 330; idle-stop bounds)
+- ~~Continuous Pub/Sub multi-page pump~~ (closed: evidence 330)
+- ~~Listen-until-Cancel Pub/Sub~~ (closed: evidence 335; no idle stop after first msg)
 - ~~Multi-type collection mutations (HSET/HDEL/SADD/SREM/ZADD/ZREM) on apply path~~
   (closed: evidence 312–314; key-view RAdd/RRem stage + review wired)
 - ~~MATCH pattern filter on ScanRedisKeys~~ (closed: evidence 311)

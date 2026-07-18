@@ -483,10 +483,12 @@ pub enum EngineMsg {
         selector: String,
         pattern: bool,
         lines: Vec<String>,
-        /// True when wait timed out with zero messages (still subscribed briefly).
+        /// True when first-page wait timed out with zero messages.
         timed_out: bool,
-        /// True when pump stopped after at least one idle gap (messages may continue server-side).
+        /// True when pump stopped after idle gap before any listen-until-cancel phase.
         idle_stop: bool,
+        /// True when operator Cancel stopped a live listen (not a failure).
+        cancelled: bool,
     },
     RedisSubscribeFailed {
         request_token: u64,

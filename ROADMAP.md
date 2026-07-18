@@ -185,8 +185,8 @@ apply, KEYS ban, SCAN MATCH + HSCAN/SSCAN/ZSCAN first-page key views,
 key-view stage RAdd/RRem → review/apply, RMore collection pages, command
 editor sequential pipeline with per-command ok/err, curated command
 completion, isolated BLPOP/BRPOP disposable connection, Pub/Sub Sub/PSub
-with multi-page pump + idle stop (evidence 311–317, 322, 329–330). Residual
-polish: listen-until-Cancel without idle stop (optional).
+with multi-page pump + listen-until-Cancel (evidence 311–317, 322, 329–330,
+335). Residual polish: none material for Phase 8 Pub/Sub.
 
 Deliver logical database isolation, SCAN navigation, namespaces, byte-safe
 keys/values, type views, TTL, bounded server overview, command

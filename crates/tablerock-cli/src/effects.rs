@@ -4614,9 +4614,11 @@ async fn execute_redis_subscribe(
         DriverPageRequest, RedisSubscriptionKind, RedisSubscriptionOptions,
     };
 
-    const MAX_PAGES: usize = 8;
-    const MAX_LINES: usize = 64;
-    const IDLE: std::time::Duration = std::time::Duration::from_millis(1_500);
+    // First page: short wait so empty channels finish honestly.
+    // After first message: listen until Cancel / max lines / max pages (no idle stop).
+    const MAX_PAGES: usize = 64;
+    const MAX_LINES: usize = 256;
+    const FIRST_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
     let session_id = match session_id_hex.parse::<SessionId>() {
         Ok(id) => id,
@@ -4685,23 +4687,35 @@ async fn execute_redis_subscribe(
         CoreEngine::Redis,
     );
 
-    // Continuous pump: up to MAX_PAGES / MAX_LINES, stop on idle gap after
-    // first message (or first-page timeout with zero messages).
     let mut all_lines: Vec<String> = Vec::new();
     let mut start_row = 0_u64;
-    let mut idle_stop = false;
     let mut timed_out = false;
+    let mut cancelled = false;
+    let mut listening = false; // true after first message — no idle stop
 
     for _page_i in 0..MAX_PAGES {
         if all_lines.len() >= MAX_LINES {
             break;
         }
-        match tokio::time::timeout(IDLE, stream.next_page(identity, start_row)).await {
-            Ok(Ok(Some(page))) => {
+        let page_result = if listening {
+            // Listen until Cancel or next messages (Cancel sets subscription cancel).
+            stream.next_page(identity, start_row).await
+        } else {
+            match tokio::time::timeout(FIRST_WAIT, stream.next_page(identity, start_row)).await {
+                Ok(r) => r,
+                Err(_elapsed) => {
+                    timed_out = true;
+                    break;
+                }
+            }
+        };
+        match page_result {
+            Ok(Some(page)) => {
                 let batch = pubsub_page_lines(&page);
                 let n = u64::from(page.envelope().row_count());
                 start_row = start_row.saturating_add(n);
                 if !batch.is_empty() {
+                    listening = true;
                     all_lines.extend(batch.iter().cloned());
                     let _ = ingress.try_send_event(Message::Engine(
                         tablerock_tui::EngineMsg::RedisSubscribePage {
@@ -4715,21 +4729,19 @@ async fn execute_redis_subscribe(
                     ));
                 }
             }
-            Ok(Ok(None)) => break,
-            Ok(Err(e)) => {
+            Ok(None) => break,
+            Err(e) => {
+                let label = e.to_string();
+                // Operator Cancel is success-with-partial, not failure.
+                if label.to_ascii_lowercase().contains("cancel") {
+                    cancelled = true;
+                    break;
+                }
                 return Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeFailed {
                     request_token,
                     context_revision,
-                    reason: FailureProjection::Label(e.to_string()),
+                    reason: FailureProjection::Label(label),
                 });
-            }
-            Err(_elapsed) => {
-                if all_lines.is_empty() {
-                    timed_out = true;
-                } else {
-                    idle_stop = true;
-                }
-                break;
             }
         }
     }
@@ -4743,7 +4755,8 @@ async fn execute_redis_subscribe(
         pattern,
         lines: all_lines,
         timed_out,
-        idle_stop,
+        idle_stop: false, // listen-until-Cancel replaces idle stop after first msg
+        cancelled,
     })
 }
 

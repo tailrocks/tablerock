@@ -1377,6 +1377,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             lines,
             timed_out,
             idle_stop,
+            cancelled,
             ..
         }) => {
             if model.workbench().context_revision != context_revision {
@@ -1408,7 +1409,9 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             model.workbench_mut().result_sections = sections;
             model.workbench_mut().inspector.open = true;
-            let suffix = if idle_stop {
+            let suffix = if cancelled {
+                " · cancelled"
+            } else if idle_stop {
                 " · idle stop"
             } else if timed_out {
                 " · timeout"
@@ -1420,7 +1423,11 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             model.workbench_mut().inspector.kind_label = "pubsub".into();
             model.workbench_mut().inspector.text = lines.join("\n");
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                grid.operation = GridOperationState::Completed;
+                if cancelled {
+                    grid.mark_server_confirmed_cancelled();
+                } else {
+                    grid.operation = GridOperationState::Completed;
+                }
             }
             let selected = model.workbench().selected_tab;
             if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
@@ -6709,16 +6716,21 @@ mod tests {
                 pattern: false,
                 lines: vec!["news · hello".into(), "news · world".into()],
                 timed_out: false,
-                idle_stop: true,
+                idle_stop: false,
+                cancelled: true,
             }),
         );
         assert!(done.needs_render());
         assert!(model.workbench().inspector.open);
-        assert!(model.workbench().inspector.title.contains("idle stop"));
-        assert_eq!(
-            model.workbench().active_grid().unwrap().operation,
-            GridOperationState::Completed
-        );
+        assert!(model.workbench().inspector.title.contains("cancelled"));
+        assert!(model
+            .workbench()
+            .active_grid()
+            .unwrap()
+            .operation
+            .label()
+            .to_ascii_lowercase()
+            .contains("cancel"));
     }
 
     #[test]
