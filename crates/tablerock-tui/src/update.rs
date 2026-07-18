@@ -3758,6 +3758,30 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyQueryId if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(text) = grid
+                .server_query_id
+                .as_ref()
+                .filter(|s| !s.is_empty())
+                .cloned()
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied query id {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTableName if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5431,6 +5455,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyColumnName
         | ActionId::CopyColumn
         | ActionId::CopyStatus
+        | ActionId::CopyQueryId
         | ActionId::CopyTableName
         | ActionId::CopySchema
         | ActionId::CopyBareTable
@@ -7161,6 +7186,7 @@ fn cycle_action(
                 ActionId::CopyColumnName,
                 ActionId::CopyColumn,
                 ActionId::CopyStatus,
+                ActionId::CopyQueryId,
                 ActionId::CopyTableName,
                 ActionId::CopySchema,
                 ActionId::CopyBareTable,
@@ -8949,6 +8975,31 @@ mod tests {
                 assert!(text.contains("42") || text.contains("rows"), "{text}");
             }
             other => panic!("expected CopyToClipboard, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copy_query_id_emits_when_present() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "ch".into(),
+            temporary: true,
+            engine_label: "ClickHouse".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyQueryId);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.server_query_id = Some("tr-99-abc".into());
+        }
+        model.set_action(ActionId::CopyQueryId);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "tr-99-abc"),
+            other => panic!("expected query id copy, got {other:?}"),
         }
     }
 

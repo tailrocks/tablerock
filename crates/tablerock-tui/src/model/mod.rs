@@ -158,6 +158,8 @@ pub enum ActionId {
     CopyColumn,
     /// Copy active grid status line to clipboard.
     CopyStatus,
+    /// Copy server query id when present (e.g. ClickHouse query_id).
+    CopyQueryId,
     /// Copy base schema.table identity if known.
     CopyTableName,
     /// Copy base schema only if known.
