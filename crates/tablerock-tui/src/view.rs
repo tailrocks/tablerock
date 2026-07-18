@@ -1023,6 +1023,7 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
     let ssh_private_key = editor.field_value(EditorField::SshPrivateKey);
     let ssh_known_hosts = editor.field_value(EditorField::SshKnownHostsPath);
     let ssh_use_agent = editor.field_value(EditorField::SshUseAgent);
+    let startup_sql = editor.field_value(EditorField::StartupSql);
 
     let general = [
         FormField::new(
@@ -1125,6 +1126,11 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             Line::from(ssh_use_agent.as_str()),
         ),
     ];
+    let startup = [FormField::new(
+        EditorField::StartupSql,
+        Line::from("Startup SQL (ReadOnly lines)"),
+        Line::from(startup_sql.as_str()),
+    )];
     let sections = [
         FormSection {
             title: Line::from("General"),
@@ -1145,6 +1151,10 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         FormSection {
             title: Line::from("SSH tunnel"),
             fields: &ssh,
+        },
+        FormSection {
+            title: Line::from("Startup actions"),
+            fields: &startup,
         },
     ];
     let mut state = FormState::new(Some(editor.focused));

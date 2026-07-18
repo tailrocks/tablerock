@@ -22,6 +22,8 @@ pub enum EditorField {
     SshPrivateKey,
     SshKnownHostsPath,
     SshUseAgent,
+    /// Newline-separated ReadOnly startup SQL/commands.
+    StartupSql,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,6 +60,8 @@ pub struct ConnectionFormModel {
     pub ssh_private_key: String,
     pub ssh_known_hosts_path: String,
     pub ssh_use_agent: bool,
+    /// Newline-separated ReadOnly startup statements (one per line; `#` comments ignored).
+    pub startup_sql: String,
     pub focused: EditorField,
     pub plaintext_acknowledged: bool,
     pub validation_error: Option<String>,
@@ -85,6 +89,7 @@ impl Default for ConnectionFormModel {
             ssh_private_key: String::new(),
             ssh_known_hosts_path: String::new(),
             ssh_use_agent: false,
+            startup_sql: String::new(),
             focused: EditorField::Name,
             plaintext_acknowledged: false,
             validation_error: None,
@@ -146,7 +151,36 @@ impl ConnectionFormModel {
                     "password/key".into()
                 }
             }
+            EditorField::StartupSql => {
+                if self.startup_sql.is_empty() {
+                    String::new()
+                } else {
+                    let lines = self
+                        .startup_sql
+                        .lines()
+                        .filter(|l| !l.trim().is_empty() && !l.trim().starts_with('#'))
+                        .count();
+                    format!("{lines} line(s)")
+                }
+            }
         }
+    }
+
+    /// Parse editor startup SQL lines into a ReadOnly `StartupActionSet`.
+    pub fn startup_action_set(&self) -> Result<tablerock_core::StartupActionSet, String> {
+        use tablerock_core::{StartupAction, StartupActionSet, StartupSafetyClass};
+        let mut actions = Vec::new();
+        for line in self.startup_sql.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            actions.push(
+                StartupAction::from_str(trimmed, StartupSafetyClass::ReadOnly, 5_000, true)
+                    .map_err(|e| e.to_string())?,
+            );
+        }
+        StartupActionSet::new(actions).map_err(|e| e.to_string())
     }
 
     pub fn cycle_engine(&mut self) {
@@ -188,7 +222,8 @@ impl ConnectionFormModel {
             EditorField::SshPassword => EditorField::SshPrivateKey,
             EditorField::SshPrivateKey => EditorField::SshKnownHostsPath,
             EditorField::SshKnownHostsPath => EditorField::SshUseAgent,
-            EditorField::SshUseAgent => EditorField::Engine,
+            EditorField::SshUseAgent => EditorField::StartupSql,
+            EditorField::StartupSql => EditorField::Engine,
         };
     }
 
@@ -237,6 +272,10 @@ impl ConnectionFormModel {
                     Some("SSH password, private key, or agent mode required".into());
                 return false;
             }
+        }
+        if let Err(error) = self.startup_action_set() {
+            self.validation_error = Some(error);
+            return false;
         }
         self.validation_error = None;
         true
@@ -295,6 +334,18 @@ mod tests {
             ..ConnectionFormModel::default()
         };
         assert!(editor.validate());
+    }
+
+    #[test]
+    fn startup_sql_parses_read_only_lines() {
+        let editor = ConnectionFormModel {
+            startup_sql: "# comment\nSELECT 1\n\nSELECT 2\n".into(),
+            ..ConnectionFormModel::default()
+        };
+        let set = editor.startup_action_set().unwrap();
+        assert_eq!(set.len(), 2);
+        assert_eq!(set.actions()[0].statement(), "SELECT 1");
+        assert_eq!(set.actions()[1].statement(), "SELECT 2");
     }
 }
 

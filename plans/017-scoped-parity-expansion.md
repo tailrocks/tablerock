@@ -111,18 +111,18 @@ host them, keep those suites local-only and record the gap — same pattern as
 - [x] Startup actions core contract (evidence 270)
 - [x] PG startup executor ReadOnly auto-run (evidence 271)
 - [x] Startup persist + connect-path wire (evidence 272)
-- [x] CH/Redis startup executors (evidence 273; TUI editor + report UI residual)
+- [x] CH/Redis startup executors (evidence 273)
+- [x] Startup TUI lines + connect report; SSH agent preference persist (evidence 274)
 - [x] Vim mode keymap layer unit suite; off by default
 - [x] Relationship graph contract + self-cycle detection
 - [x] Plan index DONE with residual SSH/full dump matrix
 
 ## Residual
 
-- Persist SSH agent preference on profile aggregate (session/editor toggle landed)
-- Startup actions: TUI editor list + connect UI report
 - Full pg_dump/pg_restore process cancel + version matrix CI
 - DDL review UI + index/constraint ops
 - Role membership/grant inspection depth
+- Startup Write/Dangerous review UI (executor skip path already enforced)
 
 ## STOP conditions
 

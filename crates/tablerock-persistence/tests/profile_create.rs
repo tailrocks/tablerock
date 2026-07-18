@@ -206,6 +206,51 @@ fn startup_actions_and_ssh_properties_round_trip() {
     fs::remove_file(&path).unwrap();
 }
 
+#[test]
+fn ssh_use_agent_preference_round_trip() {
+    let path = path("ssh-agent-pref");
+    let _ = fs::remove_file(&path);
+    let actor = PersistenceActor::open(&path).unwrap();
+    let properties = ProfilePropertySet::new(vec![
+        literal(ProfileProperty::Host, "db.internal"),
+        literal(ProfileProperty::Port, "5432"),
+    ])
+    .unwrap();
+    let id = profile_id(88);
+    let connection = ProfileConnectionSnapshot::new(
+        ProfileIdentity::new(
+            id,
+            Revision::INITIAL,
+            Engine::PostgreSql,
+            ProfileName::new(text("Agent profile")).unwrap(),
+        ),
+        properties,
+        ProfilePolicy::new(
+            TlsPolicy::Disabled,
+            ProfileSafetyMode::ReadOnly,
+            ProfileLimits::new(10_000, 30_000, 5_000, 16 * 1024 * 1024).unwrap(),
+        ),
+    )
+    .unwrap();
+    let profile = ProfileAggregate::new(
+        connection,
+        ProfileDurability::Saved,
+        ProfileOrganization::new(None, Vec::new(), false, 0, None).unwrap(),
+        ProfilePreferences::new(ReconnectPreference::Manual, false, 100)
+            .unwrap()
+            .with_ssh_use_agent(true),
+    )
+    .unwrap();
+    assert!(profile.preferences().ssh_use_agent());
+    actor
+        .create_profile(profile.persistable().unwrap())
+        .unwrap();
+    let loaded = actor.get_profile(id).unwrap().unwrap();
+    assert!(loaded.preferences().ssh_use_agent());
+    actor.shutdown().unwrap();
+    fs::remove_file(&path).unwrap();
+}
+
 fn search(value: &str) -> ProfileSearchTerm {
     ProfileSearchTerm::new(text(value)).unwrap()
 }
@@ -286,7 +331,7 @@ fn saved_token_creates_complete_rows_atomically_for_every_engine() {
     });
 
     let reopened = PersistenceActor::open(&path).unwrap();
-    assert_eq!(reopened.health().unwrap().schema_version, 11);
+    assert_eq!(reopened.health().unwrap().schema_version, 12);
     for (index, engine) in [Engine::PostgreSql, Engine::ClickHouse, Engine::Redis]
         .into_iter()
         .enumerate()
@@ -344,7 +389,7 @@ fn malformed_saved_value_fails_closed_and_rolls_back_read_transaction() {
     assert_eq!(error, PersistenceError::ProfileDecode);
     assert_eq!(format!("{error:?}"), "ProfileDecode");
     assert_eq!(error.to_string(), "local persistence operation failed");
-    assert_eq!(actor.health().unwrap().schema_version, 11);
+    assert_eq!(actor.health().unwrap().schema_version, 12);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }
@@ -389,7 +434,7 @@ fn malformed_literal_endpoint_fails_closed_in_summary_projection() {
             .unwrap_err(),
         PersistenceError::ProfileDecode
     );
-    assert_eq!(actor.health().unwrap().schema_version, 11);
+    assert_eq!(actor.health().unwrap().schema_version, 12);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }

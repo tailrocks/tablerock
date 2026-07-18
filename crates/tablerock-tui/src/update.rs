@@ -305,9 +305,15 @@ pub fn update(model: &mut Model, message: Message) -> Update {
         Message::Engine(EngineMsg::TestOk {
             identity,
             elapsed_millis,
+            startup_summary,
             ..
         }) => {
-            model.editor_mut().test_status = Some(format!("ok: {identity} ({elapsed_millis} ms)"));
+            let mut status = format!("ok: {identity} ({elapsed_millis} ms)");
+            if let Some(summary) = startup_summary {
+                status.push_str("; ");
+                status.push_str(&summary);
+            }
+            model.editor_mut().test_status = Some(status);
             Update::render()
         }
         Message::Engine(EngineMsg::TestFailed { reason, .. }) => {
@@ -323,14 +329,19 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             temporary,
             engine_label,
             profile_id_hex,
+            startup_summary,
             ..
         }) => {
+            let status = match startup_summary {
+                Some(summary) => format!("connected; {summary}"),
+                None => "connected".into(),
+            };
             model.set_session(Some(SessionFacts {
                 session_id_hex: session_id_hex.clone(),
                 identity: identity.clone(),
                 temporary,
                 engine_label: engine_label.clone(),
-                status: Some("connected".into()),
+                status: Some(status),
             }));
             let mut workbench = WorkbenchModel::from_session(
                 if temporary { "temporary" } else { "profile" },
@@ -3095,7 +3106,9 @@ fn connection_draft_from_editor(
         ssh_private_key: editor.ssh_private_key.clone(),
         ssh_known_hosts_path: editor.ssh_known_hosts_path.clone(),
         ssh_use_agent: editor.ssh_use_agent,
-        startup_actions: tablerock_core::StartupActionSet::empty(),
+        startup_actions: editor
+            .startup_action_set()
+            .unwrap_or_else(|_| tablerock_core::StartupActionSet::empty()),
     }
 }
 
@@ -3144,6 +3157,7 @@ fn apply_editor_text(model: &mut Model, text: &str) {
         EditorField::SshUseAgent => {
             editor.ssh_use_agent = !editor.ssh_use_agent;
         }
+        EditorField::StartupSql => editor.startup_sql.push_str(text),
     }
 }
 
@@ -3280,12 +3294,28 @@ mod tests {
                 request_token: 1,
                 identity: "PostgreSQL 17".into(),
                 elapsed_millis: 12,
+                startup_summary: None,
             }),
         );
         assert!(ok.needs_render());
         assert_eq!(
             model.editor().test_status.as_deref(),
             Some("ok: PostgreSQL 17 (12 ms)")
+        );
+
+        let with_startup = update(
+            &mut model,
+            Message::Engine(EngineMsg::TestOk {
+                request_token: 1,
+                identity: "PostgreSQL 17".into(),
+                elapsed_millis: 9,
+                startup_summary: Some("startup 1ok/0skip/0fail/0timeout".into()),
+            }),
+        );
+        assert!(with_startup.needs_render());
+        assert_eq!(
+            model.editor().test_status.as_deref(),
+            Some("ok: PostgreSQL 17 (9 ms); startup 1ok/0skip/0fail/0timeout")
         );
 
         let fail = update(
@@ -3412,6 +3442,7 @@ mod tests {
                 temporary: true,
                 engine_label: "PostgreSQL".into(),
                 profile_id_hex: None,
+                startup_summary: None,
             }),
         );
         assert_eq!(model.screen(), Screen::Workbench);

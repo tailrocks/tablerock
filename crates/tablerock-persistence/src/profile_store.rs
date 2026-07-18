@@ -36,6 +36,7 @@ pub(crate) struct EncodedProfile {
     reconnect: u8,
     restore_last_context: bool,
     preferred_page_rows: u32,
+    ssh_use_agent: bool,
     tags: Vec<String>,
     properties: Vec<EncodedProperty>,
     startup_actions: Vec<EncodedStartupAction>,
@@ -88,6 +89,7 @@ impl EncodedProfile {
             },
             restore_last_context: preferences.restore_last_context(),
             preferred_page_rows: preferences.preferred_page_rows(),
+            ssh_use_agent: preferences.ssh_use_agent(),
             tags: organization
                 .tags()
                 .iter()
@@ -221,10 +223,10 @@ pub(crate) async fn create(
                 engine, name, tls_policy, safety_mode, connect_timeout_ms,\
                 operation_timeout_ms, max_result_rows, max_result_bytes, group_name, favorite,\
                 saved_order, environment_kind, environment_label, reconnect,\
-                restore_last_context, preferred_page_rows\
+                restore_last_context, preferred_page_rows, ssh_use_agent\
              ) VALUES (\
                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,\
-                ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21\
+                ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22\
              )",
             turso::params![
                 profile.id.as_slice(),
@@ -248,6 +250,7 @@ pub(crate) async fn create(
                 profile.reconnect,
                 profile.restore_last_context,
                 profile.preferred_page_rows,
+                profile.ssh_use_agent,
             ],
         )
         .await
@@ -326,9 +329,9 @@ pub(crate) async fn replace(
                 connect_timeout_ms = ?9, operation_timeout_ms = ?10, max_result_rows = ?11, \
                 max_result_bytes = ?12, group_name = ?13, favorite = ?14, saved_order = ?15, \
                 environment_kind = ?16, environment_label = ?17, reconnect = ?18, \
-                restore_last_context = ?19, preferred_page_rows = ?20, \
+                restore_last_context = ?19, preferred_page_rows = ?20, ssh_use_agent = ?21, \
                 updated_at = CURRENT_TIMESTAMP \
-             WHERE profile_id = ?21 AND revision = ?22",
+             WHERE profile_id = ?22 AND revision = ?23",
             turso::params![
                 profile.aggregate_schema,
                 profile.connection_schema,
@@ -350,6 +353,7 @@ pub(crate) async fn replace(
                 profile.reconnect,
                 profile.restore_last_context,
                 profile.preferred_page_rows,
+                profile.ssh_use_agent,
                 profile.id.as_slice(),
                 expected_revision.get().to_be_bytes().as_slice(),
             ],
@@ -813,7 +817,7 @@ async fn read_transaction(
                     name, tls_policy, safety_mode, connect_timeout_ms, operation_timeout_ms,\
                     max_result_rows, max_result_bytes, group_name, favorite, saved_order,\
                     environment_kind, environment_label, reconnect, restore_last_context,\
-                    preferred_page_rows \
+                    preferred_page_rows, ssh_use_agent \
              FROM saved_profiles WHERE profile_id = ?1",
             (id.to_bytes().as_slice(),),
         )
@@ -857,6 +861,7 @@ async fn read_transaction(
     let reconnect = decode_reconnect(get::<u8>(&row, 17)?)?;
     let restore_last_context = decode_bool(get::<u8>(&row, 18)?)?;
     let preferred_page_rows = get::<u32>(&row, 19)?;
+    let ssh_use_agent = decode_bool(get::<u8>(&row, 20)?)?;
     drop(row);
     drop(rows);
 
@@ -875,7 +880,8 @@ async fn read_transaction(
         ProfileOrganization::new(group_name, tags, favorite, saved_order, environment)
             .map_err(|_| PersistenceError::ProfileDecode)?;
     let preferences = ProfilePreferences::new(reconnect, restore_last_context, preferred_page_rows)
-        .map_err(|_| PersistenceError::ProfileDecode)?;
+        .map_err(|_| PersistenceError::ProfileDecode)?
+        .with_ssh_use_agent(ssh_use_agent);
     ProfileAggregate::from_wire(
         aggregate_schema,
         connection,

@@ -259,6 +259,8 @@ pub struct ProfilePreferences {
     reconnect: ReconnectPreference,
     restore_last_context: bool,
     preferred_page_rows: u32,
+    /// Prefer SSH agent (`SSH_AUTH_SOCK`) when a bastion host is configured.
+    ssh_use_agent: bool,
 }
 
 impl ProfilePreferences {
@@ -279,7 +281,15 @@ impl ProfilePreferences {
             reconnect,
             restore_last_context,
             preferred_page_rows,
+            ssh_use_agent: false,
         })
+    }
+
+    /// Prefer agent auth for SSH tunnels on this profile.
+    #[must_use]
+    pub const fn with_ssh_use_agent(mut self, ssh_use_agent: bool) -> Self {
+        self.ssh_use_agent = ssh_use_agent;
+        self
     }
 
     #[must_use]
@@ -293,6 +303,10 @@ impl ProfilePreferences {
     #[must_use]
     pub const fn preferred_page_rows(self) -> u32 {
         self.preferred_page_rows
+    }
+    #[must_use]
+    pub const fn ssh_use_agent(self) -> bool {
+        self.ssh_use_agent
     }
 }
 

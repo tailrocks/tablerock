@@ -67,6 +67,10 @@ const MIGRATIONS: &[(u32, &str)] = &[
         11,
         include_str!("../migrations/0011-ssh-properties-and-startup-actions.sql"),
     ),
+    (
+        12,
+        include_str!("../migrations/0012-ssh-use-agent-preference.sql"),
+    ),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

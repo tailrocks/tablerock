@@ -1345,13 +1345,14 @@ async fn load_profile_list(
 
 async fn test_connection(request_token: RequestToken, draft: ConnectionDraft) -> Message {
     match open_described_session(draft, false).await {
-        Ok((session, identity, elapsed_millis, tunnel)) => {
+        Ok((session, identity, elapsed_millis, tunnel, startup_summary)) => {
             let _ = session.shutdown().await;
             drop(tunnel);
             Message::Engine(tablerock_tui::EngineMsg::TestOk {
                 request_token,
                 identity,
                 elapsed_millis,
+                startup_summary,
             })
         }
         Err(label) => Message::Engine(tablerock_tui::EngineMsg::TestFailed {
@@ -1375,7 +1376,7 @@ async fn connect_session(
     }
     .to_owned();
     match open_described_session(draft, false).await {
-        Ok((session, identity, _elapsed, tunnel)) => {
+        Ok((session, identity, _elapsed, tunnel, startup_summary)) => {
             let session_id = match mint_session_id() {
                 Ok(id) => id,
                 Err(label) => {
@@ -1396,6 +1397,7 @@ async fn connect_session(
                     temporary,
                     engine_label,
                     profile_id_hex: if temporary { None } else { profile_id_hex },
+                    startup_summary,
                 }),
                 Err(error) => Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
                     request_token,
@@ -3912,7 +3914,7 @@ async fn reconnect_session(
     // Delay is declarative (next_backoff_ms); executor may sleep before re-dispatch.
     // This attempt connects immediately so auth-stop never burns wall-clock in tests.
     match open_described_session(draft.clone(), true).await {
-        Ok((session, identity, _, tunnel)) => {
+        Ok((session, identity, _, tunnel, startup_summary)) => {
             let session_id = match mint_session_id() {
                 Ok(id) => id,
                 Err(label) => {
@@ -3938,6 +3940,7 @@ async fn reconnect_session(
                     }
                     .into(),
                     profile_id_hex: None,
+                    startup_summary,
                 }),
                 Err(error) => Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
                     request_token,
@@ -4092,7 +4095,7 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
         ssh_private_key,
         ssh_known_hosts_path: literal(ProfileProperty::SshKnownHostsPath).unwrap_or_default(),
         // Agent mode is session/editor intent; not persisted as a profile property yet.
-        ssh_use_agent: false,
+        ssh_use_agent: aggregate.preferences().ssh_use_agent(),
         startup_actions: aggregate.startup_actions().clone(),
     })
 }
@@ -4102,6 +4105,30 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
 /// When `draft.ssh_host` is set, opens a fail-closed known_hosts bastion tunnel
 /// and rewrites the driver endpoint to `127.0.0.1:local_port`. The tunnel is
 /// returned so the caller can keep it alive with the session.
+fn format_startup_summary(report: &tablerock_core::StartupRunReport) -> Option<String> {
+    use tablerock_core::StartupActionOutcome;
+    if report.outcomes().is_empty() {
+        return None;
+    }
+    let mut ok = 0u32;
+    let mut skip = 0u32;
+    let mut fail = 0u32;
+    let mut timeout = 0u32;
+    for (_, outcome) in report.outcomes() {
+        match outcome {
+            StartupActionOutcome::Succeeded => ok += 1,
+            StartupActionOutcome::SkippedNeedsReview | StartupActionOutcome::Cancelled => {
+                skip += 1
+            }
+            StartupActionOutcome::Failed => fail += 1,
+            StartupActionOutcome::TimedOut => timeout += 1,
+        }
+    }
+    Some(format!(
+        "startup {ok}ok/{skip}skip/{fail}fail/{timeout}timeout"
+    ))
+}
+
 async fn open_described_session(
     draft: ConnectionDraft,
     is_reconnect: bool,
@@ -4111,6 +4138,7 @@ async fn open_described_session(
         String,
         u64,
         Option<tablerock_engine::LocalForwardTunnel>,
+        Option<String>,
     ),
     String,
 > {
@@ -4213,8 +4241,8 @@ async fn open_described_session(
             ))
             .await
             .map_err(|e| e.to_string())?;
-            // Partial-failure honest: connect still succeeds; report not yet UI-surfaced.
-            let _startup =
+            // Partial-failure honest: connect still succeeds; summary surfaces to UI.
+            let startup =
                 run_postgres_startup_actions(&session, &draft.startup_actions, is_reconnect).await;
             let described = session.describe().await.map_err(|e| e.to_string())?;
             Ok((
@@ -4222,6 +4250,7 @@ async fn open_described_session(
                 described.identity().to_owned(),
                 described.elapsed_millis(),
                 tunnel,
+                format_startup_summary(&startup),
             ))
         }
         EngineKind::ClickHouse => {
@@ -4242,7 +4271,7 @@ async fn open_described_session(
                 ch_tls,
                 ClickHouseCompression::None,
             ));
-            let _startup =
+            let startup =
                 run_clickhouse_startup_actions(&session, &draft.startup_actions, is_reconnect)
                     .await;
             let described = session.describe().await.map_err(|e| e.to_string())?;
@@ -4251,6 +4280,7 @@ async fn open_described_session(
                 described.identity().to_owned(),
                 described.elapsed_millis(),
                 tunnel,
+                format_startup_summary(&startup),
             ))
         }
         EngineKind::Redis => {
@@ -4276,7 +4306,7 @@ async fn open_described_session(
             )
             .await
             .map_err(|e| e.to_string())?;
-            let _startup =
+            let startup =
                 run_redis_startup_actions(&session, &draft.startup_actions, is_reconnect).await;
             let described = session.describe().await.map_err(|e| e.to_string())?;
             Ok((
@@ -4284,6 +4314,7 @@ async fn open_described_session(
                 described.identity().to_owned(),
                 described.elapsed_millis(),
                 tunnel,
+                format_startup_summary(&startup),
             ))
         }
     }
@@ -4468,7 +4499,8 @@ fn draft_to_aggregate(draft: &ConnectionDraft) -> Result<ProfileAggregate, Strin
         ProfileDurability::Saved,
         organization,
         ProfilePreferences::new(ReconnectPreference::BoundedAutomatic, true, 250)
-            .map_err(|e| e.to_string())?,
+            .map_err(|e| e.to_string())?
+            .with_ssh_use_agent(draft.ssh_use_agent),
     )
     .map_err(|e| e.to_string())?
     .with_startup_actions(draft.startup_actions.clone()))

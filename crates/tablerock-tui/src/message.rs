@@ -89,6 +89,8 @@ pub enum EngineMsg {
         request_token: u64,
         identity: String,
         elapsed_millis: u64,
+        /// Optional startup-actions summary (ok/skip/fail counts).
+        startup_summary: Option<String>,
     },
     TestFailed {
         request_token: u64,
@@ -102,6 +104,8 @@ pub enum EngineMsg {
         engine_label: String,
         /// Non-temporary connects carry the profile for intent restore.
         profile_id_hex: Option<String>,
+        /// Optional startup-actions summary after connect.
+        startup_summary: Option<String>,
     },
     ConnectFailed {
         request_token: u64,
