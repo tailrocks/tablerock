@@ -231,6 +231,12 @@ impl ClickHouseActiveQuery {
 impl ClickHouseSession {
     #[must_use]
     pub fn connect(config: &ClickHouseConnectConfig) -> Self {
+        Self::connect_with_password(config, None)
+    }
+
+    /// Connect with optional password. Empty/`None` omits `with_password`.
+    #[must_use]
+    pub fn connect_with_password(config: &ClickHouseConnectConfig, password: Option<&str>) -> Self {
         let scheme = match config.tls {
             ClickHouseTlsMode::Disable => "http",
             ClickHouseTlsMode::Require | ClickHouseTlsMode::RequireSystemRoots => "https",
@@ -239,7 +245,7 @@ impl ClickHouseSession {
             ClickHouseCompression::None => Compression::None,
             ClickHouseCompression::Lz4 => Compression::Lz4,
         };
-        let client = Client::default()
+        let mut client = Client::default()
             .with_url(format!(
                 "{scheme}://{}:{}",
                 config.host.as_str(),
@@ -249,6 +255,9 @@ impl ClickHouseSession {
             .with_user(config.user.as_str())
             .with_compression(compression)
             .with_product_info("tablerock", env!("CARGO_PKG_VERSION"));
+        if let Some(password) = password.filter(|value| !value.is_empty()) {
+            client = client.with_password(password);
+        }
         Self {
             client,
             active: Arc::new(ClickHouseActiveQuery::default()),

@@ -678,34 +678,42 @@ impl TableRockBridge {
             "user",
         )?;
         let port = params.port;
-        // Password is used only for Redis credentials today; PostgreSQL/ClickHouse
-        // trust/config is host-local in the proof harness (same as engine Docker tests).
         let password = params.password.clone();
+        let password_opt = if password.is_empty() {
+            None
+        } else {
+            Some(password.as_str())
+        };
 
         let session: Box<dyn DriverSession> = self.runtime.block_on(async {
             match engine {
                 Engine::PostgreSql => {
-                    let session = PostgresSession::connect(&PostgresConnectConfig::new(
-                        host,
-                        port,
-                        database,
-                        user,
-                        PostgresTlsMode::Disabled,
-                    ))
+                    let session = PostgresSession::connect_with_password(
+                        &PostgresConnectConfig::new(
+                            host,
+                            port,
+                            database,
+                            user,
+                            PostgresTlsMode::Disabled,
+                        ),
+                        password_opt,
+                    )
                     .await
                     .map_err(|error| BridgeError::rejected("connect", error.to_string()))?;
                     Ok(Box::new(session) as Box<dyn DriverSession>)
                 }
                 Engine::ClickHouse => {
-                    let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
-                        host,
-                        port,
-                        database,
-                        user,
-                        ClickHouseTlsMode::Disable,
-                        ClickHouseCompression::Lz4,
-                    ));
-                    let _ = password;
+                    let session = ClickHouseSession::connect_with_password(
+                        &ClickHouseConnectConfig::new(
+                            host,
+                            port,
+                            database,
+                            user,
+                            ClickHouseTlsMode::Disable,
+                            ClickHouseCompression::Lz4,
+                        ),
+                        password_opt,
+                    );
                     Ok(Box::new(session) as Box<dyn DriverSession>)
                 }
                 Engine::Redis => {

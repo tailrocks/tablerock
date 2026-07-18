@@ -6082,23 +6082,31 @@ async fn open_described_session(
         TlsModeSpec::Off => RedisTlsMode::Disable,
         TlsModeSpec::VerifyCa | TlsModeSpec::VerifyFull => RedisTlsMode::Require,
     };
+    let password = if resolved_password.is_empty() {
+        None
+    } else {
+        Some(resolved_password.as_str())
+    };
     match draft.engine {
         EngineKind::PostgreSql => {
-            let session = PostgresSession::connect(&PostgresConnectConfig::new(
-                text(&host)?,
-                port,
-                text(if draft.database.is_empty() {
-                    "postgres"
-                } else {
-                    &draft.database
-                })?,
-                text(if draft.username.is_empty() {
-                    "postgres"
-                } else {
-                    &draft.username
-                })?,
-                pg_tls,
-            ))
+            let session = PostgresSession::connect_with_password(
+                &PostgresConnectConfig::new(
+                    text(&host)?,
+                    port,
+                    text(if draft.database.is_empty() {
+                        "postgres"
+                    } else {
+                        &draft.database
+                    })?,
+                    text(if draft.username.is_empty() {
+                        "postgres"
+                    } else {
+                        &draft.username
+                    })?,
+                    pg_tls,
+                ),
+                password,
+            )
             .await
             .map_err(|e| e.to_string())?;
             // Partial-failure honest: connect still succeeds; summary surfaces to UI.
@@ -6116,23 +6124,25 @@ async fn open_described_session(
             ))
         }
         EngineKind::ClickHouse => {
-            let _ = &resolved_password;
-            let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
-                text(&host)?,
-                port,
-                text(if draft.database.is_empty() {
-                    "default"
-                } else {
-                    &draft.database
-                })?,
-                text(if draft.username.is_empty() {
-                    "default"
-                } else {
-                    &draft.username
-                })?,
-                ch_tls,
-                ClickHouseCompression::None,
-            ));
+            let session = ClickHouseSession::connect_with_password(
+                &ClickHouseConnectConfig::new(
+                    text(&host)?,
+                    port,
+                    text(if draft.database.is_empty() {
+                        "default"
+                    } else {
+                        &draft.database
+                    })?,
+                    text(if draft.username.is_empty() {
+                        "default"
+                    } else {
+                        &draft.username
+                    })?,
+                    ch_tls,
+                    ClickHouseCompression::None,
+                ),
+                password,
+            );
             let startup =
                 run_clickhouse_startup_actions(&session, &draft.startup_actions, is_reconnect)
                     .await;

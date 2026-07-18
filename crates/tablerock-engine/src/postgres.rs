@@ -743,12 +743,21 @@ fn bounded_notice_text(value: &str, max_bytes: u64) -> (BoundedText, Truncation)
 impl PostgresSession {
     /// Connects with plaintext or native-root required TLS according to `config`.
     pub async fn connect(config: &PostgresConnectConfig) -> Result<Self, PostgresError> {
+        Self::connect_with_password(config, None).await
+    }
+
+    /// Connect with optional password. Password is never stored on the session;
+    /// empty/`None` means no password is sent (peer/trust auth).
+    pub async fn connect_with_password(
+        config: &PostgresConnectConfig,
+        password: Option<&str>,
+    ) -> Result<Self, PostgresError> {
         match config.tls {
-            PostgresTlsMode::Disabled => Self::connect_plain(config).await,
+            PostgresTlsMode::Disabled => Self::connect_plain(config, password).await,
             PostgresTlsMode::Required => {
                 let (connector, _rejected_native_certificates) =
                     MakeRustlsConnect::with_native_certs().map_err(|_| PostgresError::Connect)?;
-                Self::connect_rustls(config, connector).await
+                Self::connect_rustls(config, connector, password).await
             }
         }
     }
@@ -758,15 +767,27 @@ impl PostgresSession {
         config: &PostgresConnectConfig,
         material: PostgresTlsMaterial<'_>,
     ) -> Result<Self, PostgresError> {
+        Self::connect_with_tls_password(config, material, None).await
+    }
+
+    /// Required TLS + optional password (same bounds as [`Self::connect_with_password`]).
+    pub async fn connect_with_tls_password(
+        config: &PostgresConnectConfig,
+        material: PostgresTlsMaterial<'_>,
+        password: Option<&str>,
+    ) -> Result<Self, PostgresError> {
         if config.tls != PostgresTlsMode::Required {
             return Err(PostgresError::TlsConfiguration);
         }
         let connector = build_tls_connector(material)?;
-        Self::connect_rustls(config, connector).await
+        Self::connect_rustls(config, connector, password).await
     }
 
-    async fn connect_plain(config: &PostgresConnectConfig) -> Result<Self, PostgresError> {
-        let driver = driver_config(config);
+    async fn connect_plain(
+        config: &PostgresConnectConfig,
+        password: Option<&str>,
+    ) -> Result<Self, PostgresError> {
+        let driver = driver_config(config, password);
         let (client, connection) = driver
             .connect(tokio_postgres::NoTls)
             .await
@@ -789,9 +810,10 @@ impl PostgresSession {
     async fn connect_rustls(
         config: &PostgresConnectConfig,
         connector: MakeRustlsConnect,
+        password: Option<&str>,
     ) -> Result<Self, PostgresError> {
         let connector = PostgresRustlsConnector::new(connector, config.tls_server_name.as_ref());
-        let driver = driver_config(config);
+        let driver = driver_config(config, password);
         let (client, connection) = driver
             .connect(connector.clone())
             .await
@@ -2207,7 +2229,7 @@ fn validate_copy_input(
     Ok(())
 }
 
-fn driver_config(config: &PostgresConnectConfig) -> tokio_postgres::Config {
+fn driver_config(config: &PostgresConnectConfig, password: Option<&str>) -> tokio_postgres::Config {
     let mut driver = tokio_postgres::Config::new();
     driver
         .host(config.host.as_str())
@@ -2218,6 +2240,9 @@ fn driver_config(config: &PostgresConnectConfig) -> tokio_postgres::Config {
             PostgresTlsMode::Disabled => SslMode::Disable,
             PostgresTlsMode::Required => SslMode::Require,
         });
+    if let Some(password) = password.filter(|value| !value.is_empty()) {
+        driver.password(password);
+    }
     driver
 }
 
