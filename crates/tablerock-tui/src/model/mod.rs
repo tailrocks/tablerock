@@ -150,6 +150,10 @@ pub enum ActionId {
     CopyStatus,
     /// Copy base schema.table identity if known.
     CopyTableName,
+    /// Copy base schema only if known.
+    CopySchema,
+    /// Copy bare table name only if known.
+    CopyBareTable,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy locator values for the cursor row (pk=value pairs).

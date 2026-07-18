@@ -3722,6 +3722,46 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopySchema if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(schema) = grid.base_schema.as_ref().filter(|s| !s.is_empty()) else {
+                return Update::unchanged();
+            };
+            let text = schema.clone();
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied schema {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopyBareTable if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(table) = grid.base_table.as_ref().filter(|t| !t.is_empty()) else {
+                return Update::unchanged();
+            };
+            let text = table.clone();
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied table {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyPkNames if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5242,6 +5282,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyColumn
         | ActionId::CopyStatus
         | ActionId::CopyTableName
+        | ActionId::CopySchema
+        | ActionId::CopyBareTable
         | ActionId::CopyPkNames
         | ActionId::CopyLocator
         | ActionId::CopyWhere
@@ -6946,6 +6988,8 @@ fn cycle_action(
                 ActionId::CopyColumn,
                 ActionId::CopyStatus,
                 ActionId::CopyTableName,
+                ActionId::CopySchema,
+                ActionId::CopyBareTable,
                 ActionId::CopyPkNames,
                 ActionId::CopyLocator,
                 ActionId::CopyWhere,
@@ -8589,6 +8633,43 @@ mod tests {
             grid.base_table = None;
         }
         model.set_action(ActionId::CopyTableName);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+    }
+
+    #[test]
+    fn copy_schema_and_bare_table_emit_parts() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("analytics".into());
+            grid.base_table = Some("events".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopySchema);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "analytics"),
+            other => panic!("expected schema copy, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyBareTable);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "events"),
+            other => panic!("expected bare table copy, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = None;
+            grid.base_table = None;
+        }
+        model.set_action(ActionId::CopySchema);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        model.set_action(ActionId::CopyBareTable);
         assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
