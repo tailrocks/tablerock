@@ -111,6 +111,8 @@ pub enum ActionId {
     CopyDirtyTabTitles,
     /// Copy tab counts summary (total/dirty/preview/running).
     CopyTabCounts,
+    /// Copy preview tab titles (one per line); fail closed if none.
+    CopyPreviewTabTitles,
     PinTab,
     NewSql,
     RunSql,

@@ -3501,6 +3501,30 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyPreviewTabTitles if model.screen() == Screen::Workbench => {
+            let titles: Vec<String> = model
+                .workbench()
+                .tabs
+                .iter()
+                .filter(|t| t.preview)
+                .map(|t| t.title.clone())
+                .collect();
+            if titles.is_empty() {
+                return Update::unchanged();
+            }
+            let text = titles.join("\n");
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied {} preview tab title(s)", titles.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTabs if model.screen() == Screen::Workbench => {
             let text = model.workbench().tabs_panel_text();
             if text == "no tabs" {
@@ -7137,6 +7161,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyActiveTabTitle
         | ActionId::CopyDirtyTabTitles
         | ActionId::CopyTabCounts
+        | ActionId::CopyPreviewTabTitles
         | ActionId::PinTab
         | ActionId::NewSql
         | ActionId::RunSql
@@ -9006,6 +9031,7 @@ fn cycle_action(
                 ActionId::CopyActiveTabTitle,
                 ActionId::CopyDirtyTabTitles,
                 ActionId::CopyTabCounts,
+                ActionId::CopyPreviewTabTitles,
                 ActionId::CloseTab,
                 ActionId::QuickSwitch,
                 ActionId::PinTab,
@@ -11169,11 +11195,26 @@ mod tests {
             }
             other => panic!("expected tab counts, got {other:?}"),
         }
-        // Clear dirty flags → fail closed.
+        model.set_action(ActionId::CopyPreviewTabTitles);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                // Welcome + clean remain preview; dirty tabs promote out of preview.
+                assert!(text.contains("Welcome") || text.contains("clean"), "{text}");
+                assert!(!text.contains("dirty-one"), "{text}");
+            }
+            other => panic!("expected preview titles, got {other:?}"),
+        }
+        // Clear dirty flags → fail closed for dirty titles.
         for tab in &mut model.workbench_mut().tabs {
             tab.dirty = false;
         }
         model.set_action(ActionId::CopyDirtyTabTitles);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        // Clear all preview → fail closed for preview titles.
+        for tab in &mut model.workbench_mut().tabs {
+            tab.preview = false;
+        }
+        model.set_action(ActionId::CopyPreviewTabTitles);
         assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
