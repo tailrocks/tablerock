@@ -281,6 +281,11 @@ fn render_status(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mu
 
 fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, focused: bool) {
     let focused_title = focused.then(|| format!("> {title}"));
+    let body = if title == "Workspace" || title.ends_with("Workspace") {
+        Some(model.profiles().status_line())
+    } else {
+        None
+    };
     let panel = Panel::new(&model.theme)
         .title(focused_title.as_deref().unwrap_or(title))
         .emphasis(if focused {
@@ -288,5 +293,21 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
         } else {
             PanelEmphasis::Normal
         });
+    // Prefer body when TermRock Panel supports content; fall back to title-only.
+    let _ = body.as_ref();
     frame.render_widget(&panel, area);
+    if let Some(status) = body
+        && area.height > 2
+        && area.width > 2
+    {
+        use ratatui_core::widgets::Widget;
+        let text = ratatui_core::text::Line::from(status);
+        let inner = Rect {
+            x: area.x.saturating_add(1),
+            y: area.y.saturating_add(1),
+            width: area.width.saturating_sub(2),
+            height: 1,
+        };
+        text.render(inner, frame.buffer_mut());
+    }
 }

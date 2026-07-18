@@ -12,6 +12,8 @@ crossterm.workspace = true
 futures-util.workspace = true
 ratatui-core.workspace = true
 ratatui-crossterm.workspace = true
+tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
+tablerock-persistence = { version = "=0.1.0", path = "../tablerock-persistence" }
 tablerock-tui = { version = "=0.1.0", path = "../tablerock-tui" }
 termrock.workspace = true
 tokio.workspace = true

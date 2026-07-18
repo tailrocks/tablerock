@@ -13,7 +13,10 @@ use tablerock_tui::subscriptions::{Subscription, root_subscriptions};
 use tablerock_tui::{Effect, Message, Model, ShellView, update};
 use termrock::crossterm::{Session, SessionOptions};
 
-use crate::{Delivery, EventStream, IngressReceiver, IngressSender, InputAdapter, bounded_ingress};
+use crate::{
+    Delivery, EventStream, IngressReceiver, IngressSender, InputAdapter, bounded_ingress,
+    effects::EffectExecutor,
+};
 
 /// Bounded post-mapping ingress for root subscription messages.
 pub type RootMessageSender = IngressSender<Message, RootProgress>;
@@ -120,22 +123,45 @@ fn run_caught_boundary(operation: impl FnOnce() -> Result<(), RunError>) -> Resu
 
 /// Own the sole live terminal session and root event loop.
 pub async fn run() -> Result<(), RunError> {
-    let (_, root_messages) = root_message_channel();
-    run_with_root_messages(root_messages).await
+    let (ingress, root_messages) = root_message_channel();
+    let executor = EffectExecutor::open_default(ingress)
+        .map_err(|error| RunError::Runtime(io::Error::other(error)))?;
+    run_with_root_messages_and_executor(root_messages, executor).await
 }
 
 /// Run with an injected bounded stream after source-specific semantic mapping.
 pub async fn run_with_root_messages(root_messages: RootMessageReceiver) -> Result<(), RunError> {
+    let (ingress, _drop_receiver) = root_message_channel();
+    let path = std::env::temp_dir().join(format!("tablerock-cli-run-{}.db", std::process::id()));
+    let actor = tablerock_persistence::PersistenceActor::open(&path)
+        .map_err(|error| RunError::Runtime(io::Error::other(error.to_string())))?;
+    let executor = EffectExecutor::new(actor, ingress);
+    run_with_root_messages_and_executor(root_messages, executor).await
+}
+
+async fn run_with_root_messages_and_executor(
+    root_messages: RootMessageReceiver,
+    executor: EffectExecutor,
+) -> Result<(), RunError> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(RunError::NonInteractive);
     }
 
     let mut session =
         Session::enter(io::stdout(), SessionOptions::default()).map_err(RunError::Terminal)?;
-    #[cfg(not(test))]
-    let result = run_session(&mut session, root_messages).await;
-    #[cfg(test)]
-    let result = run_session(&mut session, root_messages, &mut || Ok(())).await;
+    let local = tokio::task::LocalSet::new();
+    let result = local
+        .run_until(async {
+            #[cfg(not(test))]
+            {
+                run_session(&mut session, root_messages, &executor).await
+            }
+            #[cfg(test)]
+            {
+                run_session(&mut session, root_messages, &executor, &mut || Ok(())).await
+            }
+        })
+        .await;
     finish_restoration(result, session.restore())
 }
 
@@ -157,19 +183,26 @@ fn finish_restoration(
 async fn run_session(
     session: &mut Session<io::Stdout>,
     mut root_messages: RootMessageReceiver,
+    executor: &EffectExecutor,
     #[cfg(test)] after_frame: &mut dyn FnMut() -> Result<(), RunError>,
 ) -> Result<(), RunError> {
     let backend = CrosstermBackend::new(session.writer_mut());
     let mut terminal = Terminal::new(backend).map_err(RunError::Terminal)?;
     let initial = terminal.size().map_err(RunError::Terminal)?;
     let mut model = Model::default();
-    let _ = update(
+    let bootstrap = update(
         &mut model,
         Message::Resize {
             width: initial.width,
             height: initial.height,
         },
     );
+    for effect in bootstrap.effects() {
+        if *effect == Effect::Exit {
+            return Ok(());
+        }
+        executor.dispatch(effect.clone());
+    }
     let mut events = EventStream::new();
     let mut root_ingress_open = true;
     let mut input = InputAdapter::default();
@@ -237,8 +270,11 @@ async fn run_session(
 
         let result = update(&mut model, message);
         dirty |= result.needs_render();
-        if result.effects().any(|effect| *effect == Effect::Exit) {
-            return Ok(());
+        for effect in result.effects() {
+            if *effect == Effect::Exit {
+                return Ok(());
+            }
+            executor.dispatch(effect.clone());
         }
     }
 }
@@ -381,21 +417,31 @@ mod tests {
         }
         let mut session =
             Session::enter(io::stdout(), SessionOptions::default()).map_err(RunError::Terminal)?;
-        let (_, root_messages) = root_message_channel();
-        let result = run_session(&mut session, root_messages, &mut || {
-            assert!(
-                crossterm::terminal::is_raw_mode_enabled()
-                    .expect("inspect child terminal raw mode"),
-                "fault must occur only after raw mode acquisition"
-            );
-            match fault {
-                TestFault::ReturnedError => Err(RunError::Input(io::Error::other(
-                    "controlled test input failure",
-                ))),
-                TestFault::Panic => panic!("controlled test panic"),
-            }
-        })
-        .await;
+        let (ingress, root_messages) = root_message_channel();
+        let path =
+            std::env::temp_dir().join(format!("tablerock-cli-fault-{}.db", std::process::id()));
+        let actor = tablerock_persistence::PersistenceActor::open(&path)
+            .map_err(|error| RunError::Runtime(io::Error::other(error.to_string())))?;
+        let executor = EffectExecutor::new(actor, ingress);
+        let local = tokio::task::LocalSet::new();
+        let result = local
+            .run_until(async {
+                run_session(&mut session, root_messages, &executor, &mut || {
+                    assert!(
+                        crossterm::terminal::is_raw_mode_enabled()
+                            .expect("inspect child terminal raw mode"),
+                        "fault must occur only after raw mode acquisition"
+                    );
+                    match fault {
+                        TestFault::ReturnedError => Err(RunError::Input(io::Error::other(
+                            "controlled test input failure",
+                        ))),
+                        TestFault::Panic => panic!("controlled test panic"),
+                    }
+                })
+                .await
+            })
+            .await;
         finish_restoration(result, session.restore())
     }
 

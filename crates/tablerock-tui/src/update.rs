@@ -1,6 +1,11 @@
 //! Deterministic root update path.
 
-use crate::{ActionId, Effect, FocusRegion, Message, Model, Screen, ShellTarget};
+use crate::{
+    ActionId, Effect, FocusRegion, Message, Model, Screen, ShellTarget,
+    effect::ProfileListFilterSpec,
+    message::{EngineMsg, ProfilesMsg},
+    model::profiles::ProfileListState,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Update {
@@ -43,11 +48,21 @@ impl Update {
 pub fn update(model: &mut Model, message: Message) -> Update {
     match message {
         Message::Resize { width, height } => {
-            if model.size() == (width, height) {
-                Update::unchanged()
-            } else {
+            let size_changed = model.size() != (width, height);
+            if size_changed {
                 model.resize(width, height);
+            }
+            let bootstrap = maybe_bootstrap_profiles(model);
+            if bootstrap.effect.is_some() {
+                return Update {
+                    render: true,
+                    effect: bootstrap.effect,
+                };
+            }
+            if size_changed {
                 Update::render()
+            } else {
+                Update::unchanged()
             }
         }
         Message::FrameRendered(geometry) => {
@@ -117,6 +132,36 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 Update::unchanged()
             }
         }
+        Message::Profiles(ProfilesMsg::ListLoaded {
+            request_token,
+            items,
+        }) => {
+            if model.profiles().active_token() != Some(request_token) {
+                return Update::unchanged();
+            }
+            model.set_profiles(ProfileListState::Loaded {
+                request_token,
+                rows: items,
+            });
+            Update::render()
+        }
+        Message::Profiles(ProfilesMsg::ListFailed {
+            request_token,
+            reason,
+        }) => {
+            if model.profiles().active_token() != Some(request_token) {
+                return Update::unchanged();
+            }
+            model.set_profiles(ProfileListState::Failed {
+                request_token,
+                reason,
+            });
+            Update::render()
+        }
+        Message::Engine(EngineMsg::HealthOk { .. } | EngineMsg::HealthFailed { .. }) => {
+            // Health UI lands with plan 006; accept for token plumbing only.
+            Update::unchanged()
+        }
         Message::FocusNext => {
             if model.move_focus(false) {
                 Update::render()
@@ -170,5 +215,101 @@ fn activate_selected_action(model: &mut Model) -> Update {
             Update::render()
         }
         ActionId::Quit => Update::with_effect(Effect::Exit),
+    }
+}
+
+fn maybe_bootstrap_profiles(model: &mut Model) -> Update {
+    if model.bootstrapped() || model.screen() != Screen::Connections {
+        return Update::unchanged();
+    }
+    model.set_bootstrapped(true);
+    let token = model.mint_request_token();
+    model.set_profiles(ProfileListState::Loading {
+        request_token: token,
+    });
+    Update::with_effect(Effect::LoadProfileList {
+        request_token: token,
+        filter: ProfileListFilterSpec::default(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::profiles::{FailureProjection, ProfileRowProjection};
+
+    #[test]
+    fn bootstrap_emits_load_and_rejects_stale_tokens() {
+        let mut model = Model::default();
+        let first = update(
+            &mut model,
+            Message::Resize {
+                width: 80,
+                height: 24,
+            },
+        );
+        assert!(matches!(
+            first.effects().next(),
+            Some(Effect::LoadProfileList {
+                request_token: 1,
+                ..
+            })
+        ));
+        assert!(matches!(
+            model.profiles(),
+            ProfileListState::Loading { request_token: 1 }
+        ));
+
+        // Stale completion ignored.
+        let stale = update(
+            &mut model,
+            Message::Profiles(ProfilesMsg::ListLoaded {
+                request_token: 99,
+                items: vec![],
+            }),
+        );
+        assert!(!stale.needs_render());
+        assert!(matches!(
+            model.profiles(),
+            ProfileListState::Loading { request_token: 1 }
+        ));
+
+        let ok = update(
+            &mut model,
+            Message::Profiles(ProfilesMsg::ListLoaded {
+                request_token: 1,
+                items: vec![ProfileRowProjection {
+                    name: "a".into(),
+                    engine_label: "PostgreSQL".into(),
+                    group: None,
+                    favorite: false,
+                }],
+            }),
+        );
+        assert!(ok.needs_render());
+        assert_eq!(model.profiles().status_line(), "Profiles: 1");
+    }
+
+    #[test]
+    fn failure_label_is_redacted_status_only() {
+        let mut model = Model::default();
+        let _ = update(
+            &mut model,
+            Message::Resize {
+                width: 80,
+                height: 24,
+            },
+        );
+        let _ = update(
+            &mut model,
+            Message::Profiles(ProfilesMsg::ListFailed {
+                request_token: 1,
+                reason: FailureProjection::Label("unavailable".into()),
+            }),
+        );
+        assert_eq!(
+            model.profiles().status_line(),
+            "Profiles: error (unavailable)"
+        );
     }
 }

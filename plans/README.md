@@ -21,7 +21,7 @@ plan).
 | 002 | Engine persistent sessions + arbitrary-statement execution | P1 | L | 001 | DONE |
 | 003 | Catalog listing service (PG/CH/Redis) | P1 | M | 002 | DONE |
 | 004 | Profile domain gaps + secret resolution (env tag, groups, search, prompt/plaintext) | P1 | M | 001 | DONE |
-| 005 | TUI effect executor + engine bridge + submodel architecture | P1 | L | 002, 004 | TODO |
+| 005 | TUI effect executor + engine bridge + submodel architecture | P1 | L | 002, 004 | DONE |
 | 006 | Connection experience screens (Phase 3 exit) | P1 | L | 002, 004, 005 | TODO |
 | 007 | Workbench shell + session/context lifecycle | P1 | M | 003, 006 | TODO |
 | 008 | TermRock T2: `VirtualGrid` (upstream) | P1 | M | — (parallel) | TODO |

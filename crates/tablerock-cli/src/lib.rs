@@ -1,7 +1,9 @@
 //! Process and terminal adapters for TableRock.
 
+mod effects;
 mod ingress;
 mod input;
+mod projection;
 mod run;
 
 #[cfg(test)]

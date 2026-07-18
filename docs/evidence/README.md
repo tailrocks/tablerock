@@ -164,6 +164,7 @@ How to read an evidence document:
 ## Delivery and CI
 
 - 192 — [CI verification baseline](delivery/192-ci-verification-baseline.md)
+- 199 — [TUI effect executor and engine/persistence bridge](delivery/199-tui-effect-executor-bridge.md)
 
 ## TermRock migrations and updates
 

@@ -3599,6 +3599,8 @@ dependencies = [
  "portable-pty",
  "ratatui-core",
  "ratatui-crossterm",
+ "tablerock-core",
+ "tablerock-persistence",
  "tablerock-tui",
  "termrock",
  "tokio",

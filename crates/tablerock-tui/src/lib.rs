@@ -8,9 +8,12 @@ pub mod subscriptions;
 pub mod update;
 pub mod view;
 
-pub use effect::Effect;
+pub use effect::{Effect, EngineKind, ProfileListFilterSpec, ProfileRef, RequestToken};
 pub use keymap::{ShellKeyAction, default_keymap};
-pub use message::{MAX_PASTE_BYTES, Message, PasteText};
-pub use model::{ActionId, FocusRegion, LayoutMode, Model, Screen, ScrollDirection, ShellTarget};
+pub use message::{EngineMsg, MAX_PASTE_BYTES, Message, PasteText, ProfilesMsg};
+pub use model::{
+    ActionId, FocusRegion, LayoutMode, Model, Screen, ScrollDirection, ShellTarget,
+    profiles::{FailureProjection, ProfileListState, ProfileRowProjection},
+};
 pub use update::{Update, update};
 pub use view::{ShellGeometry, ShellView};

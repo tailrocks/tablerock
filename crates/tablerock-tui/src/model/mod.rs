@@ -1,5 +1,7 @@
 //! Root-owned terminal presentation state.
 
+pub mod profiles;
+
 use termrock::{
     Theme,
     input::{KeyCode, KeyEvent, KeyModifiers},
@@ -7,7 +9,8 @@ use termrock::{
     keymap::Keymap,
 };
 
-use crate::{ShellGeometry, ShellKeyAction, default_keymap};
+use crate::{ShellGeometry, ShellKeyAction, default_keymap, effect::RequestToken};
+use profiles::ProfileListState;
 
 pub const MINIMUM_WIDTH: u16 = 40;
 pub const MINIMUM_HEIGHT: u16 = 10;
@@ -93,6 +96,10 @@ pub struct Model {
     hovered: Option<ShellTarget>,
     pressed: Option<ShellTarget>,
     engine_resync_required: bool,
+    /// Monotonic effect correlation counter (no clocks).
+    next_request_token: RequestToken,
+    profiles: ProfileListState,
+    bootstrapped: bool,
 }
 
 impl Default for Model {
@@ -109,6 +116,9 @@ impl Default for Model {
             hovered: None,
             pressed: None,
             engine_resync_required: false,
+            next_request_token: 1,
+            profiles: ProfileListState::default(),
+            bootstrapped: false,
         }
     }
 }
@@ -161,6 +171,16 @@ impl Model {
     #[must_use]
     pub const fn engine_resync_required(&self) -> bool {
         self.engine_resync_required
+    }
+
+    #[must_use]
+    pub const fn profiles(&self) -> &ProfileListState {
+        &self.profiles
+    }
+
+    #[must_use]
+    pub const fn bootstrapped(&self) -> bool {
+        self.bootstrapped
     }
 
     #[must_use]
@@ -247,6 +267,20 @@ impl Model {
 
     pub(crate) const fn set_engine_resync_required(&mut self, required: bool) {
         self.engine_resync_required = required;
+    }
+
+    pub(crate) fn mint_request_token(&mut self) -> RequestToken {
+        let token = self.next_request_token;
+        self.next_request_token = self.next_request_token.saturating_add(1);
+        token
+    }
+
+    pub(crate) fn set_profiles(&mut self, state: ProfileListState) {
+        self.profiles = state;
+    }
+
+    pub(crate) const fn set_bootstrapped(&mut self, value: bool) {
+        self.bootstrapped = value;
     }
 }
 

@@ -48,6 +48,31 @@ impl fmt::Debug for PasteText {
     }
 }
 
+use crate::model::profiles::{FailureProjection, ProfileRowProjection};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProfilesMsg {
+    ListLoaded {
+        request_token: u64,
+        items: Vec<ProfileRowProjection>,
+    },
+    ListFailed {
+        request_token: u64,
+        reason: FailureProjection,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EngineMsg {
+    HealthOk {
+        request_token: u64,
+    },
+    HealthFailed {
+        request_token: u64,
+        reason: FailureProjection,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
     Resize {
@@ -67,6 +92,8 @@ pub enum Message {
     },
     EngineResyncRequired,
     EngineResynchronized,
+    Profiles(ProfilesMsg),
+    Engine(EngineMsg),
     FocusNext,
     FocusPrevious,
     ActionNext,

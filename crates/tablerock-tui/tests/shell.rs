@@ -36,7 +36,7 @@ fn reducer_owns_resize_focus_and_effects() {
 
     let result = update(&mut model, Message::Quit);
     assert_eq!(
-        result.effects().copied().collect::<Vec<_>>(),
+        result.effects().cloned().collect::<Vec<_>>(),
         [Effect::Exit]
     );
 }
@@ -56,7 +56,7 @@ fn actions_are_root_owned_and_only_activate_from_action_focus() {
     assert_eq!(
         update(&mut model, Message::Activate)
             .effects()
-            .copied()
+            .cloned()
             .collect::<Vec<_>>(),
         [Effect::Exit]
     );
@@ -86,7 +86,7 @@ fn pointer_activation_requires_matching_render_authorized_press_and_release() {
     assert_eq!(
         update(&mut model, Message::PointerReleased(quit))
             .effects()
-            .copied()
+            .cloned()
             .collect::<Vec<_>>(),
         [Effect::Exit]
     );
