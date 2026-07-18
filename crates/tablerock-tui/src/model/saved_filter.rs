@@ -37,6 +37,16 @@ impl SavedFilterLibrary {
             .find(|p| p.name == name && p.schema == schema && p.table == table)
     }
 
+    /// Preset names bound to a table (for apply dialog hints).
+    #[must_use]
+    pub fn names_for_table(&self, schema: &str, table: &str) -> Vec<String> {
+        self.presets
+            .iter()
+            .filter(|p| p.schema == schema && p.table == table)
+            .map(|p| p.name.clone())
+            .collect()
+    }
+
     /// Minimal JSON for persistence (no cells/credentials).
     #[must_use]
     pub fn to_json(&self) -> String {
@@ -124,6 +134,16 @@ impl SavedFilterLibrary {
     }
 }
 
+/// Preset names: 1..=64 of `[A-Za-z0-9._-]` (no spaces / free SQL).
+#[must_use]
+pub fn is_safe_preset_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
+}
+
 fn escape_json(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -196,6 +216,37 @@ mod tests {
         assert_eq!(restored.presets.len(), 1);
         assert_eq!(restored.presets[0].name, "active");
         assert_eq!(restored.presets[0].filters[0].value.as_deref(), Some("open"));
+    }
+
+    #[test]
+    fn preset_name_charset_is_restrictive() {
+        assert!(is_safe_preset_name("default"));
+        assert!(is_safe_preset_name("active_only"));
+        assert!(is_safe_preset_name("a.b-c_1"));
+        assert!(!is_safe_preset_name(""));
+        assert!(!is_safe_preset_name("bad name"));
+        assert!(!is_safe_preset_name("x;drop"));
+        assert!(!is_safe_preset_name(&"x".repeat(65)));
+    }
+
+    #[test]
+    fn names_for_table_lists_only_matching() {
+        let mut lib = SavedFilterLibrary::default();
+        lib.upsert(SavedFilterPreset {
+            name: "a".into(),
+            schema: "public".into(),
+            table: "users".into(),
+            filters: Vec::new(),
+            raw_where: None,
+        });
+        lib.upsert(SavedFilterPreset {
+            name: "b".into(),
+            schema: "public".into(),
+            table: "orders".into(),
+            filters: Vec::new(),
+            raw_where: None,
+        });
+        assert_eq!(lib.names_for_table("public", "users"), vec!["a".to_owned()]);
     }
 
     #[test]

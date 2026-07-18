@@ -232,6 +232,20 @@ pub enum ConfirmDialog {
         table: String,
         confirm_buffer: String,
     },
+    /// Save filter preset: confirm_buffer is the preset name (non-empty).
+    SaveFilter {
+        schema: String,
+        table: String,
+        confirm_buffer: String,
+    },
+    /// Apply filter preset: confirm_buffer is the preset name to load.
+    ApplyFilter {
+        schema: String,
+        table: String,
+        /// Known names for the table (display only).
+        known_names: Vec<String>,
+        confirm_buffer: String,
+    },
     /// Rename: confirm_buffer is the new table name (non-empty, quoted later).
     RenameTable {
         schema: String,

@@ -102,6 +102,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::CancelBackend { confirm_buffer, .. }
                     | ConfirmDialog::TerminateBackend { confirm_buffer, .. }
                     | ConfirmDialog::KillMutation { confirm_buffer, .. }
+                    | ConfirmDialog::SaveFilter { confirm_buffer, .. }
+                    | ConfirmDialog::ApplyFilter { confirm_buffer, .. }
                     | ConfirmDialog::StartupReview { confirm_buffer, .. }
                     | ConfirmDialog::PgTool { confirm_buffer, .. }
                     | ConfirmDialog::ImportUrl { confirm_buffer, .. }
@@ -2255,6 +2257,75 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         }),
                     }
                 }
+                ConfirmDialog::SaveFilter {
+                    schema,
+                    table,
+                    confirm_buffer,
+                } => {
+                    let name = confirm_buffer.trim().to_owned();
+                    if !crate::model::saved_filter::is_safe_preset_name(&name) {
+                        return Update::render();
+                    }
+                    let Some(profile_id_hex) = model.workbench().profile_id_hex.clone() else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let (filters, raw_where) = {
+                        let Some(grid) = model.workbench().active_grid() else {
+                            model.set_confirm(None);
+                            return Update::unchanged();
+                        };
+                        (grid.filters.clone(), grid.raw_where.clone())
+                    };
+                    model.workbench_mut().filter_library.upsert(
+                        crate::model::saved_filter::SavedFilterPreset {
+                            name,
+                            schema,
+                            table,
+                            filters,
+                            raw_where,
+                        },
+                    );
+                    let library_json = model.workbench().filter_library.to_json();
+                    let token = model.mint_request_token();
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::SaveSavedFilterLibrary {
+                            request_token: token,
+                            profile_id_hex,
+                            library_json,
+                        }),
+                    }
+                }
+                ConfirmDialog::ApplyFilter {
+                    schema,
+                    table,
+                    confirm_buffer,
+                    ..
+                } => {
+                    let name = confirm_buffer.trim().to_owned();
+                    if !crate::model::saved_filter::is_safe_preset_name(&name) {
+                        return Update::render();
+                    }
+                    let preset = model
+                        .workbench()
+                        .filter_library
+                        .get(&name, &schema, &table)
+                        .cloned();
+                    model.set_confirm(None);
+                    let Some(preset) = preset else {
+                        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                            grid.error_label = Some(format!("no filter preset '{name}'"));
+                        }
+                        return Update::render();
+                    };
+                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                        grid.filters = preset.filters;
+                        grid.raw_where = preset.raw_where;
+                    }
+                    rebrowse_active_table(model)
+                }
             }
         }
         ActionId::Cancel if model.password_prompt().is_some() => {
@@ -2669,42 +2740,25 @@ fn activate_selected_action(model: &mut Model) -> Update {
             rebrowse_active_table(model)
         }
         ActionId::SaveFilter if model.screen() == Screen::Workbench => {
-            let Some(profile_id_hex) = model.workbench().profile_id_hex.clone() else {
+            if model.workbench().profile_id_hex.is_none() {
                 return Update::unchanged();
-            };
-            let (schema, table, filters, raw_where) = {
+            }
+            let (schema, table) = {
                 let Some(grid) = model.workbench().active_grid() else {
                     return Update::unchanged();
                 };
-                (
-                    grid.base_schema.clone(),
-                    grid.base_table.clone(),
-                    grid.filters.clone(),
-                    grid.raw_where.clone(),
-                )
+                (grid.base_schema.clone(), grid.base_table.clone())
             };
             let (Some(schema), Some(table)) = (schema, table) else {
                 return Update::unchanged();
             };
-            model.workbench_mut().filter_library.upsert(
-                crate::model::saved_filter::SavedFilterPreset {
-                    name: "default".into(),
-                    schema,
-                    table,
-                    filters,
-                    raw_where,
-                },
-            );
-            let library_json = model.workbench().filter_library.to_json();
-            let token = model.mint_request_token();
-            Update {
-                render: true,
-                effect: Some(Effect::SaveSavedFilterLibrary {
-                    request_token: token,
-                    profile_id_hex,
-                    library_json,
-                }),
-            }
+            model.set_confirm(Some(ConfirmDialog::SaveFilter {
+                schema,
+                table,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
         }
         ActionId::ApplyFilter if model.screen() == Screen::Workbench => {
             let (schema, table) = {
@@ -2716,22 +2770,18 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let (Some(schema), Some(table)) = (schema, table) else {
                 return Update::unchanged();
             };
-            let preset = model
+            let known_names = model
                 .workbench()
                 .filter_library
-                .get("default", &schema, &table)
-                .cloned();
-            let Some(preset) = preset else {
-                if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                    grid.error_label = Some("no saved filter for table".into());
-                }
-                return Update::render();
-            };
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                grid.filters = preset.filters;
-                grid.raw_where = preset.raw_where;
-            }
-            rebrowse_active_table(model)
+                .names_for_table(&schema, &table);
+            model.set_confirm(Some(ConfirmDialog::ApplyFilter {
+                schema,
+                table,
+                known_names,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
         }
         ActionId::ClearFilters if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
@@ -4716,7 +4766,7 @@ mod tests {
     }
 
     #[test]
-    fn save_and_apply_filter_preset_round_trip() {
+    fn save_and_apply_named_filter_preset_round_trip() {
         let mut model = Model::default();
         model.set_screen(Screen::Workbench);
         model.set_session(Some(SessionFacts {
@@ -4737,6 +4787,19 @@ mod tests {
         }
         let _ = model.request_focus(FocusRegion::Actions);
         model.set_action(ActionId::SaveFilter);
+        let ask = update(&mut model, Message::Activate);
+        assert!(ask.effects().next().is_none());
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::SaveFilter { .. })
+        ));
+        if let Some(ConfirmDialog::SaveFilter {
+            confirm_buffer, ..
+        }) = model.confirm_mut()
+        {
+            *confirm_buffer = "active_only".into();
+        }
+        model.set_action(ActionId::Submit);
         let save = update(&mut model, Message::Activate);
         match save.effects().next() {
             Some(Effect::SaveSavedFilterLibrary {
@@ -4745,17 +4808,31 @@ mod tests {
                 ..
             }) => {
                 assert_eq!(profile_id_hex, "0000000000000001000000000000000a");
+                assert!(library_json.contains("active_only"));
                 assert!(library_json.contains("status"));
-                assert!(library_json.contains("active"));
             }
             other => panic!("expected SaveSavedFilterLibrary, got {other:?}"),
         }
-        // Clear live filters then apply saved preset.
+        // Clear live filters then apply named preset.
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.clear_server_controls();
             assert!(grid.filters.is_empty());
         }
         model.set_action(ActionId::ApplyFilter);
+        let ask_apply = update(&mut model, Message::Activate);
+        assert!(ask_apply.effects().next().is_none());
+        if let Some(ConfirmDialog::ApplyFilter {
+            known_names,
+            confirm_buffer,
+            ..
+        }) = model.confirm_mut()
+        {
+            assert!(known_names.iter().any(|n| n == "active_only"));
+            *confirm_buffer = "active_only".into();
+        } else {
+            panic!("expected ApplyFilter confirm");
+        }
+        model.set_action(ActionId::Submit);
         let apply = update(&mut model, Message::Activate);
         assert!(matches!(
             apply.effects().next(),

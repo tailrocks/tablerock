@@ -40,10 +40,10 @@ Both modes show as removable chips/rows with a one-action **clear all**.
 A separate quick filter searches only resident rows and is visibly labeled
 as page-local — never confused with server filtering.
 
-Saved filter presets: **SaveFilt** stores the current server filters as the
-`default` preset for the active table on the connected profile; **LoadFilt**
-re-applies that preset and re-browses. Libraries load on connect (non-
-temporary profiles).
+Saved filter presets: **SaveFilt** prompts for a preset name and stores the
+current server filters for the active table on the connected profile;
+**LoadFilt** prompts for a name (with known-name hints) and re-browses.
+Libraries load on connect (non-temporary profiles).
 
 ## Columns
 

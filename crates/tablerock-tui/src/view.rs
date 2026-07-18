@@ -176,6 +176,34 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "KILL MUTATION on {database}.{table}. Paste exact mutation_id [{confirm_buffer}]"
             ),
         ),
+        crate::model::ConfirmDialog::SaveFilter {
+            schema,
+            table,
+            confirm_buffer,
+        } => (
+            "Save filter preset?",
+            format!(
+                "Save current filters for {schema}.{table} as named preset. Paste name [{confirm_buffer}]"
+            ),
+        ),
+        crate::model::ConfirmDialog::ApplyFilter {
+            schema,
+            table,
+            known_names,
+            confirm_buffer,
+        } => {
+            let known = if known_names.is_empty() {
+                "(none saved)".into()
+            } else {
+                known_names.join(", ")
+            };
+            (
+                "Apply filter preset?",
+                format!(
+                    "Load preset for {schema}.{table}. Known: {known}. Paste name [{confirm_buffer}]"
+                ),
+            )
+        }
         crate::model::ConfirmDialog::DdlReview {
             kind,
             schema,
