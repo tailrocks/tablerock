@@ -40,6 +40,9 @@ run_pg() {
     DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
         TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
         TABLEROCK_CATALOG=1 "$BUILD/BehaviorProof"
+    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
+        TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
+        TABLEROCK_CANCEL=1 "$BUILD/BehaviorProof"
     docker rm -f "$name" >/dev/null
 }
 

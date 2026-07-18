@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use tablerock_core::{
@@ -1061,23 +1062,35 @@ impl TableRockBridge {
         })?;
         self.ensure_runtime_inner()?;
         loop {
-            let update = {
+            // Never hold the coarse bridge mutex for an unbounded driver wait:
+            // cancel() needs the same service lock to dispatch by operation ID.
+            // A short timeout bounds lock ownership; yielding outside the lock
+            // lets a concurrent cancellation acquire it before the next poll.
+            let (timed_out, update) = {
                 let mut guard = self
                     .inner
                     .lock()
                     .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
                 let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
-                match self
-                    .runtime
-                    .block_on(inner.service.next_update(operation_id))
-                {
-                    Ok(Ok(update)) => update,
-                    Ok(Err(error)) => {
+                match self.runtime.block_on(async {
+                    tokio::time::timeout(
+                        Duration::from_millis(10),
+                        inner.service.next_update(operation_id),
+                    )
+                    .await
+                }) {
+                    Ok(Ok(Ok(update))) => (false, update),
+                    Ok(Ok(Err(error))) => {
                         return Err(BridgeError::rejected("pump", error.to_string()));
                     }
+                    Ok(Err(_elapsed)) => (true, None),
                     Err(error) => return Err(error),
                 }
             };
+            if timed_out {
+                std::thread::yield_now();
+                continue;
+            }
             let Some(update) = update else {
                 break;
             };

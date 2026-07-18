@@ -38,7 +38,9 @@
   `NSOutlineView` catalog and removes engine-specific catalog SQL from Swift
   behind a Rust-owned typed intent. Evidence 412 adds focused per-window Query
   commands, customizable toolbar actions, and corrects every native build
-  surface to the fixed macOS 26 deployment target. Remaining criteria stay open.
+  surface to the fixed macOS 26 deployment target. Evidence 413 fixes bridge
+  mutex starvation and proves live slow-query cancellation through the strict
+  Swift path. Remaining criteria stay open.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED

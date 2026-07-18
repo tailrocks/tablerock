@@ -21,6 +21,7 @@ let database = ProcessInfo.processInfo.environment["TABLEROCK_DB"] ?? "db"
 let user = ProcessInfo.processInfo.environment["TABLEROCK_USER"] ?? "u"
 let password = ProcessInfo.processInfo.environment["TABLEROCK_PASSWORD"] ?? "secret"
 let catalogMode = ProcessInfo.processInfo.environment["TABLEROCK_CATALOG"] != nil
+let cancelMode = ProcessInfo.processInfo.environment["TABLEROCK_CANCEL"] != nil
 
 let session = try bridge.open(params: OpenParams(
     engine: engine,
@@ -35,13 +36,48 @@ print("opened \(engine) session against \(host):\(port)")
 let spec = SubmitSpec(
     intent: catalogMode ? "catalog" : "execute",
     sessionId: session,
-    statement: catalogMode ? nil : statement,
+    statement: catalogMode ? nil : (cancelMode ? "SELECT pg_sleep(10)" : statement),
     resultId: nil,
     startRow: nil,
     rowCount: 500,
     expectedRevision: 0
 )
 let opId = try bridge.submit(spec: spec)
+
+if cancelMode {
+    let started = Date()
+    let pump = Task.detached { try bridge.pump(operationId: opId) }
+    try await Task.sleep(for: .milliseconds(150))
+    let cancellation = try bridge.cancel(operationId: opId)
+    try await pump.value
+    let elapsed = Date().timeIntervalSince(started)
+    let batch = try bridge.nextEvents(cursor: 0, maximum: 64)
+    let operationEvents = batch.events.filter { $0.operationId == opId }
+    let terminal = operationEvents.last { $0.kind == "terminal" }?.outcome
+    let dispatched = operationEvents.contains { $0.kind == "cancel_dispatched" }
+    _ = try bridge.shutdown(cancelActive: false, deadlineMs: 0)
+    guard cancellation.runtime != nil else {
+        FileHandle.standardError.write("FAIL: cancel had no runtime dispatch\n".data(using: .utf8)!)
+        exit(1)
+    }
+    guard dispatched else {
+        FileHandle.standardError.write("FAIL: no cancel_dispatched event\n".data(using: .utf8)!)
+        exit(1)
+    }
+    guard terminal == "server_confirmed_cancelled" || terminal == "client_stopped"
+            || terminal == "completed_before_cancel"
+    else {
+        FileHandle.standardError.write("FAIL: cancel terminal \(terminal ?? "nil")\n".data(using: .utf8)!)
+        exit(1)
+    }
+    guard elapsed < 3.0 else {
+        FileHandle.standardError.write("FAIL: cancel took \(elapsed)s\n".data(using: .utf8)!)
+        exit(1)
+    }
+    print("CANCEL PROOF PASSED: core=\(cancellation.core) runtime=\(cancellation.runtime ?? "nil") terminal=\(terminal ?? "nil") elapsed=\(String(format: "%.3f", elapsed))s")
+    exit(0)
+}
+
 try bridge.pump(operationId: opId)
 
 var decoded: PageV1Table?
