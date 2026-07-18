@@ -49,6 +49,7 @@ impl DriverPageStream for HoldStream {
 struct FixedPageSession {
     engine: Engine,
     page: ResultPage,
+    health_failure: Option<AdapterFailureClass>,
 }
 
 impl DriverSession for FixedPageSession {
@@ -72,7 +73,13 @@ impl DriverSession for FixedPageSession {
 
     fn health<'a>(&'a self) -> DriverFuture<'a, Result<SessionHealth, AdapterError>> {
         let engine = self.engine;
-        Box::pin(async move { Ok(SessionHealth::new(engine, true, 0)) })
+        let failure = self.health_failure;
+        Box::pin(async move {
+            failure.map_or_else(
+                || Ok(SessionHealth::new(engine, true, 7)),
+                |class| Err(AdapterError::new(engine, class)),
+            )
+        })
     }
 
     fn catalog<'a>(
@@ -217,7 +224,14 @@ fn sample_page(engine: Engine, result_low: u64, values: &[i64]) -> (ResultId, Re
 
 fn open_fixed(bridge: &TableRockBridge, engine: Engine, page: ResultPage) -> Vec<u8> {
     bridge
-        .open_driver_session(engine, Box::new(FixedPageSession { engine, page }))
+        .open_driver_session(
+            engine,
+            Box::new(FixedPageSession {
+                engine,
+                page,
+                health_failure: None,
+            }),
+        )
         .unwrap()
 }
 
@@ -246,6 +260,11 @@ fn bridge_page_bytes_match_in_process_encode_all_engines() {
         let in_process = page.encode_v1();
         let bridge = TableRockBridge::new_for_test();
         let session_id = open_fixed(&bridge, engine, page);
+        let health = bridge.check_session_health(session_id.clone()).unwrap();
+        assert_eq!(health.state, "healthy");
+        assert!(health.server_reachable);
+        assert_eq!(health.elapsed_millis, Some(7));
+        assert!(!health.authentication_stopped);
         let op = probe(&bridge, session_id, result_id);
         bridge.pump(op).unwrap();
 
@@ -622,6 +641,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
             Box::new(FixedPageSession {
                 engine: Engine::PostgreSql,
                 page: copy_page,
+                health_failure: None,
             }),
         )
         .unwrap();
@@ -765,6 +785,28 @@ fn disconnect_rejects_unknown_session() {
         err,
         BridgeError::Rejected { .. } | BridgeError::UnknownSession
     ));
+}
+
+#[test]
+fn session_health_projects_authentication_as_terminal_state() {
+    let (_, page) = sample_page(Engine::PostgreSql, 84, &[1]);
+    let bridge = TableRockBridge::new_for_test();
+    let session = bridge
+        .open_driver_session(
+            Engine::PostgreSql,
+            Box::new(FixedPageSession {
+                engine: Engine::PostgreSql,
+                page,
+                health_failure: Some(AdapterFailureClass::Authentication),
+            }),
+        )
+        .unwrap();
+    let health = bridge.check_session_health(session.clone()).unwrap();
+    assert_eq!(health.state, "authentication_stopped");
+    assert!(!health.server_reachable);
+    assert_eq!(health.elapsed_millis, None);
+    assert!(health.authentication_stopped);
+    bridge.disconnect(session).unwrap();
 }
 
 #[test]

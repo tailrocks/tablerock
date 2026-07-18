@@ -625,6 +625,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func cancel(operationId: Data) throws  -> CancelOutcome
     
     /**
+     * Executes one explicit driver health probe for a live session.
+     */
+    func checkSessionHealth(sessionId: Data) throws  -> BridgeSessionHealth
+    
+    /**
      * Attach a local-only persistence file for profile-backed open (idempotent replace).
      */
     func configurePersistence(path: String) throws 
@@ -858,6 +863,19 @@ open func cancel(operationId: Data)throws  -> CancelOutcome  {
     uniffi_tablerock_ffi_fn_method_tablerockbridge_cancel(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Executes one explicit driver health probe for a live session.
+     */
+open func checkSessionHealth(sessionId: Data)throws  -> BridgeSessionHealth  {
+    return try  FfiConverterTypeBridgeSessionHealth_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_check_session_health(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),uniffiCallStatus
     )
 })
 }
@@ -1949,6 +1967,71 @@ public func FfiConverterTypeBridgeProfileOrderItem_lower(_ value: BridgeProfileO
 }
 
 
+/**
+ * Safe live-session health projection. No server text or credentials cross UniFFI.
+ */
+public struct BridgeSessionHealth: Equatable, Hashable {
+    public var state: String
+    public var serverReachable: Bool
+    public var elapsedMillis: UInt64?
+    public var authenticationStopped: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(state: String, serverReachable: Bool, elapsedMillis: UInt64?, authenticationStopped: Bool) {
+        self.state = state
+        self.serverReachable = serverReachable
+        self.elapsedMillis = elapsedMillis
+        self.authenticationStopped = authenticationStopped
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BridgeSessionHealth: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeSessionHealth: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeSessionHealth {
+        return
+            try BridgeSessionHealth(
+                state: FfiConverterString.read(from: &buf), 
+                serverReachable: FfiConverterBool.read(from: &buf), 
+                elapsedMillis: FfiConverterOptionUInt64.read(from: &buf), 
+                authenticationStopped: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeSessionHealth, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.state, into: &buf)
+        FfiConverterBool.write(value.serverReachable, into: &buf)
+        FfiConverterOptionUInt64.write(value.elapsedMillis, into: &buf)
+        FfiConverterBool.write(value.authenticationStopped, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeSessionHealth_lift(_ buf: RustBuffer) throws -> BridgeSessionHealth {
+    return try FfiConverterTypeBridgeSessionHealth.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeSessionHealth_lower(_ value: BridgeSessionHealth) -> RustBuffer {
+    return FfiConverterTypeBridgeSessionHealth.lower(value)
+}
+
+
 public struct CancelOutcome: Equatable, Hashable {
     public var core: String
     public var runtime: String?
@@ -2668,6 +2751,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel() != 18861) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_check_session_health() != 24923) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_configure_persistence() != 51889) {

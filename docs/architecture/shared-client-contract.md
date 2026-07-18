@@ -95,6 +95,10 @@ Immediate cancellation cannot regress from `CancelRequested` to `Running`.
 Sessions are registry-owned: operations borrow `Arc` handles and never shut the
 connection down at terminal; rejected core submission drops only the borrow.
 Explicit `disconnect` shuts a session down once no operation still holds it.
+Explicit health probing borrows the same live session and returns only a safe
+structured state, reachability, and elapsed time. Authentication failure is a
+terminal `authentication_stopped` fact so clients never schedule blind retries;
+raw server text never crosses the presentation boundary.
 Graceful service shutdown lets tasks finish; cancel-active shutdown requests
 client stop after core cancellation intent and reports each bounded dispatch.
 Only a joined client-stop task exit becomes `ClientStopped`; it never becomes

@@ -24,8 +24,10 @@ for pattern in \
   'Button\(profile.favorite \? "Remove Favorite" : "Add Favorite"\)' \
   'Button\("Move Up"\)' \
   'Button\("Move Down"\)' \
-  'profile.connected \? "Connected" : "Disconnected"' \
+  'guard profile.connected else \{ return "Disconnected" \}' \
   'Button\("Disconnect"\)' \
+  'Button\("Check Health"\)' \
+  'case "authentication_stopped": return "Authentication stopped"' \
   'Connections in .* move to Ungrouped. No connection is deleted.'
 do
   rg -q "$pattern" "$SOURCE" || {

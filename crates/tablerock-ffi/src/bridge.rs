@@ -22,12 +22,12 @@ use tablerock_core::{
     TlsPolicy,
 };
 use tablerock_engine::{
-    CatalogRequest, ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery,
-    ClickHouseSession, ClickHouseTlsMode, DriverPageRequest, DriverRuntime, DriverSession,
-    EngineService, EngineServiceUpdate, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
-    PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol,
-    RedisSession, RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError,
-    resolve_for_connect,
+    AdapterFailureClass, CatalogRequest, ClickHouseCompression, ClickHouseConnectConfig,
+    ClickHouseProbeQuery, ClickHouseSession, ClickHouseTlsMode, DriverPageRequest, DriverRuntime,
+    DriverSession, EngineService, EngineServiceUpdate, PostgresConnectConfig, PostgresProbeQuery,
+    PostgresSession, PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity,
+    RedisCredentials, RedisProtocol, RedisSession, RedisTlsMode, ResolvedSecret, SecretPromptPort,
+    SecretResolutionError, resolve_for_connect,
 };
 use tablerock_persistence::{PersistenceActor, ProfileOrderUpdate};
 
@@ -143,6 +143,15 @@ pub struct BridgeConnectionTestReport {
     pub identity: String,
     pub tls_outcome: String,
     pub elapsed_millis: u64,
+}
+
+/// Safe live-session health projection. No server text or credentials cross UniFFI.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeSessionHealth {
+    pub state: String,
+    pub server_reachable: bool,
+    pub elapsed_millis: Option<u64>,
+    pub authentication_stopped: bool,
 }
 
 /// One Rust-owned catalog node. Swift renders these facts and returns only opaque ids.
@@ -501,9 +510,74 @@ impl TableRockBridge {
     pub fn disconnect(&self, session_id: Vec<u8>) -> Result<(), BridgeError> {
         catch_entry(|| self.disconnect_inner(session_id))
     }
+
+    /// Executes one explicit driver health probe for a live session.
+    pub fn check_session_health(
+        &self,
+        session_id: Vec<u8>,
+    ) -> Result<BridgeSessionHealth, BridgeError> {
+        catch_entry(|| self.check_session_health_inner(session_id))
+    }
 }
 
 impl TableRockBridge {
+    fn check_session_health_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+    ) -> Result<BridgeSessionHealth, BridgeError> {
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("session-id", "invalid session id"))?;
+        let (driver, expected_engine) = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (driver, registered.engine)
+        };
+        match self.runtime.block_on(driver.health())? {
+            Ok(health) => {
+                if health.engine() != expected_engine {
+                    return Err(BridgeError::rejected(
+                        "session-health-engine",
+                        "health engine mismatch",
+                    ));
+                }
+                Ok(BridgeSessionHealth {
+                    state: if health.server_reachable() {
+                        "healthy"
+                    } else {
+                        "unreachable"
+                    }
+                    .into(),
+                    server_reachable: health.server_reachable(),
+                    elapsed_millis: Some(health.elapsed_millis()),
+                    authentication_stopped: false,
+                })
+            }
+            Err(error) => Ok(BridgeSessionHealth {
+                state: match error.class() {
+                    AdapterFailureClass::Authentication => "authentication_stopped",
+                    AdapterFailureClass::Timeout => "timeout",
+                    AdapterFailureClass::Connection => "unreachable",
+                    _ => "unhealthy",
+                }
+                .into(),
+                server_reachable: false,
+                elapsed_millis: None,
+                authentication_stopped: error.class() == AdapterFailureClass::Authentication,
+            }),
+        }
+    }
+
     /// Registers an already-constructed driver session (unit/conformance tests).
     ///
     /// Not exported to UniFFI — Rust-only seam for in-process tests.

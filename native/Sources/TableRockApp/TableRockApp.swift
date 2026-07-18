@@ -201,6 +201,9 @@ private actor BridgeClient {
         try bridge.openProfile(profileId: id, passwordOverride: nil)
     }
     func disconnect(session: Data) throws { try bridge.disconnect(sessionId: session) }
+    func checkHealth(session: Data) throws -> BridgeSessionHealth {
+        try bridge.checkSessionHealth(sessionId: session)
+    }
     func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [BridgeCatalogNode] {
         try bridge.refreshCatalog(sessionId: session, parentNodeId: parentNodeId)
     }
@@ -352,7 +355,7 @@ private func runNativeProfileGroupAudit() {
         return
     }
     writePerformanceMetric(
-        "PROFILE_GROUP_PROOF_PASSED empty_group=true alphabetical=Alpha_Zebra connected_projection=true hosting_tree=true"
+        "PROFILE_GROUP_PROOF_PASSED empty_group=true alphabetical=Alpha_Zebra health=Healthy_12_ms hosting_tree=true"
     )
 }
 
@@ -591,6 +594,8 @@ final class BridgeModel {
     var sessionHex: String?
     var connectError: String?
     var connectingName: String?
+    private(set) var sessionHealth: BridgeSessionHealth?
+    private(set) var healthChecking = false
     var catalogSummary: String?
     var catalogError: String?
     var catalogSnapshot: [BridgeCatalogNode]?
@@ -662,11 +667,18 @@ final class BridgeModel {
                     productionWarning: true, dangerousPlaintext: false, connected: false
                 ),
             ]
+            sessionHealth = BridgeSessionHealth(
+                state: "healthy", serverReachable: true,
+                elapsedMillis: 12, authenticationStopped: false
+            )
             status = "Profile group fixture"
-            guard profileSections.map(\.title) == ["Empty", "Production"],
+            guard profileSections.count == 2,
+                  let connectedFixture = profileSections[1].profiles.last,
+                  profileSections.map(\.title) == ["Empty", "Production"],
                   profileSections[0].profiles.isEmpty,
                   profileSections[1].profiles.map(\.name) == ["Alpha", "Zebra"],
-                  profileSections[1].profiles.last?.connected == true
+                  connectedFixture.connected,
+                  connectionState(connectedFixture) == "Healthy · 12 ms"
             else {
                 writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED group projection mismatch")
                 return
@@ -913,12 +925,14 @@ final class BridgeModel {
             connectedEngine = formEngine
             sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
+            sessionHealth = nil
             if let previousSession { try? await client.disconnect(session: previousSession) }
             catalogSummary = nil
             catalogSnapshot = nil
             catalogRefreshState = .idle
             resultTable = nil
             await refreshProfiles()
+            await checkActiveHealth()
         } catch {
             connectError = "Connect failed: \(error)"
         }
@@ -935,6 +949,7 @@ final class BridgeModel {
             connectedEngine = item.engine
             sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
+            sessionHealth = nil
             if let previousSession { try? await client.disconnect(session: previousSession) }
             catalogSummary = nil
             catalogError = nil
@@ -942,6 +957,7 @@ final class BridgeModel {
             catalogRefreshState = .idle
             resultTable = nil
             await refreshProfiles()
+            await checkActiveHealth()
         } catch {
             connectError = "Connect failed: \(error)"
         }
@@ -955,6 +971,7 @@ final class BridgeModel {
             sessionData = nil
             sessionHex = nil
             connectedEngine = ""
+            sessionHealth = nil
             catalogSummary = nil
             catalogSnapshot = nil
             catalogRefreshState = .idle
@@ -962,6 +979,35 @@ final class BridgeModel {
             profileActionOutcome = "Disconnected"
             await refreshProfiles()
         } catch { profileActionError = "Disconnect failed: \(error)" }
+    }
+
+    func checkActiveHealth() async {
+        guard let client, let session = sessionData, !healthChecking else { return }
+        healthChecking = true
+        defer { healthChecking = false }
+        do {
+            sessionHealth = try await client.checkHealth(session: session)
+        } catch {
+            sessionHealth = BridgeSessionHealth(
+                state: "unhealthy", serverReachable: false,
+                elapsedMillis: nil, authenticationStopped: false
+            )
+            profileActionError = "Health check failed: \(error)"
+        }
+    }
+
+    func connectionState(_ profile: BridgeProfileItem) -> String {
+        if connectingName == profile.name { return "Connecting" }
+        guard profile.connected else { return "Disconnected" }
+        guard let sessionHealth else { return "Connected" }
+        switch sessionHealth.state {
+        case "healthy":
+            return sessionHealth.elapsedMillis.map { "Healthy · \($0) ms" } ?? "Healthy"
+        case "authentication_stopped": return "Authentication stopped"
+        case "timeout": return "Health timeout"
+        case "unreachable": return "Unreachable"
+        default: return "Unhealthy"
+        }
     }
 
     /// Submit a catalog refresh and poll events until the page arrives, then
@@ -1106,15 +1152,14 @@ struct ContentView: View {
                                     Button { Task { await model.connect(profile) } } label: {
                                         ProfileRow(
                                             profile: profile,
-                                            connectionState: model.connectingName == profile.name
-                                                ? "Connecting"
-                                                : (profile.connected ? "Connected" : "Disconnected")
+                                            connectionState: model.connectionState(profile)
                                         )
                                     }
                                     .buttonStyle(.plain)
                                     Menu {
                                         Button("Connect") { Task { await model.connect(profile) } }
                                         if profile.connected {
+                                            Button("Check Health") { Task { await model.checkActiveHealth() } }
                                             Button("Disconnect") { Task { await model.disconnectActive() } }
                                         }
                                         Button("Edit…") { Task { await model.editProfile(profile) } }
@@ -1144,6 +1189,7 @@ struct ContentView: View {
                                 .contextMenu {
                                     Button("Connect") { Task { await model.connect(profile) } }
                                     if profile.connected {
+                                        Button("Check Health") { Task { await model.checkActiveHealth() } }
                                         Button("Disconnect") { Task { await model.disconnectActive() } }
                                     }
                                     Button("Edit…") { Task { await model.editProfile(profile) } }
@@ -1485,6 +1531,12 @@ struct ContentView: View {
                     Label("Disconnect", systemImage: "bolt.slash")
                 }
                 .disabled(model.sessionHex == nil || model.isRunning)
+            }
+            ToolbarItem(id: "health", placement: .automatic) {
+                Button { Task { await model.checkActiveHealth() } } label: {
+                    Label("Check Health", systemImage: "heart.text.square")
+                }
+                .disabled(model.sessionHex == nil || model.isRunning || model.healthChecking)
             }
             ToolbarSpacer(.fixed)
             ToolbarItem(id: "refresh", placement: .automatic) {

@@ -391,6 +391,7 @@ How to read an evidence document:
 - 514 — [Plan 021 persistent native profile groups](delivery/514-plan-021-native-profile-groups.md)
 - 515 — [Plan 021 profile favorites and ordering](delivery/515-plan-021-profile-ordering.md)
 - 516 — [Plan 021 native profile session state and deletion retention](delivery/516-plan-021-profile-session-retention.md)
+- 517 — [Plan 021 native live session health](delivery/517-plan-021-native-session-health.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
