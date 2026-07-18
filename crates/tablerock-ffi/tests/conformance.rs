@@ -744,6 +744,44 @@ fn open_profile_requires_persistence_and_loads_literals() {
     bridge.pump(private_operation).unwrap();
     bridge.disconnect(private_session).unwrap();
     assert_eq!(bridge.list_history(None, 10).unwrap().len(), 2);
+    let saved_id = bridge
+        .save_query(
+            "Recent users".into(),
+            "postgresql".into(),
+            "SELECT * FROM users".into(),
+        )
+        .unwrap();
+    let redis_id = bridge
+        .save_query("Redis scan".into(), "redis".into(), "SCAN 0".into())
+        .unwrap();
+    assert_ne!(saved_id, redis_id);
+    let postgres_saved = bridge
+        .list_saved_queries(Some("postgresql".into()), Some("users".into()))
+        .unwrap();
+    assert_eq!(postgres_saved.len(), 1);
+    assert_eq!(postgres_saved[0].query_id, saved_id);
+    assert_eq!(postgres_saved[0].name, "Recent users");
+    assert_eq!(postgres_saved[0].statement_text, "SELECT * FROM users");
+    assert_eq!(
+        bridge
+            .save_query(
+                "Recent users".into(),
+                "postgresql".into(),
+                "SELECT id FROM users".into(),
+            )
+            .unwrap(),
+        saved_id
+    );
+    assert_eq!(
+        bridge
+            .list_saved_queries(None, Some("id from".into()))
+            .unwrap()[0]
+            .statement_text,
+        "SELECT id FROM users"
+    );
+    assert!(bridge.delete_saved_query(saved_id).unwrap());
+    assert_eq!(bridge.list_saved_queries(None, None).unwrap().len(), 1);
+    assert!(bridge.delete_saved_query(redis_id).unwrap());
     bridge.disconnect(reconnect_source).unwrap();
     assert_eq!(
         bridge

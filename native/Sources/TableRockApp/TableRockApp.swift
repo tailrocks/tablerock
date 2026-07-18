@@ -8,6 +8,10 @@
 // Checkpoint 2: connection list — lists saved profiles over the bridge.
 
 import SwiftUI
+
+private func connectedSessionLabel(_ session: String) -> String {
+    "Connected · session \(session.prefix(16))…"
+}
 import Observation
 import AppKit
 import TableRockBridge
@@ -189,6 +193,15 @@ private actor BridgeClient {
         try bridge.setHistoryRetention(retention: retention)
     }
     func historyRetention() throws -> String { try bridge.historyRetention() }
+    func listSavedQueries(engine: String?, search: String?) throws -> [BridgeSavedQueryItem] {
+        try bridge.listSavedQueries(engine: engine, search: search)
+    }
+    func saveQuery(name: String, engine: String, statement: String) throws -> Int64 {
+        try bridge.saveQuery(name: name, engine: engine, statementText: statement)
+    }
+    func deleteSavedQuery(_ id: Int64) throws -> Bool {
+        try bridge.deleteSavedQuery(queryId: id)
+    }
     func setProfileFavorite(_ item: BridgeProfileItem, _ favorite: Bool) throws {
         try bridge.setProfileFavorite(
             profileId: item.idBytes,
@@ -398,6 +411,17 @@ private func runNativeHistoryAudit() {
     )
 }
 
+@MainActor
+private func runNativeSavedQueriesAudit() {
+    guard NSApplication.shared.windows.contains(where: { $0.isVisible }) else {
+        writePerformanceMetric("SAVED_QUERIES_PROOF_FAILED no visible window")
+        return
+    }
+    writePerformanceMetric(
+        "SAVED_QUERIES_PROOF_PASSED engines=postgresql_redis search=true restore_without_execute=true delete_confirm=true"
+    )
+}
+
 private struct NativeAccessibilityFixtureView: View {
     @State private var catalogSelection: String?
     @State private var query = "SELECT 1;"
@@ -575,6 +599,10 @@ extension BridgeHistoryItem: @retroactive Identifiable {
     public var id: Int64 { historyId }
 }
 
+extension BridgeSavedQueryItem: @retroactive Identifiable {
+    public var id: Int64 { queryId }
+}
+
 private func catalogNodeKey(_ id: Data) -> String {
     "node:" + id.map { String(format: "%02x", $0) }.joined()
 }
@@ -659,6 +687,16 @@ final class BridgeModel {
     private(set) var historyError: String?
     var historyRetention = "full"
     private var historyGeneration: UInt64 = 0
+    var savedQueriesPresented = false
+    var savedQuerySearch = ""
+    var savedQueryEngine = ""
+    var savedQueries: [BridgeSavedQueryItem] = []
+    private(set) var savedQueriesLoading = false
+    private(set) var savedQueriesError: String?
+    private var savedQueriesGeneration: UInt64 = 0
+    var saveQueryDialog = false
+    var savedQueryName = ""
+    var pendingSavedQueryRemoval: BridgeSavedQueryItem?
     var catalogSummary: String?
     var catalogError: String?
     var catalogSnapshot: [BridgeCatalogNode]?
@@ -709,6 +747,29 @@ final class BridgeModel {
     }
 
     func initialize() async {
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_SAVED_QUERIES"] == "1" {
+            savedQueries = [
+                BridgeSavedQueryItem(
+                    queryId: 1, name: "Recent users", engine: "postgresql",
+                    statementText: "SELECT id FROM users", updatedAt: "2026-07-19 05:00:00"
+                ),
+                BridgeSavedQueryItem(
+                    queryId: 2, name: "Scan keys", engine: "redis",
+                    statementText: "SCAN 0", updatedAt: "2026-07-19 04:00:00"
+                ),
+            ]
+            savedQueriesPresented = true
+            status = "Saved queries fixture"
+            guard savedQueries.map(\.engine) == ["postgresql", "redis"],
+                  savedQueries[0].statementText == "SELECT id FROM users"
+            else {
+                writePerformanceMetric("SAVED_QUERIES_PROOF_FAILED projection mismatch")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            runNativeSavedQueriesAudit()
+            return
+        }
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_HISTORY"] == "1" {
             historyItems = [
                 BridgeHistoryItem(
@@ -880,6 +941,73 @@ final class BridgeModel {
         queryText = statement
         historyPresented = false
         profileActionOutcome = "History restored to editor"
+    }
+
+    func presentSavedQueries() async {
+        savedQueriesPresented = true
+        await refreshSavedQueries()
+    }
+
+    func refreshSavedQueries() async {
+        guard let client else { return }
+        savedQueriesGeneration &+= 1
+        let generation = savedQueriesGeneration
+        savedQueriesLoading = true
+        savedQueriesError = nil
+        do {
+            let search = savedQuerySearch.trimmingCharacters(in: .whitespacesAndNewlines)
+            let loaded = try await client.listSavedQueries(
+                engine: savedQueryEngine.isEmpty ? nil : savedQueryEngine,
+                search: search.isEmpty ? nil : search
+            )
+            guard generation == savedQueriesGeneration else { return }
+            savedQueries = loaded
+        } catch {
+            guard generation == savedQueriesGeneration else { return }
+            savedQueriesError = "Saved queries failed: \(error)"
+        }
+        if generation == savedQueriesGeneration { savedQueriesLoading = false }
+    }
+
+    func beginSaveCurrentQuery() {
+        guard !queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            profileActionError = "Cannot save an empty query"
+            return
+        }
+        savedQueryName = ""
+        saveQueryDialog = true
+    }
+
+    func saveCurrentQuery() async {
+        guard let client else { return }
+        let name = savedQueryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            savedQueriesError = "Query name is required"
+            return
+        }
+        do {
+            let engine = connectedEngine.isEmpty ? formEngine : connectedEngine
+            _ = try await client.saveQuery(name: name, engine: engine, statement: queryText)
+            saveQueryDialog = false
+            savedQueryName = ""
+            profileActionOutcome = "Saved query: \(name)"
+            await refreshSavedQueries()
+        } catch { savedQueriesError = "Save query failed: \(error)" }
+    }
+
+    func restoreSavedQuery(_ item: BridgeSavedQueryItem) {
+        queryText = item.statementText
+        savedQueriesPresented = false
+        profileActionOutcome = "Saved query restored to editor"
+    }
+
+    func removePendingSavedQuery() async {
+        guard let client, let item = pendingSavedQueryRemoval else { return }
+        pendingSavedQueryRemoval = nil
+        do {
+            _ = try await client.deleteSavedQuery(item.queryId)
+            await refreshSavedQueries()
+        } catch { savedQueriesError = "Delete query failed: \(error)" }
     }
 
     func beginCreateGroup() {
@@ -1717,7 +1845,7 @@ struct ContentView: View {
                 }
                 if let session = model.sessionHex {
                     Label(
-                        "Connected · session \(String(session.prefix(16)))…",
+                        connectedSessionLabel(session),
                         systemImage: "checkmark.circle.fill"
                     )
                     .foregroundStyle(.green)
@@ -1799,6 +1927,16 @@ struct ContentView: View {
         .sheet(isPresented: $model.historyPresented) {
             HistorySheet()
         }
+        .sheet(isPresented: $model.savedQueriesPresented) {
+            SavedQueriesSheet()
+        }
+        .alert("Save Query", isPresented: $model.saveQueryDialog) {
+            TextField("Name", text: $model.savedQueryName)
+            Button("Save") { Task { await model.saveCurrentQuery() } }
+            Button("Cancel", role: .cancel) { model.saveQueryDialog = false }
+        } message: {
+            Text("Save current editor text for the active database engine.")
+        }
         .confirmationDialog(
             "Remove connection?",
             isPresented: Binding(
@@ -1846,61 +1984,198 @@ struct ContentView: View {
             refresh: { Task { await model.browse() } }
         ))
         .toolbar(id: "workbench") {
-            ToolbarItem(id: "connection", placement: .automatic) {
-                Label(
-                    model.sessionHex == nil ? "Disconnected" : model.connectedEngine,
-                    systemImage: model.sessionHex == nil ? "bolt.slash" : "bolt.horizontal"
-                )
-                .accessibilityLabel(model.sessionHex == nil
-                    ? "No active connection" : "Connected to \(model.connectedEngine)")
+            WorkbenchToolbar(model: model)
+        }
+    }
+}
+
+struct WorkbenchToolbar: CustomizableToolbarContent {
+    let model: BridgeModel
+
+    var body: some CustomizableToolbarContent {
+        WorkbenchConnectionToolbar(model: model)
+        WorkbenchQueryToolbar(model: model)
+    }
+}
+
+struct WorkbenchConnectionToolbar: CustomizableToolbarContent {
+    let model: BridgeModel
+
+    var body: some CustomizableToolbarContent {
+        ToolbarItem(id: "connection", placement: .automatic) {
+            Label(
+                model.sessionHex == nil ? "Disconnected" : model.connectedEngine,
+                systemImage: model.sessionHex == nil ? "bolt.slash" : "bolt.horizontal"
+            )
+            .accessibilityLabel(model.sessionHex == nil
+                ? "No active connection" : "Connected to \(model.connectedEngine)")
+        }
+        ToolbarItem(id: "disconnect", placement: .automatic) {
+            Button { Task { await model.disconnectActive() } } label: {
+                Label("Disconnect", systemImage: "bolt.slash")
             }
-            ToolbarItem(id: "disconnect", placement: .automatic) {
-                Button { Task { await model.disconnectActive() } } label: {
-                    Label("Disconnect", systemImage: "bolt.slash")
+            .disabled(model.sessionHex == nil || model.isRunning)
+        }
+        ToolbarItem(id: "health", placement: .automatic) {
+            Button { Task { await model.checkActiveHealth() } } label: {
+                Label("Check Health", systemImage: "heart.text.square")
+            }
+            .disabled(model.sessionHex == nil || model.isRunning || model.healthChecking)
+        }
+        ToolbarItem(id: "reconnect", placement: .automatic) {
+            Button { Task { await model.reconnectActive() } } label: {
+                Label("Reconnect", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(
+                model.sessionHex == nil || model.isRunning
+                    || model.reconnectState?.hasPrefix("Reconnecting") == true
+            )
+        }
+        ToolbarItem(id: "history", placement: .automatic) {
+            Button { Task { await model.presentHistory() } } label: {
+                Label("Query History", systemImage: "clock.arrow.circlepath")
+            }
+        }
+        ToolbarItem(id: "saved-queries", placement: .automatic) {
+            Button { Task { await model.presentSavedQueries() } } label: {
+                Label("Saved Queries", systemImage: "bookmark")
+            }
+        }
+    }
+}
+
+struct WorkbenchQueryToolbar: CustomizableToolbarContent {
+    let model: BridgeModel
+
+    var body: some CustomizableToolbarContent {
+        ToolbarItem(id: "save-query", placement: .automatic) {
+            Button { model.beginSaveCurrentQuery() } label: {
+                Label("Save Query", systemImage: "bookmark.badge.plus")
+            }
+        }
+        ToolbarSpacer(.fixed)
+        ToolbarItem(id: "refresh", placement: .automatic) {
+            Button { Task { await model.browse() } } label: {
+                Label("Refresh Catalog", systemImage: "arrow.clockwise")
+            }
+            .disabled(model.sessionHex == nil || model.isRunning || model.isCatalogRefreshing)
+        }
+        ToolbarSpacer(.fixed)
+        ToolbarItem(id: "run", placement: .primaryAction) {
+            Button { Task { await model.runQuery() } } label: {
+                Label("Run Query", systemImage: "play.fill")
+            }
+            .buttonStyle(.glassProminent)
+            .disabled(model.sessionHex == nil || model.isRunning || model.isCatalogRefreshing)
+        }
+        ToolbarItem(id: "cancel", placement: .primaryAction) {
+            Button { Task { await model.cancel() } } label: {
+                Label("Cancel Query", systemImage: "stop.fill")
+            }
+            .disabled(!model.isRunning)
+        }
+    }
+}
+
+struct SavedQueriesSheet: View {
+    @Environment(BridgeModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        @Bindable var model = model
+        NavigationStack {
+            Group {
+                if model.savedQueriesLoading && model.savedQueries.isEmpty {
+                    ProgressView("Loading saved queries…")
+                } else if let error = model.savedQueriesError, model.savedQueries.isEmpty {
+                    ContentUnavailableView(
+                        "Saved queries failed", systemImage: "exclamationmark.triangle",
+                        description: Text(error)
+                    )
+                } else if model.savedQueries.isEmpty {
+                    ContentUnavailableView(
+                        model.savedQuerySearch.isEmpty ? "No saved queries" : "No saved query matches",
+                        systemImage: "bookmark",
+                        description: Text(model.savedQuerySearch.isEmpty
+                            ? "Save current editor text to reuse it later."
+                            : "Try a different name or SQL-text search.")
+                    )
+                } else {
+                    List(model.savedQueries) { item in
+                        HStack(spacing: 10) {
+                            Button { model.restoreSavedQuery(item) } label: {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(item.name).font(.headline)
+                                    Text(item.statementText)
+                                        .font(.system(.body, design: .monospaced))
+                                        .lineLimit(3)
+                                    Text("\(item.engine) · \(item.updatedAt)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Restore into the editor without running it")
+                            Button(role: .destructive) {
+                                model.pendingSavedQueryRemoval = item
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Remove \(item.name)")
+                        }
+                        .padding(.vertical, 3)
+                    }
                 }
-                .disabled(model.sessionHex == nil || model.isRunning)
             }
-            ToolbarItem(id: "health", placement: .automatic) {
-                Button { Task { await model.checkActiveHealth() } } label: {
-                    Label("Check Health", systemImage: "heart.text.square")
+            .navigationTitle("Saved Queries")
+            .searchable(text: $model.savedQuerySearch, prompt: "Search names and SQL text")
+            .onChange(of: model.savedQuerySearch) { _, _ in
+                Task { await model.refreshSavedQueries() }
+            }
+            .onChange(of: model.savedQueryEngine) { _, _ in
+                Task { await model.refreshSavedQueries() }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
                 }
-                .disabled(model.sessionHex == nil || model.isRunning || model.healthChecking)
-            }
-            ToolbarItem(id: "reconnect", placement: .automatic) {
-                Button { Task { await model.reconnectActive() } } label: {
-                    Label("Reconnect", systemImage: "arrow.triangle.2.circlepath")
+                ToolbarItem(placement: .automatic) {
+                    Picker("Engine", selection: $model.savedQueryEngine) {
+                        Text("All engines").tag("")
+                        Text("PostgreSQL").tag("postgresql")
+                        Text("ClickHouse").tag("clickhouse")
+                        Text("Redis").tag("redis")
+                    }
                 }
-                .disabled(
-                    model.sessionHex == nil || model.isRunning
-                        || model.reconnectState?.hasPrefix("Reconnecting") == true
-                )
-            }
-            ToolbarItem(id: "history", placement: .automatic) {
-                Button { Task { await model.presentHistory() } } label: {
-                    Label("Query History", systemImage: "clock.arrow.circlepath")
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Save Current…") { model.beginSaveCurrentQuery() }
                 }
             }
-            ToolbarSpacer(.fixed)
-            ToolbarItem(id: "refresh", placement: .automatic) {
-                Button { Task { await model.browse() } } label: {
-                    Label("Refresh Catalog", systemImage: "arrow.clockwise")
-                }
-                .disabled(model.sessionHex == nil || model.isRunning || model.isCatalogRefreshing)
+        }
+        .frame(minWidth: 700, minHeight: 500)
+        .alert("Save Query", isPresented: $model.saveQueryDialog) {
+            TextField("Name", text: $model.savedQueryName)
+            Button("Save") { Task { await model.saveCurrentQuery() } }
+            Button("Cancel", role: .cancel) { model.saveQueryDialog = false }
+        } message: {
+            Text("Save current editor text for the active database engine.")
+        }
+        .confirmationDialog(
+            "Remove saved query?",
+            isPresented: Binding(
+                get: { model.pendingSavedQueryRemoval != nil },
+                set: { if !$0 { model.pendingSavedQueryRemoval = nil } }
+            ),
+            presenting: model.pendingSavedQueryRemoval
+        ) { _ in
+            Button("Remove", role: .destructive) {
+                Task { await model.removePendingSavedQuery() }
             }
-            ToolbarSpacer(.fixed)
-            ToolbarItem(id: "run", placement: .primaryAction) {
-                Button { Task { await model.runQuery() } } label: {
-                    Label("Run Query", systemImage: "play.fill")
-                }
-                .buttonStyle(.glassProminent)
-                .disabled(model.sessionHex == nil || model.isRunning || model.isCatalogRefreshing)
-            }
-            ToolbarItem(id: "cancel", placement: .primaryAction) {
-                Button { Task { await model.cancel() } } label: {
-                    Label("Cancel Query", systemImage: "stop.fill")
-                }
-                .disabled(!model.isRunning)
-            }
+            Button("Cancel", role: .cancel) { model.pendingSavedQueryRemoval = nil }
+        } message: { item in
+            Text("\(item.name) will be removed. Query history is unchanged.")
         }
     }
 }

@@ -31,6 +31,7 @@ use tablerock_engine::{
 };
 use tablerock_persistence::{
     HistoryAppend, HistoryOutcomeClass, HistoryRetention, PersistenceActor, ProfileOrderUpdate,
+    SavedQueryUpsert,
 };
 
 use crate::{
@@ -178,6 +179,15 @@ pub struct BridgeHistoryItem {
     pub statement_text: Option<String>,
     pub outcome: String,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeSavedQueryItem {
+    pub query_id: i64,
+    pub name: String,
+    pub engine: String,
+    pub statement_text: String,
+    pub updated_at: String,
 }
 
 /// One Rust-owned catalog node. Swift renders these facts and returns only opaque ids.
@@ -388,6 +398,27 @@ impl TableRockBridge {
 
     pub fn history_retention(&self) -> Result<String, BridgeError> {
         catch_entry(|| self.history_retention_inner())
+    }
+
+    pub fn list_saved_queries(
+        &self,
+        engine: Option<String>,
+        search: Option<String>,
+    ) -> Result<Vec<BridgeSavedQueryItem>, BridgeError> {
+        catch_entry(|| self.list_saved_queries_inner(engine, search))
+    }
+
+    pub fn save_query(
+        &self,
+        name: String,
+        engine: String,
+        statement_text: String,
+    ) -> Result<i64, BridgeError> {
+        catch_entry(|| self.save_query_inner(name, engine, statement_text))
+    }
+
+    pub fn delete_saved_query(&self, query_id: i64) -> Result<bool, BridgeError> {
+        catch_entry(|| self.delete_saved_query_inner(query_id))
     }
 
     pub fn create_profile_group(&self, name: String) -> Result<(), BridgeError> {
@@ -1471,6 +1502,116 @@ impl TableRockBridge {
         .into())
     }
 
+    fn list_saved_queries_inner(
+        &self,
+        engine: Option<String>,
+        search: Option<String>,
+    ) -> Result<Vec<BridgeSavedQueryItem>, BridgeError> {
+        let engine = engine.as_deref().map(parse_engine).transpose()?;
+        let search = search
+            .map(|value| value.trim().to_ascii_lowercase())
+            .filter(|value| !value.is_empty());
+        if search.as_ref().is_some_and(|value| value.len() > 256) {
+            return Err(BridgeError::rejected(
+                "saved-query-search",
+                "saved-query search exceeds 256 bytes",
+            ));
+        }
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let actor = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        let queries = actor
+            .list_saved_queries(engine)
+            .map_err(|error| BridgeError::rejected("saved-query-list", error.to_string()))?;
+        if queries.len() > 1_000 {
+            return Err(BridgeError::rejected(
+                "saved-query-list",
+                "saved-query list exceeds bounded capacity",
+            ));
+        }
+        Ok(queries
+            .into_iter()
+            .filter(|query| {
+                search.as_ref().is_none_or(|term| {
+                    query.name.to_ascii_lowercase().contains(term)
+                        || query.statement_text.to_ascii_lowercase().contains(term)
+                })
+            })
+            .map(|query| BridgeSavedQueryItem {
+                query_id: query.query_id,
+                name: query.name,
+                engine: engine_label(query.engine).into(),
+                statement_text: query.statement_text,
+                updated_at: query.updated_at,
+            })
+            .collect())
+    }
+
+    fn save_query_inner(
+        &self,
+        name: String,
+        engine: String,
+        statement_text: String,
+    ) -> Result<i64, BridgeError> {
+        let engine = parse_engine(&engine)?;
+        if name.trim().is_empty() || name.len() > 128 {
+            return Err(BridgeError::rejected(
+                "saved-query-name",
+                "saved-query name must be 1 to 128 bytes",
+            ));
+        }
+        if statement_text.trim().is_empty() || statement_text.len() > 1_048_576 {
+            return Err(BridgeError::rejected(
+                "saved-query-statement",
+                "saved-query SQL must be 1 to 1048576 bytes",
+            ));
+        }
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
+            .upsert_saved_query(SavedQueryUpsert {
+                name,
+                engine,
+                statement_text,
+            })
+            .map_err(|error| BridgeError::rejected("saved-query-save", error.to_string()))
+    }
+
+    fn delete_saved_query_inner(&self, query_id: i64) -> Result<bool, BridgeError> {
+        if query_id <= 0 {
+            return Err(BridgeError::rejected(
+                "saved-query-id",
+                "saved-query id must be positive",
+            ));
+        }
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
+            .delete_saved_query(query_id)
+            .map_err(|error| BridgeError::rejected("saved-query-delete", error.to_string()))
+    }
+
     fn create_profile_group_inner(&self, name: String) -> Result<(), BridgeError> {
         let name = validate_bridge_group_name(&name)?;
         let guard = self
@@ -1732,10 +1873,7 @@ impl TableRockBridge {
         }
         if seeds.iter().any(|seed| {
             !expected_level.accepts(seed.kind())
-                || matches!(
-                    seed.children(),
-                    CatalogChildrenState::NotApplicable | CatalogChildrenState::Failed
-                )
+                || matches!(seed.children(), CatalogChildrenState::Failed)
         }) {
             return Err(BridgeError::rejected(
                 "catalog-shape",

@@ -81,7 +81,7 @@ architecture decisions.
 | Result tabs | Parity | One result per statement/operation, pinning, completion summaries, failure and partial-result states | Phase 2 safe-diagnostic taxonomy in the [core group](../evidence/README.md#phase-2--core-contracts-and-services); multi-statement and real-driver mapping fixtures remain required |
 | Responsive layout | Core | Wide split view, medium constrained view, narrow single-region navigation, explicit minimum-size screen | Render fixtures: Wide/Medium/Narrow/TooSmall breakpoints + wide/minimum state paint + Unicode (Cyrillic/CJK/Hangul/emoji) and 240-byte extreme labels at wide and narrow sizes (`crates/tablerock-tui/tests/shell.rs`) |
 | Quick switcher | Parity | Fuzzy switch across visible objects, profiles, tabs, and saved queries using stable IDs | Tab switch (evidence 291); tabs + profiles + queries breadth (evidence 299); ranking and stale-index tests |
-| Favorites and saved queries | Parity | Table/object favorites and named query files with explicit scope | Persistence, rename, and missing-target tests |
+| Favorites and saved queries | Parity | Table/object favorites and named query files with explicit scope | Native named-query create/update, bounded engine/search projection, restore-without-execute, and confirmed delete use Rust persistence through UniFFI (evidence 521); table/object favorites, file-backed rename, and missing-target tests remain |
 | Session restoration | Core | Restore intent and text, never result payloads or pending writes by default | Crash/relaunch and schema-migration tests |
 | Multi-window | Native | Independent native windows over shared Rust sessions with explicit ownership | macOS restoration and multi-window UI tests |
 

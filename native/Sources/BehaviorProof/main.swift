@@ -29,7 +29,8 @@ let session = try bridge.open(params: OpenParams(
     port: port,
     database: database,
     user: user,
-    password: password
+    password: password,
+    tlsMode: "off"
 ))
 print("opened \(engine) session against \(host):\(port)")
 
@@ -37,7 +38,7 @@ if catalogMode {
     var level = try bridge.refreshCatalog(sessionId: session, parentNodeId: nil)
     var total = level.count
     for _ in 0..<2 {
-        guard let parent = level.first(where: \.expandable) else { break }
+        guard let parent = level.first(where: { node in node.expandable }) else { break }
         level = try bridge.refreshCatalog(
             sessionId: session,
             parentNodeId: parent.idBytes
@@ -66,7 +67,7 @@ let opId = try bridge.submit(spec: spec)
 
 if cancelMode {
     let started = Date()
-    let pump = Task.detached { try bridge.pump(operationId: opId) }
+    let pump = Task<Void, Error>.detached { try bridge.pump(operationId: opId) }
     try await Task.sleep(for: .milliseconds(150))
     let cancellation = try bridge.cancel(operationId: opId)
     try await pump.value
@@ -148,7 +149,8 @@ if ProcessInfo.processInfo.environment["TABLEROCK_REVIEW"] != nil {
     let bridge2 = TableRockBridge.create()
     try bridge2.ensureRuntime()
     let session2 = try bridge2.open(params: OpenParams(
-        engine: engine, host: host, port: port, database: database, user: user, password: password))
+        engine: engine, host: host, port: port, database: database, user: user,
+        password: password, tlsMode: "off"))
     let now = UInt64(Date().timeIntervalSince1970 * 1000)
     let token = try bridge2.stageProbeReview(sessionId: session2, nowMs: now)
     // applyReviewToken does the authorize internally (consume-once); calling
