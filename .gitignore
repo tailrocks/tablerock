@@ -4,3 +4,4 @@
 *.tmp
 /native/.build/
 /native/.swiftpm/
+/native/dist/

@@ -10,6 +10,22 @@
 
 ## Status
 
+- **Checkpoint 1 IN PROGRESS (2026-07-18)** — workable app shell built and
+  launching via Command Line Tools only (no full Xcode). SwiftUI + AppKit ship
+  with the CLT macOS SDK and `swiftc` links the cargo release dylib
+  transitively through the `TableRockBridge` SwiftPM target, so a runnable
+  `TableRock.app` is producible without Xcode or a Developer ID. The app owns a
+  live `TableRockBridge` (runtime + local persistence) and reports bridge state.
+  Build: `./scripts/build-native-app.sh` → `native/dist/TableRock.app`.
+  **Gate resolution (decision authority, prompt.md):** the plan-019
+  distribution gate gates the *notarized XCFramework release* (needs full Xcode
+  + Developer ID — operator). A *workable local app* does not require that;
+  plan 020 checkpoint 1 proceeds now on the workable-local path. Notarized
+  distribution + the release-optimized Swift build (which needs
+  `sudo xcodebuild -license`, a one-time operator step that does NOT require
+  installing Xcode) remain operator-gated. Later checkpoints add the connection
+  list, catalog, editor, grid, and result surfaces over the same coarse
+  operation/event facade.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED

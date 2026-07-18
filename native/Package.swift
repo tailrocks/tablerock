@@ -41,5 +41,12 @@ let package = Package(
             dependencies: ["TableRockBridge"],
             path: "Sources/BridgeProof"
         ),
+        // Native macOS app (plan 020 checkpoint 1). SwiftUI + AppKit via CLT;
+        // links the cargo release dylib transitively through TableRockBridge.
+        .executableTarget(
+            name: "TableRockApp",
+            dependencies: ["TableRockBridge"],
+            path: "Sources/TableRockApp"
+        ),
     ]
 )
