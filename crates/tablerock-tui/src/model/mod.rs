@@ -181,6 +181,8 @@ pub enum ActionId {
     ResetColumns,
     /// Hide all columns except the cursor column.
     SoloColumn,
+    /// Show all columns; keep widths/order (unlike ResetColumns).
+    ShowAllColumns,
     /// Persist column layout for the current base table.
     SaveColumns,
     /// Move cursor column left in display order.

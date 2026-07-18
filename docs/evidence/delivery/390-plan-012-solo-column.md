@@ -25,4 +25,4 @@ cargo test -p tablerock-tui --lib
 
 ## Remaining work
 
-- None material for solo column
+- Show all without width reset — shipped as evidence 392

@@ -1420,6 +1420,22 @@ impl DataGridModel {
         changed
     }
 
+    /// Show every column; keep widths and order. Returns true if any were hidden.
+    pub fn show_all_columns(&mut self) -> bool {
+        if self.columns.is_empty() {
+            return false;
+        }
+        self.ensure_column_layout();
+        let mut changed = false;
+        for entry in &mut self.column_layout {
+            if !entry.visible {
+                entry.visible = true;
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Toggle visibility of a named column (at least one remains visible).
     pub fn toggle_column_visible(&mut self, column: &str) -> bool {
         self.ensure_column_layout();
@@ -2032,6 +2048,13 @@ mod tests {
         assert_eq!(g.visible_columns(), vec!["name".to_owned()]);
         // Already solo → no-op.
         assert!(!g.solo_cursor_column());
+        // Widen solo column then ShowAll keeps width.
+        assert!(g.adjust_cursor_column_width(8));
+        let solo_w = g.column_width("name");
+        assert!(g.show_all_columns());
+        assert_eq!(g.visible_columns().len(), 3);
+        assert_eq!(g.column_width("name"), solo_w);
+        assert!(!g.show_all_columns());
         g.reset_column_layout();
         assert_eq!(g.visible_columns().len(), 3);
     }
