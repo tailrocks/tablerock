@@ -276,7 +276,7 @@ mod tests {
         let plain = StringProjections::from_bytes(b"hello", false);
         assert_eq!(plain.json_label, "json: n/a");
         // Hex projection caps at 64 bytes.
-        let big = StringProjections::from_bytes(&vec![b'A'; 100], false);
+        let big = StringProjections::from_bytes(&[b'A'; 100], false);
         assert_eq!(big.hex.split(' ').count(), 64);
         // Truncation flag surfaces in the projection lines.
         let trunc = StringProjections::from_bytes(b"x", true);
