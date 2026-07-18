@@ -3274,6 +3274,17 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 CloseTabOutcome::Closed | CloseTabOutcome::Empty => Update::render(),
             }
         }
+        ActionId::CloseOtherTabs if model.screen() == Screen::Workbench => {
+            use crate::model::workbench::CloseTabOutcome;
+            match model.workbench_mut().close_other_tabs() {
+                CloseTabOutcome::NeedsConfirm { title, index } => {
+                    model.set_confirm(Some(ConfirmDialog::CloseDirtyTab { title, index }));
+                    model.set_action(ActionId::Submit);
+                    Update::render()
+                }
+                CloseTabOutcome::Closed | CloseTabOutcome::Empty => Update::render(),
+            }
+        }
         ActionId::NewSql if model.screen() == Screen::Workbench => {
             model.workbench_mut().open_sql_tab();
             Update::render()
@@ -4833,6 +4844,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::NextTab
         | ActionId::PrevTab
         | ActionId::CloseTab
+        | ActionId::CloseOtherTabs
         | ActionId::PinTab
         | ActionId::NewSql
         | ActionId::RunSql
@@ -6468,6 +6480,7 @@ fn cycle_action(
                 ActionId::NextDatabase,
                 ActionId::NextTab,
                 ActionId::PrevTab,
+                ActionId::CloseOtherTabs,
                 ActionId::QuickSwitch,
                 ActionId::PinTab,
                 ActionId::NewSql,

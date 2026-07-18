@@ -75,6 +75,8 @@ pub enum ActionId {
     /// Select previous workbench tab (wrap).
     PrevTab,
     CloseTab,
+    /// Close all tabs except the active one (fails closed if others dirty).
+    CloseOtherTabs,
     PinTab,
     NewSql,
     RunSql,

@@ -608,6 +608,31 @@ impl WorkbenchModel {
         self.recompute_pending();
     }
 
+    /// Close every tab except the active one. Fails closed if any other tab is dirty.
+    pub fn close_other_tabs(&mut self) -> CloseTabOutcome {
+        if self.tabs.len() <= 1 {
+            return CloseTabOutcome::Empty;
+        }
+        if let Some((index, tab)) = self
+            .tabs
+            .iter()
+            .enumerate()
+            .find(|(i, t)| *i != self.selected_tab && t.dirty)
+        {
+            return CloseTabOutcome::NeedsConfirm {
+                title: format!("other dirty: {}", tab.title),
+                index,
+            };
+        }
+        let keep = self.selected_tab;
+        let kept = self.tabs.remove(keep);
+        self.tabs.clear();
+        self.tabs.push(kept);
+        self.selected_tab = 0;
+        self.recompute_pending();
+        CloseTabOutcome::Closed
+    }
+
     /// Mark every live tab/operation disconnected without dropping content.
     ///
     /// Completed/failed grids stay inspectable with their prior terminal state;
@@ -720,6 +745,31 @@ mod tests {
         ));
         wb.force_close_tab(wb.selected_tab);
         assert!(wb.tabs.iter().all(|t| t.title != "users"));
+    }
+
+    #[test]
+    fn close_other_tabs_keeps_active_fails_on_dirty() {
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("keep");
+        let keep_idx = wb.selected_tab;
+        wb.open_preview_tab("other");
+        assert!(wb.tabs.len() >= 2);
+        // Focus keep
+        wb.selected_tab = keep_idx;
+        assert!(matches!(
+            wb.close_other_tabs(),
+            CloseTabOutcome::Closed
+        ));
+        assert_eq!(wb.tabs.len(), 1);
+        assert_eq!(wb.tabs[0].title, "keep");
+        wb.open_preview_tab("dirty");
+        wb.mark_active_dirty(true);
+        wb.selected_tab = 0; // keep
+        assert!(matches!(
+            wb.close_other_tabs(),
+            CloseTabOutcome::NeedsConfirm { .. }
+        ));
+        assert!(wb.tabs.len() >= 2);
     }
 
     #[test]
