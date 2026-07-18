@@ -203,10 +203,12 @@ pub enum Effect {
         request_token: RequestToken,
         session_id_hex: String,
         context_revision: u64,
-        /// "truncate" | "drop"
+        /// "truncate" | "drop" | "rename"
         op: String,
         schema: String,
         table: String,
+        /// New name for rename (empty otherwise).
+        new_table: String,
     },
     /// Snapshot activity for the inspector (permission-aware cancel later).
     LoadActivity {

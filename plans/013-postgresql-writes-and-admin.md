@@ -126,9 +126,10 @@ silently discard; ambiguous writes never retry.
 - [x] Review dialog parameterized preview from typed plan (not reparsed text) — evidence 229
 - [x] Destructive ops gated by specific confirmation (reducer test: no bypass path) — evidence 232
 - [x] Adversarial quote_ident unit test for mutation SQL — evidence 230-era + d270439
-- [ ] Generated-value RETURNING reconciliation + ambiguity → `Unknown` inject suite
+- [x] Generated-value RETURNING reconciliation — evidence 233; ambiguity inject suite open
 - [ ] Consume-once registry survives UI dialog clock (re-review on expiry)
-- [ ] Full ValueKind editors + cancel/terminate activity gates + rename
+- [x] Cancel/terminate activity gates + rename — evidence c7068b6 + rename commit
+- [ ] Full ValueKind-specific editors (paste buffer heuristics only today)
 - [x] Suites green for landed checkpoints; ledger + ROADMAP Phase 6 partial; plan IN PROGRESS
 
 ## STOP conditions

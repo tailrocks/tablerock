@@ -132,6 +132,8 @@ pub enum ActionId {
     CancelBackend,
     /// Terminate a backend by pid (gated confirm).
     TerminateBackend,
+    /// Rename active base table (gated: paste new name).
+    RenameTable,
     Submit,
     Cancel,
     Quit,
@@ -162,6 +164,12 @@ pub enum ConfirmDialog {
     },
     TerminateBackend {
         pid: String,
+        confirm_buffer: String,
+    },
+    /// Rename: confirm_buffer is the new table name (non-empty, quoted later).
+    RenameTable {
+        schema: String,
+        table: String,
         confirm_buffer: String,
     },
 }

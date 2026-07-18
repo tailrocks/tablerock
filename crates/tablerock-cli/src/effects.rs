@@ -346,6 +346,7 @@ impl EffectExecutor {
                 op,
                 schema,
                 table,
+                new_table,
             } => {
                 let sessions = Arc::clone(&self.sessions);
                 let ingress = self.ingress.clone();
@@ -358,6 +359,7 @@ impl EffectExecutor {
                         op,
                         schema,
                         table,
+                        new_table,
                     )
                     .await;
                     let _ = ingress.try_send_event(message);
@@ -2315,6 +2317,7 @@ async fn execute_table_op(
     op: String,
     schema: String,
     table: String,
+    new_table: String,
 ) -> Message {
     use tablerock_core::{
         Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
@@ -2363,6 +2366,19 @@ async fn execute_table_op(
     let sql = match op.as_str() {
         "truncate" => format!("TRUNCATE TABLE {qs}.{qt}"),
         "drop" => format!("DROP TABLE {qs}.{qt}"),
+        "rename" => {
+            let qn = match quote_ident(&new_table) {
+                Ok(n) => n,
+                Err(_) => {
+                    return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                        request_token,
+                        context_revision,
+                        reason: FailureProjection::Label("invalid new table name".into()),
+                    });
+                }
+            };
+            format!("ALTER TABLE {qs}.{qt} RENAME TO {qn}")
+        }
         other => {
             return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
                 request_token,

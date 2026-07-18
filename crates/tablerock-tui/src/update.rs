@@ -97,6 +97,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 match confirm {
                     ConfirmDialog::TruncateTable { confirm_buffer, .. }
                     | ConfirmDialog::DropTable { confirm_buffer, .. }
+                    | ConfirmDialog::RenameTable { confirm_buffer, .. }
                     | ConfirmDialog::CancelBackend { confirm_buffer, .. }
                     | ConfirmDialog::TerminateBackend { confirm_buffer, .. } => {
                         *confirm_buffer = text.text().to_owned();
@@ -878,6 +879,15 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 }
                 return Update::render();
             }
+            if op == "rename" {
+                // Re-attach base table name from status if possible — operator
+                // re-browses; clear identity until next browse proves PK again.
+                if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                    grid.identity_columns.clear();
+                    grid.base_table = None;
+                }
+                return Update::render();
+            }
             rebrowse_active_table(model)
         }
         Message::Engine(EngineMsg::TableOpFailed {
@@ -1237,6 +1247,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                             op: "truncate".into(),
                             schema,
                             table,
+                            new_table: String::new(),
                         }),
                     }
                 }
@@ -1266,6 +1277,38 @@ fn activate_selected_action(model: &mut Model) -> Update {
                             op: "drop".into(),
                             schema,
                             table,
+                            new_table: String::new(),
+                        }),
+                    }
+                }
+                ConfirmDialog::RenameTable {
+                    schema,
+                    table,
+                    confirm_buffer,
+                } => {
+                    let new_name = confirm_buffer.trim();
+                    if new_name.is_empty() || new_name == table {
+                        return Update::render();
+                    }
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let token = model.mint_request_token();
+                    let context_revision = model.workbench().context_revision;
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::ExecuteTableOp {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            op: "rename".into(),
+                            schema,
+                            table,
+                            new_table: new_name.to_owned(),
                         }),
                     }
                 }
@@ -1876,6 +1919,23 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::RenameTable if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::RenameTable {
+                schema,
+                table,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::ShowActivity if model.screen() == Screen::Workbench => {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
@@ -1986,6 +2046,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ShowStructure
         | ActionId::TruncateTable
         | ActionId::DropTable
+        | ActionId::RenameTable
         | ActionId::ShowActivity
         | ActionId::CancelBackend
         | ActionId::TerminateBackend
@@ -2339,6 +2400,7 @@ fn cycle_action(
                 ActionId::ShowStructure,
                 ActionId::TruncateTable,
                 ActionId::DropTable,
+                ActionId::RenameTable,
                 ActionId::ShowActivity,
                 ActionId::CancelBackend,
                 ActionId::TerminateBackend,
@@ -3551,8 +3613,9 @@ mod tests {
             Some(Effect::ExecuteTableOp {
                 op,
                 table,
+                new_table,
                 ..
-            }) if op == "truncate" && table == "users"
+            }) if op == "truncate" && table == "users" && new_table.is_empty()
         ));
         assert!(model.confirm().is_none());
     }
