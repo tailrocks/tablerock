@@ -19,7 +19,7 @@ Machine-readable export:
 |-------------|-------|
 | implemented | 57 |
 | excluded | 7 |
-| gap | 3 |
+| gap | 1 |
 
 ### Gap rows (block claims as noted)
 
@@ -29,11 +29,11 @@ Machine-readable export:
 
 ## Parity claim status
 
-**No marketing parity claim.** Core TUI workflows are largely implemented.
-Remaining **Parity** gaps are explicit and block a full three-engine parity
-claim until closed or reclassified.
+**TUI Core + Parity rows are implemented or excluded** in the three-state
+CSV (this pass). The remaining **gap** is Native multi-window, blocked on
+plan 019 packaging (full Xcode + Developer ID + notarization).
 
-Native claim blocked on plan 019 packaging (Xcode + Developer ID).
+No marketing “full product complete” claim until 019–021 exit.
 
 ## Commands
 
