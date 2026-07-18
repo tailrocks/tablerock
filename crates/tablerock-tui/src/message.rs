@@ -536,6 +536,8 @@ pub enum Message {
     EngineResynchronized,
     Profiles(ProfilesMsg),
     Engine(EngineMsg),
+    /// Periodic session health probe (CLI interval; BoundedAutomatic only).
+    HealthTick,
     FocusNext,
     FocusPrevious,
     ActionNext,

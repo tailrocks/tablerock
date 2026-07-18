@@ -33,6 +33,8 @@ enum LoopInput {
     Signal,
     Root(Option<Delivery<Message, RootProgress>>),
     Terminal(Option<io::Result<crossterm::event::Event>>),
+    /// BoundedAutomatic continuous health probe interval.
+    HealthTick,
 }
 
 #[derive(Debug)]
@@ -209,6 +211,10 @@ async fn run_session(
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
     let mut dirty = true;
+    // Continuous health for BoundedAutomatic reconnect (30s; no-op when Manual).
+    let mut health_interval =
+        tokio::time::interval(std::time::Duration::from_secs(30));
+    health_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
         if dirty {
@@ -232,6 +238,7 @@ async fn run_session(
                 signal?;
                 LoopInput::Signal
             }
+            _ = health_interval.tick() => LoopInput::HealthTick,
             input_event = async {
                 tokio::select! {
                     root = root_messages.recv(), if root_ingress_open => LoopInput::Root(root),
@@ -241,6 +248,7 @@ async fn run_session(
         };
         let message = match input_event {
             LoopInput::Signal => Message::Quit,
+            LoopInput::HealthTick => Message::HealthTick,
             LoopInput::Root(None) => {
                 root_ingress_open = false;
                 continue;

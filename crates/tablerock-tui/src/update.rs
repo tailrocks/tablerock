@@ -321,6 +321,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 session.status = Some("healthy".into());
                 model.set_session(Some(session));
             }
+            model.workbench_mut().context.health_label = "healthy".into();
             Update::render()
         }
         Message::Engine(EngineMsg::HealthFailed { reason, .. }) => {
@@ -331,6 +332,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 session.status = Some(format!("unhealthy: {label}"));
                 model.set_session(Some(session));
             }
+            model.workbench_mut().context.health_label = format!("unhealthy: {label}");
             // BoundedAutomatic: start reconnect attempt 0 from last draft.
             if crate::model::saved_filter::should_auto_reconnect(&model.reconnect_preference) {
                 if let Some(draft) = model.last_connect_draft.clone() {
@@ -346,6 +348,31 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 }
             }
             Update::render()
+        }
+        Message::HealthTick => {
+            // Continuous health only when a session is live and auto-reconnect is on.
+            if model.session().is_none() {
+                return Update::unchanged();
+            }
+            if !crate::model::saved_filter::should_auto_reconnect(&model.reconnect_preference) {
+                return Update::unchanged();
+            }
+            // Skip while already reconnecting.
+            if model
+                .session()
+                .and_then(|s| s.status.as_deref())
+                .is_some_and(|s| s.contains("reconnecting"))
+            {
+                return Update::unchanged();
+            }
+            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            Update::with_effect(Effect::CheckSessionHealth {
+                request_token: token,
+                session_id_hex,
+            })
         }
         Message::Engine(EngineMsg::TestOk {
             identity,
@@ -6796,6 +6823,41 @@ mod tests {
             }),
         );
         assert!(manual.effects().next().is_none());
+    }
+
+    #[test]
+    fn health_tick_probes_only_when_auto_reconnect_and_session() {
+        let mut model = Model::default();
+        // No session: no effect.
+        assert!(update(&mut model, Message::HealthTick).effects().next().is_none());
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000077".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        // Manual: no continuous probe.
+        model.reconnect_preference = "Manual".into();
+        assert!(update(&mut model, Message::HealthTick).effects().next().is_none());
+        // BoundedAutomatic: emit CheckSessionHealth.
+        model.reconnect_preference = "BoundedAutomatic".into();
+        let out = update(&mut model, Message::HealthTick);
+        match out.effects().next() {
+            Some(Effect::CheckSessionHealth { session_id_hex, .. }) => {
+                assert!(session_id_hex.ends_with("77"));
+            }
+            other => panic!("expected CheckSessionHealth, got {other:?}"),
+        }
+        // Skip while reconnecting.
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000077".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("reconnecting attempt 1".into()),
+        }));
+        assert!(update(&mut model, Message::HealthTick).effects().next().is_none());
     }
 
     #[test]
