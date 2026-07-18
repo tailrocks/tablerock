@@ -9,8 +9,8 @@
 
 ## Status
 
-- **Status**: DONE (evidence 200–206, 331 group rename; residual:
-  auto reconnect delayed re-dispatch loop, URL drafts deferred by product)
+- **Status**: DONE (evidence 200–206, 331 group rename, 332 reconnect loop;
+  residual: 1Password/Keychain/env deferred by product)
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MED

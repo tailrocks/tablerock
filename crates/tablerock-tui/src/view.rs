@@ -600,6 +600,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let quit = action_label(model, ActionId::Quit, "Quit");
     let remove = action_label(model, ActionId::Remove, "Remove");
     let rename_group = action_label(model, ActionId::RenameGroup, "RenGroup");
+    let reconnect = action_label(model, ActionId::Reconnect, "Reconn");
     let actions: Vec<Action<'_, ActionId>> =
         if model.password_prompt().is_some() || model.confirm().is_some() {
             vec![
@@ -1088,6 +1089,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RenameGroup,
                         label: rename_group.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Reconnect,
+                        label: reconnect.as_str(),
                         enabled: true,
                         style: None,
                     },

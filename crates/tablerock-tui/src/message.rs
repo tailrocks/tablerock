@@ -131,6 +131,8 @@ pub enum EngineMsg {
         request_token: u64,
         attempt: u32,
         next_delay_ms: u64,
+        /// Draft needed to re-dispatch the next attempt after delay (executor sleeps).
+        draft: crate::effect::ConnectionDraft,
     },
     ReconnectStopped {
         request_token: u64,

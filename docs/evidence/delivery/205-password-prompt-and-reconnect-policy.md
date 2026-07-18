@@ -34,6 +34,7 @@ Reconnect backoff policy is pure and stops on authentication labels.
 
 ## Remaining work
 
-- Docker Test/Connect matrix for all three engines.
-- Auto re-dispatch loop with real delayed sleep for reconnect.
+- Docker Test/Connect matrix for all three engines (later evidence).
+- ~~Auto re-dispatch loop with real delayed sleep for reconnect~~
+  (closed: evidence 332).
 - Phase 3 ledger + ROADMAP exit close.

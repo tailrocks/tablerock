@@ -1819,8 +1819,10 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::Reconnecting {
+            request_token,
             attempt,
             next_delay_ms,
+            draft,
             ..
         }) => {
             if let Some(mut session) = model.session().cloned() {
@@ -1829,7 +1831,15 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 ));
                 model.set_session(Some(session));
             }
-            Update::render()
+            // Auto re-dispatch: executor sleeps next_delay_ms when attempt > 0.
+            Update {
+                render: true,
+                effect: Some(Effect::ReconnectSession {
+                    request_token,
+                    draft,
+                    attempt,
+                }),
+            }
         }
         Message::Engine(EngineMsg::ReconnectStopped { reason, .. }) => {
             let label = match reason {
@@ -2705,6 +2715,28 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }));
             model.set_action(ActionId::Submit);
             Update::render()
+        }
+        ActionId::Reconnect
+            if matches!(
+                model.screen(),
+                Screen::Workbench | Screen::Editor | Screen::Connections
+            ) =>
+        {
+            // Bounded reconnect from current editor draft (attempt 0 immediate).
+            let draft = connection_draft_from_editor(model.editor());
+            let token = model.mint_request_token();
+            if let Some(mut session) = model.session().cloned() {
+                session.status = Some("reconnecting attempt 0".into());
+                model.set_session(Some(session));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::ReconnectSession {
+                    request_token: token,
+                    draft,
+                    attempt: 0,
+                }),
+            }
         }
         ActionId::Open if model.screen() == Screen::Connections => {
             let Some(profile_id_hex) = model
@@ -3633,6 +3665,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::Disconnect
         | ActionId::Remove
         | ActionId::RenameGroup
+        | ActionId::Reconnect
         | ActionId::NextDatabase
         | ActionId::NextTab
         | ActionId::CloseTab
@@ -4865,6 +4898,7 @@ fn cycle_action(
                 ActionId::QuickSwitch,
                 ActionId::Remove,
                 ActionId::RenameGroup,
+                ActionId::Reconnect,
                 ActionId::Quit,
             ],
         }
@@ -6330,6 +6364,67 @@ mod tests {
             }
             other => panic!("expected cleared BrowseTable, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn reconnecting_message_re_dispatches_effect() {
+        use crate::effect::{ConnectionDraft, EngineKind, PasswordSourceSpec, TlsModeSpec};
+        let mut model = Model::default();
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000099".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        let draft = ConnectionDraft {
+            engine: EngineKind::PostgreSql,
+            name: "t".into(),
+            group: String::new(),
+            environment: String::new(),
+            host: "127.0.0.1".into(),
+            port: "5432".into(),
+            database: "postgres".into(),
+            username: "postgres".into(),
+            password: String::new(),
+            password_source: PasswordSourceSpec::PromptOnConnect,
+            tls_mode: TlsModeSpec::Off,
+            plaintext_acknowledged: false,
+            ssh_host: String::new(),
+            ssh_port: String::new(),
+            ssh_username: String::new(),
+            ssh_password: String::new(),
+            ssh_private_key: String::new(),
+            ssh_known_hosts_path: String::new(),
+            ssh_use_agent: false,
+            startup_actions: tablerock_core::StartupActionSet::empty(),
+        };
+        let out = update(
+            &mut model,
+            Message::Engine(EngineMsg::Reconnecting {
+                request_token: 7,
+                attempt: 2,
+                next_delay_ms: 4_000,
+                draft: draft.clone(),
+            }),
+        );
+        match out.effects().next() {
+            Some(Effect::ReconnectSession {
+                attempt,
+                draft: d,
+                request_token,
+                ..
+            }) => {
+                assert_eq!(*request_token, 7);
+                assert_eq!(*attempt, 2);
+                assert_eq!(d.host, "127.0.0.1");
+            }
+            other => panic!("expected ReconnectSession re-dispatch, got {other:?}"),
+        }
+        assert!(model
+            .session()
+            .and_then(|s| s.status.as_deref())
+            .is_some_and(|s| s.contains("reconnecting attempt 2")));
     }
 
     #[test]

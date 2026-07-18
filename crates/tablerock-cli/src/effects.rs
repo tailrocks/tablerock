@@ -5551,14 +5551,17 @@ async fn reconnect_session(
     attempt: u32,
 ) -> Message {
     use tablerock_tui::{next_backoff_ms, stop_on_failure_label};
-    if next_backoff_ms(attempt).is_none() {
+    let Some(delay_ms) = next_backoff_ms(attempt) else {
         return Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
             request_token,
             reason: FailureProjection::Label("reconnect budget exhausted".into()),
         });
+    };
+    // Real delayed sleep for attempt > 0 (attempt 0 is immediate first try).
+    // Auth-stop never reaches later attempts; tests use attempt 0.
+    if attempt > 0 {
+        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
     }
-    // Delay is declarative (next_backoff_ms); executor may sleep before re-dispatch.
-    // This attempt connects immediately so auth-stop never burns wall-clock in tests.
     match open_described_session(draft.clone(), true).await {
         Ok((session, identity, _, tunnel, startup_summary, startup_pending)) => {
             let session_id = match mint_session_id() {
@@ -5601,17 +5604,21 @@ async fn reconnect_session(
                 reason: FailureProjection::Label(label),
             })
         }
-        Err(_label) => match next_backoff_ms(attempt.saturating_add(1)) {
-            Some(next_delay_ms) => Message::Engine(tablerock_tui::EngineMsg::Reconnecting {
-                request_token,
-                attempt: attempt.saturating_add(1),
-                next_delay_ms,
-            }),
-            None => Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
-                request_token,
-                reason: FailureProjection::Label("reconnect budget exhausted".into()),
-            }),
-        },
+        Err(_label) => {
+            let next_attempt = attempt.saturating_add(1);
+            match next_backoff_ms(next_attempt) {
+                Some(next_delay_ms) => Message::Engine(tablerock_tui::EngineMsg::Reconnecting {
+                    request_token,
+                    attempt: next_attempt,
+                    next_delay_ms,
+                    draft,
+                }),
+                None => Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
+                    request_token,
+                    reason: FailureProjection::Label("reconnect budget exhausted".into()),
+                }),
+            }
+        }
     }
 }
 

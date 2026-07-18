@@ -147,6 +147,8 @@ pub enum ActionId {
     ShowActivity,
     /// Rename selected connection group (Connections tree).
     RenameGroup,
+    /// Bounded automatic reconnect using current editor draft.
+    Reconnect,
     /// Redis Pub/Sub: subscribe to a channel (isolated connection).
     RedisSubscribe,
     /// Redis Pub/Sub: pattern subscribe (PSUBSCRIBE).
