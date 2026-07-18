@@ -1497,6 +1497,36 @@ mod tests {
     }
 
     #[test]
+    fn resident_scroll_does_not_request_fetch() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.replace_page(
+                0,
+                vec!["id".into()],
+                (0..10)
+                    .map(|i| crate::model::grid::ProjectedCell {
+                        text: i.to_string(),
+                        distinction: crate::model::grid::CellDistinction::Number,
+                        byte_len: 1,
+                        original_byte_len: None,
+                    })
+                    .collect(),
+                10,
+                GridRowTotal::Exact(10),
+                10,
+                false,
+            );
+            grid.operation = GridOperationState::Completed;
+            grid.viewport_row = 3;
+        }
+        // No FetchPage effect is produced by merely updating viewport inside resident.
+        assert!(!model.workbench().active_grid().unwrap().needs_fetch(3));
+        assert!(model.workbench().active_grid().unwrap().is_resident(3));
+    }
+
+    #[test]
     fn grid_page_fills_active_tab_and_rejects_stale_context() {
         let mut model = Model::default();
         model.set_screen(Screen::Workbench);

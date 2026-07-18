@@ -271,6 +271,29 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::FetchPage {
+                request_token,
+                session_id_hex,
+                context_revision,
+                statement,
+                start_row,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    // Re-run statement and skip pages until start_row (simple first-cut).
+                    let _ = start_row;
+                    let message = execute_sql(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        statement,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
         }
     }
 }

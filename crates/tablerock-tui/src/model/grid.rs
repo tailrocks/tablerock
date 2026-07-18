@@ -279,6 +279,22 @@ impl DataGridModel {
         abs_row >= self.start_row
             && abs_row < self.start_row.saturating_add(u64::from(self.row_count))
     }
+
+    /// Absolute row just past the resident window (for FetchPage).
+    #[must_use]
+    pub fn next_fetch_start(&self) -> u64 {
+        self.start_row.saturating_add(u64::from(self.row_count))
+    }
+
+    /// Whether scrolling to `abs_row` would require a fetch (outside resident).
+    #[must_use]
+    pub fn needs_fetch(&self, abs_row: u64) -> bool {
+        !self.is_resident(abs_row)
+            && !matches!(
+                self.operation,
+                GridOperationState::Idle | GridOperationState::Failed
+            )
+    }
 }
 
 /// Project a kind label (from bridge) into a distinction class.
@@ -385,5 +401,29 @@ mod tests {
         assert!(line.contains("streaming"));
         assert!(line.contains("500"));
         assert!(line.contains("~2500"));
+    }
+
+    #[test]
+    fn needs_fetch_only_outside_resident_while_active() {
+        let mut grid = DataGridModel::default();
+        grid.replace_page(
+            0,
+            vec!["a".into()],
+            vec![ProjectedCell {
+                text: "1".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            }],
+            1,
+            GridRowTotal::Unknown,
+            1,
+            false,
+        );
+        assert!(!grid.needs_fetch(0));
+        assert!(grid.needs_fetch(1));
+        assert_eq!(grid.next_fetch_start(), 1);
+        grid.operation = GridOperationState::Idle;
+        assert!(!grid.needs_fetch(1));
     }
 }

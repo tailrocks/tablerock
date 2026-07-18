@@ -156,6 +156,14 @@ pub enum Effect {
         request_token: RequestToken,
         session_id_hex: String,
     },
+    /// Fetch another page past the resident window (scroll).
+    FetchPage {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        statement: String,
+        start_row: u64,
+    },
 }
 
 /// Helper: build a root LoadCatalog effect for the current workbench session.
