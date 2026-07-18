@@ -140,13 +140,14 @@ vs outcome are proven on trunk.
 
 ## Phase 5 — workbench foundation
 
-**Status: partial.** Plans 011–012 on trunk (evidence 217–226): TermRock
-`TextArea`/`CompletionMenu`, multiline SQL editor, dialect statement
-boundaries, revisioned completion, history, saved queries, atomic `.sql`,
-intent restore, typed browse-plan sort/filter, column layout persistence,
-six copy formats + OSC 52. Still open for full Phase 5 exit: parameters,
-find/replace, formatting, explain, VirtualGrid header geometry polish,
-Redis command editor mirror.
+**Status: mostly complete.** Plans 011–012 on trunk (evidence 217–226,
+290–294, 300–302): TermRock `TextArea`/`CompletionMenu`, multiline SQL
+editor, dialect statement boundaries, revisioned completion, history,
+saved queries, atomic `.sql`, intent restore, typed browse-plan
+sort/filter, column layout persistence, six copy formats + OSC 52, named
+params, find/replace, format SQL, explain tree, inspector type views.
+Residual polish: VirtualGrid header geometry; Redis command editor is
+mirrored via plan 015 command path.
 
 ## Phase 6 — PostgreSQL write/admin slice
 
