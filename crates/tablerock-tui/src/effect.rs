@@ -62,6 +62,28 @@ pub enum MutationChangeSpec {
     Delete {
         locator: Vec<(String, String)>,
     },
+    /// Redis HSET field/value (hex or utf8 text; engine binds as bytes).
+    RedisHashSet {
+        field: String,
+        value: String,
+    },
+    RedisHashDelete {
+        field: String,
+    },
+    RedisSetAdd {
+        member: String,
+    },
+    RedisSetRemove {
+        member: String,
+    },
+    /// Score as decimal text; CLI parses to finite f64 bits.
+    RedisZSetAdd {
+        member: String,
+        score: String,
+    },
+    RedisZSetRemove {
+        member: String,
+    },
 }
 
 /// First-version connection editor payload for create/save.

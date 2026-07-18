@@ -280,10 +280,12 @@ impl EffectExecutor {
                 table,
                 changes,
             } => {
+                let sessions = Arc::clone(&self.sessions);
                 let reviews = Arc::clone(&self.mutation_reviews);
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
                     let message = review_mutations(
+                        sessions,
                         reviews,
                         request_token,
                         session_id_hex,
@@ -2416,6 +2418,15 @@ fn mut_fields(
         .collect()
 }
 
+fn redis_bytes(s: &str) -> Result<tablerock_core::BoundedBytes, String> {
+    use tablerock_core::{BoundedBytes, ByteLimit};
+    if s.is_empty() {
+        return Err("redis field/member must be non-empty".into());
+    }
+    BoundedBytes::copy_from_slice(s.as_bytes(), ByteLimit::new(1024 * 1024))
+        .map_err(|_| "redis value exceeds bound".into())
+}
+
 fn typed_changes_from_specs(
     changes: &[tablerock_tui::effect::MutationChangeSpec],
 ) -> Result<Vec<tablerock_core::MutationChange>, String> {
@@ -2436,6 +2447,35 @@ fn typed_changes_from_specs(
             },
             MutationChangeSpec::Delete { locator } => MutationChange::DeleteRow {
                 locator: mut_fields(locator)?,
+            },
+            MutationChangeSpec::RedisHashSet { field, value } => MutationChange::RedisHashSetField {
+                field: redis_bytes(field)?,
+                value: redis_bytes(value)?,
+            },
+            MutationChangeSpec::RedisHashDelete { field } => MutationChange::RedisHashDeleteField {
+                field: redis_bytes(field)?,
+            },
+            MutationChangeSpec::RedisSetAdd { member } => MutationChange::RedisSetAddMember {
+                member: redis_bytes(member)?,
+            },
+            MutationChangeSpec::RedisSetRemove { member } => MutationChange::RedisSetRemoveMember {
+                member: redis_bytes(member)?,
+            },
+            MutationChangeSpec::RedisZSetAdd { member, score } => {
+                let score = score
+                    .trim()
+                    .parse::<f64>()
+                    .map_err(|_| "zset score must be a finite number".to_owned())?;
+                if !score.is_finite() {
+                    return Err("zset score must be finite".into());
+                }
+                MutationChange::RedisZSetAddMember {
+                    member: redis_bytes(member)?,
+                    score_bits: score.to_bits(),
+                }
+            }
+            MutationChangeSpec::RedisZSetRemove { member } => MutationChange::RedisZSetRemoveMember {
+                member: redis_bytes(member)?,
             },
         });
     }
@@ -2468,13 +2508,40 @@ fn preview_lines_from_plan(plan: &tablerock_core::MutationPlan) -> Vec<String> {
                     locator.len()
                 )
             }
-            _ => format!("{i}: other change"),
+            MutationChange::RedisSetString { .. } => {
+                format!("{i}: REDIS SET (typed plan; not executed text)")
+            }
+            MutationChange::RedisDeleteKey => {
+                format!("{i}: REDIS DEL (typed plan; not executed text)")
+            }
+            MutationChange::RedisSetExpiration(_) => {
+                format!("{i}: REDIS EXPIRE (typed plan; not executed text)")
+            }
+            MutationChange::RedisHashSetField { .. } => {
+                format!("{i}: REDIS HSET (typed plan; not executed text)")
+            }
+            MutationChange::RedisHashDeleteField { .. } => {
+                format!("{i}: REDIS HDEL (typed plan; not executed text)")
+            }
+            MutationChange::RedisSetAddMember { .. } => {
+                format!("{i}: REDIS SADD (typed plan; not executed text)")
+            }
+            MutationChange::RedisSetRemoveMember { .. } => {
+                format!("{i}: REDIS SREM (typed plan; not executed text)")
+            }
+            MutationChange::RedisZSetAddMember { .. } => {
+                format!("{i}: REDIS ZADD (typed plan; not executed text)")
+            }
+            MutationChange::RedisZSetRemoveMember { .. } => {
+                format!("{i}: REDIS ZREM (typed plan; not executed text)")
+            }
         })
         .collect()
 }
 
 /// Register a reviewed plan; returns handle for later apply (consume-once).
 async fn review_mutations(
+    sessions: Arc<Mutex<SessionRegistry>>,
     reviews: Arc<Mutex<tablerock_core::MutationReviewRegistry>>,
     request_token: RequestToken,
     session_id_hex: String,
@@ -2485,8 +2552,8 @@ async fn review_mutations(
     changes: Vec<tablerock_tui::effect::MutationChangeSpec>,
 ) -> Message {
     use tablerock_core::{
-        IdParts, MutationId, MutationPlan, MutationPlanLimits, MutationTarget, Revision,
-        ReviewTokenId, SessionId,
+        Engine as CoreEngine, IdParts, MutationId, MutationPlan, MutationPlanLimits, MutationTarget,
+        Revision, ReviewTokenId, SessionId,
     };
 
     let session_id = match session_id_hex.parse::<SessionId>() {
@@ -2498,6 +2565,17 @@ async fn review_mutations(
                 reason: FailureProjection::Label("invalid session id".into()),
             });
         }
+    };
+    let engine = {
+        let registry = sessions.lock().await;
+        registry.session(session_id).map(|s| s.engine())
+    };
+    let Some(engine) = engine else {
+        return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
     };
     let typed = match typed_changes_from_specs(&changes) {
         Ok(t) if !t.is_empty() => t,
@@ -2527,37 +2605,98 @@ async fn review_mutations(
         }
     };
     let scope = mutation_scope(session_id, context_revision);
-    let target = MutationTarget::PostgreSqlRelation {
-        database: match bt_mut(&database) {
-            Ok(v) => v,
-            Err(e) => {
-                return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
-                    request_token,
-                    context_revision,
-                    reason: FailureProjection::Label(e),
-                });
-            }
+    let target = match engine {
+        CoreEngine::PostgreSql => MutationTarget::PostgreSqlRelation {
+            database: match bt_mut(&database) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                        request_token,
+                        context_revision,
+                        reason: FailureProjection::Label(e),
+                    });
+                }
+            },
+            schema: match bt_mut(&schema) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                        request_token,
+                        context_revision,
+                        reason: FailureProjection::Label(e),
+                    });
+                }
+            },
+            relation: match bt_mut(&table) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                        request_token,
+                        context_revision,
+                        reason: FailureProjection::Label(e),
+                    });
+                }
+            },
         },
-        schema: match bt_mut(&schema) {
-            Ok(v) => v,
-            Err(e) => {
-                return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
-                    request_token,
-                    context_revision,
-                    reason: FailureProjection::Label(e),
-                });
-            }
+        CoreEngine::ClickHouse => MutationTarget::ClickHouseTable {
+            database: match bt_mut(if database.is_empty() {
+                "default"
+            } else {
+                &database
+            }) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                        request_token,
+                        context_revision,
+                        reason: FailureProjection::Label(e),
+                    });
+                }
+            },
+            table: match bt_mut(&table) {
+                Ok(v) => v,
+                Err(e) => {
+                    return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                        request_token,
+                        context_revision,
+                        reason: FailureProjection::Label(e),
+                    });
+                }
+            },
         },
-        relation: match bt_mut(&table) {
-            Ok(v) => v,
-            Err(e) => {
-                return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
-                    request_token,
-                    context_revision,
-                    reason: FailureProjection::Label(e),
-                });
+        CoreEngine::Redis => {
+            // table carries the Redis key; database is logical DB index decimal.
+            let logical = if database.is_empty() {
+                0_u32
+            } else {
+                match database.parse::<u32>() {
+                    Ok(n) => n,
+                    Err(_) => {
+                        return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                            request_token,
+                            context_revision,
+                            reason: FailureProjection::Label(
+                                "redis logical database must be u32".into(),
+                            ),
+                        });
+                    }
+                }
+            };
+            let key = match redis_bytes(&table) {
+                Ok(k) => k,
+                Err(e) => {
+                    return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                        request_token,
+                        context_revision,
+                        reason: FailureProjection::Label(e),
+                    });
+                }
+            };
+            MutationTarget::RedisKey {
+                logical_database: logical,
+                key,
             }
-        },
+        }
     };
     let plan = match MutationPlan::new(
         MutationId::from_parts(IdParts::new(1, request_token.max(1)).unwrap()).unwrap(),
@@ -5375,4 +5514,92 @@ fn dirs_next_home() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+#[cfg(test)]
+mod redis_collection_spec_tests {
+    use super::*;
+    use tablerock_core::MutationChange;
+    use tablerock_tui::effect::MutationChangeSpec;
+
+    #[test]
+    fn typed_changes_map_redis_collection_specs() {
+        let changes = typed_changes_from_specs(&[
+            MutationChangeSpec::RedisHashSet {
+                field: "f".into(),
+                value: "v".into(),
+            },
+            MutationChangeSpec::RedisHashDelete {
+                field: "f".into(),
+            },
+            MutationChangeSpec::RedisSetAdd {
+                member: "m".into(),
+            },
+            MutationChangeSpec::RedisSetRemove {
+                member: "m".into(),
+            },
+            MutationChangeSpec::RedisZSetAdd {
+                member: "z".into(),
+                score: "2.5".into(),
+            },
+            MutationChangeSpec::RedisZSetRemove {
+                member: "z".into(),
+            },
+        ])
+        .unwrap();
+        assert_eq!(changes.len(), 6);
+        assert!(matches!(
+            &changes[0],
+            MutationChange::RedisHashSetField { .. }
+        ));
+        assert!(matches!(
+            &changes[4],
+            MutationChange::RedisZSetAddMember { score_bits, .. }
+                if *score_bits == 2.5_f64.to_bits()
+        ));
+        let lines = preview_lines_from_plan(
+            // minimal plan via MutationPlan::new is heavy; exercise line labels only
+            // by building a throwaway plan
+            &{
+                use tablerock_core::{
+                    IdParts, MutationId, MutationPlan, MutationPlanLimits, MutationTarget,
+                    OperationScope, ProfileId, ContextId, SessionId, Revision, BoundedBytes,
+                    ByteLimit,
+                };
+                let scope = OperationScope::new(
+                    ProfileId::from_parts(IdParts::new(1, 1).unwrap()).unwrap(),
+                    SessionId::from_parts(IdParts::new(1, 2).unwrap()).unwrap(),
+                    ContextId::from_parts(IdParts::new(1, 3).unwrap()).unwrap(),
+                );
+                MutationPlan::new(
+                    MutationId::from_parts(IdParts::new(1, 4).unwrap()).unwrap(),
+                    scope,
+                    Revision::INITIAL,
+                    MutationTarget::RedisKey {
+                        logical_database: 0,
+                        key: BoundedBytes::copy_from_slice(b"k", ByteLimit::new(8)).unwrap(),
+                    },
+                    changes,
+                    MutationPlanLimits::new(16, 8, 4096, 4096, 60_000).unwrap(),
+                )
+                .unwrap()
+            },
+        );
+        assert!(lines.iter().any(|l| l.contains("HSET")));
+        assert!(lines.iter().any(|l| l.contains("ZADD")));
+    }
+
+    #[test]
+    fn reject_empty_and_nonfinite_zset_score() {
+        assert!(typed_changes_from_specs(&[MutationChangeSpec::RedisHashSet {
+            field: "".into(),
+            value: "v".into(),
+        }])
+        .is_err());
+        assert!(typed_changes_from_specs(&[MutationChangeSpec::RedisZSetAdd {
+            member: "z".into(),
+            score: "nan".into(),
+        }])
+        .is_err());
+    }
 }

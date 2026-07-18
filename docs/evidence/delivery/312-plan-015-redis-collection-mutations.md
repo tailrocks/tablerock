@@ -11,7 +11,8 @@ Date: 2026-07-18
 | Sequential apply (non-transactional, no rollback language) | done |
 | Debug omits payload bytes (length only) | done |
 | Core unit + Docker real apply matrix | done |
-| TUI stage/review UI for collection edits | residual |
+| TUI `MutationChangeSpec` + CLI rebuild for collection ops | done (evidence 313) |
+| TUI stage actions from key-view cells | residual |
 
 ## Decision
 
@@ -29,6 +30,6 @@ cargo test -p tablerock-engine --test redis_real applies_multi_type_collection
 
 ## Remaining work
 
-- TUI MutationChangeSpec + stage actions for hash/set/zset cells
+- TUI stage actions from hash/set/zset key-view cells (specs/CLI ready: 313)
 - Full command editor tab + pipeline outcomes UI
 - Collection next-page affordance beyond first-page preview
