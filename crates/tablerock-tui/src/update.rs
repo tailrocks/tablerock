@@ -861,6 +861,21 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.workbench_mut().inspect_cursor();
             Update::render()
         }
+        ActionId::Complete if model.screen() == Screen::Workbench => {
+            if model.workbench().completion.is_some() {
+                let _ = model.workbench_mut().commit_completion(None);
+            } else if model.workbench().active_editor().is_some() {
+                model.workbench_mut().open_completion();
+            } else {
+                return Update::unchanged();
+            }
+            Update::render()
+        }
+        ActionId::Cancel if model.screen() == Screen::Workbench && model.workbench().completion.is_some() =>
+        {
+            model.workbench_mut().dismiss_completion();
+            Update::render()
+        }
         ActionId::Save
         | ActionId::Test
         | ActionId::Connect
@@ -874,6 +889,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::RunSql
         | ActionId::CancelQuery
         | ActionId::Inspect
+        | ActionId::Complete
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -951,6 +967,7 @@ fn cycle_action(
                 ActionId::PinTab,
                 ActionId::NewSql,
                 ActionId::RunSql,
+                ActionId::Complete,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,

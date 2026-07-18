@@ -1,6 +1,7 @@
 //! Root-owned terminal presentation state.
 
 pub mod catalog;
+pub mod completion;
 pub mod editor;
 pub mod grid;
 pub mod inspector;
@@ -64,6 +65,8 @@ pub enum ActionId {
     RunSql,
     CancelQuery,
     Inspect,
+    /// Open or commit SQL completion for the active editor.
+    Complete,
     Submit,
     Cancel,
     Quit,

@@ -183,6 +183,7 @@ How to read an evidence document:
 - 216 — [TermRock TextArea audit + CompletionMenu pin](delivery/216-termrock-textarea-completionmenu.md)
 - 217 — [sqlparser adoption + statement boundaries](delivery/217-sqlparser-statement-boundaries.md)
 - 218 — [QueryEditorModel multiline SQL tab](delivery/218-query-editor-model-multiline.md)
+- 219 — [SQL completion session](delivery/219-sql-completion-session.md)
 
 ## TermRock pins
 

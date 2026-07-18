@@ -9,10 +9,11 @@ use ratatui_core::{
 use termrock::{
     interaction::HitRegion,
     widgets::{
-        Action, ActionBar, ActionBarState, Form, FormField, FormSection, FormState, GridCell,
-        GridColumn, GridRow, Panel, PanelEmphasis, StatusBar, StatusBarState, StatusSlot, Tab,
-        Tabs, TabsState, TextArea, TextAreaState, Tree, TreeNode, TreeNodeStatus, TreeState,
-        VirtualGrid, VirtualGridState, render_hint_bar,
+        Action, ActionBar, ActionBarState, CompletionCandidate, CompletionMenu, CompletionMenuSize,
+        CompletionMenuState, Form, FormField, FormSection, FormState, GridCell, GridColumn,
+        GridRow, Panel, PanelEmphasis, StatusBar, StatusBarState, StatusSlot, Tab, Tabs, TabsState,
+        TextArea, TextAreaState, Tree, TreeNode, TreeNodeStatus, TreeState, VirtualGrid,
+        VirtualGridState, render_hint_bar,
     },
 };
 
@@ -262,6 +263,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let pin_tab = action_label(model, ActionId::PinTab, "Pin");
     let new_sql = action_label(model, ActionId::NewSql, "SQL");
     let run_sql = action_label(model, ActionId::RunSql, "Run");
+    let complete = action_label(model, ActionId::Complete, "Complete");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
@@ -353,6 +355,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RunSql,
                         label: run_sql.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Complete,
+                        label: complete.as_str(),
                         enabled: true,
                         style: None,
                     },
@@ -946,6 +954,36 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
             editor_area,
             &mut ta,
         );
+        if let Some(session) = wb.completion.as_ref() {
+            let owned: Vec<(String, String, String)> = session
+                .candidates
+                .iter()
+                .map(|c| (c.id.clone(), c.label.clone(), c.kind.clone()))
+                .collect();
+            let candidates: Vec<CompletionCandidate<'_, String>> = owned
+                .iter()
+                .map(|(id, label, kind)| {
+                    CompletionCandidate::new(id.clone(), label.as_str()).kind(kind.as_str())
+                })
+                .collect();
+            let anchor = Rect {
+                x: editor_area.x.saturating_add(2),
+                y: editor_area.y.saturating_add(1),
+                width: 1,
+                height: 1,
+            };
+            let mut menu_state =
+                CompletionMenuState::new(session.selected_id.clone());
+            frame.render_stateful_widget(
+                &CompletionMenu::new(&candidates, &model.theme, editor_area, anchor)
+                    .preferred_size(CompletionMenuSize {
+                        width: 36,
+                        height: 8,
+                    }),
+                editor_area,
+                &mut menu_state,
+            );
+        }
         if results_area.height > 0 {
             if let Some(grid) = wb.active_grid() {
                 render_data_grid(model, frame, results_area, grid);

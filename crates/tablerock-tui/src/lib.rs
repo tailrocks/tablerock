@@ -20,6 +20,7 @@ pub use model::grid::{
     CellDistinction, DataGridModel, GridOperationState, GridRowTotal, ProjectedCell,
     distinction_from_kind_label,
 };
+pub use model::completion::{CompletionCandidateView, CompletionSession, StaleCompletion};
 pub use model::query_editor::{QueryEditorModel, StatementSpanView};
 pub use model::{
     ActionId, FocusRegion, LayoutMode, Model, PasswordPrompt, Screen, ScrollDirection,

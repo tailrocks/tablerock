@@ -1,6 +1,7 @@
 //! Workbench shell submodel (TableRock-local; TermRock widgets render it).
 
 use super::catalog::CatalogModel;
+use super::completion::CompletionSession;
 use super::grid::DataGridModel;
 use super::inspector::InspectorModel;
 use super::query_editor::QueryEditorModel;
@@ -97,6 +98,8 @@ pub struct WorkbenchModel {
     /// Engine kind string for catalog root request mapping.
     pub engine_kind: String,
     pub inspector: InspectorModel,
+    /// Open completion popup for the active SQL editor, if any.
+    pub completion: Option<CompletionSession>,
 }
 
 impl Default for WorkbenchModel {
@@ -133,6 +136,7 @@ impl Default for WorkbenchModel {
             catalog: CatalogModel::Idle,
             engine_kind: "PostgreSQL".into(),
             inspector: InspectorModel::default(),
+            completion: None,
         }
     }
 }
@@ -247,6 +251,65 @@ impl WorkbenchModel {
         self.tabs
             .get_mut(self.selected_tab)
             .and_then(|t| t.editor.as_mut())
+    }
+
+    /// Open or refresh completion from the active editor + catalog.
+    pub fn open_completion(&mut self) {
+        let Some(editor) = self.active_editor() else {
+            self.completion = None;
+            return;
+        };
+        // Clone facts for pure build without dual borrow.
+        let editor = editor.clone();
+        let catalog = self.catalog.clone();
+        let context_revision = self.context_revision;
+        self.completion = Some(super::completion::build_session(
+            &editor,
+            &catalog,
+            context_revision,
+        ));
+    }
+
+    pub fn dismiss_completion(&mut self) {
+        self.completion = None;
+    }
+
+    /// Commit selected (or named) candidate when still fresh.
+    pub fn commit_completion(&mut self, candidate_id: Option<&str>) -> bool {
+        let Some(session) = self.completion.clone() else {
+            return false;
+        };
+        let id = candidate_id
+            .map(str::to_owned)
+            .or_else(|| session.selected_id.clone());
+        let Some(id) = id else {
+            return false;
+        };
+        let catalog_rev = super::completion::catalog_revision(&self.catalog);
+        let context_revision = self.context_revision;
+        let Some(editor) = self.active_editor_mut() else {
+            self.completion = None;
+            return false;
+        };
+        match super::completion::commit_candidate(
+            editor,
+            &session,
+            &id,
+            context_revision,
+            catalog_rev,
+        ) {
+            Ok(()) => {
+                if let Some(tab) = self.tabs.get_mut(self.selected_tab) {
+                    tab.dirty = true;
+                }
+                self.completion = None;
+                true
+            }
+            Err(_) => {
+                self.completion = None;
+                false
+            }
+        }
     }
 
     pub fn active_grid_mut(&mut self) -> Option<&mut DataGridModel> {
