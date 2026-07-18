@@ -646,6 +646,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let filt_not_empty = action_label(model, ActionId::FilterNotEmpty, "NotEmpty");
     let filt_loc = action_label(model, ActionId::FilterByLocator, "FiltLoc");
     let filt_pop = action_label(model, ActionId::RemoveLastFilter, "PopFilt");
+    let filt_shift = action_label(model, ActionId::RemoveFirstFilter, "ShiftFilt");
     let filt_col = action_label(model, ActionId::RemoveColumnFilters, "ClrColF");
     let filt_like = action_label(model, ActionId::FilterLike, "Like");
     let filt_ilike = action_label(model, ActionId::FilterILike, "ILike");
@@ -1020,6 +1021,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RemoveLastFilter,
                         label: filt_pop.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RemoveFirstFilter,
+                        label: filt_shift.as_str(),
                         enabled: true,
                         style: None,
                     },

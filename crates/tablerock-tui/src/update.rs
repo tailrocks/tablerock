@@ -4001,6 +4001,16 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::RemoveFirstFilter if model.screen() == Screen::Workbench => {
+            let removed = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.remove_first_filter());
+            if !removed {
+                return Update::unchanged();
+            }
+            rebrowse_active_table(model)
+        }
         ActionId::RemoveColumnFilters if model.screen() == Screen::Workbench => {
             let Some(col) = model
                 .workbench()
@@ -5224,6 +5234,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::FilterNotEmpty
         | ActionId::FilterByLocator
         | ActionId::RemoveLastFilter
+        | ActionId::RemoveFirstFilter
         | ActionId::RemoveColumnFilters
         | ActionId::FilterLike
         | ActionId::FilterILike
@@ -6927,6 +6938,7 @@ fn cycle_action(
                 ActionId::FilterNotEmpty,
                 ActionId::FilterByLocator,
                 ActionId::RemoveLastFilter,
+                ActionId::RemoveFirstFilter,
                 ActionId::RemoveColumnFilters,
                 ActionId::FilterLike,
                 ActionId::FilterILike,

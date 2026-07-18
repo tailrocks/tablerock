@@ -188,6 +188,8 @@ pub enum ActionId {
     InvertAllSort,
     /// Remove the last server filter chip and re-browse.
     RemoveLastFilter,
+    /// Remove the oldest server filter chip and re-browse.
+    RemoveFirstFilter,
     /// Remove all server filters for the cursor column and re-browse.
     RemoveColumnFilters,
     /// Add LIKE filter for cursor column using cell text with % wildcards.

@@ -1416,6 +1416,15 @@ impl DataGridModel {
         self.filters.pop().is_some()
     }
 
+    /// Remove the oldest server filter chip. Returns true if one was removed.
+    pub fn remove_first_filter(&mut self) -> bool {
+        if self.filters.is_empty() {
+            return false;
+        }
+        self.filters.remove(0);
+        true
+    }
+
     /// Remove all server filters for a column name (keeps sort/raw_where).
     pub fn remove_filters_for_column(&mut self, column: &str) -> usize {
         let before = self.filters.len();
@@ -2510,6 +2519,17 @@ mod tests {
         assert!(g.remove_last_filter());
         assert!(g.filters.is_empty());
         assert!(!g.remove_last_filter());
+        g.add_filter_chip("x", "eq", Some("1".into()));
+        g.add_filter_chip("y", "eq", Some("2".into()));
+        g.add_filter_chip("z", "eq", Some("3".into()));
+        assert!(g.remove_first_filter());
+        assert_eq!(g.filters.len(), 2);
+        assert_eq!(g.filters[0].column, "y");
+        assert_eq!(g.filters[1].column, "z");
+        assert!(g.remove_first_filter());
+        assert_eq!(g.filters[0].column, "z");
+        assert!(g.remove_first_filter());
+        assert!(!g.remove_first_filter());
     }
 
     #[test]
