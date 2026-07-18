@@ -776,6 +776,32 @@ impl DataGridModel {
             .unwrap_or_else(ProjectedCell::pending)
     }
 
+    /// Presentation texts for one staged insert draft across `visible` columns.
+    ///
+    /// Glyph `+` marks inserted rows (never color alone). Empty values show `∅`.
+    #[must_use]
+    pub fn insert_row_display(&self, draft_id: u64, visible: &[String]) -> Option<Vec<String>> {
+        let insert = self.drafts.inserts.iter().find(|i| i.draft_id == draft_id)?;
+        Some(
+            visible
+                .iter()
+                .map(|name| {
+                    let val = insert
+                        .values
+                        .iter()
+                        .find(|(c, _)| c == name)
+                        .map(|(_, v)| v.as_str())
+                        .unwrap_or("");
+                    if val.is_empty() {
+                        "+ ∅".into()
+                    } else {
+                        format!("+ {val}")
+                    }
+                })
+                .collect(),
+        )
+    }
+
     /// Presentation text for VirtualGrid paint: live edit buffer, staged
     /// overlays, and draft markers (text+glyph; never color alone).
     #[must_use]
@@ -2153,6 +2179,30 @@ mod tests {
         assert!(panel.contains("1. "), "{panel}");
         g.clear_notices();
         assert!(g.notice_history.is_empty());
+    }
+
+    #[test]
+    fn insert_row_display_marks_plus_glyph() {
+        use tablerock_core::ProfileSafetyMode;
+
+        let mut grid = DataGridModel::default();
+        grid.columns = vec!["id".into(), "name".into()];
+        grid.base_schema = Some("public".into());
+        grid.base_table = Some("users".into());
+        grid.identity_columns = vec!["id".into()];
+        grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+        let id = grid.stage_insert_blank().unwrap();
+        let vis = vec!["id".into(), "name".into()];
+        let texts = grid.insert_row_display(id, &vis).unwrap();
+        assert_eq!(texts, vec!["+ ∅".to_owned(), "+ ∅".to_owned()]);
+        assert!(grid.drafts.replace_insert_values(
+            id,
+            vec![("id".into(), "1".into()), ("name".into(), "ada".into())]
+        ));
+        let texts = grid.insert_row_display(id, &vis).unwrap();
+        assert_eq!(texts[0], "+ 1");
+        assert_eq!(texts[1], "+ ada");
+        assert!(grid.insert_row_display(99, &vis).is_none());
     }
 
     #[test]

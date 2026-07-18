@@ -2416,7 +2416,11 @@ fn render_data_grid(
     let body_rows = u64::from(area.height.saturating_sub(1).max(1));
     let first = grid.viewport_row.max(grid.start_row);
     let mut owned_rows: Vec<Vec<String>> = Vec::new();
-    for slot in 0..body_rows {
+    let mut row_abs: Vec<u64> = Vec::new();
+    // Reserve space for staged insert drafts at the foot of the viewport.
+    let insert_slots = grid.drafts.inserts.len().min(body_rows as usize) as u64;
+    let resident_slots = body_rows.saturating_sub(insert_slots);
+    for slot in 0..resident_slots {
         let abs = first.saturating_add(slot);
         let mut texts = Vec::with_capacity(visible.len());
         for name in &visible {
@@ -2425,6 +2429,16 @@ fn render_data_grid(
             texts.push(grid.cell_display_at(abs, col));
         }
         owned_rows.push(texts);
+        row_abs.push(abs);
+    }
+    // Paint staged inserts as synthetic + rows (presentation only; not resident).
+    // Use high abs keys so they never collide with real page rows.
+    for (i, insert) in grid.drafts.inserts.iter().enumerate().take(insert_slots as usize) {
+        if let Some(texts) = grid.insert_row_display(insert.draft_id, &visible) {
+            owned_rows.push(texts);
+            // Synthetic absolute keys: top of u64 range − draft_id.
+            row_abs.push(u64::MAX.saturating_sub(insert.draft_id).saturating_sub(i as u64));
+        }
     }
     let mut cell_bufs: Vec<Vec<GridCell<'_>>> = Vec::new();
     for texts in &owned_rows {
@@ -2445,17 +2459,21 @@ fn render_data_grid(
         .iter()
         .enumerate()
         .map(|(i, cells)| {
-            let abs = first.saturating_add(i as u64);
+            let abs = row_abs.get(i).copied().unwrap_or(first.saturating_add(i as u64));
             GridRow::new(abs, abs, cells.as_slice())
         })
         .collect();
     let total = match grid.totals {
         crate::model::grid::GridRowTotal::Exact(n)
-        | crate::model::grid::GridRowTotal::Estimated(n) => n.max(grid.rows_loaded),
+        | crate::model::grid::GridRowTotal::Estimated(n) => {
+            n.max(grid.rows_loaded)
+                .saturating_add(grid.drafts.inserts.len() as u64)
+        }
         crate::model::grid::GridRowTotal::Unknown => grid
             .start_row
             .saturating_add(u64::from(grid.row_count))
-            .saturating_add(body_rows),
+            .saturating_add(body_rows)
+            .saturating_add(grid.drafts.inserts.len() as u64),
     };
     let mut state = VirtualGridState::new();
     state.set_focused(model.focus() == Some(FocusRegion::Content));
