@@ -3693,6 +3693,32 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyColumnIdents if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let names = grid.visible_columns();
+            if names.is_empty() {
+                return Update::unchanged();
+            }
+            let text = names
+                .iter()
+                .map(|c| quote_ident_sql(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied {} column idents", names.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyHiddenColumnNames if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5724,6 +5750,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyRowSqlUpdate
         | ActionId::CopyPick
         | ActionId::CopyColumnNames
+        | ActionId::CopyColumnIdents
         | ActionId::CopyHiddenColumnNames
         | ActionId::CopyColumnName
         | ActionId::CopyColumnIdent
@@ -7472,6 +7499,7 @@ fn cycle_action(
                 ActionId::CopyRowSqlUpdate,
                 ActionId::CopyPick,
                 ActionId::CopyColumnNames,
+                ActionId::CopyColumnIdents,
                 ActionId::CopyHiddenColumnNames,
                 ActionId::CopyColumnName,
                 ActionId::CopyColumnIdent,
@@ -9371,6 +9399,43 @@ mod tests {
                 assert!(text.contains("width") || text.contains("16"), "{text}");
             }
             other => panic!("expected layout json copy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copy_column_idents_visible_quoted() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into(), "age".into()];
+            grid.cursor_col = 0;
+            assert!(grid.solo_cursor_column()); // only id visible
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyColumnIdents);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, r#""id""#);
+            }
+            other => panic!("expected visible column idents, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            assert!(grid.show_all_columns());
+        }
+        model.set_action(ActionId::CopyColumnIdents);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, r#""id", "name", "age""#);
+            }
+            other => panic!("expected all column idents, got {other:?}"),
         }
     }
 

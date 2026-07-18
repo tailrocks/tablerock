@@ -152,6 +152,8 @@ pub enum ActionId {
     CopyPick,
     /// Copy visible column names (tab-separated) to clipboard.
     CopyColumnNames,
+    /// Copy visible column names as SQL-quoted idents (comma-separated).
+    CopyColumnIdents,
     /// Copy hidden column names (tab-separated) to clipboard.
     CopyHiddenColumnNames,
     /// Copy the cursor column name to clipboard.
