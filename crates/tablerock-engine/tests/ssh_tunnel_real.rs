@@ -1,4 +1,5 @@
-//! Real SSH bastion proof: password auth + direct-tcpip toward PostgreSQL.
+//! Real SSH bastion proofs: password auth, known_hosts, local-forward to
+//! PostgreSQL / ClickHouse / Redis drivers (drivers remain SSH-unaware).
 //!
 //! Bastion is alpine+openssh with AllowTcpForwarding (linuxserver image
 //! hard-disables TCP forwarding).
@@ -7,9 +8,11 @@ use std::path::PathBuf;
 
 use tablerock_core::{BoundedText, ByteLimit};
 use tablerock_engine::{
-    LocalForwardTunnel, PostgresConnectConfig, PostgresSession, PostgresTlsMode, SshHostKeyPolicy,
-    SshPasswordAuth, SshTunnelConfig, SshTunnelError, channel_stream, connect_session,
-    connect_session_capture_host_key, learn_host_key, open_direct_tcpip,
+    ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
+    LocalForwardTunnel, PostgresConnectConfig, PostgresSession, PostgresTlsMode,
+    RedisConnectConfig, RedisConnectionSecurity, RedisProtocol, RedisSession, RedisTlsMode,
+    SshHostKeyPolicy, SshPasswordAuth, SshTunnelConfig, SshTunnelError, channel_stream,
+    connect_session, connect_session_capture_host_key, learn_host_key, open_direct_tcpip,
     open_local_forward_tunnel, spawn_local_forward,
 };
 use testcontainers::{
@@ -38,21 +41,71 @@ CFG
 exec /usr/sbin/sshd -D -e
 "#;
 
-async fn start_bastion_and_pg() -> (
-    testcontainers::ContainerAsync<GenericImage>,
-    testcontainers::ContainerAsync<GenericImage>,
-    String,
-    u16,
-) {
-    // Unique per call so parallel tests do not collide on container names.
-    let tag = format!(
+fn unique_tag() -> String {
+    format!(
         "{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0)
-    );
+    )
+}
+
+async fn start_bastion_on_network(
+    network: &str,
+) -> (testcontainers::ContainerAsync<GenericImage>, u16) {
+    let ssh = GenericImage::new("alpine", "3.21")
+        .with_exposed_port(22.tcp())
+        .with_wait_for(WaitFor::message_on_stderr("Server listening on 0.0.0.0 port 22"))
+        .with_entrypoint("sh")
+        .with_cmd(["-c", SSHD_BOOTSTRAP])
+        .with_network(network)
+        .start()
+        .await
+        .expect("alpine sshd bastion");
+    let ssh_port = ssh.get_host_port_ipv4(22.tcp()).await.unwrap();
+    (ssh, ssh_port)
+}
+
+fn accept_any_config(ssh_port: u16) -> SshTunnelConfig {
+    SshTunnelConfig {
+        bastion_host: "127.0.0.1".into(),
+        bastion_port: ssh_port,
+        auth: SshPasswordAuth::new("root", "tunnel-pass"),
+        host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
+    }
+}
+
+async fn open_tunnel_retry(
+    config: &SshTunnelConfig,
+    target: &str,
+    target_port: u16,
+) -> LocalForwardTunnel {
+    let mut tunnel = None;
+    for _ in 0..40 {
+        match open_local_forward_tunnel(config, target, target_port).await {
+            Ok(t) => {
+                tunnel = Some(t);
+                break;
+            }
+            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
+        }
+    }
+    tunnel.expect("local forward tunnel")
+}
+
+fn bt(s: &str) -> BoundedText {
+    BoundedText::copy_from_str(s, ByteLimit::new(253)).unwrap()
+}
+
+async fn start_bastion_and_pg() -> (
+    testcontainers::ContainerAsync<GenericImage>,
+    testcontainers::ContainerAsync<GenericImage>,
+    String,
+    u16,
+) {
+    let tag = unique_tag();
     let network = format!("tablerock-ssh-{tag}");
     let pg_name = format!("tablerock-pg-{tag}");
 
@@ -68,16 +121,7 @@ async fn start_bastion_and_pg() -> (
         .await
         .expect("postgres container");
 
-    let ssh = GenericImage::new("alpine", "3.21")
-        .with_exposed_port(22.tcp())
-        .with_wait_for(WaitFor::message_on_stderr("Server listening on 0.0.0.0 port 22"))
-        .with_entrypoint("sh")
-        .with_cmd(["-c", SSHD_BOOTSTRAP])
-        .with_network(network.as_str())
-        .start()
-        .await
-        .expect("alpine sshd bastion");
-    let ssh_port = ssh.get_host_port_ipv4(22.tcp()).await.unwrap();
+    let (ssh, ssh_port) = start_bastion_on_network(network.as_str()).await;
     (postgres, ssh, pg_name, ssh_port)
 }
 
@@ -229,29 +273,10 @@ async fn known_hosts_fail_closed_and_accept_learned_key() {
 #[tokio::test]
 async fn postgres_driver_connects_through_local_forward_only() {
     let (_postgres, _ssh, pg_name, ssh_port) = start_bastion_and_pg().await;
+    let config = accept_any_config(ssh_port);
+    let tunnel = open_tunnel_retry(&config, pg_name.as_str(), 5432).await;
 
-    let config = SshTunnelConfig {
-        bastion_host: "127.0.0.1".into(),
-        bastion_port: ssh_port,
-        auth: SshPasswordAuth::new("root", "tunnel-pass"),
-        host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
-    };
-
-    let mut tunnel = None;
-    for _ in 0..40 {
-        match open_local_forward_tunnel(&config, pg_name.as_str(), 5432).await {
-            Ok(t) => {
-                tunnel = Some(t);
-                break;
-            }
-            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
-        }
-    }
-    let tunnel = tunnel.expect("local forward tunnel");
-
-    // Driver sees only the local endpoint — no bastion credentials.
-    let host = BoundedText::copy_from_str(LocalForwardTunnel::local_host(), ByteLimit::new(253))
-        .unwrap();
+    let host = bt(LocalForwardTunnel::local_host());
     let database = BoundedText::copy_from_str("postgres", ByteLimit::new(128)).unwrap();
     let user = BoundedText::copy_from_str("postgres", ByteLimit::new(128)).unwrap();
     let pg = PostgresConnectConfig::new(
@@ -264,18 +289,95 @@ async fn postgres_driver_connects_through_local_forward_only() {
     let session = PostgresSession::connect(&pg)
         .await
         .expect("PostgresSession via SSH local forward");
-    session
-        .health_check()
-        .await
-        .expect("health through tunnel");
+    session.health_check().await.expect("health through tunnel");
     let describe = session
         .describe_server()
         .await
         .expect("describe_server through tunnel");
-    assert!(
-        !describe.identity().is_empty(),
-        "server identity must flow through tunnel"
-    );
+    assert!(!describe.identity().is_empty());
     session.shutdown().await.ok();
+    drop(tunnel);
+}
+
+#[tokio::test]
+async fn clickhouse_driver_connects_through_local_forward_only() {
+    let tag = unique_tag();
+    let network = format!("tablerock-ssh-ch-{tag}");
+    let ch_name = format!("tablerock-ch-{tag}");
+    let image =
+        "26.3.17.4-jammy@sha256:158dcce6f6fdc59309650aad6b79484abf4eed07d4e0bdba31d732e64b5a25fb";
+    let _ch = GenericImage::new("clickhouse", image)
+        .with_exposed_port(8123.tcp())
+        .with_env_var("CLICKHOUSE_SKIP_USER_SETUP", "1")
+        .with_network(network.as_str())
+        .with_container_name(ch_name.as_str())
+        .start()
+        .await
+        .expect("clickhouse container");
+    let (_ssh, ssh_port) = start_bastion_on_network(network.as_str()).await;
+    let config = accept_any_config(ssh_port);
+    let tunnel = open_tunnel_retry(&config, ch_name.as_str(), 8123).await;
+
+    let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
+        bt(LocalForwardTunnel::local_host()),
+        tunnel.local_port(),
+        BoundedText::copy_from_str("default", ByteLimit::new(128)).unwrap(),
+        BoundedText::copy_from_str("default", ByteLimit::new(128)).unwrap(),
+        ClickHouseTlsMode::Disable,
+        ClickHouseCompression::None,
+    ));
+    let described = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            match session.describe_server().await {
+                Ok(d) => break d,
+                Err(_) => tokio::time::sleep(std::time::Duration::from_millis(100)).await,
+            }
+        }
+    })
+    .await
+    .expect("CH describe timeout through tunnel");
+    assert!(!described.identity().is_empty());
+    drop(tunnel);
+}
+
+#[tokio::test]
+async fn redis_driver_connects_through_local_forward_only() {
+    let tag = unique_tag();
+    let network = format!("tablerock-ssh-redis-{tag}");
+    let redis_name = format!("tablerock-redis-{tag}");
+    let _redis = GenericImage::new("redis", "8.8.0")
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .with_network(network.as_str())
+        .with_container_name(redis_name.as_str())
+        .start()
+        .await
+        .expect("redis container");
+    let (_ssh, ssh_port) = start_bastion_on_network(network.as_str()).await;
+    let config = accept_any_config(ssh_port);
+    let tunnel = open_tunnel_retry(&config, redis_name.as_str(), 6379).await;
+
+    let session = RedisSession::connect(
+        &RedisConnectConfig::new(
+            bt(LocalForwardTunnel::local_host()),
+            tunnel.local_port(),
+            0,
+            RedisProtocol::Resp3,
+            RedisTlsMode::Disable,
+        ),
+        RedisConnectionSecurity::new(),
+    )
+    .await
+    .expect("RedisSession via SSH local forward");
+    session.health_check().await.expect("redis health through tunnel");
+    let described = session
+        .describe_server()
+        .await
+        .expect("redis describe through tunnel");
+    assert!(
+        described.identity().to_ascii_lowercase().contains("redis"),
+        "{}",
+        described.identity()
+    );
     drop(tunnel);
 }
