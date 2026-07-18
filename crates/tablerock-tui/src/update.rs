@@ -3365,6 +3365,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::RefreshTable if model.screen() == Screen::Workbench => {
+            rebrowse_active_table(model)
+        }
         ActionId::ToggleColumn if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -4048,6 +4051,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::SaveFilter
         | ActionId::ApplyFilter
         | ActionId::ClearFilters
+        | ActionId::RefreshTable
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
         | ActionId::SaveColumns
@@ -5325,6 +5329,7 @@ fn cycle_action(
                 ActionId::SaveFilter,
                 ActionId::ApplyFilter,
                 ActionId::ClearFilters,
+                ActionId::RefreshTable,
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
                 ActionId::SaveColumns,
@@ -6831,6 +6836,42 @@ mod tests {
             grid.error_label.as_deref(),
             Some("notice: NOTICE: table-rock-notice")
         );
+    }
+
+    #[test]
+    fn refresh_table_rebrowses_keeping_filters() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("users");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.add_filter_chip("status", "eq", Some("open".into()));
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::RefreshTable);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::BrowseTable {
+                schema,
+                table,
+                filters,
+                ..
+            }) => {
+                assert_eq!(schema, "public");
+                assert_eq!(table, "users");
+                assert_eq!(filters.len(), 1);
+                assert_eq!(filters[0].0, "status");
+            }
+            other => panic!("expected BrowseTable, got {other:?}"),
+        }
     }
 
     #[test]

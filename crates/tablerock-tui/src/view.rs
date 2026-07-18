@@ -584,6 +584,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let save_intent = action_label(model, ActionId::SaveIntent, "SaveIntent");
     let save_filter = action_label(model, ActionId::SaveFilter, "SaveFilt");
     let apply_filter = action_label(model, ActionId::ApplyFilter, "LoadFilt");
+    let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
     let col_narrow = action_label(model, ActionId::NarrowColumn, "Col-");
@@ -840,6 +841,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ApplyFilter,
                         label: apply_filter.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RefreshTable,
+                        label: refresh.as_str(),
                         enabled: true,
                         style: None,
                     },

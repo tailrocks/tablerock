@@ -120,6 +120,8 @@ pub enum ActionId {
     ApplyFilter,
     /// Clear server filters/sort and re-browse.
     ClearFilters,
+    /// Re-browse the active base table (keep sort/filters).
+    RefreshTable,
     /// Toggle visibility of the cursor column.
     ToggleColumn,
     /// Reset column layout to defaults.
