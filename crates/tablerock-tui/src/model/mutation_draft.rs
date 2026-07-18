@@ -625,4 +625,44 @@ mod tests {
         assert!(panel.contains("name"), "{panel}");
         assert!(panel.contains("delete"), "{panel}");
     }
+
+    #[test]
+    fn markers_and_cell_values_track_staged_state() {
+        let mut draft = MutationDraftModel::new();
+        draft.apply_editability(&editable());
+        assert!(draft.stage_cell_edit(cell(5, "name", "old", "new")));
+        assert!(draft.stage_delete(StagedDelete {
+            abs_row: 9,
+            locator: vec![DraftLocatorField {
+                column: "id".into(),
+                original_text: "9".into(),
+            }],
+        }));
+
+        // Row markers.
+        assert_eq!(draft.row_marker(5), DraftMarker::Modified);
+        assert_eq!(draft.row_marker(9), DraftMarker::Deleted);
+        assert_eq!(draft.row_marker(1), DraftMarker::Unchanged);
+
+        // Cell markers (deleted row reports Deleted for any column).
+        assert_eq!(draft.cell_marker(5, "name"), DraftMarker::Modified);
+        assert_eq!(draft.cell_marker(5, "other"), DraftMarker::Unchanged);
+        assert_eq!(draft.cell_marker(9, "name"), DraftMarker::Deleted);
+
+        // Original/staged value retrieval.
+        assert_eq!(draft.original_for_cell(5, "name"), Some("old"));
+        assert_eq!(draft.staged_for_cell(5, "name"), Some("new"));
+        assert_eq!(draft.staged_for_cell(5, "other"), None);
+        assert_eq!(draft.original_for_cell(9, "name"), None);
+
+        // Status suffix summarizes counts: 1 cell edit, 0 inserts, 1 delete.
+        assert_eq!(draft.status_suffix(), " · staged 2 (0↑ 1· 1↓)");
+
+        // Discarding all clears markers and the status suffix.
+        draft.discard_all();
+        assert!(draft.is_empty());
+        assert!(draft.status_suffix().is_empty());
+        assert_eq!(draft.row_marker(5), DraftMarker::Unchanged);
+        assert_eq!(draft.cell_marker(9, "name"), DraftMarker::Unchanged);
+    }
 }
