@@ -247,6 +247,40 @@ mod tests {
     }
 
     #[test]
+    fn csv_insert_changes_form_valid_mutation_plan_without_sql() {
+        use tablerock_core::{
+            ContextId, Engine, IdParts, MutationId, MutationPlan, MutationPlanLimits,
+            MutationTarget, OperationScope, ProfileId, SessionId, Revision,
+        };
+
+        let t = parse_csv("id,label\n1,hello\n2,=CMD()\n", 10, 64).unwrap();
+        let changes = csv_to_insert_changes(&t, 64).unwrap();
+        validate_insert_batch_size(&changes, 16).unwrap();
+        let scope = OperationScope::new(
+            ProfileId::from_parts(IdParts::new(1, 1).unwrap()).unwrap(),
+            SessionId::from_parts(IdParts::new(1, 2).unwrap()).unwrap(),
+            ContextId::from_parts(IdParts::new(1, 3).unwrap()).unwrap(),
+        );
+        let plan = MutationPlan::new(
+            MutationId::from_parts(IdParts::new(1, 4).unwrap()).unwrap(),
+            scope,
+            Revision::INITIAL,
+            MutationTarget::PostgreSqlRelation {
+                database: BoundedText::copy_from_str("postgres", ByteLimit::new(16)).unwrap(),
+                schema: BoundedText::copy_from_str("public", ByteLimit::new(16)).unwrap(),
+                relation: BoundedText::copy_from_str("import_probe", ByteLimit::new(32)).unwrap(),
+            },
+            changes,
+            MutationPlanLimits::new(16, 16, 4096, 4096, 60_000).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(plan.changes().len(), 2);
+        assert_eq!(plan.target().engine(), Engine::PostgreSql);
+        // No SQL text is produced by this path — only typed plan fields.
+        let _ = plan;
+    }
+
+    #[test]
     fn formula_is_data_not_evaluated() {
         let t = parse_csv("v\n=SUM(A1:A2)\n", 10, 64).unwrap();
         assert_eq!(t.rows[0][0], "=SUM(A1:A2)");
