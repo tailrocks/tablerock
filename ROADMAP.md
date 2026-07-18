@@ -180,8 +180,9 @@ Never present ClickHouse mutations as transactions.
 keys action, type/list/stream views, INFO snapshot, command
 tokenizer/classifier, sequential SET/DEL/HSET/HDEL/SADD/SREM/ZADD/ZREM
 apply, KEYS ban, SCAN MATCH + HSCAN/SSCAN/ZSCAN first-page key views,
-key-view stage RAdd/RRem → review/apply, RMore collection pages (evidence
-311–315). Residual: command editor tab/pipelines.
+key-view stage RAdd/RRem → review/apply, RMore collection pages, command
+editor sequential pipeline with per-command ok/err (evidence 311–316).
+Residual: official command-metadata completion table (license gate).
 
 Deliver logical database isolation, SCAN navigation, namespaces, byte-safe
 keys/values, type views, TTL, bounded server overview, command

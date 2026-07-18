@@ -472,6 +472,24 @@ pub struct RedisInfoSnapshot {
     pub sampled_at_ms: u64,
 }
 
+/// One pre-tokenized command for sequential pipeline execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RedisPipelineCommand {
+    pub name: String,
+    pub args: Vec<Vec<u8>>,
+}
+
+/// One sequential pipeline line outcome (no MULTI/EXEC semantics).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RedisPipelineOutcome {
+    pub ordinal: u32,
+    /// Command name + arg count only (never arg payloads).
+    pub summary: String,
+    pub ok: bool,
+    /// Bounded display of result or error.
+    pub detail: String,
+}
+
 /// One stream entry for read-only stream key views.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RedisStreamEntry {
@@ -1839,6 +1857,62 @@ impl RedisSession {
         cmd.query_async(&mut connection)
             .await
             .map_err(map_command_error)
+    }
+
+    /// Sequential non-transactional pipeline (no MULTI/EXEC).
+    ///
+    /// Blocking names fail that line only; later lines still run. Display
+    /// details are length-bounded. KEYS is not used for browse — only if the
+    /// operator explicitly tokenized it into `commands`.
+    pub async fn execute_pipeline(
+        &self,
+        commands: &[RedisPipelineCommand],
+    ) -> Result<Vec<RedisPipelineOutcome>, RedisError> {
+        const MAX_LINES: usize = 64;
+        const MAX_DETAIL_BYTES: u64 = 4_096;
+        if commands.len() > MAX_LINES {
+            return Err(RedisError::InvalidLimits);
+        }
+        let mut outcomes = Vec::with_capacity(commands.len());
+        for (i, command) in commands.iter().enumerate() {
+            let upper = command.name.to_ascii_uppercase();
+            if upper.is_empty() {
+                continue;
+            }
+            let summary = format!(
+                "{upper} ({} arg{})",
+                command.args.len(),
+                if command.args.len() == 1 { "" } else { "s" }
+            );
+            match self.execute_command_argv(&upper, &command.args).await {
+                Ok(value) => {
+                    let detail = value_as_utf8_lossy_bounded(&value, MAX_DETAIL_BYTES);
+                    outcomes.push(RedisPipelineOutcome {
+                        ordinal: (i + 1) as u32,
+                        summary,
+                        ok: true,
+                        detail,
+                    });
+                }
+                Err(RedisError::InvalidMutation) => {
+                    outcomes.push(RedisPipelineOutcome {
+                        ordinal: (i + 1) as u32,
+                        summary,
+                        ok: false,
+                        detail: "blocking command denied on shared session".into(),
+                    });
+                }
+                Err(error) => {
+                    outcomes.push(RedisPipelineOutcome {
+                        ordinal: (i + 1) as u32,
+                        summary,
+                        ok: false,
+                        detail: error.to_string(),
+                    });
+                }
+            }
+        }
+        Ok(outcomes)
     }
 
     /// Bounded INFO snapshot as (section_or_key, value) lines with sample time.

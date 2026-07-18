@@ -263,16 +263,17 @@ impl WorkbenchModel {
         self.selected_tab = self.tabs.len() - 1;
     }
 
-    /// Open a multiline SQL editor tab (TermRock TextArea in the view).
+    /// Open a multiline SQL / Redis command editor tab (TermRock TextArea).
     pub fn open_sql_tab(&mut self) {
-        let dialect = match self.engine_kind.as_str() {
-            "ClickHouse" => SqlDialect::ClickHouse,
-            _ => SqlDialect::PostgreSql,
+        let (dialect, title) = match self.engine_kind.as_str() {
+            "ClickHouse" => (SqlDialect::ClickHouse, "SQL"),
+            "Redis" => (SqlDialect::PostgreSql, "Redis"), // text editor; no SQL parse path
+            _ => (SqlDialect::PostgreSql, "SQL"),
         };
         let id = self.tabs.iter().map(|t| t.id).max().unwrap_or(0) + 1;
         self.tabs.push(WorkbenchTab {
             id,
-            title: "SQL".into(),
+            title: title.into(),
             dirty: false,
             running: false,
             preview: false,

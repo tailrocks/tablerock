@@ -2823,6 +2823,69 @@ async fn seed(port: u16) {
 }
 
 #[tokio::test]
+async fn executes_sequential_pipeline_without_multi_exec() {
+    use tablerock_engine::{RedisPipelineCommand, RedisPipelineOutcome};
+
+    let container = GenericImage::new("redis", "8.8.0")
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let session = RedisSession::connect(
+        &RedisConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            0,
+            RedisProtocol::Resp3,
+            RedisTlsMode::Disable,
+        ),
+        RedisConnectionSecurity::new(),
+    )
+    .await
+    .unwrap();
+    let outcomes = session
+        .execute_pipeline(&[
+            RedisPipelineCommand {
+                name: "SET".into(),
+                args: vec![b"pipe-k".to_vec(), b"v1".to_vec()],
+            },
+            RedisPipelineCommand {
+                name: "GET".into(),
+                args: vec![b"pipe-k".to_vec()],
+            },
+            RedisPipelineCommand {
+                name: "BLPOP".into(),
+                args: vec![b"q".to_vec(), b"0".to_vec()],
+            },
+            RedisPipelineCommand {
+                name: "INCR".into(),
+                args: vec![b"pipe-n".to_vec()],
+            },
+        ])
+        .await
+        .unwrap();
+    assert_eq!(outcomes.len(), 4);
+    assert!(outcomes[0].ok && outcomes[0].summary.starts_with("SET"));
+    assert!(outcomes[1].ok && outcomes[1].detail.contains("v1"));
+    assert!(!outcomes[2].ok);
+    assert!(outcomes[2].detail.contains("blocking"));
+    assert!(outcomes[3].ok, "later line still runs after blocked line");
+    // Trait surface
+    let driver: &dyn DriverSession = &session;
+    let via = driver
+        .redis_execute_pipeline(&[RedisPipelineCommand {
+            name: "PING".into(),
+            args: vec![],
+        }])
+        .await
+        .unwrap();
+    assert_eq!(via.len(), 1);
+    assert!(via[0].ok);
+}
+
+#[tokio::test]
 async fn collection_page_skip_returns_next_for_large_set() {
     let container = GenericImage::new("redis", "8.8.0")
         .with_exposed_port(6379.tcp())

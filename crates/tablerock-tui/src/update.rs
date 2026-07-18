@@ -1226,6 +1226,92 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::RedisPipelineDone {
+            context_revision,
+            lines,
+            ok_count,
+            fail_count,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            // Build result sections from outcome lines (ordinal prefix "N. ").
+            let mut sections = crate::model::result_sections::ResultSectionsModel::default();
+            for (i, line) in lines.iter().enumerate() {
+                let ordinal = (i + 1) as u32;
+                let failed = line.contains(" ERR ");
+                let tag = line
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("CMD")
+                    .trim_end_matches('(')
+                    .to_owned();
+                sections.push(crate::model::result_sections::StatementSection {
+                    ordinal,
+                    command_tag: tag,
+                    kind: if failed {
+                        crate::model::result_sections::StatementSectionKind::Failed
+                    } else {
+                        crate::model::result_sections::StatementSectionKind::Completed
+                    },
+                    rows: None,
+                    elapsed_ms: None,
+                    error: if failed {
+                        Some(line.clone())
+                    } else {
+                        None
+                    },
+                    pinned: false,
+                });
+            }
+            model.workbench_mut().result_sections = sections;
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: format!("redis pipeline {ok_count}ok/{fail_count}err"),
+                kind_label: "redis-pipeline".into(),
+                text: lines.join("\n"),
+                hex: String::new(),
+                byte_len: lines.iter().map(|l| l.len() as u64).sum(),
+                original_byte_len: None,
+                stale: false,
+                structure_schema: None,
+                structure_table: None,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if fail_count > 0 {
+                    grid.mark_failed(format!("pipeline {ok_count}ok/{fail_count}err"));
+                } else {
+                    grid.mark_completed();
+                    grid.error_label = Some(format!("pipeline {ok_count}ok"));
+                }
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.running = false;
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::RedisPipelineFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.running = false;
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::PgToolDone {
             kind,
             summary,
@@ -3548,6 +3634,14 @@ fn run_sql_or_bind_params(model: &mut Model) -> Update {
         return Update::unchanged();
     };
     let session_id_hex = session.session_id_hex.clone();
+    // Redis command editor: sequential pipeline (no MULTI/EXEC).
+    if model
+        .workbench()
+        .engine_kind
+        .eq_ignore_ascii_case("Redis")
+    {
+        return run_redis_pipeline(model, session_id_hex);
+    }
     // Multi-statement script: only when an explicit selection covers ≥2 spans
     // (default Run stays "current statement under cursor" / selection slice).
     {
@@ -3586,6 +3680,68 @@ fn run_sql_or_bind_params(model: &mut Model) -> Update {
             Update::render()
         }
         Err(_) => Update::unchanged(),
+    }
+}
+
+/// Redis command editor: tokenize lines, deny blocking, run sequential pipeline.
+fn run_redis_pipeline(model: &mut Model, session_id_hex: String) -> Update {
+    use crate::model::redis_command::{RedisCommandSafety, parse_command_line};
+    let Some(ed) = model.workbench().active_editor() else {
+        return Update::unchanged();
+    };
+    let text = ed
+        .run_text()
+        .unwrap_or_else(|| ed.text().to_owned());
+    let mut commands: Vec<(String, Vec<String>)> = Vec::new();
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let parsed = parse_command_line(line);
+        match parsed.safety {
+            RedisCommandSafety::Empty => continue,
+            RedisCommandSafety::BlockingDenied => {
+                if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                    grid.mark_failed(format!(
+                        "blocking command denied: {}",
+                        parsed.name
+                    ));
+                }
+                return Update::render();
+            }
+            RedisCommandSafety::ReadOnly | RedisCommandSafety::MayWrite => {
+                commands.push((parsed.name, parsed.args));
+            }
+        }
+    }
+    if commands.is_empty() {
+        return Update::unchanged();
+    }
+    if commands.len() > 64 {
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.mark_failed("redis pipeline exceeds 64 commands");
+        }
+        return Update::render();
+    }
+    let token = model.mint_request_token();
+    let context_revision = model.workbench().context_revision;
+    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+        grid.operation = GridOperationState::Running;
+        grid.error_label = None;
+    }
+    let selected = model.workbench().selected_tab;
+    if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+        tab.running = true;
+    }
+    Update {
+        render: true,
+        effect: Some(Effect::ExecuteRedisPipeline {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            commands,
+        }),
     }
 }
 
@@ -4925,6 +5081,75 @@ mod tests {
                 ..
             }) if profile_id_hex == "aa"
         ));
+    }
+
+    #[test]
+    fn redis_run_pipeline_emits_effect_and_denies_blocking() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "0000000000000001000000000000000f".into(),
+            identity: "redis".into(),
+            temporary: true,
+            engine_label: "Redis".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().engine_kind = "Redis".into();
+        model.workbench_mut().open_sql_tab();
+        assert_eq!(model.workbench().active_tab().unwrap().title, "Redis");
+        if let Some(ed) = model.workbench_mut().active_editor_mut() {
+            ed.set_text("SET k v\nGET k\n");
+            ed.set_cursor(ed.text().len());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::RunSql);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::ExecuteRedisPipeline { commands, .. }) => {
+                assert_eq!(commands.len(), 2);
+                assert_eq!(commands[0].0, "SET");
+                assert_eq!(commands[1].0, "GET");
+            }
+            other => panic!("expected ExecuteRedisPipeline, got {other:?}"),
+        }
+        // Blocking denied before effect.
+        if let Some(ed) = model.workbench_mut().active_editor_mut() {
+            ed.set_text("BLPOP q 0\n");
+            ed.set_cursor(ed.text().len());
+        }
+        model.set_action(ActionId::RunSql);
+        let blocked = update(&mut model, Message::Activate);
+        assert!(blocked.effects().next().is_none());
+        assert!(model
+            .workbench()
+            .active_grid()
+            .and_then(|g| g.error_label.as_deref())
+            .is_some_and(|l| l.contains("blocking")));
+    }
+
+    #[test]
+    fn redis_pipeline_done_fills_sections_and_inspector() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.workbench_mut().context_revision = 1;
+        model.workbench_mut().open_sql_tab();
+        let out = update(
+            &mut model,
+            Message::Engine(EngineMsg::RedisPipelineDone {
+                request_token: 1,
+                context_revision: 1,
+                lines: vec![
+                    "1. ok SET (2 args) → OK".into(),
+                    "2. ERR BLPOP (1 arg) → blocking".into(),
+                ],
+                ok_count: 1,
+                fail_count: 1,
+            }),
+        );
+        assert!(out.needs_render());
+        assert_eq!(model.workbench().result_sections.sections.len(), 2);
+        assert!(model.workbench().inspector.open);
+        assert!(model.workbench().inspector.title.contains("1ok/1err"));
     }
 
     #[test]

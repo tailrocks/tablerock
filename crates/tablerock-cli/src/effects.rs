@@ -618,6 +618,26 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::ExecuteRedisPipeline {
+                request_token,
+                session_id_hex,
+                context_revision,
+                commands,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = execute_redis_pipeline(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        commands,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::LoadRedisInfo {
                 request_token,
                 session_id_hex,
@@ -4337,6 +4357,80 @@ async fn open_redis_key(
             })
         }
         Err(e) => Message::Engine(tablerock_tui::EngineMsg::RedisKeyViewFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(e.to_string()),
+        }),
+    }
+}
+
+async fn execute_redis_pipeline(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    commands: Vec<(String, Vec<String>)>,
+) -> Message {
+    use tablerock_engine::RedisPipelineCommand;
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RedisPipelineFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::RedisPipelineFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    if session.engine() != tablerock_core::Engine::Redis {
+        return Message::Engine(tablerock_tui::EngineMsg::RedisPipelineFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("pipeline is Redis-only".into()),
+        });
+    }
+    let pipeline: Vec<RedisPipelineCommand> = commands
+        .into_iter()
+        .map(|(name, args)| RedisPipelineCommand {
+            name,
+            args: args.into_iter().map(|a| a.into_bytes()).collect(),
+        })
+        .collect();
+    match session.redis_execute_pipeline(&pipeline).await {
+        Ok(outcomes) => {
+            let mut ok_count = 0_u32;
+            let mut fail_count = 0_u32;
+            let mut lines = Vec::with_capacity(outcomes.len());
+            for o in &outcomes {
+                if o.ok {
+                    ok_count += 1;
+                    lines.push(format!("{}. ok {} → {}", o.ordinal, o.summary, o.detail));
+                } else {
+                    fail_count += 1;
+                    lines.push(format!("{}. ERR {} → {}", o.ordinal, o.summary, o.detail));
+                }
+            }
+            Message::Engine(tablerock_tui::EngineMsg::RedisPipelineDone {
+                request_token,
+                context_revision,
+                lines,
+                ok_count,
+                fail_count,
+            })
+        }
+        Err(e) => Message::Engine(tablerock_tui::EngineMsg::RedisPipelineFailed {
             request_token,
             context_revision,
             reason: FailureProjection::Label(e.to_string()),

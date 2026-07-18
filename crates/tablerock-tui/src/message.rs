@@ -442,6 +442,20 @@ pub enum EngineMsg {
         sampled_at_ms: u64,
         lines: Vec<String>,
     },
+    /// Sequential Redis pipeline outcomes (command summary + ok + detail).
+    RedisPipelineDone {
+        request_token: u64,
+        context_revision: u64,
+        /// Display lines for inspector / sections.
+        lines: Vec<String>,
+        ok_count: u32,
+        fail_count: u32,
+    },
+    RedisPipelineFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
     RedisInfoFailed {
         request_token: u64,
         context_revision: u64,

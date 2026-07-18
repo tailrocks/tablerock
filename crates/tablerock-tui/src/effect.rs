@@ -350,6 +350,14 @@ pub enum Effect {
         /// Collection entry skip for hash/set/zset next-page (0 = first page).
         collection_skip: u64,
     },
+    /// Sequential Redis command pipeline (no MULTI/EXEC). Each line is argv text.
+    ExecuteRedisPipeline {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// Pre-tokenized commands: (name, args as UTF-8 strings).
+        commands: Vec<(String, Vec<String>)>,
+    },
     /// Load bounded INFO snapshot into the inspector.
     LoadRedisInfo {
         request_token: RequestToken,

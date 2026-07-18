@@ -393,6 +393,20 @@ pub trait DriverSession: Send + Sync {
         })
     }
 
+    /// Redis-only: sequential non-transactional command pipeline outcomes.
+    fn redis_execute_pipeline<'a>(
+        &'a self,
+        commands: &'a [crate::RedisPipelineCommand],
+    ) -> DriverFuture<'a, Result<Vec<crate::RedisPipelineOutcome>, AdapterError>> {
+        let _ = commands;
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>>;
 }
 
@@ -934,6 +948,15 @@ impl DriverSession for RedisSession {
                 .map(|(k, v)| format!("{k}: {v}"))
                 .collect();
             Ok((snap.sampled_at_ms, lines))
+        })
+    }
+
+    fn redis_execute_pipeline<'a>(
+        &'a self,
+        commands: &'a [crate::RedisPipelineCommand],
+    ) -> DriverFuture<'a, Result<Vec<crate::RedisPipelineOutcome>, AdapterError>> {
+        Box::pin(async move {
+            self.execute_pipeline(commands).await.map_err(map_redis)
         })
     }
 

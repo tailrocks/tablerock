@@ -278,6 +278,22 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn redis_execute_pipeline<'a>(
+        &'a self,
+        commands: &'a [crate::RedisPipelineCommand],
+    ) -> DriverFuture<'a, Result<Vec<crate::RedisPipelineOutcome>, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => session.redis_execute_pipeline(commands).await,
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move { self.shutdown_exclusive().await })
     }
