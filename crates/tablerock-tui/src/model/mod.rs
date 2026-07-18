@@ -87,6 +87,8 @@ pub enum ActionId {
     DuplicateTab,
     /// Jump to tab by title (exact or unique prefix).
     GoToTab,
+    /// Open inspector listing all workbench tabs.
+    ListTabs,
     PinTab,
     NewSql,
     RunSql,

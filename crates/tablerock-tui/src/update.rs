@@ -3358,6 +3358,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::ListTabs if model.screen() == Screen::Workbench => {
+            let text = model.workbench().tabs_panel_text();
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: "tabs".into(),
+                kind_label: "tabs".into(),
+                text,
+                hex: String::new(),
+                byte_len: 0,
+                original_byte_len: None,
+                stale: false,
+                structure_schema: None,
+                structure_table: None,
+                hex_source: String::new(),
+                hex_offset: 0,
+                tree_source: String::new(),
+                tree_depth: 0,
+            };
+            Update::render()
+        }
         ActionId::NewSql if model.screen() == Screen::Workbench => {
             model.workbench_mut().open_sql_tab();
             Update::render()
@@ -4940,6 +4960,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::MoveTabRight
         | ActionId::DuplicateTab
         | ActionId::GoToTab
+        | ActionId::ListTabs
         | ActionId::PinTab
         | ActionId::NewSql
         | ActionId::RunSql
@@ -6582,6 +6603,7 @@ fn cycle_action(
                 ActionId::MoveTabRight,
                 ActionId::DuplicateTab,
                 ActionId::GoToTab,
+                ActionId::ListTabs,
                 ActionId::CloseTab,
                 ActionId::QuickSwitch,
                 ActionId::PinTab,

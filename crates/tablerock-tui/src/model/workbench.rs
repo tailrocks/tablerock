@@ -237,6 +237,27 @@ impl WorkbenchModel {
         }
     }
 
+    /// Multi-line inventory of tabs for the inspector panel.
+    #[must_use]
+    pub fn tabs_panel_text(&self) -> String {
+        if self.tabs.is_empty() {
+            return "no tabs".into();
+        }
+        let mut lines = vec![format!("{} tab(s)", self.tabs.len())];
+        for (i, tab) in self.tabs.iter().enumerate() {
+            let mark = if i == self.selected_tab { ">" } else { " " };
+            let dirty = if tab.dirty { "*" } else { " " };
+            let run = if tab.running { "R" } else { " " };
+            let prev = if tab.preview { "p" } else { " " };
+            lines.push(format!(
+                "{mark}{dirty}{run}{prev} {i}: {}",
+                tab.title
+            ));
+        }
+        lines.push("legend: >active *dirty Rrunning ppreview".into());
+        lines.join("\n")
+    }
+
     /// Select tab by title: exact match, else unique case-insensitive prefix.
     pub fn select_tab_by_title(&mut self, needle: &str) -> bool {
         if needle.is_empty() || self.tabs.is_empty() {
@@ -839,6 +860,19 @@ mod tests {
         ));
         wb.force_close_tab(wb.selected_tab);
         assert!(wb.tabs.iter().all(|t| t.title != "users"));
+    }
+
+    #[test]
+    fn tabs_panel_text_marks_active_and_dirty() {
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("one");
+        wb.open_preview_tab("two");
+        wb.mark_active_dirty(true);
+        let panel = wb.tabs_panel_text();
+        assert!(panel.contains("tab(s)"), "{panel}");
+        assert!(panel.contains("two"), "{panel}");
+        assert!(panel.contains('*') || panel.contains("dirty"), "{panel}");
+        assert!(panel.contains('>'), "{panel}");
     }
 
     #[test]
