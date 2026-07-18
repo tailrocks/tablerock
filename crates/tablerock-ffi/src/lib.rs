@@ -18,7 +18,7 @@ pub use bridge::{
     ApplyOutcome, BridgeConnectionTestReport, BridgeEventBatch, BridgeEventRecord,
     BridgeHistoryItem, BridgeProfileDraft, BridgeProfileGroup, BridgeProfileItem,
     BridgeProfileOrderItem, BridgeReconnectAttempt, BridgeReconnectPlan, BridgeSavedQueryItem,
-    BridgeSessionHealth, BridgeSqlFile, CancelOutcome, OpenParams, ShutdownOutcome, SubmitSpec,
-    TableRockBridge,
+    BridgeSessionHealth, BridgeSessionIntent, BridgeSqlFile, BridgeWorkspaceTab, CancelOutcome,
+    OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
 };
 pub use error::BridgeError;

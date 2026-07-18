@@ -17,6 +17,7 @@ tablerock-engine = { version = "=0.1.0", path = "../tablerock-engine" }
 tablerock-persistence = { version = "=0.1.0", path = "../tablerock-persistence" }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 uniffi = { version = "=0.32.0", default-features = false }
+serde_json.workspace = true
 
 [dev-dependencies]
 redis = { workspace = true }

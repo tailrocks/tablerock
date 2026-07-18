@@ -661,6 +661,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
 
     func deleteSavedQuery(queryId: Int64) throws  -> Bool
 
+    func deleteSessionIntent(profileId: Data) throws
+
     /**
      * Drops the Tokio runtime after service shutdown. Idempotent.
      */
@@ -685,6 +687,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Loads one editable profile without resolving or returning credentials.
      */
     func getProfileDraft(profileId: Data) throws  -> BridgeProfileDraft
+
+    func getSessionIntent(profileId: Data) throws  -> BridgeSessionIntent?
 
     func historyRetention() throws  -> String
 
@@ -733,6 +737,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Pumps driver updates for `operation_id` until a terminal fact or no pending work.
      */
     func pump(operationId: Data) throws
+
+    func putSessionIntent(profileId: Data, intent: BridgeSessionIntent) throws
 
     func readSqlFile(path: String) throws  -> BridgeSqlFile
 
@@ -982,6 +988,15 @@ open func deleteSavedQuery(queryId: Int64)throws  -> Bool  {
 })
 }
 
+open func deleteSessionIntent(profileId: Data)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_delete_session_intent(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(profileId),uniffiCallStatus
+    )
+}
+}
+
     /**
      * Drops the Tokio runtime after service shutdown. Idempotent.
      */
@@ -1038,6 +1053,16 @@ open func getProfileDraft(profileId: Data)throws  -> BridgeProfileDraft  {
     return try  FfiConverterTypeBridgeProfileDraft_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
         uniffiCallStatus in
     uniffi_tablerock_ffi_fn_method_tablerockbridge_get_profile_draft(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(profileId),uniffiCallStatus
+    )
+})
+}
+
+open func getSessionIntent(profileId: Data)throws  -> BridgeSessionIntent?  {
+    return try  FfiConverterOptionTypeBridgeSessionIntent.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_get_session_intent(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(profileId),uniffiCallStatus
     )
@@ -1176,6 +1201,16 @@ open func pump(operationId: Data)throws   {try rustCallWithError(FfiConverterTyp
     uniffi_tablerock_ffi_fn_method_tablerockbridge_pump(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+}
+}
+
+open func putSessionIntent(profileId: Data, intent: BridgeSessionIntent)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_put_session_intent(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(profileId),
+        FfiConverterTypeBridgeSessionIntent_lower(intent),uniffiCallStatus
     )
 }
 }
@@ -2453,6 +2488,68 @@ public func FfiConverterTypeBridgeSessionHealth_lower(_ value: BridgeSessionHeal
 }
 
 
+public struct BridgeSessionIntent: Equatable, Hashable {
+    public var database: String
+    public var schema: String?
+    public var selectedTab: UInt32
+    public var tabs: [BridgeWorkspaceTab]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(database: String, schema: String?, selectedTab: UInt32, tabs: [BridgeWorkspaceTab]) {
+        self.database = database
+        self.schema = schema
+        self.selectedTab = selectedTab
+        self.tabs = tabs
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeSessionIntent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeSessionIntent: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeSessionIntent {
+        return
+            try BridgeSessionIntent(
+                database: FfiConverterString.read(from: &buf),
+                schema: FfiConverterOptionString.read(from: &buf),
+                selectedTab: FfiConverterUInt32.read(from: &buf),
+                tabs: FfiConverterSequenceTypeBridgeWorkspaceTab.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeSessionIntent, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.database, into: &buf)
+        FfiConverterOptionString.write(value.schema, into: &buf)
+        FfiConverterUInt32.write(value.selectedTab, into: &buf)
+        FfiConverterSequenceTypeBridgeWorkspaceTab.write(value.tabs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeSessionIntent_lift(_ buf: RustBuffer) throws -> BridgeSessionIntent {
+    return try FfiConverterTypeBridgeSessionIntent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeSessionIntent_lower(_ value: BridgeSessionIntent) -> RustBuffer {
+    return FfiConverterTypeBridgeSessionIntent.lower(value)
+}
+
+
 public struct BridgeSqlFile: Equatable, Hashable {
     public var path: String
     public var statementText: String
@@ -2512,6 +2609,60 @@ public func FfiConverterTypeBridgeSqlFile_lift(_ buf: RustBuffer) throws -> Brid
 #endif
 public func FfiConverterTypeBridgeSqlFile_lower(_ value: BridgeSqlFile) -> RustBuffer {
     return FfiConverterTypeBridgeSqlFile.lower(value)
+}
+
+
+public struct BridgeWorkspaceTab: Equatable, Hashable {
+    public var title: String
+    public var statementText: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String, statementText: String) {
+        self.title = title
+        self.statementText = statementText
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeWorkspaceTab: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeWorkspaceTab: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeWorkspaceTab {
+        return
+            try BridgeWorkspaceTab(
+                title: FfiConverterString.read(from: &buf),
+                statementText: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeWorkspaceTab, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.statementText, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeWorkspaceTab_lift(_ buf: RustBuffer) throws -> BridgeWorkspaceTab {
+    return try FfiConverterTypeBridgeWorkspaceTab.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeWorkspaceTab_lower(_ value: BridgeWorkspaceTab) -> RustBuffer {
+    return FfiConverterTypeBridgeWorkspaceTab.lower(value)
 }
 
 
@@ -3090,6 +3241,30 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeBridgeSessionIntent: FfiConverterRustBuffer {
+    typealias SwiftType = BridgeSessionIntent?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeBridgeSessionIntent.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeBridgeSessionIntent.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeCatalogNode: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeCatalogNode]
 
@@ -3262,6 +3437,31 @@ fileprivate struct FfiConverterSequenceTypeBridgeSavedQueryItem: FfiConverterRus
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeBridgeWorkspaceTab: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeWorkspaceTab]
+
+    public static func write(_ value: [BridgeWorkspaceTab], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeWorkspaceTab.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeWorkspaceTab] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeWorkspaceTab]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeWorkspaceTab.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -3304,6 +3504,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_delete_saved_query() != 54899) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_delete_session_intent() != 54368) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_destroy_runtime() != 55977) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3317,6 +3520,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_get_profile_draft() != 6880) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_get_session_intent() != 59056) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_history_retention() != 30796) {
@@ -3350,6 +3556,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_pump() != 15232) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_put_session_intent() != 56914) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_read_sql_file() != 29861) {

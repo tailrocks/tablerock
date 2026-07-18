@@ -397,6 +397,7 @@ How to read an evidence document:
 - 520 — [Plan 021 durable history retention](delivery/520-plan-021-durable-history-retention.md)
 - 521 — [Plan 021 native saved queries](delivery/521-plan-021-native-saved-queries.md)
 - 522 — [Plan 021 native SQL files](delivery/522-plan-021-native-sql-files.md)
+- 523 — [Plan 021 typed session-intent bridge](delivery/523-plan-021-session-intent-bridge.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

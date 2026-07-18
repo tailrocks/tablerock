@@ -199,6 +199,20 @@ pub struct BridgeSqlFile {
     pub len: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct BridgeWorkspaceTab {
+    pub title: String,
+    pub statement_text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct BridgeSessionIntent {
+    pub database: String,
+    pub schema: Option<String>,
+    pub selected_tab: u32,
+    pub tabs: Vec<BridgeWorkspaceTab>,
+}
+
 /// One Rust-owned catalog node. Swift renders these facts and returns only opaque ids.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeCatalogNode {
@@ -451,6 +465,25 @@ impl TableRockBridge {
                 overwrite_external_change,
             )
         })
+    }
+
+    pub fn put_session_intent(
+        &self,
+        profile_id: Vec<u8>,
+        intent: BridgeSessionIntent,
+    ) -> Result<(), BridgeError> {
+        catch_entry(|| self.put_session_intent_inner(profile_id, intent))
+    }
+
+    pub fn get_session_intent(
+        &self,
+        profile_id: Vec<u8>,
+    ) -> Result<Option<BridgeSessionIntent>, BridgeError> {
+        catch_entry(|| self.get_session_intent_inner(profile_id))
+    }
+
+    pub fn delete_session_intent(&self, profile_id: Vec<u8>) -> Result<(), BridgeError> {
+        catch_entry(|| self.delete_session_intent_inner(profile_id))
     }
 
     pub fn create_profile_group(&self, name: String) -> Result<(), BridgeError> {
@@ -1642,6 +1675,75 @@ impl TableRockBridge {
             .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
             .delete_saved_query(query_id)
             .map_err(|error| BridgeError::rejected("saved-query-delete", error.to_string()))
+    }
+
+    fn put_session_intent_inner(
+        &self,
+        profile_id: Vec<u8>,
+        intent: BridgeSessionIntent,
+    ) -> Result<(), BridgeError> {
+        validate_session_intent(&intent)?;
+        let profile_id = decode_profile_id(&profile_id)?;
+        let intent_json = serde_json::to_string(&serde_json::json!({
+            "database": intent.database,
+            "schema": intent.schema,
+            "selected_tab": intent.selected_tab,
+            "tabs": intent.tabs.into_iter().map(|tab| serde_json::json!({
+                "title": tab.title,
+                "sql": tab.statement_text,
+            })).collect::<Vec<_>>(),
+        }))
+        .map_err(|_| BridgeError::rejected("session-intent", "cannot encode session intent"))?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
+            .put_session_intent(profile_id, intent_json)
+            .map_err(|error| BridgeError::rejected("session-intent-save", error.to_string()))
+    }
+
+    fn get_session_intent_inner(
+        &self,
+        profile_id: Vec<u8>,
+    ) -> Result<Option<BridgeSessionIntent>, BridgeError> {
+        let profile_id = decode_profile_id(&profile_id)?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let record = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
+            .get_session_intent(profile_id)
+            .map_err(|error| BridgeError::rejected("session-intent-load", error.to_string()))?;
+        record
+            .map(|record| decode_session_intent(&record.intent_json))
+            .transpose()
+    }
+
+    fn delete_session_intent_inner(&self, profile_id: Vec<u8>) -> Result<(), BridgeError> {
+        let profile_id = decode_profile_id(&profile_id)?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
+            .delete_session_intent(profile_id)
+            .map_err(|error| BridgeError::rejected("session-intent-delete", error.to_string()))
     }
 
     fn create_profile_group_inner(&self, name: String) -> Result<(), BridgeError> {
@@ -2917,6 +3019,91 @@ fn write_bridge_sql_file(
     let facts = write_sql_file_atomic(&path, statement_text)
         .map_err(|error| BridgeError::rejected("sql-file-write", error.to_string()))?;
     Ok(bridge_sql_file(statement_text.to_owned(), facts))
+}
+
+fn validate_session_intent(intent: &BridgeSessionIntent) -> Result<(), BridgeError> {
+    if intent.database.len() > 256
+        || intent
+            .schema
+            .as_ref()
+            .is_some_and(|value| value.len() > 256)
+        || intent.tabs.is_empty()
+        || intent.tabs.len() > 64
+        || usize::try_from(intent.selected_tab).map_or(true, |index| index >= intent.tabs.len())
+        || intent.tabs.iter().any(|tab| {
+            tab.title.trim().is_empty()
+                || tab.title.len() > 256
+                || tab.statement_text.len() > 1_048_576
+        })
+    {
+        return Err(BridgeError::rejected(
+            "session-intent",
+            "session intent exceeds tab, selection, title, or text bounds",
+        ));
+    }
+    Ok(())
+}
+
+fn decode_session_intent(raw: &str) -> Result<BridgeSessionIntent, BridgeError> {
+    let value: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|_| BridgeError::rejected("session-intent", "invalid session intent JSON"))?;
+    let object = value.as_object().ok_or_else(|| {
+        BridgeError::rejected("session-intent", "session intent must be an object")
+    })?;
+    let database = object
+        .get("database")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let schema = match object.get("schema") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(value) => Some(
+            value
+                .as_str()
+                .ok_or_else(|| {
+                    BridgeError::rejected("session-intent", "session schema must be text or null")
+                })?
+                .to_owned(),
+        ),
+    };
+    let selected_tab = object
+        .get("selected_tab")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or_else(|| BridgeError::rejected("session-intent", "invalid selected tab"))?;
+    let tabs = object
+        .get("tabs")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| BridgeError::rejected("session-intent", "session tabs must be an array"))?
+        .iter()
+        .map(|value| {
+            let tab = value.as_object().ok_or_else(|| {
+                BridgeError::rejected("session-intent", "session tab must be an object")
+            })?;
+            Ok(BridgeWorkspaceTab {
+                title: tab
+                    .get("title")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| {
+                        BridgeError::rejected("session-intent", "session tab title missing")
+                    })?
+                    .to_owned(),
+                statement_text: tab
+                    .get("sql")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+            })
+        })
+        .collect::<Result<Vec<_>, BridgeError>>()?;
+    let intent = BridgeSessionIntent {
+        database,
+        schema,
+        selected_tab,
+        tabs,
+    };
+    validate_session_intent(&intent)?;
+    Ok(intent)
 }
 
 #[derive(Clone, Copy)]

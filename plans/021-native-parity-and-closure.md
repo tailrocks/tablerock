@@ -10,7 +10,7 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-19): native connection workflows (evidence 512–518), Query History (519), and durable retention preference (520) landed; saved/files and remaining screens continue**
+- **IN PROGRESS (2026-07-19): native connection workflows (evidence 512–518), history/retention (519–520), saved queries (521), SQL files (522), and typed intent-only tab restoration bridge (523) landed; workbench tabs and remaining screens continue**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

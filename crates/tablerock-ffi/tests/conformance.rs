@@ -20,7 +20,10 @@ use tablerock_engine::{
     CatalogSubtree, DriverFuture, DriverPageRequest, DriverPageStream, DriverSession,
     ServerDescribe, SessionHealth,
 };
-use tablerock_ffi::{BridgeError, BridgeProfileOrderItem, SubmitSpec, TableRockBridge};
+use tablerock_ffi::{
+    BridgeError, BridgeProfileOrderItem, BridgeSessionIntent, BridgeWorkspaceTab, SubmitSpec,
+    TableRockBridge,
+};
 
 struct OnePageStream(Option<ResultPage>);
 
@@ -782,6 +785,39 @@ fn open_profile_requires_persistence_and_loads_literals() {
     assert!(bridge.delete_saved_query(saved_id).unwrap());
     assert_eq!(bridge.list_saved_queries(None, None).unwrap().len(), 1);
     assert!(bridge.delete_saved_query(redis_id).unwrap());
+    let intent = BridgeSessionIntent {
+        database: "postgres".into(),
+        schema: Some("public".into()),
+        selected_tab: 1,
+        tabs: vec![
+            BridgeWorkspaceTab {
+                title: "Query 1".into(),
+                statement_text: "SELECT 1;".into(),
+            },
+            BridgeWorkspaceTab {
+                title: "Users".into(),
+                statement_text: "SELECT id FROM users;".into(),
+            },
+        ],
+    };
+    bridge
+        .put_session_intent(profile_id.to_bytes().to_vec(), intent.clone())
+        .unwrap();
+    assert_eq!(
+        bridge
+            .get_session_intent(profile_id.to_bytes().to_vec())
+            .unwrap(),
+        Some(intent)
+    );
+    bridge
+        .delete_session_intent(profile_id.to_bytes().to_vec())
+        .unwrap();
+    assert_eq!(
+        bridge
+            .get_session_intent(profile_id.to_bytes().to_vec())
+            .unwrap(),
+        None
+    );
     bridge.disconnect(reconnect_source).unwrap();
     assert_eq!(
         bridge
