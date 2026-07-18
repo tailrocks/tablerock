@@ -78,15 +78,30 @@ impl AtomicFileWriter {
         }
         if let Some(parent) = dest.parent() {
             if !parent.as_os_str().is_empty() {
+                // Fail closed before any temp is created when parent is not a dir
+                // (file-as-parent, missing intermediate that is a file, etc.).
+                if parent.exists() && !parent.is_dir() {
+                    return Err(FileEffectError::Io(io::Error::new(
+                        io::ErrorKind::NotADirectory,
+                        "export parent path is not a directory",
+                    )));
+                }
                 fs::create_dir_all(parent)?;
             }
         }
         let temp = temp_path_for(&dest);
         // Exclusive create — fail if leftover temp exists from a crash.
-        let file = OpenOptions::new()
+        let file = match OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&temp)?;
+            .open(&temp)
+        {
+            Ok(f) => f,
+            Err(e) => {
+                let _ = fs::remove_file(&temp);
+                return Err(FileEffectError::Io(e));
+            }
+        };
         Ok(Self {
             dest,
             temp,
@@ -170,11 +185,19 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn scratch_dir() -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("tablerock-file-effects-{nanos}"));
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "tablerock-file-effects-{}-{}-{}",
+            std::process::id(),
+            nanos,
+            seq
+        ));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
