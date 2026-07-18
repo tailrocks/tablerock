@@ -227,6 +227,10 @@ pub enum ActionId {
     ShowNotices,
     /// Clear NOTICE history for the active grid tab.
     ClearNotices,
+    /// Page hex dump forward one 256-byte window.
+    HexMore,
+    /// Page hex dump backward one 256-byte window.
+    HexLess,
     /// Apply reviewed/staged mutations (typed plan rebuild from drafts).
     ApplyMutations,
     /// Follow FK from cursor column → filtered browse of referenced table.

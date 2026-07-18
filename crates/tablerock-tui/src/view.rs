@@ -670,6 +670,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let dup_row = action_label(model, ActionId::DuplicateRow, "DupRow");
     let show_notices = action_label(model, ActionId::ShowNotices, "Notices");
     let clear_notices = action_label(model, ActionId::ClearNotices, "ClrNtc");
+    let hex_more = action_label(model, ActionId::HexMore, "Hex+");
+    let hex_less = action_label(model, ActionId::HexLess, "Hex-");
     let apply_mut = action_label(model, ActionId::ApplyMutations, "Apply");
     let follow_fk = action_label(model, ActionId::FollowForeignKey, "FollowFK");
     let structure = action_label(model, ActionId::ShowStructure, "Structure");
@@ -1250,6 +1252,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ClearNotices,
                         label: clear_notices.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::HexMore,
+                        label: hex_more.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::HexLess,
+                        label: hex_less.as_str(),
                         enabled: true,
                         style: None,
                     },

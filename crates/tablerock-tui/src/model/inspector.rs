@@ -2,6 +2,9 @@
 
 use super::grid::{CellDistinction, ProjectedCell};
 
+/// Bytes shown per hex panel window (page size).
+pub const HEX_WINDOW: usize = 256;
+
 /// Full-value inspector for the selected cell.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct InspectorModel {
@@ -16,12 +19,25 @@ pub struct InspectorModel {
     /// When structure is open, DDL quick actions target this relation.
     pub structure_schema: Option<String>,
     pub structure_table: Option<String>,
+    /// Full presentation bytes for hex paging (empty when not applicable).
+    pub hex_source: String,
+    /// Byte offset into `hex_source` for the current hex window.
+    pub hex_offset: usize,
 }
 
 impl InspectorModel {
     #[must_use]
     pub fn from_cell(title: impl Into<String>, cell: &ProjectedCell, stale: bool) -> Self {
-        let hex = format_hex_panel(cell);
+        let hex_source = String::from_utf8_lossy(&hex_source_bytes(cell)).into_owned();
+        // Prefer original text when lossy conversion not needed.
+        let hex_source = if hex_source.as_bytes() == cell.text.as_bytes() {
+            cell.text.clone()
+        } else {
+            hex_source
+        };
+        let hex = format_hex_window(hex_source.as_bytes(), 0);
+        let total = hex_source.len();
+        let shown = total.min(HEX_WINDOW);
         let text = match cell.distinction {
             CellDistinction::Structured => pretty_structured(&cell.text),
             CellDistinction::Temporal => format!(
@@ -33,14 +49,21 @@ impl InspectorModel {
                 cell.display()
             ),
             CellDistinction::Binary => {
-                let shown = hex_byte_count(cell).min(256);
                 format!(
-                    "{}\n(binary · hex panel shows first {shown} of {} bytes · CopyHex)",
-                    cell.display(),
-                    cell.byte_len.max(cell.text.len() as u64)
+                    "{}\n(binary · hex bytes {shown}/{total} from 0 · Hex+/Hex- · CopyHex)",
+                    cell.display()
                 )
             }
-            _ => cell.display(),
+            _ => {
+                if total > HEX_WINDOW {
+                    format!(
+                        "{}\n(hex window {shown}/{total} from 0 · Hex+/Hex-)",
+                        cell.display()
+                    )
+                } else {
+                    cell.display()
+                }
+            }
         };
         Self {
             open: true,
@@ -53,7 +76,46 @@ impl InspectorModel {
             stale,
             structure_schema: None,
             structure_table: None,
+            hex_source,
+            hex_offset: 0,
         }
+    }
+
+    /// Page the hex dump by `delta_pages` windows (±1). Returns true if changed.
+    pub fn page_hex(&mut self, delta_pages: i32) -> bool {
+        if self.hex_source.is_empty() || delta_pages == 0 {
+            return false;
+        }
+        let total = self.hex_source.len();
+        let max_off = total.saturating_sub(1);
+        let step = HEX_WINDOW as i64 * i64::from(delta_pages);
+        let next = (self.hex_offset as i64 + step).clamp(0, max_off as i64) as usize;
+        // Align to window boundary for cleaner offsets.
+        let next = (next / HEX_WINDOW) * HEX_WINDOW;
+        let next = next.min(max_off);
+        if next == self.hex_offset && delta_pages > 0 && next + HEX_WINDOW >= total {
+            return false;
+        }
+        if next == self.hex_offset && delta_pages < 0 {
+            return false;
+        }
+        if next == self.hex_offset && delta_pages > 0 {
+            // Already at last partial window.
+            return false;
+        }
+        self.hex_offset = next;
+        self.hex = format_hex_window(self.hex_source.as_bytes(), self.hex_offset);
+        let shown_end = (self.hex_offset + HEX_WINDOW).min(total);
+        let window_len = shown_end.saturating_sub(self.hex_offset);
+        // Refresh binary hint line if present.
+        if self.kind_label == "binary" || self.hex_source.len() > HEX_WINDOW {
+            let first = self.text.lines().next().unwrap_or("").to_owned();
+            self.text = format!(
+                "{first}\n(hex bytes {window_len}/{total} from {} · Hex+/Hex- · CopyHex)",
+                self.hex_offset
+            );
+        }
+        true
     }
 
     /// True when this inspector holds a relation structure target for DDL.
@@ -137,6 +199,8 @@ impl InspectorModel {
             stale: false,
             structure_schema: None,
             structure_table: None,
+            hex_source: String::new(),
+            hex_offset: 0,
         }
     }
 }
@@ -176,6 +240,28 @@ mod tests {
         let lines = insp.lines().join("\n");
         assert!(lines.contains("hex:"));
         assert!(insp.text.contains("binary"));
+    }
+
+    #[test]
+    fn hex_window_pages_beyond_first_256() {
+        let payload: String = (0..600).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+        let cell = ProjectedCell {
+            text: payload.clone(),
+            distinction: CellDistinction::Binary,
+            byte_len: payload.len() as u64,
+            original_byte_len: None,
+        };
+        let mut insp = InspectorModel::from_cell("blob", &cell, false);
+        assert_eq!(insp.hex_offset, 0);
+        assert!(insp.hex.contains("0000"));
+        assert!(insp.hex.contains("more bytes"));
+        assert!(insp.page_hex(1));
+        assert_eq!(insp.hex_offset, HEX_WINDOW);
+        assert!(insp.hex.contains(&format!("{HEX_WINDOW:04x}")) || insp.hex.contains("0100"));
+        assert!(insp.hex.contains("bytes before"));
+        assert!(insp.page_hex(-1));
+        assert_eq!(insp.hex_offset, 0);
+        assert!(!insp.page_hex(-1));
     }
 
     #[test]
@@ -309,29 +395,23 @@ fn structured_tree_lines(raw: &str) -> Vec<String> {
     out
 }
 
-/// How many payload bytes the hex panel will show (capped).
-fn hex_byte_count(cell: &ProjectedCell) -> usize {
-    let bytes = hex_source_bytes(cell);
-    bytes.len().min(256)
-}
-
 /// Bytes to dump: prefer raw UTF-8 of cell text (presentation bytes).
 fn hex_source_bytes(cell: &ProjectedCell) -> Vec<u8> {
     // Binary cells may already store space-separated hex; keep as UTF-8 view of text.
     cell.text.as_bytes().to_vec()
 }
 
-/// Multi-line hex dump: 16 bytes per line with offset, max 256 bytes.
-fn format_hex_panel(cell: &ProjectedCell) -> String {
-    let bytes = hex_source_bytes(cell);
+/// Multi-line hex dump window: 16 bytes per line starting at `offset`.
+fn format_hex_window(bytes: &[u8], offset: usize) -> String {
     if bytes.is_empty() {
         return String::new();
     }
-    let limit = bytes.len().min(256);
-    let slice = &bytes[..limit];
+    let offset = offset.min(bytes.len().saturating_sub(1));
+    let end = (offset + HEX_WINDOW).min(bytes.len());
+    let slice = &bytes[offset..end];
     let mut lines = Vec::new();
     for (chunk_i, chunk) in slice.chunks(16).enumerate() {
-        let off = chunk_i * 16;
+        let off = offset + chunk_i * 16;
         let mut hex = String::new();
         let mut ascii = String::new();
         for (j, b) in chunk.iter().enumerate() {
@@ -352,10 +432,21 @@ fn format_hex_panel(cell: &ProjectedCell) -> String {
         }
         lines.push(format!("{off:04x}  {hex}  |{ascii}|"));
     }
-    if bytes.len() > limit {
-        lines.push(format!("… ({} more bytes not shown)", bytes.len() - limit));
+    if end < bytes.len() {
+        lines.push(format!(
+            "… ({} more bytes · Hex+)",
+            bytes.len() - end
+        ));
+    }
+    if offset > 0 {
+        lines.insert(0, format!("… ({} bytes before · Hex-)", offset));
     }
     lines.join("\n")
+}
+
+/// First-window hex panel for tests/callers that pass a cell.
+fn format_hex_panel(cell: &ProjectedCell) -> String {
+    format_hex_window(&hex_source_bytes(cell), 0)
 }
 
 /// Indent JSON-like structured text for inspector readability (best-effort).

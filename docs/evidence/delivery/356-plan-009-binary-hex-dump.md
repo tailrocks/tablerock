@@ -27,4 +27,4 @@ cargo test -p tablerock-tui --lib inspector
 
 ## Remaining work
 
-- Page/scroll hex beyond 256 bytes on demand (optional)
+- Page/scroll hex beyond 256 bytes — shipped as evidence 376

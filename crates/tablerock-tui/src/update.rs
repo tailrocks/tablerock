@@ -1151,6 +1151,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 stale: false,
                 structure_schema: Some(schema),
                 structure_table: Some(table),
+                hex_source: String::new(),
+                hex_offset: 0
             };
             Update::render()
         }
@@ -1239,6 +1241,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 stale: false,
                 structure_schema: None,
                 structure_table: None,
+                hex_source: String::new(),
+                hex_offset: 0
             };
             Update::render()
         }
@@ -1277,6 +1281,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 stale: false,
                 structure_schema: None,
                 structure_table: None,
+                hex_source: String::new(),
+                hex_offset: 0
             };
             Update::render()
         }
@@ -1323,6 +1329,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 stale: false,
                 structure_schema: None,
                 structure_table: None,
+                hex_source: String::new(),
+                hex_offset: 0
             };
             let selected = model.workbench().selected_tab;
             if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
@@ -1381,6 +1389,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 stale: false,
                 structure_schema: None,
                 structure_table: None,
+                hex_source: String::new(),
+                hex_offset: 0
             };
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if fail_count > 0 {
@@ -1614,6 +1624,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 stale: false,
                 structure_schema: Some(database.clone()),
                 structure_table: Some(table.clone()),
+                hex_source: String::new(),
+                hex_offset: 0
             };
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.error_label =
@@ -1673,6 +1685,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 stale: false,
                 structure_schema: None,
                 structure_table: None,
+                hex_source: String::new(),
+                hex_offset: 0
             };
             Update::render()
         }
@@ -1727,6 +1741,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 stale: false,
                 structure_schema: Some(logical_db),
                 structure_table: Some(key),
+                hex_source: String::new(),
+                hex_offset: 0
             };
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_completed();
@@ -1769,6 +1785,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 stale: false,
                 structure_schema: None,
                 structure_table: None,
+                hex_source: String::new(),
+                hex_offset: 0
             };
             Update::render()
         }
@@ -3995,6 +4013,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 stale: false,
                 structure_schema: None,
                 structure_table: None,
+                hex_source: String::new(),
+                hex_offset: 0
             };
             Update::render()
         }
@@ -4010,6 +4030,18 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 {
                     model.workbench_mut().inspector.text = "no notices this tab".into();
                 }
+                return Update::render();
+            }
+            Update::unchanged()
+        }
+        ActionId::HexMore if model.screen() == Screen::Workbench => {
+            if model.workbench_mut().inspector.page_hex(1) {
+                return Update::render();
+            }
+            Update::unchanged()
+        }
+        ActionId::HexLess if model.screen() == Screen::Workbench => {
+            if model.workbench_mut().inspector.page_hex(-1) {
                 return Update::render();
             }
             Update::unchanged()
@@ -4491,6 +4523,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DuplicateRow
         | ActionId::ShowNotices
         | ActionId::ClearNotices
+        | ActionId::HexMore
+        | ActionId::HexLess
         | ActionId::ApplyMutations
         | ActionId::FollowForeignKey
         | ActionId::ShowStructure
@@ -5987,6 +6021,8 @@ fn cycle_action(
                 ActionId::DuplicateRow,
                 ActionId::ShowNotices,
                 ActionId::ClearNotices,
+                ActionId::HexMore,
+                ActionId::HexLess,
                 ActionId::ApplyMutations,
                 ActionId::FollowForeignKey,
                 ActionId::ShowStructure,
@@ -9006,6 +9042,8 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
             stale: false,
             structure_schema: Some("public".into()),
             structure_table: Some("users".into()),
+                hex_source: String::new(),
+                hex_offset: 0
         };
         let _ = model.request_focus(FocusRegion::Actions);
         model.set_action(ActionId::CopyStructureDdl);
@@ -9850,6 +9888,8 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
             stale: false,
             structure_schema: Some("public".into()),
             structure_table: Some("orders".into()),
+                hex_source: String::new(),
+                hex_offset: 0
         };
         let _ = model.request_focus(FocusRegion::Actions);
         model.set_action(ActionId::DdlAddColumn);
