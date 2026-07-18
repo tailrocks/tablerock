@@ -87,6 +87,14 @@ impl CellEditSession {
         true
     }
 
+    /// Step calendar year by `delta_years` (clamps day into target month, e.g. Feb 29).
+    pub fn step_year(&mut self, delta_years: i32) -> bool {
+        if delta_years == 0 {
+            return false;
+        }
+        self.step_month(delta_years.saturating_mul(12))
+    }
+
     /// Text month grid for the date currently in the buffer (or today).
     #[must_use]
     pub fn month_calendar_text(&self) -> Option<String> {
@@ -3960,6 +3968,25 @@ mod tests {
             kind: CellDistinction::Text,
         };
         assert!(!text.step_day(1));
+    }
+
+    #[test]
+    fn temporal_step_year_clamps_leap_day() {
+        let mut session = CellEditSession {
+            abs_row: 0,
+            column: "ts".into(),
+            original_text: "2024-02-29".into(),
+            buffer: "2024-02-29".into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Temporal,
+        };
+        assert!(session.step_year(1));
+        assert_eq!(session.buffer, "2025-02-28");
+        assert!(session.step_year(-1));
+        assert_eq!(session.buffer, "2024-02-28");
+        session.buffer = "2024-02-29".into();
+        assert!(session.step_year(4));
+        assert_eq!(session.buffer, "2028-02-29");
     }
 
     #[test]

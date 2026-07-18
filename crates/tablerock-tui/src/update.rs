@@ -5957,6 +5957,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::IncYear if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.step_year(1) {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::DecYear if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.step_year(-1) {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::PickDate if model.screen() == Screen::Workbench => open_pick_date(model),
         ActionId::IncNumber if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
@@ -6800,6 +6820,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DecDay
         | ActionId::IncMonth
         | ActionId::DecMonth
+        | ActionId::IncYear
+        | ActionId::DecYear
         | ActionId::PickDate
         | ActionId::IncNumber
         | ActionId::DecNumber
@@ -8633,6 +8655,8 @@ fn cycle_action(
                 ActionId::DecDay,
                 ActionId::IncMonth,
                 ActionId::DecMonth,
+                ActionId::IncYear,
+                ActionId::DecYear,
                 ActionId::PickDate,
                 ActionId::IncNumber,
                 ActionId::DecNumber,

@@ -797,6 +797,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let dec_day = action_label(model, ActionId::DecDay, "Day-");
     let inc_month = action_label(model, ActionId::IncMonth, "Mon+");
     let dec_month = action_label(model, ActionId::DecMonth, "Mon-");
+    let inc_year = action_label(model, ActionId::IncYear, "Year+");
+    let dec_year = action_label(model, ActionId::DecYear, "Year-");
     let pick_date = action_label(model, ActionId::PickDate, "Cal");
     let inc_num = action_label(model, ActionId::IncNumber, "Num+");
     let dec_num = action_label(model, ActionId::DecNumber, "Num-");
@@ -2009,6 +2011,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::DecMonth,
                         label: dec_month.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::IncYear,
+                        label: inc_year.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DecYear,
+                        label: dec_year.as_str(),
                         enabled: true,
                         style: None,
                     },
