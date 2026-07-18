@@ -176,6 +176,8 @@ pub enum ActionId {
     CopySessionId,
     /// Copy engine label of the live session.
     CopyEngineLabel,
+    /// Copy active workbench database name.
+    CopyDatabaseName,
     /// Copy base schema.table identity if known.
     CopyTableName,
     /// Copy base schema only if known.

@@ -3959,6 +3959,23 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyDatabaseName if model.screen() == Screen::Workbench => {
+            let text = model.workbench().context.database.clone();
+            if text.is_empty() {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied database {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTableName if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -6318,6 +6335,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyCursorPosition
         | ActionId::CopySessionId
         | ActionId::CopyEngineLabel
+        | ActionId::CopyDatabaseName
         | ActionId::CopyTableName
         | ActionId::CopySchema
         | ActionId::CopyBareTable
@@ -8085,6 +8103,7 @@ fn cycle_action(
                 ActionId::CopyCursorPosition,
                 ActionId::CopySessionId,
                 ActionId::CopyEngineLabel,
+                ActionId::CopyDatabaseName,
                 ActionId::CopyTableName,
                 ActionId::CopySchema,
                 ActionId::CopyBareTable,
@@ -10568,6 +10587,7 @@ mod tests {
             status: Some("connected".into()),
         }));
         model.workbench_mut().open_preview_tab("t");
+        model.workbench_mut().context.database = "analytics".into();
         let _ = model.request_focus(FocusRegion::Actions);
         model.set_action(ActionId::CopySessionId);
         match update(&mut model, Message::Activate).effects().next() {
@@ -10582,6 +10602,13 @@ mod tests {
                 assert_eq!(text, "PostgreSQL");
             }
             other => panic!("expected engine label, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyDatabaseName);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "analytics");
+            }
+            other => panic!("expected database name, got {other:?}"),
         }
     }
 
