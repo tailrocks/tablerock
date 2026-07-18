@@ -634,3 +634,137 @@ async fn lists_catalog_databases_and_objects() {
         )
     }));
 }
+
+#[tokio::test]
+async fn structure_facts_and_progressive_insert() {
+    use tablerock_core::{
+        BoundedText, ByteLimit, ContextId, FieldValue, IdParts, MutationChange, MutationId,
+        MutationPlan, MutationPlanLimits, MutationTarget, OperationScope, OwnedValue, ProfileId,
+        ReviewTokenId, Revision, SessionId, Truncation,
+    };
+    use tablerock_engine::{MutationChangeOutcome, MutationTransactionState};
+
+    let image =
+        "26.3.17.4-jammy@sha256:158dcce6f6fdc59309650aad6b79484abf4eed07d4e0bdba31d732e64b5a25fb";
+    let container = GenericImage::new("clickhouse", image)
+        .with_exposed_port(8123.tcp())
+        .with_env_var("CLICKHOUSE_SKIP_USER_SETUP", "1")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
+    let session = ready_clickhouse_session(port, ClickHouseCompression::None).await;
+
+    session
+        .execute_sql(
+            "CREATE TABLE default.mut_ch (
+                id UInt64,
+                name String
+             ) ENGINE = MergeTree ORDER BY id",
+        )
+        .await
+        .unwrap();
+
+    let facts = session
+        .relation_engine_facts("default", "mut_ch")
+        .await
+        .unwrap()
+        .expect("table facts");
+    assert!(facts.0.contains("MergeTree"), "{facts:?}");
+    assert_eq!(facts.2, "id"); // sorting_key
+
+    let cols = session
+        .relation_column_facts("default", "mut_ch")
+        .await
+        .unwrap();
+    assert!(cols.iter().any(|(n, t, _, _)| n == "name" && t == "String"));
+
+    fn bt(s: &str) -> BoundedText {
+        BoundedText::copy_from_str(s, ByteLimit::new(10_000)).unwrap()
+    }
+    let scope = OperationScope::new(
+        ProfileId::from_parts(IdParts::new(1, 1).unwrap()).unwrap(),
+        SessionId::from_parts(IdParts::new(1, 2).unwrap()).unwrap(),
+        ContextId::from_parts(IdParts::new(1, 3).unwrap()).unwrap(),
+    );
+    let plan = MutationPlan::new(
+        MutationId::from_parts(IdParts::new(1, 10).unwrap()).unwrap(),
+        scope,
+        Revision::INITIAL,
+        MutationTarget::ClickHouseTable {
+            database: bt("default"),
+            table: bt("mut_ch"),
+        },
+        vec![MutationChange::InsertRow {
+            values: vec![
+                FieldValue::new(bt("id"), OwnedValue::unsigned(1)),
+                FieldValue::new(
+                    bt("name"),
+                    OwnedValue::text(bt("alice"), Truncation::Complete).unwrap(),
+                ),
+            ],
+        }],
+        MutationPlanLimits::new(8, 16, 4096, 4096, 60_000).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        plan.execution_model(),
+        tablerock_core::MutationExecutionModel::ClickHouseProgressiveInsertNonTransactional
+    );
+    let authorized = plan
+        .review(
+            ReviewTokenId::from_parts(IdParts::new(1, 11).unwrap()).unwrap(),
+            1_000,
+            30_000,
+        )
+        .unwrap()
+        .authorize(5_000, scope, Revision::INITIAL)
+        .unwrap();
+    let outcome = session.apply_authorized_mutation(authorized).await.unwrap();
+    // Non-transactional: terminal is Committed meaning "apply finished", not rollback semantics.
+    assert_eq!(outcome.transaction, MutationTransactionState::Committed);
+    assert!(matches!(
+        &outcome.changes[0],
+        MutationChangeOutcome::Applied {
+            rows_affected: 1,
+            ..
+        }
+    ));
+
+    // UPDATE is rejected with non-transactional wording (async path later).
+    let upd = MutationPlan::new(
+        MutationId::from_parts(IdParts::new(1, 12).unwrap()).unwrap(),
+        scope,
+        Revision::INITIAL,
+        MutationTarget::ClickHouseTable {
+            database: bt("default"),
+            table: bt("mut_ch"),
+        },
+        vec![MutationChange::UpdateRow {
+            locator: vec![FieldValue::new(bt("id"), OwnedValue::unsigned(1))],
+            assignments: vec![FieldValue::new(
+                bt("name"),
+                OwnedValue::text(bt("bob"), Truncation::Complete).unwrap(),
+            )],
+        }],
+        MutationPlanLimits::new(8, 16, 4096, 4096, 60_000).unwrap(),
+    )
+    .unwrap();
+    let auth2 = upd
+        .review(
+            ReviewTokenId::from_parts(IdParts::new(1, 13).unwrap()).unwrap(),
+            1_000,
+            30_000,
+        )
+        .unwrap()
+        .authorize(5_000, scope, Revision::INITIAL)
+        .unwrap();
+    let out2 = session.apply_authorized_mutation(auth2).await.unwrap();
+    match &out2.changes[0] {
+        MutationChangeOutcome::Failed { detail, .. } => {
+            assert!(detail.contains("never a transaction"), "{detail}");
+            assert!(!detail.to_ascii_lowercase().contains("rollback"));
+        }
+        other => panic!("expected Failed for CH update, got {other:?}"),
+    }
+}

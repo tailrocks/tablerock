@@ -534,13 +534,12 @@ impl DriverSession for ClickHouseSession {
 
     fn apply_authorized_mutation<'a>(
         &'a self,
-        _authorized: AuthorizedMutationPlan,
+        authorized: AuthorizedMutationPlan,
     ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
-        Box::pin(async {
-            Err(AdapterError::new(
-                Engine::ClickHouse,
-                AdapterFailureClass::EngineMismatch,
-            ))
+        Box::pin(async move {
+            ClickHouseSession::apply_authorized_mutation(self, authorized)
+                .await
+                .map_err(map_clickhouse)
         })
     }
 

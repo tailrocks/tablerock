@@ -348,6 +348,69 @@ impl ClickHouseSession {
             .map_err(|_| ClickHouseError::Query)
     }
 
+    /// Table engine facts: (engine, partition_key, sorting_key, primary_key, create_query).
+    pub async fn relation_engine_facts(
+        &self,
+        database: &str,
+        table: &str,
+    ) -> Result<Option<(String, String, String, String, String)>, ClickHouseError> {
+        if database.is_empty() || table.is_empty() {
+            return Err(ClickHouseError::InvalidLimits);
+        }
+        let lines = self
+            .fetch_tsv_named(
+                "SELECT engine, partition_key, sorting_key, primary_key, create_table_query \
+                 FROM system.tables \
+                 WHERE database = {db:String} AND name = {tbl:String} \
+                 LIMIT 1",
+                &[("db", database), ("tbl", table)],
+            )
+            .await?;
+        let Some(line) = lines.into_iter().next() else {
+            return Ok(None);
+        };
+        let mut parts = line.splitn(5, '\t');
+        Ok(Some((
+            parts.next().unwrap_or("").to_owned(),
+            parts.next().unwrap_or("").to_owned(),
+            parts.next().unwrap_or("").to_owned(),
+            parts.next().unwrap_or("").to_owned(),
+            parts.next().unwrap_or("").to_owned(),
+        )))
+    }
+
+    /// Column facts: (name, type, default_kind, is_in_primary_key as "0"/"1").
+    pub async fn relation_column_facts(
+        &self,
+        database: &str,
+        table: &str,
+    ) -> Result<Vec<(String, String, String, bool)>, ClickHouseError> {
+        if database.is_empty() || table.is_empty() {
+            return Err(ClickHouseError::InvalidLimits);
+        }
+        let lines = self
+            .fetch_tsv_named(
+                "SELECT name, type, default_kind, toString(is_in_primary_key) \
+                 FROM system.columns \
+                 WHERE database = {db:String} AND table = {tbl:String} \
+                 ORDER BY position \
+                 LIMIT 512",
+                &[("db", database), ("tbl", table)],
+            )
+            .await?;
+        Ok(lines
+            .into_iter()
+            .filter_map(|line| {
+                let mut parts = line.splitn(4, '\t');
+                let name = parts.next()?.to_owned();
+                let ty = parts.next()?.to_owned();
+                let default_kind = parts.next()?.to_owned();
+                let pk = parts.next()? == "1";
+                Some((name, ty, default_kind, pk))
+            })
+            .collect())
+    }
+
     pub async fn describe_server(&self) -> Result<ServerDescribe, ClickHouseError> {
         let started = std::time::Instant::now();
         let names = self.fetch_name_column("SELECT version()").await?;
@@ -467,9 +530,20 @@ impl ClickHouseSession {
 
     async fn fetch_name_column(&self, sql: &str) -> Result<Vec<String>, ClickHouseError> {
         // Use TabSeparated for simple single-column string lists.
-        let cursor = self
-            .client
-            .query(sql)
+        self.fetch_tsv_named(sql, &[]).await
+    }
+
+    /// TabSeparated fetch with optional named parameters (`{name:String}`).
+    async fn fetch_tsv_named(
+        &self,
+        sql: &str,
+        params: &[(&str, &str)],
+    ) -> Result<Vec<String>, ClickHouseError> {
+        let mut request = self.client.query(sql);
+        for (name, value) in params {
+            request = request.param(*name, *value);
+        }
+        let cursor = request
             .fetch_bytes("TabSeparated")
             .map_err(|_| ClickHouseError::Query)?;
         let mut reader = ChunkReader::new(cursor);

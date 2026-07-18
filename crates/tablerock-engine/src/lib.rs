@@ -4,6 +4,7 @@ mod adapter;
 mod browse_plan;
 mod catalog;
 mod clickhouse;
+mod clickhouse_mutation;
 mod ident;
 mod postgres;
 mod postgres_mutation;
