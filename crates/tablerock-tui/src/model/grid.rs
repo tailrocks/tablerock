@@ -1161,6 +1161,42 @@ impl DataGridModel {
         })
     }
 
+    /// Unstage the cursor cell edit only.
+    pub fn unstage_cursor_cell(&mut self) -> bool {
+        if self.columns.is_empty() {
+            return false;
+        }
+        let col = self
+            .columns
+            .get(self.cursor_col.min(self.columns.len().saturating_sub(1)))
+            .cloned()
+            .unwrap_or_default();
+        if col.is_empty() {
+            return false;
+        }
+        // Cancel live edit session on this cell if open.
+        if self
+            .cell_edit
+            .as_ref()
+            .is_some_and(|e| e.abs_row == self.cursor_row && e.column == col)
+        {
+            self.cell_edit = None;
+        }
+        self.drafts.discard_cell_edit(self.cursor_row, &col)
+    }
+
+    /// Unstage all drafts for the cursor row (cell edits + delete).
+    pub fn unstage_cursor_row(&mut self) -> bool {
+        if self
+            .cell_edit
+            .as_ref()
+            .is_some_and(|e| e.abs_row == self.cursor_row)
+        {
+            self.cell_edit = None;
+        }
+        self.drafts.discard_row_stages(self.cursor_row)
+    }
+
     /// Append a redacted notice/status line; drops oldest beyond [`MAX_NOTICE_HISTORY`].
     pub fn push_notice(&mut self, summary: impl Into<String>) {
         let summary = summary.into();
@@ -2217,6 +2253,52 @@ mod tests {
         assert!(panel.contains("1. "), "{panel}");
         g.clear_notices();
         assert!(g.notice_history.is_empty());
+    }
+
+    #[test]
+    fn unstage_cursor_cell_and_row() {
+        use super::super::mutation_draft::{DraftLocatorField, StagedCellEdit};
+        use tablerock_core::ProfileSafetyMode;
+
+        let mut grid = DataGridModel::default();
+        grid.columns = vec!["id".into(), "name".into()];
+        grid.row_count = 1;
+        grid.cells = vec![
+            ProjectedCell {
+                text: "1".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "alice".into(),
+                distinction: CellDistinction::Text,
+                byte_len: 5,
+                original_byte_len: None,
+            },
+        ];
+        grid.base_schema = Some("public".into());
+        grid.base_table = Some("users".into());
+        grid.identity_columns = vec!["id".into()];
+        grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+        grid.cursor_row = 0;
+        grid.cursor_col = 1;
+        assert!(grid.drafts.stage_cell_edit(StagedCellEdit {
+            abs_row: 0,
+            column: "name".into(),
+            original_text: "alice".into(),
+            staged_text: "bob".into(),
+            locator: vec![DraftLocatorField {
+                column: "id".into(),
+                original_text: "1".into(),
+            }],
+        }));
+        assert!(grid.unstage_cursor_cell());
+        assert!(grid.drafts.cell_edits.is_empty());
+        assert!(!grid.unstage_cursor_cell());
+        assert!(grid.stage_delete_cursor_row());
+        assert!(grid.unstage_cursor_row());
+        assert!(grid.drafts.deletes.is_empty());
     }
 
     #[test]

@@ -4121,6 +4121,30 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::UnstageCell if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.unstage_cursor_cell() {
+                    let empty = grid.drafts.is_empty();
+                    if empty {
+                        model.workbench_mut().mark_active_dirty(false);
+                    }
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::UnstageRow if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.unstage_cursor_row() {
+                    let empty = grid.drafts.is_empty();
+                    if empty {
+                        model.workbench_mut().mark_active_dirty(false);
+                    }
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::ShowStaged if model.screen() == Screen::Workbench => {
             let text = model
                 .workbench()
@@ -4732,6 +4756,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DuplicateRow
         | ActionId::EditInsert
         | ActionId::DiscardLastInsert
+        | ActionId::UnstageCell
+        | ActionId::UnstageRow
         | ActionId::ShowStaged
         | ActionId::CopyStaged
         | ActionId::ShowNotices
@@ -6292,6 +6318,8 @@ fn cycle_action(
                 ActionId::DuplicateRow,
                 ActionId::EditInsert,
                 ActionId::DiscardLastInsert,
+                ActionId::UnstageCell,
+                ActionId::UnstageRow,
                 ActionId::ShowStaged,
                 ActionId::CopyStaged,
                 ActionId::ShowNotices,

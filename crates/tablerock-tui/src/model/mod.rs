@@ -239,6 +239,10 @@ pub enum ActionId {
     EditInsert,
     /// Discard only the last staged insert draft.
     DiscardLastInsert,
+    /// Unstage cursor cell edit only (per-change discard).
+    UnstageCell,
+    /// Unstage all drafts for the cursor row (edits + delete).
+    UnstageRow,
     /// Open inspector listing all staged drafts for the active grid.
     ShowStaged,
     /// Copy staged draft inventory text to clipboard.

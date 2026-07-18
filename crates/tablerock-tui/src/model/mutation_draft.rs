@@ -209,6 +209,55 @@ impl MutationDraftModel {
         removed.is_some()
     }
 
+    /// Discard a staged cell edit for one absolute row + column.
+    pub fn discard_cell_edit(&mut self, abs_row: u64, column: &str) -> bool {
+        let before = self.cell_edits.len();
+        self.cell_edits
+            .retain(|e| !(e.abs_row == abs_row && e.column == column));
+        let removed = self.cell_edits.len() < before;
+        if removed {
+            // Drop undo tips that only re-apply this cell (best-effort).
+            self.undo.retain(|entry| match entry {
+                UndoEntry::CellReplaced { current, .. } => {
+                    !(current.abs_row == abs_row && current.column == column)
+                }
+                _ => true,
+            });
+        }
+        removed
+    }
+
+    /// Discard a staged delete for one absolute row.
+    pub fn discard_delete(&mut self, abs_row: u64) -> bool {
+        let before = self.deletes.len();
+        self.deletes.retain(|d| d.abs_row != abs_row);
+        let removed = self.deletes.len() < before;
+        if removed {
+            self.undo.retain(|entry| match entry {
+                UndoEntry::Delete(d) => d.abs_row != abs_row,
+                _ => true,
+            });
+        }
+        removed
+    }
+
+    /// Discard all cell edits and delete stages for one absolute row.
+    pub fn discard_row_stages(&mut self, abs_row: u64) -> bool {
+        let cell = {
+            let before = self.cell_edits.len();
+            self.cell_edits.retain(|e| e.abs_row != abs_row);
+            self.cell_edits.len() < before
+        };
+        let del = self.discard_delete(abs_row);
+        if cell {
+            self.undo.retain(|entry| match entry {
+                UndoEntry::CellReplaced { current, .. } => current.abs_row != abs_row,
+                _ => true,
+            });
+        }
+        cell || del
+    }
+
     pub fn stage_delete(&mut self, delete: StagedDelete) -> bool {
         if !self.staging_allowed {
             return false;
@@ -499,6 +548,32 @@ mod tests {
         assert_eq!(last.values[0].1, "1");
         assert_eq!(last.values[1].1, "ada");
         assert!(!draft.replace_insert_values(99, vec![("x".into(), "y".into())]));
+    }
+
+    #[test]
+    fn discard_cell_and_row_stages() {
+        let mut draft = MutationDraftModel::new();
+        draft.apply_editability(&editable());
+        assert!(draft.stage_cell_edit(cell(1, "name", "a", "b")));
+        assert!(draft.stage_cell_edit(cell(1, "age", "1", "2")));
+        assert!(draft.stage_cell_edit(cell(2, "name", "x", "y")));
+        assert!(draft.discard_cell_edit(1, "name"));
+        assert!(!draft.cell_edits.iter().any(|e| e.column == "name" && e.abs_row == 1));
+        assert!(draft.cell_edits.iter().any(|e| e.column == "age" && e.abs_row == 1));
+        assert!(draft.stage_delete(StagedDelete {
+            abs_row: 2,
+            locator: vec![DraftLocatorField {
+                column: "id".into(),
+                original_text: "2".into(),
+            }],
+        }));
+        // Delete drops pending cell edits on row 2.
+        assert!(!draft.cell_edits.iter().any(|e| e.abs_row == 2));
+        assert!(draft.discard_row_stages(2));
+        assert!(!draft.deletes.iter().any(|d| d.abs_row == 2));
+        assert!(draft.discard_row_stages(1));
+        assert!(draft.cell_edits.is_empty());
+        assert!(!draft.discard_cell_edit(9, "nope"));
     }
 
     #[test]
