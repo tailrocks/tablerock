@@ -298,6 +298,12 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "{calendar_text}Paste day 1-31 or YYYY-MM-DD for {year:04}-{month:02} [{confirm_buffer}]"
             ),
         ),
+        crate::model::ConfirmDialog::CopyPick { confirm_buffer } => (
+            "Copy format?",
+            format!(
+                "scope format: row|loaded + csv|tsv|json|md|insert|update [{confirm_buffer}]"
+            ),
+        ),
         crate::model::ConfirmDialog::EditInsertValues {
             draft_id,
             confirm_buffer,
@@ -668,6 +674,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_row_md = action_label(model, ActionId::CopyRowMarkdown, "RowMd");
     let copy_row_ins = action_label(model, ActionId::CopyRowSqlInsert, "RowIns");
     let copy_row_upd = action_label(model, ActionId::CopyRowSqlUpdate, "RowUpd");
+    let copy_pick = action_label(model, ActionId::CopyPick, "CopyPick");
     let toggle_bool = action_label(model, ActionId::ToggleBool, "TogBool");
     let set_null = action_label(model, ActionId::SetNull, "SetNull");
     let set_today = action_label(model, ActionId::SetToday, "Today");
@@ -1211,6 +1218,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyRowSqlUpdate,
                         label: copy_row_upd.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyPick,
+                        label: copy_pick.as_str(),
                         enabled: true,
                         style: None,
                     },

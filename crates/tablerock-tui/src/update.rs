@@ -111,6 +111,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::EditQuickFilter { confirm_buffer, .. }
                     | ConfirmDialog::GoToRow { confirm_buffer, .. }
                     | ConfirmDialog::PickDate { confirm_buffer, .. }
+                    | ConfirmDialog::CopyPick { confirm_buffer, .. }
                     | ConfirmDialog::EditInsertValues { confirm_buffer, .. }
                     | ConfirmDialog::StageRedis { confirm_buffer, .. }
                     | ConfirmDialog::RedisSubscribe { confirm_buffer, .. }
@@ -2911,6 +2912,24 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     }
                     Update::render()
                 }
+                ConfirmDialog::CopyPick { confirm_buffer } => {
+                    let Some((scope, format)) = parse_copy_pick(&confirm_buffer) else {
+                        return Update::render();
+                    };
+                    model.set_confirm(None);
+                    match scope {
+                        crate::model::copy_format::CopyScope::Row => {
+                            copy_cursor_row(model, format)
+                        }
+                        crate::model::copy_format::CopyScope::LoadedResult => {
+                            copy_grid(model, format)
+                        }
+                        crate::model::copy_format::CopyScope::Cell => {
+                            // Cell scope uses dedicated text/hex actions.
+                            copy_cursor_cell(model, false)
+                        }
+                    }
+                }
                 ConfirmDialog::EditInsertValues {
                     draft_id,
                     confirm_buffer,
@@ -3454,6 +3473,16 @@ fn activate_selected_action(model: &mut Model) -> Update {
         }
         ActionId::CopyRowSqlUpdate if model.screen() == Screen::Workbench => {
             copy_cursor_row(model, crate::model::copy_format::CopyFormat::SqlUpdate)
+        }
+        ActionId::CopyPick if model.screen() == Screen::Workbench => {
+            if model.workbench().active_grid().is_none() {
+                return Update::unchanged();
+            }
+            model.set_confirm(Some(ConfirmDialog::CopyPick {
+                confirm_buffer: "row tsv".into(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
         }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
@@ -4704,6 +4733,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyRowMarkdown
         | ActionId::CopyRowSqlInsert
         | ActionId::CopyRowSqlUpdate
+        | ActionId::CopyPick
         | ActionId::CycleSort
         | ActionId::PushSort
         | ActionId::PopSort
@@ -5834,6 +5864,35 @@ fn open_pick_date(model: &mut Model) -> Update {
     Update::render()
 }
 
+/// Parse `scope format` for CopyPick (e.g. `row csv`, `loaded:json`).
+fn parse_copy_pick(
+    buf: &str,
+) -> Option<(
+    crate::model::copy_format::CopyScope,
+    crate::model::copy_format::CopyFormat,
+)> {
+    use crate::model::copy_format::{CopyFormat, CopyScope};
+    let t = buf.trim().to_ascii_lowercase().replace(':', " ");
+    let mut parts = t.split_whitespace();
+    let first = parts.next()?;
+    let (scope, fmt_tok) = match first {
+        "row" | "r" => (CopyScope::Row, parts.next()?),
+        "loaded" | "result" | "all" | "l" => (CopyScope::LoadedResult, parts.next()?),
+        // Bare format defaults to row (most common clipboard paste).
+        other => (CopyScope::Row, other),
+    };
+    let format = match fmt_tok {
+        "csv" => CopyFormat::Csv,
+        "tsv" | "tab" => CopyFormat::Tsv,
+        "json" | "js" => CopyFormat::Json,
+        "md" | "markdown" => CopyFormat::Markdown,
+        "insert" | "sql" | "sqlinsert" => CopyFormat::SqlInsert,
+        "update" | "sqlupdate" => CopyFormat::SqlUpdate,
+        _ => return None,
+    };
+    Some((scope, format))
+}
+
 fn open_edit_insert(model: &mut Model) -> Update {
     let Some(grid) = model.workbench().active_grid() else {
         return Update::unchanged();
@@ -6264,6 +6323,7 @@ fn cycle_action(
                 ActionId::CopyRowMarkdown,
                 ActionId::CopyRowSqlInsert,
                 ActionId::CopyRowSqlUpdate,
+                ActionId::CopyPick,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,
@@ -7825,6 +7885,81 @@ mod tests {
             Some("notice: NOTICE: table-rock-notice")
         );
         assert_eq!(grid.notice_history.as_slice(), ["NOTICE: table-rock-notice"]);
+    }
+
+    #[test]
+    fn parse_copy_pick_scope_and_format() {
+        use crate::model::copy_format::{CopyFormat, CopyScope};
+        assert_eq!(
+            parse_copy_pick("row csv"),
+            Some((CopyScope::Row, CopyFormat::Csv))
+        );
+        assert_eq!(
+            parse_copy_pick("loaded:json"),
+            Some((CopyScope::LoadedResult, CopyFormat::Json))
+        );
+        assert_eq!(
+            parse_copy_pick("tsv"),
+            Some((CopyScope::Row, CopyFormat::Tsv))
+        );
+        assert_eq!(
+            parse_copy_pick("row insert"),
+            Some((CopyScope::Row, CopyFormat::SqlInsert))
+        );
+        assert!(parse_copy_pick("row nope").is_none());
+        assert!(parse_copy_pick("").is_none());
+    }
+
+    #[test]
+    fn copy_pick_dialog_emits_clipboard_effect() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into()];
+            grid.row_count = 1;
+            grid.cells = vec![
+                crate::model::grid::ProjectedCell {
+                    text: "1".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                },
+                crate::model::grid::ProjectedCell {
+                    text: "a".into(),
+                    distinction: crate::model::grid::CellDistinction::Text,
+                    byte_len: 1,
+                    original_byte_len: None,
+                },
+            ];
+            grid.cursor_row = 0;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyPick);
+        let open = update(&mut model, Message::Activate);
+        assert!(open.effects().next().is_none());
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::CopyPick { .. })
+        ));
+        if let Some(ConfirmDialog::CopyPick { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = "row tsv".into();
+        }
+        model.set_action(ActionId::Submit);
+        let done = update(&mut model, Message::Activate);
+        match done.effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(!text.is_empty(), "{text}");
+            }
+            other => panic!("expected CopyToClipboard, got {other:?}"),
+        }
     }
 
     #[test]

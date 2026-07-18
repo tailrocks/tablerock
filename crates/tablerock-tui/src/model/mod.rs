@@ -122,6 +122,8 @@ pub enum ActionId {
     CopyRowSqlInsert,
     /// Copy cursor row as SQL UPDATE (needs base-table identity).
     CopyRowSqlUpdate,
+    /// Format picker: paste `scope format` (row|loaded + csv|tsv|json|md|insert|update).
+    CopyPick,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Append cursor column as secondary sort (or cycle its direction in place).
@@ -453,6 +455,10 @@ pub enum ConfirmDialog {
         time_suffix: String,
         /// Calendar grid for the dialog body.
         calendar_text: String,
+    },
+    /// Copy format picker: confirm_buffer is `scope format` (e.g. `row csv`, `loaded tsv`).
+    CopyPick {
+        confirm_buffer: String,
     },
     /// Edit last staged insert: confirm_buffer is `col=value` lines (empty value → NULL).
     EditInsertValues {

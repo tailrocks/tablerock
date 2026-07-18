@@ -28,4 +28,4 @@ cargo test -p tablerock-tui --lib
 
 ## Remaining work
 
-- Single picker dialog cycling formats (optional)
+- Single picker dialog — shipped as evidence 393
