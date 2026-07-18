@@ -21,20 +21,7 @@ pub struct InspectorModel {
 impl InspectorModel {
     #[must_use]
     pub fn from_cell(title: impl Into<String>, cell: &ProjectedCell, stale: bool) -> Self {
-        let hex = if cell.distinction == CellDistinction::Binary
-            || cell.distinction == CellDistinction::Unknown
-            || cell.distinction == CellDistinction::Invalid
-        {
-            cell.text.clone()
-        } else {
-            cell.text
-                .as_bytes()
-                .iter()
-                .take(32)
-                .map(|b| format!("{b:02x}"))
-                .collect::<Vec<_>>()
-                .join(" ")
-        };
+        let hex = format_hex_panel(cell);
         let text = match cell.distinction {
             CellDistinction::Structured => pretty_structured(&cell.text),
             CellDistinction::Temporal => format!(
@@ -45,10 +32,14 @@ impl InspectorModel {
                 "{}\n(toggle: TogBool · null: SetNull)",
                 cell.display()
             ),
-            CellDistinction::Binary => format!(
-                "{}\n(binary · first 32 bytes in hex panel)",
-                cell.display()
-            ),
+            CellDistinction::Binary => {
+                let shown = hex_byte_count(cell).min(256);
+                format!(
+                    "{}\n(binary · hex panel shows first {shown} of {} bytes · CopyHex)",
+                    cell.display(),
+                    cell.byte_len.max(cell.text.len() as u64)
+                )
+            }
             _ => cell.display(),
         };
         Self {
@@ -108,7 +99,17 @@ impl InspectorModel {
         } else {
             out.push(format!("text: {}", self.text));
         }
-        out.push(format!("hex: {}", self.hex));
+        if self.hex.contains('\n') {
+            out.push("hex:".into());
+            for line in self.hex.lines().take(20) {
+                out.push(line.to_owned());
+            }
+            if self.hex.lines().count() > 20 {
+                out.push("…".into());
+            }
+        } else {
+            out.push(format!("hex: {}", self.hex));
+        }
         out
     }
 
@@ -148,6 +149,23 @@ mod tests {
         assert!(lines.contains("truncated"));
         assert!(lines.contains("stale: yes"));
         assert!(lines.contains("kind: truncated"));
+    }
+
+    #[test]
+    fn binary_hex_panel_is_multiline_dump() {
+        let cell = ProjectedCell {
+            text: "Hello, binary!\n\0\x01\x02".into(),
+            distinction: CellDistinction::Binary,
+            byte_len: 18,
+            original_byte_len: None,
+        };
+        let insp = InspectorModel::from_cell("row.blob", &cell, false);
+        assert!(insp.hex.contains("0000"));
+        assert!(insp.hex.contains('|'));
+        assert!(insp.hex.contains("48 65 6c 6c 6f")); // Hello
+        let lines = insp.lines().join("\n");
+        assert!(lines.contains("hex:"));
+        assert!(insp.text.contains("binary"));
     }
 
     #[test]
@@ -279,6 +297,55 @@ fn structured_tree_lines(raw: &str) -> Vec<String> {
         out.push(raw.to_owned());
     }
     out
+}
+
+/// How many payload bytes the hex panel will show (capped).
+fn hex_byte_count(cell: &ProjectedCell) -> usize {
+    let bytes = hex_source_bytes(cell);
+    bytes.len().min(256)
+}
+
+/// Bytes to dump: prefer raw UTF-8 of cell text (presentation bytes).
+fn hex_source_bytes(cell: &ProjectedCell) -> Vec<u8> {
+    // Binary cells may already store space-separated hex; keep as UTF-8 view of text.
+    cell.text.as_bytes().to_vec()
+}
+
+/// Multi-line hex dump: 16 bytes per line with offset, max 256 bytes.
+fn format_hex_panel(cell: &ProjectedCell) -> String {
+    let bytes = hex_source_bytes(cell);
+    if bytes.is_empty() {
+        return String::new();
+    }
+    let limit = bytes.len().min(256);
+    let slice = &bytes[..limit];
+    let mut lines = Vec::new();
+    for (chunk_i, chunk) in slice.chunks(16).enumerate() {
+        let off = chunk_i * 16;
+        let mut hex = String::new();
+        let mut ascii = String::new();
+        for (j, b) in chunk.iter().enumerate() {
+            if j > 0 {
+                hex.push(' ');
+            }
+            hex.push_str(&format!("{b:02x}"));
+            let c = *b as char;
+            if c.is_ascii_graphic() || c == ' ' {
+                ascii.push(c);
+            } else {
+                ascii.push('.');
+            }
+        }
+        // Pad hex to fixed width for alignment when last line short.
+        while hex.len() < 16 * 3 - 1 {
+            hex.push(' ');
+        }
+        lines.push(format!("{off:04x}  {hex}  |{ascii}|"));
+    }
+    if bytes.len() > limit {
+        lines.push(format!("… ({} more bytes not shown)", bytes.len() - limit));
+    }
+    lines.join("\n")
 }
 
 /// Indent JSON-like structured text for inspector readability (best-effort).
