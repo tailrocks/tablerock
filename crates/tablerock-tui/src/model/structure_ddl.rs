@@ -160,4 +160,16 @@ AddCol / DropCol
     fn quote_ident_escapes_quotes() {
         assert_eq!(quote_ident_sql(r#"a"b"#), r#""a""b""#);
     }
+
+    #[test]
+    fn compose_quotes_hostile_schema_and_table_names() {
+        let text = "-- columns --\nid integer NOT NULL\n";
+        let ddl = compose_create_table_ddl("sche\"ma", "ta\"ble", text).unwrap();
+        // Both identifiers are quote-escaped, never emitted raw.
+        assert!(ddl.contains(r#""sche""ma"."ta""ble""#), "{ddl}");
+        assert!(
+            !ddl.contains(r#""sche"ma."ta"ble"#),
+            "raw injection leaked: {ddl}"
+        );
+    }
 }
