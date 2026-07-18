@@ -36,3 +36,4 @@ cargo check -p tablerock-tui
 
 - Inline editable inserted-row viewport in VirtualGrid (optional)
 - Resident-row draft paint for updates/deletes — shipped as evidence 373
+- EditInsert col=value dialog — shipped as evidence 377

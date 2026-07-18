@@ -111,6 +111,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::EditQuickFilter { confirm_buffer, .. }
                     | ConfirmDialog::GoToRow { confirm_buffer, .. }
                     | ConfirmDialog::PickDate { confirm_buffer, .. }
+                    | ConfirmDialog::EditInsertValues { confirm_buffer, .. }
                     | ConfirmDialog::StageRedis { confirm_buffer, .. }
                     | ConfirmDialog::RedisSubscribe { confirm_buffer, .. }
                     | ConfirmDialog::RenameGroup { confirm_buffer, .. }
@@ -2892,6 +2893,24 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     }
                     Update::render()
                 }
+                ConfirmDialog::EditInsertValues {
+                    draft_id,
+                    confirm_buffer,
+                } => {
+                    let Some(values) = parse_insert_value_buffer(&confirm_buffer) else {
+                        return Update::render();
+                    };
+                    let ok = model
+                        .workbench_mut()
+                        .active_grid_mut()
+                        .is_some_and(|g| g.drafts.replace_insert_values(draft_id, values));
+                    if !ok {
+                        return Update::render();
+                    }
+                    model.set_confirm(None);
+                    model.workbench_mut().mark_active_dirty(true);
+                    Update::render()
+                }
                 ConfirmDialog::StageRedis {
                     op,
                     logical_db,
@@ -3996,6 +4015,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::EditInsert if model.screen() == Screen::Workbench => open_edit_insert(model),
         ActionId::ShowNotices if model.screen() == Screen::Workbench => {
             let text = model
                 .workbench()
@@ -4521,6 +4541,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DeleteRow
         | ActionId::InsertRow
         | ActionId::DuplicateRow
+        | ActionId::EditInsert
         | ActionId::ShowNotices
         | ActionId::ClearNotices
         | ActionId::HexMore
@@ -5583,6 +5604,55 @@ fn open_pick_date(model: &mut Model) -> Update {
     Update::render()
 }
 
+fn open_edit_insert(model: &mut Model) -> Update {
+    let Some(grid) = model.workbench().active_grid() else {
+        return Update::unchanged();
+    };
+    let Some(insert) = grid.drafts.last_insert() else {
+        return Update::unchanged();
+    };
+    let draft_id = insert.draft_id;
+    let buffer = insert
+        .values
+        .iter()
+        .map(|(c, v)| format!("{c}={v}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    model.set_confirm(Some(ConfirmDialog::EditInsertValues {
+        draft_id,
+        confirm_buffer: buffer,
+    }));
+    model.set_action(ActionId::Submit);
+    Update::render()
+}
+
+/// Parse `col=value` lines into ordered column pairs. Empty/blank buffer fails.
+///
+/// Lines without `=` are ignored. Column names are trimmed; values keep interior
+/// spaces. Empty value means NULL at plan build.
+fn parse_insert_value_buffer(buf: &str) -> Option<Vec<(String, String)>> {
+    let mut values = Vec::new();
+    for line in buf.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((col, val)) = line.split_once('=') else {
+            continue;
+        };
+        let col = col.trim();
+        if col.is_empty() {
+            continue;
+        }
+        values.push((col.to_owned(), val.to_owned()));
+    }
+    if values.is_empty() {
+        None
+    } else {
+        Some(values)
+    }
+}
+
 fn parse_temporal_parts(buf: &str) -> Option<(i32, u32, u32, String)> {
     let t = buf.trim();
     if t.is_empty() || t.eq_ignore_ascii_case("null") {
@@ -6019,6 +6089,7 @@ fn cycle_action(
                 ActionId::DeleteRow,
                 ActionId::InsertRow,
                 ActionId::DuplicateRow,
+                ActionId::EditInsert,
                 ActionId::ShowNotices,
                 ActionId::ClearNotices,
                 ActionId::HexMore,

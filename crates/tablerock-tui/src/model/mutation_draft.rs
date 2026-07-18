@@ -170,6 +170,28 @@ impl MutationDraftModel {
         Some(draft_id)
     }
 
+    /// Replace values on an existing insert draft. Returns false if missing/blocked.
+    pub fn replace_insert_values(
+        &mut self,
+        draft_id: u64,
+        values: Vec<(String, String)>,
+    ) -> bool {
+        if !self.staging_allowed {
+            return false;
+        }
+        let Some(insert) = self.inserts.iter_mut().find(|i| i.draft_id == draft_id) else {
+            return false;
+        };
+        insert.values = values;
+        true
+    }
+
+    /// Most recently staged insert (last in list), if any.
+    #[must_use]
+    pub fn last_insert(&self) -> Option<&StagedInsert> {
+        self.inserts.last()
+    }
+
     pub fn stage_delete(&mut self, delete: StagedDelete) -> bool {
         if !self.staging_allowed {
             return false;
@@ -389,5 +411,22 @@ mod tests {
         assert_eq!(draft.inserts.len(), 1);
         assert!(draft.undo());
         assert!(draft.inserts.is_empty());
+    }
+
+    #[test]
+    fn replace_insert_values_updates_last() {
+        let mut draft = MutationDraftModel::new();
+        draft.apply_editability(&editable());
+        let id = draft
+            .stage_insert(vec![("id".into(), String::new()), ("name".into(), String::new())])
+            .unwrap();
+        assert!(draft.replace_insert_values(
+            id,
+            vec![("id".into(), "1".into()), ("name".into(), "ada".into())]
+        ));
+        let last = draft.last_insert().unwrap();
+        assert_eq!(last.values[0].1, "1");
+        assert_eq!(last.values[1].1, "ada");
+        assert!(!draft.replace_insert_values(99, vec![("x".into(), "y".into())]));
     }
 }

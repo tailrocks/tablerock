@@ -223,6 +223,8 @@ pub enum ActionId {
     InsertRow,
     /// Stage an insert prefilled from the cursor row values.
     DuplicateRow,
+    /// Edit values of the last staged insert (`col=value` lines).
+    EditInsert,
     /// Open inspector with bounded NOTICE history for the active grid tab.
     ShowNotices,
     /// Clear NOTICE history for the active grid tab.
@@ -421,6 +423,11 @@ pub enum ConfirmDialog {
         time_suffix: String,
         /// Calendar grid for the dialog body.
         calendar_text: String,
+    },
+    /// Edit last staged insert: confirm_buffer is `col=value` lines (empty value → NULL).
+    EditInsertValues {
+        draft_id: u64,
+        confirm_buffer: String,
     },
     /// Stage Redis collection mutation: paste field/member/score payload.
     ///

@@ -298,6 +298,15 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "{calendar_text}Paste day 1-31 or YYYY-MM-DD for {year:04}-{month:02} [{confirm_buffer}]"
             ),
         ),
+        crate::model::ConfirmDialog::EditInsertValues {
+            draft_id,
+            confirm_buffer,
+        } => (
+            "Edit insert values?",
+            format!(
+                "draft #{draft_id}: paste col=value lines (empty value → NULL) [{confirm_buffer}]"
+            ),
+        ),
         crate::model::ConfirmDialog::StageRedis {
             op,
             logical_db,
@@ -668,6 +677,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let delete_row = action_label(model, ActionId::DeleteRow, "DelRow");
     let insert_row = action_label(model, ActionId::InsertRow, "InsRow");
     let dup_row = action_label(model, ActionId::DuplicateRow, "DupRow");
+    let edit_insert = action_label(model, ActionId::EditInsert, "EditIns");
     let show_notices = action_label(model, ActionId::ShowNotices, "Notices");
     let clear_notices = action_label(model, ActionId::ClearNotices, "ClrNtc");
     let hex_more = action_label(model, ActionId::HexMore, "Hex+");
@@ -1240,6 +1250,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::DuplicateRow,
                         label: dup_row.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::EditInsert,
+                        label: edit_insert.as_str(),
                         enabled: true,
                         style: None,
                     },
