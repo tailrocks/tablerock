@@ -5907,6 +5907,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::SetYesterday if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.set_yesterday() {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::SetTomorrow if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.set_tomorrow() {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::SetNow if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if let Some(edit) = grid.cell_edit.as_mut() {
@@ -6815,6 +6835,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ToggleBool
         | ActionId::SetNull
         | ActionId::SetToday
+        | ActionId::SetYesterday
+        | ActionId::SetTomorrow
         | ActionId::SetNow
         | ActionId::IncDay
         | ActionId::DecDay
@@ -8650,6 +8672,8 @@ fn cycle_action(
                 ActionId::ToggleBool,
                 ActionId::SetNull,
                 ActionId::SetToday,
+                ActionId::SetYesterday,
+                ActionId::SetTomorrow,
                 ActionId::SetNow,
                 ActionId::IncDay,
                 ActionId::DecDay,

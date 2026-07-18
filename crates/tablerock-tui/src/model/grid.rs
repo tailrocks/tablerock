@@ -47,6 +47,22 @@ impl CellEditSession {
         true
     }
 
+    /// Stamp yesterday's local calendar date for temporal cells.
+    pub fn set_yesterday(&mut self) -> bool {
+        if !self.set_today() {
+            return false;
+        }
+        self.step_day(-1)
+    }
+
+    /// Stamp tomorrow's local calendar date for temporal cells.
+    pub fn set_tomorrow(&mut self) -> bool {
+        if !self.set_today() {
+            return false;
+        }
+        self.step_day(1)
+    }
+
     /// Stamp local timestamp `YYYY-MM-DDTHH:MM:SS` for temporal cells.
     pub fn set_now(&mut self) -> bool {
         if self.kind != CellDistinction::Temporal {
@@ -3920,6 +3936,15 @@ mod tests {
             CellDistinction::Temporal
         ));
         assert!(session.buffer.chars().filter(|c| *c == '-').count() >= 2);
+        let today = session.buffer.clone();
+        assert!(session.set_yesterday());
+        assert_ne!(session.buffer, today);
+        assert!(session.set_tomorrow());
+        // yesterday + 2 days via set_tomorrow from today path: set_tomorrow stamps today+1
+        assert!(session.set_today());
+        let today2 = session.buffer.clone();
+        assert!(session.set_tomorrow());
+        assert_ne!(session.buffer, today2);
         assert!(session.set_now());
         assert!(session.buffer.contains('T'));
         assert!(staged_value_ok_for_distinction(

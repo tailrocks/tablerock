@@ -437,6 +437,10 @@ pub enum ActionId {
     SetNull,
     /// Stamp today (YYYY-MM-DD) while editing a temporal cell.
     SetToday,
+    /// Stamp yesterday while editing a temporal cell.
+    SetYesterday,
+    /// Stamp tomorrow while editing a temporal cell.
+    SetTomorrow,
     /// Stamp now (YYYY-MM-DDTHH:MM:SSZ) while editing a temporal cell.
     SetNow,
     /// Step temporal date by +1 day while editing.

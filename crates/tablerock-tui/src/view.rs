@@ -792,6 +792,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let toggle_bool = action_label(model, ActionId::ToggleBool, "TogBool");
     let set_null = action_label(model, ActionId::SetNull, "SetNull");
     let set_today = action_label(model, ActionId::SetToday, "Today");
+    let set_yest = action_label(model, ActionId::SetYesterday, "Yest");
+    let set_tom = action_label(model, ActionId::SetTomorrow, "Tomor");
     let set_now = action_label(model, ActionId::SetNow, "Now");
     let inc_day = action_label(model, ActionId::IncDay, "Day+");
     let dec_day = action_label(model, ActionId::DecDay, "Day-");
@@ -1981,6 +1983,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::SetToday,
                         label: set_today.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SetYesterday,
+                        label: set_yest.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SetTomorrow,
+                        label: set_tom.as_str(),
                         enabled: true,
                         style: None,
                     },
