@@ -101,6 +101,10 @@ pub enum ActionId {
     ListTabs,
     /// Copy tab inventory text to clipboard.
     CopyTabs,
+    /// Copy active workbench tab title.
+    CopyActiveTabTitle,
+    /// Copy dirty tab titles (one per line); fail closed if none dirty.
+    CopyDirtyTabTitles,
     PinTab,
     NewSql,
     RunSql,

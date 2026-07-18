@@ -3425,6 +3425,51 @@ fn activate_selected_action(model: &mut Model) -> Update {
             };
             Update::render()
         }
+        ActionId::CopyActiveTabTitle if model.screen() == Screen::Workbench => {
+            let Some(text) = model
+                .workbench()
+                .active_tab()
+                .map(|t| t.title.clone())
+                .filter(|s| !s.is_empty())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied tab title {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopyDirtyTabTitles if model.screen() == Screen::Workbench => {
+            let titles: Vec<String> = model
+                .workbench()
+                .tabs
+                .iter()
+                .filter(|t| t.dirty)
+                .map(|t| t.title.clone())
+                .collect();
+            if titles.is_empty() {
+                return Update::unchanged();
+            }
+            let text = titles.join("\n");
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied {} dirty tab title(s)", titles.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTabs if model.screen() == Screen::Workbench => {
             let text = model.workbench().tabs_panel_text();
             if text == "no tabs" {
@@ -6990,6 +7035,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::GoToTab
         | ActionId::ListTabs
         | ActionId::CopyTabs
+        | ActionId::CopyActiveTabTitle
+        | ActionId::CopyDirtyTabTitles
         | ActionId::PinTab
         | ActionId::NewSql
         | ActionId::RunSql
@@ -8851,6 +8898,8 @@ fn cycle_action(
                 ActionId::GoToTab,
                 ActionId::ListTabs,
                 ActionId::CopyTabs,
+                ActionId::CopyActiveTabTitle,
+                ActionId::CopyDirtyTabTitles,
                 ActionId::CloseTab,
                 ActionId::QuickSwitch,
                 ActionId::PinTab,
@@ -10930,6 +10979,45 @@ mod tests {
             model.workbench().active_grid().map(|g| g.cursor_row),
             Some(0)
         );
+    }
+
+    #[test]
+    fn copy_active_and_dirty_tab_titles() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("clean");
+        model.workbench_mut().open_preview_tab("dirty-one");
+        model.workbench_mut().mark_active_dirty(true);
+        model.workbench_mut().open_preview_tab("dirty-two");
+        model.workbench_mut().mark_active_dirty(true);
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyActiveTabTitle);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "dirty-two"),
+            other => panic!("expected active title, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyDirtyTabTitles);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("dirty-one"), "{text}");
+                assert!(text.contains("dirty-two"), "{text}");
+                assert!(!text.contains("clean"), "{text}");
+            }
+            other => panic!("expected dirty titles, got {other:?}"),
+        }
+        // Clear dirty flags → fail closed.
+        for tab in &mut model.workbench_mut().tabs {
+            tab.dirty = false;
+        }
+        model.set_action(ActionId::CopyDirtyTabTitles);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
     #[test]

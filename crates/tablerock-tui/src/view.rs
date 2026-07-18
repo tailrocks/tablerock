@@ -897,6 +897,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let go_tab = action_label(model, ActionId::GoToTab, "GoTab");
     let list_tabs = action_label(model, ActionId::ListTabs, "ListTabs");
     let copy_tabs = action_label(model, ActionId::CopyTabs, "CopyTabs");
+    let copy_tab_title = action_label(model, ActionId::CopyActiveTabTitle, "CopyTabT");
+    let copy_dirty_tabs = action_label(model, ActionId::CopyDirtyTabTitles, "CopyDirtyT");
     let submit = action_label(model, ActionId::Submit, "Submit");
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
     let quit = action_label(model, ActionId::Quit, "Quit");
@@ -2638,6 +2640,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyTabs,
                         label: copy_tabs.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyActiveTabTitle,
+                        label: copy_tab_title.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyDirtyTabTitles,
+                        label: copy_dirty_tabs.as_str(),
                         enabled: true,
                         style: None,
                     },
