@@ -11,9 +11,10 @@ use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
     LocalForwardTunnel, PostgresConnectConfig, PostgresSession, PostgresTlsMode,
     RedisConnectConfig, RedisConnectionSecurity, RedisProtocol, RedisSession, RedisTlsMode,
-    SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth, SshPublicKeyAuth, SshTunnelConfig,
-    SshTunnelError, channel_stream, connect_session, connect_session_capture_host_key,
-    learn_host_key, open_direct_tcpip, open_local_forward_tunnel, spawn_local_forward,
+    SshAgentAuth, SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth, SshPublicKeyAuth,
+    SshTunnelConfig, SshTunnelError, channel_stream, connect_session,
+    connect_session_capture_host_key, learn_host_key, open_direct_tcpip, open_local_forward_tunnel,
+    spawn_local_forward,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -436,6 +437,98 @@ async fn public_key_auth_to_bastion() {
         Some(SshTunnelError::Auth),
         "password auth must fail when bastion disables passwords"
     );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn agent_auth_to_bastion() {
+    use std::{
+        pin::Pin,
+        sync::Arc,
+        task::{Context, Poll},
+    };
+
+    use futures_util::Stream;
+    use russh::keys::agent::client::AgentClient;
+    use russh::keys::agent::server::{self, Agent};
+    use russh::keys::{PrivateKey, decode_secret_key};
+    use tokio::net::{UnixListener, UnixStream};
+
+    #[derive(Clone)]
+    struct AllowAll;
+    impl Agent for AllowAll {
+        fn confirm(
+            self,
+            _: Arc<PrivateKey>,
+        ) -> Box<dyn std::future::Future<Output = (Self, bool)> + Send + Unpin> {
+            Box::new(std::future::ready((self, true)))
+        }
+    }
+
+    /// Unpin accept stream for `russh` agent `serve`.
+    struct AcceptStream {
+        listener: UnixListener,
+    }
+    impl Stream for AcceptStream {
+        type Item = std::io::Result<UnixStream>;
+        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            match self.listener.poll_accept(cx) {
+                Poll::Ready(Ok((stream, _))) => Poll::Ready(Some(Ok(stream))),
+                Poll::Ready(Err(error)) => Poll::Ready(Some(Err(error))),
+                Poll::Pending => Poll::Pending,
+            }
+        }
+    }
+
+    let tag = unique_tag();
+    let sock = std::env::temp_dir().join(format!("tablerock-agent-{tag}.sock"));
+    let _ = std::fs::remove_file(&sock);
+    let listener = UnixListener::bind(&sock).expect("bind agent socket");
+    let agent_task = tokio::spawn(async move {
+        let _ = server::serve(AcceptStream { listener }, AllowAll).await;
+    });
+    // Give serve a beat to open the path.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let private = decode_secret_key(TEST_CLIENT_PRIVATE, None).expect("decode client key");
+    // Seed agent with identity (never leaves process except via sign requests).
+    {
+        let stream = UnixStream::connect(&sock)
+            .await
+            .expect("connect agent for add_identity");
+        let mut agent = AgentClient::connect(stream);
+        agent
+            .add_identity(&private, &[])
+            .await
+            .expect("add identity to agent");
+    }
+
+    let network = format!("tablerock-ssh-agent-{tag}");
+    let bootstrap = pubkey_sshd_bootstrap(TEST_CLIENT_PUBLIC);
+    let ssh = GenericImage::new("alpine", "3.21")
+        .with_exposed_port(22.tcp())
+        .with_wait_for(WaitFor::message_on_stderr("Server listening on 0.0.0.0 port 22"))
+        .with_entrypoint("sh")
+        .with_cmd(["-c", bootstrap.as_str()])
+        .with_network(network.as_str())
+        .start()
+        .await
+        .expect("agent bastion");
+    let ssh_port = ssh.get_host_port_ipv4(22.tcp()).await.unwrap();
+
+    let config = SshTunnelConfig {
+        bastion_host: "127.0.0.1".into(),
+        bastion_port: ssh_port,
+        auth: SshAuthMaterial::Agent(SshAgentAuth::from_socket_path("root", &sock)),
+        host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
+    };
+    assert!(
+        wait_connect(&config).await,
+        "SSH agent auth to bastion must succeed"
+    );
+
+    agent_task.abort();
+    let _ = std::fs::remove_file(&sock);
 }
 
 #[tokio::test]

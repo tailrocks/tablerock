@@ -103,7 +103,8 @@ host them, keep those suites local-only and record the gap — same pattern as
 - [x] Profile SSH property bindings (evidence 265)
 - [x] Connect-path SSH auto-wrap + session-owned tunnel (evidence 266)
 - [x] TUI connection editor SSH section (evidence 267)
-- [x] Encrypted SSH private key + TUI key field (evidence 268; agent residual)
+- [x] Encrypted SSH private key + TUI key field (evidence 268)
+- [x] SSH agent auth (evidence 269; profile/TUI agent toggle residual)
 - [x] pg_dump discovery + argv never carries password (tool_discovery tests)
 - [x] DDL plans typed (DdlPlan) + PG execute_ddl_plan add/drop column + vacuum/analyze; Redis unsupported
 - [x] Roles: list_roles read-only Docker test
@@ -114,7 +115,7 @@ host them, keep those suites local-only and record the gap — same pattern as
 
 ## Residual
 
-- SSH agent auth
+- Profile/TUI toggle for SSH agent mode (engine Agent path landed)
 - Full pg_dump/pg_restore process cancel + version matrix CI
 - DDL review UI + index/constraint ops
 - Role membership/grant inspection depth

@@ -100,11 +100,45 @@ impl fmt::Debug for SshPublicKeyAuth {
     }
 }
 
-/// Bastion authentication material (password or public key).
+/// Authenticate via SSH agent (`SSH_AUTH_SOCK` or explicit socket path).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SshAgentAuth {
+    username: String,
+    /// When set, connect this Unix socket instead of `SSH_AUTH_SOCK` (tests).
+    socket_path: Option<PathBuf>,
+}
+
+impl SshAgentAuth {
+    /// Use the agent from the `SSH_AUTH_SOCK` environment variable.
+    #[must_use]
+    pub fn from_env(username: impl Into<String>) -> Self {
+        Self {
+            username: username.into(),
+            socket_path: None,
+        }
+    }
+
+    /// Use an explicit agent socket path (Docker/unit fixtures).
+    #[must_use]
+    pub fn from_socket_path(username: impl Into<String>, path: impl Into<PathBuf>) -> Self {
+        Self {
+            username: username.into(),
+            socket_path: Some(path.into()),
+        }
+    }
+
+    #[must_use]
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+}
+
+/// Bastion authentication material (password, public key, or agent).
 #[derive(Debug)]
 pub enum SshAuthMaterial {
     Password(SshPasswordAuth),
     PublicKey(SshPublicKeyAuth),
+    Agent(SshAgentAuth),
 }
 
 impl From<SshPasswordAuth> for SshAuthMaterial {
@@ -116,6 +150,12 @@ impl From<SshPasswordAuth> for SshAuthMaterial {
 impl From<SshPublicKeyAuth> for SshAuthMaterial {
     fn from(value: SshPublicKeyAuth) -> Self {
         Self::PublicKey(value)
+    }
+}
+
+impl From<SshAgentAuth> for SshAuthMaterial {
+    fn from(value: SshAgentAuth) -> Self {
+        Self::Agent(value)
     }
 }
 
@@ -246,14 +286,15 @@ pub async fn connect_session_capture_host_key(
             .await
             .map_err(|_| SshTunnelError::Auth)?,
         SshAuthMaterial::PublicKey(public_key) => {
-            let key = PrivateKeyWithHashAlg::new(
-                Arc::clone(&public_key.private_key),
-                None,
-            );
+            let key =
+                PrivateKeyWithHashAlg::new(Arc::clone(&public_key.private_key), None);
             handle
                 .authenticate_publickey(public_key.username.as_str(), key)
                 .await
                 .map_err(|_| SshTunnelError::Auth)?
+        }
+        SshAuthMaterial::Agent(agent_auth) => {
+            authenticate_with_agent(&mut handle, agent_auth).await?
         }
     };
     match auth {
@@ -267,6 +308,51 @@ pub async fn connect_session_capture_host_key(
         }
         AuthResult::Failure { .. } => Err(SshTunnelError::Auth),
     }
+}
+
+async fn authenticate_with_agent(
+    handle: &mut Handle<ClientHandler>,
+    agent_auth: &SshAgentAuth,
+) -> Result<AuthResult, SshTunnelError> {
+    use keys::agent::client::AgentClient;
+
+    let mut agent = match &agent_auth.socket_path {
+        Some(path) => AgentClient::connect_uds(path)
+            .await
+            .map_err(|_| SshTunnelError::Auth)?,
+        None => AgentClient::connect_env()
+            .await
+            .map_err(|_| SshTunnelError::Auth)?,
+    };
+    let identities = agent
+        .request_identities()
+        .await
+        .map_err(|_| SshTunnelError::Auth)?;
+    if identities.is_empty() {
+        return Err(SshTunnelError::Auth);
+    }
+    let mut last = AuthResult::Failure {
+        remaining_methods: russh::MethodSet::empty(),
+        partial_success: false,
+    };
+    // Try each agent identity until one succeeds (agent never sends private key material).
+    for identity in identities {
+        let public_key = identity.public_key().into_owned();
+        match handle
+            .authenticate_publickey_with(
+                agent_auth.username.as_str(),
+                public_key,
+                None,
+                &mut agent,
+            )
+            .await
+        {
+            Ok(AuthResult::Success) => return Ok(AuthResult::Success),
+            Ok(failure) => last = failure,
+            Err(_) => continue,
+        }
+    }
+    Ok(last)
 }
 
 /// Record a host key into an OpenSSH known_hosts file.
@@ -459,6 +545,16 @@ C/h2ADG+GuOY1seMXSQeOkWcDlPhdQ0QU8eeA=
         let policy = SshHostKeyPolicy::KnownHostsPath(PathBuf::from("/tmp/known_hosts"));
         let debug = format!("{policy:?}");
         assert!(debug.contains("KnownHostsPath"));
+    }
+
+    #[test]
+    fn agent_auth_debug_is_safe() {
+        let auth = SshAgentAuth::from_env("tunnel");
+        let debug = format!("{auth:?}");
+        assert!(debug.contains("tunnel"));
+        assert!(!debug.contains("BEGIN"));
+        let sock = SshAgentAuth::from_socket_path("root", "/tmp/agent.sock");
+        assert_eq!(sock.username(), "root");
     }
 
     #[test]
