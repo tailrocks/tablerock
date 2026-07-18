@@ -3736,6 +3736,30 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyColumnIdent if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(name) = grid.columns.get(grid.cursor_col).cloned() else {
+                return Update::unchanged();
+            };
+            if name.is_empty() {
+                return Update::unchanged();
+            }
+            let text = quote_ident_sql(&name);
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied column ident {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyColumn if model.screen() == Screen::Workbench => {
             use crate::model::copy_format::format_cursor_column;
             let Some(grid) = model.workbench().active_grid() else {
@@ -3924,6 +3948,31 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let token = model.mint_request_token();
             if let Some(g) = model.workbench_mut().active_grid_mut() {
                 g.error_label = Some(format!("copied table {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopyTableIdent if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) = (grid.base_schema.as_ref(), grid.base_table.as_ref())
+            else {
+                return Update::unchanged();
+            };
+            if schema.is_empty() || table.is_empty() {
+                return Update::unchanged();
+            }
+            let text = format!("{}.{}", quote_ident_sql(schema), quote_ident_sql(table));
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied table ident {text}"));
             }
             Update {
                 render: true,
@@ -5650,6 +5699,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyColumnNames
         | ActionId::CopyHiddenColumnNames
         | ActionId::CopyColumnName
+        | ActionId::CopyColumnIdent
         | ActionId::CopyColumn
         | ActionId::CopyStatus
         | ActionId::CopyQueryId
@@ -5659,6 +5709,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyTableName
         | ActionId::CopySchema
         | ActionId::CopyBareTable
+        | ActionId::CopyTableIdent
         | ActionId::CopyPkNames
         | ActionId::CopyLocator
         | ActionId::CopyWhere
@@ -7395,6 +7446,7 @@ fn cycle_action(
                 ActionId::CopyColumnNames,
                 ActionId::CopyHiddenColumnNames,
                 ActionId::CopyColumnName,
+                ActionId::CopyColumnIdent,
                 ActionId::CopyColumn,
                 ActionId::CopyStatus,
                 ActionId::CopyQueryId,
@@ -7404,6 +7456,7 @@ fn cycle_action(
                 ActionId::CopyTableName,
                 ActionId::CopySchema,
                 ActionId::CopyBareTable,
+                ActionId::CopyTableIdent,
                 ActionId::CopyPkNames,
                 ActionId::CopyLocator,
                 ActionId::CopyWhere,
@@ -9289,6 +9342,41 @@ mod tests {
                 assert!(text.contains("width") || text.contains("16"), "{text}");
             }
             other => panic!("expected layout json copy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copy_column_and_table_idents_quote_sql() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec![r#"weird"name"#.into(), "id".into()];
+            grid.cursor_col = 0;
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some(r#"order"s"#.into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyColumnIdent);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, r#""weird""name""#);
+            }
+            other => panic!("expected column ident, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyTableIdent);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, r#""public"."order""s""#);
+            }
+            other => panic!("expected table ident, got {other:?}"),
         }
     }
 

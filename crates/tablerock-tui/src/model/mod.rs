@@ -156,6 +156,8 @@ pub enum ActionId {
     CopyHiddenColumnNames,
     /// Copy the cursor column name to clipboard.
     CopyColumnName,
+    /// Copy the cursor column name as a SQL-quoted identifier.
+    CopyColumnIdent,
     /// Copy cursor column values for all resident rows (one per line).
     CopyColumn,
     /// Copy active grid status line to clipboard.
@@ -174,6 +176,8 @@ pub enum ActionId {
     CopySchema,
     /// Copy bare table name only if known.
     CopyBareTable,
+    /// Copy schema.table as SQL-quoted identifiers.
+    CopyTableIdent,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy locator values for the cursor row (pk=value pairs).

@@ -729,6 +729,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_cols = action_label(model, ActionId::CopyColumnNames, "CopyCols");
     let copy_hidden_cols = action_label(model, ActionId::CopyHiddenColumnNames, "CopyHid");
     let copy_col_name = action_label(model, ActionId::CopyColumnName, "CopyColN");
+    let copy_col_ident = action_label(model, ActionId::CopyColumnIdent, "CopyColQ");
     let copy_col = action_label(model, ActionId::CopyColumn, "CopyCol");
     let copy_status = action_label(model, ActionId::CopyStatus, "CopyStat");
     let copy_qid = action_label(model, ActionId::CopyQueryId, "CopyQid");
@@ -738,6 +739,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_table = action_label(model, ActionId::CopyTableName, "CopyTbl");
     let copy_schema = action_label(model, ActionId::CopySchema, "CopySch");
     let copy_bare = action_label(model, ActionId::CopyBareTable, "CopyTblN");
+    let copy_tbl_ident = action_label(model, ActionId::CopyTableIdent, "CopyTblQ");
     let copy_pk = action_label(model, ActionId::CopyPkNames, "CopyPk");
     let copy_loc = action_label(model, ActionId::CopyLocator, "CopyLoc");
     let copy_where = action_label(model, ActionId::CopyWhere, "CopyWhere");
@@ -1557,6 +1559,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                         style: None,
                     },
                     Action {
+                        id: ActionId::CopyColumnIdent,
+                        label: copy_col_ident.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
                         id: ActionId::CopyColumn,
                         label: copy_col.as_str(),
                         enabled: true,
@@ -1607,6 +1615,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyBareTable,
                         label: copy_bare.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyTableIdent,
+                        label: copy_tbl_ident.as_str(),
                         enabled: true,
                         style: None,
                     },
