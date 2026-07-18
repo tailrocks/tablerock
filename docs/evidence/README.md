@@ -170,6 +170,7 @@ How to read an evidence document:
 - 202 — [Connection list selection, search, and Open profile](delivery/202-list-selection-connect-profile.md)
 - 204 — [TermRock Form/Tree on connection screens](delivery/204-termrock-form-tree-connection-screens.md)
 - 205 — [Password prompt port and reconnect policy](delivery/205-password-prompt-and-reconnect-policy.md)
+- 206 — [Real-server describe_server matrix](delivery/206-describe-server-real-matrix.md)
 
 ## TermRock pins
 
