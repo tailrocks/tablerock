@@ -251,6 +251,8 @@ pub enum ActionId {
     ResetColumns,
     /// Reset column widths to default; keep order and visibility.
     ResetColumnWidths,
+    /// Set all visible column widths to the cursor column width.
+    EqualizeColumnWidths,
     /// Hide all columns except the cursor column.
     SoloColumn,
     /// Show all columns; keep widths/order (unlike ResetColumns).

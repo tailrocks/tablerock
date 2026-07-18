@@ -1490,6 +1490,30 @@ impl DataGridModel {
         changed
     }
 
+    /// Set every visible column width to the cursor column's width (4..=64).
+    pub fn equalize_visible_column_widths(&mut self) -> bool {
+        self.ensure_column_layout();
+        let Some(name) = self.columns.get(self.cursor_col).cloned() else {
+            return false;
+        };
+        let Some(width) = self
+            .column_layout
+            .iter()
+            .find(|c| c.name == name)
+            .map(|c| c.width)
+        else {
+            return false;
+        };
+        let mut changed = false;
+        for entry in &mut self.column_layout {
+            if entry.visible && entry.width != width {
+                entry.width = width;
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Hide all columns except the cursor column. Returns true if layout changed.
     pub fn solo_cursor_column(&mut self) -> bool {
         if self.columns.is_empty() {
@@ -2354,6 +2378,34 @@ mod tests {
         assert!(!g.show_all_columns());
         g.reset_column_layout();
         assert_eq!(g.visible_columns().len(), 3);
+    }
+
+    #[test]
+    fn equalize_visible_column_widths_uses_cursor() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into(), "age".into()];
+        g.cursor_col = 0;
+        assert!(g.adjust_cursor_column_width(8)); // id -> 20
+        assert_eq!(g.column_width("id"), 20);
+        assert_eq!(g.column_width("name"), 12);
+        assert!(g.equalize_visible_column_widths());
+        assert_eq!(g.column_width("id"), 20);
+        assert_eq!(g.column_width("name"), 20);
+        assert_eq!(g.column_width("age"), 20);
+        assert!(!g.equalize_visible_column_widths());
+        // Hidden columns keep their width.
+        g.cursor_col = 1;
+        assert!(g.solo_cursor_column()); // only name visible
+        g.cursor_col = 1;
+        assert!(g.adjust_cursor_column_width(-4)); // name 16
+        // Make id visible again without equalizing yet.
+        assert!(g.show_all_columns());
+        // name is 16; id and age still 20 from earlier equalize + show all.
+        g.cursor_col = 1;
+        assert!(g.equalize_visible_column_widths());
+        assert_eq!(g.column_width("name"), 16);
+        assert_eq!(g.column_width("id"), 16);
+        assert_eq!(g.column_width("age"), 16);
     }
 
     #[test]
