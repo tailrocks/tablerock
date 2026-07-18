@@ -128,9 +128,9 @@ host them, keep those suites local-only and record the gap — same pattern as
 
 ## Residual
 
-- CI runners still need client packages for non-skip dump/restore matrix runs
-  (ubuntu job installs `postgresql-client` — evidence 303)
-- SSH keepalive defaults landed (evidence 304)
+- ~~CI runners still need client packages for non-skip dump/restore matrix runs~~
+  (closed: ubuntu `postgresql-client` install + pg_dump_real — evidence 303)
+- ~~SSH keepalive defaults~~ (closed: evidence 304)
 
 ## STOP conditions
 

@@ -145,6 +145,10 @@ pub enum ActionId {
     DropTable,
     /// Snapshot pg_stat_activity into the inspector.
     ShowActivity,
+    /// Redis Pub/Sub: subscribe to a channel (isolated connection).
+    RedisSubscribe,
+    /// Redis Pub/Sub: pattern subscribe (PSUBSCRIBE).
+    RedisPSubscribe,
     /// Snapshot roles + effective membership into the inspector.
     ShowRoles,
     /// Cancel a backend by pid (gated confirm).
@@ -233,6 +237,11 @@ pub enum ConfirmDialog {
     },
     TerminateBackend {
         pid: String,
+        confirm_buffer: String,
+    },
+    /// Redis Pub/Sub: confirm_buffer is channel (or pattern when `pattern`).
+    RedisSubscribe {
+        pattern: bool,
         confirm_buffer: String,
     },
     /// Kill ClickHouse mutation: paste exact mutation_id for database.table.

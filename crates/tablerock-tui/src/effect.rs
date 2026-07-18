@@ -366,6 +366,16 @@ pub enum Effect {
         /// Key to BLPOP (first key only for this residual).
         key: String,
     },
+    /// Redis Pub/Sub subscribe (isolated connection). Collects first page then completes.
+    RedisSubscribe {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// Channel name or glob pattern.
+        selector: String,
+        /// true = PSUBSCRIBE, false = SUBSCRIBE.
+        pattern: bool,
+    },
     /// Load bounded INFO snapshot into the inspector.
     LoadRedisInfo {
         request_token: RequestToken,

@@ -166,6 +166,26 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             "Terminate backend?",
             format!("Paste pid digits to pg_terminate_backend [{confirm_buffer}]"),
         ),
+        crate::model::ConfirmDialog::RedisSubscribe {
+            pattern,
+            confirm_buffer,
+        } => {
+            if *pattern {
+                (
+                    "Pattern subscribe?",
+                    format!(
+                        "PSUBSCRIBE pattern (isolated connection). Paste pattern [{confirm_buffer}]"
+                    ),
+                )
+            } else {
+                (
+                    "Subscribe?",
+                    format!(
+                        "SUBSCRIBE channel (isolated connection). Paste channel [{confirm_buffer}]"
+                    ),
+                )
+            }
+        }
         crate::model::ConfirmDialog::KillMutation {
             database,
             table,
@@ -556,6 +576,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let redis_add = action_label(model, ActionId::StageRedisAdd, "RAdd");
     let redis_rm = action_label(model, ActionId::StageRedisRemove, "RRem");
     let redis_more = action_label(model, ActionId::RedisCollectionMore, "RMore");
+    let redis_sub = action_label(model, ActionId::RedisSubscribe, "Sub");
+    let redis_psub = action_label(model, ActionId::RedisPSubscribe, "PSub");
     let export_csv = action_label(model, ActionId::ExportCsv, "ExpCsv");
     let export_json = action_label(model, ActionId::ExportJson, "ExpJson");
     let export_tsv = action_label(model, ActionId::ExportTsv, "ExpTsv");
@@ -930,6 +952,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RedisCollectionMore,
                         label: redis_more.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RedisSubscribe,
+                        label: redis_sub.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RedisPSubscribe,
+                        label: redis_psub.as_str(),
                         enabled: true,
                         style: None,
                     },

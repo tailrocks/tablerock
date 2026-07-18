@@ -661,6 +661,28 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::RedisSubscribe {
+                request_token,
+                session_id_hex,
+                context_revision,
+                selector,
+                pattern,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = execute_redis_subscribe(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        selector,
+                        pattern,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::LoadRedisInfo {
                 request_token,
                 session_id_hex,
@@ -4555,6 +4577,145 @@ async fn open_redis_key(
             request_token,
             context_revision,
             reason: FailureProjection::Label(e.to_string()),
+        }),
+    }
+}
+
+async fn execute_redis_subscribe(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    selector: String,
+    pattern: bool,
+) -> Message {
+    use tablerock_core::{
+        BoundedBytes, ByteLimit, Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId,
+        Revision,
+    };
+    use tablerock_engine::{
+        DriverPageRequest, RedisSubscriptionKind, RedisSubscriptionOptions,
+    };
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    if session.engine() != CoreEngine::Redis {
+        return Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("subscribe is Redis-only".into()),
+        });
+    }
+    let selector_bytes =
+        match BoundedBytes::copy_from_slice(selector.as_bytes(), ByteLimit::new(256)) {
+            Ok(b) => b,
+            Err(_) => {
+                return Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeFailed {
+                    request_token,
+                    context_revision,
+                    reason: FailureProjection::Label("selector too long".into()),
+                });
+            }
+        };
+    let limits = PageLimits::new(16, 4, 256 * 1024, 8 * 1024);
+    let options = RedisSubscriptionOptions::new(limits, 8 * 1024, 64);
+    let kind = if pattern {
+        RedisSubscriptionKind::Pattern
+    } else {
+        RedisSubscriptionKind::Channel
+    };
+    let request = DriverPageRequest::RedisSubscribe {
+        selector: selector_bytes,
+        kind,
+        options,
+    };
+    let mut stream = match session.start_page_stream(request).await {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let identity = PageIdentity::new(
+        ResultId::from_parts(IdParts::new(1, 9_007).unwrap()).unwrap(),
+        Revision::INITIAL,
+        CoreEngine::Redis,
+    );
+    // Bounded wait: Pub/Sub is open-ended; first page or 2s timeout.
+    let page = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        stream.next_page(identity, 0),
+    )
+    .await;
+    match page {
+        Ok(Ok(Some(page))) => {
+            let mut lines = Vec::new();
+            for row in 0..page.envelope().row_count() {
+                let mut parts = Vec::new();
+                for col in 0..page.envelope().column_count() {
+                    let t = page
+                        .cell(row, col)
+                        .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+                        .unwrap_or_default();
+                    if !t.is_empty() {
+                        parts.push(t);
+                    }
+                }
+                if !parts.is_empty() {
+                    lines.push(parts.join(" · "));
+                }
+            }
+            Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeDone {
+                request_token,
+                context_revision,
+                selector,
+                pattern,
+                lines,
+                timed_out: false,
+            })
+        }
+        Ok(Ok(None)) => Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeDone {
+            request_token,
+            context_revision,
+            selector,
+            pattern,
+            lines: Vec::new(),
+            timed_out: false,
+        }),
+        Ok(Err(e)) => Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(e.to_string()),
+        }),
+        Err(_elapsed) => Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeDone {
+            request_token,
+            context_revision,
+            selector,
+            pattern,
+            lines: Vec::new(),
+            timed_out: true,
         }),
     }
 }

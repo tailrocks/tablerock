@@ -105,6 +105,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::SaveFilter { confirm_buffer, .. }
                     | ConfirmDialog::ApplyFilter { confirm_buffer, .. }
                     | ConfirmDialog::StageRedis { confirm_buffer, .. }
+                    | ConfirmDialog::RedisSubscribe { confirm_buffer, .. }
                     | ConfirmDialog::StartupReview { confirm_buffer, .. }
                     | ConfirmDialog::PgTool { confirm_buffer, .. }
                     | ConfirmDialog::ImportUrl { confirm_buffer, .. }
@@ -1306,6 +1307,77 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::RedisSubscribeDone {
+            context_revision,
+            selector,
+            pattern,
+            lines,
+            timed_out,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let mode = if pattern { "PSUBSCRIBE" } else { "SUBSCRIBE" };
+            let mut sections = crate::model::result_sections::ResultSectionsModel::default();
+            for (i, line) in lines.iter().enumerate() {
+                sections.push(crate::model::result_sections::StatementSection {
+                    ordinal: (i + 1) as u32,
+                    command_tag: mode.into(),
+                    kind: crate::model::result_sections::StatementSectionKind::Completed,
+                    rows: Some(1),
+                    elapsed_ms: None,
+                    error: None,
+                    pinned: false,
+                });
+                let _ = line;
+            }
+            if timed_out && lines.is_empty() {
+                sections.push(crate::model::result_sections::StatementSection {
+                    ordinal: 1,
+                    command_tag: mode.into(),
+                    kind: crate::model::result_sections::StatementSectionKind::Completed,
+                    rows: Some(0),
+                    elapsed_ms: None,
+                    error: Some("wait timed out (no messages)".into()),
+                    pinned: false,
+                });
+            }
+            model.workbench_mut().result_sections = sections;
+            model.workbench_mut().inspector.open = true;
+            model.workbench_mut().inspector.title =
+                format!("{mode} {selector} · {} msg", lines.len());
+            model.workbench_mut().inspector.kind_label = "pubsub".into();
+            model.workbench_mut().inspector.text = lines.join("\n");
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.operation = GridOperationState::Completed;
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.running = false;
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::RedisSubscribeFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(l) => l,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.running = false;
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::RedisPipelineFailed {
             context_revision,
             reason,
@@ -2496,6 +2568,42 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     model.set_confirm(None);
                     Update::render()
                 }
+                ConfirmDialog::RedisSubscribe {
+                    pattern,
+                    confirm_buffer,
+                } => {
+                    let selector = confirm_buffer.trim().to_owned();
+                    if selector.is_empty() || selector.len() > 256 {
+                        return Update::render();
+                    }
+                    // Fail closed: printable channel/pattern only (no controls).
+                    if selector.chars().any(|c| c.is_control()) {
+                        return Update::render();
+                    }
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let token = model.mint_request_token();
+                    let context_revision = model.workbench().context_revision;
+                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                        grid.operation = GridOperationState::Running;
+                        grid.error_label = None;
+                    }
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::RedisSubscribe {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            selector,
+                            pattern,
+                        }),
+                    }
+                }
             }
         }
         ActionId::Cancel if model.password_prompt().is_some() => {
@@ -3019,6 +3127,22 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::StageRedisRemove if model.screen() == Screen::Workbench => {
             open_redis_stage_confirm(model, false)
         }
+        ActionId::RedisSubscribe if model.screen() == Screen::Workbench => {
+            model.set_confirm(Some(ConfirmDialog::RedisSubscribe {
+                pattern: false,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::RedisPSubscribe if model.screen() == Screen::Workbench => {
+            model.set_confirm(Some(ConfirmDialog::RedisSubscribe {
+                pattern: true,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::RedisCollectionMore if model.screen() == Screen::Workbench => {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
@@ -3491,6 +3615,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::StageRedisAdd
         | ActionId::StageRedisRemove
         | ActionId::RedisCollectionMore
+        | ActionId::RedisSubscribe
+        | ActionId::RedisPSubscribe
         | ActionId::ExportCsv
         | ActionId::ExportJson
         | ActionId::ExportTsv
@@ -6098,6 +6224,67 @@ mod tests {
             }
             other => panic!("expected cleared BrowseTable, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn redis_subscribe_action_opens_confirm_and_emits_effect() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000077".into(),
+            identity: "redis".into(),
+            temporary: true,
+            engine_label: "Redis".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().engine_kind = "Redis".into();
+        model.workbench_mut().open_sql_tab();
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::RedisSubscribe);
+        let ask = update(&mut model, Message::Activate);
+        assert!(ask.effects().next().is_none());
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::RedisSubscribe {
+                pattern: false,
+                ..
+            })
+        ));
+        if let Some(ConfirmDialog::RedisSubscribe {
+            confirm_buffer, ..
+        }) = model.confirm_mut()
+        {
+            *confirm_buffer = "news".into();
+        }
+        model.set_action(ActionId::Submit);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::RedisSubscribe {
+                selector,
+                pattern,
+                ..
+            }) => {
+                assert_eq!(selector, "news");
+                assert!(!pattern);
+            }
+            other => panic!("expected RedisSubscribe effect, got {other:?}"),
+        }
+        // Done paints inspector.
+        model.workbench_mut().context_revision = 1;
+        let done = update(
+            &mut model,
+            Message::Engine(EngineMsg::RedisSubscribeDone {
+                request_token: 1,
+                context_revision: 1,
+                selector: "news".into(),
+                pattern: false,
+                lines: vec!["news · hello".into()],
+                timed_out: false,
+            }),
+        );
+        assert!(done.needs_render());
+        assert!(model.workbench().inspector.open);
+        assert!(model.workbench().inspector.text.contains("hello"));
     }
 
     #[test]

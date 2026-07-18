@@ -461,6 +461,21 @@ pub enum EngineMsg {
         context_revision: u64,
         reason: FailureProjection,
     },
+    /// Pub/Sub page lines (channel + payload) for inspector.
+    RedisSubscribeDone {
+        request_token: u64,
+        context_revision: u64,
+        selector: String,
+        pattern: bool,
+        lines: Vec<String>,
+        /// True when wait timed out with zero messages (still subscribed briefly).
+        timed_out: bool,
+    },
+    RedisSubscribeFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
     RedisInfoFailed {
         request_token: u64,
         context_revision: u64,

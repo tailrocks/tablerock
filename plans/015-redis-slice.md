@@ -89,9 +89,10 @@ frame, never squeezed into a relational shape.
    clients, ops/sec, hit/miss, persistence, per-DB key/expiry counts) each
    with sample time/unavailable reason.
 
-**Out of scope**: Pub/Sub UI (post-parity; driver proven), cluster/sentinel
-(standalone-first fixed decision), module values beyond
-inspectable/read-only, the three known driver gaps above (stay visible).
+**Out of scope**: continuous Pub/Sub stream tab (first-page Sub/PSub UI
+landed evidence 329; driver proven), cluster/sentinel (standalone-first
+fixed decision), module values beyond inspectable/read-only, the three
+known driver gaps above (stay visible).
 
 ## Commands
 
@@ -123,6 +124,7 @@ extended; CI updated.
 - ~~Official command-metadata completion table~~ (closed: evidence 317;
   curated open-command names, not redis-doc dump; wired into CompletionMenu)
 - ~~Disposable-connection BLPOP/BRPOP from command editor~~ (closed: evidence 322)
+- ~~Pub/Sub Sub/PSub first-page UI~~ (closed: evidence 329; continuous stream residual)
 - ~~Multi-type collection mutations (HSET/HDEL/SADD/SREM/ZADD/ZREM) on apply path~~
   (closed: evidence 312–314; key-view RAdd/RRem stage + review wired)
 - ~~MATCH pattern filter on ScanRedisKeys~~ (closed: evidence 311)
