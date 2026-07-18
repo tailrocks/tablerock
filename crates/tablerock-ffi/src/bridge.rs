@@ -944,36 +944,51 @@ impl TableRockBridge {
             }
 
             let (intent, request) = match intent_name.as_str() {
-                "probe" | "execute" => {
-                    let statement = spec.statement.clone().unwrap_or_else(|| "select 1".into());
+                "probe" | "execute" | "catalog" => {
+                    // Catalog statements are Rust-owned implementation details.
+                    // Native clients submit a typed intent and never construct
+                    // engine SQL or Redis scan behavior.
+                    let statement = if intent_name == "catalog" {
+                        match engine {
+                            Engine::PostgreSql => "SELECT schemaname AS schema, tablename AS table FROM pg_tables ORDER BY 1, 2".into(),
+                            Engine::ClickHouse => "SELECT database AS schema, name AS table FROM system.tables ORDER BY 1, 2".into(),
+                            Engine::Redis => "catalog".into(),
+                        }
+                    } else {
+                        spec.statement.clone().unwrap_or_else(|| "select 1".into())
+                    };
                     let text = StatementText::new(statement)
                         .map_err(|error| BridgeError::rejected("statement", error.to_string()))?;
                     let limits = default_page_limits();
                     let max_cell_bytes = 64 * 1024;
                     let request = match (engine, intent_name.as_str()) {
-                        (Engine::PostgreSql, "execute") => DriverPageRequest::PostgreSqlStatement {
-                            statement: text.clone(),
-                            parameters: Vec::new(),
-                            limits,
-                            max_cell_bytes,
-                        },
+                        (Engine::PostgreSql, "execute" | "catalog") => {
+                            DriverPageRequest::PostgreSqlStatement {
+                                statement: text.clone(),
+                                parameters: Vec::new(),
+                                limits,
+                                max_cell_bytes,
+                            }
+                        }
                         (Engine::PostgreSql, _) => DriverPageRequest::PostgreSqlProbe {
                             query: PostgresProbeQuery::BoundedSeries,
                             limits,
                             max_cell_bytes,
                         },
-                        (Engine::ClickHouse, "execute") => DriverPageRequest::ClickHouseStatement {
-                            statement: text.clone(),
-                            query_id: BoundedText::copy_from_str(
-                                &format!("bridge-{}", page_identity.result_id()),
-                                ByteLimit::new(128),
-                            )
-                            .map_err(|error| {
-                                BridgeError::rejected("query-id", error.to_string())
-                            })?,
-                            limits,
-                            max_cell_bytes,
-                        },
+                        (Engine::ClickHouse, "execute" | "catalog") => {
+                            DriverPageRequest::ClickHouseStatement {
+                                statement: text.clone(),
+                                query_id: BoundedText::copy_from_str(
+                                    &format!("bridge-{}", page_identity.result_id()),
+                                    ByteLimit::new(128),
+                                )
+                                .map_err(|error| {
+                                    BridgeError::rejected("query-id", error.to_string())
+                                })?,
+                                limits,
+                                max_cell_bytes,
+                            }
+                        }
                         (Engine::ClickHouse, _) => DriverPageRequest::ClickHouseProbe {
                             query: ClickHouseProbeQuery::TypedValues,
                             query_id: BoundedText::copy_from_str(

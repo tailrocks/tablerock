@@ -35,7 +35,9 @@
   decode, operation-ID cancellation UI, and a strict Swift 6 build gate;
   evidence 409 replaces the SwiftUI result renderer with the required reusable
   AppKit `NSTableView`; evidence 410 replaces `TextEditor` with the required
-  IME-safe AppKit `NSTextView`/TextKit editor. Remaining criteria stay open.
+  IME-safe AppKit `NSTextView`/TextKit editor. Evidence 411 adds the AppKit
+  `NSOutlineView` catalog and removes engine-specific catalog SQL from Swift
+  behind a Rust-owned typed intent. Remaining criteria stay open.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED

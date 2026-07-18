@@ -33,11 +33,9 @@ let session = try bridge.open(params: OpenParams(
 print("opened \(engine) session against \(host):\(port)")
 
 let spec = SubmitSpec(
-    intent: "execute",
+    intent: catalogMode ? "catalog" : "execute",
     sessionId: session,
-    statement: catalogMode
-        ? "SELECT schemaname AS schema, tablename AS table FROM pg_tables ORDER BY 1, 2"
-        : statement,
+    statement: catalogMode ? nil : statement,
     resultId: nil,
     startRow: nil,
     rowCount: 500,
@@ -101,4 +99,5 @@ if let expectCols = env["TABLEROCK_EXPECT_COLS"] {
         }
     }
 }
-print("BEHAVIOR PROOF PASSED: \(engine) \(statement) -> \(table.columns.count) col(s), \(table.rows.count) row(s) decoded")
+let action = catalogMode ? "catalog" : statement
+print("BEHAVIOR PROOF PASSED: \(engine) \(action) -> \(table.columns.count) col(s), \(table.rows.count) row(s) decoded")

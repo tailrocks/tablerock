@@ -375,6 +375,7 @@ How to read an evidence document:
 - 408 — [Plan 020 actor-owned bridge and cancellation](delivery/408-plan-020-bridge-actor-cancel.md)
 - 409 — [Plan 020 AppKit result grid](delivery/409-plan-020-appkit-result-grid.md)
 - 410 — [Plan 020 AppKit TextKit editor](delivery/410-plan-020-appkit-text-editor.md)
+- 411 — [Plan 020 AppKit catalog and Rust-owned intent](delivery/411-plan-020-appkit-catalog.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

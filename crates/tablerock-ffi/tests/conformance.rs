@@ -266,6 +266,39 @@ fn command_validation_rejects_unknown_intent_and_stale_revision() {
 }
 
 #[test]
+fn catalog_intent_is_supported_for_all_engines_without_client_statement() {
+    for (engine, low) in [
+        (Engine::PostgreSql, 180_u64),
+        (Engine::ClickHouse, 181),
+        (Engine::Redis, 182),
+    ] {
+        let (result_id, page) = sample_page(engine, low, &[1]);
+        let bridge = TableRockBridge::new_for_test();
+        let session_id = open_fixed(&bridge, engine, page);
+        let operation = bridge
+            .submit(SubmitSpec {
+                intent: "catalog".into(),
+                session_id,
+                statement: None,
+                result_id: Some(result_id.to_bytes().to_vec()),
+                start_row: None,
+                row_count: Some(100),
+                expected_revision: 0,
+            })
+            .unwrap();
+        bridge.pump(operation).unwrap();
+        assert!(
+            bridge
+                .next_events(0, 32)
+                .unwrap()
+                .events
+                .iter()
+                .any(|event| event.kind == "page")
+        );
+    }
+}
+
+#[test]
 fn event_ordering_and_future_cursor_and_resync() {
     let (result_id, page) = sample_page(Engine::PostgreSql, 81, &[3]);
     let bridge = TableRockBridge::new_for_test();

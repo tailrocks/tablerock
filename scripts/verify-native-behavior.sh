@@ -37,6 +37,9 @@ run_pg() {
         TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
         TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1 \
         "$BUILD/BehaviorProof"
+    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
+        TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
+        TABLEROCK_CATALOG=1 "$BUILD/BehaviorProof"
     docker rm -f "$name" >/dev/null
 }
 
@@ -52,6 +55,9 @@ run_ch() {
         TABLEROCK_ENGINE=clickhouse TABLEROCK_PORT=8122 TABLEROCK_DB=db \
         TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1 \
         "$BUILD/BehaviorProof"
+    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
+        TABLEROCK_ENGINE=clickhouse TABLEROCK_PORT=8122 TABLEROCK_DB=db \
+        TABLEROCK_CATALOG=1 "$BUILD/BehaviorProof"
     docker rm -f "$name" >/dev/null
 }
 
@@ -64,6 +70,10 @@ run_redis() {
     DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
         TABLEROCK_ENGINE=redis TABLEROCK_PORT=6380 TABLEROCK_DB=0 \
         TABLEROCK_USER="" TABLEROCK_PASSWORD="" TABLEROCK_QUERY="PING" \
+        "$BUILD/BehaviorProof"
+    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
+        TABLEROCK_ENGINE=redis TABLEROCK_PORT=6380 TABLEROCK_DB=0 \
+        TABLEROCK_USER="" TABLEROCK_PASSWORD="" TABLEROCK_CATALOG=1 \
         "$BUILD/BehaviorProof"
     docker rm -f "$name" >/dev/null
 }

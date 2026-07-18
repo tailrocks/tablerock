@@ -118,7 +118,9 @@ final class BridgeModel {
     var connectingName: String?
     var catalogSummary: String?
     var catalogError: String?
-    var catalogTable: PageV1Table?
+    var catalogSnapshot: PageV1Table?
+    var resultTable: PageV1Table?
+    var catalogSelection: String?
     var writeOutcome: String?
     var isRunning = false
     var cancelOutcome: String?
@@ -188,7 +190,8 @@ final class BridgeModel {
         sessionData = nil
         connectError = nil
         catalogSummary = nil
-        catalogTable = nil
+        catalogSnapshot = nil
+        resultTable = nil
         do {
             let session = try await client.open(params: OpenParams(
                 engine: formEngine,
@@ -215,6 +218,8 @@ final class BridgeModel {
         connectError = nil
         catalogSummary = nil
         catalogError = nil
+        catalogSnapshot = nil
+        resultTable = nil
         do {
             let session = try await client.openProfile(id: item.idBytes)
             connectedEngine = item.engine
@@ -268,9 +273,9 @@ final class BridgeModel {
                 nextStartRow = nil
                 return
             }
-            if var table = catalogTable {
+            if var table = resultTable {
                 table.rows.append(contentsOf: more.rows)
-                catalogTable = table
+                resultTable = table
                 catalogSummary =
                     "result · \(table.columns.count) columns · \(table.rows.count) rows loaded"
             }
@@ -283,27 +288,10 @@ final class BridgeModel {
     func browse() async {
         catalogSummary = nil
         catalogError = nil
-        catalogTable = nil
-        // The bridge supports execute/probe/fetch_page (not a refresh_catalog
-        // intent), so the catalog browse runs an engine-appropriate listing
-        // query through execute.
-        let catalogSQL: String
-        switch connectedEngine {
-        case "postgresql":
-            catalogSQL = "SELECT schemaname AS schema, tablename AS table FROM pg_tables ORDER BY 1, 2"
-        case "clickhouse":
-            catalogSQL = "SELECT database AS schema, name AS table FROM system.tables ORDER BY 1, 2"
-        case "redis":
-            // Redis execute performs a key scan (DriverPageRequest::RedisKeyScan).
-            catalogSQL = ""
-        default:
-            catalogSummary = "catalog: no listing for \(connectedEngine)"
-            return
-        }
+        catalogSnapshot = nil
         do {
-            let stmt = catalogSQL.isEmpty ? nil : catalogSQL
-            if let table = try await fetchPage(intent: "execute", statement: stmt) {
-                catalogTable = table
+            if let table = try await fetchPage(intent: "catalog", statement: nil) {
+                catalogSnapshot = table
                 catalogSummary = connectedEngine == "redis"
                     ? "keys · \(table.rows.count)"
                     : "tables · \(table.rows.count)"
@@ -320,10 +308,10 @@ final class BridgeModel {
         guard !sql.isEmpty else { return }
         catalogSummary = nil
         catalogError = nil
-        catalogTable = nil
+        resultTable = nil
         do {
             if let table = try await fetchPage(intent: "execute", statement: sql) {
-                catalogTable = table
+                resultTable = table
                 catalogSummary = "result · \(table.columns.count) columns · \(table.rows.count) rows"
             } else if let outcome = writeOutcome {
                 catalogSummary = "write ok · \(outcome)"
@@ -358,23 +346,53 @@ struct ContentView: View {
     var body: some View {
         @Bindable var model = model
         NavigationSplitView {
-            // Connection list (left sidebar).
-            List(model.profiles, id: \.name) { profile in
-                Button { Task { await model.connect(profile) } } label: {
-                    ProfileRow(profile: profile)
+            VStack(spacing: 0) {
+                List(model.profiles, id: \.name) { profile in
+                    Button { Task { await model.connect(profile) } } label: {
+                        ProfileRow(profile: profile)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .overlay {
+                    if model.profiles.isEmpty && model.sessionHex == nil {
+                        ContentUnavailableView(
+                            model.bridgeError == nil ? "No profiles" : "Error",
+                            systemImage: model.bridgeError == nil ? "tray" : "exclamationmark.triangle",
+                            description: Text(model.bridgeError ?? "Use the connection form to begin.")
+                        )
+                    }
+                }
+                if model.sessionHex != nil {
+                    Divider()
+                    HStack {
+                        Text("Catalog").font(.headline)
+                        Spacer()
+                        Button { Task { await model.browse() } } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(model.isRunning)
+                        .accessibilityLabel("Refresh catalog")
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    if let snapshot = model.catalogSnapshot {
+                        CatalogOutline(
+                            table: snapshot,
+                            selection: $model.catalogSelection
+                        )
+                        .frame(minHeight: 160)
+                    } else {
+                        ContentUnavailableView(
+                            "Catalog not loaded",
+                            systemImage: "sidebar.left",
+                            description: Text("Refresh to list database objects.")
+                        )
+                        .frame(minHeight: 160)
+                    }
+                }
             }
             .navigationTitle("Connections")
-            .overlay {
-                if model.profiles.isEmpty {
-                    ContentUnavailableView(
-                        model.bridgeError == nil ? "No profiles" : "Error",
-                        systemImage: model.bridgeError == nil ? "tray" : "exclamationmark.triangle",
-                        description: Text(model.bridgeError ?? "Save a profile from the TUI, then refresh.")
-                    )
-                }
-            }
         } detail: {
             VStack(alignment: .leading, spacing: 12) {
                 Text("TableRock").font(.largeTitle).bold()
@@ -459,7 +477,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                if let table = model.catalogTable {
+                if let table = model.resultTable {
                     CatalogGrid(table: table)
                     if model.nextStartRow != nil {
                         Button("Load more rows") { Task { await model.loadMore() } }
@@ -492,6 +510,184 @@ struct NativeSettingsView: View {
         .formStyle(.grouped)
         .padding()
         .frame(width: 420)
+    }
+}
+
+struct CatalogOutline: NSViewRepresentable {
+    let table: PageV1Table
+    @Binding var selection: String?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(table: table, selection: $selection)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let outline = NSOutlineView()
+        outline.delegate = context.coordinator
+        outline.dataSource = context.coordinator
+        outline.headerView = nil
+        outline.rowSizeStyle = .small
+        outline.allowsMultipleSelection = false
+        outline.autosaveExpandedItems = false
+        outline.setAccessibilityLabel("Database catalog")
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("catalog-name"))
+        column.title = "Name"
+        column.minWidth = 120
+        column.resizingMask = .autoresizingMask
+        outline.addTableColumn(column)
+        outline.outlineTableColumn = column
+        context.coordinator.outline = outline
+        outline.reloadData()
+        context.coordinator.expandDefaultRoots()
+
+        let scroll = NSScrollView()
+        scroll.documentView = outline
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = true
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let outline = scroll.documentView as? NSOutlineView else { return }
+        let expanded = context.coordinator.expandedKeys()
+        let selected = context.coordinator.selectedKey()
+        context.coordinator.selection = $selection
+        context.coordinator.rebuild(from: table)
+        outline.reloadData()
+        context.coordinator.restore(expanded: expanded, selected: selected)
+    }
+
+    @MainActor
+    final class Node: NSObject {
+        let key: String
+        let title: String
+        let children: [Node]
+
+        init(key: String, title: String, children: [Node] = []) {
+            self.key = key
+            self.title = title
+            self.children = children
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
+        private(set) var roots: [Node] = []
+        private var nodesByKey: [String: Node] = [:]
+        var selection: Binding<String?>
+        weak var outline: NSOutlineView?
+
+        init(table: PageV1Table, selection: Binding<String?>) {
+            self.selection = selection
+            super.init()
+            rebuild(from: table)
+        }
+
+        func rebuild(from table: PageV1Table) {
+            if table.columns.count >= 2 {
+                var order: [String] = []
+                var grouped: [String: [Node]] = [:]
+                for row in table.rows where row.count >= 2 {
+                    let group = row[0]
+                    if grouped[group] == nil { order.append(group) }
+                    let title = row.dropFirst().joined(separator: " · ")
+                    grouped[group, default: []].append(Node(
+                        key: "item:\(group)\u{1f}\(title)", title: title))
+                }
+                roots = order.map { group in
+                    Node(key: "group:\(group)", title: group, children: grouped[group] ?? [])
+                }
+            } else {
+                roots = table.rows.enumerated().compactMap { index, row in
+                    guard let title = row.first else { return nil }
+                    return Node(key: "item:\(index)\u{1f}\(title)", title: title)
+                }
+            }
+            nodesByKey = [:]
+            func index(_ node: Node) {
+                nodesByKey[node.key] = node
+                node.children.forEach(index)
+            }
+            roots.forEach(index)
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+            (item as? Node)?.children.count ?? roots.count
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+            (item as? Node)?.children[index] ?? roots[index]
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
+            guard let node = item as? Node else { return false }
+            return !node.children.isEmpty
+        }
+
+        func outlineView(
+            _ outlineView: NSOutlineView,
+            viewFor tableColumn: NSTableColumn?,
+            item: Any
+        ) -> NSView? {
+            guard let node = item as? Node else { return nil }
+            let identifier = NSUserInterfaceItemIdentifier("catalog-cell")
+            let cell: NSTableCellView
+            if let reused = outlineView.makeView(withIdentifier: identifier, owner: nil)
+                as? NSTableCellView
+            {
+                cell = reused
+            } else {
+                cell = NSTableCellView()
+                cell.identifier = identifier
+                let label = NSTextField(labelWithString: "")
+                label.lineBreakMode = .byTruncatingTail
+                label.translatesAutoresizingMaskIntoConstraints = false
+                cell.textField = label
+                cell.addSubview(label)
+                NSLayoutConstraint.activate([
+                    label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                    label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+                    label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                ])
+            }
+            cell.textField?.stringValue = node.title
+            cell.setAccessibilityLabel(node.children.isEmpty
+                ? "Catalog object \(node.title)" : "Catalog group \(node.title)")
+            return cell
+        }
+
+        func outlineViewSelectionDidChange(_ notification: Notification) {
+            guard let outline, outline.selectedRow >= 0,
+                  let node = outline.item(atRow: outline.selectedRow) as? Node
+            else { selection.wrappedValue = nil; return }
+            selection.wrappedValue = node.key
+        }
+
+        func expandedKeys() -> Set<String> {
+            Set(nodesByKey.values.filter { outline?.isItemExpanded($0) == true }.map(\.key))
+        }
+
+        func selectedKey() -> String? {
+            guard let outline, outline.selectedRow >= 0 else { return selection.wrappedValue }
+            return (outline.item(atRow: outline.selectedRow) as? Node)?.key
+        }
+
+        func restore(expanded: Set<String>, selected: String?) {
+            guard let outline else { return }
+            for key in expanded {
+                if let node = nodesByKey[key] { outline.expandItem(node) }
+            }
+            if let selected, let node = nodesByKey[selected] {
+                let row = outline.row(forItem: node)
+                if row >= 0 { outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false) }
+            }
+        }
+
+        func expandDefaultRoots() {
+            guard let outline else { return }
+            roots.filter { !$0.children.isEmpty }.forEach { outline.expandItem($0) }
+        }
     }
 }
 
