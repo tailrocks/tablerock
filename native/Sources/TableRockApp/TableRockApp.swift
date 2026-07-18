@@ -276,9 +276,8 @@ final class BridgeModel: ObservableObject {
         do {
             let now = UInt64(Date().timeIntervalSince1970 * 1000)
             let token = try bridge.stageProbeReview(sessionId: session, nowMs: now)
-            _ = try bridge.authorizeReviewToken(
-                tokenId: token, nowMs: now, sessionId: session, expectedRevision: 0
-            )
+            // applyReviewToken does the authorize internally (consume-once);
+            // calling authorizeReviewToken separately consumes the token first.
             let outcome = try bridge.applyReviewToken(
                 tokenId: token, nowMs: now, sessionId: session, expectedRevision: 0
             )

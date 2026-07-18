@@ -69,7 +69,8 @@ if ProcessInfo.processInfo.environment["TABLEROCK_REVIEW"] != nil {
         engine: engine, host: host, port: port, database: database, user: user, password: password))
     let now = UInt64(Date().timeIntervalSince1970 * 1000)
     let token = try bridge2.stageProbeReview(sessionId: session2, nowMs: now)
-    _ = try bridge2.authorizeReviewToken(tokenId: token, nowMs: now, sessionId: session2, expectedRevision: 0)
+    // applyReviewToken does the authorize internally (consume-once); calling
+    // authorizeReviewToken separately would consume the token first.
     let outcome = try bridge2.applyReviewToken(tokenId: token, nowMs: now, sessionId: session2, expectedRevision: 0)
     print("review: \(outcome.transaction) applied=\(outcome.appliedCount) conflict=\(outcome.conflictCount) failed=\(outcome.failedCount)")
     guard outcome.appliedCount > 0 else {
