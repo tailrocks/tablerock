@@ -112,6 +112,85 @@ pub fn format_cursor_cell_sql(grid: &DataGridModel) -> Result<String, CopyError>
     })
 }
 
+/// Presentation aid: `INSERT INTO "schema"."table" ("c1", …) VALUES`.
+///
+/// Identity-gated. Visible columns only. Does not execute.
+pub fn format_insert_sql(grid: &DataGridModel) -> Result<String, CopyError> {
+    use super::structure_ddl::quote_ident_sql;
+    let (Some(schema), Some(table)) = (grid.base_schema.as_ref(), grid.base_table.as_ref()) else {
+        return Err(CopyError::MissingTableIdentity);
+    };
+    if schema.is_empty() || table.is_empty() {
+        return Err(CopyError::MissingTableIdentity);
+    }
+    let cols = grid.visible_columns();
+    if cols.is_empty() {
+        return Err(CopyError::Empty);
+    }
+    let col_list = cols
+        .iter()
+        .map(|c| quote_ident_sql(c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(format!(
+        "INSERT INTO {}.{} ({}) VALUES",
+        quote_ident_sql(schema),
+        quote_ident_sql(table),
+        col_list
+    ))
+}
+
+/// Presentation aid: `(lit1, lit2, …)` for the cursor row (visible columns).
+///
+/// Fails closed when any visible cell is Pending. Does not execute.
+pub fn format_values_sql(grid: &DataGridModel) -> Result<String, CopyError> {
+    use super::grid::CellDistinction;
+    let cols = grid.visible_columns();
+    if cols.is_empty() || grid.row_count == 0 {
+        return Err(CopyError::Empty);
+    }
+    let mut lits = Vec::with_capacity(cols.len());
+    for name in &cols {
+        let Some(phys) = grid.columns.iter().position(|c| c == name) else {
+            return Err(CopyError::Empty);
+        };
+        let cell = grid.cell_at(grid.cursor_row, phys);
+        if matches!(cell.distinction, CellDistinction::Pending) {
+            return Err(CopyError::Empty);
+        }
+        let lit = match cell.distinction {
+            CellDistinction::Null => "NULL".into(),
+            CellDistinction::Boolean => {
+                let t = cell.text.trim();
+                if t.eq_ignore_ascii_case("true") || t == "t" || t == "1" {
+                    "TRUE".into()
+                } else if t.eq_ignore_ascii_case("false") || t == "f" || t == "0" {
+                    "FALSE".into()
+                } else {
+                    sql_literal(&cell.text)
+                }
+            }
+            CellDistinction::Number => {
+                let t = cell.text.trim();
+                if t.parse::<f64>().is_ok() && !t.is_empty() {
+                    t.to_owned()
+                } else {
+                    sql_literal(&cell.text)
+                }
+            }
+            _ => {
+                if cell.text.is_empty() {
+                    "''".into()
+                } else {
+                    sql_literal(&cell.text)
+                }
+            }
+        };
+        lits.push(lit);
+    }
+    Ok(format!("({})", lits.join(", ")))
+}
+
 /// Copy the cursor column for all resident rows (one value per line).
 pub fn format_cursor_column(grid: &DataGridModel) -> Result<String, CopyError> {
     if grid.columns.is_empty() || grid.row_count == 0 {
@@ -551,6 +630,28 @@ mod tests {
         };
         g.cursor_col = 0;
         assert_eq!(format_cursor_cell_sql(&g).unwrap(), "TRUE");
+    }
+
+    #[test]
+    fn format_insert_and_values_sql() {
+        let mut g = sample_grid();
+        g.base_schema = Some("public".into());
+        g.base_table = Some("users".into());
+        g.cursor_row = 0;
+        assert_eq!(
+            format_insert_sql(&g).unwrap(),
+            r#"INSERT INTO "public"."users" ("id", "name") VALUES"#
+        );
+        assert_eq!(format_values_sql(&g).unwrap(), "(1, 'a,b')");
+        g.base_table = None;
+        assert!(matches!(
+            format_insert_sql(&g),
+            Err(CopyError::MissingTableIdentity)
+        ));
+        // Values still works without identity.
+        g.base_table = Some("users".into());
+        g.cursor_row = 1;
+        assert_eq!(format_values_sql(&g).unwrap(), "(NULL, 'x')");
     }
 
     #[test]

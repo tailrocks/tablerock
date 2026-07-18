@@ -234,6 +234,10 @@ pub enum ActionId {
     CopyDeleteWhereSql,
     /// Copy UPDATE SET cursor-col = value WHERE locator (presentation aid).
     CopyUpdateWhereSql,
+    /// Copy INSERT INTO table (visible cols) VALUES scaffold (presentation aid).
+    CopyInsertSql,
+    /// Copy VALUES (literals) for the cursor row visible columns.
+    CopyValuesSql,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).
