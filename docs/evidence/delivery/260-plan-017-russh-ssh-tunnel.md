@@ -36,7 +36,8 @@ cargo test -p tablerock-engine --test ssh_tunnel_real
 
 ## Residual
 
-- Known-hosts fail-closed policy + agent/key auth modes
+- Known-hosts fail-closed → evidence 261
+- Agent/key auth modes
 - Profile aggregate SSH section + TUI editor fields
 - Wire tunnels under connect path for PG/CH/Redis drivers
 - Full multi-engine bastion matrix

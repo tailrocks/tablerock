@@ -3,17 +3,20 @@
 //! Drivers receive only the established local endpoint (or a tunnelled stream).
 //! Passwords never appear in Debug; no shell interpolation.
 
-use std::{fmt, sync::Arc};
+use std::{fmt, path::PathBuf, sync::Arc};
 
 use russh::client::{self, AuthResult, Handle, Handler};
+use russh::keys::{self, PublicKey};
 use russh::{Channel, ChannelStream};
 use tokio::net::TcpListener;
 
 /// Host-key verification policy for the tunnel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SshHostKeyPolicy {
     /// Accept any host key. **Local tests only** — never for production profiles.
     DangerousAcceptAnyForTests,
+    /// Fail closed against an OpenSSH `known_hosts` file (host/port from config).
+    KnownHostsPath(PathBuf),
 }
 
 /// Password authentication material (redacted in Debug).
@@ -75,9 +78,38 @@ impl fmt::Display for SshTunnelError {
 
 impl std::error::Error for SshTunnelError {}
 
+fn map_connect_error(error: russh::Error) -> SshTunnelError {
+    match error {
+        russh::Error::UnknownKey => SshTunnelError::HostKeyRejected,
+        _ => SshTunnelError::Connect,
+    }
+}
+
+fn host_key_accepted(
+    policy: &SshHostKeyPolicy,
+    bastion_host: &str,
+    bastion_port: u16,
+    server_public_key: &PublicKey,
+) -> bool {
+    match policy {
+        SshHostKeyPolicy::DangerousAcceptAnyForTests => true,
+        SshHostKeyPolicy::KnownHostsPath(path) => {
+            match keys::check_known_hosts_path(bastion_host, bastion_port, server_public_key, path)
+            {
+                Ok(true) => true,
+                // Unknown key, changed key, or unreadable file → reject.
+                Ok(false) | Err(_) => false,
+            }
+        }
+    }
+}
+
 /// Opaque russh client handler (host-key policy applied).
 pub struct ClientHandler {
     policy: SshHostKeyPolicy,
+    bastion_host: String,
+    bastion_port: u16,
+    presented: Arc<std::sync::Mutex<Option<PublicKey>>>,
 }
 
 impl Handler for ClientHandler {
@@ -85,11 +117,20 @@ impl Handler for ClientHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKey,
+        server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        match self.policy {
-            SshHostKeyPolicy::DangerousAcceptAnyForTests => Ok(true),
+        let accept = host_key_accepted(
+            &self.policy,
+            &self.bastion_host,
+            self.bastion_port,
+            server_public_key,
+        );
+        if accept {
+            if let Ok(mut guard) = self.presented.lock() {
+                *guard = Some(server_public_key.clone());
+            }
         }
+        Ok(accept)
     }
 }
 
@@ -97,9 +138,24 @@ impl Handler for ClientHandler {
 pub async fn connect_session(
     config: &SshTunnelConfig,
 ) -> Result<Handle<ClientHandler>, SshTunnelError> {
+    let (handle, _) = connect_session_capture_host_key(config).await?;
+    Ok(handle)
+}
+
+/// Open SSH session and return the host key that passed policy.
+///
+/// On `KnownHostsPath`, the key is the one already trusted. On
+/// `DangerousAcceptAnyForTests`, the key is the live bastion key (for learning).
+pub async fn connect_session_capture_host_key(
+    config: &SshTunnelConfig,
+) -> Result<(Handle<ClientHandler>, PublicKey), SshTunnelError> {
     let conf = Arc::new(client::Config::default());
+    let presented = Arc::new(std::sync::Mutex::new(None::<PublicKey>));
     let handler = ClientHandler {
-        policy: config.host_key_policy,
+        policy: config.host_key_policy.clone(),
+        bastion_host: config.bastion_host.clone(),
+        bastion_port: config.bastion_port,
+        presented: Arc::clone(&presented),
     };
     let mut handle = client::connect(
         conf,
@@ -107,16 +163,34 @@ pub async fn connect_session(
         handler,
     )
     .await
-    .map_err(|_| SshTunnelError::Connect)?;
+    .map_err(map_connect_error)?;
 
     let auth = handle
         .authenticate_password(config.auth.username.as_str(), config.auth.password.as_str())
         .await
         .map_err(|_| SshTunnelError::Auth)?;
     match auth {
-        AuthResult::Success => Ok(handle),
+        AuthResult::Success => {
+            let key = presented
+                .lock()
+                .ok()
+                .and_then(|g| g.clone())
+                .ok_or(SshTunnelError::HostKeyRejected)?;
+            Ok((handle, key))
+        }
         AuthResult::Failure { .. } => Err(SshTunnelError::Auth),
     }
+}
+
+/// Record a host key into an OpenSSH known_hosts file.
+pub fn learn_host_key(
+    host: &str,
+    port: u16,
+    public_key: &PublicKey,
+    path: impl AsRef<std::path::Path>,
+) -> Result<(), SshTunnelError> {
+    keys::known_hosts::learn_known_hosts_path(host, port, public_key, path)
+        .map_err(|_| SshTunnelError::Connect)
 }
 
 /// Open a direct-tcpip channel through an authenticated session.
@@ -126,12 +200,7 @@ pub async fn open_direct_tcpip(
     target_port: u16,
 ) -> Result<Channel<client::Msg>, SshTunnelError> {
     handle
-        .channel_open_direct_tcpip(
-            target_host,
-            u32::from(target_port),
-            "127.0.0.1",
-            0,
-        )
+        .channel_open_direct_tcpip(target_host, u32::from(target_port), "127.0.0.1", 0)
         .await
         .map_err(|_| SshTunnelError::Channel)
 }
@@ -168,7 +237,6 @@ pub async fn spawn_local_forward(
         };
         let mut remote = channel_stream(channel);
         let _ = tokio::io::copy_bidirectional(&mut local, &mut remote).await;
-        // Keep handle alive until bridge ends.
         drop(handle);
     });
 
@@ -178,6 +246,7 @@ pub async fn spawn_local_forward(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn password_auth_debug_redacts_secret() {
@@ -185,5 +254,70 @@ mod tests {
         let debug = format!("{auth:?}");
         assert!(!debug.contains("super-secret"));
         assert!(debug.contains("<redacted>"));
+    }
+
+    #[test]
+    fn known_hosts_path_policy_debug_has_no_secrets() {
+        let policy = SshHostKeyPolicy::KnownHostsPath(PathBuf::from("/tmp/known_hosts"));
+        let debug = format!("{policy:?}");
+        assert!(debug.contains("KnownHostsPath"));
+    }
+
+    #[test]
+    fn empty_known_hosts_rejects_unknown_key() {
+        let dir = std::env::temp_dir().join(format!("tablerock-kh-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("known_hosts");
+        let _ = std::fs::File::create(&path).unwrap();
+
+        let key = keys::parse_public_key_base64(
+            "AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ",
+        )
+        .unwrap();
+        let ok = keys::check_known_hosts_path("127.0.0.1", 2222, &key, &path).unwrap();
+        assert!(!ok, "empty known_hosts must not accept arbitrary keys");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn learn_then_check_round_trip() {
+        let dir = std::env::temp_dir().join(format!("tablerock-kh-learn-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("known_hosts");
+        let key = keys::parse_public_key_base64(
+            "AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ",
+        )
+        .unwrap();
+        learn_host_key("127.0.0.1", 2222, &key, &path).unwrap();
+        assert!(keys::check_known_hosts_path("127.0.0.1", 2222, &key, &path).unwrap());
+
+        let other = keys::parse_public_key_base64(
+            "AAAAC3NzaC1lZDI1NTE5AAAAILIG2T/B0l0gaqj3puu510tu9N1OkQ4znY3LYuEm5zCF",
+        )
+        .unwrap();
+        let changed = keys::check_known_hosts_path("127.0.0.1", 2222, &other, &path);
+        assert!(changed.is_err() || matches!(changed, Ok(false)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn known_hosts_file_format_matches_openssh() {
+        let dir = std::env::temp_dir().join(format!("tablerock-kh-fmt-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("known_hosts");
+        {
+            let mut f = std::fs::File::create(&path).unwrap();
+            writeln!(
+                f,
+                "[localhost]:13265 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ"
+            )
+            .unwrap();
+        }
+        let key = keys::parse_public_key_base64(
+            "AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ",
+        )
+        .unwrap();
+        assert!(keys::check_known_hosts_path("localhost", 13265, &key, &path).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

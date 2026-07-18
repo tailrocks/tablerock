@@ -201,10 +201,11 @@ opens tunneling channels
 No shell command constructs an SSH tunnel. Database drivers receive the
 established local stream/endpoint and remain unaware of SSH credentials.
 
-Adoption (plan 017 residual, evidence 260): workspace pin `russh = "=0.62.2"`
-with `default-features = false` + `ring`; module
+Adoption (plan 017 residual, evidence 260–261): workspace pin
+`russh = "=0.62.2"` with `default-features = false` + `ring`; module
 `tablerock-engine::ssh_tunnel` — password auth, direct-tcpip, local forward,
-Debug redaction. Production known-hosts and agent/key modes remain residual.
+OpenSSH known_hosts fail-closed, Debug redaction. Agent/key auth and profile
+connect wiring remain residual.
 
 ## Ratatui and TermRock
 

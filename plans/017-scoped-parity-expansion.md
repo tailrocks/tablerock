@@ -96,7 +96,8 @@ host them, keep those suites local-only and record the gap — same pattern as
 
 ## Done criteria
 
-- [x] SSH russh adapter + password bastion Docker proof (evidence 260; known-hosts/agent/key + profile wiring residual)
+- [x] SSH russh adapter + password bastion Docker proof (evidence 260)
+- [x] SSH known_hosts fail-closed (evidence 261; agent/key + profile wiring residual)
 - [x] pg_dump discovery + argv never carries password (tool_discovery tests)
 - [x] DDL plans typed (DdlPlan) + PG execute_ddl_plan add/drop column + vacuum/analyze; Redis unsupported
 - [x] Roles: list_roles read-only Docker test
@@ -107,7 +108,7 @@ host them, keep those suites local-only and record the gap — same pattern as
 
 ## Residual
 
-- SSH known-hosts fail-closed, agent/key auth, profile aggregate + connect-path wiring, multi-engine matrix
+- SSH agent/key auth, profile aggregate + connect-path wiring, multi-engine matrix
 - Full pg_dump/pg_restore process cancel + version matrix CI
 - DDL review UI + index/constraint ops
 - Role membership/grant inspection depth
