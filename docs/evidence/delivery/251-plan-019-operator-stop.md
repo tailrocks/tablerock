@@ -2,7 +2,7 @@
 
 Date: 2026-07-18
 Host: macOS with Command Line Tools only
-Reconfirmed: 2026-07-18 @ commit `0dd4165` (still blocked; TUI ledger software gaps closed)
+Reconfirmed: 2026-07-18 @ commit `cc3aac8`+ (still blocked; software reconfirm evidence 298)
 
 ## Binding STOP conditions (from plan 019)
 
