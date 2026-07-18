@@ -5,3 +5,4 @@
 /native/.build/
 /native/.swiftpm/
 /native/dist/
+/native/.build-direct/
