@@ -4025,6 +4025,12 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::FilterILike if model.screen() == Screen::Workbench => {
             add_value_filter(model, "ilike", true)
         }
+        ActionId::FilterStartsWith if model.screen() == Screen::Workbench => {
+            add_affix_like_filter(model, AffixKind::StartsWith)
+        }
+        ActionId::FilterEndsWith if model.screen() == Screen::Workbench => {
+            add_affix_like_filter(model, AffixKind::EndsWith)
+        }
         ActionId::FilterNe if model.screen() == Screen::Workbench => {
             add_value_filter(model, "ne", false)
         }
@@ -5221,6 +5227,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::RemoveColumnFilters
         | ActionId::FilterLike
         | ActionId::FilterILike
+        | ActionId::FilterStartsWith
+        | ActionId::FilterEndsWith
         | ActionId::FilterNe
         | ActionId::FilterLt
         | ActionId::FilterLe
@@ -6318,6 +6326,50 @@ fn add_value_filter(model: &mut Model, operator: &str, wrap_like: bool) -> Updat
     rebrowse_active_table(model)
 }
 
+#[derive(Clone, Copy)]
+enum AffixKind {
+    StartsWith,
+    EndsWith,
+}
+
+/// LIKE prefix/suffix from cursor cell (skips wrap when value already has `%`).
+fn add_affix_like_filter(model: &mut Model, kind: AffixKind) -> Update {
+    let (col, value) = {
+        let Some(grid) = model.workbench().active_grid() else {
+            return Update::unchanged();
+        };
+        let col = grid.columns.get(grid.cursor_col).cloned();
+        let value = grid.cell_at(grid.cursor_row, grid.cursor_col).text.clone();
+        (col, value)
+    };
+    let Some(col) = col else {
+        return Update::unchanged();
+    };
+    if value.is_empty()
+        || matches!(
+            model
+                .workbench()
+                .active_grid()
+                .map(|g| g.cell_at(g.cursor_row, g.cursor_col).distinction),
+            Some(crate::model::grid::CellDistinction::Null)
+        )
+    {
+        return Update::unchanged();
+    }
+    let value = if value.contains('%') {
+        value
+    } else {
+        match kind {
+            AffixKind::StartsWith => format!("{value}%"),
+            AffixKind::EndsWith => format!("%{value}"),
+        }
+    };
+    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+        grid.add_filter_chip(col, "like", Some(value));
+    }
+    rebrowse_active_table(model)
+}
+
 fn open_pick_date(model: &mut Model) -> Update {
     let Some(grid) = model.workbench().active_grid() else {
         return Update::unchanged();
@@ -6878,6 +6930,8 @@ fn cycle_action(
                 ActionId::RemoveColumnFilters,
                 ActionId::FilterLike,
                 ActionId::FilterILike,
+                ActionId::FilterStartsWith,
+                ActionId::FilterEndsWith,
                 ActionId::FilterNe,
                 ActionId::FilterLt,
                 ActionId::FilterLe,
@@ -9049,6 +9103,70 @@ mod tests {
                 assert_eq!(filters[0].2.as_deref(), Some("42"));
             }
             other => panic!("expected gt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn filter_starts_and_ends_with_affix_patterns() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("users");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.columns = vec!["name".into()];
+            grid.row_count = 1;
+            grid.cells = vec![crate::model::grid::ProjectedCell {
+                text: "alice".into(),
+                distinction: crate::model::grid::CellDistinction::Text,
+                byte_len: 5,
+                original_byte_len: None,
+            }];
+            grid.cursor_col = 0;
+            grid.cursor_row = 0;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::FilterStartsWith);
+        let starts = update(&mut model, Message::Activate);
+        match starts.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].1, "like");
+                assert_eq!(filters[0].2.as_deref(), Some("alice%"));
+            }
+            other => panic!("expected starts-with, got {other:?}"),
+        }
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.filters.clear();
+        }
+        model.set_action(ActionId::FilterEndsWith);
+        let ends = update(&mut model, Message::Activate);
+        match ends.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].1, "like");
+                assert_eq!(filters[0].2.as_deref(), Some("%alice"));
+            }
+            other => panic!("expected ends-with, got {other:?}"),
+        }
+        // Already-patterned value is left alone.
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.filters.clear();
+            g.cells[0].text = "a%z".into();
+            g.cells[0].byte_len = 3;
+        }
+        model.set_action(ActionId::FilterStartsWith);
+        let patterned = update(&mut model, Message::Activate);
+        match patterned.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].2.as_deref(), Some("a%z"));
+            }
+            other => panic!("expected raw pattern, got {other:?}"),
         }
     }
 
