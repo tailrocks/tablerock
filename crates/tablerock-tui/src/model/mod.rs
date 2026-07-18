@@ -122,6 +122,12 @@ pub enum ActionId {
     RemoveLastFilter,
     /// Remove all server filters for the cursor column and re-browse.
     RemoveColumnFilters,
+    /// Add LIKE filter for cursor column using cell text with % wildcards.
+    FilterLike,
+    /// Add ILIKE filter (case-insensitive) for cursor column.
+    FilterILike,
+    /// Add inequality filter (ne) for cursor column using cell text.
+    FilterNe,
     /// Persist current grid filters as the named "default" preset for base table.
     SaveFilter,
     /// Apply the named "default" filter preset for the active base table.

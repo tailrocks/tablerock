@@ -3369,6 +3369,15 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::FilterLike if model.screen() == Screen::Workbench => {
+            add_value_filter(model, "like", true)
+        }
+        ActionId::FilterILike if model.screen() == Screen::Workbench => {
+            add_value_filter(model, "ilike", true)
+        }
+        ActionId::FilterNe if model.screen() == Screen::Workbench => {
+            add_value_filter(model, "ne", false)
+        }
         ActionId::SaveFilter if model.screen() == Screen::Workbench => {
             if model.workbench().profile_id_hex.is_none() {
                 return Update::unchanged();
@@ -4106,6 +4115,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::FilterIsNotNull
         | ActionId::RemoveLastFilter
         | ActionId::RemoveColumnFilters
+        | ActionId::FilterLike
+        | ActionId::FilterILike
+        | ActionId::FilterNe
         | ActionId::SaveFilter
         | ActionId::ApplyFilter
         | ActionId::ClearFilters
@@ -5128,6 +5140,42 @@ fn load_workbench_root_catalog(model: &mut Model) -> Update {
     }
 }
 
+/// Add a value filter on the cursor column; optionally wrap value as `%value%`.
+fn add_value_filter(model: &mut Model, operator: &str, wrap_like: bool) -> Update {
+    let (col, value) = {
+        let Some(grid) = model.workbench().active_grid() else {
+            return Update::unchanged();
+        };
+        let col = grid.columns.get(grid.cursor_col).cloned();
+        let value = grid.cell_at(grid.cursor_row, grid.cursor_col).text.clone();
+        (col, value)
+    };
+    let Some(col) = col else {
+        return Update::unchanged();
+    };
+    if value.is_empty()
+        || matches!(
+            model
+                .workbench()
+                .active_grid()
+                .map(|g| g.cell_at(g.cursor_row, g.cursor_col).distinction),
+            Some(crate::model::grid::CellDistinction::Null)
+        )
+    {
+        // LIKE/NE on NULL is not meaningful; fail closed without I/O.
+        return Update::unchanged();
+    }
+    let value = if wrap_like && !value.contains('%') {
+        format!("%{value}%")
+    } else {
+        value
+    };
+    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+        grid.add_filter_chip(col, operator, Some(value));
+    }
+    rebrowse_active_table(model)
+}
+
 fn rebrowse_active_table(model: &mut Model) -> Update {
     let identity = model.workbench().active_grid().and_then(|g| {
         Some((g.base_schema.clone()?, g.base_table.clone()?))
@@ -5388,6 +5436,9 @@ fn cycle_action(
                 ActionId::FilterIsNotNull,
                 ActionId::RemoveLastFilter,
                 ActionId::RemoveColumnFilters,
+                ActionId::FilterLike,
+                ActionId::FilterILike,
+                ActionId::FilterNe,
                 ActionId::SaveFilter,
                 ActionId::ApplyFilter,
                 ActionId::ClearFilters,
@@ -6898,6 +6949,69 @@ mod tests {
             grid.error_label.as_deref(),
             Some("notice: NOTICE: table-rock-notice")
         );
+    }
+
+    #[test]
+    fn filter_like_ilike_ne_wrap_and_reject_null() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("users");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.columns = vec!["name".into()];
+            grid.row_count = 1;
+            grid.cells = vec![crate::model::grid::ProjectedCell {
+                text: "alice".into(),
+                distinction: crate::model::grid::CellDistinction::Text,
+                byte_len: 5,
+                original_byte_len: None,
+            }];
+            grid.cursor_col = 0;
+            grid.cursor_row = 0;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::FilterLike);
+        let like = update(&mut model, Message::Activate);
+        match like.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].1, "like");
+                assert_eq!(filters[0].2.as_deref(), Some("%alice%"));
+            }
+            other => panic!("expected like, got {other:?}"),
+        }
+        // Clear and test ne
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.filters.clear();
+        }
+        model.set_action(ActionId::FilterNe);
+        let ne = update(&mut model, Message::Activate);
+        match ne.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].1, "ne");
+                assert_eq!(filters[0].2.as_deref(), Some("alice"));
+            }
+            other => panic!("expected ne, got {other:?}"),
+        }
+        // Null cell: FilterLike no-ops
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.filters.clear();
+            g.cells[0] = crate::model::grid::ProjectedCell {
+                text: String::new(),
+                distinction: crate::model::grid::CellDistinction::Null,
+                byte_len: 0,
+                original_byte_len: None,
+            };
+        }
+        model.set_action(ActionId::FilterLike);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
     #[test]

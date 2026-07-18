@@ -588,6 +588,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let filt_nn = action_label(model, ActionId::FilterIsNotNull, "NotNull");
     let filt_pop = action_label(model, ActionId::RemoveLastFilter, "PopFilt");
     let filt_col = action_label(model, ActionId::RemoveColumnFilters, "ClrColF");
+    let filt_like = action_label(model, ActionId::FilterLike, "Like");
+    let filt_ilike = action_label(model, ActionId::FilterILike, "ILike");
+    let filt_ne = action_label(model, ActionId::FilterNe, "NotEq");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
@@ -869,6 +872,24 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RemoveColumnFilters,
                         label: filt_col.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterLike,
+                        label: filt_like.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterILike,
+                        label: filt_ilike.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterNe,
+                        label: filt_ne.as_str(),
                         enabled: true,
                         style: None,
                     },
