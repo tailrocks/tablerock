@@ -104,6 +104,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::KillMutation { confirm_buffer, .. }
                     | ConfirmDialog::SaveFilter { confirm_buffer, .. }
                     | ConfirmDialog::ApplyFilter { confirm_buffer, .. }
+                    | ConfirmDialog::StageRedis { confirm_buffer, .. }
                     | ConfirmDialog::StartupReview { confirm_buffer, .. }
                     | ConfirmDialog::PgTool { confirm_buffer, .. }
                     | ConfirmDialog::ImportUrl { confirm_buffer, .. }
@@ -904,6 +905,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             model.workbench_mut().pending_review_token_hex = None;
             model.workbench_mut().pending_review_expires_at_ms = None;
             if committed {
+                let was_redis = !model.workbench().redis_staged.is_empty();
+                model.workbench_mut().redis_staged.clear();
                 if let Some(grid) = model.workbench_mut().active_grid_mut() {
                     grid.drafts.discard_all();
                     grid.cell_edit = None;
@@ -912,6 +915,27 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 }
                 model.workbench_mut().mutation_review = None;
                 model.workbench_mut().mark_active_dirty(false);
+                if was_redis {
+                    // Re-open key view so collection page reflects server.
+                    if let Some((_, key, _)) = model.workbench().redis_stage_target.clone() {
+                        if let Some(session_id_hex) =
+                            model.session().map(|s| s.session_id_hex.clone())
+                        {
+                            let token = model.mint_request_token();
+                            let context_revision = model.workbench().context_revision;
+                            return Update {
+                                render: true,
+                                effect: Some(Effect::OpenRedisKey {
+                                    request_token: token,
+                                    session_id_hex,
+                                    context_revision,
+                                    key,
+                                }),
+                            };
+                        }
+                    }
+                    return Update::render();
+                }
                 // Refresh base table so grid matches server.
                 return rebrowse_active_table(model);
             }
@@ -1372,17 +1396,29 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
+            let logical_db = model.workbench().context.database.clone();
+            // Clear staged collection edits when the open key changes.
+            let key_changed = model
+                .workbench()
+                .redis_stage_target
+                .as_ref()
+                .is_none_or(|(_, k, _)| k != &key);
+            if key_changed {
+                model.workbench_mut().redis_staged.clear();
+            }
+            model.workbench_mut().redis_stage_target =
+                Some((logical_db.clone(), key.clone(), kind_label.clone()));
             model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
                 open: true,
                 title: format!("redis:{key}"),
-                kind_label,
+                kind_label: kind_label.clone(),
                 text: lines.join("\n"),
                 hex: String::new(),
                 byte_len: lines.iter().map(|l| l.len() as u64).sum(),
                 original_byte_len: None,
                 stale: false,
-                structure_schema: None,
-                structure_table: None,
+                structure_schema: Some(logical_db),
+                structure_table: Some(key),
             };
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_completed();
@@ -2326,6 +2362,34 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     }
                     rebrowse_active_table(model)
                 }
+                ConfirmDialog::StageRedis {
+                    op,
+                    logical_db,
+                    key,
+                    confirm_buffer,
+                } => {
+                    let Some(spec) =
+                        crate::model::redis_stage::parse_stage_buffer(&op, &confirm_buffer)
+                    else {
+                        return Update::render();
+                    };
+                    // Ensure target matches the dialog (fail closed if key switched).
+                    let target_ok = model.workbench().redis_stage_target.as_ref().is_some_and(
+                        |(db, k, _)| db == &logical_db && k == &key,
+                    );
+                    if !target_ok {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    }
+                    model.workbench_mut().redis_staged.push(spec);
+                    let n = model.workbench().redis_staged.len();
+                    model.workbench_mut().mark_active_dirty(true);
+                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                        grid.error_label = Some(format!("staged redis {op} ({n} pending)"));
+                    }
+                    model.set_confirm(None);
+                    Update::render()
+                }
             }
         }
         ActionId::Cancel if model.password_prompt().is_some() => {
@@ -2821,16 +2885,32 @@ fn activate_selected_action(model: &mut Model) -> Update {
             Update::unchanged()
         }
         ActionId::DiscardStaged if model.screen() == Screen::Workbench => {
+            let had_redis = !model.workbench().redis_staged.is_empty();
+            if had_redis {
+                model.workbench_mut().redis_staged.clear();
+                model.workbench_mut().mutation_review = None;
+                model.workbench_mut().pending_review_token_hex = None;
+                model.workbench_mut().pending_review_expires_at_ms = None;
+            }
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if !grid.drafts.is_empty() || grid.cell_edit.is_some() {
+                if !grid.drafts.is_empty() || grid.cell_edit.is_some() || had_redis {
                     grid.drafts.discard_all();
                     grid.cell_edit = None;
                     model.workbench_mut().mutation_review = None;
                     model.workbench_mut().mark_active_dirty(false);
                     return Update::render();
                 }
+            } else if had_redis {
+                model.workbench_mut().mark_active_dirty(false);
+                return Update::render();
             }
             Update::unchanged()
+        }
+        ActionId::StageRedisAdd if model.screen() == Screen::Workbench => {
+            open_redis_stage_confirm(model, true)
+        }
+        ActionId::StageRedisRemove if model.screen() == Screen::Workbench => {
+            open_redis_stage_confirm(model, false)
         }
         ActionId::Cancel
             if model.screen() == Screen::Workbench
@@ -3274,6 +3354,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::KillMutation
         | ActionId::ScanRedisKeys
         | ActionId::RedisInfo
+        | ActionId::StageRedisAdd
+        | ActionId::StageRedisRemove
         | ActionId::ExportCsv
         | ActionId::ExportJson
         | ActionId::ExportTsv
@@ -3838,10 +3920,49 @@ fn open_ddl_review(model: &mut Model, kind: &str, preview_fmt: &str) -> Update {
     Update::render()
 }
 
+fn open_redis_stage_confirm(model: &mut Model, add: bool) -> Update {
+    if !model
+        .workbench()
+        .engine_kind
+        .eq_ignore_ascii_case("Redis")
+    {
+        return Update::unchanged();
+    }
+    let Some((logical_db, key, kind_label)) = model.workbench().redis_stage_target.clone() else {
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.error_label = Some("open a redis hash/set/zset key first".into());
+        }
+        return Update::render();
+    };
+    let Some(op) = crate::model::redis_stage::op_for_kind(&kind_label, add) else {
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.error_label = Some(format!("stage add/remove unsupported for {kind_label}"));
+        }
+        return Update::render();
+    };
+    model.set_confirm(Some(ConfirmDialog::StageRedis {
+        op: op.into(),
+        logical_db,
+        key,
+        confirm_buffer: String::new(),
+    }));
+    model.set_action(ActionId::Submit);
+    Update::render()
+}
+
 fn collect_mutation_specs(
     model: &Model,
 ) -> Option<(String, String, String, Vec<crate::effect::MutationChangeSpec>)> {
     use crate::effect::MutationChangeSpec;
+    // Redis collection staging path (independent of relational grid editability).
+    if model.workbench().engine_kind.eq_ignore_ascii_case("Redis") {
+        let specs = model.workbench().redis_staged.clone();
+        if specs.is_empty() {
+            return None;
+        }
+        let (logical_db, key, _) = model.workbench().redis_stage_target.as_ref()?;
+        return Some((logical_db.clone(), String::new(), key.clone(), specs));
+    }
     let database = model.workbench().context.database.clone();
     let grid = model.workbench().active_grid()?;
     if !grid.editability.is_editable() || grid.drafts.is_empty() {
@@ -4201,6 +4322,8 @@ fn cycle_action(
                 ActionId::KillMutation,
                 ActionId::ScanRedisKeys,
                 ActionId::RedisInfo,
+                ActionId::StageRedisAdd,
+                ActionId::StageRedisRemove,
                 ActionId::ExportCsv,
                 ActionId::ExportJson,
                 ActionId::ExportTsv,
@@ -4770,6 +4893,84 @@ mod tests {
                 ..
             }) if profile_id_hex == "aa"
         ));
+    }
+
+    #[test]
+    fn stage_redis_hash_add_then_review_emits_collection_specs() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "0000000000000001000000000000000d".into(),
+            identity: "redis".into(),
+            temporary: true,
+            engine_label: "Redis".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().engine_kind = "Redis".into();
+        model.workbench_mut().context.database = "0".into();
+        let rev = model.workbench().context_revision;
+        // Simulate OpenRedisKey load for a hash.
+        let _ = update(
+            &mut model,
+            Message::Engine(EngineMsg::RedisKeyViewLoaded {
+                request_token: 1,
+                context_revision: rev,
+                key: "myhash".into(),
+                kind_label: "hash".into(),
+                lines: vec!["type: Hash".into(), "HSCAN first page: 0 entries".into()],
+            }),
+        );
+        assert_eq!(
+            model.workbench().redis_stage_target.as_ref().map(|t| (&t.0, &t.1, &t.2)),
+            Some((&"0".to_owned(), &"myhash".to_owned(), &"hash".to_owned()))
+        );
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::StageRedisAdd);
+        let ask = update(&mut model, Message::Activate);
+        assert!(ask.effects().next().is_none());
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::StageRedis { op, key, .. })
+                if op == "hset" && key == "myhash"
+        ));
+        if let Some(ConfirmDialog::StageRedis {
+            confirm_buffer, ..
+        }) = model.confirm_mut()
+        {
+            *confirm_buffer = "field1=hello".into();
+        }
+        model.set_action(ActionId::Submit);
+        let staged = update(&mut model, Message::Activate);
+        assert!(staged.effects().next().is_none());
+        assert_eq!(model.workbench().redis_staged.len(), 1);
+        assert!(matches!(
+            &model.workbench().redis_staged[0],
+            crate::effect::MutationChangeSpec::RedisHashSet { field, value }
+                if field == "field1" && value == "hello"
+        ));
+        model.set_action(ActionId::ReviewMutations);
+        let review = update(&mut model, Message::Activate);
+        match review.effects().next() {
+            Some(Effect::ReviewMutations {
+                database,
+                table,
+                changes,
+                ..
+            }) => {
+                assert_eq!(database, "0");
+                assert_eq!(table, "myhash");
+                assert_eq!(changes.len(), 1);
+                assert!(matches!(
+                    &changes[0],
+                    crate::effect::MutationChangeSpec::RedisHashSet { .. }
+                ));
+            }
+            other => panic!("expected ReviewMutations with redis specs, got {other:?}"),
+        }
+        // Discard clears redis staged.
+        model.set_action(ActionId::DiscardStaged);
+        let _ = update(&mut model, Message::Activate);
+        assert!(model.workbench().redis_staged.is_empty());
     }
 
     #[test]

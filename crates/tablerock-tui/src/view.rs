@@ -204,6 +204,25 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 ),
             )
         }
+        crate::model::ConfirmDialog::StageRedis {
+            op,
+            logical_db,
+            key,
+            confirm_buffer,
+        } => {
+            let hint = match op.as_str() {
+                "hset" => "field=value",
+                "zadd" => "score=member",
+                "hdel" | "sadd" | "srem" | "zrem" => "field-or-member",
+                _ => "payload",
+            };
+            (
+                "Stage Redis collection change?",
+                format!(
+                    "{op} on db={logical_db} key={key}. Paste {hint} [{confirm_buffer}]"
+                ),
+            )
+        }
         crate::model::ConfirmDialog::DdlReview {
             kind,
             schema,
@@ -524,6 +543,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let kill_mut = action_label(model, ActionId::KillMutation, "KillMut");
     let scan_redis = action_label(model, ActionId::ScanRedisKeys, "ScanKeys");
     let redis_info = action_label(model, ActionId::RedisInfo, "RedisInfo");
+    let redis_add = action_label(model, ActionId::StageRedisAdd, "RAdd");
+    let redis_rm = action_label(model, ActionId::StageRedisRemove, "RRem");
     let export_csv = action_label(model, ActionId::ExportCsv, "ExpCsv");
     let export_json = action_label(model, ActionId::ExportJson, "ExpJson");
     let export_tsv = action_label(model, ActionId::ExportTsv, "ExpTsv");
@@ -874,6 +895,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RedisInfo,
                         label: redis_info.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::StageRedisAdd,
+                        label: redis_add.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::StageRedisRemove,
+                        label: redis_rm.as_str(),
                         enabled: true,
                         style: None,
                     },

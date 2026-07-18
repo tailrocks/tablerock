@@ -122,6 +122,10 @@ pub struct WorkbenchModel {
     pub pending_review_expires_at_ms: Option<u64>,
     /// Multi-statement run section panel (one row per statement).
     pub result_sections: ResultSectionsModel,
+    /// Active Redis key for collection staging: (logical_db, key, kind_label).
+    pub redis_stage_target: Option<(String, String, String)>,
+    /// Staged Redis collection mutation specs (review/apply handle path).
+    pub redis_staged: Vec<crate::effect::MutationChangeSpec>,
 }
 
 impl Default for WorkbenchModel {
@@ -169,6 +173,8 @@ impl Default for WorkbenchModel {
             pending_review_token_hex: None,
             pending_review_expires_at_ms: None,
             result_sections: ResultSectionsModel::default(),
+            redis_stage_target: None,
+            redis_staged: Vec::new(),
         }
     }
 }

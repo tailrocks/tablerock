@@ -200,6 +200,7 @@ How to read an evidence document:
 - 311 — [Redis SCAN MATCH + collection first-page views](delivery/311-plan-015-redis-scan-match-collections.md)
 - 312 — [Redis multi-type collection mutations](delivery/312-plan-015-redis-collection-mutations.md)
 - 313 — [Redis collection MutationChangeSpec + review target](delivery/313-plan-015-redis-collection-mutation-specs.md)
+- 314 — [Redis key-view stage RAdd/RRem](delivery/314-plan-015-redis-key-view-stage.md)
 
 ## TermRock pins
 

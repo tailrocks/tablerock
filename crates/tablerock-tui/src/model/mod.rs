@@ -13,6 +13,7 @@ pub mod redis_command;
 pub mod redis_key_view;
 pub mod redis_namespace;
 pub mod result_sections;
+pub mod redis_stage;
 pub mod saved_filter;
 pub mod vim_mode;
 pub mod profiles;
@@ -168,6 +169,10 @@ pub enum ActionId {
     ScanRedisKeys,
     /// Load Redis INFO overview into the inspector.
     RedisInfo,
+    /// Stage a Redis collection add (HSET/SADD/ZADD) for the open key view.
+    StageRedisAdd,
+    /// Stage a Redis collection remove (HDEL/SREM/ZREM) for the open key view.
+    StageRedisRemove,
     /// Export loaded result as CSV (path via paste/status; default export.csv).
     ExportCsv,
     ExportJson,
@@ -244,6 +249,18 @@ pub enum ConfirmDialog {
         table: String,
         /// Known names for the table (display only).
         known_names: Vec<String>,
+        confirm_buffer: String,
+    },
+    /// Stage Redis collection mutation: paste field/member/score payload.
+    ///
+    /// - hset: `field=value`
+    /// - zadd: `score=member`
+    /// - hdel/sadd/srem/zrem: bare field or member token
+    StageRedis {
+        /// hset | hdel | sadd | srem | zadd | zrem
+        op: String,
+        logical_db: String,
+        key: String,
         confirm_buffer: String,
     },
     /// Rename: confirm_buffer is the new table name (non-empty, quoted later).
