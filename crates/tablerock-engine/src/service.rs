@@ -395,6 +395,11 @@ impl EngineService {
         &self.core
     }
 
+    /// Mutable coordinator access for scope registration and event fan-out.
+    pub fn core_mut(&mut self) -> &mut ServiceCoordinator {
+        &mut self.core
+    }
+
     pub fn subscribe(
         &mut self,
         operation_id: OperationId,

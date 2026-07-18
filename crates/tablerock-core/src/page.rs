@@ -45,6 +45,9 @@ pub struct PageWarnings(u16);
 const _: () = assert!(PageWarning::COUNT <= u16::BITS as usize);
 
 impl PageWarnings {
+    /// Bits past the documented warning set are reserved for future versions.
+    const RESERVED_MASK: u16 = !((1 << PageWarning::COUNT) - 1);
+
     #[must_use]
     pub const fn none() -> Self {
         Self(0)
@@ -58,6 +61,18 @@ impl PageWarnings {
     #[must_use]
     pub const fn contains(self, warning: PageWarning) -> bool {
         self.0 & (1 << warning.index()) != 0
+    }
+
+    #[must_use]
+    pub const fn bits(self) -> u16 {
+        self.0
+    }
+
+    pub const fn from_bits(bits: u16) -> Result<Self, PageValidationError> {
+        if bits & Self::RESERVED_MASK != 0 {
+            return Err(PageValidationError::ReservedWarningBits);
+        }
+        Ok(Self(bits))
     }
 }
 
@@ -303,6 +318,18 @@ pub enum PageValidationError {
         stored: u64,
         original: u64,
     },
+    TruncatedEncoding,
+    InvalidMagic,
+    InvalidIdentity,
+    InvalidTotalRowsTag,
+    InvalidDeliveryTag,
+    InvalidNullableTag,
+    InvalidValueKindTag,
+    InvalidTruncationTag,
+    InvalidEngineTag,
+    EmptyEngineTypeName,
+    TrailingBytes,
+    ReservedWarningBits,
 }
 
 impl fmt::Display for PageValidationError {
@@ -759,6 +786,259 @@ impl ResultPage {
             bytes: &self.buffers.arena[start..end],
         })
     }
+
+    /// Serializes this page as the version-1 columnar byte-arena payload.
+    ///
+    /// The native UniFFI bridge and conformance suite treat this encoding as
+    /// the sole page wire format. Bounds in the envelope are already validated
+    /// at page construction; encode is infallible for a well-formed page.
+    #[must_use]
+    pub fn encode_v1(&self) -> Vec<u8> {
+        let envelope = self.envelope;
+        let buffers = &self.buffers;
+        let cells = envelope.row_count as usize * envelope.column_count as usize;
+        let mut out = Vec::with_capacity(estimate_encoded_len(envelope, buffers));
+        out.extend_from_slice(PAGE_V1_MAGIC);
+        out.extend_from_slice(&PageEnvelope::ENCODING_VERSION.to_le_bytes());
+        out.extend_from_slice(&envelope.result_id.to_bytes());
+        out.extend_from_slice(&envelope.revision.get().to_le_bytes());
+        out.push(engine_to_wire(envelope.engine));
+        out.extend_from_slice(&envelope.start_row.to_le_bytes());
+        out.extend_from_slice(&envelope.row_count.to_le_bytes());
+        out.extend_from_slice(&envelope.column_count.to_le_bytes());
+        match envelope.total_rows {
+            RowTotal::Unknown => {
+                out.push(0);
+                out.extend_from_slice(&0_u64.to_le_bytes());
+            }
+            RowTotal::Known(total) => {
+                out.push(1);
+                out.extend_from_slice(&total.to_le_bytes());
+            }
+        }
+        out.extend_from_slice(&envelope.arena_byte_len.to_le_bytes());
+        out.extend_from_slice(&envelope.column_text_byte_len.to_le_bytes());
+        out.push(match envelope.delivery {
+            PageDelivery::Partial => 0,
+            PageDelivery::Final => 1,
+        });
+        out.extend_from_slice(&envelope.warnings.bits().to_le_bytes());
+
+        for column in &buffers.columns {
+            write_bounded_str(&mut out, column.name());
+            out.push(engine_to_wire(column.engine_type().engine()));
+            write_bounded_str(&mut out, column.engine_type().name());
+            out.push(u8::from(column.nullable()));
+        }
+
+        for offset in &buffers.cell_offsets {
+            out.extend_from_slice(&offset.to_le_bytes());
+        }
+        debug_assert_eq!(buffers.cell_offsets.len(), cells + 1);
+        out.extend_from_slice(&buffers.null_bitmap);
+        for kind in &buffers.value_kinds {
+            out.push(value_kind_to_wire(*kind));
+        }
+        for truncation in &buffers.truncations {
+            write_truncation(&mut out, *truncation);
+        }
+        out.extend_from_slice(&buffers.arena);
+        out
+    }
+
+    /// Decodes a version-1 page, validating the envelope against `limits`
+    /// before allocating owned buffers.
+    pub fn decode_v1(bytes: &[u8], limits: PageLimits) -> Result<Self, PageValidationError> {
+        let mut cursor = ByteCursor::new(bytes);
+        let magic = cursor
+            .take(4)
+            .ok_or(PageValidationError::TruncatedEncoding)?;
+        if magic != PAGE_V1_MAGIC {
+            return Err(PageValidationError::InvalidMagic);
+        }
+        let encoding_version = cursor
+            .u16_le()
+            .ok_or(PageValidationError::TruncatedEncoding)?;
+        let result_id = ResultId::from_bytes(
+            cursor
+                .array16()
+                .ok_or(PageValidationError::TruncatedEncoding)?,
+        )
+        .map_err(|_| PageValidationError::InvalidIdentity)?;
+        let revision = Revision::from_wire_u64(
+            cursor
+                .u64_le()
+                .ok_or(PageValidationError::TruncatedEncoding)?,
+        );
+        let engine =
+            engine_from_wire(cursor.u8().ok_or(PageValidationError::TruncatedEncoding)?)?;
+        let start_row = cursor
+            .u64_le()
+            .ok_or(PageValidationError::TruncatedEncoding)?;
+        let row_count = cursor
+            .u32_le()
+            .ok_or(PageValidationError::TruncatedEncoding)?;
+        let column_count = cursor
+            .u32_le()
+            .ok_or(PageValidationError::TruncatedEncoding)?;
+        let total_tag = cursor.u8().ok_or(PageValidationError::TruncatedEncoding)?;
+        let total_value = cursor
+            .u64_le()
+            .ok_or(PageValidationError::TruncatedEncoding)?;
+        let total_rows = match total_tag {
+            0 => {
+                if total_value != 0 {
+                    return Err(PageValidationError::InvalidTotalRowsTag);
+                }
+                RowTotal::Unknown
+            }
+            1 => RowTotal::Known(total_value),
+            _ => return Err(PageValidationError::InvalidTotalRowsTag),
+        };
+        let arena_byte_len = cursor
+            .u64_le()
+            .ok_or(PageValidationError::TruncatedEncoding)?;
+        let column_text_byte_len = cursor
+            .u64_le()
+            .ok_or(PageValidationError::TruncatedEncoding)?;
+        let delivery = match cursor.u8().ok_or(PageValidationError::TruncatedEncoding)? {
+            0 => PageDelivery::Partial,
+            1 => PageDelivery::Final,
+            _ => return Err(PageValidationError::InvalidDeliveryTag),
+        };
+        let warnings = PageWarnings::from_bits(
+            cursor
+                .u16_le()
+                .ok_or(PageValidationError::TruncatedEncoding)?,
+        )?;
+
+        // Cheap envelope validation before any large buffer allocation.
+        let envelope = PageEnvelope::from_wire(
+            encoding_version,
+            PageIdentity::new(result_id, revision, engine),
+            PageShape::new(
+                start_row,
+                row_count,
+                column_count,
+                total_rows,
+                arena_byte_len,
+                column_text_byte_len,
+            ),
+            PageFacts::new(delivery, warnings),
+        );
+        let validated = envelope.validate(limits)?;
+
+        let cells_u64 = u64::from(row_count)
+            .checked_mul(u64::from(column_count))
+            .ok_or(PageValidationError::CellCountUnsupported {
+                cells: u64::MAX,
+            })?;
+        let cells = usize::try_from(cells_u64).map_err(|_| {
+            PageValidationError::CellCountUnsupported {
+                cells: cells_u64,
+            }
+        })?;
+
+        let mut columns = Vec::with_capacity(column_count as usize);
+        let mut observed_column_text = 0_u64;
+        for _ in 0..column_count {
+            let name_bytes = read_length_prefixed(&mut cursor)?;
+            let type_engine =
+                engine_from_wire(cursor.u8().ok_or(PageValidationError::TruncatedEncoding)?)?;
+            let type_name_bytes = read_length_prefixed(&mut cursor)?;
+            let nullable = match cursor.u8().ok_or(PageValidationError::TruncatedEncoding)? {
+                0 => false,
+                1 => true,
+                _ => return Err(PageValidationError::InvalidNullableTag),
+            };
+            let name_len = name_bytes.len() as u64;
+            let type_len = type_name_bytes.len() as u64;
+            observed_column_text = observed_column_text
+                .checked_add(name_len)
+                .and_then(|total| total.checked_add(type_len))
+                .ok_or(PageValidationError::ColumnTextLengthOverflow)?;
+            if observed_column_text > limits.max_column_text_bytes {
+                return Err(PageValidationError::ColumnTextLimitExceeded {
+                    actual: observed_column_text,
+                    limit: limits.max_column_text_bytes,
+                });
+            }
+            let name = crate::BoundedText::copy_from_str(
+                std::str::from_utf8(name_bytes)
+                    .map_err(|_| PageValidationError::InvalidUtf8Encoding { cell: 0 })?,
+                crate::ByteLimit::new(name_len.max(1)),
+            )
+            .map_err(|_| PageValidationError::ColumnTextLengthOverflow)?;
+            let type_name = crate::BoundedText::copy_from_str(
+                std::str::from_utf8(type_name_bytes)
+                    .map_err(|_| PageValidationError::InvalidUtf8Encoding { cell: 0 })?,
+                crate::ByteLimit::new(type_len.max(1)),
+            )
+            .map_err(|_| PageValidationError::ColumnTextLengthOverflow)?;
+            let engine_type = EngineType::new(type_engine, type_name)
+                .map_err(|_| PageValidationError::EmptyEngineTypeName)?;
+            columns.push(ColumnMetadata::new(name, engine_type, nullable));
+        }
+        if observed_column_text != column_text_byte_len {
+            return Err(PageValidationError::ColumnTextLengthMismatch {
+                declared: column_text_byte_len,
+                actual: observed_column_text,
+            });
+        }
+
+        let offset_count = cells.checked_add(1).ok_or(PageValidationError::CellCountUnsupported {
+            cells: cells_u64,
+        })?;
+        let mut cell_offsets = Vec::with_capacity(offset_count);
+        for _ in 0..offset_count {
+            cell_offsets.push(
+                cursor
+                    .u64_le()
+                    .ok_or(PageValidationError::TruncatedEncoding)?,
+            );
+        }
+
+        let bitmap_len = cells.div_ceil(8);
+        let null_bitmap = cursor
+            .take(bitmap_len)
+            .ok_or(PageValidationError::TruncatedEncoding)?
+            .to_vec();
+
+        let mut value_kinds = Vec::with_capacity(cells);
+        for _ in 0..cells {
+            value_kinds.push(value_kind_from_wire(
+                cursor.u8().ok_or(PageValidationError::TruncatedEncoding)?,
+            )?);
+        }
+
+        let mut truncations = Vec::with_capacity(cells);
+        for _ in 0..cells {
+            truncations.push(read_truncation(&mut cursor)?);
+        }
+
+        let arena_len = usize::try_from(arena_byte_len).map_err(|_| {
+            PageValidationError::ArenaLengthUnsupported {
+                bytes: arena_byte_len,
+            }
+        })?;
+        let arena = cursor
+            .take(arena_len)
+            .ok_or(PageValidationError::TruncatedEncoding)?
+            .to_vec();
+        if cursor.remaining() != 0 {
+            return Err(PageValidationError::TrailingBytes);
+        }
+
+        let buffers = PageBuffers::new(
+            columns,
+            cell_offsets,
+            null_bitmap,
+            value_kinds,
+            truncations,
+            arena,
+        );
+        Self::from_parts(validated, buffers)
+    }
 }
 
 fn value_byte_len(value: &OwnedValue) -> u64 {
@@ -1042,4 +1322,180 @@ fn check_len(
 
 fn null_bit(bitmap: &[u8], cell: usize) -> bool {
     bitmap[cell / 8] & (1 << (cell % 8)) != 0
+}
+
+const PAGE_V1_MAGIC: &[u8; 4] = b"TRP1";
+
+struct ByteCursor<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> ByteCursor<'a> {
+    const fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    const fn remaining(self) -> usize {
+        self.bytes.len().saturating_sub(self.offset)
+    }
+
+    fn take(&mut self, len: usize) -> Option<&'a [u8]> {
+        let end = self.offset.checked_add(len)?;
+        let slice = self.bytes.get(self.offset..end)?;
+        self.offset = end;
+        Some(slice)
+    }
+
+    fn u8(&mut self) -> Option<u8> {
+        let bytes = self.take(1)?;
+        Some(bytes[0])
+    }
+
+    fn u16_le(&mut self) -> Option<u16> {
+        let bytes = self.take(2)?;
+        Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+    }
+
+    fn u32_le(&mut self) -> Option<u32> {
+        let bytes = self.take(4)?;
+        Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
+    fn u64_le(&mut self) -> Option<u64> {
+        let bytes = self.take(8)?;
+        Some(u64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]))
+    }
+
+    fn array16(&mut self) -> Option<[u8; 16]> {
+        let bytes = self.take(16)?;
+        let mut out = [0_u8; 16];
+        out.copy_from_slice(bytes);
+        Some(out)
+    }
+}
+
+fn estimate_encoded_len(envelope: PageEnvelope, buffers: &PageBuffers) -> usize {
+    let cells = envelope.row_count as usize * envelope.column_count as usize;
+    let mut len: usize = 4 + 2 + 16 + 8 + 1 + 8 + 4 + 4 + 1 + 8 + 8 + 8 + 1 + 2;
+    for column in &buffers.columns {
+        len = len
+            .saturating_add(4)
+            .saturating_add(column.name().len())
+            .saturating_add(1)
+            .saturating_add(4)
+            .saturating_add(column.engine_type().name().len())
+            .saturating_add(1);
+    }
+    len = len
+        .saturating_add(cells.saturating_add(1).saturating_mul(8))
+        .saturating_add(cells.div_ceil(8))
+        .saturating_add(cells)
+        .saturating_add(cells.saturating_mul(1 + 8))
+        .saturating_add(buffers.arena.len());
+    len
+}
+
+fn write_bounded_str(out: &mut Vec<u8>, value: &str) {
+    let len = u32::try_from(value.len()).unwrap_or(u32::MAX);
+    out.extend_from_slice(&len.to_le_bytes());
+    out.extend_from_slice(value.as_bytes());
+}
+
+fn read_length_prefixed<'a>(
+    cursor: &mut ByteCursor<'a>,
+) -> Result<&'a [u8], PageValidationError> {
+    let len = cursor
+        .u32_le()
+        .ok_or(PageValidationError::TruncatedEncoding)? as usize;
+    cursor
+        .take(len)
+        .ok_or(PageValidationError::TruncatedEncoding)
+}
+
+const fn engine_to_wire(engine: Engine) -> u8 {
+    match engine {
+        Engine::PostgreSql => 0,
+        Engine::ClickHouse => 1,
+        Engine::Redis => 2,
+    }
+}
+
+const fn engine_from_wire(tag: u8) -> Result<Engine, PageValidationError> {
+    match tag {
+        0 => Ok(Engine::PostgreSql),
+        1 => Ok(Engine::ClickHouse),
+        2 => Ok(Engine::Redis),
+        _ => Err(PageValidationError::InvalidEngineTag),
+    }
+}
+
+const fn value_kind_to_wire(kind: ValueKind) -> u8 {
+    match kind {
+        ValueKind::Null => 0,
+        ValueKind::Boolean => 1,
+        ValueKind::Signed => 2,
+        ValueKind::Unsigned => 3,
+        ValueKind::Float64 => 4,
+        ValueKind::Decimal => 5,
+        ValueKind::Temporal => 6,
+        ValueKind::Text => 7,
+        ValueKind::Structured => 8,
+        ValueKind::Binary => 9,
+        ValueKind::Invalid => 10,
+        ValueKind::Unknown => 11,
+    }
+}
+
+const fn value_kind_from_wire(tag: u8) -> Result<ValueKind, PageValidationError> {
+    match tag {
+        0 => Ok(ValueKind::Null),
+        1 => Ok(ValueKind::Boolean),
+        2 => Ok(ValueKind::Signed),
+        3 => Ok(ValueKind::Unsigned),
+        4 => Ok(ValueKind::Float64),
+        5 => Ok(ValueKind::Decimal),
+        6 => Ok(ValueKind::Temporal),
+        7 => Ok(ValueKind::Text),
+        8 => Ok(ValueKind::Structured),
+        9 => Ok(ValueKind::Binary),
+        10 => Ok(ValueKind::Invalid),
+        11 => Ok(ValueKind::Unknown),
+        _ => Err(PageValidationError::InvalidValueKindTag),
+    }
+}
+
+fn write_truncation(out: &mut Vec<u8>, truncation: Truncation) {
+    match truncation {
+        Truncation::Complete => out.push(0),
+        Truncation::Truncated {
+            original_byte_len: None,
+        } => out.push(1),
+        Truncation::Truncated {
+            original_byte_len: Some(len),
+        } => {
+            out.push(2);
+            out.extend_from_slice(&len.to_le_bytes());
+        }
+    }
+}
+
+fn read_truncation(cursor: &mut ByteCursor<'_>) -> Result<Truncation, PageValidationError> {
+    match cursor.u8().ok_or(PageValidationError::TruncatedEncoding)? {
+        0 => Ok(Truncation::Complete),
+        1 => Ok(Truncation::Truncated {
+            original_byte_len: None,
+        }),
+        2 => {
+            let len = cursor
+                .u64_le()
+                .ok_or(PageValidationError::TruncatedEncoding)?;
+            Ok(Truncation::Truncated {
+                original_byte_len: Some(len),
+            })
+        }
+        _ => Err(PageValidationError::InvalidTruncationTag),
+    }
 }

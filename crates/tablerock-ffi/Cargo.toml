@@ -1,0 +1,32 @@
+[package]
+name = "tablerock-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Synchronous UniFFI facade over TableRock engine for native macOS"
+
+[lib]
+name = "tablerock_ffi"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[dependencies]
+tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
+tablerock-engine = { version = "=0.1.0", path = "../tablerock-engine" }
+tablerock-persistence = { version = "=0.1.0", path = "../tablerock-persistence" }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+uniffi = { version = "=0.32.0", default-features = false }
+
+[dev-dependencies]
+# In-process panic probe only; not part of the shipping surface.
+
+[lints.rust]
+# UniFFI scaffolding requires `unsafe` at the C ABI boundary. Core crates remain forbid.
+unsafe_code = "allow"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+[lints.clippy]
+correctness = "deny"
+suspicious = "deny"
+perf = "deny"

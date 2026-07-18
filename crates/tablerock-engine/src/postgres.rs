@@ -960,12 +960,9 @@ impl PostgresSession {
                 DdlTarget::PostgreSqlRelation { schema, relation },
             ) => {
                 format!(
-                    "VACUUM {}",
-                    format!(
-                        "{}.{}",
-                        quote_ident(schema).map_err(|_| PostgresError::Query)?,
-                        quote_ident(relation).map_err(|_| PostgresError::Query)?
-                    )
+                    "VACUUM {}.{}",
+                    quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                    quote_ident(relation).map_err(|_| PostgresError::Query)?,
                 )
             }
             (

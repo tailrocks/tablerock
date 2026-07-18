@@ -27,7 +27,7 @@ jobs:
       - name: Check
         run: cargo check --workspace --all-targets
       - name: Container-free tests
-        run: cargo test -p tablerock-core -p tablerock-persistence -p tablerock-tui -p tablerock-cli
+        run: cargo test -p tablerock-core -p tablerock-persistence -p tablerock-tui -p tablerock-cli -p tablerock-ffi
       - name: Engine unit and container-free integration tests
         run: >
           cargo test -p tablerock-engine

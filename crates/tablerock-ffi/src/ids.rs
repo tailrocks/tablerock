@@ -1,0 +1,64 @@
+use tablerock_core::{
+    ContextId, IdDecodeError, IdParts, OperationId, ProfileId, ResultId, SessionId,
+};
+
+pub(crate) fn session_from_bytes(bytes: &[u8]) -> Result<SessionId, IdDecodeError> {
+    SessionId::from_bytes(as_array16(bytes)?)
+}
+
+pub(crate) fn operation_from_bytes(bytes: &[u8]) -> Result<OperationId, IdDecodeError> {
+    OperationId::from_bytes(as_array16(bytes)?)
+}
+
+pub(crate) fn result_from_bytes(bytes: &[u8]) -> Result<ResultId, IdDecodeError> {
+    ResultId::from_bytes(as_array16(bytes)?)
+}
+
+pub(crate) fn session_bytes(id: SessionId) -> Vec<u8> {
+    id.to_bytes().to_vec()
+}
+
+pub(crate) fn operation_bytes(id: OperationId) -> Vec<u8> {
+    id.to_bytes().to_vec()
+}
+
+fn as_array16(bytes: &[u8]) -> Result<[u8; 16], IdDecodeError> {
+    <[u8; 16]>::try_from(bytes).map_err(|_| IdDecodeError::InvalidLength)
+}
+
+/// Sequential opaque ID factory for bridge-owned handles.
+pub(crate) struct IdFactory {
+    next_low: u64,
+}
+
+impl IdFactory {
+    pub(crate) const fn new() -> Self {
+        Self { next_low: 1 }
+    }
+
+    pub(crate) fn parts(&mut self) -> IdParts {
+        let low = self.next_low;
+        self.next_low = self.next_low.saturating_add(1);
+        IdParts::new(0, low).expect("low counter starts at 1")
+    }
+
+    pub(crate) fn profile(&mut self) -> ProfileId {
+        ProfileId::from_parts(self.parts()).expect("nonzero id")
+    }
+
+    pub(crate) fn session(&mut self) -> SessionId {
+        SessionId::from_parts(self.parts()).expect("nonzero id")
+    }
+
+    pub(crate) fn context(&mut self) -> ContextId {
+        ContextId::from_parts(self.parts()).expect("nonzero id")
+    }
+
+    pub(crate) fn operation(&mut self) -> OperationId {
+        OperationId::from_parts(self.parts()).expect("nonzero id")
+    }
+
+    pub(crate) fn result(&mut self) -> ResultId {
+        ResultId::from_parts(self.parts()).expect("nonzero id")
+    }
+}

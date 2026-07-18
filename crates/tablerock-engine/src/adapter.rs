@@ -274,11 +274,19 @@ pub trait DriverSession: Send + Sync {
     /// Bounded server identity/version facts for Test Connection.
     fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>>;
 
-    /// Apply an authorized mutation plan (PostgreSQL today; others fail closed).
+    /// Apply an authorized mutation plan (real engines override; stubs fail closed).
     fn apply_authorized_mutation<'a>(
         &'a self,
         authorized: AuthorizedMutationPlan,
-    ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>>;
+    ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
+        let _ = authorized;
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
 
     /// Redis-only: load a type-specific key view as display lines.
     fn redis_key_view_lines<'a>(

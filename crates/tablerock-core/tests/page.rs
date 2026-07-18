@@ -80,6 +80,92 @@ fn validated_with_arena(arena_byte_len: u64) -> tablerock_core::ValidatedPageEnv
 }
 
 #[test]
+fn page_v1_round_trip_preserves_cells_and_envelope() {
+    let text = |value: &str| {
+        OwnedValue::text(
+            BoundedText::copy_from_str(value, ByteLimit::new(16)).unwrap(),
+            Truncation::Complete,
+        )
+        .unwrap()
+    };
+    let page = ResultPage::from_row_major(
+        identity(),
+        10,
+        RowTotal::Known(42),
+        PageFacts::new(
+            PageDelivery::Final,
+            PageWarnings::none()
+                .with(PageWarning::UnknownValues)
+                .with(PageWarning::DeliveryDiscontinuity),
+        ),
+        columns_for(Engine::PostgreSql),
+        vec![
+            OwnedValue::signed(7),
+            text("alpha"),
+            OwnedValue::signed(8),
+            OwnedValue::null(),
+        ],
+        page_limits(),
+    )
+    .unwrap();
+
+    let encoded = page.encode_v1();
+    assert!(encoded.starts_with(b"TRP1"));
+    let decoded = ResultPage::decode_v1(&encoded, page_limits()).unwrap();
+    assert_eq!(decoded.envelope(), page.envelope());
+    assert_eq!(decoded.columns().len(), page.columns().len());
+    for row in 0..2 {
+        for column in 0..2 {
+            let original = page.cell(row, column).unwrap();
+            let restored = decoded.cell(row, column).unwrap();
+            assert_eq!(restored.kind(), original.kind());
+            assert_eq!(restored.is_null(), original.is_null());
+            assert_eq!(restored.truncation(), original.truncation());
+            assert_eq!(restored.bytes(), original.bytes());
+        }
+    }
+}
+
+#[test]
+fn page_v1_decode_rejects_oversized_arena_before_allocation() {
+    let page = ResultPage::from_row_major(
+        identity(),
+        0,
+        RowTotal::Unknown,
+        facts(),
+        columns_for(Engine::PostgreSql),
+        vec![
+            OwnedValue::signed(1),
+            OwnedValue::signed(2),
+            OwnedValue::signed(3),
+            OwnedValue::signed(4),
+        ],
+        page_limits(),
+    )
+    .unwrap();
+    let mut encoded = page.encode_v1();
+    // Arena length field sits after total_rows (1+8) following start of fixed header.
+    // Corrupt the declared arena length to exceed limits while keeping short payload.
+    // Fixed header layout after magic:
+    // version u16, result_id 16, revision u64, engine u8, start_row u64, row_count u32,
+    // column_count u32, total_tag u8, total_value u64, arena_byte_len u64, ...
+    let arena_field_offset = 4 + 2 + 16 + 8 + 1 + 8 + 4 + 4 + 1 + 8;
+    let huge = (page_limits().max_arena_bytes() + 1).to_le_bytes();
+    encoded[arena_field_offset..arena_field_offset + 8].copy_from_slice(&huge);
+    let err = ResultPage::decode_v1(&encoded, page_limits()).unwrap_err();
+    assert!(matches!(
+        err,
+        PageValidationError::ArenaLimitExceeded { .. }
+    ));
+}
+
+#[test]
+fn page_v1_decode_rejects_bad_magic() {
+    let err = ResultPage::decode_v1(b"XXXX", page_limits()).unwrap_err();
+    assert!(matches!(err, PageValidationError::InvalidMagic));
+}
+
+#[test]
 fn row_major_values_become_validated_column_major_page() {
     let text = |value: &str| {
         OwnedValue::text(
