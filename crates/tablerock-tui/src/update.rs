@@ -3905,6 +3905,35 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::FilterByLocator if model.screen() == Screen::Workbench => {
+            let fields = {
+                let Some(grid) = model.workbench().active_grid() else {
+                    return Update::unchanged();
+                };
+                grid.locator_for_row(grid.cursor_row)
+            };
+            if fields.is_empty() {
+                return Update::unchanged();
+            }
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                for f in fields {
+                    // NULL identity uses isnull; otherwise eq on presentation text.
+                    let col_idx = grid.columns.iter().position(|c| c == &f.column);
+                    let is_null = col_idx.is_some_and(|i| {
+                        matches!(
+                            grid.cell_at(grid.cursor_row, i).distinction,
+                            crate::model::grid::CellDistinction::Null
+                        )
+                    });
+                    if is_null {
+                        grid.add_filter_chip(f.column, "isnull", None);
+                    } else {
+                        grid.add_filter_chip(f.column, "eq", Some(f.original_text));
+                    }
+                }
+            }
+            rebrowse_active_table(model)
+        }
         ActionId::RemoveLastFilter if model.screen() == Screen::Workbench => {
             let removed = model
                 .workbench_mut()
@@ -5125,6 +5154,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::FilterIsNotNull
         | ActionId::FilterEmpty
         | ActionId::FilterNotEmpty
+        | ActionId::FilterByLocator
         | ActionId::RemoveLastFilter
         | ActionId::RemoveColumnFilters
         | ActionId::FilterLike
@@ -6776,6 +6806,7 @@ fn cycle_action(
                 ActionId::FilterIsNotNull,
                 ActionId::FilterEmpty,
                 ActionId::FilterNotEmpty,
+                ActionId::FilterByLocator,
                 ActionId::RemoveLastFilter,
                 ActionId::RemoveColumnFilters,
                 ActionId::FilterLike,
@@ -8547,6 +8578,54 @@ mod tests {
         let tab = model.workbench().active_tab().unwrap();
         assert_eq!(tab.title, "renamed query");
         assert!(!tab.preview);
+    }
+
+    #[test]
+    fn filter_by_locator_adds_eq_chips() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into()];
+            grid.row_count = 1;
+            grid.cells = vec![
+                crate::model::grid::ProjectedCell {
+                    text: "9".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                },
+                crate::model::grid::ProjectedCell {
+                    text: "z".into(),
+                    distinction: crate::model::grid::CellDistinction::Text,
+                    byte_len: 1,
+                    original_byte_len: None,
+                },
+            ];
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("t".into());
+            grid.identity_columns = vec!["id".into()];
+            grid.cursor_row = 0;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::FilterByLocator);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters.len(), 1);
+                assert_eq!(filters[0].0, "id");
+                assert_eq!(filters[0].1, "eq");
+                assert_eq!(filters[0].2.as_deref(), Some("9"));
+            }
+            other => panic!("expected BrowseTable, got {other:?}"),
+        }
     }
 
     #[test]
