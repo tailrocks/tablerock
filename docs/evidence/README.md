@@ -195,6 +195,7 @@ How to read an evidence document:
 - 306 — [Saved filter library persistence actor](delivery/306-plan-016-saved-filter-persist.md)
 - 307 — [Saved filter TUI load/save wiring](delivery/307-plan-016-saved-filter-tui-wire.md)
 - 308 — [ClickHouse ExecuteSql + query_id status](delivery/308-plan-014-ch-execute-sql-query-id.md)
+- 309 — [Disconnect mid-stream marks live ops](delivery/309-plan-018-disconnect-mid-stream.md)
 
 ## TermRock pins
 

@@ -471,6 +471,14 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
+            // Disconnect mid-stream: keep stale page; never revive disconnected ops.
+            if model
+                .workbench()
+                .active_grid()
+                .is_some_and(|g| g.operation == GridOperationState::Disconnected)
+            {
+                return Update::unchanged();
+            }
             let totals = if let Some(n) = totals_exact {
                 GridRowTotal::Exact(n)
             } else if let Some(n) = totals_estimated {
@@ -539,6 +547,13 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             truncated,
         }) => {
             if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            if model
+                .workbench()
+                .active_grid()
+                .is_some_and(|g| g.operation == GridOperationState::Disconnected)
+            {
                 return Update::unchanged();
             }
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
@@ -1456,6 +1471,13 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
+            if model
+                .workbench()
+                .active_grid()
+                .is_some_and(|g| g.operation == GridOperationState::Disconnected)
+            {
+                return Update::unchanged();
+            }
             let label = match reason {
                 FailureProjection::Label(label) => label,
             };
@@ -1469,12 +1491,26 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::GridCancelDispatched { dispatch, .. }) => {
+            if model
+                .workbench()
+                .active_grid()
+                .is_some_and(|g| g.operation == GridOperationState::Disconnected)
+            {
+                return Update::unchanged();
+            }
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_cancel_dispatch(&dispatch);
             }
             Update::render()
         }
         Message::Engine(EngineMsg::GridCancelled { label, .. }) => {
+            if model
+                .workbench()
+                .active_grid()
+                .is_some_and(|g| g.operation == GridOperationState::Disconnected)
+            {
+                return Update::unchanged();
+            }
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if label.contains("server confirmed") {
                     grid.mark_server_confirmed_cancelled();
@@ -4918,6 +4954,89 @@ mod tests {
         );
         assert_eq!(model.screen(), Screen::Connections);
         assert!(model.session().is_none());
+    }
+
+    #[test]
+    fn disconnect_mid_stream_ignores_late_grid_pages() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000009".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().context_revision = 3;
+        model.workbench_mut().open_preview_tab("live");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.operation = GridOperationState::Streaming;
+            grid.columns = vec!["id".into()];
+            grid.cells = vec![crate::model::grid::ProjectedCell {
+                text: "1".into(),
+                distinction: crate::model::grid::CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            }];
+            grid.row_count = 1;
+            grid.rows_loaded = 1;
+        }
+        model.workbench_mut().mark_active_running(true);
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::Disconnect);
+        let disc = update(&mut model, Message::Activate);
+        assert!(matches!(
+            disc.effects().next(),
+            Some(Effect::DisconnectSession { .. })
+        ));
+        assert_eq!(
+            model.workbench().active_grid().unwrap().operation,
+            GridOperationState::Disconnected
+        );
+        // Late page must not overwrite disconnected state or cells.
+        let late = update(
+            &mut model,
+            Message::Engine(EngineMsg::GridPage {
+                request_token: 9,
+                context_revision: 3,
+                start_row: 0,
+                columns: vec!["id".into()],
+                cells: vec![crate::model::grid::ProjectedCell {
+                    text: "999".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 3,
+                    original_byte_len: None,
+                }],
+                row_count: 1,
+                totals_exact: Some(1),
+                totals_estimated: None,
+                bytes: 8,
+                truncated: false,
+                complete: true,
+                identity_columns: None,
+                server_query_id: None,
+            }),
+        );
+        assert!(!late.needs_render());
+        let grid = model.workbench().active_grid().unwrap();
+        assert_eq!(grid.operation, GridOperationState::Disconnected);
+        assert_eq!(grid.cells[0].text, "1");
+        // Late complete also ignored.
+        let done = update(
+            &mut model,
+            Message::Engine(EngineMsg::GridStreamComplete {
+                request_token: 9,
+                context_revision: 3,
+                rows_loaded: 50,
+                truncated: false,
+            }),
+        );
+        assert!(!done.needs_render());
+        assert_eq!(
+            model.workbench().active_grid().unwrap().operation,
+            GridOperationState::Disconnected
+        );
+        assert_eq!(model.workbench().active_grid().unwrap().rows_loaded, 1);
     }
 
     #[test]

@@ -214,11 +214,12 @@ an engine render an explicit unsupported capability.
 
 ## Phase 11 — TUI parity release gate
 
-**Mostly complete (plan 018, evidence 248–303):** redaction, non-color cues,
-OTLP-off, export fail-closed, resize storm, ledger three-state CSV, local and
-ubuntu CI first-row budgets, URL import/external open, explain tree, named
-params, multi-statement script selection, find/replace, format SQL. Residual:
-multi-OS fixed-spec matrix publish; true ENOSPC volume-image CI.
+**Mostly complete (plan 018, evidence 248–303, 309):** redaction, non-color
+cues, OTLP-off, export fail-closed, resize storm, disconnect mid-stream marks
+live ops, ledger three-state CSV, local and ubuntu CI first-row budgets, URL
+import/external open, explain tree, named params, multi-statement script
+selection, find/replace, format SQL. Residual: multi-OS fixed-spec matrix
+publish; true ENOSPC volume-image CI.
 
 Every in-scope parity-ledger row is implemented, explicitly excluded, or
 visibly blocks (Native multi-window waits on Phase 12 packaging).

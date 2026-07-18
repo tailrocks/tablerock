@@ -532,13 +532,18 @@ impl WorkbenchModel {
         self.recompute_pending();
     }
 
-    /// Mark every live tab disconnected without dropping content.
+    /// Mark every live tab/operation disconnected without dropping content.
+    ///
+    /// Completed/failed grids stay inspectable with their prior terminal state;
+    /// only live (queued/running/streaming/cancel-*) operations flip to
+    /// [`GridOperationState::Disconnected`].
     pub fn mark_disconnected(&mut self) {
         self.context.health_label = "disconnected".into();
         for tab in &mut self.tabs {
             if tab.running {
                 tab.running = false;
             }
+            tab.grid.mark_disconnected();
         }
         self.status.operation = "disconnected".into();
     }
@@ -684,5 +689,52 @@ mod tests {
         assert_eq!(wb.tabs.len(), 2);
         assert!(!wb.tabs.iter().any(|t| t.running));
         assert_eq!(wb.status.operation, "disconnected");
+    }
+
+    #[test]
+    fn disconnect_marks_live_grid_disconnected_and_keeps_cells() {
+        use crate::model::grid::{
+            CellDistinction, GridOperationState, GridRowTotal, ProjectedCell,
+        };
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("stream");
+        if let Some(grid) = wb.active_grid_mut() {
+            grid.operation = GridOperationState::Streaming;
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("stream".into());
+            grid.columns = vec!["id".into()];
+            grid.cells = vec![ProjectedCell {
+                text: "7".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            }];
+            grid.row_count = 1;
+            grid.rows_loaded = 1;
+            grid.totals = GridRowTotal::Unknown;
+        }
+        wb.mark_active_running(true);
+        wb.mark_disconnected();
+        let grid = wb.active_grid().expect("grid");
+        assert_eq!(grid.operation, GridOperationState::Disconnected);
+        assert_eq!(grid.cells[0].text, "7");
+        assert_eq!(grid.row_count, 1);
+        assert!(grid.status_line().contains("disconnected"));
+    }
+
+    #[test]
+    fn disconnect_does_not_rewrite_completed_grid() {
+        use crate::model::grid::GridOperationState;
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("done");
+        if let Some(grid) = wb.active_grid_mut() {
+            grid.operation = GridOperationState::Completed;
+            grid.row_count = 3;
+        }
+        wb.mark_disconnected();
+        assert_eq!(
+            wb.active_grid().unwrap().operation,
+            GridOperationState::Completed
+        );
     }
 }

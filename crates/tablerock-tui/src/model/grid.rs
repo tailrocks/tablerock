@@ -167,6 +167,20 @@ impl GridOperationState {
             Self::Disconnected => "disconnected",
         }
     }
+
+    /// True when an in-flight operation should flip to Disconnected on session loss.
+    #[must_use]
+    pub const fn is_live(self) -> bool {
+        matches!(
+            self,
+            Self::Queued
+                | Self::Running
+                | Self::Streaming
+                | Self::CancelRequested
+                | Self::ClientStopped
+                | Self::CancelUnknown
+        )
+    }
 }
 
 /// Totals fact for the active result.
@@ -406,6 +420,13 @@ impl DataGridModel {
 
     pub fn mark_server_confirmed_cancelled(&mut self) {
         self.operation = GridOperationState::ServerConfirmedCancelled;
+    }
+
+    /// Session loss: terminal for live ops; completed/failed content stays inspectable.
+    pub fn mark_disconnected(&mut self) {
+        if self.operation.is_live() {
+            self.operation = GridOperationState::Disconnected;
+        }
     }
 
     #[must_use]
