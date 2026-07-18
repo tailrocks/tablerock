@@ -663,6 +663,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let pop_sort = action_label(model, ActionId::PopSort, "Sort-");
     let inv_sort = action_label(model, ActionId::InvertPrimarySort, "SortInv");
     let rot_sort = action_label(model, ActionId::RotateSort, "SortRot");
+    let keep_sort = action_label(model, ActionId::KeepPrimarySort, "Sort1");
     let quick_filt = action_label(model, ActionId::EditQuickFilter, "PgFilt");
     let clear_quick = action_label(model, ActionId::ClearQuickFilter, "ClrPgF");
     let go_row = action_label(model, ActionId::GoToRow, "GoRow");
@@ -1111,6 +1112,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RotateSort,
                         label: rot_sort.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::KeepPrimarySort,
+                        label: keep_sort.as_str(),
                         enabled: true,
                         style: None,
                     },

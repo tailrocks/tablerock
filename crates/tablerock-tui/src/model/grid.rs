@@ -1347,6 +1347,15 @@ impl DataGridModel {
         true
     }
 
+    /// Drop secondary sort keys; keep only the primary. Needs ≥2 keys.
+    pub fn keep_primary_sort(&mut self) -> bool {
+        if self.sort.len() < 2 {
+            return false;
+        }
+        self.sort.truncate(1);
+        true
+    }
+
     /// Clear server sort/filter; keep quick filter (page-local).
     pub fn clear_server_controls(&mut self) {
         self.sort.clear();
@@ -2371,6 +2380,12 @@ mod tests {
         assert!(g.rotate_sort_keys());
         assert_eq!(g.sort[0].column, "age");
         assert_eq!(g.sort[1].column, "name");
+        g.push_sort_column("id");
+        assert_eq!(g.sort.len(), 3);
+        assert!(g.keep_primary_sort());
+        assert_eq!(g.sort.len(), 1);
+        assert_eq!(g.sort[0].column, "age");
+        assert!(!g.keep_primary_sort());
     }
 
     #[test]
