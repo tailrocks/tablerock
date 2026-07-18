@@ -4016,6 +4016,28 @@ fn activate_selected_action(model: &mut Model) -> Update {
             Update::unchanged()
         }
         ActionId::EditInsert if model.screen() == Screen::Workbench => open_edit_insert(model),
+        ActionId::ShowStaged if model.screen() == Screen::Workbench => {
+            let text = model
+                .workbench()
+                .active_grid()
+                .map(|g| g.drafts.staged_panel_text())
+                .unwrap_or_else(|| "no active grid".into());
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: "staged changes".into(),
+                kind_label: "staged".into(),
+                text,
+                hex: String::new(),
+                byte_len: 0,
+                original_byte_len: None,
+                stale: false,
+                structure_schema: None,
+                structure_table: None,
+                hex_source: String::new(),
+                hex_offset: 0,
+            };
+            Update::render()
+        }
         ActionId::ShowNotices if model.screen() == Screen::Workbench => {
             let text = model
                 .workbench()
@@ -4542,6 +4564,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::InsertRow
         | ActionId::DuplicateRow
         | ActionId::EditInsert
+        | ActionId::ShowStaged
         | ActionId::ShowNotices
         | ActionId::ClearNotices
         | ActionId::HexMore
@@ -6090,6 +6113,7 @@ fn cycle_action(
                 ActionId::InsertRow,
                 ActionId::DuplicateRow,
                 ActionId::EditInsert,
+                ActionId::ShowStaged,
                 ActionId::ShowNotices,
                 ActionId::ClearNotices,
                 ActionId::HexMore,

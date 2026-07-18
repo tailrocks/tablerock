@@ -225,6 +225,8 @@ pub enum ActionId {
     DuplicateRow,
     /// Edit values of the last staged insert (`col=value` lines).
     EditInsert,
+    /// Open inspector listing all staged drafts for the active grid.
+    ShowStaged,
     /// Open inspector with bounded NOTICE history for the active grid tab.
     ShowNotices,
     /// Clear NOTICE history for the active grid tab.

@@ -303,6 +303,60 @@ impl MutationDraftModel {
             self.deletes.len()
         )
     }
+
+    /// Multi-line inventory of staged drafts for the inspector panel.
+    #[must_use]
+    pub fn staged_panel_text(&self) -> String {
+        if self.is_empty() {
+            return "no staged changes".into();
+        }
+        let mut lines = vec![format!(
+            "{} staged ({} insert, {} cell, {} delete)",
+            self.pending_count(),
+            self.inserts.len(),
+            self.cell_edits.len(),
+            self.deletes.len()
+        )];
+        for ins in &self.inserts {
+            let cols: Vec<String> = ins
+                .values
+                .iter()
+                .map(|(c, v)| {
+                    if v.is_empty() {
+                        format!("{c}=∅")
+                    } else {
+                        format!("{c}={v}")
+                    }
+                })
+                .take(8)
+                .collect();
+            let more = if ins.values.len() > 8 {
+                format!(" +{} more", ins.values.len() - 8)
+            } else {
+                String::new()
+            };
+            lines.push(format!(
+                "+ insert #{}: {}{more}",
+                ins.draft_id,
+                cols.join(", ")
+            ));
+        }
+        for edit in &self.cell_edits {
+            lines.push(format!(
+                "· r{} {} : {:?} → {:?}",
+                edit.abs_row, edit.column, edit.original_text, edit.staged_text
+            ));
+        }
+        for del in &self.deletes {
+            let keys: Vec<String> = del
+                .locator
+                .iter()
+                .map(|f| format!("{}={}", f.column, f.original_text))
+                .collect();
+            lines.push(format!("− r{} delete ({})", del.abs_row, keys.join(", ")));
+        }
+        lines.join("\n")
+    }
 }
 
 #[cfg(test)]
@@ -428,5 +482,27 @@ mod tests {
         assert_eq!(last.values[0].1, "1");
         assert_eq!(last.values[1].1, "ada");
         assert!(!draft.replace_insert_values(99, vec![("x".into(), "y".into())]));
+    }
+
+    #[test]
+    fn staged_panel_text_lists_all_kinds() {
+        let mut draft = MutationDraftModel::new();
+        draft.apply_editability(&editable());
+        assert_eq!(draft.staged_panel_text(), "no staged changes");
+        draft
+            .stage_insert(vec![("id".into(), "1".into())])
+            .unwrap();
+        assert!(draft.stage_cell_edit(cell(0, "name", "a", "b")));
+        assert!(draft.stage_delete(StagedDelete {
+            abs_row: 3,
+            locator: vec![DraftLocatorField {
+                column: "id".into(),
+                original_text: "3".into(),
+            }],
+        }));
+        let panel = draft.staged_panel_text();
+        assert!(panel.contains("insert"), "{panel}");
+        assert!(panel.contains("name"), "{panel}");
+        assert!(panel.contains("delete"), "{panel}");
     }
 }
