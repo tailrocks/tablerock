@@ -323,6 +323,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let activity = action_label(model, ActionId::ShowActivity, "Activity");
     let cancel_be = action_label(model, ActionId::CancelBackend, "CancelBE");
     let term_be = action_label(model, ActionId::TerminateBackend, "TermBE");
+    let scan_redis = action_label(model, ActionId::ScanRedisKeys, "ScanKeys");
+    let redis_info = action_label(model, ActionId::RedisInfo, "RedisInfo");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
@@ -546,6 +548,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::TerminateBackend,
                         label: term_be.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ScanRedisKeys,
+                        label: scan_redis.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RedisInfo,
+                        label: redis_info.as_str(),
                         enabled: true,
                         style: None,
                     },

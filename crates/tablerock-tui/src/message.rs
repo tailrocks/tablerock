@@ -342,6 +342,43 @@ pub enum EngineMsg {
         context_revision: u64,
         reason: FailureProjection,
     },
+    /// SCAN page of Redis keys (display strings).
+    RedisKeysLoaded {
+        request_token: u64,
+        context_revision: u64,
+        keys: Vec<String>,
+        /// True when more keys may exist (cursor not exhausted).
+        has_more: bool,
+    },
+    RedisKeysFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
+    /// Type-specific Redis key view lines for inspector/grid header.
+    RedisKeyViewLoaded {
+        request_token: u64,
+        context_revision: u64,
+        key: String,
+        kind_label: String,
+        lines: Vec<String>,
+    },
+    RedisKeyViewFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
+    RedisInfoLoaded {
+        request_token: u64,
+        context_revision: u64,
+        sampled_at_ms: u64,
+        lines: Vec<String>,
+    },
+    RedisInfoFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

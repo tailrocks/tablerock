@@ -176,6 +176,12 @@ Never present ClickHouse mutations as transactions.
 
 ## Phase 8 — Redis slice
 
+**Partial→mostly complete (evidence 241–243):** namespace projection, SCAN
+keys action, type/list/stream views, INFO snapshot, command
+tokenizer/classifier, sequential SET/DEL apply, KEYS ban. Residual:
+collection scan grids, command editor tab/pipelines, multi-type staged
+edits.
+
 Deliver logical database isolation, SCAN navigation, namespaces, byte-safe
 keys/values, type views, TTL, bounded server overview, command
 editor/completion, pipelines, guarded type-specific edits, and honest

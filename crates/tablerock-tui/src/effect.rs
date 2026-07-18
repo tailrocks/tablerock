@@ -230,6 +230,30 @@ pub enum Effect {
         kind: String,
         pid: i32,
     },
+    /// SCAN keys in the current Redis logical DB (never KEYS).
+    ScanRedisKeys {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// SCAN MATCH pattern; empty means "*".
+        pattern: String,
+        /// Max keys to return in this page.
+        count: u32,
+    },
+    /// Open a Redis key tab: TYPE + value projection for the key.
+    OpenRedisKey {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// Key bytes as lossy UTF-8 or hex prefix (engine receives UTF-8 bytes).
+        key: String,
+    },
+    /// Load bounded INFO snapshot into the inspector.
+    LoadRedisInfo {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+    },
     /// Run a single SQL statement (first page) into the active tab grid.
     ExecuteSql {
         request_token: RequestToken,

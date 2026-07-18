@@ -1041,6 +1041,137 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::RedisKeysLoaded {
+            context_revision,
+            keys,
+            has_more,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            use crate::model::redis_namespace::{group_by_namespace, project_key};
+            let projected: Vec<_> = keys
+                .iter()
+                .map(|k| project_key(k.as_bytes()))
+                .collect();
+            let groups = group_by_namespace(&projected);
+            let mut lines = vec![format!(
+                "SCAN keys: {} (more={has_more})",
+                keys.len()
+            )];
+            for (ns, idxs) in groups {
+                lines.push(format!("namespace {ns}: {} keys", idxs.len()));
+                for i in idxs.into_iter().take(32) {
+                    lines.push(format!("  {}", projected[i].full));
+                }
+            }
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: "redis SCAN".into(),
+                kind_label: "keys".into(),
+                text: lines.join("\n"),
+                hex: String::new(),
+                byte_len: keys.iter().map(|k| k.len() as u64).sum(),
+                original_byte_len: None,
+                stale: false,
+            };
+            Update::render()
+        }
+        Message::Engine(EngineMsg::RedisKeysFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::RedisKeyViewLoaded {
+            context_revision,
+            key,
+            kind_label,
+            lines,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: format!("redis:{key}"),
+                kind_label,
+                text: lines.join("\n"),
+                hex: String::new(),
+                byte_len: lines.iter().map(|l| l.len() as u64).sum(),
+                original_byte_len: None,
+                stale: false,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_completed();
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::RedisKeyViewFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::RedisInfoLoaded {
+            context_revision,
+            sampled_at_ms,
+            lines,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: format!("redis INFO @ {sampled_at_ms}"),
+                kind_label: "info".into(),
+                text: lines.join("\n"),
+                hex: String::new(),
+                byte_len: lines.iter().map(|l| l.len() as u64).sum(),
+                original_byte_len: None,
+                stale: false,
+            };
+            Update::render()
+        }
+        Message::Engine(EngineMsg::RedisInfoFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::GridFailed {
             context_revision,
             reason,
@@ -1996,6 +2127,45 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::ScanRedisKeys if model.screen() == Screen::Workbench => {
+            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+                return Update::unchanged();
+            };
+            if !model
+                .workbench()
+                .engine_kind
+                .eq_ignore_ascii_case("Redis")
+            {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            let context_revision = model.workbench().context_revision;
+            Update {
+                render: true,
+                effect: Some(Effect::ScanRedisKeys {
+                    request_token: token,
+                    session_id_hex,
+                    context_revision,
+                    pattern: "*".into(),
+                    count: 100,
+                }),
+            }
+        }
+        ActionId::RedisInfo if model.screen() == Screen::Workbench => {
+            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            let context_revision = model.workbench().context_revision;
+            Update {
+                render: true,
+                effect: Some(Effect::LoadRedisInfo {
+                    request_token: token,
+                    session_id_hex,
+                    context_revision,
+                }),
+            }
+        }
         ActionId::CancelBackend if model.screen() == Screen::Workbench => {
             model.set_confirm(Some(ConfirmDialog::CancelBackend {
                 pid: String::new(),
@@ -2095,6 +2265,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ShowActivity
         | ActionId::CancelBackend
         | ActionId::TerminateBackend
+        | ActionId::ScanRedisKeys
+        | ActionId::RedisInfo
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -2480,6 +2652,8 @@ fn cycle_action(
                 ActionId::ShowActivity,
                 ActionId::CancelBackend,
                 ActionId::TerminateBackend,
+                ActionId::ScanRedisKeys,
+                ActionId::RedisInfo,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,
@@ -2532,6 +2706,28 @@ fn activate_catalog_node(model: &mut Model) -> Update {
         return Update::unchanged();
     };
     if !node.branch {
+        // Redis key leaves open a type-specific key view.
+        let is_redis_key = matches!(
+            node.kind_label.as_str(),
+            "string" | "key" | "hash" | "list" | "set" | "zset" | "stream"
+        ) || engine_label.eq_ignore_ascii_case("Redis")
+            && !matches!(
+                node.kind_label.as_str(),
+                "database" | "db" | "namespace"
+            );
+        if is_redis_key {
+            model.workbench_mut().open_preview_tab(node.label.clone());
+            let token = model.mint_request_token();
+            return Update {
+                render: true,
+                effect: Some(Effect::OpenRedisKey {
+                    request_token: token,
+                    session_id_hex,
+                    context_revision,
+                    key: node.label.clone(),
+                }),
+            };
+        }
         // Data-bearing leaves open a browse tab; functions stay preview-only.
         let is_table = matches!(
             node.kind_label.as_str(),

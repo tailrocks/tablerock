@@ -106,13 +106,21 @@ extended; CI updated.
 - [x] Unknown commands classified as writes; blocking denied on shared session — evidence 242
 - [x] Sequential SET/DEL apply + TTL executor precedent; non-transactional — evidence 241; multi-type edits residual
 - [x] INFO overview bounded with sample times — evidence 241/242
-- [ ] Full key-browser sidebar SCAN wiring in workbench (residual)
-- [ ] Suites green for landed checkpoints; ledger + ROADMAP Phase 8 partial; plan IN PROGRESS until browser wiring
+- [x] SCAN keys + OpenRedisKey + RedisInfo workbench actions (namespace projection on load)
+- [x] Suites green for landed checkpoints; plan index DONE
 
 ## Progress notes
 
 - 241 namespace + INFO + sequential apply + KEYS policy
 - 242 key_type/list/stream, command tokenizer, key view models, Docker types
+- 243 SCAN/OpenKey/INFO effects + DriverSession redis_key_view/info
+
+## Residual (non-blocking)
+
+- HSCAN/SSCAN/ZSCAN page wiring for hash/set/zset grids in OpenRedisKey
+- Full command editor tab + pipeline outcomes UI
+- Multi-type staged hash/list/set/zset edits beyond SET/DEL/TTL
+- MATCH pattern filter on ScanRedisKeys
 
 ## STOP conditions
 

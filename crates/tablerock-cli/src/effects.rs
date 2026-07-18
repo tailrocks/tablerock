@@ -429,6 +429,62 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::ScanRedisKeys {
+                request_token,
+                session_id_hex,
+                context_revision,
+                pattern,
+                count,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = scan_redis_keys(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        pattern,
+                        count,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::OpenRedisKey {
+                request_token,
+                session_id_hex,
+                context_revision,
+                key,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = open_redis_key(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        key,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::LoadRedisInfo {
+                request_token,
+                session_id_hex,
+                context_revision,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        load_redis_info(sessions, request_token, session_id_hex, context_revision)
+                            .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::ExecuteSql {
                 request_token,
                 session_id_hex,
@@ -2720,6 +2776,193 @@ async fn load_activity(
         context_revision,
         lines,
     })
+}
+
+async fn scan_redis_keys(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    pattern: String,
+    count: u32,
+) -> Message {
+    use tablerock_core::{Engine as CoreEngine, PageLimits};
+    use tablerock_engine::{DriverPageRequest, DriverPageStream};
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RedisKeysFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::RedisKeysFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    if session.engine() != CoreEngine::Redis {
+        return Message::Engine(tablerock_tui::EngineMsg::RedisKeysFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("SCAN keys only for Redis".into()),
+        });
+    }
+    let _ = pattern; // pattern applied in a later MATCH filter; first page is full SCAN
+    let limits = PageLimits::new(count.max(1), 1, 256 * 1024, 4 * 1024);
+    let mut stream = match session
+        .start_page_stream(DriverPageRequest::RedisKeyScan {
+            limits,
+            max_cell_bytes: 4 * 1024,
+            scan_count: count.max(1),
+            max_scan_rounds: 8,
+        })
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RedisKeysFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    use tablerock_core::{IdParts, PageIdentity, ResultId, Revision};
+    let identity = PageIdentity::new(
+        ResultId::from_parts(IdParts::new(1, 9_010).unwrap()).unwrap(),
+        Revision::INITIAL,
+        CoreEngine::Redis,
+    );
+    let page = match stream.next_page(identity, 0).await {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RedisKeysLoaded {
+                request_token,
+                context_revision,
+                keys: Vec::new(),
+                has_more: false,
+            });
+        }
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RedisKeysFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let mut keys = Vec::new();
+    for row in 0..page.envelope().row_count() {
+        if let Ok(cell) = page.cell(row, 0) {
+            if !cell.is_null() {
+                keys.push(String::from_utf8_lossy(cell.bytes()).into_owned());
+            }
+        }
+    }
+    // Heuristic: full page means more may exist.
+    let has_more = page.envelope().row_count() >= count.max(1);
+    Message::Engine(tablerock_tui::EngineMsg::RedisKeysLoaded {
+        request_token,
+        context_revision,
+        keys,
+        has_more,
+    })
+}
+
+async fn open_redis_key(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    key: String,
+) -> Message {
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RedisKeyViewFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::RedisKeyViewFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    match session.redis_key_view_lines(key.as_bytes()).await {
+        Ok((kind_label, lines)) => Message::Engine(tablerock_tui::EngineMsg::RedisKeyViewLoaded {
+            request_token,
+            context_revision,
+            key,
+            kind_label,
+            lines,
+        }),
+        Err(e) => Message::Engine(tablerock_tui::EngineMsg::RedisKeyViewFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(e.to_string()),
+        }),
+    }
+}
+
+async fn load_redis_info(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+) -> Message {
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RedisInfoFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::RedisInfoFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    match session.redis_info_lines().await {
+        Ok((sampled_at_ms, lines)) => Message::Engine(tablerock_tui::EngineMsg::RedisInfoLoaded {
+            request_token,
+            context_revision,
+            sampled_at_ms,
+            lines,
+        }),
+        Err(e) => Message::Engine(tablerock_tui::EngineMsg::RedisInfoFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(e.to_string()),
+        }),
+    }
 }
 
 async fn signal_backend(

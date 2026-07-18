@@ -137,6 +137,10 @@ pub enum ActionId {
     TerminateBackend,
     /// Rename active base table (gated: paste new name).
     RenameTable,
+    /// SCAN Redis keys in the connected logical DB.
+    ScanRedisKeys,
+    /// Load Redis INFO overview into the inspector.
+    RedisInfo,
     Submit,
     Cancel,
     Quit,

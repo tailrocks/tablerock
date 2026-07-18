@@ -280,6 +280,32 @@ pub trait DriverSession: Send + Sync {
         authorized: AuthorizedMutationPlan,
     ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>>;
 
+    /// Redis-only: load a type-specific key view as display lines.
+    fn redis_key_view_lines<'a>(
+        &'a self,
+        key: &'a [u8],
+    ) -> DriverFuture<'a, Result<(String, Vec<String>), AdapterError>> {
+        let _ = key;
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
+    /// Redis-only: bounded INFO snapshot lines + sample time.
+    fn redis_info_lines<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<(u64, Vec<String>), AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>>;
 }
 
@@ -640,6 +666,100 @@ impl DriverSession for RedisSession {
             RedisSession::apply_authorized_mutation(self, authorized)
                 .await
                 .map_err(map_redis)
+        })
+    }
+
+    fn redis_key_view_lines<'a>(
+        &'a self,
+        key: &'a [u8],
+    ) -> DriverFuture<'a, Result<(String, Vec<String>), AdapterError>> {
+        Box::pin(async move {
+            use tablerock_core::{BoundedBytes, ByteLimit, RedisKeyKind};
+            let key = BoundedBytes::copy_from_slice(key, ByteLimit::new(key.len() as u64 + 1))
+                .map_err(|_| {
+                    AdapterError::new(Engine::Redis, AdapterFailureClass::InvalidRequest)
+                })?;
+            let kind = self.key_type(&key).await.map_err(map_redis)?;
+            let ttl = self
+                .read_time_to_live(&key)
+                .await
+                .map(|t| format!("{t:?}"))
+                .unwrap_or_else(|_| "unavailable".into());
+            let mut lines = vec![
+                format!("type: {kind:?}"),
+                format!("ttl: {ttl}"),
+            ];
+            let kind_label = match kind {
+                RedisKeyKind::String => "string",
+                RedisKeyKind::Hash => "hash",
+                RedisKeyKind::List => "list",
+                RedisKeyKind::Set => "set",
+                RedisKeyKind::SortedSet => "zset",
+                RedisKeyKind::Stream => "stream",
+                RedisKeyKind::Unknown => "unknown",
+            };
+            match kind {
+                RedisKeyKind::String => {
+                    if let Ok(Some(v)) = self.read_binary(&key, 4 * 1024).await {
+                        let bytes = match v.as_ref() {
+                            tablerock_core::ValueRef::Binary { value, .. } => value.to_vec(),
+                            tablerock_core::ValueRef::Text { value, .. } => value.as_bytes().to_vec(),
+                            _ => Vec::new(),
+                        };
+                        lines.push(format!(
+                            "value: {}",
+                            String::from_utf8_lossy(&bytes)
+                        ));
+                        if v.is_truncated() {
+                            lines.push("truncated: yes".into());
+                        }
+                    } else {
+                        lines.push("value: (missing or empty)".into());
+                    }
+                }
+                RedisKeyKind::List => {
+                    if let Ok(vals) = self.list_range(&key, 0, 31, 32, 256).await {
+                        for (i, v) in vals.iter().enumerate() {
+                            let text = match v.as_ref() {
+                                tablerock_core::ValueRef::Binary { value, .. } => {
+                                    String::from_utf8_lossy(value).into_owned()
+                                }
+                                tablerock_core::ValueRef::Text { value, .. } => value.to_string(),
+                                _ => format!("{v:?}"),
+                            };
+                            lines.push(format!("{i}: {text}"));
+                        }
+                    }
+                }
+                RedisKeyKind::Stream => {
+                    if let Ok(entries) = self.stream_range(&key, "-", "+", 16, 256).await {
+                        for e in entries {
+                            lines.push(format!("{} {}", e.id, e.fields.join("=")));
+                        }
+                    }
+                }
+                RedisKeyKind::Hash | RedisKeyKind::Set | RedisKeyKind::SortedSet => {
+                    lines.push("collection: open via HSCAN/SSCAN/ZSCAN (scan_collection)".into());
+                }
+                RedisKeyKind::Unknown => {
+                    lines.push("key missing or type unknown".into());
+                }
+            }
+            Ok((kind_label.into(), lines))
+        })
+    }
+
+    fn redis_info_lines<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<(u64, Vec<String>), AdapterError>> {
+        Box::pin(async move {
+            let snap = self.server_info_snapshot().await.map_err(map_redis)?;
+            let lines: Vec<String> = snap
+                .fields
+                .into_iter()
+                .map(|(k, v)| format!("{k}: {v}"))
+                .collect();
+            Ok((snap.sampled_at_ms, lines))
         })
     }
 

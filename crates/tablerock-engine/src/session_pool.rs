@@ -156,6 +156,37 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn redis_key_view_lines<'a>(
+        &'a self,
+        key: &'a [u8],
+    ) -> DriverFuture<'a, Result<(String, Vec<String>), AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => session.redis_key_view_lines(key).await,
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
+    fn redis_info_lines<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<(u64, Vec<String>), AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => session.redis_info_lines().await,
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move { self.shutdown_exclusive().await })
     }
