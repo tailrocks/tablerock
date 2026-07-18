@@ -102,7 +102,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::CancelBackend { confirm_buffer, .. }
                     | ConfirmDialog::TerminateBackend { confirm_buffer, .. }
                     | ConfirmDialog::StartupReview { confirm_buffer, .. }
-                    | ConfirmDialog::PgTool { confirm_buffer, .. } => {
+                    | ConfirmDialog::PgTool { confirm_buffer, .. }
+                    | ConfirmDialog::ImportUrl { confirm_buffer, .. } => {
                         *confirm_buffer = text.text().to_owned();
                     }
                     _ => {}
@@ -1746,6 +1747,27 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         _ => Update::render(),
                     }
                 }
+                ConfirmDialog::ImportUrl { confirm_buffer } => {
+                    let url = confirm_buffer.trim();
+                    if url.is_empty() {
+                        return Update::render();
+                    }
+                    match tablerock_core::parse_connection_url(url) {
+                        Ok(draft) => {
+                            model.editor_mut().apply_connection_url(&draft);
+                            model.set_confirm(None);
+                            model.set_screen(Screen::Editor);
+                            model.set_action(ActionId::Test);
+                            Update::render()
+                        }
+                        Err(error) => {
+                            model.editor_mut().validation_error = Some(error.to_string());
+                            model.set_confirm(None);
+                            model.set_screen(Screen::Editor);
+                            Update::render()
+                        }
+                    }
+                }
                 ConfirmDialog::RenameTable {
                     schema,
                     table,
@@ -1867,6 +1889,18 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.reset_editor();
             model.set_screen(Screen::Editor);
             model.set_action(ActionId::Save);
+            Update::render()
+        }
+        ActionId::ImportUrl
+            if matches!(
+                model.screen(),
+                Screen::Connections | Screen::ConnectionPicker | Screen::Editor
+            ) =>
+        {
+            model.set_confirm(Some(ConfirmDialog::ImportUrl {
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
             Update::render()
         }
         ActionId::Save if model.screen() == Screen::Editor => {
@@ -2647,6 +2681,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ImportCsv
         | ActionId::PgDump
         | ActionId::PgRestore
+        | ActionId::ImportUrl
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -3115,6 +3150,7 @@ fn cycle_action(
                 ActionId::Save,
                 ActionId::Test,
                 ActionId::Connect,
+                ActionId::ImportUrl,
                 ActionId::Cancel,
                 ActionId::Quit,
             ],
@@ -3185,6 +3221,7 @@ fn cycle_action(
             Screen::Connections | Screen::ConnectionPicker => &[
                 ActionId::Open,
                 ActionId::New,
+                ActionId::ImportUrl,
                 ActionId::Remove,
                 ActionId::Quit,
             ],
@@ -4704,6 +4741,34 @@ mod tests {
                 ..
             }) if kind == "drop_column" && object_name == "email" && type_text.is_empty()
         ));
+    }
+
+    #[test]
+    fn import_url_paste_applies_to_editor() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Connections);
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::ImportUrl);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::ImportUrl { .. })
+        ));
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded(
+                "redis://:hunter2@127.0.0.1:6380/2".into(),
+            )),
+        );
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        assert!(model.confirm().is_none());
+        assert_eq!(model.screen(), Screen::Editor);
+        assert_eq!(model.editor().engine, crate::effect::EngineKind::Redis);
+        assert_eq!(model.editor().host, "127.0.0.1");
+        assert_eq!(model.editor().port, "6380");
+        assert_eq!(model.editor().database, "2");
+        assert_eq!(model.editor().password, "hunter2");
     }
 
     #[test]

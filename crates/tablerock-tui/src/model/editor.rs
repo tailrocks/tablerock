@@ -166,6 +166,47 @@ impl ConnectionFormModel {
         }
     }
 
+    /// Apply a parsed connection URL into editor fields (credentials transient).
+    ///
+    /// Password from the URL sets `DangerousPlaintext` + `plaintext_acknowledged`
+    /// so Test/Connect can proceed; operator still reviews the form.
+    pub fn apply_connection_url(
+        &mut self,
+        draft: &tablerock_core::ConnectionUrlDraft,
+    ) {
+        self.engine = match draft.engine {
+            tablerock_core::Engine::PostgreSql => EngineKind::PostgreSql,
+            tablerock_core::Engine::ClickHouse => EngineKind::ClickHouse,
+            tablerock_core::Engine::Redis => EngineKind::Redis,
+        };
+        self.host = draft.host.clone();
+        self.port = draft.port.to_string();
+        self.database = draft.database.clone();
+        self.username = draft.username.clone();
+        if let Some(password) = &draft.password {
+            self.password = password.clone();
+            self.password_source = PasswordSourceChoice::DangerousPlaintext;
+            self.plaintext_acknowledged = true;
+        }
+        self.tls_mode = match draft.tls {
+            tablerock_core::ConnectionUrlTls::Off => TlsModeChoice::Off,
+            tablerock_core::ConnectionUrlTls::Required => TlsModeChoice::VerifyFull,
+        };
+        if self.name.is_empty() {
+            self.name = format!("{}@{}:{}", self.engine_label_short(), self.host, self.port);
+        }
+        self.validation_error = None;
+        self.test_status = Some("URL imported — review before connect".into());
+    }
+
+    fn engine_label_short(&self) -> &'static str {
+        match self.engine {
+            EngineKind::PostgreSql => "pg",
+            EngineKind::ClickHouse => "ch",
+            EngineKind::Redis => "redis",
+        }
+    }
+
     /// Parse editor startup SQL lines into a `StartupActionSet`.
     ///
     /// Line prefixes (case-insensitive, space after prefix required):
@@ -340,6 +381,29 @@ mod tests {
             ..ConnectionFormModel::default()
         };
         assert!(editor.validate());
+    }
+
+    #[test]
+    fn apply_connection_url_fills_editor_fields() {
+        let draft = tablerock_core::parse_connection_url(
+            "postgresql://alice:s3cret@db.example:6543/app?sslmode=require",
+        )
+        .unwrap();
+        let mut editor = ConnectionFormModel::default();
+        editor.apply_connection_url(&draft);
+        assert_eq!(editor.engine, EngineKind::PostgreSql);
+        assert_eq!(editor.host, "db.example");
+        assert_eq!(editor.port, "6543");
+        assert_eq!(editor.database, "app");
+        assert_eq!(editor.username, "alice");
+        assert_eq!(editor.password, "s3cret");
+        assert_eq!(
+            editor.password_source,
+            PasswordSourceChoice::DangerousPlaintext
+        );
+        assert!(editor.plaintext_acknowledged);
+        assert_eq!(editor.tls_mode, TlsModeChoice::VerifyFull);
+        assert!(editor.name.contains("db.example"));
     }
 
     #[test]

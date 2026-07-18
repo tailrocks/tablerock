@@ -2,7 +2,7 @@ section,capability,sequencing,three_state,notes,evidence
 Connection,Connection list,Core,implemented,list/search/empty/loading/fail states,plans 004-006
 Connection,Create/edit/duplicate/remove,Core,implemented,form + persistence CAS,plans 004-006
 Connection,Engine chooser,Core,implemented,PG/CH/Redis only,plan 006
-Connection,URL import,Parity,gap,blocks Parity claim until parser fixtures land,
+Connection,URL import,Parity,implemented,parse_connection_url + ImportUrl dialog,evidence 289
 Connection,External URL open,Later,gap,deliberately deferred,
 Connection,Test connection,Core,implemented,describe + startup summary,plans 006/017
 Connection,Temporary connection,Core,implemented,no durable profile/secret,plan 006

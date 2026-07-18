@@ -172,6 +172,8 @@ pub enum ActionId {
     PgDump,
     /// Supervised pg_restore into the active connection endpoint (PostgreSQL only).
     PgRestore,
+    /// Paste a connection URL into the editor (reviewable draft).
+    ImportUrl,
     Submit,
     Cancel,
     Quit,
@@ -234,6 +236,10 @@ pub enum ConfirmDialog {
     PgTool {
         /// "dump" | "restore"
         kind: String,
+        confirm_buffer: String,
+    },
+    /// Import connection URL: paste URL into buffer, Submit applies to editor.
+    ImportUrl {
         confirm_buffer: String,
     },
 }

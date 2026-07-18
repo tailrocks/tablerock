@@ -231,6 +231,12 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "Paste file path (default tablerock.dump) then Submit [{confirm_buffer}]"
             ),
         ),
+        crate::model::ConfirmDialog::ImportUrl { confirm_buffer } => (
+            "Import connection URL?",
+            format!(
+                "Paste postgres/redis/clickhouse URL then Submit [{confirm_buffer}]"
+            ),
+        ),
     };
     let panel = Panel::new(&model.theme)
         .title(title)
@@ -347,6 +353,7 @@ fn render_body(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut 
 fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
     let open = action_label(model, ActionId::Open, "Open");
     let new = action_label(model, ActionId::New, "New");
+    let import_url = action_label(model, ActionId::ImportUrl, "URL");
     let save = action_label(model, ActionId::Save, "Save");
     let test = action_label(model, ActionId::Test, "Test");
     let connect = action_label(model, ActionId::Connect, "Connect");
@@ -441,6 +448,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::Connect,
                         label: connect.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ImportUrl,
+                        label: import_url.as_str(),
                         enabled: true,
                         style: None,
                     },
@@ -757,6 +770,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::New,
                         label: new.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ImportUrl,
+                        label: import_url.as_str(),
                         enabled: true,
                         style: None,
                     },

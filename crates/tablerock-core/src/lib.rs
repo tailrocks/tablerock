@@ -2,6 +2,7 @@
 
 mod catalog;
 mod command;
+mod connection_url;
 mod ddl;
 mod diagnostic;
 mod editability;
@@ -29,6 +30,10 @@ pub use command::{
     BudgetField, CommandBudget, CommandBudgetError, CommandBudgetLimits, CommandBuildError,
     CommandEnvelope, CommandIntent, CommandSafety, CommandScope, MAX_STATEMENT_BYTES, PageRequest,
     RedactionClass, StatementText, StatementTextError, ValidatedCommandBudget,
+};
+pub use connection_url::{
+    ConnectionUrlDraft, ConnectionUrlError, ConnectionUrlTls, MAX_CONNECTION_URL_BYTES,
+    parse_connection_url,
 };
 pub use ddl::{
     DdlBuildError, DdlKind, DdlPlan, DdlTarget, RelationshipEdge, RelationshipGraph,
