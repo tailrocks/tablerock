@@ -373,12 +373,16 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             profile_id_hex,
             startup_summary,
             startup_pending,
+            reconnect_preference,
             ..
         }) => {
             let status = match startup_summary {
                 Some(summary) => format!("connected; {summary}"),
                 None => "connected".into(),
             };
+            if let Some(pref) = reconnect_preference {
+                model.reconnect_preference = pref;
+            }
             model.set_session(Some(SessionFacts {
                 session_id_hex: session_id_hex.clone(),
                 identity: identity.clone(),
@@ -5234,6 +5238,7 @@ fn connection_draft_from_editor(
         startup_actions: editor
             .startup_action_set()
             .unwrap_or_else(|_| tablerock_core::StartupActionSet::empty()),
+        reconnect_preference: "Manual".into(),
     }
 }
 
@@ -6051,6 +6056,7 @@ mod tests {
                 profile_id_hex: None,
                 startup_summary: None,
                 startup_pending: Vec::new(),
+                reconnect_preference: Some("Manual".into()),
             }),
         );
         assert_eq!(model.screen(), Screen::Workbench);
@@ -6442,6 +6448,7 @@ mod tests {
             ssh_known_hosts_path: String::new(),
             ssh_use_agent: false,
             startup_actions: tablerock_core::StartupActionSet::empty(),
+            reconnect_preference: "Manual".into(),
         });
         model.set_session(Some(SessionFacts {
             session_id_hex: "00000000000000010000000000000088".into(),
@@ -6505,6 +6512,7 @@ mod tests {
             ssh_known_hosts_path: String::new(),
             ssh_use_agent: false,
             startup_actions: tablerock_core::StartupActionSet::empty(),
+            reconnect_preference: "Manual".into(),
         };
         let out = update(
             &mut model,
@@ -8066,9 +8074,11 @@ mod tests {
                 profile_id_hex: None,
                 startup_summary: Some("startup 1ok/1skip/0fail/0timeout".into()),
                 startup_pending: vec![("write".into(), "SET search_path TO app".into())],
+                reconnect_preference: Some("BoundedAutomatic".into()),
             }),
         );
         assert_eq!(model.screen(), Screen::Workbench);
+        assert_eq!(model.reconnect_preference, "BoundedAutomatic");
         assert!(matches!(
             model.confirm(),
             Some(ConfirmDialog::StartupReview { items, .. }) if items.len() == 1

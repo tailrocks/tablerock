@@ -1728,6 +1728,7 @@ async fn connect_session(
         EngineKind::Redis => "Redis",
     }
     .to_owned();
+    let reconnect_preference = draft.reconnect_preference.clone();
     match open_described_session(draft, false).await {
         Ok((session, identity, _elapsed, tunnel, startup_summary, startup_pending)) => {
             let session_id = match mint_session_id() {
@@ -1752,6 +1753,7 @@ async fn connect_session(
                     profile_id_hex: if temporary { None } else { profile_id_hex },
                     startup_summary,
                     startup_pending,
+                    reconnect_preference: Some(reconnect_preference),
                 }),
                 Err(error) => Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
                     request_token,
@@ -5624,6 +5626,7 @@ async fn reconnect_session(
                     profile_id_hex: None,
                     startup_summary,
                     startup_pending,
+                    reconnect_preference: Some(draft.reconnect_preference.clone()),
                 }),
                 Err(error) => Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
                     request_token,
@@ -5784,6 +5787,10 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
         // Agent mode is session/editor intent; not persisted as a profile property yet.
         ssh_use_agent: aggregate.preferences().ssh_use_agent(),
         startup_actions: aggregate.startup_actions().clone(),
+        reconnect_preference: match aggregate.preferences().reconnect() {
+            tablerock_core::ReconnectPreference::Manual => "Manual".into(),
+            tablerock_core::ReconnectPreference::BoundedAutomatic => "BoundedAutomatic".into(),
+        },
     })
 }
 

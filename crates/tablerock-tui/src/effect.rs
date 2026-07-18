@@ -114,6 +114,8 @@ pub struct ConnectionDraft {
     pub ssh_use_agent: bool,
     /// Reviewed startup actions run after connect (ReadOnly auto-executes).
     pub startup_actions: tablerock_core::StartupActionSet,
+    /// "Manual" or "BoundedAutomatic" (from profile preferences when saved).
+    pub reconnect_preference: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

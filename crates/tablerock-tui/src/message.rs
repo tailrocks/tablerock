@@ -109,6 +109,8 @@ pub enum EngineMsg {
         /// Write/Dangerous actions skipped at connect; open StartupReview when non-empty.
         /// Each entry is `(safety_label, statement)`.
         startup_pending: Vec<(String, String)>,
+        /// Profile reconnect preference label for health auto-reconnect.
+        reconnect_preference: Option<String>,
     },
     ConnectFailed {
         request_token: u64,

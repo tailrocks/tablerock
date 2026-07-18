@@ -31,4 +31,5 @@ cargo check -p tablerock-cli
 
 ## Remaining work
 
-- Load reconnect preference from saved profile aggregate on ConnectProfile
+- ~~Load reconnect preference from saved profile aggregate on ConnectProfile~~
+  (closed: evidence 334)
