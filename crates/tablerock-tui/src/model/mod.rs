@@ -166,6 +166,8 @@ pub enum ActionId {
     CopyServerProgress,
     /// Copy local result_token (page identity seed) as decimal text.
     CopyResultToken,
+    /// Copy cursor absolute row and physical column as `row,col`.
+    CopyCursorPosition,
     /// Copy base schema.table identity if known.
     CopyTableName,
     /// Copy base schema only if known.

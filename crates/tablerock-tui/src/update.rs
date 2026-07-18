@@ -3847,6 +3847,28 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyCursorPosition if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            if grid.columns.is_empty() {
+                return Update::unchanged();
+            }
+            let col = grid.cursor_col.min(grid.columns.len().saturating_sub(1));
+            let name = grid.columns.get(col).map(|s| s.as_str()).unwrap_or("?");
+            let text = format!("{},{} ({name})", grid.cursor_row, col);
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied cursor {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTableName if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5633,6 +5655,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyQueryId
         | ActionId::CopyServerProgress
         | ActionId::CopyResultToken
+        | ActionId::CopyCursorPosition
         | ActionId::CopyTableName
         | ActionId::CopySchema
         | ActionId::CopyBareTable
@@ -7377,6 +7400,7 @@ fn cycle_action(
                 ActionId::CopyQueryId,
                 ActionId::CopyServerProgress,
                 ActionId::CopyResultToken,
+                ActionId::CopyCursorPosition,
                 ActionId::CopyTableName,
                 ActionId::CopySchema,
                 ActionId::CopyBareTable,
@@ -9265,6 +9289,33 @@ mod tests {
                 assert!(text.contains("width") || text.contains("16"), "{text}");
             }
             other => panic!("expected layout json copy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copy_cursor_position_emits_row_col_name() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into()];
+            grid.cursor_row = 7;
+            grid.cursor_col = 1;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyCursorPosition);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "7,1 (name)");
+            }
+            other => panic!("expected cursor position copy, got {other:?}"),
         }
     }
 
