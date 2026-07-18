@@ -1525,10 +1525,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 } => {
                     let parts: Vec<&str> = confirm_buffer.split_whitespace().collect();
                     let (object_name, type_text) = match kind.as_str() {
-                        "add_column" if parts.len() >= 2 => {
-                            (parts[0].to_owned(), parts[1..].join(" "))
-                        }
-                        "create_index" if parts.len() >= 2 => {
+                        "add_column" | "create_index" | "add_constraint"
+                            if parts.len() >= 2 =>
+                        {
                             (parts[0].to_owned(), parts[1..].join(" "))
                         }
                         "drop_column" | "drop_index" | "drop_constraint"
@@ -2269,6 +2268,46 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::DdlAddConstraint if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::DdlReview {
+                kind: "add_constraint".into(),
+                schema: schema.clone(),
+                table: table.clone(),
+                preview: format!(
+                    "ADD CONSTRAINT on {schema}.{table} (paste: name UNIQUE (col))"
+                ),
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::DdlDropConstraint if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::DdlReview {
+                kind: "drop_constraint".into(),
+                schema: schema.clone(),
+                table: table.clone(),
+                preview: format!("DROP CONSTRAINT on {schema}.{table} (paste: name)"),
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::ShowActivity if model.screen() == Screen::Workbench => {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
@@ -2441,6 +2480,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DdlCreateIndex
         | ActionId::DdlDropColumn
         | ActionId::DdlDropIndex
+        | ActionId::DdlAddConstraint
+        | ActionId::DdlDropConstraint
         | ActionId::RenameTable
         | ActionId::ShowActivity
         | ActionId::CancelBackend
@@ -2935,6 +2976,8 @@ fn cycle_action(
                 ActionId::DdlCreateIndex,
                 ActionId::DdlDropColumn,
                 ActionId::DdlDropIndex,
+                ActionId::DdlAddConstraint,
+                ActionId::DdlDropConstraint,
                 ActionId::RenameTable,
                 ActionId::ShowActivity,
                 ActionId::CancelBackend,
@@ -4399,6 +4442,43 @@ mod tests {
                 && table == "users"
         ));
         assert!(model.confirm().is_none());
+    }
+
+    #[test]
+    fn ddl_add_constraint_review_emits_execute_ddl_plan() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::DdlAddConstraint);
+        let _ = update(&mut model, Message::Activate);
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("users_email_uq UNIQUE (email)".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let ok = update(&mut model, Message::Activate);
+        assert!(matches!(
+            ok.effects().next(),
+            Some(Effect::ExecuteDdlPlan {
+                kind,
+                object_name,
+                type_text,
+                ..
+            }) if kind == "add_constraint"
+                && object_name == "users_email_uq"
+                && type_text == "UNIQUE (email)"
+        ));
     }
 
     #[test]

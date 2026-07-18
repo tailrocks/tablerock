@@ -24,10 +24,10 @@ cargo test -p tablerock-engine --lib
 
 ## Follow-up
 
-- `DdlDropColumn` / `DdlDropIndex` action bar entries (same review dialog)
-- Unit: `ddl_drop_column_review_emits_execute_ddl_plan`
+- `DdlDropColumn` / `DdlDropIndex` / `DdlAddConstraint` / `DdlDropConstraint`
+  action bar entries (same review dialog)
+- Units: drop column + add constraint buffer parsing
 
 ## Residual
 
 - Structure panel quick-actions wired to same review dialog
-- Constraint add/drop action entries

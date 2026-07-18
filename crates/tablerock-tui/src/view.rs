@@ -336,6 +336,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let ddl_idx = action_label(model, ActionId::DdlCreateIndex, "AddIdx");
     let ddl_drop_col = action_label(model, ActionId::DdlDropColumn, "DropCol");
     let ddl_drop_idx = action_label(model, ActionId::DdlDropIndex, "DropIdx");
+    let ddl_add_c = action_label(model, ActionId::DdlAddConstraint, "AddCon");
+    let ddl_drop_c = action_label(model, ActionId::DdlDropConstraint, "DropCon");
     let activity = action_label(model, ActionId::ShowActivity, "Activity");
     let cancel_be = action_label(model, ActionId::CancelBackend, "CancelBE");
     let term_be = action_label(model, ActionId::TerminateBackend, "TermBE");
@@ -575,6 +577,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::DdlDropIndex,
                         label: ddl_drop_idx.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DdlAddConstraint,
+                        label: ddl_add_c.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DdlDropConstraint,
+                        label: ddl_drop_c.as_str(),
                         enabled: true,
                         style: None,
                     },

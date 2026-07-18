@@ -148,6 +148,10 @@ pub enum ActionId {
     DdlDropColumn,
     /// Review DROP INDEX: confirm_buffer = index name.
     DdlDropIndex,
+    /// Review ADD CONSTRAINT: confirm_buffer = "name UNIQUE (col)".
+    DdlAddConstraint,
+    /// Review DROP CONSTRAINT: confirm_buffer = constraint name.
+    DdlDropConstraint,
     /// SCAN Redis keys in the connected logical DB.
     ScanRedisKeys,
     /// Load Redis INFO overview into the inspector.
