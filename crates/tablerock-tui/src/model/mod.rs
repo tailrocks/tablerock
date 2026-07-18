@@ -144,6 +144,10 @@ pub enum ActionId {
     SetToday,
     /// Stamp now (YYYY-MM-DDTHH:MM:SSZ) while editing a temporal cell.
     SetNow,
+    /// Step number cell buffer by +1 while editing.
+    IncNumber,
+    /// Step number cell buffer by -1 while editing.
+    DecNumber,
     /// Stage delete of the cursor row.
     DeleteRow,
     /// Apply reviewed/staged mutations (typed plan rebuild from drafts).

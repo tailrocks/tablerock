@@ -55,6 +55,40 @@ impl CellEditSession {
         self.buffer = local_now_iso();
         true
     }
+
+    /// Step integer/float buffer by `delta` for Number cells (presentation only).
+    pub fn step_number(&mut self, delta: i64) -> bool {
+        if self.kind != CellDistinction::Number || delta == 0 {
+            return false;
+        }
+        let t = self.buffer.trim();
+        if t.is_empty() || t.eq_ignore_ascii_case("null") {
+            self.buffer = delta.to_string();
+            return true;
+        }
+        if let Ok(n) = t.parse::<i128>() {
+            let next = n.saturating_add(i128::from(delta));
+            self.buffer = next.to_string();
+            return true;
+        }
+        if let Ok(f) = t.parse::<f64>() {
+            if !f.is_finite() {
+                return false;
+            }
+            let next = f + delta as f64;
+            if !next.is_finite() {
+                return false;
+            }
+            // Prefer short decimal when step keeps a .0 integer-looking value.
+            if next.fract() == 0.0 && next.abs() < 1e15 {
+                self.buffer = format!("{}", next as i64);
+            } else {
+                self.buffer = format!("{next}");
+            }
+            return true;
+        }
+        false
+    }
 }
 
 fn local_today_iso() -> String {
@@ -1534,6 +1568,37 @@ mod tests {
         };
         assert!(!text.set_today());
         assert!(!text.set_now());
+    }
+
+    #[test]
+    fn number_step_inc_dec() {
+        let mut session = CellEditSession {
+            abs_row: 0,
+            column: "n".into(),
+            original_text: "10".into(),
+            buffer: "10".into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Number,
+        };
+        assert!(session.step_number(1));
+        assert_eq!(session.buffer, "11");
+        assert!(session.step_number(-3));
+        assert_eq!(session.buffer, "8");
+        session.buffer = "1.5".into();
+        assert!(session.step_number(1));
+        assert_eq!(session.buffer, "2.5");
+        session.buffer = "null".into();
+        assert!(session.step_number(1));
+        assert_eq!(session.buffer, "1");
+        let mut text = CellEditSession {
+            abs_row: 0,
+            column: "t".into(),
+            original_text: String::new(),
+            buffer: "1".into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Text,
+        };
+        assert!(!text.step_number(1));
     }
 
     #[test]
