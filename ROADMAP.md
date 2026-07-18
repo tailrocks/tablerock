@@ -262,6 +262,12 @@ UniFFI Rust bridge, connection experience, AppKit catalog, query editor, large
 grid, result page, cancellation, and accessibility tracer. Swift contains no
 database or safety behavior.
 
+**Complete (evidence 407–414, 505–511):** the locally runnable strict Swift 6
+app passes the three-engine bridge vertical, typed lazy catalog, query/page,
+cancellation, reviewed apply, AppKit accessibility/focus, Liquid Glass,
+appearance, 10k-grid, page-decode, RSS, and leak gates. Developer ID release
+distribution remains the separately recorded Phase 12/14 operator gate.
+
 ## Phase 14 — native parity and release evidence
 
 Project all supported profiles, tabs, history, query/edit/review,

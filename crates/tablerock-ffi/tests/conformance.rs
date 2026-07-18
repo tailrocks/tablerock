@@ -11,13 +11,14 @@ use std::sync::{
 };
 
 use tablerock_core::{
-    BoundedText, ByteLimit, CancelDispatch, ColumnMetadata, Engine, EngineType, IdParts,
-    OperationId, OwnedValue, PageDelivery, PageFacts, PageIdentity, PageLimits, PageWarnings,
-    ProfileId, ResultId, ResultPage, Revision, RowTotal,
+    BoundedText, ByteLimit, CancelDispatch, CatalogChildrenState, CatalogNodeKind, ColumnMetadata,
+    Engine, EngineType, IdParts, OperationId, OwnedValue, PageDelivery, PageFacts, PageIdentity,
+    PageLimits, PageWarnings, ProfileId, ResultId, ResultPage, Revision, RowTotal,
 };
 use tablerock_engine::{
-    AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
-    DriverSession, ServerDescribe, SessionHealth,
+    AdapterError, AdapterFailureClass, CatalogExactness, CatalogNodeSeed, CatalogRequest,
+    CatalogSubtree, DriverFuture, DriverPageRequest, DriverPageStream, DriverSession,
+    ServerDescribe, SessionHealth,
 };
 use tablerock_ffi::{BridgeError, SubmitSpec, TableRockBridge};
 
@@ -76,13 +77,52 @@ impl DriverSession for FixedPageSession {
 
     fn catalog<'a>(
         &'a self,
-        _request: tablerock_engine::CatalogRequest,
-    ) -> DriverFuture<'a, Result<tablerock_engine::CatalogSubtree, AdapterError>> {
+        request: CatalogRequest,
+    ) -> DriverFuture<'a, Result<CatalogSubtree, AdapterError>> {
         let engine = self.engine;
         Box::pin(async move {
-            Err(AdapterError::new(
+            let (kind, name, children) = match request {
+                CatalogRequest::PostgreSqlDatabases { .. } => (
+                    CatalogNodeKind::PostgreSqlDatabase,
+                    "app",
+                    CatalogChildrenState::Unrequested,
+                ),
+                CatalogRequest::PostgreSqlSchemas { .. } => (
+                    CatalogNodeKind::PostgreSqlSchema,
+                    "public",
+                    CatalogChildrenState::Unrequested,
+                ),
+                CatalogRequest::PostgreSqlRelations { .. } => (
+                    CatalogNodeKind::PostgreSqlObject(tablerock_core::PostgreSqlObjectKind::Table),
+                    "users",
+                    CatalogChildrenState::Unrequested,
+                ),
+                CatalogRequest::ClickHouseDatabases { .. } => (
+                    CatalogNodeKind::ClickHouseDatabase,
+                    "default",
+                    CatalogChildrenState::Unrequested,
+                ),
+                CatalogRequest::ClickHouseObjects { .. } => (
+                    CatalogNodeKind::ClickHouseObject(tablerock_core::ClickHouseObjectKind::Table),
+                    "events",
+                    CatalogChildrenState::Unrequested,
+                ),
+                CatalogRequest::RedisLogicalDatabases { .. } => (
+                    CatalogNodeKind::RedisLogicalDatabase,
+                    "0",
+                    CatalogChildrenState::Unrequested,
+                ),
+            };
+            Ok(CatalogSubtree::new(
                 engine,
-                AdapterFailureClass::InvalidRequest,
+                vec![CatalogNodeSeed::new(
+                    kind,
+                    BoundedText::copy_from_str(name, ByteLimit::new(32)).unwrap(),
+                    children,
+                    None,
+                )],
+                true,
+                CatalogExactness::Exact,
             ))
         })
     }
@@ -266,35 +306,29 @@ fn command_validation_rejects_unknown_intent_and_stale_revision() {
 }
 
 #[test]
-fn catalog_intent_is_supported_for_all_engines_without_client_statement() {
+fn typed_catalog_uses_opaque_parent_handles_for_all_engines() {
     for (engine, low) in [
         (Engine::PostgreSql, 180_u64),
         (Engine::ClickHouse, 181),
         (Engine::Redis, 182),
     ] {
-        let (result_id, page) = sample_page(engine, low, &[1]);
+        let (_result_id, page) = sample_page(engine, low, &[1]);
         let bridge = TableRockBridge::new_for_test();
         let session_id = open_fixed(&bridge, engine, page);
-        let operation = bridge
-            .submit(SubmitSpec {
-                intent: "catalog".into(),
-                session_id,
-                statement: None,
-                result_id: Some(result_id.to_bytes().to_vec()),
-                start_row: None,
-                row_count: Some(100),
-                expected_revision: 0,
-            })
-            .unwrap();
-        bridge.pump(operation).unwrap();
-        assert!(
-            bridge
-                .next_events(0, 32)
-                .unwrap()
-                .events
-                .iter()
-                .any(|event| event.kind == "page")
-        );
+        let roots = bridge.refresh_catalog(session_id.clone(), None).unwrap();
+        assert_eq!(roots.len(), 1);
+        if roots[0].expandable {
+            let children = bridge
+                .refresh_catalog(session_id.clone(), Some(roots[0].id_bytes.clone()))
+                .unwrap();
+            assert_eq!(children.len(), 1);
+            assert_eq!(children[0].parent_id_bytes, Some(roots[0].id_bytes.clone()));
+        }
+        let stale = vec![0xff; 16];
+        assert!(matches!(
+            bridge.refresh_catalog(session_id, Some(stale)),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "unknown-catalog-node"
+        ));
     }
 }
 

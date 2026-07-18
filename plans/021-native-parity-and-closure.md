@@ -10,6 +10,7 @@
 
 ## Status
 
+- **IN PROGRESS (2026-07-19): Plan 020/Phase 13 exit verified; screen parity audit started**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

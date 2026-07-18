@@ -682,6 +682,12 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func pump(operationId: Data) throws 
     
     /**
+     * Load one typed catalog level. `parent_node_id` is an opaque id previously
+     * returned by this method; Swift never chooses engine requests or names.
+     */
+    func refreshCatalog(sessionId: Data, parentNodeId: Data?) throws  -> [BridgeCatalogNode]
+    
+    /**
      * Drop a review token without authorizing (operator discard).
      */
     func revokeReviewToken(tokenId: Data) throws  -> Bool
@@ -957,6 +963,21 @@ open func pump(operationId: Data)throws   {try rustCallWithError(FfiConverterTyp
 }
     
     /**
+     * Load one typed catalog level. `parent_node_id` is an opaque id previously
+     * returned by this method; Swift never chooses engine requests or names.
+     */
+open func refreshCatalog(sessionId: Data, parentNodeId: Data?)throws  -> [BridgeCatalogNode]  {
+    return try  FfiConverterSequenceTypeBridgeCatalogNode.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_refresh_catalog(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterOptionData.lower(parentNodeId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Drop a review token without authorizing (operator discard).
      */
 open func revokeReviewToken(tokenId: Data)throws  -> Bool  {
@@ -1127,6 +1148,83 @@ public func FfiConverterTypeApplyOutcome_lift(_ buf: RustBuffer) throws -> Apply
 #endif
 public func FfiConverterTypeApplyOutcome_lower(_ value: ApplyOutcome) -> RustBuffer {
     return FfiConverterTypeApplyOutcome.lower(value)
+}
+
+
+/**
+ * One Rust-owned catalog node. Swift renders these facts and returns only opaque ids.
+ */
+public struct BridgeCatalogNode: Equatable, Hashable {
+    public var idBytes: Data
+    public var parentIdBytes: Data?
+    public var depth: UInt16
+    public var name: String
+    public var kind: String
+    public var childrenState: String
+    public var expandable: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(idBytes: Data, parentIdBytes: Data?, depth: UInt16, name: String, kind: String, childrenState: String, expandable: Bool) {
+        self.idBytes = idBytes
+        self.parentIdBytes = parentIdBytes
+        self.depth = depth
+        self.name = name
+        self.kind = kind
+        self.childrenState = childrenState
+        self.expandable = expandable
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BridgeCatalogNode: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeCatalogNode: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeCatalogNode {
+        return
+            try BridgeCatalogNode(
+                idBytes: FfiConverterData.read(from: &buf), 
+                parentIdBytes: FfiConverterOptionData.read(from: &buf), 
+                depth: FfiConverterUInt16.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterString.read(from: &buf), 
+                childrenState: FfiConverterString.read(from: &buf), 
+                expandable: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeCatalogNode, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.idBytes, into: &buf)
+        FfiConverterOptionData.write(value.parentIdBytes, into: &buf)
+        FfiConverterUInt16.write(value.depth, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.childrenState, into: &buf)
+        FfiConverterBool.write(value.expandable, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeCatalogNode_lift(_ buf: RustBuffer) throws -> BridgeCatalogNode {
+    return try FfiConverterTypeBridgeCatalogNode.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeCatalogNode_lower(_ value: BridgeCatalogNode) -> RustBuffer {
+    return FfiConverterTypeBridgeCatalogNode.lower(value)
 }
 
 
@@ -1543,7 +1641,7 @@ public func FfiConverterTypeShutdownOutcome_lower(_ value: ShutdownOutcome) -> R
  */
 public struct SubmitSpec: Equatable, Hashable {
     /**
-     * `execute`, `fetch_page`, `refresh_catalog`, or `probe`.
+     * `execute`, `fetch_page`, or `probe`.
      */
     public var intent: String
     /**
@@ -1575,7 +1673,7 @@ public struct SubmitSpec: Equatable, Hashable {
     // declare one manually.
     public init(
         /**
-         * `execute`, `fetch_page`, `refresh_catalog`, or `probe`.
+         * `execute`, `fetch_page`, or `probe`.
          */intent: String, 
         /**
          * Session returned by `open`.
@@ -1914,6 +2012,31 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeCatalogNode: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeCatalogNode]
+
+    public static func write(_ value: [BridgeCatalogNode], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeCatalogNode.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeCatalogNode] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeCatalogNode]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeCatalogNode.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeEventRecord: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeEventRecord]
 
@@ -2016,6 +2139,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_pump() != 15232) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_refresh_catalog() != 24952) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_review_token() != 712) {

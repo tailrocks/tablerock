@@ -159,6 +159,9 @@ private actor BridgeClient {
     func openProfile(id: Data) throws -> Data {
         try bridge.openProfile(profileId: id, passwordOverride: nil)
     }
+    func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [BridgeCatalogNode] {
+        try bridge.refreshCatalog(sessionId: session, parentNodeId: parentNodeId)
+    }
     func submit(session: Data, intent: String, statement: String?) throws -> Data {
         try bridge.submit(spec: SubmitSpec(
             intent: intent, sessionId: session, statement: statement,
@@ -246,11 +249,28 @@ struct TableRockApp: App {
 private struct NativeAccessibilityFixtureView: View {
     @State private var catalogSelection: String?
     @State private var query = "SELECT 1;"
+    @State private var refreshState: CatalogRefreshState = .loaded
 
-    private let catalog = PageV1Table(
-        columns: ["schema", "table"],
-        rows: [["public", "users"]]
-    )
+    private let catalog = [
+        BridgeCatalogNode(
+            idBytes: Data(repeating: 1, count: 16),
+            parentIdBytes: nil,
+            depth: 0,
+            name: "public",
+            kind: "postgresql_schema",
+            childrenState: "loaded_complete",
+            expandable: true
+        ),
+        BridgeCatalogNode(
+            idBytes: Data(repeating: 2, count: 16),
+            parentIdBytes: Data(repeating: 1, count: 16),
+            depth: 1,
+            name: "users",
+            kind: "postgresql_table",
+            childrenState: "not_applicable",
+            expandable: false
+        ),
+    ]
     private let result = PageV1Table(
         columns: ["id", "name"],
         rows: [["1", "Ada"]]
@@ -258,7 +278,24 @@ private struct NativeAccessibilityFixtureView: View {
 
     var body: some View {
         HSplitView {
-            CatalogOutline(table: catalog, selection: $catalogSelection)
+            CatalogOutline(
+                table: catalog,
+                selection: $catalogSelection,
+                refreshState: refreshState,
+                onExpand: { key in
+                    writePerformanceMetric("CATALOG_EXPANSION_REQUEST key=\(key)")
+                    refreshState = .loading(nodeKey: key)
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(100))
+                        refreshState = .stale(
+                            nodeKey: key,
+                            message: "fixture refresh failed"
+                        )
+                        try? await Task.sleep(for: .milliseconds(100))
+                        runNativeCatalogStateAudit()
+                    }
+                }
+            )
                 .frame(minWidth: 220)
             VStack {
                 SqlTextEditor(text: $query)
@@ -300,9 +337,34 @@ private func runNativeAccessibilityAudit() {
         writePerformanceMetric("ACCESSIBILITY_PROOF_FAILED role, label, or focus mismatch")
         return
     }
+    if let firstItem = outline.item(atRow: 0) {
+        outline.collapseItem(firstItem)
+        outline.expandItem(firstItem)
+    }
     writePerformanceMetric(
         "ACCESSIBILITY_PROOF_PASSED outline=Database_catalog grid=Query_results editor=SQL_editor focus=editor-grid-editor"
     )
+}
+
+@MainActor
+private func runNativeCatalogStateAudit() {
+    guard let root = NSApplication.shared.windows.first(where: { $0.isVisible })?.contentView
+    else { return }
+    func descendants(of view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+    guard let outline = descendants(of: root).compactMap({ $0 as? NSOutlineView }).first
+    else { return }
+    for row in 0..<outline.numberOfRows {
+        guard let node = outline.item(atRow: row) as? CatalogOutline.Node else { continue }
+        if node.isState, node.title == "Stale · fixture refresh failed" {
+            writePerformanceMetric(
+                "CATALOG_STATE_PROOF_PASSED loading_then_stale_preserved_under=node"
+            )
+            return
+        }
+    }
+    writePerformanceMetric("CATALOG_STATE_PROOF_FAILED stale node missing")
 }
 
 private struct PerformanceFixtureView: View {
@@ -319,6 +381,36 @@ private struct PerformanceFixtureView: View {
 }
 
 /// Owns the live TableRockBridge + the profile list for the window's lifetime.
+enum CatalogRefreshState: Equatable {
+    case idle
+    case loading(nodeKey: String?)
+    case loaded
+    case stale(nodeKey: String?, message: String)
+    case failed(message: String)
+}
+
+private func catalogNodeKey(_ id: Data) -> String {
+    "node:" + id.map { String(format: "%02x", $0) }.joined()
+}
+
+private func catalogDescendantIds(
+    of parentId: Data,
+    in nodes: [BridgeCatalogNode]
+) -> Set<Data> {
+    var descendants: Set<Data> = []
+    var frontier: Set<Data> = [parentId]
+    while !frontier.isEmpty {
+        let children = Set<Data>(nodes.compactMap { node in
+            guard let parent = node.parentIdBytes, frontier.contains(parent) else { return nil }
+            return node.idBytes
+        })
+        let fresh = children.subtracting(descendants)
+        descendants.formUnion(fresh)
+        frontier = fresh
+    }
+    return descendants
+}
+
 @MainActor
 @Observable
 final class BridgeModel {
@@ -330,7 +422,11 @@ final class BridgeModel {
     var connectingName: String?
     var catalogSummary: String?
     var catalogError: String?
-    var catalogSnapshot: PageV1Table?
+    var catalogSnapshot: [BridgeCatalogNode]?
+    private(set) var catalogRefreshState: CatalogRefreshState = .idle
+    var isCatalogRefreshing: Bool {
+        if case .loading = catalogRefreshState { true } else { false }
+    }
     var resultTable: PageV1Table?
     var catalogSelection: String?
     var writeOutcome: String?
@@ -431,6 +527,7 @@ final class BridgeModel {
         connectError = nil
         catalogSummary = nil
         catalogSnapshot = nil
+        catalogRefreshState = .idle
         resultTable = nil
         do {
             let session = try await client.open(params: OpenParams(
@@ -459,6 +556,7 @@ final class BridgeModel {
         catalogSummary = nil
         catalogError = nil
         catalogSnapshot = nil
+        catalogRefreshState = .idle
         resultTable = nil
         do {
             let session = try await client.openProfile(id: item.idBytes)
@@ -525,21 +623,38 @@ final class BridgeModel {
         }
     }
 
-    func browse() async {
+    func browse(expandedNodeKey: String? = nil) async {
+        guard !isRunning, !isCatalogRefreshing else { return }
+        guard let client, let session = sessionData else { return }
+        let hadSnapshot = catalogSnapshot != nil
+        catalogRefreshState = .loading(nodeKey: expandedNodeKey)
         catalogSummary = nil
         catalogError = nil
-        catalogSnapshot = nil
         do {
-            if let table = try await fetchPage(intent: "catalog", statement: nil) {
-                catalogSnapshot = table
-                catalogSummary = connectedEngine == "redis"
-                    ? "keys · \(table.rows.count)"
-                    : "tables · \(table.rows.count)"
-            } else {
-                catalogSummary = "catalog: no result page"
+            let parentId = expandedNodeKey.flatMap { key in
+                catalogSnapshot?.first(where: { catalogNodeKey($0.idBytes) == key })?.idBytes
             }
+            let loaded = try await client.refreshCatalog(
+                session: session,
+                parentNodeId: parentId
+            )
+            if let parentId {
+                var retained = catalogSnapshot ?? []
+                let staleIds = catalogDescendantIds(of: parentId, in: retained)
+                retained.removeAll { staleIds.contains($0.idBytes) }
+                retained.append(contentsOf: loaded)
+                catalogSnapshot = retained
+            } else {
+                catalogSnapshot = loaded
+            }
+            catalogRefreshState = .loaded
+            catalogSummary = "catalog · \(catalogSnapshot?.count ?? 0) nodes loaded"
         } catch {
-            catalogError = "Browse failed: \(error)"
+            let message = "Browse failed: \(error)"
+            catalogRefreshState = hadSnapshot
+                ? .stale(nodeKey: expandedNodeKey, message: message)
+                : .failed(message: message)
+            catalogError = message
         }
     }
 
@@ -611,24 +726,46 @@ struct ContentView: View {
                             Image(systemName: "arrow.clockwise")
                         }
                         .buttonStyle(.borderless)
-                        .disabled(model.isRunning)
+                        .disabled(model.isRunning || model.isCatalogRefreshing)
                         .accessibilityLabel("Refresh catalog")
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
+                    if model.isCatalogRefreshing {
+                        ProgressView("Refreshing catalog…")
+                            .controlSize(.small)
+                            .padding(.horizontal, 10)
+                    }
                     if let snapshot = model.catalogSnapshot {
                         CatalogOutline(
                             table: snapshot,
-                            selection: $model.catalogSelection
+                            selection: $model.catalogSelection,
+                            refreshState: model.catalogRefreshState,
+                            onExpand: { nodeKey in
+                                Task { await model.browse(expandedNodeKey: nodeKey) }
+                            }
                         )
                         .frame(minHeight: 160)
                     } else {
-                        ContentUnavailableView(
-                            "Catalog not loaded",
-                            systemImage: "sidebar.left",
-                            description: Text("Refresh to list database objects.")
-                        )
-                        .frame(minHeight: 160)
+                        switch model.catalogRefreshState {
+                        case .loading:
+                            ProgressView("Loading catalog…")
+                                .frame(minHeight: 160)
+                        case let .failed(message):
+                            ContentUnavailableView(
+                                "Catalog failed",
+                                systemImage: "exclamationmark.triangle",
+                                description: Text(message)
+                            )
+                            .frame(minHeight: 160)
+                        default:
+                            ContentUnavailableView(
+                                "Catalog not loaded",
+                                systemImage: "sidebar.left",
+                                description: Text("Refresh to list database objects.")
+                            )
+                            .frame(minHeight: 160)
+                        }
                     }
                 }
             }
@@ -698,13 +835,13 @@ struct ContentView: View {
                             Button("Run query") { Task { await model.runQuery() } }
                                 .buttonStyle(.borderedProminent)
                                 .keyboardShortcut("r", modifiers: .command)
-                                .disabled(model.isRunning)
+                                .disabled(model.isRunning || model.isCatalogRefreshing)
                             Button("Cancel") { Task { await model.cancel() } }
                                 .disabled(!model.isRunning)
                             Button("Refresh catalog") { Task { await model.browse() } }
-                                .disabled(model.isRunning)
+                                .disabled(model.isRunning || model.isCatalogRefreshing)
                             Button("Apply probe edit") { Task { await model.applyProbeEdit() } }
-                                .disabled(model.isRunning)
+                                .disabled(model.isRunning || model.isCatalogRefreshing)
                         }
                         if let cancelOutcome = model.cancelOutcome {
                             Text(cancelOutcome).foregroundStyle(.secondary).font(.callout)
@@ -742,9 +879,9 @@ struct ContentView: View {
         }
         .task { await model.initialize() }
         .focusedValue(\.workbenchActions, WorkbenchActions(
-            canRun: model.sessionHex != nil && !model.isRunning,
+            canRun: model.sessionHex != nil && !model.isRunning && !model.isCatalogRefreshing,
             canCancel: model.isRunning,
-            canRefresh: model.sessionHex != nil && !model.isRunning,
+            canRefresh: model.sessionHex != nil && !model.isRunning && !model.isCatalogRefreshing,
             run: { Task { await model.runQuery() } },
             cancel: { Task { await model.cancel() } },
             refresh: { Task { await model.browse() } }
@@ -763,7 +900,7 @@ struct ContentView: View {
                 Button { Task { await model.browse() } } label: {
                     Label("Refresh Catalog", systemImage: "arrow.clockwise")
                 }
-                .disabled(model.sessionHex == nil || model.isRunning)
+                .disabled(model.sessionHex == nil || model.isRunning || model.isCatalogRefreshing)
             }
             ToolbarSpacer(.fixed)
             ToolbarItem(id: "run", placement: .primaryAction) {
@@ -771,7 +908,7 @@ struct ContentView: View {
                     Label("Run Query", systemImage: "play.fill")
                 }
                 .buttonStyle(.glassProminent)
-                .disabled(model.sessionHex == nil || model.isRunning)
+                .disabled(model.sessionHex == nil || model.isRunning || model.isCatalogRefreshing)
             }
             ToolbarItem(id: "cancel", placement: .primaryAction) {
                 Button { Task { await model.cancel() } } label: {
@@ -796,11 +933,18 @@ struct NativeSettingsView: View {
 }
 
 struct CatalogOutline: NSViewRepresentable {
-    let table: PageV1Table
+    let table: [BridgeCatalogNode]
     @Binding var selection: String?
+    let refreshState: CatalogRefreshState
+    let onExpand: @MainActor (String) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(table: table, selection: $selection)
+        Coordinator(
+            table: table,
+            selection: $selection,
+            refreshState: refreshState,
+            onExpand: onExpand
+        )
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -835,7 +979,8 @@ struct CatalogOutline: NSViewRepresentable {
         let expanded = context.coordinator.expandedKeys()
         let selected = context.coordinator.selectedKey()
         context.coordinator.selection = $selection
-        context.coordinator.rebuild(from: table)
+        context.coordinator.onExpand = onExpand
+        context.coordinator.rebuild(from: table, refreshState: refreshState)
         outline.reloadData()
         context.coordinator.restore(expanded: expanded, selected: selected)
     }
@@ -845,11 +990,21 @@ struct CatalogOutline: NSViewRepresentable {
         let key: String
         let title: String
         let children: [Node]
+        let isState: Bool
+        let expandable: Bool
 
-        init(key: String, title: String, children: [Node] = []) {
+        init(
+            key: String,
+            title: String,
+            children: [Node] = [],
+            isState: Bool = false,
+            expandable: Bool = false
+        ) {
             self.key = key
             self.title = title
             self.children = children
+            self.isState = isState
+            self.expandable = expandable
         }
     }
 
@@ -858,34 +1013,48 @@ struct CatalogOutline: NSViewRepresentable {
         private(set) var roots: [Node] = []
         private var nodesByKey: [String: Node] = [:]
         var selection: Binding<String?>
+        var onExpand: @MainActor (String) -> Void
         weak var outline: NSOutlineView?
+        private var suppressExpansionCallbacks = false
 
-        init(table: PageV1Table, selection: Binding<String?>) {
+        init(
+            table: [BridgeCatalogNode],
+            selection: Binding<String?>,
+            refreshState: CatalogRefreshState,
+            onExpand: @escaping @MainActor (String) -> Void
+        ) {
             self.selection = selection
+            self.onExpand = onExpand
             super.init()
-            rebuild(from: table)
+            rebuild(from: table, refreshState: refreshState)
         }
 
-        func rebuild(from table: PageV1Table) {
-            if table.columns.count >= 2 {
-                var order: [String] = []
-                var grouped: [String: [Node]] = [:]
-                for row in table.rows where row.count >= 2 {
-                    let group = row[0]
-                    if grouped[group] == nil { order.append(group) }
-                    let title = row.dropFirst().joined(separator: " · ")
-                    grouped[group, default: []].append(Node(
-                        key: "item:\(group)\u{1f}\(title)", title: title))
+        func rebuild(from table: [BridgeCatalogNode], refreshState: CatalogRefreshState) {
+            let byParent = Dictionary(grouping: table, by: \.parentIdBytes)
+            func build(_ record: BridgeCatalogNode) -> Node {
+                let key = catalogNodeKey(record.idBytes)
+                var children = (byParent[record.idBytes] ?? []).map(build)
+                switch refreshState {
+                case let .loading(nodeKey) where nodeKey == key:
+                    children.append(Node(
+                        key: "state:loading:\(key)", title: "Loading…", isState: true))
+                case let .stale(nodeKey, message) where nodeKey == key:
+                    children.append(Node(
+                        key: "state:stale:\(key)",
+                        title: "Stale · \(message)",
+                        isState: true
+                    ))
+                default:
+                    break
                 }
-                roots = order.map { group in
-                    Node(key: "group:\(group)", title: group, children: grouped[group] ?? [])
-                }
-            } else {
-                roots = table.rows.enumerated().compactMap { index, row in
-                    guard let title = row.first else { return nil }
-                    return Node(key: "item:\(index)\u{1f}\(title)", title: title)
-                }
+                return Node(
+                    key: key,
+                    title: record.name,
+                    children: children,
+                    expandable: record.expandable
+                )
             }
+            roots = (byParent[nil] ?? []).map(build)
             nodesByKey = [:]
             func index(_ node: Node) {
                 nodesByKey[node.key] = node
@@ -904,7 +1073,7 @@ struct CatalogOutline: NSViewRepresentable {
 
         func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
             guard let node = item as? Node else { return false }
-            return !node.children.isEmpty
+            return node.expandable || !node.children.isEmpty
         }
 
         func outlineView(
@@ -934,9 +1103,19 @@ struct CatalogOutline: NSViewRepresentable {
                 ])
             }
             cell.textField?.stringValue = node.title
-            cell.setAccessibilityLabel(node.children.isEmpty
+            cell.setAccessibilityLabel(node.isState
+                ? "Catalog state \(node.title)"
+                : node.children.isEmpty
                 ? "Catalog object \(node.title)" : "Catalog group \(node.title)")
             return cell
+        }
+
+        func outlineViewItemDidExpand(_ notification: Notification) {
+            guard !suppressExpansionCallbacks,
+                  let node = notification.userInfo?["NSObject"] as? Node,
+                  node.key.hasPrefix("node:")
+            else { return }
+            onExpand(node.key)
         }
 
         func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -957,6 +1136,8 @@ struct CatalogOutline: NSViewRepresentable {
 
         func restore(expanded: Set<String>, selected: String?) {
             guard let outline else { return }
+            suppressExpansionCallbacks = true
+            defer { suppressExpansionCallbacks = false }
             for key in expanded {
                 if let node = nodesByKey[key] { outline.expandItem(node) }
             }
@@ -968,6 +1149,8 @@ struct CatalogOutline: NSViewRepresentable {
 
         func expandDefaultRoots() {
             guard let outline else { return }
+            suppressExpansionCallbacks = true
+            defer { suppressExpansionCallbacks = false }
             roots.filter { !$0.children.isEmpty }.forEach { outline.expandItem($0) }
         }
     }

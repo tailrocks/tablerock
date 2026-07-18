@@ -29,7 +29,7 @@ pub enum EngineServiceError {
     RuntimeUnavailable,
     IntentMismatch,
     Catalog(AdapterError),
-    CatalogBuild,
+    CatalogBuild(tablerock_core::CatalogBuildError),
     CatalogCursor(tablerock_core::CatalogRejection),
 }
 
@@ -48,7 +48,7 @@ impl fmt::Display for EngineServiceError {
             Self::RuntimeUnavailable => "engine service runtime is unavailable",
             Self::IntentMismatch => "command intent is not a catalog refresh",
             Self::Catalog(_) => "catalog listing failed",
-            Self::CatalogBuild => "catalog snapshot failed validation",
+            Self::CatalogBuild(error) => return write!(formatter, "{error}"),
             Self::CatalogCursor(_) => "catalog cursor rejected the snapshot",
         })
     }
@@ -162,7 +162,7 @@ impl EngineService {
         let identity = CatalogIdentity::new(scope, subtree.engine(), next_revision);
         let nodes = assemble_catalog_nodes(subtree, parent, id_seed);
         let snapshot = CatalogSnapshot::new(identity, nodes, limits)
-            .map_err(|_| EngineServiceError::CatalogBuild)?;
+            .map_err(EngineServiceError::CatalogBuild)?;
         let next_cursor = cursor
             .accept(&snapshot)
             .map_err(EngineServiceError::CatalogCursor)?;

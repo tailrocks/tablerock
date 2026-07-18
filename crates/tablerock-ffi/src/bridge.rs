@@ -1,23 +1,25 @@
 //! Coarse synchronous facade matching the shared-client-contract bridge shape.
 
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     sync::{Arc, Mutex},
     time::Duration,
 };
 
 use tablerock_core::{
-    BoundedText, ByteLimit, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
+    BoundedText, ByteLimit, CatalogChildrenState, CatalogNode, CatalogNodeId, CatalogNodeKind,
+    ClickHouseObjectKind, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
     CommandScope, Engine, FieldValue, MutationChange, MutationPlan, MutationPlanLimits,
     MutationReviewRegistry, MutationTarget, OperationId, OperationOutcome, OperationScope,
-    OwnedValue, PageIdentity, PageKey, PageRequest, ProfileId, ProfileListFilter,
-    ProfileListRequest, ProfileProperty, ResultStore, ResultStoreLimits, Revision,
-    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText,
+    OwnedValue, PageIdentity, PageKey, PageRequest, PostgreSqlObjectKind, ProfileId,
+    ProfileListFilter, ProfileListRequest, ProfileProperty, RedisKeyKind, ResultStore,
+    ResultStoreLimits, Revision, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
+    StatementText,
 };
 use tablerock_engine::{
-    ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession,
-    ClickHouseTlsMode, DriverPageRequest, DriverRuntime, DriverSession, EngineService,
-    EngineServiceUpdate, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
+    CatalogRequest, ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery,
+    ClickHouseSession, ClickHouseTlsMode, DriverPageRequest, DriverRuntime, DriverSession,
+    EngineService, EngineServiceUpdate, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
     PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol,
     RedisSession, RedisTlsMode,
 };
@@ -26,8 +28,9 @@ use tablerock_persistence::PersistenceActor;
 use crate::{
     error::{BridgeError, catch_entry},
     ids::{
-        IdFactory, operation_bytes, operation_from_bytes, result_from_bytes, review_token_bytes,
-        review_token_from_bytes, session_bytes, session_from_bytes,
+        IdFactory, catalog_node_bytes, catalog_node_from_bytes, operation_bytes,
+        operation_from_bytes, result_from_bytes, review_token_bytes, review_token_from_bytes,
+        session_bytes, session_from_bytes,
     },
     page_limits::default_page_limits,
     runtime::RuntimeOwner,
@@ -68,7 +71,7 @@ impl std::fmt::Debug for OpenParams {
 /// Submits one coarse command. Intent-specific fields are optional by kind.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct SubmitSpec {
-    /// `execute`, `fetch_page`, `refresh_catalog`, or `probe`.
+    /// `execute`, `fetch_page`, or `probe`.
     pub intent: String,
     /// Session returned by `open`.
     pub session_id: Vec<u8>,
@@ -126,6 +129,19 @@ pub struct ApplyOutcome {
     pub failed_count: u32,
 }
 
+/// One Rust-owned catalog node. Swift renders these facts and returns only opaque ids.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeCatalogNode {
+    pub id_bytes: Vec<u8>,
+    pub parent_id_bytes: Option<Vec<u8>>,
+    pub depth: u16,
+    pub name: String,
+    pub kind: String,
+    pub children_state: String,
+    pub expandable: bool,
+}
+
+#[derive(Clone, Copy)]
 struct RegisteredSession {
     profile_id: tablerock_core::ProfileId,
     session_id: SessionId,
@@ -151,6 +167,7 @@ struct BridgeInner {
     accepting: bool,
     /// Optional local-only profile store (never logs secrets).
     persistence: Option<PersistenceActor>,
+    catalog_nodes: BTreeMap<(SessionId, CatalogNodeId), CatalogNode>,
 }
 
 /// One saved profile row for the native connection screen.
@@ -211,6 +228,16 @@ impl TableRockBridge {
     /// Requires `configure_persistence` first.
     pub fn list_profiles(&self) -> Result<Vec<BridgeProfileItem>, BridgeError> {
         catch_entry(|| self.list_profiles_inner())
+    }
+
+    /// Load one typed catalog level. `parent_node_id` is an opaque id previously
+    /// returned by this method; Swift never chooses engine requests or names.
+    pub fn refresh_catalog(
+        &self,
+        session_id: Vec<u8>,
+        parent_node_id: Option<Vec<u8>>,
+    ) -> Result<Vec<BridgeCatalogNode>, BridgeError> {
+        catch_entry(|| self.refresh_catalog_inner(session_id, parent_node_id))
     }
 
     /// Stage a probe mutation + register a single-use review token for the
@@ -710,6 +737,191 @@ impl TableRockBridge {
             .collect())
     }
 
+    fn refresh_catalog_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        parent_node_id_bytes: Option<Vec<u8>>,
+    ) -> Result<Vec<BridgeCatalogNode>, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let parent_id = parent_node_id_bytes
+            .as_deref()
+            .map(catalog_node_from_bytes)
+            .transpose()
+            .map_err(|_| {
+                BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+            })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        let registered = *inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        let limits = default_page_limits();
+        let (request, parent, expected_level) = match parent_id {
+            None => (
+                match registered.engine {
+                    Engine::PostgreSql => CatalogRequest::PostgreSqlDatabases { limits },
+                    Engine::ClickHouse => CatalogRequest::ClickHouseDatabases { limits },
+                    Engine::Redis => CatalogRequest::RedisLogicalDatabases { limits },
+                },
+                None,
+                match registered.engine {
+                    Engine::PostgreSql => CatalogExpectedLevel::PostgreSqlDatabase,
+                    Engine::ClickHouse => CatalogExpectedLevel::ClickHouseDatabase,
+                    Engine::Redis => CatalogExpectedLevel::RedisLogicalDatabase,
+                },
+            ),
+            Some(parent_id) => {
+                let node = inner
+                    .catalog_nodes
+                    .get(&(session_id, parent_id))
+                    .ok_or_else(|| {
+                        BridgeError::rejected(
+                            "unknown-catalog-node",
+                            "catalog node is stale or unknown",
+                        )
+                    })?;
+                let (request, expected_level) = match node.kind() {
+                    CatalogNodeKind::PostgreSqlDatabase => (
+                        CatalogRequest::PostgreSqlSchemas {
+                            database: bounded_catalog_name(node.name())?,
+                            limits,
+                        },
+                        CatalogExpectedLevel::PostgreSqlSchema,
+                    ),
+                    CatalogNodeKind::PostgreSqlSchema => {
+                        let database_id = node.parent_id().ok_or_else(|| {
+                            BridgeError::rejected("catalog-parent", "schema has no database parent")
+                        })?;
+                        let database = inner
+                            .catalog_nodes
+                            .get(&(session_id, database_id))
+                            .ok_or_else(|| {
+                                BridgeError::rejected("catalog-parent", "database parent is stale")
+                            })?;
+                        (
+                            CatalogRequest::PostgreSqlRelations {
+                                database: bounded_catalog_name(database.name())?,
+                                schema: bounded_catalog_name(node.name())?,
+                                limits,
+                            },
+                            CatalogExpectedLevel::PostgreSqlObject,
+                        )
+                    }
+                    CatalogNodeKind::ClickHouseDatabase => (
+                        CatalogRequest::ClickHouseObjects {
+                            database: bounded_catalog_name(node.name())?,
+                            limits,
+                        },
+                        CatalogExpectedLevel::ClickHouseObject,
+                    ),
+                    _ => {
+                        return Err(BridgeError::rejected(
+                            "catalog-leaf",
+                            "catalog node has no supported child request",
+                        ));
+                    }
+                };
+                (request, Some((parent_id, node.depth())), expected_level)
+            }
+        };
+        let driver = inner
+            .service
+            .session(session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        let subtree = self.runtime.block_on(async {
+            driver
+                .catalog(request)
+                .await
+                .map_err(|error| BridgeError::rejected("catalog-refresh", error.to_string()))
+        })??;
+        if subtree.engine() != registered.engine {
+            return Err(BridgeError::rejected(
+                "catalog-engine",
+                "catalog subtree engine mismatch",
+            ));
+        }
+        let (parent_id, depth) = parent
+            .map(|(id, parent_depth)| (Some(id), parent_depth.saturating_add(1)))
+            .unwrap_or((None, 0));
+        let seeds = subtree.into_nodes();
+        if seeds.len() > 1_000
+            || seeds.iter().map(|seed| seed.name().len()).sum::<usize>() > 100_000
+        {
+            return Err(BridgeError::rejected(
+                "catalog-bounds",
+                "catalog subtree exceeds bridge bounds",
+            ));
+        }
+        if seeds.iter().any(|seed| {
+            !expected_level.accepts(seed.kind())
+                || matches!(
+                    seed.children(),
+                    CatalogChildrenState::NotApplicable | CatalogChildrenState::Failed
+                )
+        }) {
+            return Err(BridgeError::rejected(
+                "catalog-shape",
+                "catalog adapter returned an invalid child kind",
+            ));
+        }
+        let nodes = seeds
+            .into_iter()
+            .map(|seed| {
+                let id = inner.ids.catalog_node();
+                let kind = seed.kind();
+                let children = seed.children();
+                let name = seed.clone().into_name();
+                let engine_type = seed.take_engine_type();
+                CatalogNode::new(id, parent_id, depth, kind, name, engine_type, children)
+            })
+            .collect::<Vec<_>>();
+        if parent_id.is_none() {
+            inner
+                .catalog_nodes
+                .retain(|(cached_session, _), _| *cached_session != session_id);
+        } else if let Some(parent_id) = parent_id {
+            let mut stale = BTreeSet::new();
+            let mut frontier = BTreeSet::from([parent_id]);
+            loop {
+                let children = inner
+                    .catalog_nodes
+                    .iter()
+                    .filter_map(|((cached_session, id), node)| {
+                        (*cached_session == session_id
+                            && node
+                                .parent_id()
+                                .is_some_and(|parent| frontier.contains(&parent)))
+                        .then_some(*id)
+                    })
+                    .collect::<BTreeSet<_>>();
+                let fresh = children
+                    .difference(&stale)
+                    .copied()
+                    .collect::<BTreeSet<_>>();
+                if fresh.is_empty() {
+                    break;
+                }
+                stale.extend(&fresh);
+                frontier = fresh;
+            }
+            inner.catalog_nodes.retain(|(cached_session, id), _| {
+                *cached_session != session_id || !stale.contains(id)
+            });
+        }
+        for node in &nodes {
+            inner
+                .catalog_nodes
+                .insert((session_id, node.id()), node.clone());
+        }
+        Ok(nodes.iter().map(bridge_catalog_node).collect())
+    }
+
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let engine = parse_engine(&params.engine)?;
@@ -945,51 +1157,36 @@ impl TableRockBridge {
             }
 
             let (intent, request) = match intent_name.as_str() {
-                "probe" | "execute" | "catalog" => {
-                    // Catalog statements are Rust-owned implementation details.
-                    // Native clients submit a typed intent and never construct
-                    // engine SQL or Redis scan behavior.
-                    let statement = if intent_name == "catalog" {
-                        match engine {
-                            Engine::PostgreSql => "SELECT schemaname AS schema, tablename AS table FROM pg_tables ORDER BY 1, 2".into(),
-                            Engine::ClickHouse => "SELECT database AS schema, name AS table FROM system.tables ORDER BY 1, 2".into(),
-                            Engine::Redis => "catalog".into(),
-                        }
-                    } else {
-                        spec.statement.clone().unwrap_or_else(|| "select 1".into())
-                    };
+                "probe" | "execute" => {
+                    let statement = spec.statement.clone().unwrap_or_else(|| "select 1".into());
                     let text = StatementText::new(statement)
                         .map_err(|error| BridgeError::rejected("statement", error.to_string()))?;
                     let limits = default_page_limits();
                     let max_cell_bytes = 64 * 1024;
                     let request = match (engine, intent_name.as_str()) {
-                        (Engine::PostgreSql, "execute" | "catalog") => {
-                            DriverPageRequest::PostgreSqlStatement {
-                                statement: text.clone(),
-                                parameters: Vec::new(),
-                                limits,
-                                max_cell_bytes,
-                            }
-                        }
+                        (Engine::PostgreSql, "execute") => DriverPageRequest::PostgreSqlStatement {
+                            statement: text.clone(),
+                            parameters: Vec::new(),
+                            limits,
+                            max_cell_bytes,
+                        },
                         (Engine::PostgreSql, _) => DriverPageRequest::PostgreSqlProbe {
                             query: PostgresProbeQuery::BoundedSeries,
                             limits,
                             max_cell_bytes,
                         },
-                        (Engine::ClickHouse, "execute" | "catalog") => {
-                            DriverPageRequest::ClickHouseStatement {
-                                statement: text.clone(),
-                                query_id: BoundedText::copy_from_str(
-                                    &format!("bridge-{}", page_identity.result_id()),
-                                    ByteLimit::new(128),
-                                )
-                                .map_err(|error| {
-                                    BridgeError::rejected("query-id", error.to_string())
-                                })?,
-                                limits,
-                                max_cell_bytes,
-                            }
-                        }
+                        (Engine::ClickHouse, "execute") => DriverPageRequest::ClickHouseStatement {
+                            statement: text.clone(),
+                            query_id: BoundedText::copy_from_str(
+                                &format!("bridge-{}", page_identity.result_id()),
+                                ByteLimit::new(128),
+                            )
+                            .map_err(|error| {
+                                BridgeError::rejected("query-id", error.to_string())
+                            })?,
+                            limits,
+                            max_cell_bytes,
+                        },
                         (Engine::ClickHouse, _) => DriverPageRequest::ClickHouseProbe {
                             query: ClickHouseProbeQuery::TypedValues,
                             query_id: BoundedText::copy_from_str(
@@ -1227,6 +1424,117 @@ impl TableRockBridge {
     }
 }
 
+fn bounded_catalog_name(name: &str) -> Result<BoundedText, BridgeError> {
+    BoundedText::copy_from_str(name, ByteLimit::new(1_024))
+        .map_err(|error| BridgeError::rejected("catalog-name", error.to_string()))
+}
+
+#[derive(Clone, Copy)]
+enum CatalogExpectedLevel {
+    PostgreSqlDatabase,
+    PostgreSqlSchema,
+    PostgreSqlObject,
+    ClickHouseDatabase,
+    ClickHouseObject,
+    RedisLogicalDatabase,
+}
+
+impl CatalogExpectedLevel {
+    const fn accepts(self, kind: CatalogNodeKind) -> bool {
+        matches!(
+            (self, kind),
+            (
+                Self::PostgreSqlDatabase,
+                CatalogNodeKind::PostgreSqlDatabase
+            ) | (Self::PostgreSqlSchema, CatalogNodeKind::PostgreSqlSchema)
+                | (Self::PostgreSqlObject, CatalogNodeKind::PostgreSqlObject(_))
+                | (
+                    Self::ClickHouseDatabase,
+                    CatalogNodeKind::ClickHouseDatabase
+                )
+                | (Self::ClickHouseObject, CatalogNodeKind::ClickHouseObject(_))
+                | (
+                    Self::RedisLogicalDatabase,
+                    CatalogNodeKind::RedisLogicalDatabase
+                )
+        )
+    }
+}
+
+fn bridge_catalog_node(node: &CatalogNode) -> BridgeCatalogNode {
+    BridgeCatalogNode {
+        id_bytes: catalog_node_bytes(node.id()),
+        parent_id_bytes: node.parent_id().map(catalog_node_bytes),
+        depth: node.depth(),
+        name: node.name().to_owned(),
+        kind: catalog_kind_label(node.kind()).to_owned(),
+        children_state: catalog_children_label(node.children()).to_owned(),
+        expandable: catalog_kind_is_expandable(node.kind()),
+    }
+}
+
+const fn catalog_kind_is_expandable(kind: CatalogNodeKind) -> bool {
+    matches!(
+        kind,
+        CatalogNodeKind::PostgreSqlDatabase
+            | CatalogNodeKind::PostgreSqlSchema
+            | CatalogNodeKind::ClickHouseDatabase
+    )
+}
+
+const fn catalog_children_label(state: CatalogChildrenState) -> &'static str {
+    match state {
+        CatalogChildrenState::NotApplicable => "not_applicable",
+        CatalogChildrenState::Unrequested => "unrequested",
+        CatalogChildrenState::Loading => "loading",
+        CatalogChildrenState::Loaded { complete: true } => "loaded_complete",
+        CatalogChildrenState::Loaded { complete: false } => "loaded_partial",
+        CatalogChildrenState::Stale => "stale",
+        CatalogChildrenState::Failed => "failed",
+    }
+}
+
+const fn catalog_kind_label(kind: CatalogNodeKind) -> &'static str {
+    match kind {
+        CatalogNodeKind::PostgreSqlDatabase => "postgresql_database",
+        CatalogNodeKind::PostgreSqlSchema => "postgresql_schema",
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::Table) => "postgresql_table",
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::View) => "postgresql_view",
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::MaterializedView) => {
+            "postgresql_materialized_view"
+        }
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::ForeignTable) => {
+            "postgresql_foreign_table"
+        }
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::PartitionedTable) => {
+            "postgresql_partitioned_table"
+        }
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::Sequence) => "postgresql_sequence",
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::Function) => "postgresql_function",
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::Type) => "postgresql_type",
+        CatalogNodeKind::PostgreSqlColumn => "postgresql_column",
+        CatalogNodeKind::ClickHouseDatabase => "clickhouse_database",
+        CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Table) => "clickhouse_table",
+        CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::View) => "clickhouse_view",
+        CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::MaterializedView) => {
+            "clickhouse_materialized_view"
+        }
+        CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Dictionary) => {
+            "clickhouse_dictionary"
+        }
+        CatalogNodeKind::ClickHouseColumn => "clickhouse_column",
+        CatalogNodeKind::RedisLogicalDatabase => "redis_logical_database",
+        CatalogNodeKind::RedisNamespace => "redis_namespace",
+        CatalogNodeKind::RedisKey(RedisKeyKind::Unknown) => "redis_key_unknown",
+        CatalogNodeKind::RedisKey(RedisKeyKind::String) => "redis_key_string",
+        CatalogNodeKind::RedisKey(RedisKeyKind::Hash) => "redis_key_hash",
+        CatalogNodeKind::RedisKey(RedisKeyKind::List) => "redis_key_list",
+        CatalogNodeKind::RedisKey(RedisKeyKind::Set) => "redis_key_set",
+        CatalogNodeKind::RedisKey(RedisKeyKind::SortedSet) => "redis_key_sorted_set",
+        CatalogNodeKind::RedisKey(RedisKeyKind::Stream) => "redis_key_stream",
+    }
+}
+
 impl BridgeInner {
     fn new() -> Result<Self, BridgeError> {
         let core = ServiceCoordinator::new(
@@ -1255,6 +1563,7 @@ impl BridgeInner {
             first_sequence: 0,
             accepting: true,
             persistence: None,
+            catalog_nodes: BTreeMap::new(),
         })
     }
 

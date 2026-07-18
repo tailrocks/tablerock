@@ -38,5 +38,11 @@ identity + notary credentials:
 # then sign, notarytool submit --wait, stapler staple — see plan 019
 ```
 
-Until those land, plan 019 distribution gate remains STOP and plan 020
-(native vertical slice) must not start.
+Plan 020's locally runnable native vertical slice is complete. Plan 019's
+Developer ID/notarization distribution gate remains blocked and is inherited by
+Plan 021 release evidence; it does not prevent local development or verification.
+
+```bash
+./scripts/build-native-app.sh
+open native/dist/TableRock.app
+```

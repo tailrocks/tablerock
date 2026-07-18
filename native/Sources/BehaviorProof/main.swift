@@ -33,10 +33,30 @@ let session = try bridge.open(params: OpenParams(
 ))
 print("opened \(engine) session against \(host):\(port)")
 
+if catalogMode {
+    var level = try bridge.refreshCatalog(sessionId: session, parentNodeId: nil)
+    var total = level.count
+    for _ in 0..<2 {
+        guard let parent = level.first(where: \.expandable) else { break }
+        level = try bridge.refreshCatalog(
+            sessionId: session,
+            parentNodeId: parent.idBytes
+        )
+        total += level.count
+    }
+    _ = try bridge.shutdown(cancelActive: false, deadlineMs: 0)
+    guard total > 0 else {
+        FileHandle.standardError.write("FAIL: typed catalog returned no nodes\n".data(using: .utf8)!)
+        exit(1)
+    }
+    print("CATALOG PROOF PASSED: \(engine) typed nodes=\(total)")
+    exit(0)
+}
+
 let spec = SubmitSpec(
-    intent: catalogMode ? "catalog" : "execute",
+    intent: "execute",
     sessionId: session,
-    statement: catalogMode ? nil : (cancelMode ? "SELECT pg_sleep(10)" : statement),
+    statement: cancelMode ? "SELECT pg_sleep(10)" : statement,
     resultId: nil,
     startRow: nil,
     rowCount: 500,
@@ -163,5 +183,4 @@ if let expectCols = env["TABLEROCK_EXPECT_COLS"] {
         }
     }
 }
-let action = catalogMode ? "catalog" : statement
-print("BEHAVIOR PROOF PASSED: \(engine) \(action) -> \(table.columns.count) col(s), \(table.rows.count) row(s) decoded")
+print("BEHAVIOR PROOF PASSED: \(engine) \(statement) -> \(table.columns.count) col(s), \(table.rows.count) row(s) decoded")

@@ -10,8 +10,7 @@
 
 ## Status
 
-- **Checkpoints 1–7 prototype complete (2026-07-18) + behaviorally verified
-  (2026-07-19); plan remains IN PROGRESS**
+- **DONE (2026-07-19): all checkpoints and exit gates verified**
   — behavioral prototype originally delivered via Command Line Tools only.
   Full Xcode 26.6 is now installed; Developer ID remains absent. The local build uses direct `swiftc`
   (`scripts/build-native-app.sh`), not SwiftPM: swiftc links the cargo release
@@ -27,8 +26,8 @@
   (missing `pump`, warnings u32→u16, integers LE→BE). **Gate resolution:**
   the plan-019 distribution gate gates the *notarized XCFramework release*
   (Developer ID — operator); a *workable local app* does not
-  require it. The prototype does not yet satisfy all of the plan's
-  accessibility, appearance, lazy-catalog, or Instruments done criteria.
+  require it. The locally workable Phase 13 app satisfies this plan's
+  accessibility, appearance, lazy-catalog, and Instruments criteria.
   Evidence 407 removes `ObservableObject` and adds the required
   Settings scene. Evidence 408 adds actor-owned bridge I/O, off-main pump/page
   decode, operation-ID cancellation UI, and a strict Swift 6 build gate;
@@ -44,12 +43,13 @@
   captured artifacts, and a structural custom-control accessibility gate.
   Evidence 505 records bounded 10k-row AppKit scrolling and fixes unbounded
   pre-viewport column initialization. Evidence 506 closes the live
-  query/catalog/cancel/review matrix and Swift ownership audit. Remaining
-  Evidence 507 records real-page Swift decode under Time Profiler; evidence
+  query/catalog/cancel/review matrix and Swift ownership audit. Evidence 507
+  records real-page Swift decode under Time Profiler; evidence
   508 closes the Liquid Glass structural/degradation audit; evidence 509 proves
   zero decoder leaks; evidence 510 runs the actual AppKit accessibility/focus
-  path. Lazy expansion with explicit loading/stale/error catalog states remains
-  before Plan 020 exit. The full system VoiceOver matrix remains Plan 021 scope.
+  path. Evidence 511 replaces the flat catalog page with typed Rust-owned lazy
+  levels, opaque expansion handles, and explicit loading/stale/error states.
+  The full system VoiceOver and workflow-parity matrices remain Plan 021 scope.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
@@ -157,7 +157,7 @@ unchanged-green.
 - [x] Instruments: native 10k-grid scroll/RSS, real 500-row UniFFI page decode
       latency, and zero decoder leaks recorded (evidence 505, 507, 509)
 - [x] Conformance suite green through the app's bridge path (evidence 506)
-- [ ] Evidence + ROADMAP Phase 13 complete; `plans/README.md` updated
+- [x] Evidence + ROADMAP Phase 13 complete; `plans/README.md` updated (evidence 511)
 
 ## STOP conditions
 

@@ -70,12 +70,22 @@ for _ in $(seq 1 50); do
   sleep 0.1
 done
 for _ in $(seq 1 50); do
-  rg -q '^ACCESSIBILITY_PROOF_' "$audit_log" && break
+  rg -q '^CATALOG_STATE_PROOF_' "$audit_log" && break
   sleep 0.1
 done
 if ! rg -q '^ACCESSIBILITY_PROOF_PASSED ' "$audit_log"; then
   cat "$audit_log" >&2
   echo "error: native accessibility runtime proof failed" >&2
+  exit 1
+fi
+if ! rg -q '^CATALOG_EXPANSION_REQUEST key=node:' "$audit_log"; then
+  cat "$audit_log" >&2
+  echo "error: catalog expansion did not dispatch refresh intent" >&2
+  exit 1
+fi
+if ! rg -q '^CATALOG_STATE_PROOF_PASSED ' "$audit_log"; then
+  cat "$audit_log" >&2
+  echo "error: catalog loading/stale state runtime proof failed" >&2
   exit 1
 fi
 

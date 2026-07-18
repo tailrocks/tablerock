@@ -1,6 +1,15 @@
 use tablerock_core::{
-    ContextId, IdDecodeError, IdParts, OperationId, ProfileId, ResultId, ReviewTokenId, SessionId,
+    CatalogNodeId, ContextId, IdDecodeError, IdParts, OperationId, ProfileId, ResultId,
+    ReviewTokenId, SessionId,
 };
+
+pub(crate) fn catalog_node_from_bytes(bytes: &[u8]) -> Result<CatalogNodeId, IdDecodeError> {
+    CatalogNodeId::from_bytes(as_array16(bytes)?)
+}
+
+pub(crate) fn catalog_node_bytes(id: CatalogNodeId) -> Vec<u8> {
+    id.to_bytes().to_vec()
+}
 
 pub(crate) fn session_from_bytes(bytes: &[u8]) -> Result<SessionId, IdDecodeError> {
     SessionId::from_bytes(as_array16(bytes)?)
@@ -76,5 +85,9 @@ impl IdFactory {
 
     pub(crate) fn mutation(&mut self) -> tablerock_core::MutationId {
         tablerock_core::MutationId::from_parts(self.parts()).expect("nonzero id")
+    }
+
+    pub(crate) fn catalog_node(&mut self) -> CatalogNodeId {
+        CatalogNodeId::from_parts(self.parts()).expect("nonzero id")
     }
 }
