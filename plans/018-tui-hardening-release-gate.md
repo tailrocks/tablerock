@@ -73,7 +73,7 @@ freshness-checked per repo convention).
 
 - [x] quality-and-verification.md map started (evidence 248 gate table)
 - [~] Failure-injection matrix partial (280 export, 285 resize, 287 readonly/mid-write; true ENOSPC CI residual)
-- [~] Release-profile budget numbers local-rig (evidence 288 first-paint 297 first-row 301; fixed-spec CI residual)
+- [~] Release-profile budget numbers local-rig + ubuntu CI (evidence 288/297/301/303; multi-OS matrix residual)
 - [x] Non-color cue audit: `non_color_cues` unit (evidence 248)
 - [x] OTLP off-by-default proven (no sockets test); safe schema enforced by type
 - [x] Ledger: three-state CSV export + parity claim status (evidence 286)

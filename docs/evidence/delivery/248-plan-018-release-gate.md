@@ -22,7 +22,8 @@ Date: 2026-07-18
   - partial: local-rig release cold-start + binary size (evidence 288)
   - partial: unit first-paint &lt; 50 ms (evidence 297)
   - partial: Docker first-page/stream budgets PG/CH/Redis (evidence 301)
-  - residual: fixed-spec CI runners (host matrix publish)
+  - partial: ubuntu-latest CI runs performance_real + pg_dump_real (evidence 303)
+  - residual: multi-OS fixed-spec matrix publish
 - Ledger three-state export: landed CSV + counts (evidence 286)
 
 ## Parity claim status
