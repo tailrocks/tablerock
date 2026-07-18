@@ -35,11 +35,24 @@ impl InspectorModel {
                 .collect::<Vec<_>>()
                 .join(" ")
         };
+        let text = match cell.distinction {
+            CellDistinction::Structured => pretty_structured(&cell.text),
+            CellDistinction::Temporal => annotate_temporal(&cell.text),
+            CellDistinction::Boolean => format!(
+                "{}\n(toggle: TogBool · null: SetNull)",
+                cell.display()
+            ),
+            CellDistinction::Binary => format!(
+                "{}\n(binary · first 32 bytes in hex panel)",
+                cell.display()
+            ),
+            _ => cell.display(),
+        };
         Self {
             open: true,
             title: title.into(),
             kind_label: cell.distinction.label().into(),
-            text: cell.display(),
+            text,
             hex,
             byte_len: cell.byte_len,
             original_byte_len: cell.original_byte_len,
@@ -99,4 +112,172 @@ mod tests {
         assert!(lines.contains("stale: yes"));
         assert!(lines.contains("kind: truncated"));
     }
+
+    #[test]
+    fn structured_pretty_print_and_temporal_annotation() {
+        let json = ProjectedCell {
+            text: r#"{"a":1,"b":true}"#.into(),
+            distinction: CellDistinction::Structured,
+            byte_len: 15,
+            original_byte_len: None,
+        };
+        let insp = InspectorModel::from_cell("row.payload", &json, false);
+        assert!(insp.text.contains('\n') || insp.text.contains("  "));
+        assert!(insp.text.contains("\"a\""));
+
+        let temp = ProjectedCell {
+            text: "2024-01-15T12:30:00Z".into(),
+            distinction: CellDistinction::Temporal,
+            byte_len: 20,
+            original_byte_len: None,
+        };
+        let t = InspectorModel::from_cell("row.ts", &temp, false);
+        assert!(t.text.contains("date:"));
+        assert!(t.text.contains("2024-01-15"));
+    }
+
+    #[test]
+    fn pretty_structured_invalid_falls_back() {
+        assert_eq!(pretty_structured("not-json"), "not-json");
+    }
+}
+
+/// Indent JSON-like structured text for inspector readability (best-effort).
+fn pretty_structured(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if !(trimmed.starts_with('{') || trimmed.starts_with('[')) {
+        return raw.to_owned();
+    }
+    let mut out = String::with_capacity(raw.len() + 32);
+    let mut depth: i32 = 0;
+    let mut in_str = false;
+    let mut escape = false;
+    let bytes = trimmed.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_str {
+            out.push(b as char);
+            if escape {
+                escape = false;
+            } else if b == b'\\' {
+                escape = true;
+            } else if b == b'"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'"' => {
+                in_str = true;
+                out.push('"');
+            }
+            b'{' | b'[' => {
+                out.push(b as char);
+                depth += 1;
+                out.push('\n');
+                for _ in 0..depth {
+                    out.push_str("  ");
+                }
+            }
+            b'}' | b']' => {
+                depth = depth.saturating_sub(1);
+                out.push('\n');
+                for _ in 0..depth {
+                    out.push_str("  ");
+                }
+                out.push(b as char);
+            }
+            b',' => {
+                out.push(',');
+                out.push('\n');
+                for _ in 0..depth {
+                    out.push_str("  ");
+                }
+                // skip following space
+                if bytes.get(i + 1) == Some(&b' ') {
+                    i += 1;
+                }
+            }
+            b':' => {
+                out.push(':');
+                out.push(' ');
+                if bytes.get(i + 1) == Some(&b' ') {
+                    i += 1;
+                }
+            }
+            b' ' | b'\n' | b'\t' | b'\r' => {}
+            _ => out.push(b as char),
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Annotate ISO-like temporal values with component lines.
+fn annotate_temporal(raw: &str) -> String {
+    let t = raw.trim();
+    let mut lines = vec![t.to_owned()];
+    let (date, rest) = if let Some((d, r)) = t.split_once('T') {
+        (Some(d), Some(r))
+    } else if let Some((d, r)) = t.split_once(' ') {
+        (Some(d), Some(r))
+    } else if t.len() >= 10 && t.as_bytes().get(4) == Some(&b'-') {
+        (Some(&t[..10]), if t.len() > 10 { Some(&t[10..]) } else { None })
+    } else {
+        (None, Some(t))
+    };
+    if let Some(d) = date {
+        let parts: Vec<_> = d.split('-').collect();
+        if parts.len() == 3 {
+            lines.push(format!(
+                "date: {d} (y={} m={} d={})",
+                parts[0], parts[1], parts[2]
+            ));
+        } else {
+            lines.push(format!("date: {d}"));
+        }
+    }
+    if let Some(r) = rest {
+        let r = r.trim_start_matches(|c: char| c == 'T' || c == ' ');
+        if r.is_empty() {
+            return lines.join("\n");
+        }
+        let tz = if r.ends_with('Z') {
+            Some("UTC")
+        } else if let Some(pos) = r.char_indices().rev().find(|(_, c)| *c == '+' || *c == '-') {
+            // timezone offset starts at last + or - after time body
+            if pos.0 >= 8 {
+                Some(&r[pos.0..])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let body = if r.ends_with('Z') {
+            &r[..r.len() - 1]
+        } else if let Some(tz_s) = tz {
+            r.strip_suffix(tz_s).unwrap_or(r)
+        } else {
+            r
+        };
+        let (clock, frac) = body
+            .split_once('.')
+            .map(|(a, b)| (a, Some(b)))
+            .unwrap_or((body, None));
+        if !clock.is_empty() {
+            lines.push(format!("time: {clock}"));
+        }
+        if let Some(f) = frac {
+            if f.chars().all(|c| c.is_ascii_digit()) {
+                lines.push(format!("fraction: {f}"));
+            }
+        }
+        if let Some(tz_s) = tz {
+            lines.push(format!("tz: {tz_s}"));
+        }
+    }
+    lines.join("\n")
 }
