@@ -159,6 +159,8 @@ pub enum ActionId {
     ClearFilters,
     /// Paste/edit raw WHERE predicate for browse plan.
     EditRawWhere,
+    /// Clear raw WHERE only (keep typed filter chips) and re-browse.
+    ClearRawWhere,
     /// Edit page-local quick filter (no server I/O).
     EditQuickFilter,
     /// Clear page-local quick filter (no server I/O).

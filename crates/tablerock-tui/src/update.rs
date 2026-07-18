@@ -3666,6 +3666,23 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::ClearRawWhere if model.screen() == Screen::Workbench => {
+            let cleared = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| {
+                    if g.raw_where.as_ref().is_none_or(|s| s.is_empty()) {
+                        false
+                    } else {
+                        g.raw_where = None;
+                        true
+                    }
+                });
+            if !cleared {
+                return Update::unchanged();
+            }
+            rebrowse_active_table(model)
+        }
         ActionId::EditQuickFilter if model.screen() == Screen::Workbench => {
             if model.workbench().active_grid().is_none() {
                 return Update::unchanged();
@@ -4640,6 +4657,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ApplyFilter
         | ActionId::ClearFilters
         | ActionId::EditRawWhere
+        | ActionId::ClearRawWhere
         | ActionId::EditQuickFilter
         | ActionId::ClearQuickFilter
         | ActionId::GoToRow
@@ -6197,6 +6215,7 @@ fn cycle_action(
                 ActionId::ApplyFilter,
                 ActionId::ClearFilters,
                 ActionId::EditRawWhere,
+                ActionId::ClearRawWhere,
                 ActionId::EditQuickFilter,
                 ActionId::ClearQuickFilter,
                 ActionId::GoToRow,
@@ -7936,6 +7955,22 @@ mod tests {
         match cleared.effects().next() {
             Some(Effect::BrowseTable { raw_where, .. }) => assert!(raw_where.is_none()),
             other => panic!("expected clear raw_where, got {other:?}"),
+        }
+        // Set again then ClearRawWhere action.
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.raw_where = Some("x = 1".into());
+            grid.add_filter_chip("id", "gt", Some("0".into()));
+        }
+        model.set_action(ActionId::ClearRawWhere);
+        let clr = update(&mut model, Message::Activate);
+        match clr.effects().next() {
+            Some(Effect::BrowseTable {
+                raw_where, filters, ..
+            }) => {
+                assert!(raw_where.is_none());
+                assert_eq!(filters.len(), 1);
+            }
+            other => panic!("expected ClearRawWhere BrowseTable, got {other:?}"),
         }
     }
 
