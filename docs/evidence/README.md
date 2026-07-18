@@ -383,6 +383,7 @@ How to read an evidence document:
 - 506 — [Plan 020 live vertical-slice conformance](delivery/506-plan-020-live-vertical-conformance.md)
 - 507 — [Plan 020 native page-decode Instruments evidence](delivery/507-plan-020-native-page-decode-instruments.md)
 - 508 — [Plan 020 Liquid Glass structural audit](delivery/508-plan-020-liquid-glass-audit.md)
+- 509 — [Plan 020 page-decode retained-object proof](delivery/509-plan-020-page-decode-leak-proof.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

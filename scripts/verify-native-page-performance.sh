@@ -7,8 +7,13 @@ NATIVE="$REPO_ROOT/native"
 BUILD="$NATIVE/.build-direct"
 OUT_DIR="${1:-$(mktemp -d "$REPO_ROOT/target/native-page-performance.XXXXXX")}"
 CONTAINER="tablerock-pg-page-perf"
+BENCH_PID=""
 
 cleanup() {
+  if [[ -n "$BENCH_PID" ]] && kill -0 "$BENCH_PID" 2>/dev/null; then
+    kill "$BENCH_PID" 2>/dev/null || true
+    wait "$BENCH_PID" 2>/dev/null || true
+  fi
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -52,12 +57,24 @@ xcrun xctrace record --template 'Time Profiler' --time-limit 10s \
 xcrun xctrace export --input "$OUT_DIR/page-decode.trace" --toc \
   --output "$OUT_DIR/page-decode-toc.xml" >/dev/null
 
-/usr/bin/env "${environment[@]}" "$BUILD/BehaviorProof" \
-  >"$OUT_DIR/benchmark.log" 2>&1
+/usr/bin/env "${environment[@]}" TABLEROCK_BENCH_HOLD_SECONDS=30 \
+  "$BUILD/BehaviorProof" >"$OUT_DIR/benchmark.log" 2>&1 &
+BENCH_PID="$!"
+for _ in $(seq 1 150); do
+  rg -q '^PERF_PAGE_DECODE ' "$OUT_DIR/benchmark.log" && break
+  sleep 0.1
+done
+rg -q '^PERF_PAGE_DECODE ' "$OUT_DIR/benchmark.log"
+leaks "$BENCH_PID" >"$OUT_DIR/page-leaks.txt" 2>&1 || true
+kill "$BENCH_PID" 2>/dev/null || true
+wait "$BENCH_PID" 2>/dev/null || true
+BENCH_PID=""
 metric="$(rg '^PERF_PAGE_DECODE ' "$OUT_DIR/benchmark.log")"
+leak_summary="$(rg -m1 'leaks for .*total leaked bytes' "$OUT_DIR/page-leaks.txt" || true)"
 trace_bytes="$(du -sk "$OUT_DIR/page-decode.trace" | awk '{ print $1 * 1024 }')"
 {
   echo "$metric"
+  echo "PERF_LEAK_SCAN ${leak_summary:-unavailable}"
   echo "PERF_TRACE_BYTES $trace_bytes"
   xcrun xctrace version
   sw_vers

@@ -113,9 +113,13 @@ if let rawIterations = ProcessInfo.processInfo.environment["TABLEROCK_DECODE_BEN
     let seconds = Double(elapsed.components.seconds)
         + Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000
     let meanMicroseconds = seconds * 1_000_000 / Double(iterations)
-    print(
-        "PERF_PAGE_DECODE bytes=\(page.count) rows=\(table.rows.count) columns=\(table.columns.count) iterations=\(iterations) total_seconds=\(String(format: "%.6f", seconds)) mean_microseconds=\(String(format: "%.3f", meanMicroseconds))"
-    )
+    let metric = "PERF_PAGE_DECODE bytes=\(page.count) rows=\(table.rows.count) columns=\(table.columns.count) iterations=\(iterations) total_seconds=\(String(format: "%.6f", seconds)) mean_microseconds=\(String(format: "%.3f", meanMicroseconds))\n"
+    FileHandle.standardError.write(Data(metric.utf8))
+    if let rawHold = ProcessInfo.processInfo.environment["TABLEROCK_BENCH_HOLD_SECONDS"],
+       let holdSeconds = UInt64(rawHold), holdSeconds > 0
+    {
+        try await Task.sleep(for: .seconds(min(holdSeconds, 60)))
+    }
     exit(0)
 }
 

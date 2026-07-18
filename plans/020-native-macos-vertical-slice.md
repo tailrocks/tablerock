@@ -45,9 +45,9 @@
   Evidence 505 records bounded 10k-row AppKit scrolling and fixes unbounded
   pre-viewport column initialization. Evidence 506 closes the live
   query/catalog/cancel/review matrix and Swift ownership audit. Remaining
-  system-setting/VoiceOver and retained-object criteria stay open. Evidence
-  507 records real-page Swift decode under Time Profiler; evidence 508 closes
-  the Liquid Glass structural/degradation audit.
+  system-setting/VoiceOver criteria stay open. Evidence 507 records real-page
+  Swift decode under Time Profiler; evidence 508 closes the Liquid Glass
+  structural/degradation audit; evidence 509 proves zero decoder leaks.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
@@ -152,9 +152,8 @@ unchanged-green.
       accessibility degradation verified (evidence 414, 508)
 - [x] Strict-concurrency build clean; no `ObservableObject`, no GCD (evidence
       407–408; Swift 6 complete checking + warnings-as-errors)
-- [ ] Instruments: native 10k-grid scroll/RSS and real 500-row UniFFI page
-      decode latency recorded (evidence 505, 507); retained-object attribution
-      remains
+- [x] Instruments: native 10k-grid scroll/RSS, real 500-row UniFFI page decode
+      latency, and zero decoder leaks recorded (evidence 505, 507, 509)
 - [x] Conformance suite green through the app's bridge path (evidence 506)
 - [ ] Evidence + ROADMAP Phase 13 complete; `plans/README.md` updated
 
