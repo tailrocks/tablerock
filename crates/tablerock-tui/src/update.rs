@@ -3275,6 +3275,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::CopyCellHex if model.screen() == Screen::Workbench => {
             copy_cursor_cell(model, true)
         }
+        ActionId::CopyRow if model.screen() == Screen::Workbench => copy_cursor_row(model),
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -4041,6 +4042,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopySqlUpdate
         | ActionId::CopyCell
         | ActionId::CopyCellHex
+        | ActionId::CopyRow
         | ActionId::CycleSort
         | ActionId::AddFilter
         | ActionId::SaveFilter
@@ -5196,6 +5198,33 @@ fn copy_cursor_cell(model: &mut Model, hex: bool) -> Update {
     }
 }
 
+fn copy_cursor_row(model: &mut Model) -> Update {
+    use crate::model::copy_format::{CopyFormat, CopyScope, format_copy};
+    let Some(grid) = model.workbench().active_grid() else {
+        return Update::unchanged();
+    };
+    let text = match format_copy(grid, CopyScope::Row, CopyFormat::Tsv) {
+        Ok(t) => t,
+        Err(err) => {
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(err.to_string());
+            }
+            return Update::render();
+        }
+    };
+    if let Some(g) = model.workbench_mut().active_grid_mut() {
+        g.error_label = Some(format!("copied row ({} bytes)", text.len()));
+    }
+    let token = model.mint_request_token();
+    Update {
+        render: true,
+        effect: Some(Effect::CopyToClipboard {
+            request_token: token,
+            text,
+        }),
+    }
+}
+
 fn switch_workbench_database(model: &mut Model) -> Update {
     let Some(session) = model.session() else {
         return Update::unchanged();
@@ -5287,6 +5316,7 @@ fn cycle_action(
                 ActionId::CopyJson,
                 ActionId::CopyCell,
                 ActionId::CopyCellHex,
+                ActionId::CopyRow,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,

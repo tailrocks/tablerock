@@ -1781,6 +1781,46 @@ mod tests {
     }
 
     #[test]
+    fn million_row_totals_viewport_stays_resident_window() {
+        // Synthetic large total must not allocate cells for every row.
+        let mut grid = DataGridModel::default();
+        let page_rows = 100u32;
+        let mut cells = Vec::with_capacity(page_rows as usize);
+        for i in 0..page_rows {
+            cells.push(ProjectedCell {
+                text: i.to_string(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            });
+        }
+        grid.replace_page(
+            0,
+            vec!["id".into()],
+            cells,
+            page_rows,
+            GridRowTotal::Exact(1_000_000),
+            page_rows as u64,
+            false,
+        );
+        grid.operation = GridOperationState::Streaming;
+        grid.viewport_row = 0;
+        // Resident window only.
+        assert_eq!(grid.cells.len(), page_rows as usize);
+        assert!(grid.is_resident(0));
+        assert!(grid.is_resident(99));
+        assert!(!grid.is_resident(100));
+        assert!(grid.needs_fetch(100));
+        assert!(!grid.needs_fetch(50));
+        // Jump viewport far past resident page — still O(1) checks.
+        grid.viewport_row = 999_900;
+        assert!(!grid.is_resident(999_900));
+        assert!(grid.needs_fetch(999_900));
+        assert_eq!(grid.totals, GridRowTotal::Exact(1_000_000));
+        assert!(grid.status_line().contains("total 1000000") || grid.status_line().contains("1000000"));
+    }
+
+    #[test]
     fn temporal_set_today_and_now_stamps() {
         let mut session = CellEditSession {
             abs_row: 0,

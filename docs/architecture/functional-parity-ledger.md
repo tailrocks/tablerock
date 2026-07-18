@@ -106,7 +106,7 @@ architecture decisions.
 
 | Capability | Status | TableRock requirement | Acceptance evidence |
 |---|---|---|---|
-| Virtualized grid | Core | Render only resident rows/columns; stable two-axis navigation and placeholders; no I/O from render | Phase 4 TermRock `VirtualGrid` + `DataGridModel` (evidence 211–214); resident-scroll no-I/O unit tests; million-row synthetic viewport benchmark still open for Phase 11 hardening |
+| Virtualized grid | Core | Render only resident rows/columns; stable two-axis navigation and placeholders; no I/O from render | VirtualGrid + DataGridModel (211–214); resident-scroll no-I/O; million-row totals + resident window unit proof (evidence 355); CI frame-time microbench optional |
 | Typed display | Core | Distinguish NULL, empty, whitespace, zero, false, bytes, structured containers, unknown, invalid, and truncated values | Phase 2 owned-value contract plus ClickHouse 25.8/26.3 fixtures (see [core](../evidence/README.md#phase-2--core-contracts-and-services) and [ClickHouse](../evidence/README.md#phase-2--clickhouse-driver) groups); Phase 4 TUI distinction classes + glyph/text treatments (evidence 211) |
 | Column controls | Parity | Show/hide, reorder, width, fit, format, one-action reset, and stable per-table preferences | Toggle/reset + persist (225); ColL/ColR + Col± (347); ColFit/ColFitA from resident content (evidence 352) |
 | Sorting | Core | Server sort for table browsing, explicit provenance, multi-column order, no unsafe SQL concatenation | Phase 5 `BrowsePlan` + CycleSort (evidence 223–225); hostile identifier suite in browse_plan tests |

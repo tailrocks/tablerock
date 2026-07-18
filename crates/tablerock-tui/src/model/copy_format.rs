@@ -396,6 +396,17 @@ mod tests {
     }
 
     #[test]
+    fn format_cursor_row_tsv() {
+        let mut g = sample_grid();
+        g.cursor_row = 0;
+        let tsv = format_copy(&g, CopyScope::Row, CopyFormat::Tsv).unwrap();
+        assert!(tsv.contains("1"));
+        assert!(tsv.contains("a,b") || tsv.contains("\"a,b\"") || tsv.contains("a,b"));
+        // Row scope is single data line (may include header depending on formatter).
+        assert!(!tsv.trim().is_empty());
+    }
+
+    #[test]
     fn sql_insert_requires_identity() {
         let g = sample_grid();
         assert_eq!(

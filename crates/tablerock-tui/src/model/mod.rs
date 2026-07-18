@@ -108,6 +108,8 @@ pub enum ActionId {
     CopyCell,
     /// Copy cursor cell as hex of UTF-8 bytes.
     CopyCellHex,
+    /// Copy cursor row (visible columns) as TSV.
+    CopyRow,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Add an equality filter for the cursor column using the cursor cell text.
