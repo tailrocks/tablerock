@@ -289,6 +289,28 @@ pub enum EngineMsg {
         context_revision: u64,
         reason: FailureProjection,
     },
+    TableOpDone {
+        request_token: u64,
+        context_revision: u64,
+        op: String,
+        schema: String,
+        table: String,
+    },
+    TableOpFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
+    ActivitySnapshot {
+        request_token: u64,
+        context_revision: u64,
+        lines: Vec<String>,
+    },
+    ActivityFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

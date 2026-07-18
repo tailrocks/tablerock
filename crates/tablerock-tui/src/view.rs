@@ -138,6 +138,26 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             "Close tab?",
             format!("Close '{title}' with unsaved changes?"),
         ),
+        crate::model::ConfirmDialog::TruncateTable {
+            schema,
+            table,
+            confirm_buffer,
+        } => (
+            "Truncate table?",
+            format!(
+                "TRUNCATE {schema}.{table}. Paste table name '{table}' to confirm [{confirm_buffer}]"
+            ),
+        ),
+        crate::model::ConfirmDialog::DropTable {
+            schema,
+            table,
+            confirm_buffer,
+        } => (
+            "Drop table?",
+            format!(
+                "DROP TABLE {schema}.{table}. Paste table name '{table}' to confirm [{confirm_buffer}]"
+            ),
+        ),
     };
     let panel = Panel::new(&model.theme)
         .title(title)
@@ -279,6 +299,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let apply_mut = action_label(model, ActionId::ApplyMutations, "Apply");
     let follow_fk = action_label(model, ActionId::FollowForeignKey, "FollowFK");
     let structure = action_label(model, ActionId::ShowStructure, "Structure");
+    let truncate = action_label(model, ActionId::TruncateTable, "Truncate");
+    let drop_t = action_label(model, ActionId::DropTable, "Drop");
+    let activity = action_label(model, ActionId::ShowActivity, "Activity");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
@@ -466,6 +489,24 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ShowStructure,
                         label: structure.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::TruncateTable,
+                        label: truncate.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DropTable,
+                        label: drop_t.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ShowActivity,
+                        label: activity.as_str(),
                         enabled: true,
                         style: None,
                     },

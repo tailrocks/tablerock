@@ -92,6 +92,18 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Paste(text) if model.confirm().is_some() => {
+            if let Some(confirm) = model.confirm_mut() {
+                match confirm {
+                    ConfirmDialog::TruncateTable { confirm_buffer, .. }
+                    | ConfirmDialog::DropTable { confirm_buffer, .. } => {
+                        *confirm_buffer = text.text().to_owned();
+                    }
+                    _ => {}
+                }
+            }
+            Update::render()
+        }
         Message::Paste(text) if model.screen() == Screen::Editor => {
             apply_editor_text(model, text.text());
             Update::render()
@@ -841,6 +853,83 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::TableOpDone {
+            context_revision,
+            op,
+            schema,
+            table,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.error_label = Some(format!("{op} {schema}.{table} done"));
+            }
+            if op == "drop" {
+                // Table gone — clear base identity.
+                if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                    grid.base_table = None;
+                    grid.identity_columns.clear();
+                    grid.cells.clear();
+                    grid.row_count = 0;
+                }
+                return Update::render();
+            }
+            rebrowse_active_table(model)
+        }
+        Message::Engine(EngineMsg::TableOpFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::ActivitySnapshot {
+            context_revision,
+            lines,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: "pg_stat_activity".into(),
+                kind_label: "activity".into(),
+                text: lines.join("\n"),
+                hex: String::new(),
+                byte_len: lines.iter().map(|l| l.len() as u64).sum(),
+                original_byte_len: None,
+                stale: false,
+            };
+            Update::render()
+        }
+        Message::Engine(EngineMsg::ActivityFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::GridFailed {
             context_revision,
             reason,
@@ -1050,30 +1139,99 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let Some(confirm) = model.confirm().cloned() else {
                 return Update::unchanged();
             };
-            let token = model.mint_request_token();
-            model.set_profiles(ProfileListState::Loading {
-                request_token: token,
-            });
-            model.set_confirm(None);
             match confirm {
-                ConfirmDialog::RemoveProfile { id_hex, .. } => Update {
-                    render: true,
-                    effect: Some(Effect::DeleteProfile {
+                ConfirmDialog::RemoveProfile { id_hex, .. } => {
+                    let token = model.mint_request_token();
+                    model.set_profiles(ProfileListState::Loading {
                         request_token: token,
-                        profile_id_hex: id_hex,
-                    }),
-                },
-                ConfirmDialog::RemoveGroup { name } => Update {
-                    render: true,
-                    effect: Some(Effect::DeleteGroup {
+                    });
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::DeleteProfile {
+                            request_token: token,
+                            profile_id_hex: id_hex,
+                        }),
+                    }
+                }
+                ConfirmDialog::RemoveGroup { name } => {
+                    let token = model.mint_request_token();
+                    model.set_profiles(ProfileListState::Loading {
                         request_token: token,
-                        group_name: name,
-                    }),
-                },
+                    });
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::DeleteGroup {
+                            request_token: token,
+                            group_name: name,
+                        }),
+                    }
+                }
                 ConfirmDialog::CloseDirtyTab { index, .. } => {
+                    model.set_confirm(None);
                     model.workbench_mut().force_close_tab(index);
                     model.set_action(ActionId::Disconnect);
                     Update::render()
+                }
+                ConfirmDialog::TruncateTable {
+                    schema,
+                    table,
+                    confirm_buffer,
+                } => {
+                    // Fail closed: buffer must equal the table name exactly.
+                    if confirm_buffer != table {
+                        return Update::render();
+                    }
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let token = model.mint_request_token();
+                    let context_revision = model.workbench().context_revision;
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::ExecuteTableOp {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            op: "truncate".into(),
+                            schema,
+                            table,
+                        }),
+                    }
+                }
+                ConfirmDialog::DropTable {
+                    schema,
+                    table,
+                    confirm_buffer,
+                } => {
+                    if confirm_buffer != table {
+                        return Update::render();
+                    }
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let token = model.mint_request_token();
+                    let context_revision = model.workbench().context_revision;
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::ExecuteTableOp {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            op: "drop".into(),
+                            schema,
+                            table,
+                        }),
+                    }
                 }
             }
         }
@@ -1608,6 +1766,55 @@ fn activate_selected_action(model: &mut Model) -> Update {
             follow_foreign_key(model)
         }
         ActionId::ShowStructure if model.screen() == Screen::Workbench => show_structure(model),
+        ActionId::TruncateTable if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::TruncateTable {
+                schema,
+                table,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::DropTable if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::DropTable {
+                schema,
+                table,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::ShowActivity if model.screen() == Screen::Workbench => {
+            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            let context_revision = model.workbench().context_revision;
+            Update {
+                render: true,
+                effect: Some(Effect::LoadActivity {
+                    request_token: token,
+                    session_id_hex,
+                    context_revision,
+                }),
+            }
+        }
         ActionId::SaveColumns if model.screen() == Screen::Workbench => {
             let profile_id_hex = model.workbench().profile_id_hex.clone();
             let database = model.workbench().context.database.clone();
@@ -1685,6 +1892,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ApplyMutations
         | ActionId::FollowForeignKey
         | ActionId::ShowStructure
+        | ActionId::TruncateTable
+        | ActionId::DropTable
+        | ActionId::ShowActivity
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -2033,6 +2243,9 @@ fn cycle_action(
                 ActionId::ApplyMutations,
                 ActionId::FollowForeignKey,
                 ActionId::ShowStructure,
+                ActionId::TruncateTable,
+                ActionId::DropTable,
+                ActionId::ShowActivity,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,
@@ -2355,6 +2568,7 @@ fn maybe_bootstrap_profiles(model: &mut Model) -> Update {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PasteText;
     use crate::model::profiles::{FailureProjection, ProfileRowProjection};
 
     #[test]
@@ -3202,5 +3416,48 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn truncate_confirm_requires_exact_table_name() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "01".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+        }
+        // Drive the action match path directly via Actions focus.
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::TruncateTable);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::TruncateTable { table, .. }) if table == "users"
+        ));
+        // Wrong name: no effect.
+        model.set_action(ActionId::Submit);
+        let wrong = update(&mut model, Message::Activate);
+        assert!(wrong.effects().next().is_none());
+        assert!(model.confirm().is_some());
+        // Paste exact name then submit.
+        let _ = update(&mut model, Message::Paste(PasteText::bounded("users".into())));
+        model.set_action(ActionId::Submit);
+        let ok = update(&mut model, Message::Activate);
+        assert!(matches!(
+            ok.effects().next(),
+            Some(Effect::ExecuteTableOp {
+                op,
+                table,
+                ..
+            }) if op == "truncate" && table == "users"
+        ));
+        assert!(model.confirm().is_none());
     }
 }

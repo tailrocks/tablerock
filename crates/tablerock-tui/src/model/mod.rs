@@ -122,17 +122,35 @@ pub enum ActionId {
     FollowForeignKey,
     /// Load structure facts (columns/types) into the inspector.
     ShowStructure,
+    /// Request truncate of the active base table (gated confirm).
+    TruncateTable,
+    /// Request drop of the active base table (gated confirm).
+    DropTable,
+    /// Snapshot pg_stat_activity into the inspector.
+    ShowActivity,
     Submit,
     Cancel,
     Quit,
 }
 
-/// Pending destructive confirm (remove profile/group/tab).
+/// Pending destructive confirm (remove profile/group/tab / table ops).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmDialog {
     RemoveProfile { id_hex: String, name: String },
     RemoveGroup { name: String },
     CloseDirtyTab { title: String, index: usize },
+    /// Require exact table name re-type for truncate (fail closed).
+    TruncateTable {
+        schema: String,
+        table: String,
+        confirm_buffer: String,
+    },
+    /// Require exact table name re-type for drop (fail closed).
+    DropTable {
+        schema: String,
+        table: String,
+        confirm_buffer: String,
+    },
 }
 
 /// Ephemeral password prompt; Debug redacts buffer. Cleared after submit.
@@ -473,6 +491,10 @@ impl Model {
     }
 
     #[must_use]
+    pub fn confirm_mut(&mut self) -> Option<&mut ConfirmDialog> {
+        self.confirm.as_mut()
+    }
+
     pub const fn confirm(&self) -> Option<&ConfirmDialog> {
         self.confirm.as_ref()
     }

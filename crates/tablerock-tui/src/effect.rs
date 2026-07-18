@@ -198,6 +198,22 @@ pub enum Effect {
         schema: String,
         table: String,
     },
+    /// Destructive table op after confirm (typed plan only — no free SQL).
+    ExecuteTableOp {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// "truncate" | "drop"
+        op: String,
+        schema: String,
+        table: String,
+    },
+    /// Snapshot activity for the inspector (permission-aware cancel later).
+    LoadActivity {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+    },
     /// Run a single SQL statement (first page) into the active tab grid.
     ExecuteSql {
         request_token: RequestToken,

@@ -339,6 +339,44 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::ExecuteTableOp {
+                request_token,
+                session_id_hex,
+                context_revision,
+                op,
+                schema,
+                table,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = execute_table_op(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        op,
+                        schema,
+                        table,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::LoadActivity {
+                request_token,
+                session_id_hex,
+                context_revision,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        load_activity(sessions, request_token, session_id_hex, context_revision)
+                            .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::ExecuteSql {
                 request_token,
                 session_id_hex,
@@ -2244,6 +2282,239 @@ async fn load_relation_structure(
         schema,
         table,
         columns,
+    })
+}
+
+async fn execute_table_op(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    op: String,
+    schema: String,
+    table: String,
+) -> Message {
+    use tablerock_core::{
+        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
+    };
+    use tablerock_engine::{DriverPageRequest, quote_ident};
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    if session.engine() != CoreEngine::PostgreSql {
+        return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("table ops only for PostgreSQL".into()),
+        });
+    }
+    let (qs, qt) = match (quote_ident(&schema), quote_ident(&table)) {
+        (Ok(s), Ok(t)) => (s, t),
+        _ => {
+            return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid identifier".into()),
+            });
+        }
+    };
+    // Fixed op vocabulary only — never free-form operator SQL.
+    let sql = match op.as_str() {
+        "truncate" => format!("TRUNCATE TABLE {qs}.{qt}"),
+        "drop" => format!("DROP TABLE {qs}.{qt}"),
+        other => {
+            return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(format!("unknown table op: {other}")),
+            });
+        }
+    };
+    let statement = match StatementText::new(&sql) {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let limits = PageLimits::new(1, 1, 1024, 256);
+    let mut stream = match session
+        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+            statement,
+            parameters: Vec::new(),
+            limits,
+            max_cell_bytes: 256,
+        })
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let identity = PageIdentity::new(
+        ResultId::from_parts(IdParts::new(1, 9_004).unwrap()).unwrap(),
+        Revision::INITIAL,
+        CoreEngine::PostgreSql,
+    );
+    // Drain: DDL may return empty page or error.
+    match stream.next_page(identity, 0).await {
+        Ok(_) => Message::Engine(tablerock_tui::EngineMsg::TableOpDone {
+            request_token,
+            context_revision,
+            op,
+            schema,
+            table,
+        }),
+        Err(e) => Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(e.to_string()),
+        }),
+    }
+}
+
+async fn load_activity(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+) -> Message {
+    use tablerock_core::{
+        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
+    };
+    use tablerock_engine::DriverPageRequest;
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ActivityFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::ActivityFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    // Fixed query only; no cancel/terminate in this checkpoint (permission gates next).
+    let sql = "SELECT pid::text, \
+            usename::text, \
+            application_name::text, \
+            state::text, \
+            left(query, 80) \
+     FROM pg_catalog.pg_stat_activity \
+     WHERE backend_type = 'client backend' \
+     ORDER BY backend_start DESC NULLS LAST \
+     LIMIT 32";
+    let statement = match StatementText::new(sql) {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ActivityFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let limits = PageLimits::new(32, 8, 256 * 1024, 8 * 1024);
+    let mut stream = match session
+        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+            statement,
+            parameters: Vec::new(),
+            limits,
+            max_cell_bytes: 8 * 1024,
+        })
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ActivityFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let identity = PageIdentity::new(
+        ResultId::from_parts(IdParts::new(1, 9_005).unwrap()).unwrap(),
+        Revision::INITIAL,
+        CoreEngine::PostgreSql,
+    );
+    let page = match stream.next_page(identity, 0).await {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ActivitySnapshot {
+                request_token,
+                context_revision,
+                lines: vec!["(no client backends)".into()],
+            });
+        }
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ActivityFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let mut lines = Vec::new();
+    for row in 0..page.envelope().row_count() {
+        let mut parts = Vec::new();
+        for col in 0..page.envelope().column_count().min(5) {
+            let t = page
+                .cell(row, col)
+                .map(|c| {
+                    if c.is_null() {
+                        "∅".into()
+                    } else {
+                        String::from_utf8_lossy(c.bytes()).into_owned()
+                    }
+                })
+                .unwrap_or_default();
+            parts.push(t);
+        }
+        lines.push(parts.join(" · "));
+    }
+    Message::Engine(tablerock_tui::EngineMsg::ActivitySnapshot {
+        request_token,
+        context_revision,
+        lines,
     })
 }
 
