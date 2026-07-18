@@ -168,6 +168,28 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::DeleteProfile {
+                request_token,
+                profile_id_hex,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = delete_profile(persistence, request_token, profile_id_hex).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::DeleteGroup {
+                request_token,
+                group_name,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = delete_group(persistence, request_token, group_name).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
         }
     }
 }
@@ -301,6 +323,73 @@ fn mint_session_id() -> Result<SessionId, String> {
     let low = NEXT_SESSION_LOW.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     SessionId::from_parts(IdParts::new(1, low).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())
+}
+
+async fn delete_profile(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    profile_id_hex: String,
+) -> Message {
+    let joined = tokio::task::spawn_blocking(move || {
+        let profile_id = profile_id_hex
+            .parse::<ProfileId>()
+            .map_err(|_| "invalid profile id".to_owned())?;
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        let Some(aggregate) = actor
+            .get_profile(profile_id)
+            .map_err(|error| error.to_string())?
+        else {
+            return Err("profile not found".to_owned());
+        };
+        let revision = aggregate.connection().revision();
+        actor
+            .delete_profile(profile_id, revision)
+            .map_err(|error| error.to_string())
+    })
+    .await;
+    match joined {
+        Ok(Ok(())) => Message::Profiles(ProfilesMsg::Deleted { request_token }),
+        Ok(Err(label)) => Message::Profiles(ProfilesMsg::DeleteFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Profiles(ProfilesMsg::DeleteFailed {
+            request_token,
+            reason: FailureProjection::Label("task-failed".into()),
+        }),
+    }
+}
+
+async fn delete_group(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    group_name: String,
+) -> Message {
+    let joined = tokio::task::spawn_blocking(move || {
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .delete_group(&group_name)
+            .map_err(|error| error.to_string())
+            .map(|_| ())
+    })
+    .await;
+    match joined {
+        Ok(Ok(())) => Message::Profiles(ProfilesMsg::Deleted { request_token }),
+        Ok(Err(label)) => Message::Profiles(ProfilesMsg::DeleteFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Profiles(ProfilesMsg::DeleteFailed {
+            request_token,
+            reason: FailureProjection::Label("task-failed".into()),
+        }),
+    }
 }
 
 async fn connect_profile(

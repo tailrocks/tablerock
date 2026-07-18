@@ -48,9 +48,17 @@ pub enum ActionId {
     Test,
     Connect,
     Disconnect,
+    Remove,
     Submit,
     Cancel,
     Quit,
+}
+
+/// Pending destructive confirm (remove profile/group).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfirmDialog {
+    RemoveProfile { id_hex: String, name: String },
+    RemoveGroup { name: String },
 }
 
 /// Ephemeral password prompt; Debug redacts buffer. Cleared after submit.
@@ -149,6 +157,7 @@ pub struct Model {
     editor: ConnectionFormModel,
     session: Option<SessionFacts>,
     password_prompt: Option<PasswordPrompt>,
+    confirm: Option<ConfirmDialog>,
     bootstrapped: bool,
 }
 
@@ -171,6 +180,7 @@ impl Default for Model {
             editor: ConnectionFormModel::default(),
             session: None,
             password_prompt: None,
+            confirm: None,
             bootstrapped: false,
         }
     }
@@ -371,6 +381,15 @@ impl Model {
 
     pub(crate) fn password_prompt_mut(&mut self) -> Option<&mut PasswordPrompt> {
         self.password_prompt.as_mut()
+    }
+
+    #[must_use]
+    pub const fn confirm(&self) -> Option<&ConfirmDialog> {
+        self.confirm.as_ref()
+    }
+
+    pub(crate) fn set_confirm(&mut self, confirm: Option<ConfirmDialog>) {
+        self.confirm = confirm;
     }
 
     pub(crate) const fn set_bootstrapped(&mut self, value: bool) {

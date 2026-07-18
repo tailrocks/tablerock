@@ -50,7 +50,10 @@ async fn postgres_describe_server_returns_version_identity() {
     let described = session.describe_server().await.unwrap();
     assert_eq!(described.engine(), Engine::PostgreSql);
     assert!(
-        described.identity().to_ascii_lowercase().contains("postgres"),
+        described
+            .identity()
+            .to_ascii_lowercase()
+            .contains("postgres"),
         "{}",
         described.identity()
     );
@@ -59,7 +62,8 @@ async fn postgres_describe_server_returns_version_identity() {
 
 #[tokio::test]
 async fn clickhouse_describe_server_returns_version_identity() {
-    let image = "26.3.17.4-jammy@sha256:158dcce6f6fdc59309650aad6b79484abf4eed07d4e0bdba31d732e64b5a25fb";
+    let image =
+        "26.3.17.4-jammy@sha256:158dcce6f6fdc59309650aad6b79484abf4eed07d4e0bdba31d732e64b5a25fb";
     let container = GenericImage::new("clickhouse", image)
         .with_exposed_port(8123.tcp())
         .with_env_var("CLICKHOUSE_SKIP_USER_SETUP", "1")

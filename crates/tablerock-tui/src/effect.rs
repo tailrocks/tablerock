@@ -106,4 +106,14 @@ pub enum Effect {
         draft: ConnectionDraft,
         attempt: u32,
     },
+    /// Delete a saved profile (caller confirmed; active session check is UI-side).
+    DeleteProfile {
+        request_token: RequestToken,
+        profile_id_hex: String,
+    },
+    /// Delete a group name (members become ungrouped).
+    DeleteGroup {
+        request_token: RequestToken,
+        group_name: String,
+    },
 }

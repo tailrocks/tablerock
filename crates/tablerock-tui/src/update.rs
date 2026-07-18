@@ -5,7 +5,7 @@ use crate::{
     effect::ProfileListFilterSpec,
     message::{EngineMsg, ProfilesMsg},
     model::{
-        PasswordPrompt, SessionFacts,
+        ConfirmDialog, PasswordPrompt, SessionFacts,
         profiles::{FailureProjection, ProfileListState},
     },
 };
@@ -213,6 +213,41 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             });
             Update::render()
         }
+        Message::Profiles(ProfilesMsg::Deleted { request_token }) => {
+            if model.profiles().active_token() != Some(request_token) {
+                return Update::unchanged();
+            }
+            model.set_confirm(None);
+            let token = model.mint_request_token();
+            model.set_profiles(ProfileListState::Loading {
+                request_token: token,
+            });
+            Update {
+                render: true,
+                effect: Some(Effect::LoadProfileList {
+                    request_token: token,
+                    filter: ProfileListFilterSpec::default(),
+                }),
+            }
+        }
+        Message::Profiles(ProfilesMsg::DeleteFailed {
+            request_token,
+            reason,
+        }) => {
+            if model.profiles().active_token() != Some(request_token) {
+                return Update::unchanged();
+            }
+            model.set_confirm(None);
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            // Surface as list failure without dropping existing rows if possible.
+            model.set_profiles(ProfileListState::Failed {
+                request_token,
+                reason: FailureProjection::Label(label),
+            });
+            Update::render()
+        }
         Message::Engine(EngineMsg::HealthOk { .. } | EngineMsg::HealthFailed { .. }) => {
             Update::unchanged()
         }
@@ -334,7 +369,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 model.screen(),
                 model.selected_action(),
                 reverse,
-                model.password_prompt().is_some(),
+                model.password_prompt().is_some() || model.confirm().is_some(),
             ));
             Update::render()
         }
@@ -387,9 +422,54 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::Submit if model.confirm().is_some() => {
+            let Some(confirm) = model.confirm().cloned() else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            model.set_profiles(ProfileListState::Loading {
+                request_token: token,
+            });
+            model.set_confirm(None);
+            match confirm {
+                ConfirmDialog::RemoveProfile { id_hex, .. } => Update {
+                    render: true,
+                    effect: Some(Effect::DeleteProfile {
+                        request_token: token,
+                        profile_id_hex: id_hex,
+                    }),
+                },
+                ConfirmDialog::RemoveGroup { name } => Update {
+                    render: true,
+                    effect: Some(Effect::DeleteGroup {
+                        request_token: token,
+                        group_name: name,
+                    }),
+                },
+            }
+        }
         ActionId::Cancel if model.password_prompt().is_some() => {
             model.set_password_prompt(None);
             Update::render()
+        }
+        ActionId::Cancel if model.confirm().is_some() => {
+            model.set_confirm(None);
+            model.set_action(ActionId::Open);
+            Update::render()
+        }
+        ActionId::Remove if model.screen() == Screen::Connections => {
+            if let Some(row) = model.profiles().selected_row() {
+                if model.session().is_some() {
+                    // Active session present: still ask (spec: ask when active sessions).
+                }
+                model.set_confirm(Some(ConfirmDialog::RemoveProfile {
+                    id_hex: row.id_hex.clone(),
+                    name: row.name.clone(),
+                }));
+                model.set_action(ActionId::Submit);
+                return Update::render();
+            }
+            Update::unchanged()
         }
         ActionId::Open if model.screen() == Screen::Connections => {
             let Some(profile_id_hex) = model
@@ -492,6 +572,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::Test
         | ActionId::Connect
         | ActionId::Disconnect
+        | ActionId::Remove
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -503,7 +584,9 @@ fn cycle_action(
     reverse: bool,
     password_prompt: bool,
 ) -> ActionId {
-    let actions: &[ActionId] = if password_prompt {
+    // Confirm and password prompts share Submit/Cancel actions.
+    let modal = password_prompt; // caller passes password; confirm handled via selected actions
+    let actions: &[ActionId] = if modal || matches!(current, ActionId::Submit | ActionId::Cancel) {
         &[ActionId::Submit, ActionId::Cancel, ActionId::Quit]
     } else {
         match screen {
@@ -515,9 +598,12 @@ fn cycle_action(
                 ActionId::Quit,
             ],
             Screen::Workbench => &[ActionId::Disconnect, ActionId::Quit],
-            Screen::Connections | Screen::ConnectionPicker => {
-                &[ActionId::Open, ActionId::New, ActionId::Quit]
-            }
+            Screen::Connections | Screen::ConnectionPicker => &[
+                ActionId::Open,
+                ActionId::New,
+                ActionId::Remove,
+                ActionId::Quit,
+            ],
         }
     };
     let idx = actions.iter().position(|a| *a == current).unwrap_or(0);
@@ -747,6 +833,48 @@ mod tests {
             model.editor().test_status.as_deref(),
             Some("failed: connect")
         );
+    }
+
+    #[test]
+    fn remove_requires_confirm_then_emits_delete() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Connections);
+        model.set_profiles(ProfileListState::Loaded {
+            request_token: 1,
+            rows: vec![crate::model::profiles::ProfileRowProjection {
+                id_hex: "aa".into(),
+                name: "local".into(),
+                engine_label: "PostgreSQL".into(),
+                group: None,
+                favorite: false,
+                target_summary: "127.0.0.1:5432".into(),
+                environment: None,
+                production_warning: false,
+                safety_label: "Confirm writes".into(),
+                plaintext_secret_warning: false,
+                live_state: crate::model::profiles::LiveConnectionState::Disconnected,
+            }],
+            selected_id: Some("aa".into()),
+            search: String::new(),
+            collapsed: Vec::new(),
+        });
+        model.set_action(ActionId::Remove);
+        for _ in 0..4 {
+            let _ = update(&mut model, Message::FocusNext);
+        }
+        model.set_action(ActionId::Remove);
+        let ask = update(&mut model, Message::Activate);
+        assert!(ask.effects().next().is_none());
+        assert!(model.confirm().is_some());
+        model.set_action(ActionId::Submit);
+        let del = update(&mut model, Message::Activate);
+        assert!(matches!(
+            del.effects().next(),
+            Some(Effect::DeleteProfile {
+                profile_id_hex,
+                ..
+            }) if profile_id_hex == "aa"
+        ));
     }
 
     #[test]

@@ -111,8 +111,40 @@ impl ShellView {
         render_status(model, frame, rows[5], &mut geometry);
         if model.password_prompt().is_some() {
             render_password_prompt_overlay(model, frame, rows[2]);
+        } else if model.confirm().is_some() {
+            render_confirm_overlay(model, frame, rows[2]);
         }
         geometry
+    }
+}
+
+fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
+    use ratatui_core::widgets::Widget;
+    let Some(confirm) = model.confirm() else {
+        return;
+    };
+    let (title, body) = match confirm {
+        crate::model::ConfirmDialog::RemoveProfile { name, id_hex } => (
+            "Remove profile?",
+            format!("Remove '{name}' ({id_hex})? Active sessions must be reviewed."),
+        ),
+        crate::model::ConfirmDialog::RemoveGroup { name } => (
+            "Remove group?",
+            format!("Remove group '{name}'? Members become ungrouped."),
+        ),
+    };
+    let panel = Panel::new(&model.theme)
+        .title(title)
+        .emphasis(PanelEmphasis::Focused);
+    frame.render_widget(&panel, area);
+    if area.height > 2 && area.width > 2 {
+        let inner = Rect {
+            x: area.x.saturating_add(1),
+            y: area.y.saturating_add(1),
+            width: area.width.saturating_sub(2),
+            height: area.height.saturating_sub(2),
+        };
+        Line::from(body).render(inner, frame.buffer_mut());
     }
 }
 
@@ -223,45 +255,13 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let submit = action_label(model, ActionId::Submit, "Submit");
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
     let quit = action_label(model, ActionId::Quit, "Quit");
-    let actions: Vec<Action<'_, ActionId>> = if model.password_prompt().is_some() {
-        vec![
-            Action {
-                id: ActionId::Submit,
-                label: submit.as_str(),
-                enabled: true,
-                style: None,
-            },
-            Action {
-                id: ActionId::Cancel,
-                label: cancel.as_str(),
-                enabled: true,
-                style: None,
-            },
-            Action {
-                id: ActionId::Quit,
-                label: quit.as_str(),
-                enabled: true,
-                style: None,
-            },
-        ]
-    } else {
-        match model.screen() {
-            crate::Screen::Editor => vec![
+    let remove = action_label(model, ActionId::Remove, "Remove");
+    let actions: Vec<Action<'_, ActionId>> =
+        if model.password_prompt().is_some() || model.confirm().is_some() {
+            vec![
                 Action {
-                    id: ActionId::Save,
-                    label: save.as_str(),
-                    enabled: true,
-                    style: None,
-                },
-                Action {
-                    id: ActionId::Test,
-                    label: test.as_str(),
-                    enabled: true,
-                    style: None,
-                },
-                Action {
-                    id: ActionId::Connect,
-                    label: connect.as_str(),
+                    id: ActionId::Submit,
+                    label: submit.as_str(),
                     enabled: true,
                     style: None,
                 },
@@ -277,43 +277,83 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     enabled: true,
                     style: None,
                 },
-            ],
-            crate::Screen::Workbench => vec![
-                Action {
-                    id: ActionId::Disconnect,
-                    label: disconnect.as_str(),
-                    enabled: true,
-                    style: None,
-                },
-                Action {
-                    id: ActionId::Quit,
-                    label: quit.as_str(),
-                    enabled: true,
-                    style: None,
-                },
-            ],
-            _ => vec![
-                Action {
-                    id: ActionId::Open,
-                    label: open.as_str(),
-                    enabled: true,
-                    style: None,
-                },
-                Action {
-                    id: ActionId::New,
-                    label: new.as_str(),
-                    enabled: true,
-                    style: None,
-                },
-                Action {
-                    id: ActionId::Quit,
-                    label: quit.as_str(),
-                    enabled: true,
-                    style: None,
-                },
-            ],
-        }
-    };
+            ]
+        } else {
+            match model.screen() {
+                crate::Screen::Editor => vec![
+                    Action {
+                        id: ActionId::Save,
+                        label: save.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Test,
+                        label: test.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Connect,
+                        label: connect.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Cancel,
+                        label: cancel.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Quit,
+                        label: quit.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                ],
+                crate::Screen::Workbench => vec![
+                    Action {
+                        id: ActionId::Disconnect,
+                        label: disconnect.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Quit,
+                        label: quit.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                ],
+                _ => vec![
+                    Action {
+                        id: ActionId::Open,
+                        label: open.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::New,
+                        label: new.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Remove,
+                        label: remove.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Quit,
+                        label: quit.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                ],
+            }
+        };
     let mut state = ActionBarState {
         focused: (model.focus() == Some(FocusRegion::Actions)).then_some(model.selected_action()),
         regions: Vec::new(),
