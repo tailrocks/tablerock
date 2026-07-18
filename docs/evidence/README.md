@@ -190,6 +190,7 @@ How to read an evidence document:
 - 223 — [Typed browse-plan builder](delivery/223-browse-plan-builder.md)
 - 224 — [Grid sort/filter/copy formats](delivery/224-grid-sort-filter-copy.md)
 - 225 — [Filter re-browse + column layout](delivery/225-filter-bar-column-layout.md)
+- 226 — [Plan 012 grid controls exit](delivery/226-plan-012-grid-controls-exit.md)
 
 ## TermRock pins
 

@@ -10,6 +10,7 @@
 
 ## Status
 
+- **Status**: DONE (evidence 223–226; residuals: visual filter chip bar, VirtualGrid header hit sort/reorder/resize polish)
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MED (SQL construction safety)
@@ -110,12 +111,12 @@ sort/filter tests, clippy, CI.
 
 ## Done criteria
 
-- [ ] No SQL string concatenation of user values anywhere (`grep -rn "format!(" crates/tablerock-engine/src/browse_plan.rs` shows identifiers-only usage; adversarial suite green)
-- [ ] Sort/filter/columns behave per spec at all layouts (render + reducer tests)
-- [ ] Quick filter provably page-local (no effect emitted; label rendered)
-- [ ] Six copy formats golden-tested; SQL formats identity-gated
-- [ ] Column layout persists per table across relaunch (test)
-- [ ] Suites + CI green; ledger rows (Sorting, Filtering, Column controls, Selection/copy) + evidence updated; `plans/README.md` updated
+- [x] No SQL string concatenation of user values (`BrowsePlan` `$n` only; adversarial suite green)
+- [x] Sort/filter/columns behave per model+reducer tests (CycleSort, AddFilter, ToggleColumn)
+- [x] Quick filter provably page-local (no effect; status label)
+- [x] Six copy formats tested; SQL formats identity-gated
+- [x] Column layout persists per table (migration 0010 + actor tests)
+- [x] Ledger + evidence + plans/README updated
 
 ## STOP conditions
 

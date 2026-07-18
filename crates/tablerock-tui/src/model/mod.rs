@@ -88,6 +88,10 @@ pub enum ActionId {
     CopyCsv,
     /// Copy loaded result as TSV.
     CopyTsv,
+    CopyJson,
+    CopyMarkdown,
+    CopySqlInsert,
+    CopySqlUpdate,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Add an equality filter for the cursor column using the cursor cell text.

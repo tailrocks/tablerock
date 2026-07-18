@@ -139,12 +139,13 @@ vs outcome are proven on trunk.
 
 ## Phase 5 — workbench foundation
 
-**Status: partial.** Plan 011 core on trunk (evidence 217–222): TermRock
+**Status: partial.** Plans 011–012 on trunk (evidence 217–226): TermRock
 `TextArea`/`CompletionMenu`, multiline SQL editor, dialect statement
-boundaries, revisioned completion, history retention modes, saved queries,
-atomic `.sql` files, intent-only session restore. Still open for full Phase 5
-exit (plan 012+): parameters, find/replace, formatting, explain, server
-sort/filter/columns, copy formats, Redis command editor mirror.
+boundaries, revisioned completion, history, saved queries, atomic `.sql`,
+intent restore, typed browse-plan sort/filter, column layout persistence,
+six copy formats + OSC 52. Still open for full Phase 5 exit: parameters,
+find/replace, formatting, explain, VirtualGrid header geometry polish,
+Redis command editor mirror.
 
 ## Phase 6 — PostgreSQL write/admin slice
 

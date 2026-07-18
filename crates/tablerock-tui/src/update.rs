@@ -1267,6 +1267,18 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::CopyTsv if model.screen() == Screen::Workbench => {
             copy_grid(model, crate::model::copy_format::CopyFormat::Tsv)
         }
+        ActionId::CopyJson if model.screen() == Screen::Workbench => {
+            copy_grid(model, crate::model::copy_format::CopyFormat::Json)
+        }
+        ActionId::CopyMarkdown if model.screen() == Screen::Workbench => {
+            copy_grid(model, crate::model::copy_format::CopyFormat::Markdown)
+        }
+        ActionId::CopySqlInsert if model.screen() == Screen::Workbench => {
+            copy_grid(model, crate::model::copy_format::CopyFormat::SqlInsert)
+        }
+        ActionId::CopySqlUpdate if model.screen() == Screen::Workbench => {
+            copy_grid(model, crate::model::copy_format::CopyFormat::SqlUpdate)
+        }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -1390,6 +1402,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::SaveIntent
         | ActionId::CopyCsv
         | ActionId::CopyTsv
+        | ActionId::CopyJson
+        | ActionId::CopyMarkdown
+        | ActionId::CopySqlInsert
+        | ActionId::CopySqlUpdate
         | ActionId::CycleSort
         | ActionId::AddFilter
         | ActionId::ClearFilters
@@ -1580,6 +1596,10 @@ fn cycle_action(
                 ActionId::SaveIntent,
                 ActionId::CopyCsv,
                 ActionId::CopyTsv,
+                ActionId::CopyJson,
+                ActionId::CopyMarkdown,
+                ActionId::CopySqlInsert,
+                ActionId::CopySqlUpdate,
                 ActionId::CycleSort,
                 ActionId::AddFilter,
                 ActionId::ClearFilters,
