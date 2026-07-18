@@ -14,6 +14,7 @@
 
 ## Status
 
+- **Status**: DONE (TermRock `5ab74a2`, TableRock pin evidence 203)
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED (cross-repo, API design longevity)

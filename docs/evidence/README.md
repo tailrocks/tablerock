@@ -169,6 +169,10 @@ How to read an evidence document:
 - 201 — [Connect session registration and stub workbench](delivery/201-connect-session-workbench.md)
 - 202 — [Connection list selection, search, and Open profile](delivery/202-list-selection-connect-profile.md)
 
+## TermRock pins
+
+- 203 — [TermRock T2 VirtualGrid adoption pin](termrock/203-termrock-virtualgrid-t2.md)
+
 ## TermRock migrations and updates
 
 - 49 — [TermRock 0.8 canonical API migration evidence](termrock/49-termrock-0.8-migration.md)

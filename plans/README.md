@@ -24,7 +24,7 @@ plan).
 | 005 | TUI effect executor + engine bridge + submodel architecture | P1 | L | 002, 004 | DONE |
 | 006 | Connection experience screens (Phase 3 exit) | P1 | L | 002, 004, 005 | IN PROGRESS |
 | 007 | Workbench shell + session/context lifecycle | P1 | M | 003, 006 | TODO |
-| 008 | TermRock T2: `VirtualGrid` (upstream) | P1 | M | — (parallel) | TODO |
+| 008 | TermRock T2: `VirtualGrid` (upstream) | P1 | M | — (parallel) | DONE |
 | 009 | PostgreSQL read-only vertical slice (Phase 4 exit) | P1 | L | 002, 003, 007, 008 | TODO |
 | 010 | TermRock T3: `TextArea` audit + `CompletionMenu` (upstream) | P1 | M | 008 (workflow precedent) | TODO |
 | 011 | SQL editor workbench: parser, completion, history, files (Phase 5 core) | P1 | L | 009, 010 | TODO |
