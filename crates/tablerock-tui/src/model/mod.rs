@@ -142,6 +142,10 @@ pub enum ActionId {
     FilterIsNull,
     /// Add IS NOT NULL filter for the cursor column.
     FilterIsNotNull,
+    /// Add equality filter for empty string (column = '').
+    FilterEmpty,
+    /// Add inequality filter for empty string (column <> '').
+    FilterNotEmpty,
     /// Remove the last server filter chip and re-browse.
     RemoveLastFilter,
     /// Remove all server filters for the cursor column and re-browse.

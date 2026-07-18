@@ -3657,6 +3657,32 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::FilterEmpty if model.screen() == Screen::Workbench => {
+            let Some(col) = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.columns.get(g.cursor_col).cloned())
+            else {
+                return Update::unchanged();
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.add_filter_chip(col, "eq", Some(String::new()));
+            }
+            rebrowse_active_table(model)
+        }
+        ActionId::FilterNotEmpty if model.screen() == Screen::Workbench => {
+            let Some(col) = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.columns.get(g.cursor_col).cloned())
+            else {
+                return Update::unchanged();
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.add_filter_chip(col, "ne", Some(String::new()));
+            }
+            rebrowse_active_table(model)
+        }
         ActionId::RemoveLastFilter if model.screen() == Screen::Workbench => {
             let removed = model
                 .workbench_mut()
@@ -4841,6 +4867,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::AddFilter
         | ActionId::FilterIsNull
         | ActionId::FilterIsNotNull
+        | ActionId::FilterEmpty
+        | ActionId::FilterNotEmpty
         | ActionId::RemoveLastFilter
         | ActionId::RemoveColumnFilters
         | ActionId::FilterLike
@@ -6473,6 +6501,8 @@ fn cycle_action(
                 ActionId::AddFilter,
                 ActionId::FilterIsNull,
                 ActionId::FilterIsNotNull,
+                ActionId::FilterEmpty,
+                ActionId::FilterNotEmpty,
                 ActionId::RemoveLastFilter,
                 ActionId::RemoveColumnFilters,
                 ActionId::FilterLike,
@@ -8523,6 +8553,18 @@ mod tests {
             }
             other => panic!("expected isnotnull, got {other:?}"),
         }
+        model.set_action(ActionId::FilterEmpty);
+        let empty = update(&mut model, Message::Activate);
+        match empty.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters.len(), 3);
+                assert_eq!(filters[2].1, "eq");
+                assert_eq!(filters[2].2.as_deref(), Some(""));
+            }
+            other => panic!("expected empty eq, got {other:?}"),
+        }
+        model.set_action(ActionId::RemoveLastFilter);
+        let _ = update(&mut model, Message::Activate);
         model.set_action(ActionId::RemoveLastFilter);
         let popped = update(&mut model, Message::Activate);
         match popped.effects().next() {
