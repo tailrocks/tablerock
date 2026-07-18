@@ -148,7 +148,7 @@ public enum PageV1 {
 public struct PageV1Table: Sendable, Equatable {
     public let columns: [String]
     /// One display string per cell. `∅` for NULL; `<kind N>` for non-text kinds.
-    public let rows: [[String]]
+    public var rows: [[String]]
 }
 
 extension PageV1 {

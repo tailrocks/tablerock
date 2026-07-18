@@ -37,6 +37,10 @@ final class BridgeModel: ObservableObject {
     @Published var catalogSummary: String?
     @Published var catalogError: String?
     @Published var catalogTable: PageV1Table?
+    // Pagination state for the current result (fetch_page).
+    var resultIdData: Data?
+    var resultRevision: UInt64 = 0
+    var nextStartRow: UInt64?
     @Published var queryText: String = "SELECT 1;"
     @Published var reviewOutcome: String?
     @Published var reviewError: String?
@@ -162,6 +166,10 @@ final class BridgeModel: ObservableObject {
             if batch.events.isEmpty { break }
             for event in batch.events {
                 if event.kind == "page", let page = event.pageBytes {
+                    let env = try PageV1.decodeEnvelope(page)
+                    resultIdData = env.resultId
+                    resultRevision = env.revision
+                    nextStartRow = env.startRow + UInt64(env.rowCount)
                     return try PageV1.decodeTable(page)
                 }
                 if event.kind == "terminal" { return nil }
@@ -169,6 +177,31 @@ final class BridgeModel: ObservableObject {
             cursor = batch.nextCursor
         }
         return nil
+    }
+
+    /// Fetch the next page of the current result and append its rows.
+    func loadMore() {
+        guard let bridge, let resultId = resultIdData, let start = nextStartRow else { return }
+        do {
+            let pageBytes = try bridge.fetchPage(
+                resultId: resultId, startRow: start, revision: resultRevision
+            )
+            let env = try PageV1.decodeEnvelope(pageBytes)
+            let more = try PageV1.decodeTable(pageBytes)
+            if more.rows.isEmpty {
+                nextStartRow = nil
+                return
+            }
+            if var table = catalogTable {
+                table.rows.append(contentsOf: more.rows)
+                catalogTable = table
+                catalogSummary =
+                    "result · \(table.columns.count) columns · \(table.rows.count) rows loaded"
+            }
+            nextStartRow = env.startRow + UInt64(env.rowCount)
+        } catch {
+            catalogError = "Load more failed: \(error)"
+        }
     }
 
     func browse() {
@@ -329,6 +362,9 @@ struct ContentView: View {
                 }
                 if let table = model.catalogTable {
                     CatalogGrid(table: table)
+                    if model.nextStartRow != nil {
+                        Button("Load more rows") { model.loadMore() }
+                    }
                 }
                 if let connectError = model.connectError {
                     Text(connectError)
