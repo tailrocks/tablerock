@@ -3683,6 +3683,33 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::CopyFilterBar if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let mut parts = Vec::new();
+            if let Some(s) = grid.sort_chip_bar() {
+                parts.push(s);
+            }
+            if let Some(f) = grid.filter_chip_bar() {
+                parts.push(f);
+            }
+            if parts.is_empty() {
+                return Update::unchanged();
+            }
+            let text = parts.join("\n");
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied filter bar ({} bytes)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::EditQuickFilter if model.screen() == Screen::Workbench => {
             if model.workbench().active_grid().is_none() {
                 return Update::unchanged();
@@ -4658,6 +4685,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ClearFilters
         | ActionId::EditRawWhere
         | ActionId::ClearRawWhere
+        | ActionId::CopyFilterBar
         | ActionId::EditQuickFilter
         | ActionId::ClearQuickFilter
         | ActionId::GoToRow
@@ -6216,6 +6244,7 @@ fn cycle_action(
                 ActionId::ClearFilters,
                 ActionId::EditRawWhere,
                 ActionId::ClearRawWhere,
+                ActionId::CopyFilterBar,
                 ActionId::EditQuickFilter,
                 ActionId::ClearQuickFilter,
                 ActionId::GoToRow,
