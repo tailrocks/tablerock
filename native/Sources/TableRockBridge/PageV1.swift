@@ -242,7 +242,11 @@ extension PageV1 {
                 case 1: row.append(slice.first.map { $0 != 0 ? "true" : "false" } ?? "false")
                 case 2: row.append(formatSigned(slice))
                 case 3: row.append(formatUnsigned(slice))
-                case 7: row.append(String(data: slice, encoding: .utf8) ?? "<text>")
+                // Decimal(5), Temporal(6), Text(7), Structured(8) are all stored
+                // as their UTF-8 text representation in the arena (page.rs
+                // append_value: BoundedText::as_bytes).
+                case 5, 6, 7, 8:
+                    row.append(String(data: slice, encoding: .utf8) ?? "<text>")
                 default: row.append("<kind \(kinds[i])>")
                 }
             }
