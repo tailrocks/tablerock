@@ -1821,6 +1821,69 @@ impl DataGridModel {
         self.viewport_col = col;
     }
 
+    /// Whether `name` is currently visible in the column layout.
+    #[must_use]
+    pub fn is_column_visible(&self, name: &str) -> bool {
+        if self.column_layout.is_empty() {
+            return true;
+        }
+        self.column_layout
+            .iter()
+            .find(|c| c.name == name)
+            .map(|c| c.visible)
+            .unwrap_or(true)
+    }
+
+    /// Step cursor to the next/previous **visible** column (layout order).
+    ///
+    /// `dir < 0` previous, `dir > 0` next. Skips hidden columns. Returns false
+    /// when already at the edge of the visible set.
+    pub fn step_cursor_visible_column(&mut self, dir: i8) -> bool {
+        if dir == 0 || self.columns.is_empty() {
+            return false;
+        }
+        let visible = self.visible_columns();
+        if visible.is_empty() {
+            return false;
+        }
+        let current_name = self
+            .columns
+            .get(self.cursor_col.min(self.columns.len().saturating_sub(1)))
+            .cloned()
+            .unwrap_or_default();
+        let cur_vis = visible.iter().position(|n| n == &current_name);
+        let target_vis = match cur_vis {
+            Some(i) if dir < 0 => i.checked_sub(1),
+            Some(i) if dir > 0 => {
+                let n = i.saturating_add(1);
+                if n < visible.len() {
+                    Some(n)
+                } else {
+                    None
+                }
+            }
+            // Cursor is on a hidden column: snap to nearest visible.
+            None if dir < 0 => Some(visible.len().saturating_sub(1)),
+            None => Some(0),
+            _ => None,
+        };
+        let Some(tv) = target_vis else {
+            return false;
+        };
+        let Some(name) = visible.get(tv) else {
+            return false;
+        };
+        let Some(phys) = self.columns.iter().position(|c| c == name) else {
+            return false;
+        };
+        if phys == self.cursor_col {
+            return false;
+        }
+        self.cursor_col = phys;
+        self.reveal_cursor_column();
+        true
+    }
+
     /// Jump cursor to the first identity (pk) column in physical order.
     ///
     /// Returns false when identity is unknown or no identity column is present.
@@ -2611,6 +2674,33 @@ mod tests {
         assert!(g.go_to_last_identity_column());
         assert_eq!(g.cursor_col, 2); // id last in identity list
         assert!(!g.go_to_last_identity_column());
+    }
+
+    #[test]
+    fn step_cursor_visible_column_skips_hidden() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into(), "age".into(), "note".into()];
+        g.cursor_col = 0;
+        assert!(g.solo_cursor_column()); // only id
+        // No other visible → cannot step right.
+        assert!(!g.step_cursor_visible_column(1));
+        assert!(g.show_all_columns());
+        // Hide name (middle).
+        g.ensure_column_layout();
+        if let Some(e) = g.column_layout.iter_mut().find(|c| c.name == "name") {
+            e.visible = false;
+        }
+        g.cursor_col = 0; // id
+        assert!(g.step_cursor_visible_column(1));
+        assert_eq!(g.cursor_col, 2); // age, skipped name
+        assert!(g.step_cursor_visible_column(1));
+        assert_eq!(g.cursor_col, 3); // note
+        assert!(!g.step_cursor_visible_column(1));
+        assert!(g.step_cursor_visible_column(-1));
+        assert_eq!(g.cursor_col, 2); // age
+        assert!(g.step_cursor_visible_column(-1));
+        assert_eq!(g.cursor_col, 0); // id
+        assert!(!g.step_cursor_visible_column(-1));
     }
 
     #[test]

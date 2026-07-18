@@ -7730,14 +7730,17 @@ fn scroll_grid(model: &mut Model, direction: ScrollDirection) -> Update {
                 grid.cursor_row = grid.cursor_row.saturating_sub(1);
             }
             ScrollDirection::Left => {
-                grid.viewport_col = grid.viewport_col.saturating_sub(1);
-                grid.cursor_col = grid.cursor_col.saturating_sub(1);
-                return Update::render();
+                // Steps the visible layout set (skips hidden after Solo/ColHideE).
+                if grid.step_cursor_visible_column(-1) {
+                    return Update::render();
+                }
+                return Update::unchanged();
             }
             ScrollDirection::Right => {
-                grid.viewport_col = grid.viewport_col.saturating_add(1);
-                grid.cursor_col = grid.cursor_col.saturating_add(1);
-                return Update::render();
+                if grid.step_cursor_visible_column(1) {
+                    return Update::render();
+                }
+                return Update::unchanged();
             }
         }
         let target = grid.viewport_row.max(grid.cursor_row);
