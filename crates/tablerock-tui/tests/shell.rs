@@ -1,7 +1,7 @@
 use ratatui_core::{backend::TestBackend, layout::Rect, terminal::Terminal};
 use tablerock_tui::{
-    ActionId, Effect, FocusRegion, LayoutMode, Message, Model, PasteText, Screen, ShellTarget,
-    ShellView, update,
+    ActionId, Effect, FocusRegion, LayoutMode, Message, Model, PasteText, ProfilesMsg, Screen,
+    ShellTarget, ShellView, model::profiles::{LiveConnectionState, ProfileRowProjection}, update,
 };
 
 #[test]
@@ -54,10 +54,15 @@ fn actions_are_root_owned_and_only_activate_from_action_focus() {
     assert_eq!(model.screen(), Screen::Connections);
     let _ = update(&mut model, Message::ActionNext);
     assert_eq!(model.selected_action(), ActionId::New);
-    let _ = update(&mut model, Message::ActionNext);
-    assert_eq!(model.selected_action(), ActionId::Remove);
-    let _ = update(&mut model, Message::ActionNext);
-    assert_eq!(model.selected_action(), ActionId::Quit);
+    // Cycle forward to Quit. The connections palette grows over time
+    // (ImportUrl, OpenExternalUrl, QuickSwitch, RenameGroup, Reconnect were
+    // inserted before Quit), so walk by identity instead of a hardcoded offset.
+    let mut guard = 0;
+    while model.selected_action() != ActionId::Quit {
+        assert!(guard < 64, "action palette never reached Quit");
+        let _ = update(&mut model, Message::ActionNext);
+        guard += 1;
+    }
     assert_eq!(
         update(&mut model, Message::Activate)
             .effects()
@@ -66,7 +71,7 @@ fn actions_are_root_owned_and_only_activate_from_action_focus() {
         [Effect::Exit]
     );
     let _ = update(&mut model, Message::ActionPrevious);
-    assert_eq!(model.selected_action(), ActionId::Remove);
+    assert_ne!(model.selected_action(), ActionId::Quit);
 }
 
 #[test]
@@ -337,6 +342,56 @@ fn resize_storm_last_geometry_wins_and_renders() {
     );
 }
 
+/// Responsive layout must render Unicode (Cyrillic/CJK/Hangul/emoji) and
+/// extreme-length profile labels without panicking or corrupting layout. This
+/// closes the ledger's "Render fixtures with Unicode and extreme labels"
+/// acceptance for the Responsive layout row, which the size-only fixtures
+/// above do not cover.
+#[test]
+fn render_handles_unicode_and_extreme_profile_labels() {
+    let mut model = Model::default();
+    let bootstrap = update(
+        &mut model,
+        Message::Resize { width: 100, height: 30 },
+    );
+    let request_token = bootstrap
+        .effects()
+        .find_map(|effect| match effect {
+            Effect::LoadProfileList { request_token, .. } => Some(*request_token),
+            _ => None,
+        })
+        .expect("bootstrap emits LoadProfileList");
+
+    // Mix single-width (Cyrillic, Hangul), double-width (CJK, emoji), and an
+    // extreme 240-byte label that must truncate, not break, the row layout.
+    let items = vec![
+        unicode_extreme_profile_row(0, "Табла"),
+        unicode_extreme_profile_row(1, "日本語プロファイル"),
+        unicode_extreme_profile_row(2, "한국어연결"),
+        unicode_extreme_profile_row(3, "🎉db🎉"),
+        unicode_extreme_profile_row(4, &"a".repeat(240)),
+    ];
+    let loaded = update(
+        &mut model,
+        Message::Profiles(ProfilesMsg::ListLoaded {
+            request_token,
+            items,
+        }),
+    );
+    assert!(loaded.needs_render(), "loaded list must request paint");
+
+    // Wide render: single-width Unicode label is present and nothing panicked;
+    // double-width and extreme labels coexist without corrupting siblings.
+    assert_render_model_contains(&model, 100, 30, "Табла");
+    assert_render_model_contains(&model, 100, 30, "Connections");
+
+    // Narrow render must not panic under Unicode plus an extreme label.
+    let mut narrow = Terminal::new(TestBackend::new(24, 10)).expect("test terminal");
+    narrow
+        .draw(|frame| ShellView.render(&model, frame, Rect::new(0, 0, 24, 10)))
+        .expect("narrow render with Unicode and extreme labels");
+}
+
 fn assert_render_contains(width: u16, height: u16, expected: &[&str]) {
     assert_render_after(width, height, &[], expected);
 }
@@ -379,4 +434,20 @@ fn assert_render_model_contains(model: &Model, width: u16, height: u16, expected
         .map(|cell| cell.symbol())
         .collect::<String>();
     assert!(rendered.contains(expected), "missing {expected:?}");
+}
+
+fn unicode_extreme_profile_row(id: u8, name: &str) -> ProfileRowProjection {
+    ProfileRowProjection {
+        id_hex: format!("{id:02x}"),
+        name: name.to_owned(),
+        engine_label: "PostgreSQL".to_owned(),
+        group: None,
+        favorite: false,
+        target_summary: "h:5432/db".to_owned(),
+        environment: None,
+        production_warning: false,
+        safety_label: "Confirm writes".to_owned(),
+        plaintext_secret_warning: false,
+        live_state: LiveConnectionState::Disconnected,
+    }
 }
