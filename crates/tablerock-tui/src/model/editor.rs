@@ -166,17 +166,23 @@ impl ConnectionFormModel {
         }
     }
 
-    /// Parse editor startup SQL lines into a ReadOnly `StartupActionSet`.
+    /// Parse editor startup SQL lines into a `StartupActionSet`.
+    ///
+    /// Line prefixes (case-insensitive, space after prefix required):
+    /// - none / `#` comment → ReadOnly (default)
+    /// - `!write ` or `!w ` → Write (review-gated at connect)
+    /// - `!danger ` / `!dangerous ` / `!d ` → Dangerous (review-gated)
     pub fn startup_action_set(&self) -> Result<tablerock_core::StartupActionSet, String> {
-        use tablerock_core::{StartupAction, StartupActionSet, StartupSafetyClass};
+        use tablerock_core::{StartupAction, StartupActionSet};
         let mut actions = Vec::new();
         for line in self.startup_sql.lines() {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with('#') {
                 continue;
             }
+            let (safety, statement) = parse_startup_line(trimmed);
             actions.push(
-                StartupAction::from_str(trimmed, StartupSafetyClass::ReadOnly, 5_000, true)
+                StartupAction::from_str(statement, safety, 5_000, true)
                     .map_err(|e| e.to_string())?,
             );
         }
@@ -346,7 +352,44 @@ mod tests {
         assert_eq!(set.len(), 2);
         assert_eq!(set.actions()[0].statement(), "SELECT 1");
         assert_eq!(set.actions()[1].statement(), "SELECT 2");
+        assert!(set.actions()[0].safety().may_auto_run());
     }
+
+    #[test]
+    fn startup_sql_parses_write_and_danger_prefixes() {
+        use tablerock_core::StartupSafetyClass;
+        let editor = ConnectionFormModel {
+            startup_sql: "SELECT 1\n!write SET search_path TO app\n!danger DROP TABLE tmp\n".into(),
+            ..ConnectionFormModel::default()
+        };
+        let set = editor.startup_action_set().unwrap();
+        assert_eq!(set.len(), 3);
+        assert_eq!(set.actions()[0].safety(), StartupSafetyClass::ReadOnly);
+        assert_eq!(set.actions()[1].safety(), StartupSafetyClass::Write);
+        assert_eq!(set.actions()[1].statement(), "SET search_path TO app");
+        assert_eq!(set.actions()[2].safety(), StartupSafetyClass::Dangerous);
+        assert_eq!(set.actions()[2].statement(), "DROP TABLE tmp");
+        assert_eq!(set.review_required(false).len(), 2);
+        assert_eq!(set.auto_runnable(false).len(), 1);
+    }
+}
+
+/// Split optional safety prefix from a startup SQL line.
+fn parse_startup_line(trimmed: &str) -> (tablerock_core::StartupSafetyClass, &str) {
+    use tablerock_core::StartupSafetyClass;
+    let lower = trimmed.to_ascii_lowercase();
+    for (prefix, safety) in [
+        ("!dangerous ", StartupSafetyClass::Dangerous),
+        ("!danger ", StartupSafetyClass::Dangerous),
+        ("!d ", StartupSafetyClass::Dangerous),
+        ("!write ", StartupSafetyClass::Write),
+        ("!w ", StartupSafetyClass::Write),
+    ] {
+        if lower.starts_with(prefix) {
+            return (safety, trimmed[prefix.len()..].trim());
+        }
+    }
+    (StartupSafetyClass::ReadOnly, trimmed)
 }
 
 const fn engine_label(engine: EngineKind) -> &'static str {

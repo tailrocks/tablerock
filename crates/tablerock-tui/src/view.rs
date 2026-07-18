@@ -188,6 +188,36 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "RENAME {schema}.{table}. Paste new table name [{confirm_buffer}]"
             ),
         ),
+        crate::model::ConfirmDialog::StartupReview {
+            items,
+            confirm_buffer,
+        } => {
+            let preview: Vec<String> = items
+                .iter()
+                .take(4)
+                .map(|(safety, stmt)| {
+                    let short = if stmt.len() > 48 {
+                        format!("{}…", &stmt[..48])
+                    } else {
+                        stmt.clone()
+                    };
+                    format!("[{safety}] {short}")
+                })
+                .collect();
+            let more = if items.len() > 4 {
+                format!(" (+{} more)", items.len() - 4)
+            } else {
+                String::new()
+            };
+            (
+                "Authorize startup writes?",
+                format!(
+                    "{} skipped action(s): {}. Paste RUN to execute [{confirm_buffer}]{more}",
+                    items.len(),
+                    preview.join("; ")
+                ),
+            )
+        }
     };
     let panel = Panel::new(&model.theme)
         .title(title)
@@ -1189,7 +1219,7 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
     ];
     let startup = [FormField::new(
         EditorField::StartupSql,
-        Line::from("Startup SQL (ReadOnly lines)"),
+        Line::from("Startup SQL (!write/!danger prefixes)"),
         Line::from(startup_sql.as_str()),
     )];
     let sections = [

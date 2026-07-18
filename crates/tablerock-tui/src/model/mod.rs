@@ -217,6 +217,14 @@ pub enum ConfirmDialog {
         preview: String,
         confirm_buffer: String,
     },
+    /// Authorize Write/Dangerous startup actions skipped at connect.
+    ///
+    /// Each item is `(safety_label, statement)`. Confirm buffer must equal `RUN`
+    /// (case-sensitive) to authorize execution.
+    StartupReview {
+        items: Vec<(String, String)>,
+        confirm_buffer: String,
+    },
 }
 
 /// Ephemeral password prompt; Debug redacts buffer. Cleared after submit.

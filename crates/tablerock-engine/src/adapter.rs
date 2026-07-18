@@ -320,6 +320,23 @@ pub trait DriverSession: Send + Sync {
         })
     }
 
+    /// Execute one operator-authorized startup statement (Write/Dangerous after review).
+    ///
+    /// Callers must have completed the review gate; this does not re-check safety class.
+    fn execute_startup_authorized<'a>(
+        &'a self,
+        statement: &'a str,
+        timeout_ms: u32,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        let _ = (statement, timeout_ms);
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
     /// Redis-only: load a type-specific key view as display lines.
     fn redis_key_view_lines<'a>(
         &'a self,
@@ -550,6 +567,24 @@ impl DriverSession for PostgresSession {
         })
     }
 
+    fn execute_startup_authorized<'a>(
+        &'a self,
+        statement: &'a str,
+        timeout_ms: u32,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        Box::pin(async move {
+            let timeout = std::time::Duration::from_millis(u64::from(timeout_ms.max(100)));
+            match tokio::time::timeout(timeout, self.execute_sql(statement)).await {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) => Err(map_postgres(e)),
+                Err(_) => Err(AdapterError::new(
+                    Engine::PostgreSql,
+                    AdapterFailureClass::Timeout,
+                )),
+            }
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move { (*self).shutdown().await.map_err(map_postgres) })
     }
@@ -629,6 +664,24 @@ impl DriverSession for ClickHouseSession {
             ClickHouseSession::apply_authorized_mutation(self, authorized)
                 .await
                 .map_err(map_clickhouse)
+        })
+    }
+
+    fn execute_startup_authorized<'a>(
+        &'a self,
+        statement: &'a str,
+        timeout_ms: u32,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        Box::pin(async move {
+            let timeout = std::time::Duration::from_millis(u64::from(timeout_ms.max(100)));
+            match tokio::time::timeout(timeout, self.execute_sql(statement)).await {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) => Err(map_clickhouse(e)),
+                Err(_) => Err(AdapterError::new(
+                    Engine::ClickHouse,
+                    AdapterFailureClass::Timeout,
+                )),
+            }
         })
     }
 
@@ -823,6 +876,37 @@ impl DriverSession for RedisSession {
                 .map(|(k, v)| format!("{k}: {v}"))
                 .collect();
             Ok((snap.sampled_at_ms, lines))
+        })
+    }
+
+    fn execute_startup_authorized<'a>(
+        &'a self,
+        statement: &'a str,
+        timeout_ms: u32,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        Box::pin(async move {
+            let mut parts = statement.split_whitespace();
+            let Some(name) = parts.next() else {
+                return Err(AdapterError::new(
+                    Engine::Redis,
+                    AdapterFailureClass::InvalidRequest,
+                ));
+            };
+            let args: Vec<Vec<u8>> = parts.map(|p| p.as_bytes().to_vec()).collect();
+            let timeout = std::time::Duration::from_millis(u64::from(timeout_ms.max(100)));
+            match tokio::time::timeout(
+                timeout,
+                self.execute_command_argv(&name.to_ascii_uppercase(), &args),
+            )
+            .await
+            {
+                Ok(Ok(_)) => Ok(()),
+                Ok(Err(e)) => Err(map_redis(e)),
+                Err(_) => Err(AdapterError::new(
+                    Engine::Redis,
+                    AdapterFailureClass::Timeout,
+                )),
+            }
         })
     }
 

@@ -256,6 +256,16 @@ pub enum Effect {
         schema: Option<String>,
         table: Option<String>,
     },
+    /// Execute operator-authorized Write/Dangerous startup actions after review.
+    ///
+    /// Each item is `(safety_label, statement)` where safety is `write` or `danger`.
+    ExecuteStartupReviewed {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// (safety, statement) pairs authorized by the confirm dialog.
+        items: Vec<(String, String)>,
+    },
     /// pg_cancel_backend / pg_terminate_backend after pid confirm.
     SignalBackend {
         request_token: RequestToken,

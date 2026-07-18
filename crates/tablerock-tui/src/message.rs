@@ -106,6 +106,9 @@ pub enum EngineMsg {
         profile_id_hex: Option<String>,
         /// Optional startup-actions summary after connect.
         startup_summary: Option<String>,
+        /// Write/Dangerous actions skipped at connect; open StartupReview when non-empty.
+        /// Each entry is `(safety_label, statement)`.
+        startup_pending: Vec<(String, String)>,
     },
     ConnectFailed {
         request_token: u64,
@@ -344,6 +347,11 @@ pub enum EngineMsg {
         request_token: u64,
         context_revision: u64,
         reason: FailureProjection,
+    },
+    /// Outcome of authorized Write/Dangerous startup execution after review.
+    StartupReviewDone {
+        request_token: u64,
+        summary: String,
     },
     BackendSignalDone {
         request_token: u64,

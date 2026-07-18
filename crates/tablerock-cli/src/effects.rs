@@ -457,6 +457,21 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::ExecuteStartupReviewed {
+                request_token,
+                session_id_hex,
+                context_revision: _,
+                items,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        execute_startup_reviewed(sessions, request_token, session_id_hex, items)
+                            .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::SignalBackend {
                 request_token,
                 session_id_hex,
@@ -1395,7 +1410,7 @@ async fn load_profile_list(
 
 async fn test_connection(request_token: RequestToken, draft: ConnectionDraft) -> Message {
     match open_described_session(draft, false).await {
-        Ok((session, identity, elapsed_millis, tunnel, startup_summary)) => {
+        Ok((session, identity, elapsed_millis, tunnel, startup_summary, _pending)) => {
             let _ = session.shutdown().await;
             drop(tunnel);
             Message::Engine(tablerock_tui::EngineMsg::TestOk {
@@ -1426,7 +1441,7 @@ async fn connect_session(
     }
     .to_owned();
     match open_described_session(draft, false).await {
-        Ok((session, identity, _elapsed, tunnel, startup_summary)) => {
+        Ok((session, identity, _elapsed, tunnel, startup_summary, startup_pending)) => {
             let session_id = match mint_session_id() {
                 Ok(id) => id,
                 Err(label) => {
@@ -1448,6 +1463,7 @@ async fn connect_session(
                     engine_label,
                     profile_id_hex: if temporary { None } else { profile_id_hex },
                     startup_summary,
+                    startup_pending,
                 }),
                 Err(error) => Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
                     request_token,
@@ -2890,6 +2906,58 @@ async fn execute_ddl_plan_effect(
     }
 }
 
+async fn execute_startup_reviewed(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    items: Vec<(String, String)>,
+) -> Message {
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::StartupReviewDone {
+                request_token,
+                summary: "startup review failed: invalid session id".into(),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::StartupReviewDone {
+            request_token,
+            summary: "startup review failed: session not registered".into(),
+        });
+    };
+
+    let mut ok = 0u32;
+    let mut fail = 0u32;
+    for (safety_label, statement) in items {
+        // Only Write/Dangerous may pass through this reviewed seam.
+        if !matches!(safety_label.as_str(), "write" | "danger" | "dangerous") {
+            fail += 1;
+            continue;
+        }
+        if statement.trim().is_empty() {
+            fail += 1;
+            continue;
+        }
+        match session
+            .execute_startup_authorized(statement.trim(), 5_000)
+            .await
+        {
+            Ok(()) => ok += 1,
+            Err(_) => fail += 1,
+        }
+    }
+    Message::Engine(tablerock_tui::EngineMsg::StartupReviewDone {
+        request_token,
+        summary: format!("startup review applied: {ok}ok/{fail}fail"),
+    })
+}
+
 async fn load_roles(
     sessions: Arc<Mutex<SessionRegistry>>,
     request_token: RequestToken,
@@ -4131,7 +4199,7 @@ async fn reconnect_session(
     // Delay is declarative (next_backoff_ms); executor may sleep before re-dispatch.
     // This attempt connects immediately so auth-stop never burns wall-clock in tests.
     match open_described_session(draft.clone(), true).await {
-        Ok((session, identity, _, tunnel, startup_summary)) => {
+        Ok((session, identity, _, tunnel, startup_summary, startup_pending)) => {
             let session_id = match mint_session_id() {
                 Ok(id) => id,
                 Err(label) => {
@@ -4158,6 +4226,7 @@ async fn reconnect_session(
                     .into(),
                     profile_id_hex: None,
                     startup_summary,
+                    startup_pending,
                 }),
                 Err(error) => Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
                     request_token,
@@ -4346,6 +4415,25 @@ fn format_startup_summary(report: &tablerock_core::StartupRunReport) -> Option<S
     ))
 }
 
+/// Collect Write/Dangerous actions that were skipped and need operator review.
+fn startup_pending_items(
+    set: &tablerock_core::StartupActionSet,
+    is_reconnect: bool,
+) -> Vec<(String, String)> {
+    use tablerock_core::StartupSafetyClass;
+    set.review_required(is_reconnect)
+        .into_iter()
+        .map(|action| {
+            let label = match action.safety() {
+                StartupSafetyClass::Write => "write",
+                StartupSafetyClass::Dangerous => "danger",
+                StartupSafetyClass::ReadOnly => "readonly",
+            };
+            (label.into(), action.statement().to_owned())
+        })
+        .collect()
+}
+
 async fn open_described_session(
     draft: ConnectionDraft,
     is_reconnect: bool,
@@ -4356,6 +4444,7 @@ async fn open_described_session(
         u64,
         Option<tablerock_engine::LocalForwardTunnel>,
         Option<String>,
+        Vec<(String, String)>,
     ),
     String,
 > {
@@ -4461,6 +4550,7 @@ async fn open_described_session(
             // Partial-failure honest: connect still succeeds; summary surfaces to UI.
             let startup =
                 run_postgres_startup_actions(&session, &draft.startup_actions, is_reconnect).await;
+            let pending = startup_pending_items(&draft.startup_actions, is_reconnect);
             let described = session.describe().await.map_err(|e| e.to_string())?;
             Ok((
                 Box::new(session) as Box<dyn DriverSession>,
@@ -4468,6 +4558,7 @@ async fn open_described_session(
                 described.elapsed_millis(),
                 tunnel,
                 format_startup_summary(&startup),
+                pending,
             ))
         }
         EngineKind::ClickHouse => {
@@ -4491,6 +4582,7 @@ async fn open_described_session(
             let startup =
                 run_clickhouse_startup_actions(&session, &draft.startup_actions, is_reconnect)
                     .await;
+            let pending = startup_pending_items(&draft.startup_actions, is_reconnect);
             let described = session.describe().await.map_err(|e| e.to_string())?;
             Ok((
                 Box::new(session) as Box<dyn DriverSession>,
@@ -4498,6 +4590,7 @@ async fn open_described_session(
                 described.elapsed_millis(),
                 tunnel,
                 format_startup_summary(&startup),
+                pending,
             ))
         }
         EngineKind::Redis => {
@@ -4525,6 +4618,7 @@ async fn open_described_session(
             .map_err(|e| e.to_string())?;
             let startup =
                 run_redis_startup_actions(&session, &draft.startup_actions, is_reconnect).await;
+            let pending = startup_pending_items(&draft.startup_actions, is_reconnect);
             let described = session.describe().await.map_err(|e| e.to_string())?;
             Ok((
                 Box::new(session) as Box<dyn DriverSession>,
@@ -4532,6 +4626,7 @@ async fn open_described_session(
                 described.elapsed_millis(),
                 tunnel,
                 format_startup_summary(&startup),
+                pending,
             ))
         }
     }

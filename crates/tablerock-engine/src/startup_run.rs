@@ -56,6 +56,14 @@ async fn run_sql_one_pg(session: &PostgresSession, action: &StartupAction) -> St
         return StartupActionOutcome::SkippedNeedsReview;
     }
     debug_assert!(matches!(action.safety(), StartupSafetyClass::ReadOnly));
+    run_sql_one_pg_authorized(session, action).await
+}
+
+/// Execute one PG startup action after operator review (Write/Dangerous allowed).
+pub async fn run_sql_one_pg_authorized(
+    session: &PostgresSession,
+    action: &StartupAction,
+) -> StartupActionOutcome {
     let timeout = Duration::from_millis(u64::from(action.timeout_ms()));
     match tokio::time::timeout(timeout, session.execute_sql(action.statement())).await {
         Ok(Ok(())) => StartupActionOutcome::Succeeded,
@@ -71,6 +79,14 @@ async fn run_sql_one_ch(
     if !action.safety().may_auto_run() {
         return StartupActionOutcome::SkippedNeedsReview;
     }
+    run_sql_one_ch_authorized(session, action).await
+}
+
+/// Execute one ClickHouse startup action after operator review.
+pub async fn run_sql_one_ch_authorized(
+    session: &ClickHouseSession,
+    action: &StartupAction,
+) -> StartupActionOutcome {
     let timeout = Duration::from_millis(u64::from(action.timeout_ms()));
     match tokio::time::timeout(timeout, session.execute_sql(action.statement())).await {
         Ok(Ok(())) => StartupActionOutcome::Succeeded,
@@ -83,6 +99,14 @@ async fn run_redis_one(session: &RedisSession, action: &StartupAction) -> Startu
     if !action.safety().may_auto_run() {
         return StartupActionOutcome::SkippedNeedsReview;
     }
+    run_redis_one_authorized(session, action).await
+}
+
+/// Execute one Redis startup action after operator review.
+pub async fn run_redis_one_authorized(
+    session: &RedisSession,
+    action: &StartupAction,
+) -> StartupActionOutcome {
     let mut parts = action.statement().split_whitespace();
     let Some(name) = parts.next() else {
         return StartupActionOutcome::Failed;

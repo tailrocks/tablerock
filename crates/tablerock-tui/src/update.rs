@@ -100,7 +100,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::DdlReview { confirm_buffer, .. }
                     | ConfirmDialog::RenameTable { confirm_buffer, .. }
                     | ConfirmDialog::CancelBackend { confirm_buffer, .. }
-                    | ConfirmDialog::TerminateBackend { confirm_buffer, .. } => {
+                    | ConfirmDialog::TerminateBackend { confirm_buffer, .. }
+                    | ConfirmDialog::StartupReview { confirm_buffer, .. } => {
                         *confirm_buffer = text.text().to_owned();
                     }
                     _ => {}
@@ -331,6 +332,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             engine_label,
             profile_id_hex,
             startup_summary,
+            startup_pending,
             ..
         }) => {
             let status = match startup_summary {
@@ -344,6 +346,13 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 engine_label: engine_label.clone(),
                 status: Some(status),
             }));
+            let has_startup_review = !startup_pending.is_empty();
+            if has_startup_review {
+                model.set_confirm(Some(ConfirmDialog::StartupReview {
+                    items: startup_pending,
+                    confirm_buffer: String::new(),
+                }));
+            }
             let mut workbench = WorkbenchModel::from_session(
                 if temporary { "temporary" } else { "profile" },
                 engine_label.clone(),
@@ -359,7 +368,12 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             };
             model.set_workbench(workbench);
             model.set_screen(Screen::Workbench);
-            model.set_action(ActionId::Disconnect);
+            // Startup review dialog takes the action bar (Submit/Cancel).
+            if has_startup_review {
+                model.set_action(ActionId::Submit);
+            } else {
+                model.set_action(ActionId::Disconnect);
+            }
             // Prefer intent restore for non-temporary profiles; catalog still loads after.
             if let Some(profile_id_hex) = profile_id_hex.filter(|_| !temporary) {
                 return Update {
@@ -1055,6 +1069,13 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::StartupReviewDone { summary, .. }) => {
+            if let Some(mut session) = model.session().cloned() {
+                session.status = Some(summary);
+                model.set_session(Some(session));
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::BackendSignalDone {
             context_revision,
             kind,
@@ -1596,6 +1617,36 @@ fn activate_selected_action(model: &mut Model) -> Update {
                             table,
                             object_name,
                             type_text,
+                        }),
+                    }
+                }
+                ConfirmDialog::StartupReview {
+                    items,
+                    confirm_buffer,
+                } => {
+                    if confirm_buffer.trim() != "RUN" {
+                        return Update::render();
+                    }
+                    if items.is_empty() {
+                        model.set_confirm(None);
+                        return Update::render();
+                    }
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let token = model.mint_request_token();
+                    let context_revision = model.workbench().context_revision;
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::ExecuteStartupReviewed {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            items,
                         }),
                     }
                 }
@@ -3679,6 +3730,7 @@ mod tests {
                 engine_label: "PostgreSQL".into(),
                 profile_id_hex: None,
                 startup_summary: None,
+                startup_pending: Vec::new(),
             }),
         );
         assert_eq!(model.screen(), Screen::Workbench);
@@ -4578,6 +4630,42 @@ mod tests {
                 ..
             }) if kind == "drop_column" && object_name == "email" && type_text.is_empty()
         ));
+    }
+
+    #[test]
+    fn connect_with_startup_pending_opens_review_dialog() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Editor);
+        let _ = update(
+            &mut model,
+            Message::Engine(EngineMsg::ConnectOk {
+                request_token: 1,
+                session_id_hex: "00000000000000010000000000000002".into(),
+                identity: "PostgreSQL 17".into(),
+                temporary: true,
+                engine_label: "PostgreSQL".into(),
+                profile_id_hex: None,
+                startup_summary: Some("startup 1ok/1skip/0fail/0timeout".into()),
+                startup_pending: vec![("write".into(), "SET search_path TO app".into())],
+            }),
+        );
+        assert_eq!(model.screen(), Screen::Workbench);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::StartupReview { items, .. }) if items.len() == 1
+        ));
+        let _ = update(&mut model, Message::Paste(PasteText::bounded("RUN".into())));
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::Submit);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::ExecuteStartupReviewed {
+                items,
+                ..
+            }) if items.len() == 1 && items[0].0 == "write"
+        ));
+        assert!(model.confirm().is_none());
     }
 
     #[test]
