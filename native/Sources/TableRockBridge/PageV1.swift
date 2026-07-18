@@ -143,3 +143,108 @@ public enum PageV1 {
         )
     }
 }
+
+/// A decoded page rendered as columns + display-string cells.
+public struct PageV1Table: Sendable, Equatable {
+    public let columns: [String]
+    /// One display string per cell. `∅` for NULL; `<kind N>` for non-text kinds.
+    public let rows: [[String]]
+}
+
+extension PageV1 {
+    /// Decode the full page body: header + column names + cell display strings.
+    /// Text cells render from the arena; non-text kinds render as a label.
+    public static func decodeTable(_ data: Data) throws -> PageV1Table {
+        var pos = 0
+        func need(_ n: Int) throws {
+            if pos + n > data.count { throw PageV1DecodeError.truncated }
+        }
+        func u8() throws -> UInt8 { try need(1); let v = data[pos]; pos += 1; return v }
+        func u16() throws -> UInt16 {
+            try need(2)
+            let v = UInt16(data[pos]) | (UInt16(data[pos + 1]) << 8)
+            pos += 2; return v
+        }
+        func u32() throws -> UInt32 {
+            try need(4)
+            let v = UInt32(data[pos]) | (UInt32(data[pos + 1]) << 8)
+                | (UInt32(data[pos + 2]) << 16) | (UInt32(data[pos + 3]) << 24)
+            pos += 4; return v
+        }
+        func u64() throws -> UInt64 {
+            try need(8)
+            var v: UInt64 = 0
+            for i in 0..<8 { v |= UInt64(data[pos + i]) << (8 * i) }
+            pos += 8; return v
+        }
+        func bytes(_ n: Int) throws -> Data {
+            try need(n); let d = data.subdata(in: pos..<(pos + n)); pos += n; return d
+        }
+        func boundedStr() throws -> String {
+            let len = Int(try u32())
+            return String(data: try bytes(len), encoding: .utf8) ?? "<utf8?>"
+        }
+
+        // Header (matches encode_v1).
+        _ = try bytes(4)                 // magic
+        _ = try u16()                    // encoding_version
+        _ = try bytes(16)                // result_id
+        _ = try u64()                    // revision
+        _ = try u8()                     // engine
+        _ = try u64()                    // start_row
+        let rowCount = try u32()
+        let columnCount = try u32()
+        _ = try u8()                     // total_tag
+        _ = try u64()                    // total_value
+        let arenaByteLen = Int(try u64())
+        _ = try u64()                    // column_text_byte_len
+        _ = try u8()                     // delivery
+        _ = try bytes(4)                 // warnings
+
+        // Columns: bounded_str(name) + u8(engine) + bounded_str(engine_name) + u8(nullable).
+        var columns: [String] = []
+        for _ in 0..<columnCount {
+            columns.append(try boundedStr())
+            _ = try u8()
+            _ = try boundedStr()
+            _ = try u8()
+        }
+
+        let cells = Int(rowCount) * Int(columnCount)
+        var offsets: [UInt64] = []
+        for _ in 0..<(cells + 1) { offsets.append(try u64()) }
+        let bitmap = try bytes((cells + 7) / 8)
+        var kinds: [UInt8] = []
+        for _ in 0..<cells { kinds.append(try u8()) }
+        // Truncations are variable-length (Complete=0, Truncated(None)=1, Truncated(Some)=2+u64).
+        for _ in 0..<cells {
+            if try u8() == 2 { _ = try u64() }
+        }
+        let arena = try bytes(arenaByteLen)
+
+        var rows: [[String]] = []
+        let cols = Int(columnCount)
+        for r in 0..<Int(rowCount) {
+            var row: [String] = []
+            for c in 0..<cols {
+                let i = r * cols + c
+                let isNull = (bitmap[i / 8] & (1 << (i % 8))) != 0
+                if isNull {
+                    row.append("∅")
+                } else if kinds[i] == 7 {
+                    let start = Int(offsets[i])
+                    let end = Int(offsets[i + 1])
+                    if start <= end && end <= arena.count {
+                        row.append(String(data: arena.subdata(in: start..<end), encoding: .utf8) ?? "<text>")
+                    } else {
+                        row.append("<text>")
+                    }
+                } else {
+                    row.append("<kind \(kinds[i])>")
+                }
+            }
+            rows.append(row)
+        }
+        return PageV1Table(columns: columns, rows: rows)
+    }
+}

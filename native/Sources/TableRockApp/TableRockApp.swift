@@ -36,6 +36,7 @@ final class BridgeModel: ObservableObject {
     @Published var connectingName: String?
     @Published var catalogSummary: String?
     @Published var catalogError: String?
+    @Published var catalogTable: PageV1Table?
     var bridge: TableRockBridge?
     var sessionData: Data?
 
@@ -104,6 +105,7 @@ final class BridgeModel: ObservableObject {
         guard let bridge, let session = sessionData else { return }
         catalogSummary = nil
         catalogError = nil
+        catalogTable = nil
         do {
             let spec = SubmitSpec(
                 intent: "refresh_catalog",
@@ -121,9 +123,10 @@ final class BridgeModel: ObservableObject {
                 if batch.events.isEmpty { break }
                 for event in batch.events {
                     if event.kind == "page", let page = event.pageBytes {
-                        let envelope = try PageV1.decodeEnvelope(page)
+                        let table = try PageV1.decodeTable(page)
+                        catalogTable = table
                         catalogSummary =
-                            "catalog page · \(envelope.columnCount) columns · \(envelope.rowCount) rows"
+                            "catalog · \(table.columns.count) columns · \(table.rows.count) rows"
                         return
                     }
                     if event.kind == "terminal" {
@@ -190,6 +193,9 @@ struct ContentView: View {
                 if let catalogError = model.catalogError {
                     Text(catalogError).foregroundStyle(.red).font(.callout).textSelection(.enabled)
                 }
+                if let table = model.catalogTable {
+                    CatalogGrid(table: table)
+                }
                 if let connectError = model.connectError {
                     Text(connectError)
                         .foregroundStyle(.red)
@@ -205,6 +211,36 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .task { model.initialize() }
+    }
+}
+
+struct CatalogGrid: View {
+    let table: PageV1Table
+
+    var body: some View {
+        ScrollView([.horizontal, .vertical]) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 16) {
+                    ForEach(table.columns.indices, id: \.self) { i in
+                        Text(table.columns[i]).bold()
+                            .frame(minWidth: 60, alignment: .leading)
+                    }
+                }
+                .padding(6)
+                Divider()
+                ForEach(table.rows.indices, id: \.self) { r in
+                    HStack(spacing: 16) {
+                        ForEach(table.rows[r].indices, id: \.self) { c in
+                            Text(table.rows[r][c])
+                                .frame(minWidth: 60, alignment: .leading)
+                        }
+                    }
+                    .padding(6)
+                }
+            }
+        }
+        .background(.quaternary.opacity(0.3))
+        .cornerRadius(6)
     }
 }
 
