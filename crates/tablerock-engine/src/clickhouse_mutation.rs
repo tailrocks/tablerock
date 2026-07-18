@@ -37,7 +37,8 @@ impl ClickHouseSession {
         }
         let lines = self
             .fetch_tsv_named(
-                "SELECT mutation_id, toString(is_done), ifNull(latest_fail_reason, '') \
+                "SELECT mutation_id, toString(is_done), toString(is_killed), \
+                 ifNull(latest_fail_reason, '') \
                  FROM system.mutations \
                  WHERE database = {db:String} AND table = {tbl:String} \
                  ORDER BY create_time DESC \
@@ -48,18 +49,46 @@ impl ClickHouseSession {
         let Some(line) = lines.into_iter().next() else {
             return Ok(Vec::new());
         };
-        let mut parts = line.splitn(3, '\t');
+        let mut parts = line.splitn(4, '\t');
         Ok(vec![
             (
                 "mutation_id".into(),
                 parts.next().unwrap_or("").to_owned(),
             ),
             ("is_done".into(), parts.next().unwrap_or("").to_owned()),
+            ("is_killed".into(), parts.next().unwrap_or("").to_owned()),
             (
                 "latest_fail_reason".into(),
                 parts.next().unwrap_or("").to_owned(),
             ),
         ])
+    }
+
+    /// Kill one unfinished mutation after destructive review (never free SQL).
+    ///
+    /// Issues `KILL MUTATION WHERE database/table/mutation_id` with named
+    /// parameters. Empty identifiers fail closed. Callers must have completed
+    /// the operator re-type gate; this method does not re-check UI authority.
+    pub async fn kill_mutation(
+        &self,
+        database: &str,
+        table: &str,
+        mutation_id: &str,
+    ) -> Result<(), ClickHouseError> {
+        if database.is_empty() || table.is_empty() || mutation_id.is_empty() {
+            return Err(ClickHouseError::InvalidLimits);
+        }
+        // Mutation ids look like `mutation_2.txt` (server-generated). Reject
+        // free SQL injection surface with a tight identifier charset + length.
+        if !is_safe_mutation_id(mutation_id) {
+            return Err(ClickHouseError::InvalidLimits);
+        }
+        self.execute_sql_named(
+            "KILL MUTATION WHERE database = {db:String} AND table = {tbl:String} \
+             AND mutation_id = {mid:String}",
+            &[("db", database), ("tbl", table), ("mid", mutation_id)],
+        )
+        .await
     }
 
     /// Apply an authorized plan. Outcomes never claim transactional rollback.
@@ -284,6 +313,16 @@ fn escape_ch_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
+/// Server mutation ids are bounded file-like tokens (`mutation_N.txt`).
+fn is_safe_mutation_id(mutation_id: &str) -> bool {
+    const MAX_LEN: usize = 128;
+    !mutation_id.is_empty()
+        && mutation_id.len() <= MAX_LEN
+        && mutation_id.bytes().all(|b| {
+            b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.'
+        })
+}
+
 /// Split `"db"."table"` or `db.table` produced by quote_ident into parts.
 fn split_qualified(qualified: &str) -> Result<(&str, &str), ClickHouseError> {
     // Expect "database"."table" from quote_ident.
@@ -354,5 +393,17 @@ mod tests {
             ("transactional", "false"),
             ("transactional", "false")
         );
+    }
+
+    #[test]
+    fn kill_mutation_id_charset_is_restrictive() {
+        assert!(is_safe_mutation_id("mutation_2.txt"));
+        assert!(is_safe_mutation_id("0000000000"));
+        assert!(is_safe_mutation_id("12_34-56"));
+        assert!(!is_safe_mutation_id(""));
+        assert!(!is_safe_mutation_id("mutation_2.txt; DROP TABLE t"));
+        assert!(!is_safe_mutation_id("1 2"));
+        assert!(!is_safe_mutation_id(&"x".repeat(129)));
+        assert!(!is_safe_mutation_id("mut'ation"));
     }
 }

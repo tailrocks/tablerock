@@ -101,6 +101,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::RenameTable { confirm_buffer, .. }
                     | ConfirmDialog::CancelBackend { confirm_buffer, .. }
                     | ConfirmDialog::TerminateBackend { confirm_buffer, .. }
+                    | ConfirmDialog::KillMutation { confirm_buffer, .. }
                     | ConfirmDialog::StartupReview { confirm_buffer, .. }
                     | ConfirmDialog::PgTool { confirm_buffer, .. }
                     | ConfirmDialog::ImportUrl { confirm_buffer, .. }
@@ -1201,6 +1202,56 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::MutationKillDone {
+            context_revision,
+            database,
+            table,
+            mutation_id,
+            status_lines,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let mut lines = vec![format!(
+                "KILL MUTATION {database}.{table} id={mutation_id}"
+            )];
+            lines.extend(status_lines);
+            let text = lines.join("\n");
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: format!("mutation kill {database}.{table}"),
+                kind_label: "mutation".into(),
+                text: text.clone(),
+                hex: String::new(),
+                byte_len: text.len() as u64,
+                original_byte_len: None,
+                stale: false,
+                structure_schema: Some(database.clone()),
+                structure_table: Some(table.clone()),
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.error_label =
+                    Some(format!("kill mutation {mutation_id} on {database}.{table}"));
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::MutationKillFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::RedisKeysLoaded {
             context_revision,
             keys,
@@ -2091,6 +2142,45 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         }),
                     }
                 }
+                ConfirmDialog::KillMutation {
+                    database,
+                    table,
+                    confirm_buffer,
+                } => {
+                    let mutation_id = confirm_buffer.trim().to_owned();
+                    // Mirror engine gate: `mutation_2.txt` style ids only.
+                    if mutation_id.is_empty()
+                        || mutation_id.len() > 128
+                        || !mutation_id.bytes().all(|b| {
+                            b.is_ascii_alphanumeric()
+                                || b == b'_'
+                                || b == b'-'
+                                || b == b'.'
+                        })
+                    {
+                        return Update::render();
+                    }
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let token = model.mint_request_token();
+                    let context_revision = model.workbench().context_revision;
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::KillClickHouseMutation {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            database,
+                            table,
+                            mutation_id,
+                        }),
+                    }
+                }
             }
         }
         ActionId::Cancel if model.password_prompt().is_some() => {
@@ -2866,6 +2956,31 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::KillMutation if model.screen() == Screen::Workbench => {
+            // ClickHouse only; require an active base table for targeting.
+            let is_ch = model
+                .session()
+                .map(|s| s.engine_label.eq_ignore_ascii_case("ClickHouse"))
+                .unwrap_or(false);
+            if !is_ch {
+                return Update::unchanged();
+            }
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(database), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::KillMutation {
+                database,
+                table,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::SaveColumns if model.screen() == Screen::Workbench => {
             let profile_id_hex = model.workbench().profile_id_hex.clone();
             let database = model.workbench().context.database.clone();
@@ -2958,6 +3073,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ShowRoles
         | ActionId::CancelBackend
         | ActionId::TerminateBackend
+        | ActionId::KillMutation
         | ActionId::ScanRedisKeys
         | ActionId::RedisInfo
         | ActionId::ExportCsv
@@ -3856,6 +3972,7 @@ fn cycle_action(
                 ActionId::ShowRoles,
                 ActionId::CancelBackend,
                 ActionId::TerminateBackend,
+                ActionId::KillMutation,
                 ActionId::ScanRedisKeys,
                 ActionId::RedisInfo,
                 ActionId::ExportCsv,
@@ -4427,6 +4544,70 @@ mod tests {
                 ..
             }) if profile_id_hex == "aa"
         ));
+    }
+
+    #[test]
+    fn kill_mutation_requires_retype_and_emits_effect() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000002".into(),
+            identity: "ch".into(),
+            temporary: true,
+            engine_label: "ClickHouse".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("kill_mut");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("default".into());
+            grid.base_table = Some("kill_mut".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::KillMutation);
+        let ask = update(&mut model, Message::Activate);
+        assert!(ask.effects().next().is_none());
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::KillMutation {
+                database,
+                table,
+                ..
+            }) if database == "default" && table == "kill_mut"
+        ));
+        // Wrong charset stays open, no effect.
+        if let Some(ConfirmDialog::KillMutation {
+            confirm_buffer, ..
+        }) = model.confirm_mut()
+        {
+            *confirm_buffer = "bad;drop".into();
+        }
+        model.set_action(ActionId::Submit);
+        let reject = update(&mut model, Message::Activate);
+        assert!(reject.effects().next().is_none());
+        assert!(model.confirm().is_some());
+        // Valid mutation id → KillClickHouseMutation effect.
+        if let Some(ConfirmDialog::KillMutation {
+            confirm_buffer, ..
+        }) = model.confirm_mut()
+        {
+            *confirm_buffer = "mutation_2.txt".into();
+        }
+        model.set_action(ActionId::Submit);
+        let kill = update(&mut model, Message::Activate);
+        match kill.effects().next() {
+            Some(Effect::KillClickHouseMutation {
+                database,
+                table,
+                mutation_id,
+                ..
+            }) => {
+                assert_eq!(database, "default");
+                assert_eq!(table, "kill_mut");
+                assert_eq!(mutation_id, "mutation_2.txt");
+            }
+            other => panic!("expected KillClickHouseMutation, got {other:?}"),
+        }
+        assert!(model.confirm().is_none());
     }
 
     #[test]

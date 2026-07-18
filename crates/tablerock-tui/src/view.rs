@@ -166,6 +166,16 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             "Terminate backend?",
             format!("Paste pid digits to pg_terminate_backend [{confirm_buffer}]"),
         ),
+        crate::model::ConfirmDialog::KillMutation {
+            database,
+            table,
+            confirm_buffer,
+        } => (
+            "Kill ClickHouse mutation?",
+            format!(
+                "KILL MUTATION on {database}.{table}. Paste exact mutation_id [{confirm_buffer}]"
+            ),
+        ),
         crate::model::ConfirmDialog::DdlReview {
             kind,
             schema,
@@ -481,6 +491,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let roles = action_label(model, ActionId::ShowRoles, "Roles");
     let cancel_be = action_label(model, ActionId::CancelBackend, "CancelBE");
     let term_be = action_label(model, ActionId::TerminateBackend, "TermBE");
+    let kill_mut = action_label(model, ActionId::KillMutation, "KillMut");
     let scan_redis = action_label(model, ActionId::ScanRedisKeys, "ScanKeys");
     let redis_info = action_label(model, ActionId::RedisInfo, "RedisInfo");
     let export_csv = action_label(model, ActionId::ExportCsv, "ExpCsv");
@@ -803,6 +814,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::TerminateBackend,
                         label: term_be.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::KillMutation,
+                        label: kill_mut.as_str(),
                         enabled: true,
                         style: None,
                     },

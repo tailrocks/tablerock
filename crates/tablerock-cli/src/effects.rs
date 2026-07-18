@@ -548,6 +548,30 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::KillClickHouseMutation {
+                request_token,
+                session_id_hex,
+                context_revision,
+                database,
+                table,
+                mutation_id,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = kill_clickhouse_mutation_effect(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        database,
+                        table,
+                        mutation_id,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::ScanRedisKeys {
                 request_token,
                 session_id_hex,
@@ -4154,6 +4178,66 @@ async fn signal_backend(
             reason: FailureProjection::Label(e.to_string()),
         }),
     }
+}
+
+/// ClickHouse KILL MUTATION after operator re-type gate (bound ids only).
+async fn kill_clickhouse_mutation_effect(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    database: String,
+    table: String,
+    mutation_id: String,
+) -> Message {
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationKillFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::MutationKillFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    if session.engine() != tablerock_core::Engine::ClickHouse {
+        return Message::Engine(tablerock_tui::EngineMsg::MutationKillFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("KILL MUTATION is ClickHouse-only".into()),
+        });
+    }
+    if let Err(error) = session
+        .kill_clickhouse_mutation(&database, &table, &mutation_id)
+        .await
+    {
+        return Message::Engine(tablerock_tui::EngineMsg::MutationKillFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(error.to_string()),
+        });
+    }
+    // Adapter trait has no mutation-status poll; surface kill acceptance.
+    // Engine real tests poll `system.mutations.is_killed` directly.
+    Message::Engine(tablerock_tui::EngineMsg::MutationKillDone {
+        request_token,
+        context_revision,
+        database,
+        table,
+        mutation_id,
+        status_lines: vec!["kill accepted (poll system.mutations for is_killed)".into()],
+    })
 }
 
 /// Load PRIMARY KEY column names via the driver page stream (bound params).

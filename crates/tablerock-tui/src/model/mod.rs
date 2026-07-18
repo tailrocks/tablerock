@@ -144,6 +144,8 @@ pub enum ActionId {
     CancelBackend,
     /// Terminate a backend by pid (gated confirm).
     TerminateBackend,
+    /// Kill a ClickHouse async mutation by id (gated re-type confirm).
+    KillMutation,
     /// Rename active base table (gated: paste new name).
     RenameTable,
     /// Review ADD COLUMN: confirm_buffer = "column_name type".
@@ -218,6 +220,12 @@ pub enum ConfirmDialog {
     },
     TerminateBackend {
         pid: String,
+        confirm_buffer: String,
+    },
+    /// Kill ClickHouse mutation: paste exact mutation_id for database.table.
+    KillMutation {
+        database: String,
+        table: String,
         confirm_buffer: String,
     },
     /// Rename: confirm_buffer is the new table name (non-empty, quoted later).

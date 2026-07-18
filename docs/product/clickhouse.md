@@ -31,5 +31,7 @@ behavior and honest mutation semantics.
 - **Updates and deletes** are asynchronous mutations: the UI shows mutation
   identity and `system.mutations` status until done, failed, or unknown.
   They are never presented as transactions, instant, or rollback-capable.
+- **Kill mutation** (`KillMut`) cancels one unfinished server mutation after
+  re-typing the exact `mutation_id` (bound parameters only; no free SQL).
 - Parts and engine operations (optimize where permitted) live behind typed
   safety gates in the administration phase.

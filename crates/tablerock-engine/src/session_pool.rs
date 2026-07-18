@@ -222,6 +222,28 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn kill_clickhouse_mutation<'a>(
+        &'a self,
+        database: &'a str,
+        table: &'a str,
+        mutation_id: &'a str,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => {
+                    session
+                        .kill_clickhouse_mutation(database, table, mutation_id)
+                        .await
+                }
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn redis_key_view_lines<'a>(
         &'a self,
         key: &'a [u8],

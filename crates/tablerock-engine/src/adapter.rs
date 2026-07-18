@@ -337,6 +337,25 @@ pub trait DriverSession: Send + Sync {
         })
     }
 
+    /// ClickHouse-only: kill one unfinished async mutation by id.
+    ///
+    /// Parameters are bound; empty or non-id mutation tokens fail closed.
+    /// Non-ClickHouse engines return [`AdapterFailureClass::EngineMismatch`].
+    fn kill_clickhouse_mutation<'a>(
+        &'a self,
+        database: &'a str,
+        table: &'a str,
+        mutation_id: &'a str,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        let _ = (database, table, mutation_id);
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
     /// Redis-only: load a type-specific key view as display lines.
     fn redis_key_view_lines<'a>(
         &'a self,
@@ -662,6 +681,19 @@ impl DriverSession for ClickHouseSession {
     ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
         Box::pin(async move {
             ClickHouseSession::apply_authorized_mutation(self, authorized)
+                .await
+                .map_err(map_clickhouse)
+        })
+    }
+
+    fn kill_clickhouse_mutation<'a>(
+        &'a self,
+        database: &'a str,
+        table: &'a str,
+        mutation_id: &'a str,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        Box::pin(async move {
+            self.kill_mutation(database, table, mutation_id)
                 .await
                 .map_err(map_clickhouse)
         })

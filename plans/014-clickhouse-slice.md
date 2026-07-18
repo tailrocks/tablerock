@@ -106,8 +106,8 @@ extended with the new fixtures; CI list updated.
 - Custom CA / mTLS via `clickhouse::Client::with_http_client` fixture matrix
 - Progress/query-id OperationEvent surface into status bar
 - ~~Partial-page + late error single-operation fixture~~ (closed: clickhouse_real)
-- KILL MUTATION destructive gate
-- Editor Explain action wiring to explain_raw/structured
+- ~~KILL MUTATION destructive gate~~ (closed: evidence 305)
+- ~~Editor Explain action wiring to explain_raw/structured~~ (closed: evidence 239/290/302)
 
 ## STOP conditions
 

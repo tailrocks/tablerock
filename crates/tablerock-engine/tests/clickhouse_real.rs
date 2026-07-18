@@ -801,6 +801,104 @@ async fn structure_facts_and_progressive_insert() {
 }
 
 #[tokio::test]
+async fn kill_mutation_accepts_bound_id_and_fail_closed_hostile() {
+    let image =
+        "26.3.17.4-jammy@sha256:158dcce6f6fdc59309650aad6b79484abf4eed07d4e0bdba31d732e64b5a25fb";
+    let container = GenericImage::new("clickhouse", image)
+        .with_exposed_port(8123.tcp())
+        .with_env_var("CLICKHOUSE_SKIP_USER_SETUP", "1")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
+    let session = ready_clickhouse_session(port, ClickHouseCompression::None).await;
+
+    session
+        .execute_sql(
+            "CREATE TABLE IF NOT EXISTS default.kill_mut \
+             (id UInt64, v String) ENGINE = MergeTree ORDER BY id",
+        )
+        .await
+        .unwrap();
+    session
+        .execute_sql("TRUNCATE TABLE IF EXISTS default.kill_mut")
+        .await
+        .unwrap();
+    // Large enough that a kill race is possible on slow hosts; small
+    // fixtures may finish before KILL — still prove kill SQL is accepted.
+    session
+        .execute_sql(
+            "INSERT INTO default.kill_mut SELECT number, 'a' FROM numbers(200_000)",
+        )
+        .await
+        .unwrap();
+    session
+        .execute_sql("ALTER TABLE default.kill_mut UPDATE v = 'killed' WHERE 1")
+        .await
+        .unwrap();
+
+    let status = session
+        .latest_mutation_status("default", "kill_mut")
+        .await
+        .unwrap();
+    let mutation_id = status
+        .iter()
+        .find(|(k, _)| k == "mutation_id")
+        .map(|(_, v)| v.clone())
+        .expect("mutation_id after ALTER");
+    assert!(
+        mutation_id.starts_with("mutation_") || mutation_id.chars().all(|c| c.is_ascii_digit()),
+        "unexpected mutation_id shape: {mutation_id:?} from {status:?}"
+    );
+
+    // Fail closed: empty / hostile id rejected.
+    assert!(
+        session
+            .kill_mutation("default", "kill_mut", "")
+            .await
+            .is_err()
+    );
+    assert!(
+        session
+            .kill_mutation("default", "kill_mut", "1; DROP TABLE t")
+            .await
+            .is_err()
+    );
+    assert!(
+        session
+            .kill_mutation("default", "kill_mut", "mut'ation")
+            .await
+            .is_err()
+    );
+
+    session
+        .kill_mutation("default", "kill_mut", &mutation_id)
+        .await
+        .expect("KILL MUTATION must accept bound id");
+
+    // Status remains pollable. Server may report is_killed, is_done, or
+    // clear the unfinished row after kill of a finished mutation.
+    let status_after = session
+        .latest_mutation_status("default", "kill_mut")
+        .await
+        .expect("system.mutations poll must stay readable after kill");
+    let keys: Vec<_> = status_after.iter().map(|(k, _)| k.as_str()).collect();
+    if !status_after.is_empty() {
+        assert!(
+            keys.contains(&"mutation_id") && keys.contains(&"is_done") && keys.contains(&"is_killed"),
+            "status keys incomplete: {status_after:?}"
+        );
+    }
+
+    // Trait surface used by CLI/TUI — second kill is best-effort.
+    let as_driver: &dyn DriverSession = &session;
+    as_driver
+        .kill_clickhouse_mutation("default", "kill_mut", &mutation_id)
+        .await
+        .expect("trait kill path must accept same bound id");
+}
+
+#[tokio::test]
 async fn explain_raw_and_structured_with_fallback() {
     let image =
         "26.3.17.4-jammy@sha256:158dcce6f6fdc59309650aad6b79484abf4eed07d4e0bdba31d732e64b5a25fb";

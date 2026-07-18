@@ -357,6 +357,19 @@ impl ClickHouseSession {
             .map_err(|_| ClickHouseError::Query)
     }
 
+    /// Execute SQL with named string parameters (`{name:String}`).
+    pub(crate) async fn execute_sql_named(
+        &self,
+        sql: &str,
+        params: &[(&str, &str)],
+    ) -> Result<(), ClickHouseError> {
+        let mut request = self.client.query(sql);
+        for (name, value) in params {
+            request = request.param(*name, *value);
+        }
+        request.execute().await.map_err(|_| ClickHouseError::Query)
+    }
+
     /// Table engine facts: (engine, partition_key, sorting_key, primary_key, create_query).
     pub async fn relation_engine_facts(
         &self,

@@ -299,6 +299,15 @@ pub enum Effect {
         kind: String,
         pid: i32,
     },
+    /// ClickHouse KILL MUTATION after mutation_id re-type confirm.
+    KillClickHouseMutation {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        database: String,
+        table: String,
+        mutation_id: String,
+    },
     /// SCAN keys in the current Redis logical DB (never KEYS).
     ScanRedisKeys {
         request_token: RequestToken,

@@ -10,7 +10,7 @@ Date: 2026-07-18
 | `returned` markers: kind=async_mutation_*, transactional=false | done |
 | `latest_mutation_status` polls `system.mutations` | done |
 | Docker: mutation accepted + poll is_done | done |
-| KILL MUTATION gate / unknown on connection loss | open |
+| KILL MUTATION gate / unknown on connection loss | done (evidence 305) |
 | Progress/query-id UI + TLS CA | open |
 
 ## Verification

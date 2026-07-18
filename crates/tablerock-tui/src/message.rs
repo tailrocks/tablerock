@@ -380,6 +380,20 @@ pub enum EngineMsg {
         context_revision: u64,
         reason: FailureProjection,
     },
+    /// ClickHouse KILL MUTATION accepted; status_lines are system.mutations facts.
+    MutationKillDone {
+        request_token: u64,
+        context_revision: u64,
+        database: String,
+        table: String,
+        mutation_id: String,
+        status_lines: Vec<String>,
+    },
+    MutationKillFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
     /// SCAN page of Redis keys (display strings).
     RedisKeysLoaded {
         request_token: u64,
