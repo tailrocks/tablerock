@@ -652,6 +652,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let filt_ilike = action_label(model, ActionId::FilterILike, "ILike");
     let filt_starts = action_label(model, ActionId::FilterStartsWith, "Starts");
     let filt_ends = action_label(model, ActionId::FilterEndsWith, "Ends");
+    let filt_istarts = action_label(model, ActionId::FilterIStartsWith, "IStarts");
+    let filt_iends = action_label(model, ActionId::FilterIEndsWith, "IEnds");
     let filt_ne = action_label(model, ActionId::FilterNe, "NotEq");
     let filt_lt = action_label(model, ActionId::FilterLt, "Lt");
     let filt_le = action_label(model, ActionId::FilterLe, "Le");
@@ -1066,6 +1068,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::FilterEndsWith,
                         label: filt_ends.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterIStartsWith,
+                        label: filt_istarts.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterIEndsWith,
+                        label: filt_iends.as_str(),
                         enabled: true,
                         style: None,
                     },

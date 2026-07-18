@@ -4098,10 +4098,16 @@ fn activate_selected_action(model: &mut Model) -> Update {
             add_value_filter(model, "ilike", true)
         }
         ActionId::FilterStartsWith if model.screen() == Screen::Workbench => {
-            add_affix_like_filter(model, AffixKind::StartsWith)
+            add_affix_like_filter(model, AffixKind::StartsWith, false)
         }
         ActionId::FilterEndsWith if model.screen() == Screen::Workbench => {
-            add_affix_like_filter(model, AffixKind::EndsWith)
+            add_affix_like_filter(model, AffixKind::EndsWith, false)
+        }
+        ActionId::FilterIStartsWith if model.screen() == Screen::Workbench => {
+            add_affix_like_filter(model, AffixKind::StartsWith, true)
+        }
+        ActionId::FilterIEndsWith if model.screen() == Screen::Workbench => {
+            add_affix_like_filter(model, AffixKind::EndsWith, true)
         }
         ActionId::FilterNe if model.screen() == Screen::Workbench => {
             add_value_filter(model, "ne", false)
@@ -5363,6 +5369,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::FilterILike
         | ActionId::FilterStartsWith
         | ActionId::FilterEndsWith
+        | ActionId::FilterIStartsWith
+        | ActionId::FilterIEndsWith
         | ActionId::FilterNe
         | ActionId::FilterLt
         | ActionId::FilterLe
@@ -6471,8 +6479,8 @@ enum AffixKind {
     EndsWith,
 }
 
-/// LIKE prefix/suffix from cursor cell (skips wrap when value already has `%`).
-fn add_affix_like_filter(model: &mut Model, kind: AffixKind) -> Update {
+/// LIKE/ILIKE prefix/suffix from cursor cell (skips wrap when value already has `%`).
+fn add_affix_like_filter(model: &mut Model, kind: AffixKind, case_insensitive: bool) -> Update {
     let (col, value) = {
         let Some(grid) = model.workbench().active_grid() else {
             return Update::unchanged();
@@ -6503,8 +6511,9 @@ fn add_affix_like_filter(model: &mut Model, kind: AffixKind) -> Update {
             AffixKind::EndsWith => format!("%{value}"),
         }
     };
+    let operator = if case_insensitive { "ilike" } else { "like" };
     if let Some(grid) = model.workbench_mut().active_grid_mut() {
-        grid.add_filter_chip(col, "like", Some(value));
+        grid.add_filter_chip(col, operator, Some(value));
     }
     rebrowse_active_table(model)
 }
@@ -7076,6 +7085,8 @@ fn cycle_action(
                 ActionId::FilterILike,
                 ActionId::FilterStartsWith,
                 ActionId::FilterEndsWith,
+                ActionId::FilterIStartsWith,
+                ActionId::FilterIEndsWith,
                 ActionId::FilterNe,
                 ActionId::FilterLt,
                 ActionId::FilterLe,
@@ -9387,6 +9398,54 @@ mod tests {
                 assert_eq!(filters[0].2.as_deref(), Some("a%z"));
             }
             other => panic!("expected raw pattern, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn filter_istarts_and_iends_use_ilike() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("users");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.columns = vec!["name".into()];
+            grid.row_count = 1;
+            grid.cells = vec![crate::model::grid::ProjectedCell {
+                text: "Alice".into(),
+                distinction: crate::model::grid::CellDistinction::Text,
+                byte_len: 5,
+                original_byte_len: None,
+            }];
+            grid.cursor_col = 0;
+            grid.cursor_row = 0;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::FilterIStartsWith);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].1, "ilike");
+                assert_eq!(filters[0].2.as_deref(), Some("Alice%"));
+            }
+            other => panic!("expected istarts, got {other:?}"),
+        }
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.filters.clear();
+        }
+        model.set_action(ActionId::FilterIEndsWith);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].1, "ilike");
+                assert_eq!(filters[0].2.as_deref(), Some("%Alice"));
+            }
+            other => panic!("expected iends, got {other:?}"),
         }
     }
 
