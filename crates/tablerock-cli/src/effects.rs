@@ -521,6 +521,32 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::ImportCsvApply {
+                request_token,
+                session_id_hex,
+                context_revision,
+                database,
+                schema,
+                table,
+                path,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = import_csv_apply(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        database,
+                        schema,
+                        table,
+                        path,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::ExecuteSql {
                 request_token,
                 session_id_hex,
@@ -2913,6 +2939,167 @@ async fn scan_redis_keys(
         keys,
         has_more,
     })
+}
+
+async fn import_csv_apply(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    database: String,
+    schema: String,
+    table: String,
+    path: String,
+) -> Message {
+    use std::fs;
+
+    use tablerock_core::{
+        BoundedText, ByteLimit, Engine, IdParts, MutationId, MutationTarget, OperationScope,
+        ProfileId, ReviewTokenId, Revision, SessionId as CoreSessionId,
+    };
+
+    use crate::import_apply::apply_csv_inserts;
+    use crate::import_csv::parse_csv;
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+                needs_re_review: false,
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+            needs_re_review: false,
+        });
+    };
+
+    let csv_text = match fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(format!("read {path}: {e}")),
+                needs_re_review: false,
+            });
+        }
+    };
+    let table_data = match parse_csv(&csv_text, 10_000, 64 * 1024) {
+        Ok(t) => t,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+                needs_re_review: false,
+            });
+        }
+    };
+
+    let bt = |s: &str| {
+        BoundedText::copy_from_str(s, ByteLimit::new(256)).unwrap_or_else(|_| {
+            BoundedText::copy_from_str("x", ByteLimit::new(1)).expect("tiny")
+        })
+    };
+    let target = match session.engine() {
+        Engine::PostgreSql => MutationTarget::PostgreSqlRelation {
+            database: bt(if database.is_empty() {
+                "postgres"
+            } else {
+                &database
+            }),
+            schema: bt(&schema),
+            relation: bt(&table),
+        },
+        Engine::ClickHouse => MutationTarget::ClickHouseTable {
+            database: bt(if database.is_empty() {
+                "default"
+            } else {
+                &database
+            }),
+            table: bt(&table),
+        },
+        Engine::Redis => {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("CSV import unsupported for Redis".into()),
+                needs_re_review: false,
+            });
+        }
+    };
+
+    let scope = OperationScope::new(
+        ProfileId::from_parts(IdParts::new(0, request_token.max(1)).expect("id"))
+            .expect("profile"),
+        // Reuse session id parts when possible; otherwise mint stable opaque IDs.
+        CoreSessionId::from_bytes(session_id.to_bytes()).unwrap_or_else(|_| {
+            CoreSessionId::from_parts(IdParts::new(0, request_token.max(1) + 1).expect("id"))
+                .expect("session")
+        }),
+        tablerock_core::ContextId::from_parts(
+            IdParts::new(0, request_token.max(1) + 2).expect("id"),
+        )
+        .expect("context"),
+    );
+    let mutation_id =
+        MutationId::from_parts(IdParts::new(0, request_token.max(1) + 3).expect("id"))
+            .expect("mutation");
+    let token =
+        ReviewTokenId::from_parts(IdParts::new(0, request_token.max(1) + 4).expect("id"))
+            .expect("token");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(1);
+
+    match apply_csv_inserts(
+        session,
+        &table_data,
+        target,
+        scope,
+        Revision::from_wire_u64(context_revision),
+        mutation_id,
+        token,
+        64 * 1024,
+        256,
+        now,
+        60_000,
+    )
+    .await
+    {
+        Ok(outcome) => {
+            let committed = matches!(
+                outcome.transaction,
+                tablerock_engine::MutationTransactionState::Committed
+            );
+            Message::Engine(tablerock_tui::EngineMsg::MutationApplied {
+                request_token,
+                context_revision,
+                committed,
+                change_count: outcome.changes.len(),
+                detail: format!("import csv → {schema}.{table} ({:?})", outcome.transaction),
+            })
+        }
+        Err(e) => Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(e.to_string()),
+            needs_re_review: false,
+        }),
+    }
 }
 
 async fn export_result(request_token: RequestToken, path: String, body: String) -> Message {

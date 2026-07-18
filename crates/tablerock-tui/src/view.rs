@@ -328,6 +328,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let export_csv = action_label(model, ActionId::ExportCsv, "ExpCsv");
     let export_json = action_label(model, ActionId::ExportJson, "ExpJson");
     let export_tsv = action_label(model, ActionId::ExportTsv, "ExpTsv");
+    let export_stream = action_label(model, ActionId::ExportStreamCsv, "ExpStream");
+    let import_csv = action_label(model, ActionId::ImportCsv, "ImpCsv");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
@@ -581,6 +583,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ExportTsv,
                         label: export_tsv.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ExportStreamCsv,
+                        label: export_stream.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ImportCsv,
+                        label: import_csv.as_str(),
                         enabled: true,
                         style: None,
                     },

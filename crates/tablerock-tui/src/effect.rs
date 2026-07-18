@@ -276,6 +276,18 @@ pub enum Effect {
         /// "csv" | "json" | "tsv"
         format: String,
     },
+    /// Import a CSV file into a relation through the typed mutation write seam.
+    ImportCsvApply {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// Database name (ClickHouse) or PostgreSQL database label.
+        database: String,
+        schema: String,
+        table: String,
+        /// Destination path of the CSV to read (default import.csv).
+        path: String,
+    },
     /// Run a single SQL statement (first page) into the active tab grid.
     ExecuteSql {
         request_token: RequestToken,

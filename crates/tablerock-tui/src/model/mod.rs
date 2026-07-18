@@ -148,6 +148,12 @@ pub enum ActionId {
     ExportCsv,
     ExportJson,
     ExportTsv,
+    /// Streaming full re-query export (re-runs editor SQL to file).
+    ExportStreamCsv,
+    ExportStreamJson,
+    ExportStreamTsv,
+    /// Import CSV into active base table via mutation write seam (default import.csv).
+    ImportCsv,
     Submit,
     Cancel,
     Quit,

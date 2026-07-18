@@ -2196,6 +2196,16 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::ExportTsv if model.screen() == Screen::Workbench => {
             export_loaded_result(model, "tsv", "export.tsv")
         }
+        ActionId::ExportStreamCsv if model.screen() == Screen::Workbench => {
+            export_stream_query(model, "csv", "export-stream.csv")
+        }
+        ActionId::ExportStreamJson if model.screen() == Screen::Workbench => {
+            export_stream_query(model, "json", "export-stream.json")
+        }
+        ActionId::ExportStreamTsv if model.screen() == Screen::Workbench => {
+            export_stream_query(model, "tsv", "export-stream.tsv")
+        }
+        ActionId::ImportCsv if model.screen() == Screen::Workbench => import_csv_apply(model),
         ActionId::CancelBackend if model.screen() == Screen::Workbench => {
             model.set_confirm(Some(ConfirmDialog::CancelBackend {
                 pid: String::new(),
@@ -2300,8 +2310,77 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ExportCsv
         | ActionId::ExportJson
         | ActionId::ExportTsv
+        | ActionId::ExportStreamCsv
+        | ActionId::ExportStreamJson
+        | ActionId::ExportStreamTsv
+        | ActionId::ImportCsv
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
+    }
+}
+
+fn export_stream_query(model: &mut Model, format: &str, default_path: &str) -> Update {
+    let Some(session) = model.session() else {
+        return Update::unchanged();
+    };
+    let session_id_hex = session.session_id_hex.clone();
+    let statement = model
+        .workbench()
+        .active_editor()
+        .and_then(|ed| ed.run_text())
+        .unwrap_or_default();
+    if statement.trim().is_empty() {
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.mark_failed("stream export needs SQL in the active editor");
+        }
+        return Update::render();
+    }
+    let token = model.mint_request_token();
+    let context_revision = model.workbench().context_revision;
+    Update {
+        render: true,
+        effect: Some(Effect::ExportStreamQuery {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            statement,
+            path: default_path.into(),
+            format: format.into(),
+        }),
+    }
+}
+
+fn import_csv_apply(model: &mut Model) -> Update {
+    let Some(session) = model.session() else {
+        return Update::unchanged();
+    };
+    let session_id_hex = session.session_id_hex.clone();
+    let database = model.workbench().context.database.clone();
+    let (schema, table) = {
+        let Some(grid) = model.workbench().active_grid() else {
+            return Update::unchanged();
+        };
+        (grid.base_schema.clone(), grid.base_table.clone())
+    };
+    let (Some(schema), Some(table)) = (schema, table) else {
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.mark_failed("import CSV needs an active base table");
+        }
+        return Update::render();
+    };
+    let token = model.mint_request_token();
+    let context_revision = model.workbench().context_revision;
+    Update {
+        render: true,
+        effect: Some(Effect::ImportCsvApply {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            database,
+            schema,
+            table,
+            path: "import.csv".into(),
+        }),
     }
 }
 
@@ -2721,6 +2800,10 @@ fn cycle_action(
                 ActionId::ExportCsv,
                 ActionId::ExportJson,
                 ActionId::ExportTsv,
+                ActionId::ExportStreamCsv,
+                ActionId::ExportStreamJson,
+                ActionId::ExportStreamTsv,
+                ActionId::ImportCsv,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,
@@ -4084,5 +4167,102 @@ mod tests {
             }) if op == "truncate" && table == "users" && new_table.is_empty()
         ));
         assert!(model.confirm().is_none());
+    }
+
+    #[test]
+    fn export_stream_emits_export_stream_query_from_editor_sql() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().open_sql_tab();
+        model
+            .workbench_mut()
+            .active_editor_mut()
+            .unwrap()
+            .set_text("select 1 as n");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::ExportStreamCsv);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::ExportStreamQuery {
+                session_id_hex,
+                statement,
+                format,
+                path,
+                ..
+            }) if session_id_hex == "aabb"
+                && statement.contains("select 1")
+                && format == "csv"
+                && path == "export-stream.csv"
+        ));
+    }
+
+    #[test]
+    fn import_csv_emits_import_apply_for_base_table() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "ccdd".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().context.database = "postgres".into();
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::ImportCsv);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::ImportCsvApply {
+                session_id_hex,
+                database,
+                schema,
+                table,
+                path,
+                ..
+            }) if session_id_hex == "ccdd"
+                && database == "postgres"
+                && schema == "public"
+                && table == "users"
+                && path == "import.csv"
+        ));
+    }
+
+    #[test]
+    fn import_csv_without_base_table_marks_failed() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "eeff".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::ImportCsv);
+        let out = update(&mut model, Message::Activate);
+        assert!(out.effects().next().is_none());
+        let err = model
+            .workbench()
+            .active_grid()
+            .and_then(|g| g.error_label.clone());
+        assert!(
+            err.as_deref()
+                .is_some_and(|e| e.contains("base table")),
+            "{err:?}"
+        );
     }
 }

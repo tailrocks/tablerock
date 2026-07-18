@@ -116,7 +116,8 @@ Standard suites + Docker engine suites; new import/export tests live in
 - ~~Streaming re-query export with cancel mid-stream~~ (closed: stream_export)
 - Persistence actor API for filter presets
 - Multi-statement UI wiring into QueryEditorModel run path
-- TUI Effect wiring for import apply / stream export actions
+- ~~TUI Effect wiring for import apply / stream export actions~~
+  (ImportCsv + ExportStreamCsv/Json/Tsv → effects; unit-tested)
 
 ## STOP conditions
 
