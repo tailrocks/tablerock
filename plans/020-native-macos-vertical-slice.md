@@ -45,8 +45,9 @@
   Evidence 505 records bounded 10k-row AppKit scrolling and fixes unbounded
   pre-viewport column initialization. Evidence 506 closes the live
   query/catalog/cancel/review matrix and Swift ownership audit. Remaining
-  system-setting/VoiceOver, glass, page-decode Instruments, and retained-object
-  criteria stay open.
+  system-setting/VoiceOver and retained-object criteria stay open. Evidence
+  507 records real-page Swift decode under Time Profiler; evidence 508 closes
+  the Liquid Glass structural/degradation audit.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
@@ -147,7 +148,8 @@ unchanged-green.
 - [x] Zero per-cell bridge calls (page snapshot decoded once off-main, then
       rendered by reusable `NSTableView` cells; evidence 408–409)
 - [x] Swift contains no SQL parsing/safety/mutation construction (evidence 506)
-- [ ] Glass rules hold: no glass on content surfaces; one cluster per region; accessibility degradation verified (screenshot matrix)
+- [x] Glass rules hold: no glass on content surfaces; one cluster per region;
+      accessibility degradation verified (evidence 414, 508)
 - [x] Strict-concurrency build clean; no `ObservableObject`, no GCD (evidence
       407–408; Swift 6 complete checking + warnings-as-errors)
 - [ ] Instruments: native 10k-grid scroll/RSS and real 500-row UniFFI page

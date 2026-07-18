@@ -693,17 +693,19 @@ struct ContentView: View {
                 .accessibilityLabel(model.sessionHex == nil
                     ? "No active connection" : "Connected to \(model.connectedEngine)")
             }
+            ToolbarSpacer(.fixed)
             ToolbarItem(id: "refresh", placement: .automatic) {
                 Button { Task { await model.browse() } } label: {
                     Label("Refresh Catalog", systemImage: "arrow.clockwise")
                 }
                 .disabled(model.sessionHex == nil || model.isRunning)
             }
+            ToolbarSpacer(.fixed)
             ToolbarItem(id: "run", placement: .primaryAction) {
                 Button { Task { await model.runQuery() } } label: {
                     Label("Run Query", systemImage: "play.fill")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(model.sessionHex == nil || model.isRunning)
             }
             ToolbarItem(id: "cancel", placement: .primaryAction) {
@@ -918,9 +920,12 @@ struct CatalogGrid: NSViewRepresentable {
         grid.allowsColumnResizing = true
         grid.allowsMultipleSelection = true
         grid.rowSizeStyle = .small
+        grid.backgroundColor = .textBackgroundColor
         grid.setAccessibilityLabel("Query results")
         let scroll = NSScrollView()
         scroll.documentView = grid
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .textBackgroundColor
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
@@ -1063,11 +1068,15 @@ struct SqlTextEditor: NSViewRepresentable {
         editor.font = NSFont.monospacedSystemFont(
             ofSize: NSFont.systemFontSize, weight: .regular)
         editor.textContainerInset = NSSize(width: 6, height: 6)
+        editor.drawsBackground = true
+        editor.backgroundColor = .textBackgroundColor
         editor.string = text
         editor.setAccessibilityLabel("SQL editor")
 
         let scroll = NSScrollView()
         scroll.documentView = editor
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .textBackgroundColor
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.borderType = .bezelBorder

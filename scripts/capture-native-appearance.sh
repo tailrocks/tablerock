@@ -34,14 +34,19 @@ window_id_for_pid() {
     let rows = CGWindowListCopyWindowInfo(
       [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
     )! as! [[String: Any]]
+    var best: (number: Int, area: Int)?
     for row in rows {
       guard row[kCGWindowOwnerPID as String] as? Int == expectedPID,
             let number = row[kCGWindowNumber as String] as? Int,
             let layer = row[kCGWindowLayer as String] as? Int,
+            let bounds = row[kCGWindowBounds as String] as? [String: Any],
+            let width = bounds["Width"] as? Int,
+            let height = bounds["Height"] as? Int,
             layer == 0 else { continue }
-      print(number)
-      break
+      let candidate = (number, width * height)
+      if best == nil || candidate.1 > best!.area { best = candidate }
     }
+    if let best { print(best.number) }
   ' "$app_pid"
 }
 
@@ -72,7 +77,19 @@ for scheme in light dark; do
         echo "error: no TableRock window for $name" >&2
         exit 1
       fi
-      screencapture -x -o -l "$window_id" "$OUT_DIR/$name.png"
+      captured=""
+      for _ in $(seq 1 20); do
+        if screencapture -x -o -l "$window_id" "$OUT_DIR/$name.png" 2>/dev/null \
+            && [[ -s "$OUT_DIR/$name.png" ]]; then
+          captured="1"
+          break
+        fi
+        sleep 0.1
+      done
+      if [[ -z "$captured" ]]; then
+        echo "error: window pixels unavailable for $name" >&2
+        exit 1
+      fi
       kill "$CURRENT_PID"
       wait "$CURRENT_PID" 2>/dev/null || true
       CURRENT_PID=""

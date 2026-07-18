@@ -32,9 +32,16 @@ require 'accessibilityLabel\("Refresh catalog"\)' 'catalog refresh label'
 require 'Label\("Run Query"' 'Run toolbar/menu label'
 require 'Label\("Cancel Query"' 'Cancel toolbar/menu label'
 require 'Fixture ·' 'appearance evidence marker'
+require '\.buttonStyle\(\.glassProminent\)' 'glass-prominent primary toolbar action'
+require 'backgroundColor = \.textBackgroundColor' 'opaque editor/grid content surfaces'
+if [[ "$(rg -c 'ToolbarSpacer\(\.fixed\)' "$SOURCE")" -lt 2 ]]; then
+  echo "error: missing toolbar glass-cluster separators" >&2
+  exit 1
+fi
 
 forbid 'NSVisualEffectView' 'custom visual-effect material'
 forbid '\.blur\(' 'custom blur'
+forbid 'toolbarBackground|[A-Za-z]+Material' 'custom toolbar or material background'
 forbid 'DispatchQueue' 'GCD ownership bypass'
 forbid 'ObservableObject|@Published|@StateObject|@EnvironmentObject' 'legacy observation stack'
 
