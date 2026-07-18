@@ -445,4 +445,17 @@ mod tests {
         assert_eq!(sql_placeholder(3, &Bound::Bool(true)), "$3::boolean");
         assert_eq!(sql_placeholder(4, &Bound::Null), "$4::text");
     }
+
+    #[test]
+    fn hostile_identifiers_are_quoted_not_injected() {
+        // Quote-ident must neutralize structural injection in relation/column names.
+        let hostile = "users\"; DROP TABLE t; --";
+        let quoted = quote_ident(hostile).unwrap();
+        assert!(quoted.starts_with('"') && quoted.ends_with('"'));
+        assert!(!quoted.contains("\"; DROP"));
+        // Values never enter SQL as literals — only $n casts.
+        let ph = sql_placeholder(1, &Bound::Text("1; DROP TABLE t".into()));
+        assert_eq!(ph, "$1::text");
+        assert!(!ph.contains("DROP"));
+    }
 }

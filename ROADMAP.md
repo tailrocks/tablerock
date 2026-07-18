@@ -149,6 +149,14 @@ Redis command editor mirror.
 
 ## Phase 6 — PostgreSQL write/admin slice
 
+**Partial (evidence 227–230):** `ApplyMutations` intent + PG transactional
+apply; editability facts + staged drafts; review preview from typed plans;
+cell-edit session; browse PK identity; conflict rollback keeps staged state.
+Still open for full Phase 6 exit: full typed editors, RETURNING/generated
+values, consume-once review registry across UI dialog time, FK navigation,
+table ops, activity dashboard, structure tab, adversarial mutation suite
+closure, ledger rows green.
+
 Deliver proven editability, typed value editors, inserts/updates/deletes
 staged in memory with visible row/cell highlighting, undo/discard, the review
 dialog with exact parameterized SQL preview, transactional apply, conflict and
