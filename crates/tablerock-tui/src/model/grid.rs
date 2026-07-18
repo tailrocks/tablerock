@@ -1514,6 +1514,20 @@ impl DataGridModel {
         self.viewport_col = 0;
     }
 
+    /// Move cursor to the last resident cell (no server I/O).
+    pub fn end_cursor(&mut self) {
+        if self.columns.is_empty() || self.row_count == 0 {
+            self.home_cursor();
+            return;
+        }
+        self.cursor_row = self
+            .start_row
+            .saturating_add(u64::from(self.row_count.saturating_sub(1)));
+        self.cursor_col = self.columns.len().saturating_sub(1);
+        self.viewport_row = self.cursor_row;
+        self.viewport_col = self.cursor_col;
+    }
+
     pub fn move_cursor_column(&mut self, dir: i8) -> bool {
         if dir == 0 {
             return false;
@@ -2079,6 +2093,11 @@ mod tests {
         assert_eq!(g.cursor_col, 0);
         assert_eq!(g.viewport_row, 100);
         assert_eq!(g.viewport_col, 0);
+        g.end_cursor();
+        assert_eq!(g.cursor_row, 109);
+        assert_eq!(g.cursor_col, 1);
+        assert_eq!(g.viewport_row, 109);
+        assert_eq!(g.viewport_col, 1);
     }
 
     #[test]

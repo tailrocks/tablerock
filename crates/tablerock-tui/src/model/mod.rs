@@ -213,6 +213,8 @@ pub enum ActionId {
     GoToColumn,
     /// Move cursor to top-left of resident page (no fetch).
     HomeCursor,
+    /// Move cursor to bottom-right of resident page (no fetch).
+    EndCursor,
     /// Re-browse the active base table (keep sort/filters).
     RefreshTable,
     /// Toggle visibility of the cursor column.

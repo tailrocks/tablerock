@@ -667,6 +667,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let go_last = action_label(model, ActionId::GoToLastRow, "Last");
     let go_col = action_label(model, ActionId::GoToColumn, "GoCol");
     let home_cur = action_label(model, ActionId::HomeCursor, "Home");
+    let end_cur = action_label(model, ActionId::EndCursor, "End");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
@@ -1136,6 +1137,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::HomeCursor,
                         label: home_cur.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::EndCursor,
+                        label: end_cur.as_str(),
                         enabled: true,
                         style: None,
                     },

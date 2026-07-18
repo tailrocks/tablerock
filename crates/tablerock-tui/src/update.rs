@@ -4135,6 +4135,16 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::EndCursor if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.columns.is_empty() {
+                    return Update::unchanged();
+                }
+                grid.end_cursor();
+                return Update::render();
+            }
+            Update::unchanged()
+        }
         ActionId::RefreshTable if model.screen() == Screen::Workbench => {
             rebrowse_active_table(model)
         }
@@ -5117,6 +5127,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::GoToLastRow
         | ActionId::GoToColumn
         | ActionId::HomeCursor
+        | ActionId::EndCursor
         | ActionId::RefreshTable
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
@@ -6766,6 +6777,7 @@ fn cycle_action(
                 ActionId::GoToLastRow,
                 ActionId::GoToColumn,
                 ActionId::HomeCursor,
+                ActionId::EndCursor,
                 ActionId::RefreshTable,
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
