@@ -168,4 +168,47 @@ mod tests {
         // May be Found or Missing depending on environment — just must not panic.
         let _ = s.is_available();
     }
+
+    #[test]
+    fn pg_restore_argv_carries_no_secret_and_targets_file() {
+        let argv = pg_restore_argv(
+            Path::new("/usr/bin/pg_restore"),
+            "db.host",
+            5433,
+            "analytics",
+            "reporter",
+            Path::new("/tmp/in.dump"),
+        );
+        let refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+        // Password flows through the environment, never the argv.
+        assert!(!argv_contains_secret(&refs, "topsecret"));
+        assert!(refs.contains(&"--no-password"));
+        assert!(refs.contains(&"/usr/bin/pg_restore"));
+        assert!(refs.contains(&"db.host"));
+        assert!(refs.contains(&"5433"));
+        assert!(refs.contains(&"analytics"));
+        assert!(refs.contains(&"reporter"));
+        assert!(refs.contains(&"/tmp/in.dump"));
+    }
+
+    #[test]
+    fn pg_dump_argv_uses_custom_format_archive_target() {
+        let argv = pg_dump_argv(
+            Path::new("/usr/bin/pg_dump"),
+            "h",
+            7,
+            "d",
+            "u",
+            Path::new("/tmp/o.dump"),
+        );
+        let refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
+        // Custom format so pg_restore can reload the archive.
+        assert!(refs.contains(&"-Fc"));
+        // Connection + identity + target flags are all present.
+        assert!(refs.contains(&"-h"));
+        assert!(refs.contains(&"-U"));
+        assert!(refs.contains(&"-d"));
+        assert!(refs.contains(&"-f"));
+        assert!(refs.contains(&"/tmp/o.dump"));
+    }
 }
