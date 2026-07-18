@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
-# Build a workable TableRock.app using Command Line Tools ONLY — direct swiftc,
-# no SwiftPM, no full Xcode, no Developer ID, no CLT license acceptance.
+# Build a local-development TableRock.app with direct swiftc against macOS 26.
+# No SwiftPM or Developer ID identity is required for this ad-hoc-signed build.
 #
-# Why direct swiftc: `swift build` (SwiftPM) and `cc` test-linking are gated on
-# the Xcode license (`sudo xcodebuild -license`), an operator step. swiftc itself
-# is not — so we compile the UniFFI bridge module + the SwiftUI app directly and
-# link the cargo release dylib. This makes the workable app reproducible without
-# any operator action. Notarized XCFramework distribution (plan 019) remains the
-# separate operator-gated release path.
+# Direct swiftc keeps the local proof independent of SwiftPM packaging and links
+# the cargo release dylib. Notarized XCFramework distribution (plan 019) remains
+# the separate operator-gated release path.
 #
 # Usage: ./scripts/build-native-app.sh
 # Output: native/dist/TableRock.app
@@ -18,7 +15,7 @@ NATIVE="$REPO_ROOT/native"
 BUILD="$NATIVE/.build-direct"
 DIST="$NATIVE/dist"
 APP="$DIST/TableRock.app"
-TARGET_arm64="arm64-apple-macos14"
+TARGET_arm64="arm64-apple-macos26.0"
 
 echo "==> Building Rust facade (release)"
 cargo build -p tablerock-ffi --release
@@ -72,7 +69,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleExecutable</key><string>TableRock</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

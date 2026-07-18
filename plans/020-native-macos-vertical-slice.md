@@ -12,10 +12,10 @@
 
 - **Checkpoints 1–7 prototype complete (2026-07-18) + behaviorally verified
   (2026-07-19); plan remains IN PROGRESS**
-  — full workbench delivered via Command Line Tools only (no full Xcode, no
-  Developer ID, no CLT license acceptance). The build uses direct `swiftc`
+  — behavioral prototype originally delivered via Command Line Tools only.
+  Full Xcode 26.6 is now installed; Developer ID remains absent. The local build uses direct `swiftc`
   (`scripts/build-native-app.sh`), not SwiftPM: swiftc links the cargo release
-  dylib + SwiftUI/AppKit from the CLT macOS SDK, producing a runnable
+  dylib + SwiftUI/AppKit from the macOS 26.5 SDK, producing a runnable
   `TableRock.app`. Checkpoints: cp1 shell+bridge · cp2 connection list
   (`list_profiles`) · cp3 connect (`open_profile`) · cp4 catalog browse
   (operation/event/page flow) · cp5 grid (full page-body decode: columns +
@@ -26,18 +26,19 @@
   ClickHouse, Redis — live Docker); it caught + fixed 3 real decoder bugs
   (missing `pump`, warnings u32→u16, integers LE→BE). **Gate resolution:**
   the plan-019 distribution gate gates the *notarized XCFramework release*
-  (full Xcode + Developer ID — operator); a *workable local app* does not
-  require it, and the direct-swiftc build avoids the CLT license that SwiftPM
-  requires. The prototype does not yet satisfy the plan's AppKit controls,
-  off-main actor polling, accessibility, appearance, or Instruments done
-  criteria. Evidence 407 removes `ObservableObject` and adds the required
+  (Developer ID — operator); a *workable local app* does not
+  require it. The prototype does not yet satisfy all of the plan's
+  accessibility, appearance, lazy-catalog, or Instruments done criteria.
+  Evidence 407 removes `ObservableObject` and adds the required
   Settings scene. Evidence 408 adds actor-owned bridge I/O, off-main pump/page
   decode, operation-ID cancellation UI, and a strict Swift 6 build gate;
   evidence 409 replaces the SwiftUI result renderer with the required reusable
   AppKit `NSTableView`; evidence 410 replaces `TextEditor` with the required
   IME-safe AppKit `NSTextView`/TextKit editor. Evidence 411 adds the AppKit
   `NSOutlineView` catalog and removes engine-specific catalog SQL from Swift
-  behind a Rust-owned typed intent. Remaining criteria stay open.
+  behind a Rust-owned typed intent. Evidence 412 adds focused per-window Query
+  commands, customizable toolbar actions, and corrects every native build
+  surface to the fixed macOS 26 deployment target. Remaining criteria stay open.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED

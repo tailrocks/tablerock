@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 // Resolve absolute path to cargo release output (repo_root/target/release).
@@ -8,7 +8,7 @@ let cargoReleaseLibDir = packageDir + "/../target/release"
 let package = Package(
     name: "TableRockBridge",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v26),
     ],
     products: [
         .library(name: "TableRockBridge", targets: ["TableRockBridge"]),
@@ -41,7 +41,7 @@ let package = Package(
             dependencies: ["TableRockBridge"],
             path: "Sources/BridgeProof"
         ),
-        // Native macOS app (plan 020 checkpoint 1). SwiftUI + AppKit via CLT;
+        // Native macOS app (plan 020 checkpoint 1). SwiftUI + AppKit on macOS 26;
         // links the cargo release dylib transitively through TableRockBridge.
         .executableTarget(
             name: "TableRockApp",

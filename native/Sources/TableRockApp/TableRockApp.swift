@@ -1,10 +1,8 @@
 // TableRock native macOS app — plan 020.
 //
-// Built with swiftc via Command Line Tools (no full Xcode required): SwiftUI +
-// AppKit ship with the CLT macOS SDK, and the Rust bridge is linked as the cargo
-// release dylib. Notarized XCFramework distribution remains the operator-gated
-// release path (plan 019). See scripts/build-native-app.sh (direct swiftc,
-// license-free).
+// Built directly with Swift 6 against the macOS 26 SDK. The Rust bridge is
+// linked as the cargo release dylib for local development; notarized
+// XCFramework distribution remains the operator-gated release path (plan 019).
 //
 // Checkpoint 1: app shell + live bridge (runtime + persistence).
 // Checkpoint 2: connection list — lists saved profiles over the bridge.
@@ -18,6 +16,46 @@ private struct NativeOperationProjection: Sendable {
     let table: PageV1Table?
     let envelope: PageV1Envelope?
     let outcome: String?
+}
+
+@MainActor
+private struct WorkbenchActions {
+    let canRun: Bool
+    let canCancel: Bool
+    let canRefresh: Bool
+    let run: () -> Void
+    let cancel: () -> Void
+    let refresh: () -> Void
+}
+
+private struct WorkbenchActionsKey: FocusedValueKey {
+    typealias Value = WorkbenchActions
+}
+
+private extension FocusedValues {
+    var workbenchActions: WorkbenchActions? {
+        get { self[WorkbenchActionsKey.self] }
+        set { self[WorkbenchActionsKey.self] = newValue }
+    }
+}
+
+private struct WorkbenchCommands: Commands {
+    @FocusedValue(\.workbenchActions) private var actions
+
+    var body: some Commands {
+        CommandMenu("Query") {
+            Button("Run Query") { actions?.run() }
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(actions?.canRun != true)
+            Button("Cancel Query") { actions?.cancel() }
+                .keyboardShortcut(".", modifiers: .command)
+                .disabled(actions?.canCancel != true)
+            Divider()
+            Button("Refresh Catalog") { actions?.refresh() }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(actions?.canRefresh != true)
+        }
+    }
 }
 
 /// Sole owner of the synchronous UniFFI object. Blocking driver pumping and
@@ -99,6 +137,9 @@ struct TableRockApp: App {
             ContentView()
                 .environment(model)
                 .frame(minWidth: 760, minHeight: 520)
+        }
+        .commands {
+            WorkbenchCommands()
         }
         Settings {
             NativeSettingsView()
@@ -498,6 +539,43 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .task { await model.initialize() }
+        .focusedValue(\.workbenchActions, WorkbenchActions(
+            canRun: model.sessionHex != nil && !model.isRunning,
+            canCancel: model.isRunning,
+            canRefresh: model.sessionHex != nil && !model.isRunning,
+            run: { Task { await model.runQuery() } },
+            cancel: { Task { await model.cancel() } },
+            refresh: { Task { await model.browse() } }
+        ))
+        .toolbar(id: "workbench") {
+            ToolbarItem(id: "connection", placement: .automatic) {
+                Label(
+                    model.sessionHex == nil ? "Disconnected" : model.connectedEngine,
+                    systemImage: model.sessionHex == nil ? "bolt.slash" : "bolt.horizontal"
+                )
+                .accessibilityLabel(model.sessionHex == nil
+                    ? "No active connection" : "Connected to \(model.connectedEngine)")
+            }
+            ToolbarItem(id: "refresh", placement: .automatic) {
+                Button { Task { await model.browse() } } label: {
+                    Label("Refresh Catalog", systemImage: "arrow.clockwise")
+                }
+                .disabled(model.sessionHex == nil || model.isRunning)
+            }
+            ToolbarItem(id: "run", placement: .primaryAction) {
+                Button { Task { await model.runQuery() } } label: {
+                    Label("Run Query", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.sessionHex == nil || model.isRunning)
+            }
+            ToolbarItem(id: "cancel", placement: .primaryAction) {
+                Button { Task { await model.cancel() } } label: {
+                    Label("Cancel Query", systemImage: "stop.fill")
+                }
+                .disabled(!model.isRunning)
+            }
+        }
     }
 }
 
