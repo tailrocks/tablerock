@@ -148,6 +148,8 @@ pub enum ActionId {
     CopyPick,
     /// Copy visible column names (tab-separated) to clipboard.
     CopyColumnNames,
+    /// Copy the cursor column name to clipboard.
+    CopyColumnName,
     /// Copy cursor column values for all resident rows (one per line).
     CopyColumn,
     /// Copy active grid status line to clipboard.
