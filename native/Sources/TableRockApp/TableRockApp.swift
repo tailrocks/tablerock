@@ -31,6 +31,9 @@ final class BridgeModel: ObservableObject {
     @Published var status: String = "starting…"
     @Published var bridgeError: String?
     @Published var profiles: [BridgeProfileItem] = []
+    @Published var sessionHex: String?
+    @Published var connectError: String?
+    @Published var connectingName: String?
     var bridge: TableRockBridge?
 
     private static let persistenceDirectory: URL = {
@@ -72,6 +75,21 @@ final class BridgeModel: ObservableObject {
             status = "error"
         }
     }
+
+    /// Open a saved profile by id (password override nil — inline source only).
+    func connect(_ item: BridgeProfileItem) {
+        guard let bridge else { return }
+        connectingName = item.name
+        sessionHex = nil
+        connectError = nil
+        do {
+            let session = try bridge.openProfile(profileId: item.idBytes, passwordOverride: nil)
+            sessionHex = session.map { String(format: "%02x", $0) }.joined()
+        } catch {
+            connectError = "Connect failed: \(error)"
+        }
+        connectingName = nil
+    }
 }
 
 struct ContentView: View {
@@ -81,7 +99,10 @@ struct ContentView: View {
         NavigationSplitView {
             // Connection list (left sidebar).
             List(model.profiles, id: \.name) { profile in
-                ProfileRow(profile: profile)
+                Button { model.connect(profile) } label: {
+                    ProfileRow(profile: profile)
+                }
+                .buttonStyle(.plain)
             }
             .navigationTitle("Connections")
             .overlay {
@@ -99,6 +120,22 @@ struct ContentView: View {
                 Text(model.status).foregroundStyle(.secondary)
                 if let bridgeError = model.bridgeError {
                     Text(bridgeError)
+                        .foregroundStyle(.red)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                }
+                if let name = model.connectingName {
+                    Text("Connecting to \(name)…").foregroundStyle(.secondary)
+                }
+                if let session = model.sessionHex {
+                    Label(
+                        "Connected · session \(String(session.prefix(16)))…",
+                        systemImage: "checkmark.circle.fill"
+                    )
+                    .foregroundStyle(.green)
+                }
+                if let connectError = model.connectError {
+                    Text(connectError)
                         .foregroundStyle(.red)
                         .font(.callout)
                         .textSelection(.enabled)
