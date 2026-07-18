@@ -154,6 +154,8 @@ pub enum ActionId {
     CopyPkNames,
     /// Copy locator values for the cursor row (pk=value pairs).
     CopyLocator,
+    /// Copy SQL WHERE clause from cursor row locator.
+    CopyWhere,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Append cursor column as secondary sort (or cycle its direction in place).

@@ -3762,6 +3762,25 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyWhere if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(text) = grid.cursor_where_sql() else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied WHERE ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -5096,6 +5115,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyTableName
         | ActionId::CopyPkNames
         | ActionId::CopyLocator
+        | ActionId::CopyWhere
         | ActionId::CycleSort
         | ActionId::PushSort
         | ActionId::PopSort
@@ -6743,6 +6763,7 @@ fn cycle_action(
                 ActionId::CopyTableName,
                 ActionId::CopyPkNames,
                 ActionId::CopyLocator,
+                ActionId::CopyWhere,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,

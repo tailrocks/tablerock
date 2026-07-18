@@ -700,6 +700,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_table = action_label(model, ActionId::CopyTableName, "CopyTbl");
     let copy_pk = action_label(model, ActionId::CopyPkNames, "CopyPk");
     let copy_loc = action_label(model, ActionId::CopyLocator, "CopyLoc");
+    let copy_where = action_label(model, ActionId::CopyWhere, "CopyWhere");
     let toggle_bool = action_label(model, ActionId::ToggleBool, "TogBool");
     let set_null = action_label(model, ActionId::SetNull, "SetNull");
     let set_today = action_label(model, ActionId::SetToday, "Today");
@@ -1335,6 +1336,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyLocator,
                         label: copy_loc.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyWhere,
+                        label: copy_where.as_str(),
                         enabled: true,
                         style: None,
                     },

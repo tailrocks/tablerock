@@ -1495,6 +1495,42 @@ impl DataGridModel {
         )
     }
 
+    /// SQL WHERE fragment from cursor row locator (quoted idents, literal values).
+    ///
+    /// Presentation aid only — not executed. Values are single-quoted with `'`
+    /// doubled. NULL cells use the `NULL` keyword.
+    #[must_use]
+    pub fn cursor_where_sql(&self) -> Option<String> {
+        let fields = self.locator_for_row(self.cursor_row);
+        if fields.is_empty() {
+            return None;
+        }
+        let parts: Vec<String> = fields
+            .iter()
+            .map(|f| {
+                let col = format!("\"{}\"", f.column.replace('"', "\"\""));
+                let is_null = self
+                    .columns
+                    .iter()
+                    .position(|c| c == &f.column)
+                    .map(|i| {
+                        matches!(
+                            self.cell_at(self.cursor_row, i).distinction,
+                            CellDistinction::Null
+                        )
+                    })
+                    .unwrap_or(false);
+                let lit = if is_null {
+                    "NULL".into()
+                } else {
+                    format!("'{}'", f.original_text.replace('\'', "''"))
+                };
+                format!("{col} = {lit}")
+            })
+            .collect();
+        Some(format!("WHERE {}", parts.join(" AND ")))
+    }
+
     /// Align horizontal viewport so the cursor column is the first visible
     /// physical column when possible (wide grids after GoToColumn).
     pub fn reveal_cursor_column(&mut self) {
@@ -2123,8 +2159,11 @@ mod tests {
         g.cursor_row = 0;
         let loc = g.cursor_locator_text().expect("locator");
         assert_eq!(loc, "id=7");
+        let wh = g.cursor_where_sql().expect("where");
+        assert_eq!(wh, "WHERE \"id\" = '7'");
         g.identity_columns.clear();
         assert!(g.cursor_locator_text().is_none());
+        assert!(g.cursor_where_sql().is_none());
     }
 
     #[test]
