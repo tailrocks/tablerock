@@ -2,3 +2,5 @@
 /.DS_Store
 *.swp
 *.tmp
+/native/.build/
+/native/.swiftpm/

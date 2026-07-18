@@ -15,14 +15,17 @@
 
 ## Status
 
-- **State**: IN PROGRESS (checkpoint 1: page codec + facade crate + unit tests)
+- **State**: IN PROGRESS (checkpoints 1–2: facade + generated Swift + proof harness;
+  XCFramework/notarize blocked — no full Xcode / Developer ID on host)
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: HIGH (architecture gate; external toolchain)
 - **Depends on**: plans/018
 - **Category**: direction (Phase 12 roadmap)
 - **Planned at**: commit `d8b113b`, 2026-07-18
-- **Evidence**: `docs/evidence/delivery/249-plan-019-page-codec-and-ffi-facade.md`
+- **Evidence**:
+  - `docs/evidence/delivery/249-plan-019-page-codec-and-ffi-facade.md`
+  - `docs/evidence/delivery/250-plan-019-swift-bindings-and-proof.md`
 
 ## Fixed constraints (inline — non-negotiable without recorded revision)
 

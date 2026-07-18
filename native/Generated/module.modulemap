@@ -1,0 +1,4 @@
+module tablerock_ffiFFI {
+    header "tablerock_ffiFFI.h"
+    export *
+}
