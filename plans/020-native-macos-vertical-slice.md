@@ -45,9 +45,11 @@
   Evidence 505 records bounded 10k-row AppKit scrolling and fixes unbounded
   pre-viewport column initialization. Evidence 506 closes the live
   query/catalog/cancel/review matrix and Swift ownership audit. Remaining
-  system-setting/VoiceOver criteria stay open. Evidence 507 records real-page
-  Swift decode under Time Profiler; evidence 508 closes the Liquid Glass
-  structural/degradation audit; evidence 509 proves zero decoder leaks.
+  Evidence 507 records real-page Swift decode under Time Profiler; evidence
+  508 closes the Liquid Glass structural/degradation audit; evidence 509 proves
+  zero decoder leaks; evidence 510 runs the actual AppKit accessibility/focus
+  path. Lazy expansion with explicit loading/stale/error catalog states remains
+  before Plan 020 exit. The full system VoiceOver matrix remains Plan 021 scope.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED

@@ -4,6 +4,17 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+APP_BUNDLE="$REPO_ROOT/native/dist/TableRock.app"
+APP_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/TableRock"
+APP_PID=""
+
+cleanup() {
+  if [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
+    kill "$APP_PID" 2>/dev/null || true
+    wait "$APP_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
 
 require() {
   local pattern="$1"
@@ -45,4 +56,27 @@ forbid 'toolbarBackground|[A-Za-z]+Material' 'custom toolbar or material backgro
 forbid 'DispatchQueue' 'GCD ownership bypass'
 forbid 'ObservableObject|@Published|@StateObject|@EnvironmentObject' 'legacy observation stack'
 
-echo "native accessibility structural gate passed"
+if pgrep -f "^$APP_EXECUTABLE$" >/dev/null; then
+  echo "error: TableRock is already running; close it before accessibility proof" >&2
+  exit 1
+fi
+"$REPO_ROOT/scripts/build-native-app.sh" >/dev/null
+audit_log="$(mktemp "$REPO_ROOT/target/native-accessibility.XXXXXX")"
+open -n -F --env TABLEROCK_FIXTURE_ACCESSIBILITY_AUDIT=1 \
+  --stdout "$audit_log" --stderr "$audit_log" "$APP_BUNDLE"
+for _ in $(seq 1 50); do
+  APP_PID="$(pgrep -n -f "^$APP_EXECUTABLE$" || true)"
+  [[ -n "$APP_PID" ]] && break
+  sleep 0.1
+done
+for _ in $(seq 1 50); do
+  rg -q '^ACCESSIBILITY_PROOF_' "$audit_log" && break
+  sleep 0.1
+done
+if ! rg -q '^ACCESSIBILITY_PROOF_PASSED ' "$audit_log"; then
+  cat "$audit_log" >&2
+  echo "error: native accessibility runtime proof failed" >&2
+  exit 1
+fi
+
+echo "native accessibility structural and runtime gate passed"

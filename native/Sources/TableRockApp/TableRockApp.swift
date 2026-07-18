@@ -220,7 +220,10 @@ struct TableRockApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"] != nil {
+            if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_ACCESSIBILITY_AUDIT"] == "1" {
+                NativeAccessibilityFixtureView()
+                    .frame(minWidth: 760, minHeight: 520)
+            } else if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"] != nil {
                 PerformanceFixtureView(table: model.resultTable)
                     .frame(minWidth: 760, minHeight: 520)
             } else {
@@ -238,6 +241,68 @@ struct TableRockApp: App {
             NativeSettingsView()
         }
     }
+}
+
+private struct NativeAccessibilityFixtureView: View {
+    @State private var catalogSelection: String?
+    @State private var query = "SELECT 1;"
+
+    private let catalog = PageV1Table(
+        columns: ["schema", "table"],
+        rows: [["public", "users"]]
+    )
+    private let result = PageV1Table(
+        columns: ["id", "name"],
+        rows: [["1", "Ada"]]
+    )
+
+    var body: some View {
+        HSplitView {
+            CatalogOutline(table: catalog, selection: $catalogSelection)
+                .frame(minWidth: 220)
+            VStack {
+                SqlTextEditor(text: $query)
+                    .frame(height: 120)
+                CatalogGrid(table: result)
+            }
+        }
+        .padding(12)
+        .task {
+            try? await Task.sleep(for: .milliseconds(500))
+            runNativeAccessibilityAudit()
+        }
+    }
+}
+
+@MainActor
+private func runNativeAccessibilityAudit() {
+    guard let window = NSApplication.shared.windows.first(where: { $0.isVisible }),
+          let root = window.contentView
+    else {
+        writePerformanceMetric("ACCESSIBILITY_PROOF_FAILED no visible window")
+        return
+    }
+    func descendants(of view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+    let views = descendants(of: root)
+    guard let outline = views.compactMap({ $0 as? NSOutlineView }).first,
+          let grid = views.compactMap({ $0 as? NSTableView })
+              .first(where: { !($0 is NSOutlineView) }),
+          let editor = views.compactMap({ $0 as? NSTextView }).first,
+          outline.accessibilityLabel() == "Database catalog",
+          grid.accessibilityLabel() == "Query results",
+          editor.accessibilityLabel() == "SQL editor",
+          window.makeFirstResponder(editor), window.firstResponder === editor,
+          window.makeFirstResponder(grid), window.firstResponder === grid,
+          window.makeFirstResponder(editor), window.firstResponder === editor
+    else {
+        writePerformanceMetric("ACCESSIBILITY_PROOF_FAILED role, label, or focus mismatch")
+        return
+    }
+    writePerformanceMetric(
+        "ACCESSIBILITY_PROOF_PASSED outline=Database_catalog grid=Query_results editor=SQL_editor focus=editor-grid-editor"
+    )
 }
 
 private struct PerformanceFixtureView: View {
