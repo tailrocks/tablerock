@@ -1948,7 +1948,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 render: true,
                 effect: Some(Effect::ReconnectSession {
                     request_token,
-                    draft,
+                    draft: *draft,
                     attempt,
                 }),
             }
@@ -13477,7 +13477,7 @@ mod tests {
                 request_token: 7,
                 attempt: 2,
                 next_delay_ms: 4_000,
-                draft: draft.clone(),
+                draft: Box::new(draft.clone()),
             }),
         );
         match out.effects().next() {

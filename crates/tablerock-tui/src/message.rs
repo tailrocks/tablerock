@@ -134,7 +134,10 @@ pub enum EngineMsg {
         attempt: u32,
         next_delay_ms: u64,
         /// Draft needed to re-dispatch the next attempt after delay (executor sleeps).
-        draft: crate::effect::ConnectionDraft,
+        /// Boxed: `ConnectionDraft` is a fat struct (~556 B) and `Reconnecting` is a
+        /// rare, non-hot message; boxing it keeps the `EngineMsg`/`Message` enums
+        /// small without paying allocation on the frequent engine-event path.
+        draft: Box<crate::effect::ConnectionDraft>,
     },
     ReconnectStopped {
         request_token: u64,

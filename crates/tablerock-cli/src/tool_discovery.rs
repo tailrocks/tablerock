@@ -158,7 +158,7 @@ mod tests {
         );
         let refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
         assert!(!argv_contains_secret(&refs, "s3cret"));
-        assert!(refs.iter().any(|a| *a == "--no-password"));
+        assert!(refs.contains(&"--no-password"));
     }
 
     #[test]

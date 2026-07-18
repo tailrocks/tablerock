@@ -5747,7 +5747,7 @@ async fn reconnect_session(
                     request_token,
                     attempt: next_attempt,
                     next_delay_ms,
-                    draft,
+                    draft: Box::new(draft),
                 }),
                 None => Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
                     request_token,

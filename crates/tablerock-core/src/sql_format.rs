@@ -186,7 +186,7 @@ fn flush_space(out: &mut String, pending: &mut bool) {
 
 fn is_keyword(word: &str) -> bool {
     let lower = word.to_ascii_lowercase();
-    KEYWORDS.iter().any(|k| *k == lower.as_str())
+    KEYWORDS.contains(&lower.as_str())
 }
 
 fn dollar_tag(bytes: &[u8], i: usize) -> Option<usize> {
