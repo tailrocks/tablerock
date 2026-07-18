@@ -999,14 +999,15 @@ mod tests {
     #[test]
     fn tab_counts_summary_reports_flags() {
         let mut wb = WorkbenchModel::default();
+        // Default Welcome tab remains; open two more.
         wb.open_preview_tab("a");
         wb.open_preview_tab("b");
         wb.mark_active_dirty(true);
-        wb.tabs[0].running = true;
+        wb.tabs[0].running = true; // Welcome
         let s = wb.tab_counts_summary();
-        assert!(s.contains("total=2"), "{s}");
+        assert!(s.contains("total=3"), "{s}");
         assert!(s.contains("dirty=1"), "{s}");
-        assert!(s.contains("preview=2"), "{s}");
+        assert!(s.contains("preview=3"), "{s}");
         assert!(s.contains("running=1"), "{s}");
     }
 

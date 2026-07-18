@@ -11163,7 +11163,8 @@ mod tests {
         model.set_action(ActionId::CopyTabCounts);
         match update(&mut model, Message::Activate).effects().next() {
             Some(Effect::CopyToClipboard { text, .. }) => {
-                assert!(text.contains("total=3"), "{text}");
+                // Welcome + clean + dirty-one + dirty-two
+                assert!(text.contains("total=4"), "{text}");
                 assert!(text.contains("dirty=2"), "{text}");
             }
             other => panic!("expected tab counts, got {other:?}"),
