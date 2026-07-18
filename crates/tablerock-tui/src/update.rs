@@ -5980,6 +5980,36 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::SetStartOfDay if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.set_start_of_day() {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::SetNoon if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.set_noon() {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::SetEndOfDay if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.set_end_of_day() {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::IncDay if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if let Some(edit) = grid.cell_edit.as_mut() {
@@ -6926,6 +6956,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::SetYesterday
         | ActionId::SetTomorrow
         | ActionId::SetNow
+        | ActionId::SetStartOfDay
+        | ActionId::SetNoon
+        | ActionId::SetEndOfDay
         | ActionId::IncDay
         | ActionId::DecDay
         | ActionId::IncMonth
@@ -8772,6 +8805,9 @@ fn cycle_action(
                 ActionId::SetYesterday,
                 ActionId::SetTomorrow,
                 ActionId::SetNow,
+                ActionId::SetStartOfDay,
+                ActionId::SetNoon,
+                ActionId::SetEndOfDay,
                 ActionId::IncDay,
                 ActionId::DecDay,
                 ActionId::IncMonth,

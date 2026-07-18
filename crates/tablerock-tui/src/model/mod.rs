@@ -453,6 +453,12 @@ pub enum ActionId {
     SetTomorrow,
     /// Stamp now (YYYY-MM-DDTHH:MM:SSZ) while editing a temporal cell.
     SetNow,
+    /// Set temporal edit buffer time to 00:00:00 (keep date/timezone).
+    SetStartOfDay,
+    /// Set temporal edit buffer time to 12:00:00 (keep date/timezone).
+    SetNoon,
+    /// Set temporal edit buffer time to 23:59:59 (keep date/timezone).
+    SetEndOfDay,
     /// Step temporal date by +1 day while editing.
     IncDay,
     /// Step temporal date by -1 day while editing.

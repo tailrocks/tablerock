@@ -72,6 +72,45 @@ impl CellEditSession {
         true
     }
 
+    /// Set time to 00:00:00 on the current (or today) date; keep timezone if present.
+    pub fn set_start_of_day(&mut self) -> bool {
+        self.set_time_on_date(0, 0, 0)
+    }
+
+    /// Set time to 12:00:00 on the current (or today) date; keep timezone if present.
+    pub fn set_noon(&mut self) -> bool {
+        self.set_time_on_date(12, 0, 0)
+    }
+
+    /// Set time to 23:59:59 on the current (or today) date; keep timezone if present.
+    pub fn set_end_of_day(&mut self) -> bool {
+        self.set_time_on_date(23, 59, 59)
+    }
+
+    fn set_time_on_date(&mut self, h: u32, min: u32, sec: u32) -> bool {
+        if self.kind != CellDistinction::Temporal {
+            return false;
+        }
+        self.ensure_temporal_date_base();
+        let Some((y, m, d, rest)) = split_temporal_buffer(&self.buffer) else {
+            return false;
+        };
+        let tz = parse_time_rest(rest.as_deref())
+            .and_then(|(_, _, _, z)| z)
+            .unwrap_or_default();
+        let time_part = if tz.is_empty() {
+            format!("T{h:02}:{min:02}:{sec:02}")
+        } else {
+            format!("T{h:02}:{min:02}:{sec:02}{tz}")
+        };
+        let next = join_temporal_date(y, m, d, Some(&time_part));
+        if next == self.buffer {
+            return false;
+        }
+        self.buffer = next;
+        true
+    }
+
     /// Step date portion by `delta_days` for temporal cells (keeps time suffix if present).
     pub fn step_day(&mut self, delta_days: i32) -> bool {
         if self.kind != CellDistinction::Temporal || delta_days == 0 {
@@ -4158,6 +4197,28 @@ mod tests {
             kind: CellDistinction::Text,
         };
         assert!(!text.step_day(1));
+    }
+
+    #[test]
+    fn temporal_set_start_noon_end_of_day() {
+        let mut session = CellEditSession {
+            abs_row: 0,
+            column: "ts".into(),
+            original_text: "2024-03-10T15:45:30Z".into(),
+            buffer: "2024-03-10T15:45:30Z".into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Temporal,
+        };
+        assert!(session.set_start_of_day());
+        assert_eq!(session.buffer, "2024-03-10T00:00:00Z");
+        assert!(session.set_noon());
+        assert_eq!(session.buffer, "2024-03-10T12:00:00Z");
+        assert!(session.set_end_of_day());
+        assert_eq!(session.buffer, "2024-03-10T23:59:59Z");
+        assert!(!session.set_end_of_day());
+        session.buffer = "2024-03-10".into();
+        assert!(session.set_noon());
+        assert_eq!(session.buffer, "2024-03-10T12:00:00");
     }
 
     #[test]

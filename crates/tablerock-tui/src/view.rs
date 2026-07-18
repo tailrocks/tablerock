@@ -800,6 +800,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let set_yest = action_label(model, ActionId::SetYesterday, "Yest");
     let set_tom = action_label(model, ActionId::SetTomorrow, "Tomor");
     let set_now = action_label(model, ActionId::SetNow, "Now");
+    let set_sod = action_label(model, ActionId::SetStartOfDay, "StartDay");
+    let set_noon = action_label(model, ActionId::SetNoon, "Noon");
+    let set_eod = action_label(model, ActionId::SetEndOfDay, "EndDay");
     let inc_day = action_label(model, ActionId::IncDay, "Day+");
     let dec_day = action_label(model, ActionId::DecDay, "Day-");
     let inc_month = action_label(model, ActionId::IncMonth, "Mon+");
@@ -2040,6 +2043,24 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::SetNow,
                         label: set_now.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SetStartOfDay,
+                        label: set_sod.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SetNoon,
+                        label: set_noon.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SetEndOfDay,
+                        label: set_eod.as_str(),
                         enabled: true,
                         style: None,
                     },
