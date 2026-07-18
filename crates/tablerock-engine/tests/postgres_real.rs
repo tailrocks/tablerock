@@ -2696,6 +2696,61 @@ async fn ddl_add_column_and_list_roles() {
 }
 
 #[tokio::test]
+async fn role_memberships_and_table_privileges() {
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+
+    session
+        .execute_sql(
+            "CREATE ROLE tr_parent NOLOGIN; \
+             CREATE ROLE tr_child NOLOGIN; \
+             GRANT tr_parent TO tr_child; \
+             CREATE TABLE priv_probe (id int); \
+             GRANT SELECT ON priv_probe TO tr_child;",
+        )
+        .await
+        .unwrap();
+
+    let memberships = session.list_role_memberships(64).await.unwrap();
+    assert!(
+        memberships
+            .iter()
+            .any(|(role, member)| role == "tr_parent" && member == "tr_child"),
+        "expected tr_parent → tr_child membership, got {memberships:?}"
+    );
+
+    let privs = session
+        .list_table_privileges("public", "priv_probe", 64)
+        .await
+        .unwrap();
+    assert!(
+        privs.iter().any(|row| {
+            row.grantee == "tr_child"
+                && row.privilege.eq_ignore_ascii_case("SELECT")
+                && row.object.contains("priv_probe")
+        }),
+        "expected SELECT for tr_child on priv_probe, got {privs:?}"
+    );
+}
+
+#[tokio::test]
 async fn ddl_index_and_constraint_ops() {
     use tablerock_core::{
         ContextId, DdlKind, DdlPlan, DdlTarget, Engine, IdParts, OperationScope, ProfileId,

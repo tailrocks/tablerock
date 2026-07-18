@@ -1079,6 +1079,73 @@ impl PostgresSession {
         Ok(rows.into_iter().map(|r| r.get(0)).collect())
     }
 
+    /// Direct role membership edges (role → member) from `pg_auth_members`.
+    ///
+    /// Bounded by `limit`. Does not expand inheritance recursively (that is a
+    /// separate later checkpoint with cycle/self-lockout tests).
+    pub async fn list_role_memberships(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<(String, String)>, PostgresError> {
+        if limit == 0 {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let rows = self
+            .client
+            .query(
+                "SELECT r.rolname::text AS role_name, m.rolname::text AS member_name \
+                 FROM pg_catalog.pg_auth_members am \
+                 JOIN pg_catalog.pg_roles r ON r.oid = am.roleid \
+                 JOIN pg_catalog.pg_roles m ON m.oid = am.member \
+                 ORDER BY 1, 2 LIMIT $1::int4",
+                &[&i32::try_from(limit).unwrap_or(i32::MAX)],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        Ok(rows.into_iter().map(|r| (r.get(0), r.get(1))).collect())
+    }
+
+    /// Table-level privileges for a relation (`information_schema.table_privileges`).
+    pub async fn list_table_privileges(
+        &self,
+        schema: &str,
+        table: &str,
+        limit: u32,
+    ) -> Result<Vec<tablerock_core::RolePrivilegeRow>, PostgresError> {
+        if limit == 0 || schema.is_empty() || table.is_empty() {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let rows = self
+            .client
+            .query(
+                "SELECT grantee::text, privilege_type::text, \
+                        (table_schema || '.' || table_name)::text AS object, \
+                        is_grantable::text \
+                 FROM information_schema.table_privileges \
+                 WHERE table_schema = $1 AND table_name = $2 \
+                 ORDER BY 1, 2 LIMIT $3::int4",
+                &[
+                    &schema,
+                    &table,
+                    &i32::try_from(limit).unwrap_or(i32::MAX),
+                ],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                let grantable: String = r.get(3);
+                tablerock_core::RolePrivilegeRow {
+                    grantee: r.get(0),
+                    privilege: r.get(1),
+                    object: r.get(2),
+                    is_grantable: grantable.eq_ignore_ascii_case("YES"),
+                }
+            })
+            .collect())
+    }
+
     /// Primary-key column names for a relation, ordered by key position.
     ///
     /// Empty when the relation has no PRIMARY KEY (views, heaps without PK).
