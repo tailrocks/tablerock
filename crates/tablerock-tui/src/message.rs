@@ -249,6 +249,18 @@ pub enum EngineMsg {
         request_token: u64,
         reason: FailureProjection,
     },
+    MutationApplied {
+        request_token: u64,
+        context_revision: u64,
+        committed: bool,
+        change_count: usize,
+        detail: String,
+    },
+    MutationFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -112,6 +112,12 @@ pub enum ActionId {
     DiscardStaged,
     /// Open review dialog for staged mutations (typed plan preview).
     ReviewMutations,
+    /// Begin inline edit of the cursor cell (editable results only).
+    EditCell,
+    /// Stage delete of the cursor row.
+    DeleteRow,
+    /// Apply reviewed/staged mutations (typed plan rebuild from drafts).
+    ApplyMutations,
     Submit,
     Cancel,
     Quit,

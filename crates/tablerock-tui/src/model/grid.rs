@@ -3,8 +3,18 @@
 //! Cell projections are computed by the CLI/engine bridge when pages admit;
 //! the TUI never decodes page arenas.
 
-use super::mutation_draft::MutationDraftModel;
+use super::mutation_draft::{DraftLocatorField, MutationDraftModel, StagedCellEdit};
 use tablerock_core::EditabilityFacts;
+
+/// In-grid cell edit session (presentation only; commit stages a draft).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CellEditSession {
+    pub abs_row: u64,
+    pub column: String,
+    pub original_text: String,
+    pub buffer: String,
+    pub locator: Vec<DraftLocatorField>,
+}
 
 /// Visual distinction class (text+glyph; never color alone).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -238,6 +248,8 @@ pub struct DataGridModel {
     pub editability: EditabilityFacts,
     /// In-memory staged mutations for this tab.
     pub drafts: MutationDraftModel,
+    /// Active inline cell edit (None when not editing).
+    pub cell_edit: Option<CellEditSession>,
 }
 
 impl Default for DataGridModel {
@@ -270,6 +282,7 @@ impl Default for DataGridModel {
                 reason: tablerock_core::EditabilityReason::NoBaseTable,
             },
             drafts: MutationDraftModel::new(),
+            cell_edit: None,
         }
     }
 }
@@ -404,6 +417,91 @@ impl DataGridModel {
             &self.identity_columns,
         );
         self.drafts.apply_editability(&self.editability);
+        if !self.drafts.staging_allowed() {
+            self.cell_edit = None;
+        }
+    }
+
+    /// Begin editing the cursor cell when the result is editable.
+    pub fn begin_cell_edit(&mut self) -> bool {
+        if !self.drafts.staging_allowed() || !self.editability.is_editable() {
+            return false;
+        }
+        if self.columns.is_empty() {
+            return false;
+        }
+        let col_idx = self.cursor_col.min(self.columns.len().saturating_sub(1));
+        let column = self.columns[col_idx].clone();
+        // Identity columns themselves are locators; still allow edit of non-key cells.
+        let cell = self.cell_at(self.cursor_row, col_idx);
+        if matches!(
+            cell.distinction,
+            CellDistinction::Truncated | CellDistinction::Invalid | CellDistinction::Unknown
+        ) {
+            return false;
+        }
+        let locator = self.locator_for_row(self.cursor_row);
+        if locator.is_empty() {
+            return false;
+        }
+        self.cell_edit = Some(CellEditSession {
+            abs_row: self.cursor_row,
+            column,
+            original_text: cell.text.clone(),
+            buffer: cell.text,
+            locator,
+        });
+        true
+    }
+
+    /// Build locator fields from identity columns at `abs_row`.
+    #[must_use]
+    pub fn locator_for_row(&self, abs_row: u64) -> Vec<DraftLocatorField> {
+        let mut out = Vec::new();
+        for name in &self.identity_columns {
+            let Some(col_idx) = self.columns.iter().position(|c| c == name) else {
+                return Vec::new();
+            };
+            let cell = self.cell_at(abs_row, col_idx);
+            out.push(DraftLocatorField {
+                column: name.clone(),
+                original_text: cell.text,
+            });
+        }
+        out
+    }
+
+    /// Commit active cell edit into drafts. Returns true if a draft was staged.
+    pub fn commit_cell_edit(&mut self) -> bool {
+        let Some(session) = self.cell_edit.take() else {
+            return false;
+        };
+        self.drafts.stage_cell_edit(StagedCellEdit {
+            abs_row: session.abs_row,
+            column: session.column,
+            original_text: session.original_text,
+            staged_text: session.buffer,
+            locator: session.locator,
+        })
+    }
+
+    pub fn cancel_cell_edit(&mut self) {
+        self.cell_edit = None;
+    }
+
+    /// Stage delete for the cursor row.
+    pub fn stage_delete_cursor_row(&mut self) -> bool {
+        if !self.drafts.staging_allowed() {
+            return false;
+        }
+        let locator = self.locator_for_row(self.cursor_row);
+        if locator.is_empty() {
+            return false;
+        }
+        self.drafts.stage_delete(super::mutation_draft::StagedDelete {
+            abs_row: self.cursor_row,
+            locator,
+        })
     }
 
     /// Cycle sort on `column` as primary (removes prior keys for that column).
@@ -823,6 +921,42 @@ mod tests {
         assert!(!grid.editability.is_editable());
         assert!(grid.drafts.is_empty());
         assert!(grid.status_line().contains("read-only"));
+    }
+
+    #[test]
+    fn begin_and_commit_cell_edit_stages_draft() {
+        use tablerock_core::ProfileSafetyMode;
+
+        let mut grid = DataGridModel::default();
+        grid.columns = vec!["id".into(), "name".into()];
+        grid.row_count = 1;
+        grid.cells = vec![
+            ProjectedCell {
+                text: "1".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "alice".into(),
+                distinction: CellDistinction::Text,
+                byte_len: 5,
+                original_byte_len: None,
+            },
+        ];
+        grid.base_schema = Some("public".into());
+        grid.base_table = Some("users".into());
+        grid.identity_columns = vec!["id".into()];
+        grid.cursor_row = 0;
+        grid.cursor_col = 1;
+        grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+        assert!(grid.begin_cell_edit());
+        if let Some(edit) = grid.cell_edit.as_mut() {
+            edit.buffer = "bob".into();
+        }
+        assert!(grid.commit_cell_edit());
+        assert_eq!(grid.drafts.pending_count(), 1);
+        assert_eq!(grid.drafts.staged_for_cell(0, "name"), Some("bob"));
     }
 
     #[test]

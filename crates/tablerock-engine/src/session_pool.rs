@@ -140,6 +140,22 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn apply_authorized_mutation<'a>(
+        &'a self,
+        authorized: tablerock_core::AuthorizedMutationPlan,
+    ) -> DriverFuture<'a, Result<crate::MutationApplyOutcome, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => session.apply_authorized_mutation(authorized).await,
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move { self.shutdown_exclusive().await })
     }

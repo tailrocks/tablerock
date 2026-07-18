@@ -114,6 +114,13 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.screen() == Screen::Workbench
                 && model.focus() == Some(FocusRegion::Content) =>
         {
+            // Inline cell edit takes paste before SQL editor.
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+            {
+                edit.buffer = text.text().to_owned();
+                return Update::render();
+            }
             let selected = model.workbench().selected_tab;
             if let Some(tab) = model.workbench_mut().tabs.get_mut(selected)
                 && let Some(editor) = tab.editor.as_mut()
@@ -700,6 +707,50 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::MutationApplied {
+            context_revision,
+            committed,
+            change_count,
+            detail,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            if committed {
+                if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                    grid.drafts.discard_all();
+                    grid.cell_edit = None;
+                    grid.mark_completed();
+                    grid.error_label = Some(format!("applied {change_count}: {detail}"));
+                }
+                model.workbench_mut().mutation_review = None;
+                model.workbench_mut().mark_active_dirty(false);
+                // Refresh base table so grid matches server.
+                return rebrowse_active_table(model);
+            }
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                // Conflict/rollback: keep staged drafts for resolution.
+                grid.mark_failed(format!("apply rolled back: {detail}"));
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::MutationFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::GridFailed {
             context_revision,
             reason,
@@ -845,6 +896,21 @@ pub fn update(model: &mut Model, message: Message) -> Update {
         }
         Message::Activate if model.screen() == Screen::Editor => {
             model.editor_mut().focus_next();
+            Update::render()
+        }
+        Message::Activate
+            if model.screen() == Screen::Workbench
+                && model.focus() == Some(FocusRegion::Content)
+                && model
+                    .workbench()
+                    .active_grid()
+                    .is_some_and(|g| g.cell_edit.is_some()) =>
+        {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.commit_cell_edit() {
+                    model.workbench_mut().mark_active_dirty(true);
+                }
+            }
             Update::render()
         }
         Message::Activate => Update::unchanged(),
@@ -1365,6 +1431,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::UndoStaged if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if grid.drafts.undo() {
+                    let empty = grid.drafts.is_empty();
+                    if empty {
+                        model.workbench_mut().mark_active_dirty(false);
+                    }
                     return Update::render();
                 }
             }
@@ -1372,13 +1442,28 @@ fn activate_selected_action(model: &mut Model) -> Update {
         }
         ActionId::DiscardStaged if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if !grid.drafts.is_empty() {
+                if !grid.drafts.is_empty() || grid.cell_edit.is_some() {
                     grid.drafts.discard_all();
+                    grid.cell_edit = None;
                     model.workbench_mut().mutation_review = None;
+                    model.workbench_mut().mark_active_dirty(false);
                     return Update::render();
                 }
             }
             Update::unchanged()
+        }
+        ActionId::Cancel
+            if model.screen() == Screen::Workbench
+                && model
+                    .workbench()
+                    .active_grid()
+                    .is_some_and(|g| g.cell_edit.is_some()) =>
+        {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.cancel_cell_edit();
+            }
+            model.workbench_mut().mutation_review = None;
+            Update::render()
         }
         ActionId::ReviewMutations if model.screen() == Screen::Workbench => {
             use crate::model::mutation_plan_build::review_from_drafts;
@@ -1408,6 +1493,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     Update::render()
                 }
             }
+        }
+        ActionId::EditCell if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.begin_cell_edit() {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::DeleteRow if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.stage_delete_cursor_row() {
+                    model.workbench_mut().mark_active_dirty(true);
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::ApplyMutations if model.screen() == Screen::Workbench => {
+            apply_staged_mutations(model)
         }
         ActionId::SaveColumns if model.screen() == Screen::Workbench => {
             let profile_id_hex = model.workbench().profile_id_hex.clone();
@@ -1481,8 +1586,94 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::UndoStaged
         | ActionId::DiscardStaged
         | ActionId::ReviewMutations
+        | ActionId::EditCell
+        | ActionId::DeleteRow
+        | ActionId::ApplyMutations
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
+    }
+}
+
+fn apply_staged_mutations(model: &mut Model) -> Update {
+    use crate::effect::MutationChangeSpec;
+    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+        return Update::unchanged();
+    };
+    let database = model.workbench().context.database.clone();
+    let context_revision = model.workbench().context_revision;
+    let (schema, table, changes) = {
+        let Some(grid) = model.workbench().active_grid() else {
+            return Update::unchanged();
+        };
+        if !grid.editability.is_editable() || grid.drafts.is_empty() {
+            return Update::unchanged();
+        }
+        let schema = grid.base_schema.clone().unwrap_or_default();
+        let table = grid.base_table.clone().unwrap_or_default();
+        let mut changes = Vec::new();
+        for insert in &grid.drafts.inserts {
+            changes.push(MutationChangeSpec::Insert {
+                values: insert.values.clone(),
+            });
+        }
+        // Group updates by row.
+        let mut rows: Vec<u64> = grid.drafts.cell_edits.iter().map(|e| e.abs_row).collect();
+        rows.sort_unstable();
+        rows.dedup();
+        for row in rows {
+            let edits: Vec<_> = grid
+                .drafts
+                .cell_edits
+                .iter()
+                .filter(|e| e.abs_row == row)
+                .collect();
+            if edits.is_empty() {
+                continue;
+            }
+            let locator = edits[0]
+                .locator
+                .iter()
+                .map(|f| (f.column.clone(), f.original_text.clone()))
+                .collect();
+            let assignments = edits
+                .iter()
+                .map(|e| (e.column.clone(), e.staged_text.clone()))
+                .collect();
+            changes.push(MutationChangeSpec::Update {
+                locator,
+                assignments,
+            });
+        }
+        for delete in &grid.drafts.deletes {
+            changes.push(MutationChangeSpec::Delete {
+                locator: delete
+                    .locator
+                    .iter()
+                    .map(|f| (f.column.clone(), f.original_text.clone()))
+                    .collect(),
+            });
+        }
+        (schema, table, changes)
+    };
+    if changes.is_empty() {
+        return Update::unchanged();
+    }
+    let token = model.mint_request_token();
+    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+        grid.operation = GridOperationState::Running;
+        grid.error_label = None;
+    }
+    Update {
+        render: true,
+        effect: Some(Effect::ApplyMutations {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            database,
+            schema,
+            table,
+            changes,
+        }),
     }
 }
 
@@ -1678,6 +1869,9 @@ fn cycle_action(
                 ActionId::UndoStaged,
                 ActionId::DiscardStaged,
                 ActionId::ReviewMutations,
+                ActionId::EditCell,
+                ActionId::DeleteRow,
+                ActionId::ApplyMutations,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,

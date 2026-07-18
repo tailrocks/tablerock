@@ -49,6 +49,21 @@ pub enum CatalogLevelSpec {
     Objects { database: String },
 }
 
+/// Plain mutation change for ApplyMutations (presentation → CLI rebuilds typed plan).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MutationChangeSpec {
+    Insert {
+        values: Vec<(String, String)>,
+    },
+    Update {
+        locator: Vec<(String, String)>,
+        assignments: Vec<(String, String)>,
+    },
+    Delete {
+        locator: Vec<(String, String)>,
+    },
+}
+
 /// First-version connection editor payload for create/save.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectionDraft {
@@ -148,6 +163,20 @@ pub enum Effect {
         /// Filters as (column, operator, optional value).
         filters: Vec<(String, String, Option<String>)>,
         raw_where: Option<String>,
+    },
+    /// Apply staged mutations rebuilt as a typed plan (never from preview text).
+    ApplyMutations {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        database: String,
+        schema: String,
+        table: String,
+        /// Plain change specs: ("insert"|"update"|"delete", fields).
+        /// Insert/update fields are (column, value_text); update/delete locators
+        /// are separate as ("@locator", column, value_text) triples encoded in
+        /// the payload builder.
+        changes: Vec<MutationChangeSpec>,
     },
     /// Run a single SQL statement (first page) into the active tab grid.
     ExecuteSql {

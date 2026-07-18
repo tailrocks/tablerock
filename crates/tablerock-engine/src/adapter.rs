@@ -1,15 +1,15 @@
 use std::{error::Error, fmt, future::Future, pin::Pin, time::Instant};
 
 use tablerock_core::{
-    BoundedBytes, BoundedText, CancelDispatch, Engine, OperationId, PageIdentity, PageLimits,
-    ResultPage, StatementText,
+    AuthorizedMutationPlan, BoundedBytes, BoundedText, CancelDispatch, Engine, OperationId,
+    PageIdentity, PageLimits, ResultPage, StatementText,
 };
 
 use crate::{
     CatalogRequest, CatalogSubtree, ClickHouseError, ClickHouseProbeQuery, ClickHouseRowStream,
-    ClickHouseSession, PostgresError, PostgresProbeQuery, PostgresRowStream, PostgresSession,
-    RedisCollectionScanKind, RedisCollectionScanOptions, RedisCollectionStream, RedisError,
-    RedisKeyStream, RedisSession, RedisSubscriptionKind, RedisSubscriptionOptions,
+    ClickHouseSession, MutationApplyOutcome, PostgresError, PostgresProbeQuery, PostgresRowStream,
+    PostgresSession, RedisCollectionScanKind, RedisCollectionScanOptions, RedisCollectionStream,
+    RedisError, RedisKeyStream, RedisSession, RedisSubscriptionKind, RedisSubscriptionOptions,
     RedisSubscriptionStream, ServerDescribe,
 };
 
@@ -274,6 +274,12 @@ pub trait DriverSession: Send + Sync {
     /// Bounded server identity/version facts for Test Connection.
     fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>>;
 
+    /// Apply an authorized mutation plan (PostgreSQL today; others fail closed).
+    fn apply_authorized_mutation<'a>(
+        &'a self,
+        authorized: AuthorizedMutationPlan,
+    ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>>;
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>>;
 }
 
@@ -444,6 +450,17 @@ impl DriverSession for PostgresSession {
         Box::pin(async move { self.describe_server().await.map_err(map_postgres) })
     }
 
+    fn apply_authorized_mutation<'a>(
+        &'a self,
+        authorized: AuthorizedMutationPlan,
+    ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::apply_authorized_mutation(self, authorized)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move { (*self).shutdown().await.map_err(map_postgres) })
     }
@@ -513,6 +530,18 @@ impl DriverSession for ClickHouseSession {
 
     fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>> {
         Box::pin(async move { self.describe_server().await.map_err(map_clickhouse) })
+    }
+
+    fn apply_authorized_mutation<'a>(
+        &'a self,
+        _authorized: AuthorizedMutationPlan,
+    ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::ClickHouse,
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
@@ -602,6 +631,18 @@ impl DriverSession for RedisSession {
 
     fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>> {
         Box::pin(async move { self.describe_server().await.map_err(map_redis) })
+    }
+
+    fn apply_authorized_mutation<'a>(
+        &'a self,
+        _authorized: AuthorizedMutationPlan,
+    ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::Redis,
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {

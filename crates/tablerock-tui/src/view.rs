@@ -274,6 +274,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let undo_staged = action_label(model, ActionId::UndoStaged, "UndoEdit");
     let discard_staged = action_label(model, ActionId::DiscardStaged, "DiscardEdits");
     let review_mut = action_label(model, ActionId::ReviewMutations, "Review");
+    let edit_cell = action_label(model, ActionId::EditCell, "Edit");
+    let delete_row = action_label(model, ActionId::DeleteRow, "DelRow");
+    let apply_mut = action_label(model, ActionId::ApplyMutations, "Apply");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
@@ -431,6 +434,24 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ReviewMutations,
                         label: review_mut.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::EditCell,
+                        label: edit_cell.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DeleteRow,
+                        label: delete_row.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ApplyMutations,
+                        label: apply_mut.as_str(),
                         enabled: true,
                         style: None,
                     },
@@ -982,6 +1003,15 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
                         .first()
                         .map(|l| l.sql.as_str())
                         .unwrap_or("—")
+                )
+            })
+            .unwrap_or_default(),
+        wb.active_grid()
+            .and_then(|g| g.cell_edit.as_ref())
+            .map(|e| {
+                format!(
+                    "editing {}.{} = [{}] (paste value, Activate to stage)",
+                    e.abs_row, e.column, e.buffer
                 )
             })
             .unwrap_or_default(),
