@@ -7,7 +7,8 @@ use tablerock_core::{
     ProfileListItem, ProfileListPage, ProfileListRequest, ProfileName, ProfileOrganization,
     ProfilePolicy, ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
     ProfileSafetyMode, ProfileSourceFacts, ProfileTag, PropertyValueSource, ReconnectPreference,
-    Revision, SecretSource, SecretSourceKind, TlsPolicy,
+    Revision, SecretSource, SecretSourceKind, StartupAction, StartupActionSet, StartupSafetyClass,
+    TlsPolicy,
 };
 use zeroize::Zeroize;
 
@@ -37,6 +38,15 @@ pub(crate) struct EncodedProfile {
     preferred_page_rows: u32,
     tags: Vec<String>,
     properties: Vec<EncodedProperty>,
+    startup_actions: Vec<EncodedStartupAction>,
+}
+
+struct EncodedStartupAction {
+    ordinal: u8,
+    statement: String,
+    safety: u8,
+    timeout_ms: u32,
+    run_on_reconnect: bool,
 }
 
 impl EncodedProfile {
@@ -84,6 +94,19 @@ impl EncodedProfile {
                 .map(|tag| tag.as_str().to_owned())
                 .collect(),
             properties,
+            startup_actions: profile
+                .startup_actions()
+                .actions()
+                .iter()
+                .enumerate()
+                .map(|(ordinal, action)| EncodedStartupAction {
+                    ordinal: ordinal as u8,
+                    statement: action.statement().to_owned(),
+                    safety: encode_startup_safety(action.safety()),
+                    timeout_ms: action.timeout_ms(),
+                    run_on_reconnect: action.run_on_reconnect(),
+                })
+                .collect(),
         }
     }
 }
@@ -265,6 +288,7 @@ pub(crate) async fn create(
             .await
             .map_err(|_| PersistenceError::ProfileWrite)?;
     }
+    insert_startup_actions(&transaction, profile.id.as_slice(), &profile.startup_actions).await?;
     transaction
         .commit()
         .await
@@ -356,6 +380,13 @@ pub(crate) async fn replace(
     transaction
         .execute(
             "DELETE FROM saved_profile_properties WHERE profile_id = ?1",
+            (profile.id.as_slice(),),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    transaction
+        .execute(
+            "DELETE FROM saved_profile_startup_actions WHERE profile_id = ?1",
             (profile.id.as_slice(),),
         )
         .await
@@ -716,6 +747,33 @@ async fn insert_children(
             .await
             .map_err(|_| PersistenceError::ProfileWrite)?;
     }
+    insert_startup_actions(connection, profile.id.as_slice(), &profile.startup_actions).await?;
+    Ok(())
+}
+
+async fn insert_startup_actions(
+    connection: &turso::Connection,
+    profile_id: &[u8],
+    actions: &[EncodedStartupAction],
+) -> Result<(), PersistenceError> {
+    for action in actions {
+        connection
+            .execute(
+                "INSERT INTO saved_profile_startup_actions(\
+                    profile_id, ordinal, statement, safety, timeout_ms, run_on_reconnect\
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                turso::params![
+                    profile_id,
+                    action.ordinal,
+                    action.statement.as_str(),
+                    action.safety,
+                    action.timeout_ms,
+                    action.run_on_reconnect,
+                ],
+            )
+            .await
+            .map_err(|_| PersistenceError::ProfileWrite)?;
+    }
     Ok(())
 }
 
@@ -804,6 +862,7 @@ async fn read_transaction(
 
     let tags = read_tags(connection, id).await?;
     let properties = read_properties(connection, id, property_schema).await?;
+    let startup_actions = read_startup_actions(connection, id).await?;
     let identity = ProfileIdentity::new(id, revision, engine, name);
     let connection = ProfileConnectionSnapshot::from_wire(
         connection_schema,
@@ -824,8 +883,56 @@ async fn read_transaction(
         organization,
         preferences,
     )
+    .map(|aggregate| aggregate.with_startup_actions(startup_actions))
     .map(Some)
     .map_err(|_| PersistenceError::ProfileDecode)
+}
+
+async fn read_startup_actions(
+    connection: &turso::Connection,
+    id: ProfileId,
+) -> Result<StartupActionSet, PersistenceError> {
+    let mut rows = connection
+        .query(
+            "SELECT ordinal, statement, safety, timeout_ms, run_on_reconnect \
+             FROM saved_profile_startup_actions WHERE profile_id = ?1 ORDER BY ordinal",
+            (id.to_bytes().as_slice(),),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?;
+    let mut actions = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?
+    {
+        let _ordinal = get::<u8>(&row, 0)?;
+        let statement = get::<String>(&row, 1)?;
+        let safety = decode_startup_safety(get::<u8>(&row, 2)?)?;
+        let timeout_ms = get::<u32>(&row, 3)?;
+        let run_on_reconnect = decode_bool(get::<u8>(&row, 4)?)?;
+        let action = StartupAction::from_str(&statement, safety, timeout_ms, run_on_reconnect)
+            .map_err(|_| PersistenceError::ProfileDecode)?;
+        actions.push(action);
+    }
+    StartupActionSet::new(actions).map_err(|_| PersistenceError::ProfileDecode)
+}
+
+const fn encode_startup_safety(safety: StartupSafetyClass) -> u8 {
+    match safety {
+        StartupSafetyClass::ReadOnly => 1,
+        StartupSafetyClass::Write => 2,
+        StartupSafetyClass::Dangerous => 3,
+    }
+}
+
+const fn decode_startup_safety(value: u8) -> Result<StartupSafetyClass, PersistenceError> {
+    match value {
+        1 => Ok(StartupSafetyClass::ReadOnly),
+        2 => Ok(StartupSafetyClass::Write),
+        3 => Ok(StartupSafetyClass::Dangerous),
+        _ => Err(PersistenceError::ProfileDecode),
+    }
 }
 
 async fn read_tags(

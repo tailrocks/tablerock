@@ -8,7 +8,7 @@ use tablerock_core::{
     ProfileListRequest, ProfileName, ProfileOrganization, ProfilePolicy, ProfilePreferences,
     ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode,
     ProfileSearchTerm, ProfileTag, PropertyValueSource, ReconnectPreference, Revision,
-    SecretSource, SecretSourceKind, TlsPolicy,
+    SecretSource, SecretSourceKind, StartupAction, StartupActionSet, StartupSafetyClass, TlsPolicy,
 };
 use tablerock_persistence::{PersistenceActor, PersistenceError};
 
@@ -131,6 +131,81 @@ fn profile_id(low_id: u64) -> ProfileId {
     ProfileId::from_parts(IdParts::new(1, low_id).unwrap()).unwrap()
 }
 
+#[test]
+fn startup_actions_and_ssh_properties_round_trip() {
+    let path = path("startup-ssh");
+    let _ = fs::remove_file(&path);
+    let actor = PersistenceActor::open(&path).unwrap();
+    let properties = ProfilePropertySet::new(vec![
+        literal(ProfileProperty::Host, "db.internal"),
+        literal(ProfileProperty::Port, "5432"),
+        literal(ProfileProperty::SshHost, "bastion.internal"),
+        literal(ProfileProperty::SshPort, "22"),
+        literal(ProfileProperty::SshUsername, "tunnel"),
+        literal(ProfileProperty::SshKnownHostsPath, "/var/lib/known_hosts"),
+        secret(
+            ProfileProperty::SshPassword,
+            SecretSourceKind::PromptOnConnect,
+        ),
+    ])
+    .unwrap();
+    let id = profile_id(42);
+    let connection = ProfileConnectionSnapshot::new(
+        ProfileIdentity::new(
+            id,
+            Revision::INITIAL,
+            Engine::PostgreSql,
+            ProfileName::new(text("SSH profile")).unwrap(),
+        ),
+        properties,
+        ProfilePolicy::new(
+            TlsPolicy::Disabled,
+            ProfileSafetyMode::ReadOnly,
+            ProfileLimits::new(10_000, 30_000, 5_000, 16 * 1024 * 1024).unwrap(),
+        ),
+    )
+    .unwrap();
+    let startup = StartupActionSet::new(vec![
+        StartupAction::from_str("SELECT 1", StartupSafetyClass::ReadOnly, 5_000, true).unwrap(),
+        StartupAction::from_str(
+            "SET application_name = 'tablerock'",
+            StartupSafetyClass::ReadOnly,
+            2_000,
+            false,
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+    let profile = ProfileAggregate::new(
+        connection,
+        ProfileDurability::Saved,
+        ProfileOrganization::new(None, Vec::new(), false, 0, None).unwrap(),
+        ProfilePreferences::new(ReconnectPreference::Manual, false, 100).unwrap(),
+    )
+    .unwrap()
+    .with_startup_actions(startup);
+    actor
+        .create_profile(profile.persistable().unwrap())
+        .unwrap();
+    let loaded = actor.get_profile(id).unwrap().unwrap();
+    assert_eq!(
+        loaded
+            .connection()
+            .properties()
+            .literal(ProfileProperty::SshHost),
+        Some("bastion.internal")
+    );
+    assert_eq!(loaded.startup_actions().len(), 2);
+    assert_eq!(
+        loaded.startup_actions().actions()[0].statement(),
+        "SELECT 1"
+    );
+    assert!(!loaded.startup_actions().actions()[1].run_on_reconnect());
+    assert!(!format!("{loaded:?}").contains("SELECT 1"));
+    actor.shutdown().unwrap();
+    fs::remove_file(&path).unwrap();
+}
+
 fn search(value: &str) -> ProfileSearchTerm {
     ProfileSearchTerm::new(text(value)).unwrap()
 }
@@ -211,7 +286,7 @@ fn saved_token_creates_complete_rows_atomically_for_every_engine() {
     });
 
     let reopened = PersistenceActor::open(&path).unwrap();
-    assert_eq!(reopened.health().unwrap().schema_version, 10);
+    assert_eq!(reopened.health().unwrap().schema_version, 11);
     for (index, engine) in [Engine::PostgreSql, Engine::ClickHouse, Engine::Redis]
         .into_iter()
         .enumerate()
@@ -269,7 +344,7 @@ fn malformed_saved_value_fails_closed_and_rolls_back_read_transaction() {
     assert_eq!(error, PersistenceError::ProfileDecode);
     assert_eq!(format!("{error:?}"), "ProfileDecode");
     assert_eq!(error.to_string(), "local persistence operation failed");
-    assert_eq!(actor.health().unwrap().schema_version, 10);
+    assert_eq!(actor.health().unwrap().schema_version, 11);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }
@@ -314,7 +389,7 @@ fn malformed_literal_endpoint_fails_closed_in_summary_projection() {
             .unwrap_err(),
         PersistenceError::ProfileDecode
     );
-    assert_eq!(actor.health().unwrap().schema_version, 10);
+    assert_eq!(actor.health().unwrap().schema_version, 11);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }

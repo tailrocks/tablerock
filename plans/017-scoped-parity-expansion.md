@@ -109,7 +109,8 @@ host them, keep those suites local-only and record the gap — same pattern as
 - [x] DDL plans typed (DdlPlan) + PG execute_ddl_plan add/drop column + vacuum/analyze; Redis unsupported
 - [x] Roles: list_roles read-only Docker test
 - [x] Startup actions core contract (evidence 270)
-- [x] PG startup executor ReadOnly auto-run (evidence 271; profile persist + connect wire residual)
+- [x] PG startup executor ReadOnly auto-run (evidence 271)
+- [x] Startup persist + connect-path wire (evidence 272; TUI list + CH/Redis residual)
 - [x] Vim mode keymap layer unit suite; off by default
 - [x] Relationship graph contract + self-cycle detection
 - [x] Plan index DONE with residual SSH/full dump matrix
@@ -117,7 +118,7 @@ host them, keep those suites local-only and record the gap — same pattern as
 ## Residual
 
 - Persist SSH agent preference on profile aggregate (session/editor toggle landed)
-- Startup actions: profile persist + connect-path wire + CH/Redis + review UI
+- Startup actions: TUI editor list + CH/Redis executors + connect UI report
 - Full pg_dump/pg_restore process cancel + version matrix CI
 - DDL review UI + index/constraint ops
 - Role membership/grant inspection depth

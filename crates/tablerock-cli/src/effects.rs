@@ -1344,7 +1344,7 @@ async fn load_profile_list(
 }
 
 async fn test_connection(request_token: RequestToken, draft: ConnectionDraft) -> Message {
-    match open_described_session(draft).await {
+    match open_described_session(draft, false).await {
         Ok((session, identity, elapsed_millis, tunnel)) => {
             let _ = session.shutdown().await;
             drop(tunnel);
@@ -1374,7 +1374,7 @@ async fn connect_session(
         EngineKind::Redis => "Redis",
     }
     .to_owned();
-    match open_described_session(draft).await {
+    match open_described_session(draft, false).await {
         Ok((session, identity, _elapsed, tunnel)) => {
             let session_id = match mint_session_id() {
                 Ok(id) => id,
@@ -3911,7 +3911,7 @@ async fn reconnect_session(
     }
     // Delay is declarative (next_backoff_ms); executor may sleep before re-dispatch.
     // This attempt connects immediately so auth-stop never burns wall-clock in tests.
-    match open_described_session(draft.clone()).await {
+    match open_described_session(draft.clone(), true).await {
         Ok((session, identity, _, tunnel)) => {
             let session_id = match mint_session_id() {
                 Ok(id) => id,
@@ -4093,6 +4093,7 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
         ssh_known_hosts_path: literal(ProfileProperty::SshKnownHostsPath).unwrap_or_default(),
         // Agent mode is session/editor intent; not persisted as a profile property yet.
         ssh_use_agent: false,
+        startup_actions: aggregate.startup_actions().clone(),
     })
 }
 
@@ -4103,6 +4104,7 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
 /// returned so the caller can keep it alive with the session.
 async fn open_described_session(
     draft: ConnectionDraft,
+    is_reconnect: bool,
 ) -> Result<
     (
         Box<dyn DriverSession>,
@@ -4117,7 +4119,7 @@ async fn open_described_session(
         LocalForwardTunnel, PostgresConnectConfig, PostgresSession, PostgresTlsMode,
         RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
         RedisTlsMode, SshAgentAuth, SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth,
-        SshPublicKeyAuth, SshTunnelConfig, open_local_forward_tunnel,
+        SshPublicKeyAuth, SshTunnelConfig, open_local_forward_tunnel, run_postgres_startup_actions,
     };
     let mut host = draft.host.clone();
     let mut port: u16 = draft.port.parse().map_err(|_| "invalid port".to_owned())?;
@@ -4210,6 +4212,9 @@ async fn open_described_session(
             ))
             .await
             .map_err(|e| e.to_string())?;
+            // Partial-failure honest: connect still succeeds; report not yet UI-surfaced.
+            let _startup =
+                run_postgres_startup_actions(&session, &draft.startup_actions, is_reconnect).await;
             let described = session.describe().await.map_err(|e| e.to_string())?;
             Ok((
                 Box::new(session) as Box<dyn DriverSession>,
@@ -4452,14 +4457,15 @@ fn draft_to_aggregate(draft: &ConnectionDraft) -> Result<ProfileAggregate, Strin
     let environment = parse_environment(&draft.environment)?;
     let organization = ProfileOrganization::new(group, Vec::new(), false, 0, environment)
         .map_err(|e| e.to_string())?;
-    ProfileAggregate::new(
+    Ok(ProfileAggregate::new(
         connection,
         ProfileDurability::Saved,
         organization,
         ProfilePreferences::new(ReconnectPreference::BoundedAutomatic, true, 250)
             .map_err(|e| e.to_string())?,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?
+    .with_startup_actions(draft.startup_actions.clone()))
 }
 
 fn parse_environment(raw: &str) -> Result<Option<EnvironmentTag>, String> {

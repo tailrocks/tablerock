@@ -90,6 +90,8 @@ pub struct ConnectionDraft {
     pub ssh_known_hosts_path: String,
     /// When true, use SSH agent (`SSH_AUTH_SOCK`) instead of password/key material.
     pub ssh_use_agent: bool,
+    /// Reviewed startup actions run after connect (ReadOnly auto-executes).
+    pub startup_actions: tablerock_core::StartupActionSet,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

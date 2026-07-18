@@ -309,6 +309,7 @@ pub struct ProfileAggregate {
     durability: ProfileDurability,
     organization: ProfileOrganization,
     preferences: ProfilePreferences,
+    startup_actions: crate::StartupActionSet,
 }
 
 impl ProfileAggregate {
@@ -351,7 +352,15 @@ impl ProfileAggregate {
             durability,
             organization,
             preferences,
+            startup_actions: crate::StartupActionSet::empty(),
         })
+    }
+
+    /// Attach reviewed startup actions (replaces any previous set).
+    #[must_use]
+    pub fn with_startup_actions(mut self, startup_actions: crate::StartupActionSet) -> Self {
+        self.startup_actions = startup_actions;
+        self
     }
 
     #[must_use]
@@ -365,6 +374,10 @@ impl ProfileAggregate {
     #[must_use]
     pub const fn durability(&self) -> ProfileDurability {
         self.durability
+    }
+    #[must_use]
+    pub const fn startup_actions(&self) -> &crate::StartupActionSet {
+        &self.startup_actions
     }
     #[must_use]
     pub const fn organization(&self) -> &ProfileOrganization {

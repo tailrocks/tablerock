@@ -33,7 +33,7 @@ fn crash_helper_process() {
     let path = PathBuf::from(std::env::var_os(CRASH_PATH).unwrap());
     let actor = PersistenceActor::open(path).unwrap();
     let health = actor.health().unwrap();
-    assert_eq!(health.schema_version, 10);
+    assert_eq!(health.schema_version, 11);
     assert!(health.foreign_keys_enabled);
     assert!(health.integrity_ok);
     std::process::abort();
@@ -55,7 +55,7 @@ fn abrupt_process_death_reopens_without_drop_or_checkpoint() {
 
     let reopened = PersistenceActor::open(&path).unwrap();
     let health = reopened.health().unwrap();
-    assert_eq!(health.schema_version, 10);
+    assert_eq!(health.schema_version, 11);
     assert!(health.foreign_keys_enabled);
     assert!(health.integrity_ok);
     reopened.shutdown().unwrap();

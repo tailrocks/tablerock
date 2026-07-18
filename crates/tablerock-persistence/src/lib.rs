@@ -63,6 +63,10 @@ const MIGRATIONS: &[(u32, &str)] = &[
         include_str!("../migrations/0009-saved-queries-and-session-intent.sql"),
     ),
     (10, include_str!("../migrations/0010-column-layout.sql")),
+    (
+        11,
+        include_str!("../migrations/0011-ssh-properties-and-startup-actions.sql"),
+    ),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

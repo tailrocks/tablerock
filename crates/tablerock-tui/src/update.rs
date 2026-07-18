@@ -3095,6 +3095,7 @@ fn connection_draft_from_editor(
         ssh_private_key: editor.ssh_private_key.clone(),
         ssh_known_hosts_path: editor.ssh_known_hosts_path.clone(),
         ssh_use_agent: editor.ssh_use_agent,
+        startup_actions: tablerock_core::StartupActionSet::empty(),
     }
 }
 
