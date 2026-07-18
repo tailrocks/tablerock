@@ -665,6 +665,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let clear_filt_keep = action_label(model, ActionId::ClearFiltersKeepSort, "ClrFiltS");
     let copy_filt_bar = action_label(model, ActionId::CopyFilterBar, "CopyBar");
     let copy_sort_bar = action_label(model, ActionId::CopySortBar, "CopySort");
+    let copy_filt_only = action_label(model, ActionId::CopyFiltersOnly, "CopyFilt");
     let clear_sort = action_label(model, ActionId::ClearSort, "ClrSort");
     let cycle_sort = action_label(model, ActionId::CycleSort, "Sort");
     let push_sort = action_label(model, ActionId::PushSort, "Sort+");
@@ -1152,6 +1153,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopySortBar,
                         label: copy_sort_bar.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyFiltersOnly,
+                        label: copy_filt_only.as_str(),
                         enabled: true,
                         style: None,
                     },

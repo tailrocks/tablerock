@@ -4314,6 +4314,25 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyFiltersOnly if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(text) = grid.filter_chip_bar() else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied filters ({} bytes)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::EditQuickFilter if model.screen() == Screen::Workbench => {
             if model.workbench().active_grid().is_none() {
                 return Update::unchanged();
@@ -5451,6 +5470,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ClearRawWhere
         | ActionId::CopyFilterBar
         | ActionId::CopySortBar
+        | ActionId::CopyFiltersOnly
         | ActionId::EditQuickFilter
         | ActionId::ClearQuickFilter
         | ActionId::GoToRow
@@ -7172,6 +7192,7 @@ fn cycle_action(
                 ActionId::ClearRawWhere,
                 ActionId::CopyFilterBar,
                 ActionId::CopySortBar,
+                ActionId::CopyFiltersOnly,
                 ActionId::EditQuickFilter,
                 ActionId::ClearQuickFilter,
                 ActionId::GoToRow,
@@ -8811,6 +8832,42 @@ mod tests {
             grid.clear_sort();
         }
         model.set_action(ActionId::CopySortBar);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+    }
+
+    #[test]
+    fn copy_filters_only_emits_filter_chips() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.push_sort_column("name");
+            grid.add_filter_chip("status", "eq", Some("open".into()));
+            grid.quick_filter = "acme".into();
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyFiltersOnly);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("status"), "{text}");
+                assert!(text.contains("open") || text.contains("page:"), "{text}");
+                assert!(!text.contains("sort:"), "{text}");
+            }
+            other => panic!("expected filters-only copy, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.filters.clear();
+            grid.quick_filter.clear();
+            grid.raw_where = None;
+        }
+        model.set_action(ActionId::CopyFiltersOnly);
         assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 

@@ -243,6 +243,8 @@ pub enum ActionId {
     CopyFilterBar,
     /// Copy sort chip bar only to clipboard.
     CopySortBar,
+    /// Copy filter chip bar only (no sort line) to clipboard.
+    CopyFiltersOnly,
     /// Edit page-local quick filter (no server I/O).
     EditQuickFilter,
     /// Clear page-local quick filter (no server I/O).
