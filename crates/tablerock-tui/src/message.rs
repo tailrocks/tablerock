@@ -236,6 +236,17 @@ pub enum EngineMsg {
         request_token: u64,
         reason: FailureProjection,
     },
+    ColumnLayoutLoaded {
+        request_token: u64,
+        layout_json: Option<String>,
+    },
+    ColumnLayoutSaved {
+        request_token: u64,
+    },
+    ColumnLayoutFailed {
+        request_token: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -442,6 +442,105 @@ impl DataGridModel {
         self.ensure_column_layout();
     }
 
+    /// Toggle visibility of a named column (at least one remains visible).
+    pub fn toggle_column_visible(&mut self, column: &str) -> bool {
+        self.ensure_column_layout();
+        let visible_count = self.column_layout.iter().filter(|c| c.visible).count();
+        if let Some(entry) = self.column_layout.iter_mut().find(|c| c.name == column) {
+            if entry.visible && visible_count <= 1 {
+                return false;
+            }
+            entry.visible = !entry.visible;
+            return true;
+        }
+        false
+    }
+
+    /// Serialize layout for persistence (names/visible/width only).
+    #[must_use]
+    pub fn layout_json(&self) -> String {
+        let mut out = String::from("[");
+        for (i, c) in self.column_layout.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!(
+                r#"{{"name":"{}","visible":{},"width":{}}}"#,
+                c.name.replace('\\', "\\\\").replace('"', "\\\""),
+                c.visible,
+                c.width
+            ));
+        }
+        out.push(']');
+        out
+    }
+
+    /// Apply layout JSON from persistence.
+    pub fn apply_layout_json(&mut self, json: &str) -> bool {
+        if json.contains("\"cells\"") {
+            return false;
+        }
+        let mut layout = Vec::new();
+        let mut rest = json;
+        while let Some(idx) = rest.find("\"name\"") {
+            rest = &rest[idx..];
+            let Some(name) = extract_layout_string(rest, "name") else {
+                break;
+            };
+            let slice_end = rest.find('}').unwrap_or(rest.len());
+            let obj = &rest[..slice_end];
+            let visible = !obj.contains("\"visible\":false");
+            let width = extract_layout_number(obj, "width").unwrap_or(12) as u16;
+            layout.push(ColumnLayout {
+                name,
+                visible,
+                width: width.max(4),
+            });
+            rest = rest.get(slice_end.saturating_add(1)..).unwrap_or("");
+        }
+        if layout.is_empty() {
+            return false;
+        }
+        self.column_layout = layout;
+        true
+    }
+
+    pub fn add_filter_chip(&mut self, column: impl Into<String>, operator: impl Into<String>, value: Option<String>) {
+        self.filters.push(GridFilterChip {
+            column: column.into(),
+            operator: operator.into(),
+            value,
+        });
+    }
+}
+
+fn extract_layout_string(json: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{key}\"");
+    let idx = json.find(&needle)?;
+    let after = json[idx + needle.len()..].trim_start().strip_prefix(':')?.trim_start();
+    let after = after.strip_prefix('"')?;
+    let mut out = String::new();
+    let mut chars = after.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => return Some(out),
+            '\\' => out.push(chars.next()?),
+            c => out.push(c),
+        }
+    }
+    None
+}
+
+fn extract_layout_number(json: &str, key: &str) -> Option<u64> {
+    let needle = format!("\"{key}\"");
+    let idx = json.find(&needle)?;
+    let after = json[idx + needle.len()..].trim_start().strip_prefix(':')?.trim_start();
+    let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+impl DataGridModel {
+
     /// Rows matching page-local quick filter (no I/O).
     #[must_use]
     pub fn quick_filter_matches(&self) -> Vec<u64> {
@@ -596,6 +695,24 @@ mod tests {
         assert!(line.contains("streaming"));
         assert!(line.contains("500"));
         assert!(line.contains("~2500"));
+    }
+
+    #[test]
+    fn layout_json_round_trip_and_toggle() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into(), "age".into()];
+        g.ensure_column_layout();
+        assert!(g.toggle_column_visible("name"));
+        let json = g.layout_json();
+        assert!(json.contains("\"name\""));
+        assert!(json.contains("\"visible\":false"));
+        let mut g2 = DataGridModel::default();
+        g2.columns = g.columns.clone();
+        assert!(g2.apply_layout_json(&json));
+        assert_eq!(g2.visible_columns(), vec!["id".to_owned(), "age".to_owned()]);
+        // Cannot hide last visible column.
+        assert!(g2.toggle_column_visible("id"));
+        assert!(!g2.toggle_column_visible("age"));
     }
 
     #[test]

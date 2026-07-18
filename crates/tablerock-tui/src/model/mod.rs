@@ -90,6 +90,16 @@ pub enum ActionId {
     CopyTsv,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
+    /// Add an equality filter for the cursor column using the cursor cell text.
+    AddFilter,
+    /// Clear server filters/sort and re-browse.
+    ClearFilters,
+    /// Toggle visibility of the cursor column.
+    ToggleColumn,
+    /// Reset column layout to defaults.
+    ResetColumns,
+    /// Persist column layout for the current base table.
+    SaveColumns,
     Submit,
     Cancel,
     Quit,

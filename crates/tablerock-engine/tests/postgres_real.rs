@@ -623,6 +623,7 @@ async fn browses_2500_row_table_in_500_row_pages_with_result_store_pin() {
     let mut stream = session
         .start_page_stream(DriverPageRequest::PostgreSqlStatement {
             statement: StatementText::new("SELECT id, label FROM browse_2500 ORDER BY id").unwrap(),
+            parameters: Vec::new(),
             limits: page_limits,
             max_cell_bytes: 64 * 1024,
         })
@@ -686,6 +687,7 @@ async fn browses_2500_row_table_in_500_row_pages_with_result_store_pin() {
             Arc::new(session),
             DriverPageRequest::PostgreSqlStatement {
                 statement: StatementText::new("SELECT id FROM browse_2500 ORDER BY id").unwrap(),
+                parameters: Vec::new(),
                 limits: page_limits,
                 max_cell_bytes: 64 * 1024,
             },
@@ -2087,6 +2089,7 @@ async fn persistent_session_runs_statement_cancel_health_and_reuses_connection()
                     "SELECT 1::int4 AS n UNION ALL SELECT 2::int4 ORDER BY 1",
                 )
                 .unwrap(),
+                parameters: Vec::new(),
                 limits: PageLimits::new(10, 8, 4096, 256),
                 max_cell_bytes: 64,
             },
@@ -2115,6 +2118,7 @@ async fn persistent_session_runs_statement_cancel_health_and_reuses_connection()
             DriverPageRequest::PostgreSqlStatement {
                 statement: tablerock_core::StatementText::new("SELECT 'reuse'::text AS label")
                     .unwrap(),
+                parameters: Vec::new(),
                 limits: PageLimits::new(10, 8, 4096, 256),
                 max_cell_bytes: 64,
             },
@@ -2142,6 +2146,7 @@ async fn persistent_session_runs_statement_cancel_health_and_reuses_connection()
                     "SELECT g FROM generate_series(1, 1000000) AS g, pg_sleep(0.05)",
                 )
                 .unwrap(),
+                parameters: Vec::new(),
                 limits: PageLimits::new(1, 2, 128, 128),
                 max_cell_bytes: 32,
             },
@@ -2189,6 +2194,7 @@ async fn persistent_session_runs_statement_cancel_health_and_reuses_connection()
             Arc::clone(&handle),
             DriverPageRequest::PostgreSqlStatement {
                 statement: tablerock_core::StatementText::new("SELEC this_is_not_valid").unwrap(),
+                parameters: Vec::new(),
                 limits: PageLimits::new(10, 8, 4096, 256),
                 max_cell_bytes: 64,
             },
@@ -2210,6 +2216,7 @@ async fn persistent_session_runs_statement_cancel_health_and_reuses_connection()
     let empty = handle
         .start_page_stream(DriverPageRequest::PostgreSqlStatement {
             statement: tablerock_core::StatementText::new("").unwrap(),
+            parameters: Vec::new(),
             limits: PageLimits::new(10, 8, 4096, 256),
             max_cell_bytes: 64,
         })

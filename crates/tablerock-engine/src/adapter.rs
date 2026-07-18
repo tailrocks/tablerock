@@ -58,6 +58,8 @@ pub enum DriverPageRequest {
     /// Operator-supplied PostgreSQL statement. Text is never logged by Debug.
     PostgreSqlStatement {
         statement: StatementText,
+        /// Bound parameters for `$n` placeholders. Never logged by Debug.
+        parameters: Vec<crate::browse_plan::FilterValue>,
         limits: PageLimits,
         max_cell_bytes: u64,
     },
@@ -126,10 +128,12 @@ impl fmt::Debug for DriverPageRequest {
                 .field("max_cell_bytes", max_cell_bytes),
             Self::PostgreSqlStatement {
                 statement,
+                parameters,
                 limits,
                 max_cell_bytes,
             } => debug
                 .field("statement_bytes", &statement.len())
+                .field("parameter_count", &parameters.len())
                 .field("limits", limits)
                 .field("max_cell_bytes", max_cell_bytes),
             Self::ClickHouseProbe {
@@ -398,10 +402,11 @@ impl DriverSession for PostgresSession {
                     .map_err(map_postgres),
                 DriverPageRequest::PostgreSqlStatement {
                     statement,
+                    parameters,
                     limits,
                     max_cell_bytes,
                 } => self
-                    .stream_statement(statement.as_str(), limits, max_cell_bytes)
+                    .stream_statement(statement.as_str(), &parameters, limits, max_cell_bytes)
                     .await
                     .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
                     .map_err(map_postgres),

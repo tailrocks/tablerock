@@ -671,6 +671,25 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::ColumnLayoutLoaded { layout_json, .. }) => {
+            if let Some(json) = layout_json {
+                if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                    let _ = grid.apply_layout_json(&json);
+                }
+            }
+            // After layout load (or miss), start the browse stream.
+            rebrowse_active_table(model)
+        }
+        Message::Engine(EngineMsg::ColumnLayoutSaved { .. }) => Update::render(),
+        Message::Engine(EngineMsg::ColumnLayoutFailed { reason, .. }) => {
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::GridFailed {
             context_revision,
             reason,
@@ -1259,26 +1278,87 @@ fn activate_selected_action(model: &mut Model) -> Update {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.cycle_sort_column(&col);
             }
-            // Re-browse when base table identity is known.
-            let identity = model.workbench().active_grid().and_then(|g| {
-                Some((g.base_schema.clone()?, g.base_table.clone()?))
-            });
-            let Some((schema, table)) = identity else {
-                return Update::render();
+            rebrowse_active_table(model)
+        }
+        ActionId::AddFilter if model.screen() == Screen::Workbench => {
+            let (col, value) = {
+                let Some(grid) = model.workbench().active_grid() else {
+                    return Update::unchanged();
+                };
+                let col = grid.columns.get(grid.cursor_col).cloned();
+                let value = grid.cell_at(grid.cursor_row, grid.cursor_col).text.clone();
+                (col, value)
             };
-            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
-                return Update::render();
+            let Some(col) = col else {
+                return Update::unchanged();
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                let is_null = value.is_empty()
+                    || matches!(
+                        grid.cell_at(grid.cursor_row, grid.cursor_col).distinction,
+                        crate::model::grid::CellDistinction::Null
+                    );
+                if is_null {
+                    grid.add_filter_chip(col, "isnull", None);
+                } else {
+                    grid.add_filter_chip(col, "eq", Some(value));
+                }
+            }
+            rebrowse_active_table(model)
+        }
+        ActionId::ClearFilters if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.clear_server_controls();
+            }
+            rebrowse_active_table(model)
+        }
+        ActionId::ToggleColumn if model.screen() == Screen::Workbench => {
+            let col = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.columns.get(g.cursor_col).cloned());
+            let Some(col) = col else {
+                return Update::unchanged();
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                let _ = grid.toggle_column_visible(&col);
+            }
+            Update::render()
+        }
+        ActionId::ResetColumns if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.reset_column_layout();
+            }
+            Update::render()
+        }
+        ActionId::SaveColumns if model.screen() == Screen::Workbench => {
+            let profile_id_hex = model.workbench().profile_id_hex.clone();
+            let database = model.workbench().context.database.clone();
+            let (schema, table, layout_json) = {
+                let Some(grid) = model.workbench().active_grid() else {
+                    return Update::unchanged();
+                };
+                (
+                    grid.base_schema.clone(),
+                    grid.base_table.clone(),
+                    grid.layout_json(),
+                )
+            };
+            let (Some(profile_id_hex), Some(schema), Some(table)) =
+                (profile_id_hex, schema, table)
+            else {
+                return Update::unchanged();
             };
             let token = model.mint_request_token();
-            let context_revision = model.workbench().context_revision;
             Update {
                 render: true,
-                effect: Some(Effect::BrowseTable {
+                effect: Some(Effect::SaveColumnLayout {
                     request_token: token,
-                    session_id_hex,
-                    context_revision,
+                    profile_id_hex,
+                    database,
                     schema,
                     table,
+                    layout_json,
                 }),
             }
         }
@@ -1311,8 +1391,86 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyCsv
         | ActionId::CopyTsv
         | ActionId::CycleSort
+        | ActionId::AddFilter
+        | ActionId::ClearFilters
+        | ActionId::ToggleColumn
+        | ActionId::ResetColumns
+        | ActionId::SaveColumns
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
+    }
+}
+
+fn rebrowse_active_table(model: &mut Model) -> Update {
+    let identity = model.workbench().active_grid().and_then(|g| {
+        Some((g.base_schema.clone()?, g.base_table.clone()?))
+    });
+    let Some((schema, table)) = identity else {
+        return Update::render();
+    };
+    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+        return Update::render();
+    };
+    let token = model.mint_request_token();
+    let context_revision = model.workbench().context_revision;
+    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+        grid.operation = GridOperationState::Running;
+        grid.error_label = None;
+    }
+    Update {
+        render: true,
+        effect: Some(browse_table_effect(
+            token,
+            session_id_hex,
+            context_revision,
+            schema,
+            table,
+            model.workbench().active_grid(),
+        )),
+    }
+}
+
+fn browse_table_effect(
+    request_token: u64,
+    session_id_hex: String,
+    context_revision: u64,
+    schema: String,
+    table: String,
+    grid: Option<&crate::model::grid::DataGridModel>,
+) -> Effect {
+    use crate::model::grid::ColumnSort;
+    let (sort, filters, raw_where) = match grid {
+        Some(g) => {
+            let sort = g
+                .sort
+                .iter()
+                .filter_map(|k| {
+                    let dir = match k.direction {
+                        ColumnSort::Asc => "asc",
+                        ColumnSort::Desc => "desc",
+                        ColumnSort::None => return None,
+                    };
+                    Some((k.column.clone(), dir.to_owned()))
+                })
+                .collect();
+            let filters = g
+                .filters
+                .iter()
+                .map(|f| (f.column.clone(), f.operator.clone(), f.value.clone()))
+                .collect();
+            (sort, filters, g.raw_where.clone())
+        }
+        None => (Vec::new(), Vec::new(), None),
+    };
+    Effect::BrowseTable {
+        request_token,
+        session_id_hex,
+        context_revision,
+        schema,
+        table,
+        sort,
+        filters,
+        raw_where,
     }
 }
 
@@ -1423,6 +1581,11 @@ fn cycle_action(
                 ActionId::CopyCsv,
                 ActionId::CopyTsv,
                 ActionId::CycleSort,
+                ActionId::AddFilter,
+                ActionId::ClearFilters,
+                ActionId::ToggleColumn,
+                ActionId::ResetColumns,
+                ActionId::SaveColumns,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,
@@ -1513,15 +1676,30 @@ fn activate_catalog_node(model: &mut Model) -> Update {
             grid.base_table = Some(table.clone());
             grid.ensure_column_layout();
         }
+        // Prefer loading saved layout before first paint when profile known.
+        if let Some(profile_id_hex) = model.workbench().profile_id_hex.clone() {
+            let database = model.workbench().context.database.clone();
+            return Update {
+                render: true,
+                effect: Some(Effect::LoadColumnLayout {
+                    request_token: token,
+                    profile_id_hex,
+                    database,
+                    schema: schema.clone(),
+                    table: table.clone(),
+                }),
+            };
+        }
         return Update {
             render: true,
-            effect: Some(Effect::BrowseTable {
-                request_token: token,
+            effect: Some(browse_table_effect(
+                token,
                 session_id_hex,
                 context_revision,
                 schema,
                 table,
-            }),
+                model.workbench().active_grid(),
+            )),
         };
     }
     let was_expanded = node.expanded;
@@ -2180,6 +2358,81 @@ mod tests {
         let grid = model.workbench().active_grid().unwrap();
         assert_eq!(grid.operation, GridOperationState::Completed);
         assert_eq!(grid.rows_loaded, 2500);
+    }
+
+    #[test]
+    fn add_filter_and_cycle_sort_rebrowse_with_plan() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("users");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.columns = vec!["id".into(), "name".into()];
+            grid.row_count = 1;
+            grid.cells = vec![
+                crate::model::grid::ProjectedCell {
+                    text: "1".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                },
+                crate::model::grid::ProjectedCell {
+                    text: "alice".into(),
+                    distinction: crate::model::grid::CellDistinction::Text,
+                    byte_len: 5,
+                    original_byte_len: None,
+                },
+            ];
+            grid.cursor_col = 1;
+            grid.cursor_row = 0;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::AddFilter);
+        let filtered = update(&mut model, Message::Activate);
+        match filtered.effects().next() {
+            Some(Effect::BrowseTable {
+                schema,
+                table,
+                filters,
+                ..
+            }) => {
+                assert_eq!(schema, "public");
+                assert_eq!(table, "users");
+                assert_eq!(filters.len(), 1);
+                assert_eq!(filters[0].0, "name");
+                assert_eq!(filters[0].1, "eq");
+                assert_eq!(filters[0].2.as_deref(), Some("alice"));
+            }
+            other => panic!("expected BrowseTable with filter, got {other:?}"),
+        }
+        model.set_action(ActionId::CycleSort);
+        let sorted = update(&mut model, Message::Activate);
+        match sorted.effects().next() {
+            Some(Effect::BrowseTable { sort, filters, .. }) => {
+                assert!(!sort.is_empty());
+                assert_eq!(filters.len(), 1); // filter retained
+            }
+            other => panic!("expected BrowseTable with sort, got {other:?}"),
+        }
+        model.set_action(ActionId::ClearFilters);
+        let cleared = update(&mut model, Message::Activate);
+        match cleared.effects().next() {
+            Some(Effect::BrowseTable {
+                sort, filters, ..
+            }) => {
+                assert!(sort.is_empty());
+                assert!(filters.is_empty());
+            }
+            other => panic!("expected cleared BrowseTable, got {other:?}"),
+        }
     }
 
     #[test]

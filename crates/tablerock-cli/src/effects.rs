@@ -12,7 +12,7 @@ use tablerock_core::{
     SessionId, TlsPolicy,
 };
 use tablerock_engine::{
-    CatalogRequest, DriverPageRequest, DriverSession, SessionRegistry, qualify_table,
+    CatalogRequest, DriverPageRequest, DriverSession, SessionRegistry,
 };
 use tablerock_persistence::PersistenceActor;
 use tablerock_tui::{
@@ -240,6 +240,9 @@ impl EffectExecutor {
                 context_revision,
                 schema,
                 table,
+                sort,
+                filters,
+                raw_where,
             } => {
                 let sessions = Arc::clone(&self.sessions);
                 let results = Arc::clone(&self.results);
@@ -254,6 +257,9 @@ impl EffectExecutor {
                         context_revision,
                         schema,
                         table,
+                        sort,
+                        filters,
+                        raw_where,
                     )
                     .await;
                     let _ = ingress.try_send_event(message);
@@ -277,6 +283,7 @@ impl EffectExecutor {
                         session_id_hex,
                         context_revision,
                         statement,
+                        Vec::new(),
                     )
                     .await;
                     let _ = ingress.try_send_event(message);
@@ -447,6 +454,52 @@ impl EffectExecutor {
                         bytes,
                     },
                 ));
+            }
+            Effect::SaveColumnLayout {
+                request_token,
+                profile_id_hex,
+                database,
+                schema,
+                table,
+                layout_json,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = save_column_layout(
+                        persistence,
+                        request_token,
+                        profile_id_hex,
+                        database,
+                        schema,
+                        table,
+                        layout_json,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::LoadColumnLayout {
+                request_token,
+                profile_id_hex,
+                database,
+                schema,
+                table,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = load_column_layout(
+                        persistence,
+                        request_token,
+                        profile_id_hex,
+                        database,
+                        schema,
+                        table,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
             }
         }
     }
@@ -853,6 +906,96 @@ async fn load_session_intent(
     }
 }
 
+async fn save_column_layout(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    profile_id_hex: String,
+    database: String,
+    schema: String,
+    table: String,
+    layout_json: String,
+) -> Message {
+    use tablerock_core::ProfileId;
+    use tablerock_persistence::ColumnLayoutKey;
+    let joined = tokio::task::spawn_blocking(move || {
+        let id: ProfileId = profile_id_hex
+            .parse()
+            .map_err(|_| "invalid profile id".to_owned())?;
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .put_column_layout(
+                ColumnLayoutKey {
+                    profile_id: id,
+                    database,
+                    schema,
+                    table,
+                },
+                layout_json,
+            )
+            .map_err(|e| e.to_string())
+    })
+    .await;
+    match joined {
+        Ok(Ok(())) => Message::Engine(tablerock_tui::EngineMsg::ColumnLayoutSaved { request_token }),
+        Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::ColumnLayoutFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::ColumnLayoutFailed {
+            request_token,
+            reason: FailureProjection::Label("save column layout task failed".into()),
+        }),
+    }
+}
+
+async fn load_column_layout(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    profile_id_hex: String,
+    database: String,
+    schema: String,
+    table: String,
+) -> Message {
+    use tablerock_core::ProfileId;
+    use tablerock_persistence::ColumnLayoutKey;
+    let joined = tokio::task::spawn_blocking(move || {
+        let id: ProfileId = profile_id_hex
+            .parse()
+            .map_err(|_| "invalid profile id".to_owned())?;
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .get_column_layout(ColumnLayoutKey {
+                profile_id: id,
+                database,
+                schema,
+                table,
+            })
+            .map_err(|e| e.to_string())
+            .map(|opt| opt.map(|r| r.layout_json))
+    })
+    .await;
+    match joined {
+        Ok(Ok(layout_json)) => Message::Engine(tablerock_tui::EngineMsg::ColumnLayoutLoaded {
+            request_token,
+            layout_json,
+        }),
+        Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::ColumnLayoutFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::ColumnLayoutFailed {
+            request_token,
+            reason: FailureProjection::Label("load column layout task failed".into()),
+        }),
+    }
+}
+
 fn history_row(
     entry: tablerock_persistence::HistoryEntry,
 ) -> tablerock_tui::HistoryRowProjection {
@@ -1167,9 +1310,84 @@ async fn browse_table(
     context_revision: u64,
     schema: String,
     table: String,
+    sort: Vec<(String, String)>,
+    filters: Vec<(String, String, Option<String>)>,
+    raw_where: Option<String>,
 ) -> Message {
-    let qualified = match qualify_table(&schema, &table) {
-        Ok(q) => q,
+    use tablerock_engine::{
+        BrowsePlan, FilterOperator, FilterValue, SortDirection, SortKey, TypedCondition,
+    };
+    let mut plan = BrowsePlan {
+        schema,
+        table,
+        sort: sort
+            .into_iter()
+            .filter_map(|(column, dir)| {
+                let direction = match dir.as_str() {
+                    "desc" | "Desc" | "DESC" => SortDirection::Desc,
+                    "asc" | "Asc" | "ASC" => SortDirection::Asc,
+                    _ => return None,
+                };
+                Some(SortKey { column, direction })
+            })
+            .collect(),
+        filters: Vec::new(),
+        raw_where,
+        limit: PAGE_ROWS,
+        offset: 0,
+    };
+    for (column, op, value) in filters {
+        let operator = match op.to_ascii_lowercase().as_str() {
+            "eq" | "=" => FilterOperator::Eq,
+            "ne" | "<>" | "!=" => FilterOperator::Ne,
+            "lt" | "<" => FilterOperator::Lt,
+            "le" | "<=" => FilterOperator::Le,
+            "gt" | ">" => FilterOperator::Gt,
+            "ge" | ">=" => FilterOperator::Ge,
+            "like" => FilterOperator::Like,
+            "ilike" => FilterOperator::ILike,
+            "isnull" | "is_null" => FilterOperator::IsNull,
+            "isnotnull" | "is_not_null" => FilterOperator::IsNotNull,
+            _ => {
+                return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                    request_token,
+                    context_revision,
+                    reason: FailureProjection::Label(format!("unknown filter operator: {op}")),
+                });
+            }
+        };
+        let value = if operator.needs_value() {
+            let Some(v) = value else {
+                return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                    request_token,
+                    context_revision,
+                    reason: FailureProjection::Label("filter value required".into()),
+                });
+            };
+            // Prefer integer when it parses; else text (boolean true/false).
+            let fv = if let Ok(n) = v.parse::<i64>() {
+                FilterValue::Integer(n)
+            } else if v.eq_ignore_ascii_case("true") {
+                FilterValue::Boolean(true)
+            } else if v.eq_ignore_ascii_case("false") {
+                FilterValue::Boolean(false)
+            } else if let Ok(n) = v.parse::<f64>() {
+                FilterValue::Float(n)
+            } else {
+                FilterValue::Text(v)
+            };
+            Some(fv)
+        } else {
+            None
+        };
+        plan.filters.push(TypedCondition {
+            column,
+            operator,
+            value,
+        });
+    }
+    let rendered = match plan.render_sql() {
+        Ok(r) => r,
         Err(error) => {
             return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
                 request_token,
@@ -1178,9 +1396,6 @@ async fn browse_table(
             });
         }
     };
-    // Prefer typed browse plan when callers pass sort/filter via future
-    // effect fields; first-cut remains SELECT * FROM qualified.
-    let statement = format!("SELECT * FROM {qualified}");
     execute_sql(
         sessions,
         results,
@@ -1188,7 +1403,8 @@ async fn browse_table(
         request_token,
         session_id_hex,
         context_revision,
-        statement,
+        rendered.sql,
+        rendered.parameters,
     )
     .await
 }
@@ -1204,6 +1420,7 @@ async fn execute_sql(
     session_id_hex: String,
     context_revision: u64,
     statement: String,
+    parameters: Vec<tablerock_engine::FilterValue>,
 ) -> Message {
     use tablerock_core::{
         Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
@@ -1243,6 +1460,7 @@ async fn execute_sql(
     let mut stream = match session
         .start_page_stream(DriverPageRequest::PostgreSqlStatement {
             statement,
+            parameters,
             limits,
             max_cell_bytes: 64 * 1024,
         })

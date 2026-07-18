@@ -843,9 +843,11 @@ impl PostgresSession {
 
     /// Streams an operator-supplied statement through the same decoder path as probes.
     /// Statement text is never retained on this type after prepare begins.
+    /// Parameters are bound positionally to `$n` placeholders (never concatenated).
     pub async fn stream_statement(
         &self,
         sql: &str,
+        parameters: &[crate::browse_plan::FilterValue],
         limits: PageLimits,
         max_cell_bytes: u64,
     ) -> Result<PostgresRowStream, PostgresError> {
@@ -863,9 +865,25 @@ impl PostgresSession {
             .await
             .map_err(|_| PostgresError::Query)?;
         let columns = decode_columns(statement.columns(), limits)?;
+        // Own params so references live through query_raw.
+        let owned: Vec<Box<dyn ToSql + Sync + Send>> = parameters
+            .iter()
+            .map(|p| -> Box<dyn ToSql + Sync + Send> {
+                match p {
+                    crate::browse_plan::FilterValue::Text(s) => Box::new(s.clone()),
+                    crate::browse_plan::FilterValue::Integer(n) => Box::new(*n),
+                    crate::browse_plan::FilterValue::Float(n) => Box::new(*n),
+                    crate::browse_plan::FilterValue::Boolean(b) => Box::new(*b),
+                }
+            })
+            .collect();
+        let refs: Vec<&(dyn ToSql + Sync)> = owned
+            .iter()
+            .map(|p| p.as_ref() as &(dyn ToSql + Sync))
+            .collect();
         let stream = self
             .client
-            .query_raw(&statement, Vec::<&(dyn ToSql + Sync)>::new())
+            .query_raw(&statement, refs)
             .await
             .map_err(|_| PostgresError::Query)?;
         Ok(PostgresRowStream {

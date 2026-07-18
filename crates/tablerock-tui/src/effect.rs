@@ -136,13 +136,18 @@ pub enum Effect {
         /// Parent presentation id for merge (None = roots).
         parent_id: Option<String>,
     },
-    /// Browse a table: bounded SELECT stream, first page into the active tab grid.
+    /// Browse a table via typed plan (sort/filter/raw WHERE) into the active grid.
     BrowseTable {
         request_token: RequestToken,
         session_id_hex: String,
         context_revision: u64,
         schema: String,
         table: String,
+        /// Sort keys as (column, "asc"|"desc").
+        sort: Vec<(String, String)>,
+        /// Filters as (column, operator, optional value).
+        filters: Vec<(String, String, Option<String>)>,
+        raw_where: Option<String>,
     },
     /// Run a single SQL statement (first page) into the active tab grid.
     ExecuteSql {
@@ -227,6 +232,23 @@ pub enum Effect {
     CopyToClipboard {
         request_token: RequestToken,
         text: String,
+    },
+    /// Persist per-table column layout JSON.
+    SaveColumnLayout {
+        request_token: RequestToken,
+        profile_id_hex: String,
+        database: String,
+        schema: String,
+        table: String,
+        layout_json: String,
+    },
+    /// Load per-table column layout JSON.
+    LoadColumnLayout {
+        request_token: RequestToken,
+        profile_id_hex: String,
+        database: String,
+        schema: String,
+        table: String,
     },
 }
 

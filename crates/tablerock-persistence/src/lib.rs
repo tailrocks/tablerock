@@ -1,5 +1,6 @@
 //! Local-only persistence owned by one serialized worker thread.
 
+mod column_layout_store;
 mod history_store;
 mod profile_store;
 mod recovery;
@@ -20,6 +21,7 @@ use std::{
     time::Duration,
 };
 
+pub use column_layout_store::{ColumnLayoutKey, ColumnLayoutRecord};
 pub use history_store::{
     DEFAULT_HISTORY_LIMIT, HistoryAppend, HistoryEntry, HistoryOutcomeClass, HistoryRetention,
 };
@@ -60,6 +62,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
         9,
         include_str!("../migrations/0009-saved-queries-and-session-intent.sql"),
     ),
+    (10, include_str!("../migrations/0010-column-layout.sql")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -309,6 +312,43 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
+    pub fn put_column_layout(
+        &self,
+        key: ColumnLayoutKey,
+        layout_json: String,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::PutColumnLayout(key, layout_json, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn get_column_layout(
+        &self,
+        key: ColumnLayoutKey,
+    ) -> Result<Option<ColumnLayoutRecord>, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::GetColumnLayout(key, sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn delete_column_layout(
+        &self,
+        key: ColumnLayoutKey,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::DeleteColumnLayout(key, sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
     pub fn shutdown(mut self) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::Shutdown(sender))?;
@@ -408,6 +448,16 @@ enum Command {
         mpsc::SyncSender<Result<Option<SessionIntentRecord>, PersistenceError>>,
     ),
     DeleteSessionIntent(ProfileId, mpsc::SyncSender<Result<(), PersistenceError>>),
+    PutColumnLayout(
+        ColumnLayoutKey,
+        String,
+        mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
+    GetColumnLayout(
+        ColumnLayoutKey,
+        mpsc::SyncSender<Result<Option<ColumnLayoutRecord>, PersistenceError>>,
+    ),
+    DeleteColumnLayout(ColumnLayoutKey, mpsc::SyncSender<Result<(), PersistenceError>>),
     Shutdown(mpsc::SyncSender<Result<(), PersistenceError>>),
 }
 
@@ -628,6 +678,39 @@ fn worker_main(
                     tokio::time::timeout(
                         OPERATION_TIMEOUT,
                         session_intent_store::delete(&connection, profile_id),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::PutColumnLayout(key, layout_json, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        column_layout_store::put(&connection, &key, &layout_json),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::GetColumnLayout(key, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        column_layout_store::get(&connection, &key),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::DeleteColumnLayout(key, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        column_layout_store::delete(&connection, &key),
                     )
                     .await
                     .map_err(|_| PersistenceError::Timeout)?
