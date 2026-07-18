@@ -14,6 +14,7 @@ mod secret_resolution;
 mod service;
 mod session_pool;
 mod ssh_tunnel;
+mod startup_run;
 mod temporal;
 
 pub use adapter::{
@@ -71,5 +72,6 @@ pub use ssh_tunnel::{
     connect_session, connect_session_capture_host_key, learn_host_key, open_direct_tcpip,
     open_local_forward_tunnel, spawn_local_forward,
 };
+pub use startup_run::run_postgres_startup_actions;
 // SQL analysis is pure and lives in core; re-export for engine consumers.
 pub use tablerock_core::{SqlDialect, StatementSpan, statement_at, statements};
