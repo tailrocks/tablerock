@@ -107,20 +107,19 @@ Done so far:
 - Performance: current-line 10,000-row streaming, first-page, throughput,
   page-residency, and process-RSS budgets.
 
-Still open: product file effects, UI/UniFFI integration, and everything in
-Phase 3 onward. Engine sessions are reusable with operator SQL and health
+Still open: product file effects and UI/UniFFI integration beyond the Phase 3
+connection shell. Engine sessions are reusable with operator SQL and health
 (193–195); lazy catalog listing works for PG/CH/Redis (198).
 
 ## Phase 3 — connection experience
 
-Deliver the [connection screens](docs/product/connections.md): searchable
-grouped profile list with environment tags, the minimal capability-driven
-editor (engine, name, group, environment, host, port, database, user,
-password, TLS mode), URL and temporary drafts, Test and Connect, one password
-field with prompt/acknowledged-plaintext sources first, General/TLS/Safety
-sections, context selection, health, reconnect, and safe versioned persistence
-for all three engines. 1Password `op://` mapping and other secret sources
-stage after the basic loop is proven.
+**Status: complete.** Exit evidence: 199–206 (effect bridge, Test/Connect,
+list/search/Open, Form/Tree, password prompt + reconnect policy,
+describe_server real matrix). Residual deferred by product: URL import,
+1Password/Keychain/env sources, group rename dialog polish, delayed
+reconnect auto re-dispatch. Temporary Connect, save, Test without save,
+prompt-on-connect fail-closed, Remove confirm, and TermRock Form/Tree are
+proven on trunk.
 
 ## Phase 4 — PostgreSQL read-only tracer
 
