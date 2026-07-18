@@ -359,6 +359,10 @@ pub enum ActionId {
     PageColumnLeft,
     /// Jump right by half of the visible column set (skips hidden).
     PageColumnRight,
+    /// Jump to first visible column; keep current row.
+    CursorColumnHome,
+    /// Jump to last visible column; keep current row.
+    CursorColumnEnd,
     /// Re-browse the active base table (keep sort/filters).
     RefreshTable,
     /// Toggle visibility of the cursor column.

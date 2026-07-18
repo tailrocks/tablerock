@@ -5480,6 +5480,28 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 Update::unchanged()
             }
         }
+        ActionId::CursorColumnHome if model.screen() == Screen::Workbench => {
+            let moved = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.jump_cursor_visible_column_edge(-1));
+            if moved {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
+        ActionId::CursorColumnEnd if model.screen() == Screen::Workbench => {
+            let moved = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.jump_cursor_visible_column_edge(1));
+            if moved {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
         ActionId::RefreshTable if model.screen() == Screen::Workbench => {
             rebrowse_active_table(model)
         }
@@ -6620,6 +6642,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::EndCursor
         | ActionId::PageColumnLeft
         | ActionId::PageColumnRight
+        | ActionId::CursorColumnHome
+        | ActionId::CursorColumnEnd
         | ActionId::RefreshTable
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
@@ -8432,6 +8456,8 @@ fn cycle_action(
                 ActionId::EndCursor,
                 ActionId::PageColumnLeft,
                 ActionId::PageColumnRight,
+                ActionId::CursorColumnHome,
+                ActionId::CursorColumnEnd,
                 ActionId::RefreshTable,
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
@@ -10381,6 +10407,29 @@ mod tests {
                 .active_grid()
                 .map(|g| g.columns[g.cursor_col].as_str()),
             Some("c6")
+        );
+        // CursorColumnHome/End keep row.
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.cursor_row = 2;
+            grid.cursor_col = 3;
+        }
+        model.set_action(ActionId::CursorColumnHome);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(
+            model
+                .workbench()
+                .active_grid()
+                .map(|g| (g.cursor_row, g.columns[g.cursor_col].as_str())),
+            Some((2, "c1"))
+        );
+        model.set_action(ActionId::CursorColumnEnd);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(
+            model
+                .workbench()
+                .active_grid()
+                .map(|g| (g.cursor_row, g.columns[g.cursor_col].as_str())),
+            Some((2, "c6"))
         );
     }
 

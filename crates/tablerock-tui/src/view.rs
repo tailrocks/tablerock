@@ -697,6 +697,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let end_cur = action_label(model, ActionId::EndCursor, "End");
     let page_col_l = action_label(model, ActionId::PageColumnLeft, "PgColL");
     let page_col_r = action_label(model, ActionId::PageColumnRight, "PgColR");
+    let cur_col_home = action_label(model, ActionId::CursorColumnHome, "ColHomeC");
+    let cur_col_end = action_label(model, ActionId::CursorColumnEnd, "ColEndC");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
@@ -1398,6 +1400,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::PageColumnRight,
                         label: page_col_r.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CursorColumnHome,
+                        label: cur_col_home.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CursorColumnEnd,
+                        label: cur_col_end.as_str(),
                         enabled: true,
                         style: None,
                     },

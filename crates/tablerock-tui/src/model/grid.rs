@@ -2147,6 +2147,34 @@ impl DataGridModel {
         any
     }
 
+    /// Jump to the first (`edge < 0`) or last (`edge > 0`) visible column.
+    ///
+    /// Keeps the current row. Returns false when already there or no visible
+    /// columns.
+    pub fn jump_cursor_visible_column_edge(&mut self, edge: i8) -> bool {
+        if edge == 0 || self.columns.is_empty() {
+            return false;
+        }
+        let visible = self.visible_columns();
+        let Some(target_name) = (if edge < 0 {
+            visible.first()
+        } else {
+            visible.last()
+        })
+        .cloned() else {
+            return false;
+        };
+        let Some(idx) = self.columns.iter().position(|c| c == &target_name) else {
+            return false;
+        };
+        if self.cursor_col == idx {
+            return false;
+        }
+        self.cursor_col = idx;
+        self.reveal_cursor_column();
+        true
+    }
+
     /// Move cursor by `delta` absolute rows (negative = up). Adjusts viewport.
     pub fn step_cursor_row(&mut self, delta: i64) {
         if delta == 0 {
@@ -2787,6 +2815,27 @@ mod tests {
         assert!(g.step_cursor_visible_column_by(-20));
         assert_eq!(g.cursor_col, 0);
         assert!(!g.step_cursor_visible_column_by(-1));
+    }
+
+    #[test]
+    fn jump_cursor_visible_column_edge_keeps_row() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+        g.row_count = 4;
+        g.start_row = 10;
+        g.cursor_row = 12;
+        g.ensure_column_layout();
+        assert!(g.toggle_column_visible("a"));
+        assert!(g.toggle_column_visible("d"));
+        g.cursor_col = 2; // c
+        assert!(g.jump_cursor_visible_column_edge(-1));
+        assert_eq!(g.cursor_row, 12);
+        assert_eq!(g.columns[g.cursor_col], "b");
+        assert!(!g.jump_cursor_visible_column_edge(-1));
+        assert!(g.jump_cursor_visible_column_edge(1));
+        assert_eq!(g.cursor_row, 12);
+        assert_eq!(g.columns[g.cursor_col], "c");
+        assert!(!g.jump_cursor_visible_column_edge(1));
     }
 
     #[test]
