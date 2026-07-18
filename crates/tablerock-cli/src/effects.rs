@@ -10,12 +10,14 @@ use tablerock_core::{
     ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag,
     ReconnectPreference, Revision, SecretSource, SecretSourceKind, SessionId, TlsPolicy,
 };
-use tablerock_engine::{CatalogRequest, DriverSession, SessionRegistry};
+use tablerock_engine::{
+    CatalogRequest, DriverPageRequest, DriverSession, SessionRegistry, qualify_table,
+};
 use tablerock_persistence::PersistenceActor;
 use tablerock_tui::{
-    CatalogLevelSpec, CatalogNodeProjection, CatalogNodeStatus, ConnectionDraft, Effect,
-    EngineKind, FailureProjection, Message, PasswordSourceSpec, ProfilesMsg, RequestToken,
-    TlsModeSpec,
+    CatalogLevelSpec, CatalogNodeProjection, CatalogNodeStatus, CellDistinction, ConnectionDraft,
+    Effect, EngineKind, FailureProjection, Message, PasswordSourceSpec, ProfilesMsg, ProjectedCell,
+    RequestToken, TlsModeSpec, distinction_from_kind_label,
 };
 use tokio::sync::Mutex;
 
@@ -212,6 +214,60 @@ impl EffectExecutor {
                         parent_id,
                     )
                     .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+
+            Effect::BrowseTable {
+                request_token,
+                session_id_hex,
+                context_revision,
+                schema,
+                table,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = browse_table(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        schema,
+                        table,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::ExecuteSql {
+                request_token,
+                session_id_hex,
+                context_revision,
+                statement,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = execute_sql(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        statement,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::CancelQuery {
+                request_token,
+                session_id_hex,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = cancel_query(sessions, request_token, session_id_hex).await;
                     let _ = ingress.try_send_event(message);
                 });
             }
@@ -491,6 +547,272 @@ async fn load_catalog(
             reason: FailureProjection::Label(error.to_string()),
         }),
     }
+}
+
+async fn browse_table(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    schema: String,
+    table: String,
+) -> Message {
+    let qualified = match qualify_table(&schema, &table) {
+        Ok(q) => q,
+        Err(error) => {
+            return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(error.to_string()),
+            });
+        }
+    };
+    let statement = format!("SELECT * FROM {qualified}");
+    execute_sql(
+        sessions,
+        request_token,
+        session_id_hex,
+        context_revision,
+        statement,
+    )
+    .await
+}
+
+async fn execute_sql(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    statement: String,
+) -> Message {
+    use tablerock_core::{
+        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
+    };
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    let statement = match StatementText::new(statement) {
+        Ok(s) => s,
+        Err(error) => {
+            return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(error.to_string()),
+            });
+        }
+    };
+    let limits = PageLimits::new(500, 64, 2 * 1024 * 1024, 64 * 1024);
+    let mut stream = match session
+        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+            statement,
+            limits,
+            max_cell_bytes: 64 * 1024,
+        })
+        .await
+    {
+        Ok(stream) => stream,
+        Err(error) => {
+            return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(error.to_string()),
+            });
+        }
+    };
+    let low = request_token.max(1);
+    let result_id =
+        ResultId::from_parts(IdParts::new(1, low).expect("id parts")).expect("result id");
+    let identity = PageIdentity::new(result_id, Revision::INITIAL, CoreEngine::PostgreSql);
+    match stream.next_page(identity, 0).await {
+        Ok(Some(page)) => project_page_message(request_token, context_revision, page, true),
+        Ok(None) => Message::Engine(tablerock_tui::EngineMsg::GridPage {
+            request_token,
+            context_revision,
+            start_row: 0,
+            columns: Vec::new(),
+            cells: Vec::new(),
+            row_count: 0,
+            totals_exact: Some(0),
+            totals_estimated: None,
+            bytes: 0,
+            truncated: false,
+            complete: true,
+        }),
+        Err(error) => Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(error.to_string()),
+        }),
+    }
+}
+
+async fn cancel_query(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+) -> Message {
+    use tablerock_core::{IdParts, OperationId};
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                request_token,
+                context_revision: 0,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+            request_token,
+            context_revision: 0,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    let low = request_token.max(1);
+    let op = OperationId::from_parts(IdParts::new(1, low).expect("id parts")).expect("op id");
+    let _dispatch = session.cancel(op).await;
+    Message::Engine(tablerock_tui::EngineMsg::GridCancelDispatched { request_token })
+}
+
+fn project_page_message(
+    request_token: RequestToken,
+    context_revision: u64,
+    page: tablerock_core::ResultPage,
+    complete: bool,
+) -> Message {
+    use tablerock_core::{RowTotal, Truncation, ValueKind};
+    let envelope = page.envelope();
+    let columns: Vec<String> = page.columns().iter().map(|c| c.name().to_owned()).collect();
+    let col_count = envelope.column_count();
+    let row_count = envelope.row_count();
+    let mut cells = Vec::with_capacity(row_count as usize * col_count as usize);
+    for row in 0..row_count {
+        for col in 0..col_count {
+            let cell = page.cell(row, col).expect("in-range cell");
+            let truncated = matches!(cell.truncation(), Truncation::Truncated { .. });
+            let original = match cell.truncation() {
+                Truncation::Truncated {
+                    original_byte_len: Some(n),
+                } => Some(n),
+                Truncation::Truncated {
+                    original_byte_len: None,
+                } => None,
+                Truncation::Complete => None,
+            };
+            let kind_label = match cell.kind() {
+                ValueKind::Null => "null",
+                ValueKind::Boolean => "boolean",
+                ValueKind::Signed
+                | ValueKind::Unsigned
+                | ValueKind::Float64
+                | ValueKind::Decimal => "number",
+                ValueKind::Temporal => "temporal",
+                ValueKind::Text => "text",
+                ValueKind::Structured => "structured",
+                ValueKind::Binary => "binary",
+                ValueKind::Invalid => "invalid",
+                ValueKind::Unknown => "unknown",
+            };
+            let text = if cell.is_null() {
+                String::new()
+            } else {
+                match cell.kind() {
+                    ValueKind::Boolean => {
+                        if cell.bytes().first() == Some(&1) {
+                            "true".into()
+                        } else {
+                            "false".into()
+                        }
+                    }
+                    ValueKind::Signed => {
+                        let mut buf = [0u8; 8];
+                        let b = cell.bytes();
+                        let n = b.len().min(8);
+                        buf[8 - n..].copy_from_slice(&b[..n]);
+                        i64::from_be_bytes(buf).to_string()
+                    }
+                    ValueKind::Unsigned | ValueKind::Float64 => {
+                        let mut buf = [0u8; 8];
+                        let b = cell.bytes();
+                        let n = b.len().min(8);
+                        buf[8 - n..].copy_from_slice(&b[..n]);
+                        if cell.kind() == ValueKind::Float64 {
+                            f64::from_bits(u64::from_be_bytes(buf)).to_string()
+                        } else {
+                            u64::from_be_bytes(buf).to_string()
+                        }
+                    }
+                    ValueKind::Binary | ValueKind::Unknown | ValueKind::Invalid => {
+                        let b = cell.bytes();
+                        let take = b.len().min(16);
+                        let hex: String = b[..take]
+                            .iter()
+                            .map(|x| format!("{x:02x}"))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        if b.len() > take {
+                            format!("{hex} …")
+                        } else {
+                            hex
+                        }
+                    }
+                    _ => String::from_utf8_lossy(cell.bytes()).into_owned(),
+                }
+            };
+            let empty = text.is_empty() && !cell.is_null();
+            let distinction =
+                distinction_from_kind_label(kind_label, cell.is_null(), truncated, empty);
+            cells.push(ProjectedCell {
+                text,
+                distinction,
+                byte_len: cell.bytes().len() as u64,
+                original_byte_len: original,
+            });
+        }
+    }
+    let totals_exact = match envelope.total_rows() {
+        RowTotal::Known(n) => Some(n),
+        RowTotal::Unknown => None,
+    };
+    let truncated = cells
+        .iter()
+        .any(|c| c.distinction == CellDistinction::Truncated);
+    Message::Engine(tablerock_tui::EngineMsg::GridPage {
+        request_token,
+        context_revision,
+        start_row: envelope.start_row(),
+        columns,
+        cells,
+        row_count,
+        totals_exact,
+        totals_estimated: None,
+        bytes: envelope.arena_byte_len(),
+        truncated,
+        complete,
+    })
 }
 
 fn catalog_kind_label(kind: tablerock_core::CatalogNodeKind) -> &'static str {

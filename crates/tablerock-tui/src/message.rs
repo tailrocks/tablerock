@@ -139,6 +139,32 @@ pub enum EngineMsg {
         context_revision: u64,
         reason: FailureProjection,
     },
+    /// First page (or next page) projected for the grid.
+    GridPage {
+        request_token: u64,
+        context_revision: u64,
+        start_row: u64,
+        columns: Vec<String>,
+        cells: Vec<crate::model::grid::ProjectedCell>,
+        row_count: u32,
+        totals_exact: Option<u64>,
+        totals_estimated: Option<u64>,
+        bytes: u64,
+        truncated: bool,
+        complete: bool,
+    },
+    GridFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
+    GridCancelDispatched {
+        request_token: u64,
+    },
+    GridCancelled {
+        request_token: u64,
+        label: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

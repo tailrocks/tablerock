@@ -7,6 +7,7 @@ use crate::{
     model::{
         ConfirmDialog, PasswordPrompt, SessionFacts,
         catalog::{CatalogModel, CatalogNodeStatus},
+        grid::{GridOperationState, GridRowTotal},
         profiles::{FailureProjection, ProfileListState},
         workbench::WorkbenchModel,
     },
@@ -364,6 +365,80 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 context_revision,
                 reason: label,
             };
+            Update::render()
+        }
+        Message::Engine(EngineMsg::GridPage {
+            context_revision,
+            start_row,
+            columns,
+            cells,
+            row_count,
+            totals_exact,
+            totals_estimated,
+            bytes,
+            truncated,
+            complete,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let totals = if let Some(n) = totals_exact {
+                GridRowTotal::Exact(n)
+            } else if let Some(n) = totals_estimated {
+                GridRowTotal::Estimated(n)
+            } else {
+                GridRowTotal::Unknown
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.replace_page(
+                    start_row, columns, cells, row_count, totals, bytes, truncated,
+                );
+                if complete {
+                    grid.mark_completed();
+                }
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.running = !complete;
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::GridFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.running = false;
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::GridCancelDispatched { .. }) => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_cancel_requested();
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::GridCancelled { label, .. }) => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_cancelled();
+                grid.error_label = Some(label);
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.running = false;
+            }
             Update::render()
         }
         Message::Engine(EngineMsg::ConnectFailed { reason, .. }) => {
@@ -818,8 +893,49 @@ fn activate_catalog_node(model: &mut Model) -> Update {
         return Update::unchanged();
     };
     if !node.branch {
+        // Data-bearing leaves open a browse tab; functions stay preview-only.
+        let is_table = matches!(
+            node.kind_label.as_str(),
+            "table" | "view" | "matview" | "ftable"
+        );
         model.workbench_mut().open_preview_tab(node.label.clone());
-        return Update::render();
+        if !is_table {
+            return Update::render();
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.operation = GridOperationState::Running;
+        }
+        let selected = model.workbench().selected_tab;
+        if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+            tab.running = true;
+        }
+        let token = model.mint_request_token();
+        let context_revision = model.workbench().context_revision;
+        // Path id: database/schema/table or schema/table.
+        let parts: Vec<_> = node.id.split('/').collect();
+        let (schema, table) = match parts.as_slice() {
+            [.., schema, table] => ((*schema).to_owned(), (*table).to_owned()),
+            [table] => (
+                model
+                    .workbench()
+                    .context
+                    .schema
+                    .clone()
+                    .unwrap_or_else(|| "public".into()),
+                (*table).to_owned(),
+            ),
+            _ => ("public".into(), node.label.clone()),
+        };
+        return Update {
+            render: true,
+            effect: Some(Effect::BrowseTable {
+                request_token: token,
+                session_id_hex,
+                context_revision,
+                schema,
+                table,
+            }),
+        };
     }
     let was_expanded = node.expanded;
     model.workbench_mut().catalog.toggle_expand(&node.id);
@@ -1299,6 +1415,66 @@ mod tests {
             }
             other => panic!("expected loaded, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn grid_page_fills_active_tab_and_rejects_stale_context() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.workbench_mut().context_revision = 2;
+        model.workbench_mut().open_preview_tab("users");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.operation = GridOperationState::Running;
+        }
+        let stale = update(
+            &mut model,
+            Message::Engine(EngineMsg::GridPage {
+                request_token: 1,
+                context_revision: 1,
+                start_row: 0,
+                columns: vec!["id".into()],
+                cells: vec![crate::model::grid::ProjectedCell {
+                    text: "1".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                }],
+                row_count: 1,
+                totals_exact: Some(1),
+                totals_estimated: None,
+                bytes: 8,
+                truncated: false,
+                complete: true,
+            }),
+        );
+        assert!(!stale.needs_render());
+        let ok = update(
+            &mut model,
+            Message::Engine(EngineMsg::GridPage {
+                request_token: 1,
+                context_revision: 2,
+                start_row: 0,
+                columns: vec!["id".into()],
+                cells: vec![crate::model::grid::ProjectedCell {
+                    text: "1".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                }],
+                row_count: 1,
+                totals_exact: Some(1),
+                totals_estimated: None,
+                bytes: 8,
+                truncated: false,
+                complete: true,
+            }),
+        );
+        assert!(ok.needs_render());
+        let grid = model.workbench().active_grid().unwrap();
+        assert_eq!(grid.row_count, 1);
+        assert_eq!(grid.columns, ["id"]);
+        assert_eq!(grid.operation, GridOperationState::Completed);
+        assert!(grid.is_resident(0));
     }
 
     #[test]

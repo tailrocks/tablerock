@@ -136,6 +136,26 @@ pub enum Effect {
         /// Parent presentation id for merge (None = roots).
         parent_id: Option<String>,
     },
+    /// Browse a table: bounded SELECT stream, first page into the active tab grid.
+    BrowseTable {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        schema: String,
+        table: String,
+    },
+    /// Run a single SQL statement (first page) into the active tab grid.
+    ExecuteSql {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        statement: String,
+    },
+    /// Cancel the active stream for a session (best-effort).
+    CancelQuery {
+        request_token: RequestToken,
+        session_id_hex: String,
+    },
 }
 
 /// Helper: build a root LoadCatalog effect for the current workbench session.
