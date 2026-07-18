@@ -54,7 +54,9 @@ impl fmt::Display for BridgeError {
 impl Error for BridgeError {}
 
 /// Run `body` and convert panics into [`BridgeError::ContainedPanic`].
-pub(crate) fn catch_entry<T>(body: impl FnOnce() -> Result<T, BridgeError>) -> Result<T, BridgeError> {
+pub(crate) fn catch_entry<T>(
+    body: impl FnOnce() -> Result<T, BridgeError>,
+) -> Result<T, BridgeError> {
     match std::panic::catch_unwind(AssertUnwindSafe(body)) {
         Ok(result) => result,
         Err(payload) => Err(BridgeError::ContainedPanic {

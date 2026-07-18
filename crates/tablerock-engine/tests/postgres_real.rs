@@ -587,9 +587,7 @@ async fn streams_bounded_pages_from_real_postgres() {
 /// completion, ResultStore admit+pin for scroll FetchPage semantics.
 #[tokio::test]
 async fn browses_2500_row_table_in_500_row_pages_with_result_store_pin() {
-    use tablerock_core::{
-        OpenResultOutcome, ResultStore, ResultStoreLimits, StatementText,
-    };
+    use tablerock_core::{OpenResultOutcome, ResultStore, ResultStoreLimits, StatementText};
 
     let container = GenericImage::new("postgres", "18.4-alpine")
         .with_exposed_port(5432.tcp())
@@ -2404,9 +2402,7 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
             30_000,
         )
         .unwrap();
-    let authorized = reviewed
-        .authorize(5_000, scope, Revision::INITIAL)
-        .unwrap();
+    let authorized = reviewed.authorize(5_000, scope, Revision::INITIAL).unwrap();
     let outcome = session.apply_authorized_mutation(authorized).await.unwrap();
     assert_eq!(outcome.transaction, MutationTransactionState::Committed);
     match &outcome.changes[0] {
@@ -2416,9 +2412,7 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
             ..
         } => {
             assert!(
-                returned
-                    .iter()
-                    .any(|(n, v)| n == "name" && v == "bob"),
+                returned.iter().any(|(n, v)| n == "name" && v == "bob"),
                 "RETURNING should include updated name: {returned:?}"
             );
         }
@@ -2452,11 +2446,17 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
     let authorized2 = reviewed2
         .authorize(5_000, scope, Revision::INITIAL)
         .unwrap();
-    let conflict = session.apply_authorized_mutation(authorized2).await.unwrap();
+    let conflict = session
+        .apply_authorized_mutation(authorized2)
+        .await
+        .unwrap();
     assert_eq!(conflict.transaction, MutationTransactionState::RolledBack);
     assert!(matches!(
         &conflict.changes[0],
-        tablerock_engine::MutationChangeOutcome::Conflict { rows_affected: 0, .. }
+        tablerock_engine::MutationChangeOutcome::Conflict {
+            rows_affected: 0,
+            ..
+        }
     ));
 
     // Insert + delete happy path in one authorized multi-change plan.
@@ -2495,10 +2495,7 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
         .unwrap()
         .authorize(5_000, scope, Revision::INITIAL)
         .unwrap();
-    let multi_out = session
-        .apply_authorized_mutation(multi_auth)
-        .await
-        .unwrap();
+    let multi_out = session.apply_authorized_mutation(multi_auth).await.unwrap();
     assert_eq!(multi_out.transaction, MutationTransactionState::Committed);
     assert_eq!(multi_out.changes.len(), 2);
 
@@ -2624,28 +2621,24 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
         .relation_foreign_keys("public", "mut_orders")
         .await
         .unwrap();
-    assert!(
-        fks.iter()
-            .any(|(local, fs, ft, fc)| local == "user_id"
-                && fs == "public"
-                && ft == "mut_users"
-                && fc == "id")
-    );
+    assert!(fks.iter().any(|(local, fs, ft, fc)| local == "user_id"
+        && fs == "public"
+        && ft == "mut_users"
+        && fc == "id"));
     let indexes = session
         .relation_indexes("public", "mut_orders")
         .await
         .unwrap();
     assert!(
-        indexes
-            .iter()
-            .any(|(n, _u, primary, def)| *primary
-                || (n == "mut_orders_user_idx" && def.contains("user_id"))),
+        indexes.iter().any(|(n, _u, primary, def)| *primary
+            || (n == "mut_orders_user_idx" && def.contains("user_id"))),
         "expected PK or user_id index: {indexes:?}"
     );
     assert!(
         indexes
             .iter()
-            .any(|(n, _, _, def)| n == "mut_orders_user_idx" && def.to_ascii_lowercase().contains("user_id")),
+            .any(|(n, _, _, def)| n == "mut_orders_user_idx"
+                && def.to_ascii_lowercase().contains("user_id")),
         "secondary index missing: {indexes:?}"
     );
     let constraints = session
@@ -2653,11 +2646,9 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
         .await
         .unwrap();
     assert!(
-        constraints
-            .iter()
-            .any(|(n, kind, def)| kind == "CHECK"
-                && n == "mut_orders_total_pos"
-                && def.to_ascii_lowercase().contains("total")),
+        constraints.iter().any(|(n, kind, def)| kind == "CHECK"
+            && n == "mut_orders_total_pos"
+            && def.to_ascii_lowercase().contains("total")),
         "CHECK constraint missing: {constraints:?}"
     );
     assert!(
@@ -3002,10 +2993,12 @@ async fn ddl_index_and_constraint_ops() {
         .execute_sql("INSERT INTO ddl_idx (id, code) VALUES (1, 'a');")
         .await
         .unwrap();
-    assert!(session
-        .execute_sql("INSERT INTO ddl_idx (id, code) VALUES (2, 'a');")
-        .await
-        .is_err());
+    assert!(
+        session
+            .execute_sql("INSERT INTO ddl_idx (id, code) VALUES (2, 'a');")
+            .await
+            .is_err()
+    );
 
     let drop_constraint = DdlPlan::new(
         DdlKind::DropConstraint,

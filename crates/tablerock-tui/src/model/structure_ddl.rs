@@ -68,19 +68,12 @@ pub fn compose_create_table_ddl(
                 // "PRIMARY KEY name: PRIMARY KEY (id)" → CONSTRAINT "name" PRIMARY KEY (id)
                 if let Some((kind_name, def)) = line.split_once(": ") {
                     let def = def.trim();
-                    let name = kind_name
-                        .split_whitespace()
-                        .last()
-                        .unwrap_or("constraint");
+                    let name = kind_name.split_whitespace().last().unwrap_or("constraint");
                     // Skip if def already is a full CREATE (indexes section owns those).
                     if def.to_ascii_uppercase().starts_with("CREATE ") {
                         continue;
                     }
-                    constraints.push(format!(
-                        "CONSTRAINT {} {}",
-                        quote_ident_sql(name),
-                        def
-                    ));
+                    constraints.push(format!("CONSTRAINT {} {}", quote_ident_sql(name), def));
                 }
             }
         }

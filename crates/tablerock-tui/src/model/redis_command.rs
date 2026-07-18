@@ -104,17 +104,67 @@ pub fn complete_prefix(prefix: &str, limit: usize) -> Vec<&'static str> {
 // Provenance: Redis open-command family names used for classification only.
 // Not a full dump of redis-doc; curated subsets for safety gates.
 const BLOCKING: &[&str] = &[
-    "BLPOP", "BRPOP", "BRPOPLPUSH", "BLMOVE", "BZPOPMIN", "BZPOPMAX", "BZMPOP",
-    "BLMPOP", "XREAD", "XREADGROUP", // can block with BLOCK option — deny on shared path
+    "BLPOP",
+    "BRPOP",
+    "BRPOPLPUSH",
+    "BLMOVE",
+    "BZPOPMIN",
+    "BZPOPMAX",
+    "BZMPOP",
+    "BLMPOP",
+    "XREAD",
+    "XREADGROUP", // can block with BLOCK option — deny on shared path
 ];
 
 const READ_ONLY: &[&str] = &[
-    "GET", "MGET", "STRLEN", "GETRANGE", "SUBSTR", "EXISTS", "TYPE", "TTL", "PTTL",
-    "HGET", "HMGET", "HGETALL", "HKEYS", "HVALS", "HLEN", "HEXISTS", "HSCAN",
-    "LRANGE", "LINDEX", "LLEN", "SCARD", "SISMEMBER", "SMEMBERS", "SSCAN", "SRANDMEMBER",
-    "ZRANGE", "ZRANGEBYSCORE", "ZCARD", "ZSCORE", "ZRANK", "ZSCAN", "ZCOUNT",
-    "XRANGE", "XREVRANGE", "XLEN", "XINFO", "SCAN", "DBSIZE", "INFO", "PING",
-    "ECHO", "TIME", "CLIENT", "CONFIG", "MEMORY", "OBJECT", "DUMP", "KEYS", // KEYS classified read-only but UI must never issue it for browse
+    "GET",
+    "MGET",
+    "STRLEN",
+    "GETRANGE",
+    "SUBSTR",
+    "EXISTS",
+    "TYPE",
+    "TTL",
+    "PTTL",
+    "HGET",
+    "HMGET",
+    "HGETALL",
+    "HKEYS",
+    "HVALS",
+    "HLEN",
+    "HEXISTS",
+    "HSCAN",
+    "LRANGE",
+    "LINDEX",
+    "LLEN",
+    "SCARD",
+    "SISMEMBER",
+    "SMEMBERS",
+    "SSCAN",
+    "SRANDMEMBER",
+    "ZRANGE",
+    "ZRANGEBYSCORE",
+    "ZCARD",
+    "ZSCORE",
+    "ZRANK",
+    "ZSCAN",
+    "ZCOUNT",
+    "XRANGE",
+    "XREVRANGE",
+    "XLEN",
+    "XINFO",
+    "SCAN",
+    "DBSIZE",
+    "INFO",
+    "PING",
+    "ECHO",
+    "TIME",
+    "CLIENT",
+    "CONFIG",
+    "MEMORY",
+    "OBJECT",
+    "DUMP",
+    "KEYS", // KEYS classified read-only but UI must never issue it for browse
 ];
 
 /// Curated completion table (read + write + blocking families).
@@ -124,12 +174,65 @@ const READ_ONLY: &[&str] = &[
 /// Expand here as product coverage grows; classification lists remain authority
 /// for safety.
 const ALL_COMMANDS: &[&str] = &[
-    "APPEND", "BLPOP", "BRPOP", "COPY", "DBSIZE", "DECR", "DEL", "DUMP", "ECHO", "EXISTS",
-    "EXPIRE", "GET", "GETRANGE", "HDEL", "HGET", "HGETALL", "HLEN", "HMGET", "HSCAN", "HSET",
-    "INCR", "INFO", "KEYS", "LINDEX", "LLEN", "LPOP", "LPUSH", "LRANGE", "MGET", "MSET",
-    "PERSIST", "PEXPIRE", "PING", "PTTL", "RENAME", "RESTORE", "RPOP", "RPUSH", "SADD", "SCAN",
-    "SCARD", "SET", "SETRANGE", "SISMEMBER", "SMEMBERS", "SREM", "SSCAN", "STRLEN", "TTL",
-    "TYPE", "XADD", "XLEN", "XRANGE", "XREAD", "ZADD", "ZCARD", "ZRANGE", "ZREM", "ZSCAN",
+    "APPEND",
+    "BLPOP",
+    "BRPOP",
+    "COPY",
+    "DBSIZE",
+    "DECR",
+    "DEL",
+    "DUMP",
+    "ECHO",
+    "EXISTS",
+    "EXPIRE",
+    "GET",
+    "GETRANGE",
+    "HDEL",
+    "HGET",
+    "HGETALL",
+    "HLEN",
+    "HMGET",
+    "HSCAN",
+    "HSET",
+    "INCR",
+    "INFO",
+    "KEYS",
+    "LINDEX",
+    "LLEN",
+    "LPOP",
+    "LPUSH",
+    "LRANGE",
+    "MGET",
+    "MSET",
+    "PERSIST",
+    "PEXPIRE",
+    "PING",
+    "PTTL",
+    "RENAME",
+    "RESTORE",
+    "RPOP",
+    "RPUSH",
+    "SADD",
+    "SCAN",
+    "SCARD",
+    "SET",
+    "SETRANGE",
+    "SISMEMBER",
+    "SMEMBERS",
+    "SREM",
+    "SSCAN",
+    "STRLEN",
+    "TTL",
+    "TYPE",
+    "XADD",
+    "XLEN",
+    "XRANGE",
+    "XREAD",
+    "ZADD",
+    "ZCARD",
+    "ZRANGE",
+    "ZREM",
+    "ZSCAN",
     "ZSCORE",
 ];
 
@@ -147,9 +250,18 @@ mod tests {
     fn unknown_is_write_blocking_denied() {
         assert_eq!(classify_command("GET"), RedisCommandSafety::ReadOnly);
         assert_eq!(classify_command("SET"), RedisCommandSafety::MayWrite);
-        assert_eq!(classify_command("MYMODULE.FOO"), RedisCommandSafety::MayWrite);
-        assert_eq!(classify_command("BLPOP"), RedisCommandSafety::BlockingDenied);
-        assert_eq!(classify_command("XREAD"), RedisCommandSafety::BlockingDenied);
+        assert_eq!(
+            classify_command("MYMODULE.FOO"),
+            RedisCommandSafety::MayWrite
+        );
+        assert_eq!(
+            classify_command("BLPOP"),
+            RedisCommandSafety::BlockingDenied
+        );
+        assert_eq!(
+            classify_command("XREAD"),
+            RedisCommandSafety::BlockingDenied
+        );
     }
 
     #[test]

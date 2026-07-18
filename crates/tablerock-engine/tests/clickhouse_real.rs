@@ -827,9 +827,7 @@ async fn kill_mutation_accepts_bound_id_and_fail_closed_hostile() {
     // Large enough that a kill race is possible on slow hosts; small
     // fixtures may finish before KILL — still prove kill SQL is accepted.
     session
-        .execute_sql(
-            "INSERT INTO default.kill_mut SELECT number, 'a' FROM numbers(200_000)",
-        )
+        .execute_sql("INSERT INTO default.kill_mut SELECT number, 'a' FROM numbers(200_000)")
         .await
         .unwrap();
     session
@@ -885,7 +883,9 @@ async fn kill_mutation_accepts_bound_id_and_fail_closed_hostile() {
     let keys: Vec<_> = status_after.iter().map(|(k, _)| k.as_str()).collect();
     if !status_after.is_empty() {
         assert!(
-            keys.contains(&"mutation_id") && keys.contains(&"is_done") && keys.contains(&"is_killed"),
+            keys.contains(&"mutation_id")
+                && keys.contains(&"is_done")
+                && keys.contains(&"is_killed"),
             "status keys incomplete: {status_after:?}"
         );
     }
@@ -985,10 +985,7 @@ async fn partial_rows_and_late_error_both_visible_on_one_operation() {
     let retained_bytes = page.cell(0, 0).unwrap().bytes().to_vec();
 
     let cancel = service.cancel(operation_id).unwrap();
-    assert_eq!(
-        cancel.core,
-        tablerock_core::CancelRequestOutcome::Requested
-    );
+    assert_eq!(cancel.core, tablerock_core::CancelRequestOutcome::Requested);
 
     let mut saw_terminal = false;
     tokio::time::timeout(CLICKHOUSE_CANCEL_EVIDENCE_DEADLINE, async {

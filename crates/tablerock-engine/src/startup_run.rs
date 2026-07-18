@@ -133,13 +133,8 @@ mod tests {
     fn write_actions_not_auto_runnable() {
         let set = StartupActionSet::new(vec![
             StartupAction::from_str("SELECT 1", StartupSafetyClass::ReadOnly, 1_000, true).unwrap(),
-            StartupAction::from_str(
-                "DELETE FROM t",
-                StartupSafetyClass::Write,
-                1_000,
-                true,
-            )
-            .unwrap(),
+            StartupAction::from_str("DELETE FROM t", StartupSafetyClass::Write, 1_000, true)
+                .unwrap(),
         ])
         .unwrap();
         assert_eq!(set.auto_runnable(false).len(), 1);

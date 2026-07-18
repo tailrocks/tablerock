@@ -138,10 +138,7 @@ async fn enforce_limit(
         return Ok(());
     }
     let mut rows = connection
-        .query(
-            "SELECT COUNT(*) FROM query_history",
-            (),
-        )
+        .query("SELECT COUNT(*) FROM query_history", ())
         .await
         .map_err(|_| PersistenceError::Query)?;
     let count = if let Some(row) = rows.next().await.map_err(|_| PersistenceError::Query)? {
@@ -213,11 +210,14 @@ fn row_to_entry(row: &turso::Row) -> Result<HistoryEntry, PersistenceError> {
     let history_id = row.get::<i64>(0).map_err(|_| PersistenceError::Query)?;
     let engine = engine_from_code(row.get::<i64>(1).map_err(|_| PersistenceError::Query)?);
     let database_name = row.get::<String>(2).map_err(|_| PersistenceError::Query)?;
-    let schema_name = row.get::<Option<String>>(3).map_err(|_| PersistenceError::Query)?;
-    let statement_text = row.get::<Option<String>>(4).map_err(|_| PersistenceError::Query)?;
-    let outcome = HistoryOutcomeClass::parse(
-        &row.get::<String>(5).map_err(|_| PersistenceError::Query)?,
-    );
+    let schema_name = row
+        .get::<Option<String>>(3)
+        .map_err(|_| PersistenceError::Query)?;
+    let statement_text = row
+        .get::<Option<String>>(4)
+        .map_err(|_| PersistenceError::Query)?;
+    let outcome =
+        HistoryOutcomeClass::parse(&row.get::<String>(5).map_err(|_| PersistenceError::Query)?);
     let created_at = row.get::<String>(6).map_err(|_| PersistenceError::Query)?;
     Ok(HistoryEntry {
         history_id,

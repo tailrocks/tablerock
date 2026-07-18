@@ -26,17 +26,15 @@ pub use column_layout_store::{ColumnLayoutKey, ColumnLayoutRecord};
 pub use history_store::{
     DEFAULT_HISTORY_LIMIT, HistoryAppend, HistoryEntry, HistoryOutcomeClass, HistoryRetention,
 };
-pub use saved_filter_store::SavedFilterLibraryRecord;
 use profile_store::EncodedProfile;
 pub use recovery::{
     BACKUP_FORMAT_VERSION, BackupManifest, MAX_BACKUP_BYTES, create_backup, read_backup_manifest,
     restore_backup,
 };
+pub use saved_filter_store::SavedFilterLibraryRecord;
 pub use saved_query_store::{SavedQuery, SavedQueryUpsert};
 pub use session_intent_store::SessionIntentRecord;
-pub use sql_file::{
-    SqlFileFacts, external_change_detected, read_sql_file, write_sql_file_atomic,
-};
+pub use sql_file::{SqlFileFacts, external_change_detected, read_sql_file, write_sql_file_atomic};
 use tablerock_core::{
     Engine, PersistableProfile, ProfileAggregate, ProfileId, ProfileListPage, ProfileListRequest,
     Revision,
@@ -210,10 +208,7 @@ impl PersistenceActor {
     }
 
     /// Append a query-history entry (honors retention; never stores result rows).
-    pub fn append_history(
-        &self,
-        request: HistoryAppend,
-    ) -> Result<Option<i64>, PersistenceError> {
+    pub fn append_history(&self, request: HistoryAppend) -> Result<Option<i64>, PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(
             &self.sender,
@@ -245,10 +240,7 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
-    pub fn upsert_saved_query(
-        &self,
-        request: SavedQueryUpsert,
-    ) -> Result<i64, PersistenceError> {
+    pub fn upsert_saved_query(&self, request: SavedQueryUpsert) -> Result<i64, PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::UpsertSavedQuery(request, sender))?;
         receiver
@@ -267,10 +259,7 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
-    pub fn get_saved_query(
-        &self,
-        query_id: i64,
-    ) -> Result<Option<SavedQuery>, PersistenceError> {
+    pub fn get_saved_query(&self, query_id: i64) -> Result<Option<SavedQuery>, PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::GetSavedQuery(query_id, sender))?;
         receiver
@@ -312,10 +301,7 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
-    pub fn delete_session_intent(
-        &self,
-        profile_id: ProfileId,
-    ) -> Result<(), PersistenceError> {
+    pub fn delete_session_intent(&self, profile_id: ProfileId) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(
             &self.sender,
@@ -352,10 +338,7 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
-    pub fn delete_column_layout(
-        &self,
-        key: ColumnLayoutKey,
-    ) -> Result<(), PersistenceError> {
+    pub fn delete_column_layout(&self, key: ColumnLayoutKey) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::DeleteColumnLayout(key, sender))?;
         receiver
@@ -515,7 +498,10 @@ enum Command {
         ColumnLayoutKey,
         mpsc::SyncSender<Result<Option<ColumnLayoutRecord>, PersistenceError>>,
     ),
-    DeleteColumnLayout(ColumnLayoutKey, mpsc::SyncSender<Result<(), PersistenceError>>),
+    DeleteColumnLayout(
+        ColumnLayoutKey,
+        mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
     PutSavedFilterLibrary(
         ProfileId,
         String,

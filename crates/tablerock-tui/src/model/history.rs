@@ -77,7 +77,9 @@ impl HistoryPanel {
         match self {
             Self::Closed => String::new(),
             Self::Loading { .. } => "History: loading…".into(),
-            Self::Open { entries, selected, .. } => {
+            Self::Open {
+                entries, selected, ..
+            } => {
                 format!("History: {}/{}", selected.saturating_add(1), entries.len())
             }
             Self::Failed { reason, .. } => format!("History: error ({reason})"),

@@ -309,10 +309,7 @@ impl WorkbenchModel {
             let dirty = if tab.dirty { "*" } else { " " };
             let run = if tab.running { "R" } else { " " };
             let prev = if tab.preview { "p" } else { " " };
-            lines.push(format!(
-                "{mark}{dirty}{run}{prev} {i}: {}",
-                tab.title
-            ));
+            lines.push(format!("{mark}{dirty}{run}{prev} {i}: {}", tab.title));
         }
         lines.push("legend: >active *dirty Rrunning ppreview".into());
         lines.join("\n")
@@ -974,10 +971,7 @@ fn extract_json_number(json: &str, key: &str) -> Option<u64> {
     let idx = json.find(&needle)?;
     let after = &json[idx + needle.len()..];
     let after = after.trim_start().strip_prefix(':')?.trim_start();
-    let digits: String = after
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
+    let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
     digits.parse().ok()
 }
 
@@ -1154,10 +1148,7 @@ mod tests {
         assert!(wb.tabs.len() >= 2);
         // Focus keep
         wb.selected_tab = keep_idx;
-        assert!(matches!(
-            wb.close_other_tabs(),
-            CloseTabOutcome::Closed
-        ));
+        assert!(matches!(wb.close_other_tabs(), CloseTabOutcome::Closed));
         assert_eq!(wb.tabs.len(), 1);
         assert_eq!(wb.tabs[0].title, "keep");
         wb.open_preview_tab("dirty");
@@ -1271,9 +1262,7 @@ mod tests {
         wb.context.database = "app".into();
         wb.context.schema = Some("public".into());
         wb.open_sql_tab();
-        wb.active_editor_mut()
-            .unwrap()
-            .set_text("SELECT 99 FROM t");
+        wb.active_editor_mut().unwrap().set_text("SELECT 99 FROM t");
         let json = wb.intent_json();
         assert!(json.contains("SELECT 99"));
         assert!(!json.contains("cells"));
@@ -1283,11 +1272,7 @@ mod tests {
         assert!(other.apply_intent_json(&json));
         assert_eq!(other.context.database, "app");
         assert_eq!(other.context.schema.as_deref(), Some("public"));
-        let sql_tabs: Vec<_> = other
-            .tabs
-            .iter()
-            .filter(|t| t.editor.is_some())
-            .collect();
+        let sql_tabs: Vec<_> = other.tabs.iter().filter(|t| t.editor.is_some()).collect();
         assert!(!sql_tabs.is_empty());
         assert!(
             sql_tabs
@@ -1475,14 +1460,15 @@ fn compare_original_staged(original: &str, staged: &str) -> String {
         staged.lines().collect()
     };
     let rows = o_lines.len().max(s_lines.len()).max(1);
-    let o_w = o_lines.iter().map(|l| l.chars().count()).max().unwrap_or(0).max("original".len());
+    let o_w = o_lines
+        .iter()
+        .map(|l| l.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max("original".len());
     let mut out = Vec::with_capacity(rows + 2);
     out.push("compare:".into());
-    out.push(format!(
-        "  {:o_w$} | staged",
-        "original",
-        o_w = o_w
-    ));
+    out.push(format!("  {:o_w$} | staged", "original", o_w = o_w));
     for i in 0..rows {
         let o = o_lines.get(i).copied().unwrap_or("");
         let s = s_lines.get(i).copied().unwrap_or("");

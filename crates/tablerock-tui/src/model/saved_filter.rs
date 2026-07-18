@@ -22,9 +22,11 @@ pub struct SavedFilterLibrary {
 
 impl SavedFilterLibrary {
     pub fn upsert(&mut self, preset: SavedFilterPreset) {
-        if let Some(existing) = self.presets.iter_mut().find(|p| {
-            p.name == preset.name && p.schema == preset.schema && p.table == preset.table
-        }) {
+        if let Some(existing) = self
+            .presets
+            .iter_mut()
+            .find(|p| p.name == preset.name && p.schema == preset.schema && p.table == preset.table)
+        {
             *existing = preset;
         } else {
             self.presets.push(preset);
@@ -293,7 +295,10 @@ mod tests {
         let restored = SavedFilterLibrary::from_json(&json).unwrap();
         assert_eq!(restored.presets.len(), 1);
         assert_eq!(restored.presets[0].name, "active");
-        assert_eq!(restored.presets[0].filters[0].value.as_deref(), Some("open"));
+        assert_eq!(
+            restored.presets[0].filters[0].value.as_deref(),
+            Some("open")
+        );
     }
 
     #[test]
@@ -339,10 +344,7 @@ mod tests {
         assert!(ranked[0].starts_with("active"), "{ranked:?}");
         assert!(!ranked.iter().any(|n| n == "default"));
         // Unique subsequence → resolve.
-        assert_eq!(
-            resolve_preset_name(&known, "arch"),
-            Some("archived".into())
-        );
+        assert_eq!(resolve_preset_name(&known, "arch"), Some("archived".into()));
         // Ambiguous "act" → no resolve.
         assert_eq!(resolve_preset_name(&known, "act"), None);
         // Exact still works.

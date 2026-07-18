@@ -54,8 +54,7 @@ impl ProfileRowProjection {
             return false;
         }
         let want = format!("{host}:{port}/{database}");
-        self.target_summary == want
-            || self.target_summary.eq_ignore_ascii_case(&want)
+        self.target_summary == want || self.target_summary.eq_ignore_ascii_case(&want)
     }
 
     #[must_use]

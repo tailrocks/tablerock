@@ -206,8 +206,7 @@ impl QueryEditorModel {
         let from = self.cursor.min(self.text.len());
         let hay = &self.text[from..];
         let rel = if case_insensitive {
-            hay.to_ascii_lowercase()
-                .find(&needle.to_ascii_lowercase())
+            hay.to_ascii_lowercase().find(&needle.to_ascii_lowercase())
         } else {
             hay.find(needle)
         }?;

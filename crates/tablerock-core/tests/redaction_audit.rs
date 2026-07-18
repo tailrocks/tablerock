@@ -3,9 +3,7 @@
 //! This is a gate-level regression suite for Phase 11 (no credentials/SQL body
 //! values in Debug). Extend when new types cross the boundary.
 
-use tablerock_core::{
-    BoundedText, ByteLimit, FieldValue, MutationChange, OwnedValue, Truncation,
-};
+use tablerock_core::{BoundedText, ByteLimit, FieldValue, MutationChange, OwnedValue, Truncation};
 
 fn text(s: &str) -> BoundedText {
     BoundedText::copy_from_str(s, ByteLimit::new(10_000)).unwrap()
@@ -22,7 +20,10 @@ fn mutation_change_debug_omits_secret_payloads() {
     };
     let dbg = format!("{change:?}");
     assert!(!dbg.contains("hunter2-secret"), "{dbg}");
-    assert!(dbg.contains("update_row") || dbg.contains("assignment"), "{dbg}");
+    assert!(
+        dbg.contains("update_row") || dbg.contains("assignment"),
+        "{dbg}"
+    );
 }
 
 #[test]

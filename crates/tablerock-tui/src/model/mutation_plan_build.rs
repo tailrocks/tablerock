@@ -53,9 +53,8 @@ pub struct MutationReviewView {
 }
 
 fn bt(s: &str) -> Result<BoundedText, DraftPlanError> {
-    BoundedText::copy_from_str(s, ByteLimit::new(TEXT_LIMIT)).map_err(|_| {
-        DraftPlanError::Value(format!("text exceeds {TEXT_LIMIT} bytes"))
-    })
+    BoundedText::copy_from_str(s, ByteLimit::new(TEXT_LIMIT))
+        .map_err(|_| DraftPlanError::Value(format!("text exceeds {TEXT_LIMIT} bytes")))
 }
 
 /// Parse staged display text into an `OwnedValue` for plan building.
@@ -139,9 +138,7 @@ fn insert_change(insert: &StagedInsert) -> Result<MutationChange, DraftPlanError
         .iter()
         .map(|(col, text)| field(col, text))
         .collect();
-    Ok(MutationChange::InsertRow {
-        values: values?,
-    })
+    Ok(MutationChange::InsertRow { values: values? })
 }
 
 fn delete_change(delete: &StagedDelete) -> Result<MutationChange, DraftPlanError> {
@@ -198,10 +195,7 @@ pub fn review_view_from_plan(plan: &MutationPlan) -> MutationReviewView {
         MutationTarget::PostgreSqlRelation {
             schema, relation, ..
         } => (schema.as_str().to_owned(), relation.as_str().to_owned()),
-        other => (
-            String::new(),
-            format!("{:?}", other.engine()),
-        ),
+        other => (String::new(), format!("{:?}", other.engine())),
     };
     let qualified = format!("{}.{}", quote_ident(&schema), quote_ident(&table));
     let mut lines = Vec::new();
@@ -219,10 +213,7 @@ pub fn review_view_from_plan(plan: &MutationPlan) -> MutationReviewView {
 fn preview_change(qualified: &str, change: &MutationChange) -> ReviewStatementLine {
     match change {
         MutationChange::InsertRow { values } => {
-            let cols: Vec<_> = values
-                .iter()
-                .map(|f| quote_ident(f.field()))
-                .collect();
+            let cols: Vec<_> = values.iter().map(|f| quote_ident(f.field())).collect();
             let placeholders: Vec<_> = (1..=values.len()).map(|n| format!("${n}")).collect();
             let sql = format!(
                 "INSERT INTO {qualified} ({}) VALUES ({})",
@@ -350,7 +341,17 @@ pub fn review_from_drafts(
     table: &str,
     database: &str,
 ) -> Result<MutationReviewView, DraftPlanError> {
-    let plan = plan_from_drafts(drafts, schema, table, database, 1, 2, 3, 10, Revision::INITIAL)?;
+    let plan = plan_from_drafts(
+        drafts,
+        schema,
+        table,
+        database,
+        1,
+        2,
+        3,
+        10,
+        Revision::INITIAL,
+    )?;
     Ok(review_view_from_plan(&plan))
 }
 
@@ -445,10 +446,7 @@ mod tests {
     fn insert_delete_preview_kinds() {
         let mut draft = ready_draft();
         draft
-            .stage_insert(vec![
-                ("id".into(), "9".into()),
-                ("name".into(), "z".into()),
-            ])
+            .stage_insert(vec![("id".into(), "9".into()), ("name".into(), "z".into())])
             .unwrap();
         draft.stage_delete(super::super::mutation_draft::StagedDelete {
             abs_row: 3,

@@ -291,7 +291,12 @@ pub(crate) async fn create(
             .await
             .map_err(|_| PersistenceError::ProfileWrite)?;
     }
-    insert_startup_actions(&transaction, profile.id.as_slice(), &profile.startup_actions).await?;
+    insert_startup_actions(
+        &transaction,
+        profile.id.as_slice(),
+        &profile.startup_actions,
+    )
+    .await?;
     transaction
         .commit()
         .await

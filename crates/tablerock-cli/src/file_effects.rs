@@ -91,11 +91,7 @@ impl AtomicFileWriter {
         }
         let temp = temp_path_for(&dest);
         // Exclusive create — fail if leftover temp exists from a crash.
-        let file = match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)
-        {
+        let file = match OpenOptions::new().write(true).create_new(true).open(&temp) {
             Ok(f) => f,
             Err(e) => {
                 let _ = fs::remove_file(&temp);
@@ -358,7 +354,10 @@ mod tests {
         } else {
             drop(w);
         }
-        assert!(!dest.exists(), "dest must not exist after mid-write failure");
+        assert!(
+            !dest.exists(),
+            "dest must not exist after mid-write failure"
+        );
         let temps: Vec<_> = dir
             .read_dir()
             .unwrap()

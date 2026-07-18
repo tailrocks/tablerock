@@ -156,9 +156,7 @@ pub fn format_sql(source: &str, _dialect: SqlDialect) -> String {
             flush_space(&mut out, &mut pending_space);
             let start = i;
             i += 1;
-            while i < bytes.len()
-                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_')
-            {
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
                 i += 1;
             }
             let word = &source[start..i];

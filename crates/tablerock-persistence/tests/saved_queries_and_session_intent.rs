@@ -65,9 +65,7 @@ fn session_intent_round_trip_rejects_result_shaped_json() {
     let pid = profile(42);
 
     let intent = r#"{"database":"postgres","schema":"public","selected_tab":0,"tabs":[{"title":"SQL","sql":"SELECT 1"}]}"#;
-    actor
-        .put_session_intent(pid, intent.into())
-        .expect("put");
+    actor.put_session_intent(pid, intent.into()).expect("put");
     let loaded = actor.get_session_intent(pid).expect("get").expect("row");
     assert_eq!(loaded.intent_json, intent);
     // Schema has nowhere for result rows — assert no history/result tables mixed in.
@@ -116,10 +114,7 @@ fn intent_and_history_tables_never_hold_result_payloads() {
 
 #[test]
 fn atomic_sql_file_write_and_external_change() {
-    let dir = std::env::temp_dir().join(format!(
-        "tablerock-sql-files-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("tablerock-sql-files-{}", std::process::id()));
     let _ = fs::create_dir_all(&dir);
     let path = dir.join("query.sql");
     let _ = fs::remove_file(&path);

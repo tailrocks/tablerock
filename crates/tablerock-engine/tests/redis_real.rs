@@ -1655,23 +1655,26 @@ async fn verify_version(tag: &str) {
         );
 
         // OpenRedisKey path: collection first page via HSCAN/SSCAN/ZSCAN.
-        let (hash_label, hash_lines, hash_next) = driver
-            .redis_key_view_lines(b"scan-hash", 0)
-            .await
-            .unwrap();
+        let (hash_label, hash_lines, hash_next) =
+            driver.redis_key_view_lines(b"scan-hash", 0).await.unwrap();
         assert_eq!(hash_label, "hash");
         assert!(
             hash_lines.iter().any(|l| l.contains("HSCAN")),
             "{hash_lines:?}"
         );
         assert!(
-            hash_lines.iter().any(|l| l.contains("field") || l.contains('=')),
+            hash_lines
+                .iter()
+                .any(|l| l.contains("field") || l.contains('=')),
             "{hash_lines:?}"
         );
         let _ = hash_next; // small fixture may end on first page
         let (set_label, set_lines, _) = driver.redis_key_view_lines(b"scan-set", 0).await.unwrap();
         assert_eq!(set_label, "set");
-        assert!(set_lines.iter().any(|l| l.contains("SSCAN")), "{set_lines:?}");
+        assert!(
+            set_lines.iter().any(|l| l.contains("SSCAN")),
+            "{set_lines:?}"
+        );
 
         let mut bounded = session
             .scan_keys(PageLimits::new(8, 1, 4, 64), 2, 8, 128, None)
@@ -2924,7 +2927,10 @@ async fn collection_page_skip_returns_next_for_large_set() {
     let next = next0.expect("large set should have more after first page");
     assert!(next > 0);
     let (_, lines1, next1) = driver.redis_key_view_lines(key, next).await.unwrap();
-    assert!(lines1.iter().any(|l| l.contains(&format!("skip={next}"))), "{lines1:?}");
+    assert!(
+        lines1.iter().any(|l| l.contains(&format!("skip={next}"))),
+        "{lines1:?}"
+    );
     // Pages should not be identical (different members after skip).
     assert_ne!(lines0, lines1);
     let _ = next1;
@@ -3154,7 +3160,9 @@ async fn lists_catalog_logical_databases() {
 #[tokio::test]
 async fn key_type_list_stream_and_info_snapshot() {
     use tablerock_core::{BoundedBytes, ByteLimit, RedisKeyKind};
-    use tablerock_engine::{RedisConnectConfig, RedisConnectionSecurity, RedisProtocol, RedisTlsMode};
+    use tablerock_engine::{
+        RedisConnectConfig, RedisConnectionSecurity, RedisProtocol, RedisTlsMode,
+    };
 
     let container = GenericImage::new("redis", "8.8.0")
         .with_exposed_port(6379.tcp())
@@ -3215,10 +3223,7 @@ async fn key_type_list_stream_and_info_snapshot() {
         RedisKeyKind::Stream
     );
 
-    let list = session
-        .list_range(&key(b"l"), 0, -1, 16, 64)
-        .await
-        .unwrap();
+    let list = session.list_range(&key(b"l"), 0, -1, 16, 64).await.unwrap();
     assert_eq!(list.len(), 2);
 
     let stream = session

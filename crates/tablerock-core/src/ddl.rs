@@ -65,14 +65,8 @@ impl DdlKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DdlTarget {
-    PostgreSqlRelation {
-        schema: String,
-        relation: String,
-    },
-    ClickHouseTable {
-        database: String,
-        table: String,
-    },
+    PostgreSqlRelation { schema: String, relation: String },
+    ClickHouseTable { database: String, table: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,7 +117,11 @@ impl DdlPlan {
                 return Err(DdlBuildError::EmptyIdentifier);
             }
         }
-        if kind == DdlKind::AddColumn && type_text.as_ref().map(|t| t.trim().is_empty()).unwrap_or(true)
+        if kind == DdlKind::AddColumn
+            && type_text
+                .as_ref()
+                .map(|t| t.trim().is_empty())
+                .unwrap_or(true)
         {
             return Err(DdlBuildError::MissingType);
         }
@@ -133,12 +131,18 @@ impl DdlPlan {
                 | DdlKind::DropIndex
                 | DdlKind::AddConstraint
                 | DdlKind::DropConstraint
-        ) && object_name.as_ref().map(|n| n.trim().is_empty()).unwrap_or(true)
+        ) && object_name
+            .as_ref()
+            .map(|n| n.trim().is_empty())
+            .unwrap_or(true)
         {
             return Err(DdlBuildError::EmptyIdentifier);
         }
         if matches!(kind, DdlKind::CreateIndex | DdlKind::AddConstraint)
-            && type_text.as_ref().map(|t| t.trim().is_empty()).unwrap_or(true)
+            && type_text
+                .as_ref()
+                .map(|t| t.trim().is_empty())
+                .unwrap_or(true)
         {
             // CreateIndex: type_text = column list; AddConstraint: type_text = clause body.
             return Err(DdlBuildError::MissingType);
@@ -408,19 +412,21 @@ mod tests {
             ),
             Err(DdlBuildError::MissingType)
         ));
-        assert!(DdlPlan::new(
-            DdlKind::CreateIndex,
-            Engine::PostgreSql,
-            scope(),
-            Revision::INITIAL,
-            DdlTarget::PostgreSqlRelation {
-                schema: "public".into(),
-                relation: "t".into(),
-            },
-            Some("i".into()),
-            Some("c".into()),
-        )
-        .is_ok());
+        assert!(
+            DdlPlan::new(
+                DdlKind::CreateIndex,
+                Engine::PostgreSql,
+                scope(),
+                Revision::INITIAL,
+                DdlTarget::PostgreSqlRelation {
+                    schema: "public".into(),
+                    relation: "t".into(),
+                },
+                Some("i".into()),
+                Some("c".into()),
+            )
+            .is_ok()
+        );
     }
 
     #[test]

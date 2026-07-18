@@ -18,10 +18,7 @@ pub struct RedisKeyHeader {
 impl RedisKeyHeader {
     #[must_use]
     pub fn lines(&self) -> Vec<String> {
-        let kind = self
-            .kind
-            .map(redis_kind_label)
-            .unwrap_or("unknown");
+        let kind = self.kind.map(redis_kind_label).unwrap_or("unknown");
         vec![
             format!("key: {}", self.key_display),
             format!("type: {kind}"),
@@ -259,6 +256,11 @@ mod tests {
             true,
         );
         assert!(stream.display_lines().iter().any(|l| l.contains("1-0")));
-        assert!(stream.display_lines().iter().any(|l| l.contains("truncated")));
+        assert!(
+            stream
+                .display_lines()
+                .iter()
+                .any(|l| l.contains("truncated"))
+        );
     }
 }

@@ -38,7 +38,11 @@ pub struct CsvTable {
 }
 
 /// Parse a UTF-8 CSV buffer (RFC-4180-tolerant: quotes, commas, newlines).
-pub fn parse_csv(input: &str, max_rows: u32, max_cell_bytes: usize) -> Result<CsvTable, CsvImportError> {
+pub fn parse_csv(
+    input: &str,
+    max_rows: u32,
+    max_cell_bytes: usize,
+) -> Result<CsvTable, CsvImportError> {
     if max_rows == 0 || max_cell_bytes == 0 {
         return Err(CsvImportError {
             row: 0,
@@ -54,7 +58,12 @@ pub fn parse_csv(input: &str, max_rows: u32, max_cell_bytes: usize) -> Result<Cs
     let mut line: u32 = 1;
     let mut col: u32 = 1;
 
-    let push_field = |field: &mut String, row: &mut Vec<String>, max_cell_bytes: usize, line: u32, col: u32| -> Result<(), CsvImportError> {
+    let push_field = |field: &mut String,
+                      row: &mut Vec<String>,
+                      max_cell_bytes: usize,
+                      line: u32,
+                      col: u32|
+     -> Result<(), CsvImportError> {
         if field.len() > max_cell_bytes {
             return Err(CsvImportError {
                 row: line,
@@ -178,13 +187,12 @@ pub fn csv_to_insert_changes(
                 column: col,
                 message: format!("cell exceeds {max_cell_bytes} bytes"),
             })?;
-            let value = OwnedValue::text(text, Truncation::Complete).map_err(|_| {
-                CsvImportError {
+            let value =
+                OwnedValue::text(text, Truncation::Complete).map_err(|_| CsvImportError {
                     row: line,
                     column: col,
                     message: "invalid text cell".into(),
-                }
-            })?;
+                })?;
             values.push(FieldValue::new(field, value));
         }
         changes.push(MutationChange::InsertRow { values });
@@ -250,7 +258,7 @@ mod tests {
     fn csv_insert_changes_form_valid_mutation_plan_without_sql() {
         use tablerock_core::{
             ContextId, Engine, IdParts, MutationId, MutationPlan, MutationPlanLimits,
-            MutationTarget, OperationScope, ProfileId, SessionId, Revision,
+            MutationTarget, OperationScope, ProfileId, Revision, SessionId,
         };
 
         let t = parse_csv("id,label\n1,hello\n2,=CMD()\n", 10, 64).unwrap();

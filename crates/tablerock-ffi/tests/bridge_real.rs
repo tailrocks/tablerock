@@ -42,9 +42,7 @@ fn probe_and_fetch(
         })
         .expect("submit probe");
     bridge.pump(operation.clone()).expect("pump to terminal");
-    let batch = bridge
-        .next_events(event_cursor, 64)
-        .expect("events");
+    let batch = bridge.next_events(event_cursor, 64).expect("events");
     assert!(
         batch.events.iter().any(|e| e.kind == "page"),
         "expected page event after cursor {event_cursor}, got {:?} outcomes {:?}",
@@ -338,11 +336,9 @@ async fn bridge_three_engines_sequential_open_probe() {
                 .unwrap_or_else(|e| panic!("open {engine}: {e}"));
             let (page, next) = probe_and_fetch(&bridge, session, cursor);
             cursor = next;
-            let decoded = ResultPage::decode_v1(
-                &page,
-                PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
-            )
-            .unwrap();
+            let decoded =
+                ResultPage::decode_v1(&page, PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024))
+                    .unwrap();
             observed.push(decoded.envelope().engine());
         }
         bridge.shutdown(false, 5_000).expect("shutdown");

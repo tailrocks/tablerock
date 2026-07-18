@@ -190,9 +190,7 @@ impl DriverSession for SessionSlot {
         Box::pin(async move {
             let guard = self.state.read().await;
             match &*guard {
-                SessionState::Open(session) => {
-                    session.role_inspector_lines(schema, table).await
-                }
+                SessionState::Open(session) => session.role_inspector_lines(schema, table).await,
                 SessionState::Closed => Err(AdapterError::new(
                     self.engine,
                     AdapterFailureClass::Connection,

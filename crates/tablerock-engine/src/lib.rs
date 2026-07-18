@@ -21,6 +21,10 @@ pub use adapter::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
     DriverSession, SessionHealth,
 };
+pub use browse_plan::{
+    BrowsePlan, BrowsePlanError, FilterOperator, FilterValue, RenderedBrowseSql, SortDirection,
+    SortKey, TypedCondition, parse_bind_text,
+};
 pub use catalog::{
     CatalogExactness, CatalogNodeSeed, CatalogRequest, CatalogSubtree,
     REDIS_DEFAULT_LOGICAL_DATABASES, ServerDescribe,
@@ -28,11 +32,6 @@ pub use catalog::{
 pub use clickhouse::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseError, ClickHouseProbeQuery,
     ClickHouseRowStream, ClickHouseSession, ClickHouseTlsMode,
-};
-pub use browse_plan::{
-    BrowsePlan, BrowsePlanError, FilterOperator, FilterValue, RenderedBrowseSql, SortDirection,
-    parse_bind_text,
-    SortKey, TypedCondition,
 };
 pub use ident::{QuoteIdentError, qualify_table, quote_ident};
 pub use postgres::{
@@ -75,8 +74,8 @@ pub use ssh_tunnel::{
     spawn_local_forward, ssh_client_config,
 };
 pub use startup_run::{
-    run_clickhouse_startup_actions, run_postgres_startup_actions, run_redis_startup_actions,
-    run_redis_one_authorized, run_sql_one_ch_authorized, run_sql_one_pg_authorized,
+    run_clickhouse_startup_actions, run_postgres_startup_actions, run_redis_one_authorized,
+    run_redis_startup_actions, run_sql_one_ch_authorized, run_sql_one_pg_authorized,
 };
 // SQL analysis is pure and lives in core; re-export for engine consumers.
 pub use tablerock_core::{SqlDialect, StatementSpan, statement_at, statements};

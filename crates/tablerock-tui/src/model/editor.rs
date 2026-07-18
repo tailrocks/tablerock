@@ -192,10 +192,7 @@ impl ConnectionFormModel {
     ///
     /// Password from the URL sets `DangerousPlaintext` + `plaintext_acknowledged`
     /// so Test/Connect can proceed; operator still reviews the form.
-    pub fn apply_connection_url(
-        &mut self,
-        draft: &tablerock_core::ConnectionUrlDraft,
-    ) {
+    pub fn apply_connection_url(&mut self, draft: &tablerock_core::ConnectionUrlDraft) {
         self.engine = match draft.engine {
             tablerock_core::Engine::PostgreSql => EngineKind::PostgreSql,
             tablerock_core::Engine::ClickHouse => EngineKind::ClickHouse,
@@ -391,8 +388,8 @@ mod tests {
             port: "5432".into(),
             ssh_host: "bastion".into(),
             ssh_port: "22".into(),
-            ssh_private_key: "-----BEGIN OPENSSH PRIVATE KEY-----\nx\n-----END OPENSSH PRIVATE KEY-----"
-                .into(),
+            ssh_private_key:
+                "-----BEGIN OPENSSH PRIVATE KEY-----\nx\n-----END OPENSSH PRIVATE KEY-----".into(),
             ssh_known_hosts_path: "/tmp/known_hosts".into(),
             ..ConnectionFormModel::default()
         };
@@ -411,11 +408,13 @@ mod tests {
             ..ConnectionFormModel::default()
         };
         assert!(!editor.validate());
-        assert!(editor
-            .validation_error
-            .as_deref()
-            .unwrap_or("")
-            .contains("password, private key, or agent"));
+        assert!(
+            editor
+                .validation_error
+                .as_deref()
+                .unwrap_or("")
+                .contains("password, private key, or agent")
+        );
     }
 
     #[test]

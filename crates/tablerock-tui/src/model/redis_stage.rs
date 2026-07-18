@@ -4,10 +4,7 @@ use crate::effect::MutationChangeSpec;
 
 /// Safe field/member token: 1..=512 of printable non-whitespace (no `=` for bare tokens).
 fn is_safe_token(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= 512
-        && s.chars()
-            .all(|c| !c.is_control() && !c.is_whitespace())
+    !s.is_empty() && s.len() <= 512 && s.chars().all(|c| !c.is_control() && !c.is_whitespace())
 }
 
 /// Parse stage buffer for a Redis collection op into a presentation spec.

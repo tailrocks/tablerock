@@ -1922,14 +1922,9 @@ mod tests {
 
     #[test]
     fn format_clickhouse_progress_joins_parts() {
-        let label = format_clickhouse_progress(
-            Some(10),
-            Some(100),
-            Some(2048),
-            Some(5_000_000),
-            Some(0),
-        )
-        .unwrap();
+        let label =
+            format_clickhouse_progress(Some(10), Some(100), Some(2048), Some(5_000_000), Some(0))
+                .unwrap();
         assert!(label.contains("read 10/100 rows"), "{label}");
         assert!(label.contains("2048 B"), "{label}");
         assert!(label.contains("5 ms"), "{label}");

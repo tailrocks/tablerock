@@ -58,7 +58,9 @@ async fn start_bastion_on_network(
 ) -> (testcontainers::ContainerAsync<GenericImage>, u16) {
     let ssh = GenericImage::new("alpine", "3.21")
         .with_exposed_port(22.tcp())
-        .with_wait_for(WaitFor::message_on_stderr("Server listening on 0.0.0.0 port 22"))
+        .with_wait_for(WaitFor::message_on_stderr(
+            "Server listening on 0.0.0.0 port 22",
+        ))
         .with_entrypoint("sh")
         .with_cmd(["-c", SSHD_BOOTSTRAP])
         .with_network(network)
@@ -89,8 +91,7 @@ wBAgM=
 -----END OPENSSH PRIVATE KEY-----
 ";
 
-const TEST_CLIENT_PUBLIC: &str =
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIKxjd6YM8L0u+DdGltNIOFP53pKREgM+EltwJPQ+PYI test@tablerock";
+const TEST_CLIENT_PUBLIC: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIKxjd6YM8L0u+DdGltNIOFP53pKREgM+EltwJPQ+PYI test@tablerock";
 
 /// Bastion that accepts only the given public key (password auth off).
 fn pubkey_sshd_bootstrap(authorized_public_key: &str) -> String {
@@ -132,8 +133,7 @@ C/h2ADG+GuOY1seMXSQeOkWcDlPhdQ0QU8eeA=
 -----END OPENSSH PRIVATE KEY-----
 ";
 
-const TEST_CLIENT_ENCRYPTED_PUBLIC: &str =
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHHw5gseHBmFD4FjBt//7cH6sWnFVekyGEm7PeF6ADHt tablerock-test";
+const TEST_CLIENT_ENCRYPTED_PUBLIC: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHHw5gseHBmFD4FjBt//7cH6sWnFVekyGEm7PeF6ADHt tablerock-test";
 
 async fn open_tunnel_retry(
     config: &SshTunnelConfig,
@@ -405,7 +405,9 @@ async fn public_key_auth_to_bastion() {
     let bootstrap = pubkey_sshd_bootstrap(TEST_CLIENT_PUBLIC);
     let ssh = GenericImage::new("alpine", "3.21")
         .with_exposed_port(22.tcp())
-        .with_wait_for(WaitFor::message_on_stderr("Server listening on 0.0.0.0 port 22"))
+        .with_wait_for(WaitFor::message_on_stderr(
+            "Server listening on 0.0.0.0 port 22",
+        ))
         .with_entrypoint("sh")
         .with_cmd(["-c", bootstrap.as_str()])
         .with_network(network.as_str())
@@ -422,7 +424,10 @@ async fn public_key_auth_to_bastion() {
         auth: SshAuthMaterial::PublicKey(key_auth),
         host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
     };
-    assert!(wait_connect(&config).await, "public-key auth to bastion must succeed");
+    assert!(
+        wait_connect(&config).await,
+        "public-key auth to bastion must succeed"
+    );
 
     // Password auth must fail on this bastion (password disabled).
     let password_cfg = SshTunnelConfig {
@@ -507,7 +512,9 @@ async fn agent_auth_to_bastion() {
     let bootstrap = pubkey_sshd_bootstrap(TEST_CLIENT_PUBLIC);
     let ssh = GenericImage::new("alpine", "3.21")
         .with_exposed_port(22.tcp())
-        .with_wait_for(WaitFor::message_on_stderr("Server listening on 0.0.0.0 port 22"))
+        .with_wait_for(WaitFor::message_on_stderr(
+            "Server listening on 0.0.0.0 port 22",
+        ))
         .with_entrypoint("sh")
         .with_cmd(["-c", bootstrap.as_str()])
         .with_network(network.as_str())
@@ -538,7 +545,9 @@ async fn encrypted_private_key_auth_to_bastion() {
     let bootstrap = pubkey_sshd_bootstrap(TEST_CLIENT_ENCRYPTED_PUBLIC);
     let ssh = GenericImage::new("alpine", "3.21")
         .with_exposed_port(22.tcp())
-        .with_wait_for(WaitFor::message_on_stderr("Server listening on 0.0.0.0 port 22"))
+        .with_wait_for(WaitFor::message_on_stderr(
+            "Server listening on 0.0.0.0 port 22",
+        ))
         .with_entrypoint("sh")
         .with_cmd(["-c", bootstrap.as_str()])
         .with_network(network.as_str())
@@ -594,7 +603,10 @@ async fn redis_driver_connects_through_local_forward_only() {
     )
     .await
     .expect("RedisSession via SSH local forward");
-    session.health_check().await.expect("redis health through tunnel");
+    session
+        .health_check()
+        .await
+        .expect("redis health through tunnel");
     let described = session
         .describe_server()
         .await

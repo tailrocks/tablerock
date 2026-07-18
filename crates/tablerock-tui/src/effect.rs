@@ -33,7 +33,9 @@ pub enum PasswordSourceSpec {
     DangerousPlaintext,
     /// Password taken from host environment variable at connect time.
     /// `var` is the variable name only — never the resolved value.
-    HostEnvironment { var: String },
+    HostEnvironment {
+        var: String,
+    },
     /// 1Password CLI reference (IDs only). Resolved via `op read` at connect.
     OnePassword {
         account_id: String,

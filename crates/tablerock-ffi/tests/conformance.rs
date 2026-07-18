@@ -60,7 +60,9 @@ impl DriverSession for FixedPageSession {
         _request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
         let page = self.page.clone();
-        Box::pin(async move { Ok(Box::new(OnePageStream(Some(page))) as Box<dyn DriverPageStream>) })
+        Box::pin(
+            async move { Ok(Box::new(OnePageStream(Some(page))) as Box<dyn DriverPageStream>) },
+        )
     }
 
     fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
@@ -179,11 +181,7 @@ fn open_fixed(bridge: &TableRockBridge, engine: Engine, page: ResultPage) -> Vec
         .unwrap()
 }
 
-fn probe(
-    bridge: &TableRockBridge,
-    session_id: Vec<u8>,
-    result_id: ResultId,
-) -> Vec<u8> {
+fn probe(bridge: &TableRockBridge, session_id: Vec<u8>, result_id: ResultId) -> Vec<u8> {
     bridge
         .submit(SubmitSpec {
             intent: "probe".into(),
@@ -453,8 +451,10 @@ fn open_profile_requires_persistence_and_loads_literals() {
             profile_id,
             Revision::INITIAL,
             Engine::PostgreSql,
-            ProfileName::new(BoundedText::copy_from_str("bridge-test", ByteLimit::new(32)).unwrap())
-                .unwrap(),
+            ProfileName::new(
+                BoundedText::copy_from_str("bridge-test", ByteLimit::new(32)).unwrap(),
+            )
+            .unwrap(),
         ),
         properties,
         ProfilePolicy::new(
@@ -472,7 +472,10 @@ fn open_profile_requires_persistence_and_loads_literals() {
                 ProfileGroupName::new(BoundedText::copy_from_str("g", ByteLimit::new(8)).unwrap())
                     .unwrap(),
             ),
-            vec![ProfileTag::new(BoundedText::copy_from_str("t", ByteLimit::new(8)).unwrap()).unwrap()],
+            vec![
+                ProfileTag::new(BoundedText::copy_from_str("t", ByteLimit::new(8)).unwrap())
+                    .unwrap(),
+            ],
             true,
             0,
             None,

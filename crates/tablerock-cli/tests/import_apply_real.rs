@@ -84,13 +84,13 @@ async fn applies_csv_insert_rows_through_mutation_seam() {
     assert_eq!(outcome.transaction, MutationTransactionState::Committed);
     assert_eq!(outcome.changes.len(), 2);
     assert!(
-        outcome
-            .changes
-            .iter()
-            .all(|c| matches!(
-                c,
-                tablerock_engine::MutationChangeOutcome::Applied { rows_affected: 1, .. }
-            )),
+        outcome.changes.iter().all(|c| matches!(
+            c,
+            tablerock_engine::MutationChangeOutcome::Applied {
+                rows_affected: 1,
+                ..
+            }
+        )),
         "changes: {:?}",
         outcome.changes
     );
@@ -179,10 +179,7 @@ async fn applies_csv_insert_rows_on_clickhouse_progressive() {
         outcome
             .changes
             .iter()
-            .all(|c| matches!(
-                c,
-                tablerock_engine::MutationChangeOutcome::Applied { .. }
-            )),
+            .all(|c| matches!(c, tablerock_engine::MutationChangeOutcome::Applied { .. })),
         "changes: {:?}",
         outcome.changes
     );

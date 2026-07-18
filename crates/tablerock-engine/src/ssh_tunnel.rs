@@ -67,10 +67,8 @@ impl SshPublicKeyAuth {
         openssh_private_key: &str,
         passphrase: Option<&str>,
     ) -> Result<Self, SshTunnelError> {
-        let private_key =
-            keys::decode_secret_key(openssh_private_key.trim(), passphrase).map_err(|_| {
-                SshTunnelError::Auth
-            })?;
+        let private_key = keys::decode_secret_key(openssh_private_key.trim(), passphrase)
+            .map_err(|_| SshTunnelError::Auth)?;
         Ok(Self {
             username: username.into(),
             private_key: Arc::new(private_key),
@@ -302,8 +300,7 @@ pub async fn connect_session_capture_host_key(
             .await
             .map_err(|_| SshTunnelError::Auth)?,
         SshAuthMaterial::PublicKey(public_key) => {
-            let key =
-                PrivateKeyWithHashAlg::new(Arc::clone(&public_key.private_key), None);
+            let key = PrivateKeyWithHashAlg::new(Arc::clone(&public_key.private_key), None);
             handle
                 .authenticate_publickey(public_key.username.as_str(), key)
                 .await
@@ -355,12 +352,7 @@ async fn authenticate_with_agent(
     for identity in identities {
         let public_key = identity.public_key().into_owned();
         match handle
-            .authenticate_publickey_with(
-                agent_auth.username.as_str(),
-                public_key,
-                None,
-                &mut agent,
-            )
+            .authenticate_publickey_with(agent_auth.username.as_str(), public_key, None, &mut agent)
             .await
         {
             Ok(AuthResult::Success) => return Ok(AuthResult::Success),
@@ -515,7 +507,11 @@ wBAgM=
         assert!(!debug.contains("BEGIN OPENSSH"));
         assert!(!debug.contains("b3BlbnNzaC1rZXktdjE"));
         assert!(debug.contains("<redacted>"));
-        assert!(auth.public_key_openssh().unwrap().starts_with("ssh-ed25519 "));
+        assert!(
+            auth.public_key_openssh()
+                .unwrap()
+                .starts_with("ssh-ed25519 ")
+        );
     }
 
     /// Encrypted with passphrase `test-pass-phrase` (aes256-ctr); fixture only.
@@ -550,7 +546,11 @@ C/h2ADG+GuOY1seMXSQeOkWcDlPhdQ0QU8eeA=
             Some("test-pass-phrase"),
         )
         .expect("correct passphrase decrypts");
-        assert!(auth.public_key_openssh().unwrap().starts_with("ssh-ed25519 "));
+        assert!(
+            auth.public_key_openssh()
+                .unwrap()
+                .starts_with("ssh-ed25519 ")
+        );
         let debug = format!("{auth:?}");
         assert!(!debug.contains("test-pass-phrase"));
         assert!(!debug.contains("aes256"));

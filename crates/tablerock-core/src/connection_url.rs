@@ -47,7 +47,10 @@ impl fmt::Debug for ConnectionUrlDraft {
             .field("username", &self.username)
             .field(
                 "password",
-                &self.password.as_ref().map(|p| format!("[{} bytes]", p.len())),
+                &self
+                    .password
+                    .as_ref()
+                    .map(|p| format!("[{} bytes]", p.len())),
             )
             .field("tls", &self.tls)
             .finish()
@@ -89,11 +92,18 @@ impl ConnectionUrlDraft {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionUrlError {
     Empty,
-    TooLarge { actual: usize, maximum: usize },
-    UnsupportedScheme { scheme: String },
+    TooLarge {
+        actual: usize,
+        maximum: usize,
+    },
+    UnsupportedScheme {
+        scheme: String,
+    },
     MissingHost,
     InvalidHost,
-    InvalidPort { value: String },
+    InvalidPort {
+        value: String,
+    },
     InvalidEncoding,
     Malformed,
     /// Control characters or other hostile bytes in the input.
@@ -149,10 +159,11 @@ pub fn parse_connection_url(input: &str) -> Result<ConnectionUrlDraft, Connectio
         "redis" => (Engine::Redis, 6379, ConnectionUrlTls::Off),
         "rediss" => (Engine::Redis, 6379, ConnectionUrlTls::Required),
         // Explicit reject list for common deep-link attack schemes.
-        other if matches!(
-            other,
-            "javascript" | "data" | "file" | "about" | "blob" | "vbscript" | "mailto"
-        ) =>
+        other
+            if matches!(
+                other,
+                "javascript" | "data" | "file" | "about" | "blob" | "vbscript" | "mailto"
+            ) =>
         {
             return Err(ConnectionUrlError::HostileInput);
         }
@@ -191,9 +202,7 @@ pub fn parse_connection_url(input: &str) -> Result<ConnectionUrlDraft, Connectio
 
     // IPv6: [::1]:5432
     let (host, port) = if hostport.starts_with('[') {
-        let end = hostport
-            .find(']')
-            .ok_or(ConnectionUrlError::Malformed)?;
+        let end = hostport.find(']').ok_or(ConnectionUrlError::Malformed)?;
         let host = hostport[1..end].to_owned();
         if host.is_empty() {
             return Err(ConnectionUrlError::MissingHost);
@@ -373,7 +382,12 @@ fn validate_host(host: &str) -> Result<(), ConnectionUrlError> {
         return Ok(());
     }
     // Allow broader unicode hostnames but reject shell metacharacters.
-    if host.chars().any(|c| matches!(c, ';' | '|' | '&' | '`' | '$' | '(' | ')' | '<' | '>' | '\n' | '\r')) {
+    if host.chars().any(|c| {
+        matches!(
+            c,
+            ';' | '|' | '&' | '`' | '$' | '(' | ')' | '<' | '>' | '\n' | '\r'
+        )
+    }) {
         return Err(ConnectionUrlError::HostileInput);
     }
     Ok(())

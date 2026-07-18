@@ -7,19 +7,19 @@ pub mod editor;
 pub mod grid;
 pub mod history;
 pub mod inspector;
-pub mod structure_ddl;
 pub mod mutation_draft;
 pub mod mutation_plan_build;
+pub mod profiles;
+pub mod query_editor;
 pub mod redis_command;
 pub mod redis_key_view;
 pub mod redis_namespace;
-pub mod result_sections;
 pub mod redis_stage;
+pub mod result_sections;
 pub mod saved_filter;
-pub mod vim_mode;
-pub mod profiles;
-pub mod query_editor;
 pub mod saved_query;
+pub mod structure_ddl;
+pub mod vim_mode;
 pub mod workbench;
 
 use termrock::{
@@ -663,14 +663,22 @@ pub enum ActionId {
 /// Pending destructive confirm (remove profile/group/tab / table ops).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmDialog {
-    RemoveProfile { id_hex: String, name: String },
-    RemoveGroup { name: String },
+    RemoveProfile {
+        id_hex: String,
+        name: String,
+    },
+    RemoveGroup {
+        name: String,
+    },
     /// Rename group: paste new name (non-empty, safe charset).
     RenameGroup {
         old_name: String,
         confirm_buffer: String,
     },
-    CloseDirtyTab { title: String, index: usize },
+    CloseDirtyTab {
+        title: String,
+        index: usize,
+    },
     /// Require exact table name re-type for truncate (fail closed).
     TruncateTable {
         schema: String,

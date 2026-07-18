@@ -13,7 +13,6 @@ use tablerock_core::{
     ResultStoreLimits, Revision, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
     StatementText,
 };
-use tablerock_persistence::PersistenceActor;
 use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession,
     ClickHouseTlsMode, DriverPageRequest, DriverRuntime, DriverSession, EngineService,
@@ -21,12 +20,13 @@ use tablerock_engine::{
     PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol,
     RedisSession, RedisTlsMode,
 };
+use tablerock_persistence::PersistenceActor;
 
 use crate::{
-    error::{catch_entry, BridgeError},
+    error::{BridgeError, catch_entry},
     ids::{
-        operation_bytes, operation_from_bytes, result_from_bytes, review_token_bytes,
-        review_token_from_bytes, session_bytes, session_from_bytes, IdFactory,
+        IdFactory, operation_bytes, operation_from_bytes, result_from_bytes, review_token_bytes,
+        review_token_from_bytes, session_bytes, session_from_bytes,
     },
     page_limits::default_page_limits,
     runtime::RuntimeOwner,
@@ -386,7 +386,11 @@ impl TableRockBridge {
         let name = BoundedText::copy_from_str("id", ByteLimit::new(8))
             .map_err(|error| BridgeError::rejected("mutation-field", error.to_string()))?;
         let relation_text = BoundedText::copy_from_str(
-            if relation.is_empty() { "users" } else { &relation },
+            if relation.is_empty() {
+                "users"
+            } else {
+                &relation
+            },
             ByteLimit::new(128),
         )
         .map_err(|error| BridgeError::rejected("mutation-target", error.to_string()))?;
@@ -591,21 +595,20 @@ impl TableRockBridge {
         password_override: Option<String>,
     ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
-        let profile_id = ProfileId::from_bytes(
-            <[u8; 16]>::try_from(profile_id_bytes.as_slice())
-                .map_err(|_| BridgeError::rejected("bad-profile-id", "profile id must be 16 bytes"))?,
-        )
-        .map_err(|error| BridgeError::rejected("bad-profile-id", error.to_string()))?;
+        let profile_id =
+            ProfileId::from_bytes(<[u8; 16]>::try_from(profile_id_bytes.as_slice()).map_err(
+                |_| BridgeError::rejected("bad-profile-id", "profile id must be 16 bytes"),
+            )?)
+            .map_err(|error| BridgeError::rejected("bad-profile-id", error.to_string()))?;
         let params = {
             let guard = self
                 .inner
                 .lock()
                 .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
             let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
-            let actor = inner
-                .persistence
-                .as_ref()
-                .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+            let actor = inner.persistence.as_ref().ok_or_else(|| {
+                BridgeError::rejected("persistence", "configure_persistence first")
+            })?;
             let aggregate = actor
                 .get_profile(profile_id)
                 .map_err(|error| BridgeError::rejected("profile-load", error.to_string()))?
@@ -648,9 +651,8 @@ impl TableRockBridge {
         self.ensure_runtime_inner()?;
         let engine = parse_engine(&params.engine)?;
         let text = |value: &str, field: &str| {
-            BoundedText::copy_from_str(value, ByteLimit::new(256)).map_err(|error| {
-                BridgeError::rejected(field, error.to_string())
-            })
+            BoundedText::copy_from_str(value, ByteLimit::new(256))
+                .map_err(|error| BridgeError::rejected(field, error.to_string()))
         };
         let host = text(&params.host, "host")?;
         let database = text(
@@ -725,10 +727,8 @@ impl TableRockBridge {
                         } else {
                             Some(params.user.as_str())
                         };
-                        security = security.with_credentials(RedisCredentials::new(
-                            username,
-                            password.as_str(),
-                        ));
+                        security = security
+                            .with_credentials(RedisCredentials::new(username, password.as_str()));
                     }
                     let session = RedisSession::connect(
                         &RedisConnectConfig::new(
@@ -852,8 +852,9 @@ impl TableRockBridge {
             let budget = CommandBudget::new(60_000, 1_024, 16 * 1024 * 1024, row_count)
                 .map_err(|error| BridgeError::rejected("budget", error.to_string()))?
                 .validate(
-                    CommandBudgetLimits::new(60_000, 1_024, 16 * 1024 * 1024, 10_000)
-                        .map_err(|error| BridgeError::rejected("budget-limits", error.to_string()))?,
+                    CommandBudgetLimits::new(60_000, 1_024, 16 * 1024 * 1024, 10_000).map_err(
+                        |error| BridgeError::rejected("budget-limits", error.to_string()),
+                    )?,
                 )
                 .map_err(|error| BridgeError::rejected("budget-validate", error.to_string()))?;
 
@@ -978,8 +979,9 @@ impl TableRockBridge {
     }
 
     fn pump_inner(&self, operation_id_bytes: Vec<u8>) -> Result<(), BridgeError> {
-        let operation_id = operation_from_bytes(&operation_id_bytes)
-            .map_err(|_| BridgeError::rejected("bad-operation-id", "operation id must be 16 bytes"))?;
+        let operation_id = operation_from_bytes(&operation_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-operation-id", "operation id must be 16 bytes")
+        })?;
         self.ensure_runtime_inner()?;
         loop {
             let update = {
@@ -988,7 +990,10 @@ impl TableRockBridge {
                     .lock()
                     .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
                 let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
-                match self.runtime.block_on(inner.service.next_update(operation_id)) {
+                match self
+                    .runtime
+                    .block_on(inner.service.next_update(operation_id))
+                {
                     Ok(Ok(update)) => update,
                     Ok(Err(error)) => {
                         return Err(BridgeError::rejected("pump", error.to_string()));
@@ -1012,7 +1017,11 @@ impl TableRockBridge {
         Ok(())
     }
 
-    fn next_events_inner(&self, cursor: u64, maximum: u32) -> Result<BridgeEventBatch, BridgeError> {
+    fn next_events_inner(
+        &self,
+        cursor: u64,
+        maximum: u32,
+    ) -> Result<BridgeEventBatch, BridgeError> {
         let mut guard = self
             .inner
             .lock()
@@ -1070,8 +1079,9 @@ impl TableRockBridge {
     }
 
     fn cancel_inner(&self, operation_id: Vec<u8>) -> Result<CancelOutcome, BridgeError> {
-        let operation_id = operation_from_bytes(&operation_id)
-            .map_err(|_| BridgeError::rejected("bad-operation-id", "operation id must be 16 bytes"))?;
+        let operation_id = operation_from_bytes(&operation_id).map_err(|_| {
+            BridgeError::rejected("bad-operation-id", "operation id must be 16 bytes")
+        })?;
         let mut guard = self
             .inner
             .lock()
@@ -1263,5 +1273,3 @@ fn parse_engine(name: &str) -> Result<Engine, BridgeError> {
         )),
     }
 }
-
-

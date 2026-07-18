@@ -212,8 +212,7 @@ async fn run_session(
     tokio::pin!(shutdown);
     let mut dirty = true;
     // Continuous health for BoundedAutomatic reconnect (30s; no-op when Manual).
-    let mut health_interval =
-        tokio::time::interval(std::time::Duration::from_secs(30));
+    let mut health_interval = tokio::time::interval(std::time::Duration::from_secs(30));
     health_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {

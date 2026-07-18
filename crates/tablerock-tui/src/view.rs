@@ -249,11 +249,8 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             known_names,
             confirm_buffer,
         } => {
-            let ranked = crate::model::saved_filter::rank_preset_names(
-                known_names,
-                confirm_buffer,
-                8,
-            );
+            let ranked =
+                crate::model::saved_filter::rank_preset_names(known_names, confirm_buffer, 8);
             let known = if known_names.is_empty() {
                 "(none saved)".into()
             } else if confirm_buffer.trim().is_empty() {
@@ -272,15 +269,11 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         }
         crate::model::ConfirmDialog::EditRawWhere { confirm_buffer } => (
             "Edit raw WHERE?",
-            format!(
-                "Paste predicate only (no semicolon). Empty clears. [{confirm_buffer}]"
-            ),
+            format!("Paste predicate only (no semicolon). Empty clears. [{confirm_buffer}]"),
         ),
         crate::model::ConfirmDialog::EditQuickFilter { confirm_buffer } => (
             "Page-local filter?",
-            format!(
-                "Filter resident rows only (no server I/O). Empty clears. [{confirm_buffer}]"
-            ),
+            format!("Filter resident rows only (no server I/O). Empty clears. [{confirm_buffer}]"),
         ),
         crate::model::ConfirmDialog::GoToRow { confirm_buffer } => (
             "Go to row?",
@@ -312,9 +305,7 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         ),
         crate::model::ConfirmDialog::CopyPick { confirm_buffer } => (
             "Copy format?",
-            format!(
-                "scope format: row|loaded + csv|tsv|json|md|insert|update [{confirm_buffer}]"
-            ),
+            format!("scope format: row|loaded + csv|tsv|json|md|insert|update [{confirm_buffer}]"),
         ),
         crate::model::ConfirmDialog::EditInsertValues {
             draft_id,
@@ -339,9 +330,7 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             };
             (
                 "Stage Redis collection change?",
-                format!(
-                    "{op} on db={logical_db} key={key}. Paste {hint} [{confirm_buffer}]"
-                ),
+                format!("{op} on db={logical_db} key={key}. Paste {hint} [{confirm_buffer}]"),
             )
         }
         crate::model::ConfirmDialog::DdlReview {
@@ -362,9 +351,7 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             confirm_buffer,
         } => (
             "Rename table?",
-            format!(
-                "RENAME {schema}.{table}. Paste new table name [{confirm_buffer}]"
-            ),
+            format!("RENAME {schema}.{table}. Paste new table name [{confirm_buffer}]"),
         ),
         crate::model::ConfirmDialog::StartupReview {
             items,
@@ -405,15 +392,11 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             } else {
                 "pg_dump?"
             },
-            format!(
-                "Paste file path (default tablerock.dump) then Submit [{confirm_buffer}]"
-            ),
+            format!("Paste file path (default tablerock.dump) then Submit [{confirm_buffer}]"),
         ),
         crate::model::ConfirmDialog::ImportUrl { confirm_buffer } => (
             "Import connection URL?",
-            format!(
-                "Paste postgres/redis/clickhouse URL then Submit [{confirm_buffer}]"
-            ),
+            format!("Paste postgres/redis/clickhouse URL then Submit [{confirm_buffer}]"),
         ),
         crate::model::ConfirmDialog::OpenExternalUrl {
             summary,
@@ -450,14 +433,14 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                     for (i, t) in model.workbench().tabs.iter().enumerate().take(6) {
                         preview.push(format!("t{}:{}", i + 1, t.title));
                     }
-                    if let SavedQueryPanel::Open { entries, .. } = &model.workbench().saved_queries {
+                    if let SavedQueryPanel::Open { entries, .. } = &model.workbench().saved_queries
+                    {
                         for q in entries.iter().take(4) {
                             preview.push(format!("q:{}", q.name));
                         }
                     }
                 }
-                crate::model::Screen::Connections
-                | crate::model::Screen::ConnectionPicker => {
+                crate::model::Screen::Connections | crate::model::Screen::ConnectionPicker => {
                     if let ProfileListState::Loaded { rows, .. } = model.profiles() {
                         for r in rows.iter().take(8) {
                             preview.push(format!("p:{}", r.name));
@@ -492,9 +475,7 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         ),
         crate::model::ConfirmDialog::FindReplace { confirm_buffer } => (
             "Find/replace?",
-            format!(
-                "Paste find=>replace[=>all][=>i] then Submit [{confirm_buffer}]"
-            ),
+            format!("Paste find=>replace[=>all][=>i] then Submit [{confirm_buffer}]"),
         ),
     };
     let panel = Panel::new(&model.theme)
@@ -3337,10 +3318,7 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
                     "review {}.{} · {n} stmt(s) · first: {}",
                     r.schema,
                     r.table,
-                    r.lines
-                        .first()
-                        .map(|l| l.sql.as_str())
-                        .unwrap_or("—")
+                    r.lines.first().map(|l| l.sql.as_str()).unwrap_or("—")
                 )
             })
             .unwrap_or_default(),
@@ -3427,8 +3405,7 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
                 width: 1,
                 height: 1,
             };
-            let mut menu_state =
-                CompletionMenuState::new(session.selected_id.clone());
+            let mut menu_state = CompletionMenuState::new(session.selected_id.clone());
             frame.render_stateful_widget(
                 &CompletionMenu::new(&candidates, &model.theme, editor_area, anchor)
                     .preferred_size(CompletionMenuSize {
@@ -3456,9 +3433,7 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
             (insp_lines.len() as u16).min(grid_area.height / 3).max(1)
         };
         let sort_bar = wb.active_grid().and_then(|g| g.sort_chip_bar());
-        let filter_bar = wb
-            .active_grid()
-            .and_then(|g| g.filter_chip_bar());
+        let filter_bar = wb.active_grid().and_then(|g| g.filter_chip_bar());
         let sort_h = u16::from(sort_bar.is_some());
         let filter_h = u16::from(filter_bar.is_some());
         let control_h = sort_h.saturating_add(filter_h);
@@ -3571,11 +3546,21 @@ fn render_data_grid(
     }
     // Paint staged inserts as synthetic + rows (presentation only; not resident).
     // Use high abs keys so they never collide with real page rows.
-    for (i, insert) in grid.drafts.inserts.iter().enumerate().take(insert_slots as usize) {
+    for (i, insert) in grid
+        .drafts
+        .inserts
+        .iter()
+        .enumerate()
+        .take(insert_slots as usize)
+    {
         if let Some(texts) = grid.insert_row_display(insert.draft_id, &visible) {
             owned_rows.push(texts);
             // Synthetic absolute keys: top of u64 range − draft_id.
-            row_abs.push(u64::MAX.saturating_sub(insert.draft_id).saturating_sub(i as u64));
+            row_abs.push(
+                u64::MAX
+                    .saturating_sub(insert.draft_id)
+                    .saturating_sub(i as u64),
+            );
         }
     }
     let mut cell_bufs: Vec<Vec<GridCell<'_>>> = Vec::new();
@@ -3597,16 +3582,18 @@ fn render_data_grid(
         .iter()
         .enumerate()
         .map(|(i, cells)| {
-            let abs = row_abs.get(i).copied().unwrap_or(first.saturating_add(i as u64));
+            let abs = row_abs
+                .get(i)
+                .copied()
+                .unwrap_or(first.saturating_add(i as u64));
             GridRow::new(abs, abs, cells.as_slice())
         })
         .collect();
     let total = match grid.totals {
         crate::model::grid::GridRowTotal::Exact(n)
-        | crate::model::grid::GridRowTotal::Estimated(n) => {
-            n.max(grid.rows_loaded)
-                .saturating_add(grid.drafts.inserts.len() as u64)
-        }
+        | crate::model::grid::GridRowTotal::Estimated(n) => n
+            .max(grid.rows_loaded)
+            .saturating_add(grid.drafts.inserts.len() as u64),
         crate::model::grid::GridRowTotal::Unknown => grid
             .start_row
             .saturating_add(u64::from(grid.row_count))

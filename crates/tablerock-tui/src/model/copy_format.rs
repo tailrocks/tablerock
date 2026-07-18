@@ -324,17 +324,15 @@ fn collect_rows(grid: &DataGridModel, scope: CopyScope) -> Vec<Vec<String>> {
     };
     abs_rows
         .into_iter()
-        .map(|abs| {
-            match scope {
-                CopyScope::Cell => {
-                    let col = grid.cursor_col.min(col_count.saturating_sub(1));
-                    vec![cell_copy_text(&grid.cell_at(abs, col))]
-                }
-                _ => visible
-                    .iter()
-                    .map(|&col| cell_copy_text(&grid.cell_at(abs, col)))
-                    .collect(),
+        .map(|abs| match scope {
+            CopyScope::Cell => {
+                let col = grid.cursor_col.min(col_count.saturating_sub(1));
+                vec![cell_copy_text(&grid.cell_at(abs, col))]
             }
+            _ => visible
+                .iter()
+                .map(|&col| cell_copy_text(&grid.cell_at(abs, col)))
+                .collect(),
         })
         .collect()
 }
@@ -365,7 +363,13 @@ fn cell_copy_text(cell: &ProjectedCell) -> String {
 
 fn format_csv(columns: &[String], rows: &[Vec<String>]) -> String {
     let mut out = String::new();
-    out.push_str(&columns.iter().map(|c| csv_escape(c)).collect::<Vec<_>>().join(","));
+    out.push_str(
+        &columns
+            .iter()
+            .map(|c| csv_escape(c))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
     out.push('\n');
     for row in rows {
         let line: Vec<_> = row.iter().map(|c| csv_escape(c)).collect();
@@ -376,8 +380,7 @@ fn format_csv(columns: &[String], rows: &[Vec<String>]) -> String {
 }
 
 fn csv_escape(value: &str) -> String {
-    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r')
-    {
+    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r') {
         format!("\"{}\"", value.replace('"', "\"\""))
     } else {
         value.to_owned()
@@ -409,11 +412,7 @@ fn format_json(columns: &[String], rows: &[Vec<String>]) -> String {
                 out.push_str(", ");
             }
             let val = row.get(ci).map(String::as_str).unwrap_or("");
-            out.push_str(&format!(
-                "\"{}\":{}",
-                json_escape_key(col),
-                json_value(val)
-            ));
+            out.push_str(&format!("\"{}\":{}", json_escape_key(col), json_value(val)));
         }
         out.push('}');
         if ri + 1 < rows.len() {
@@ -463,7 +462,12 @@ fn format_markdown(columns: &[String], rows: &[Vec<String>]) -> String {
     out
 }
 
-fn format_sql_insert(schema: &str, table: &str, columns: &[String], rows: &[Vec<String>]) -> String {
+fn format_sql_insert(
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    rows: &[Vec<String>],
+) -> String {
     let cols = columns
         .iter()
         .map(|c| format!("\"{}\"", c.replace('"', "\"\"")))
@@ -500,26 +504,14 @@ fn format_sql_update(
             .iter()
             .zip(row.iter())
             .filter(|(c, _)| !identity_columns.iter().any(|id| id == *c))
-            .map(|(c, v)| {
-                format!(
-                    "\"{}\" = {}",
-                    c.replace('"', "\"\""),
-                    sql_literal(v)
-                )
-            })
+            .map(|(c, v)| format!("\"{}\" = {}", c.replace('"', "\"\""), sql_literal(v)))
             .collect();
         // If every column is identity, SET all columns so the statement is usable.
         let sets = if sets.is_empty() {
             columns
                 .iter()
                 .zip(row.iter())
-                .map(|(c, v)| {
-                    format!(
-                        "\"{}\" = {}",
-                        c.replace('"', "\"\""),
-                        sql_literal(v)
-                    )
-                })
+                .map(|(c, v)| format!("\"{}\" = {}", c.replace('"', "\"\""), sql_literal(v)))
                 .collect::<Vec<_>>()
         } else {
             sets
@@ -704,7 +696,10 @@ mod tests {
         assert_eq!(format_values_sql(&g).unwrap(), "(NULL, 'x')");
         g.cursor_row = 0;
         let loaded = format_insert_loaded_sql(&g).unwrap();
-        assert!(loaded.starts_with(r#"INSERT INTO "public"."users""#), "{loaded}");
+        assert!(
+            loaded.starts_with(r#"INSERT INTO "public"."users""#),
+            "{loaded}"
+        );
         assert!(loaded.contains("(1, 'a,b')"), "{loaded}");
         assert!(loaded.contains("(NULL, 'x')"), "{loaded}");
     }
@@ -750,7 +745,10 @@ mod tests {
         let upd = format_copy(&g, CopyScope::Row, CopyFormat::SqlUpdate).unwrap();
         assert!(upd.contains("UPDATE"), "{upd}");
         assert!(upd.contains("users"), "{upd}");
-        assert!(upd.contains("WHERE requires primary key") || upd.contains("WHERE"), "{upd}");
+        assert!(
+            upd.contains("WHERE requires primary key") || upd.contains("WHERE"),
+            "{upd}"
+        );
         g.identity_columns = vec!["id".into()];
         let upd_id = format_copy(&g, CopyScope::Row, CopyFormat::SqlUpdate).unwrap();
         assert!(upd_id.contains("WHERE"), "{upd_id}");

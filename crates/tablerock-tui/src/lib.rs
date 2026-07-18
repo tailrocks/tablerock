@@ -16,12 +16,12 @@ pub use effect::{
 pub use keymap::{ShellKeyAction, default_keymap};
 pub use message::{EngineMsg, MAX_PASTE_BYTES, Message, PasteText, ProfilesMsg};
 pub use model::catalog::{CatalogModel, CatalogNodeProjection, CatalogNodeStatus};
+pub use model::completion::{CompletionCandidateView, CompletionSession, StaleCompletion};
 pub use model::copy_format::{CopyError, CopyFormat, CopyScope, format_copy};
 pub use model::grid::{
     CellDistinction, ColumnLayout, ColumnSort, DataGridModel, GridFilterChip, GridOperationState,
     GridRowTotal, GridSortKey, ProjectedCell, distinction_from_kind_label,
 };
-pub use model::completion::{CompletionCandidateView, CompletionSession, StaleCompletion};
 pub use model::history::{HistoryPanel, HistoryRowProjection};
 pub use model::query_editor::{QueryEditorModel, StatementSpanView};
 pub use model::saved_query::{BoundSqlFile, SavedQueryPanel, SavedQueryRow};

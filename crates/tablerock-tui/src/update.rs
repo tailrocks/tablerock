@@ -585,10 +585,9 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 }
                 // EXPLAIN result: open plan tree inspector from first-column lines.
                 let explain_plan = if start_row == 0
-                    && columns
-                        .iter()
-                        .any(|c| c.eq_ignore_ascii_case("QUERY PLAN") || c.eq_ignore_ascii_case("explain"))
-                {
+                    && columns.iter().any(|c| {
+                        c.eq_ignore_ascii_case("QUERY PLAN") || c.eq_ignore_ascii_case("explain")
+                    }) {
                     let col_count = columns.len().max(1);
                     let mut lines = Vec::new();
                     for (i, cell) in cells.iter().enumerate() {
@@ -609,8 +608,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 if let Some(plan) = explain_plan {
                     model.workbench_mut().inspector =
                         crate::model::inspector::InspectorModel::from_explain_text(
-                            "explain",
-                            &plan,
+                            "explain", &plan,
                         );
                 }
             }
@@ -743,9 +741,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::NamedQueryLoaded {
-            name,
-            statement,
-            ..
+            name, statement, ..
         }) => {
             if model.workbench().active_editor().is_none() {
                 model.workbench_mut().open_sql_tab();
@@ -819,9 +815,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::SessionIntentSaved { .. }) => Update::render(),
-        Message::Engine(EngineMsg::SessionIntentLoaded {
-            intent_json, ..
-        }) => {
+        Message::Engine(EngineMsg::SessionIntentLoaded { intent_json, .. }) => {
             if let Some(json) = intent_json {
                 let _ = model.workbench_mut().apply_intent_json(&json);
             }
@@ -888,8 +882,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
         }
         Message::Engine(EngineMsg::SavedFilterLibraryLoaded { library_json, .. }) => {
             if let Some(json) = library_json {
-                if let Some(lib) =
-                    crate::model::saved_filter::SavedFilterLibrary::from_json(&json)
+                if let Some(lib) = crate::model::saved_filter::SavedFilterLibrary::from_json(&json)
                 {
                     model.workbench_mut().filter_library = lib;
                 }
@@ -908,8 +901,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 FailureProjection::Label(label) => label,
             };
             // Connect-path load failures still open the catalog.
-            if model.session().is_some()
-                && matches!(model.workbench().catalog, CatalogModel::Idle)
+            if model.session().is_some() && matches!(model.workbench().catalog, CatalogModel::Idle)
             {
                 return load_workbench_root_catalog(model);
             }
@@ -945,11 +937,13 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                         .unwrap_or_default(),
                     lines: lines
                         .into_iter()
-                        .map(|sql| crate::model::mutation_plan_build::ReviewStatementLine {
-                            sql,
-                            parameters: Vec::new(),
-                            kind: "review",
-                        })
+                        .map(
+                            |sql| crate::model::mutation_plan_build::ReviewStatementLine {
+                                sql,
+                                parameters: Vec::new(),
+                                kind: "review",
+                            },
+                        )
                         .collect(),
                 });
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
@@ -1068,10 +1062,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 return Update::unchanged();
             }
             let title = {
-                let parts: Vec<_> = filters
-                    .iter()
-                    .map(|(c, v)| format!("{c}={v}"))
-                    .collect();
+                let parts: Vec<_> = filters.iter().map(|(c, v)| format!("{c}={v}")).collect();
                 format!("{foreign_table} · {}", parts.join(","))
             };
             model.workbench_mut().open_preview_tab(&title);
@@ -1159,7 +1150,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 hex_source: String::new(),
                 hex_offset: 0,
                 tree_source: String::new(),
-                tree_depth: 0
+                tree_depth: 0,
             };
             Update::render()
         }
@@ -1251,7 +1242,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 hex_source: String::new(),
                 hex_offset: 0,
                 tree_source: String::new(),
-                tree_depth: 0
+                tree_depth: 0,
             };
             Update::render()
         }
@@ -1293,7 +1284,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 hex_source: String::new(),
                 hex_offset: 0,
                 tree_source: String::new(),
-                tree_depth: 0
+                tree_depth: 0,
             };
             Update::render()
         }
@@ -1343,7 +1334,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 hex_source: String::new(),
                 hex_offset: 0,
                 tree_source: String::new(),
-                tree_depth: 0
+                tree_depth: 0,
             };
             let selected = model.workbench().selected_tab;
             if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
@@ -1382,11 +1373,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     },
                     rows: None,
                     elapsed_ms: None,
-                    error: if failed {
-                        Some(line.clone())
-                    } else {
-                        None
-                    },
+                    error: if failed { Some(line.clone()) } else { None },
                     pinned: false,
                 });
             }
@@ -1405,7 +1392,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 hex_source: String::new(),
                 hex_offset: 0,
                 tree_source: String::new(),
-                tree_depth: 0
+                tree_depth: 0,
             };
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if fail_count > 0 {
@@ -1557,10 +1544,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::PgToolDone {
-            kind,
-            summary,
-            ok,
-            ..
+            kind, summary, ok, ..
         }) => {
             if let Some(mut session) = model.session().cloned() {
                 session.status = Some(format!(
@@ -1623,9 +1607,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let mut lines = vec![format!(
-                "KILL MUTATION {database}.{table} id={mutation_id}"
-            )];
+            let mut lines = vec![format!("KILL MUTATION {database}.{table} id={mutation_id}")];
             lines.extend(status_lines);
             let text = lines.join("\n");
             model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
@@ -1642,7 +1624,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 hex_source: String::new(),
                 hex_offset: 0,
                 tree_source: String::new(),
-                tree_depth: 0
+                tree_depth: 0,
             };
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.error_label =
@@ -1676,15 +1658,9 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 return Update::unchanged();
             }
             use crate::model::redis_namespace::{group_by_namespace, project_key};
-            let projected: Vec<_> = keys
-                .iter()
-                .map(|k| project_key(k.as_bytes()))
-                .collect();
+            let projected: Vec<_> = keys.iter().map(|k| project_key(k.as_bytes())).collect();
             let groups = group_by_namespace(&projected);
-            let mut lines = vec![format!(
-                "SCAN keys: {} (more={has_more})",
-                keys.len()
-            )];
+            let mut lines = vec![format!("SCAN keys: {} (more={has_more})", keys.len())];
             for (ns, idxs) in groups {
                 lines.push(format!("namespace {ns}: {} keys", idxs.len()));
                 for i in idxs.into_iter().take(32) {
@@ -1705,7 +1681,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 hex_source: String::new(),
                 hex_offset: 0,
                 tree_source: String::new(),
-                tree_depth: 0
+                tree_depth: 0,
             };
             Update::render()
         }
@@ -1763,7 +1739,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 hex_source: String::new(),
                 hex_offset: 0,
                 tree_source: String::new(),
-                tree_depth: 0
+                tree_depth: 0,
             };
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_completed();
@@ -1809,7 +1785,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 hex_source: String::new(),
                 hex_offset: 0,
                 tree_source: String::new(),
-                tree_depth: 0
+                tree_depth: 0,
             };
             Update::render()
         }
@@ -2162,8 +2138,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     if confirm_buffer != table {
                         return Update::render();
                     }
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2192,8 +2167,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     if confirm_buffer != table {
                         return Update::render();
                     }
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2222,8 +2196,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     if confirm_buffer != table {
                         return Update::render();
                     }
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2252,8 +2225,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     if confirm_buffer != table {
                         return Update::render();
                     }
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2282,8 +2254,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     if confirm_buffer != table {
                         return Update::render();
                     }
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2313,14 +2284,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 } => {
                     let parts: Vec<&str> = confirm_buffer.split_whitespace().collect();
                     let (object_name, type_text) = match kind.as_str() {
-                        "add_column" | "create_index" | "add_constraint"
-                            if parts.len() >= 2 =>
-                        {
+                        "add_column" | "create_index" | "add_constraint" if parts.len() >= 2 => {
                             (parts[0].to_owned(), parts[1..].join(" "))
                         }
-                        "drop_column" | "drop_index" | "drop_constraint"
-                            if parts.len() == 1 =>
-                        {
+                        "drop_column" | "drop_index" | "drop_constraint" if parts.len() == 1 => {
                             (parts[0].to_owned(), String::new())
                         }
                         _ => return Update::render(),
@@ -2328,8 +2295,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     if object_name.is_empty() {
                         return Update::render();
                     }
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2362,8 +2328,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         model.set_confirm(None);
                         return Update::render();
                     }
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2539,8 +2504,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                                     }),
                                     _ => None,
                                 };
-                                let matched_profile_id_hex =
-                                    matched.map(|r| r.id_hex.clone());
+                                let matched_profile_id_hex = matched.map(|r| r.id_hex.clone());
                                 if let Some(row) = matched {
                                     summary.push_str(&format!(
                                         " · matched saved profile '{}'",
@@ -2586,9 +2550,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     let replacement = parts[1];
                     let flags = parts.get(2..).unwrap_or(&[]);
                     let all = flags.iter().any(|f| f.eq_ignore_ascii_case("all"));
-                    let case_i = flags.iter().any(|f| {
-                        f.eq_ignore_ascii_case("i") || f.eq_ignore_ascii_case("ci")
-                    });
+                    let case_i = flags
+                        .iter()
+                        .any(|f| f.eq_ignore_ascii_case("i") || f.eq_ignore_ascii_case("ci"));
                     let Some(ed) = model.workbench_mut().active_editor_mut() else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2614,8 +2578,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     use tablerock_core::{
                         bind_named_values, parse_param_bindings, rewrite_named_params,
                     };
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2663,8 +2626,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     if new_name.is_empty() || new_name == table {
                         return Update::render();
                     }
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2686,12 +2648,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     }
                 }
                 ConfirmDialog::CancelBackend {
-                    ref confirm_buffer,
-                    ..
+                    ref confirm_buffer, ..
                 }
                 | ConfirmDialog::TerminateBackend {
-                    ref confirm_buffer,
-                    ..
+                    ref confirm_buffer, ..
                 } => {
                     let trimmed = confirm_buffer.trim();
                     let Ok(pid) = trimmed.parse::<i32>() else {
@@ -2705,8 +2665,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         ConfirmDialog::TerminateBackend { .. } => "terminate",
                         _ => unreachable!(),
                     };
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2735,16 +2694,12 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     if mutation_id.is_empty()
                         || mutation_id.len() > 128
                         || !mutation_id.bytes().all(|b| {
-                            b.is_ascii_alphanumeric()
-                                || b == b'_'
-                                || b == b'-'
-                                || b == b'.'
+                            b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.'
                         })
                     {
                         return Update::render();
                     }
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -2976,9 +2931,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     };
                     model.set_confirm(None);
                     match scope {
-                        crate::model::copy_format::CopyScope::Row => {
-                            copy_cursor_row(model, format)
-                        }
+                        crate::model::copy_format::CopyScope::Row => copy_cursor_row(model, format),
                         crate::model::copy_format::CopyScope::LoadedResult => {
                             copy_grid(model, format)
                         }
@@ -3018,9 +2971,11 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         return Update::render();
                     };
                     // Ensure target matches the dialog (fail closed if key switched).
-                    let target_ok = model.workbench().redis_stage_target.as_ref().is_some_and(
-                        |(db, k, _)| db == &logical_db && k == &key,
-                    );
+                    let target_ok = model
+                        .workbench()
+                        .redis_stage_target
+                        .as_ref()
+                        .is_some_and(|(db, k, _)| db == &logical_db && k == &key);
                     if !target_ok {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -3046,8 +3001,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     if selector.chars().any(|c| c.is_control()) {
                         return Update::render();
                     }
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
+                    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone())
                     else {
                         model.set_confirm(None);
                         return Update::unchanged();
@@ -3552,7 +3506,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
             Update::render()
         }
         ActionId::RunSql if model.screen() == Screen::Workbench => run_sql_or_bind_params(model),
-        ActionId::RunScript if model.screen() == Screen::Workbench => run_script_entire_buffer(model),
+        ActionId::RunScript if model.screen() == Screen::Workbench => {
+            run_script_entire_buffer(model)
+        }
         ActionId::CancelQuery if model.screen() == Screen::Workbench => {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
@@ -3596,8 +3552,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 return Update::render();
             }
             let token = model.mint_request_token();
-            model.workbench_mut().history =
-                crate::model::history::HistoryPanel::Loading { request_token: token };
+            model.workbench_mut().history = crate::model::history::HistoryPanel::Loading {
+                request_token: token,
+            };
             Update {
                 render: true,
                 effect: Some(Effect::LoadHistory {
@@ -5105,8 +5062,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let text = grid.identity_columns.join("\t");
             let token = model.mint_request_token();
             if let Some(g) = model.workbench_mut().active_grid_mut() {
-                g.error_label =
-                    Some(format!("copied {} pk name(s)", g.identity_columns.len()));
+                g.error_label = Some(format!("copied {} pk name(s)", g.identity_columns.len()));
             }
             Update {
                 render: true,
@@ -5132,8 +5088,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 .join(", ");
             let token = model.mint_request_token();
             if let Some(g) = model.workbench_mut().active_grid_mut() {
-                g.error_label =
-                    Some(format!("copied {} pk ident(s)", g.identity_columns.len()));
+                g.error_label = Some(format!("copied {} pk ident(s)", g.identity_columns.len()));
             }
             Update {
                 render: true,
@@ -5615,17 +5570,14 @@ fn activate_selected_action(model: &mut Model) -> Update {
             Update::render()
         }
         ActionId::ClearRawWhere if model.screen() == Screen::Workbench => {
-            let cleared = model
-                .workbench_mut()
-                .active_grid_mut()
-                .is_some_and(|g| {
-                    if g.raw_where.as_ref().is_none_or(|s| s.is_empty()) {
-                        false
-                    } else {
-                        g.raw_where = None;
-                        true
-                    }
-                });
+            let cleared = model.workbench_mut().active_grid_mut().is_some_and(|g| {
+                if g.raw_where.as_ref().is_none_or(|s| s.is_empty()) {
+                    false
+                } else {
+                    g.raw_where = None;
+                    true
+                }
+            });
             if !cleared {
                 return Update::unchanged();
             }
@@ -5712,17 +5664,14 @@ fn activate_selected_action(model: &mut Model) -> Update {
             Update::render()
         }
         ActionId::ClearQuickFilter if model.screen() == Screen::Workbench => {
-            let cleared = model
-                .workbench_mut()
-                .active_grid_mut()
-                .is_some_and(|g| {
-                    if g.quick_filter.is_empty() {
-                        false
-                    } else {
-                        g.quick_filter.clear();
-                        true
-                    }
-                });
+            let cleared = model.workbench_mut().active_grid_mut().is_some_and(|g| {
+                if g.quick_filter.is_empty() {
+                    false
+                } else {
+                    g.quick_filter.clear();
+                    true
+                }
+            });
             if !cleared {
                 return Update::unchanged();
             }
@@ -5743,21 +5692,22 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
-        ActionId::GoToFirstRow if model.screen() == Screen::Workbench => {
-            jump_to_row(model, 0)
-        }
+        ActionId::GoToFirstRow if model.screen() == Screen::Workbench => jump_to_row(model, 0),
         ActionId::GoToLastRow if model.screen() == Screen::Workbench => {
-            let last = model.workbench().active_grid().and_then(|g| match g.totals {
-                crate::model::grid::GridRowTotal::Exact(n) if n > 0 => Some(n - 1),
-                crate::model::grid::GridRowTotal::Estimated(n) if n > 0 => Some(n - 1),
-                _ => {
-                    // Fall back to end of resident window.
-                    Some(
-                        g.start_row
-                            .saturating_add(u64::from(g.row_count.saturating_sub(1))),
-                    )
-                }
-            });
+            let last = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| match g.totals {
+                    crate::model::grid::GridRowTotal::Exact(n) if n > 0 => Some(n - 1),
+                    crate::model::grid::GridRowTotal::Estimated(n) if n > 0 => Some(n - 1),
+                    _ => {
+                        // Fall back to end of resident window.
+                        Some(
+                            g.start_row
+                                .saturating_add(u64::from(g.row_count.saturating_sub(1))),
+                        )
+                    }
+                });
             let Some(last) = last else {
                 return Update::unchanged();
             };
@@ -5807,9 +5757,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 Update::unchanged()
             }
         }
-        ActionId::PageUp if model.screen() == Screen::Workbench => {
-            page_jump_rows(model, -1, false)
-        }
+        ActionId::PageUp if model.screen() == Screen::Workbench => page_jump_rows(model, -1, false),
         ActionId::PageDown if model.screen() == Screen::Workbench => {
             page_jump_rows(model, 1, false)
         }
@@ -6198,9 +6146,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
         }
         ActionId::CommitCellEdit if model.screen() == Screen::Workbench => {
-            let committed = model.workbench_mut().active_grid_mut().is_some_and(|g| {
-                g.cell_edit.is_some() && g.commit_cell_edit()
-            });
+            let committed = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.cell_edit.is_some() && g.commit_cell_edit());
             if committed {
                 model.workbench_mut().mark_active_dirty(true);
                 Update::render()
@@ -6669,7 +6618,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 hex_source: String::new(),
                 hex_offset: 0,
                 tree_source: String::new(),
-                tree_depth: 0
+                tree_depth: 0,
             };
             Update::render()
         }
@@ -6747,8 +6696,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
             };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
+            let (Some(schema), Some(table)) = (grid.base_schema.clone(), grid.base_table.clone())
             else {
                 return Update::unchanged();
             };
@@ -6764,8 +6712,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
             };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
+            let (Some(schema), Some(table)) = (grid.base_schema.clone(), grid.base_table.clone())
             else {
                 return Update::unchanged();
             };
@@ -6781,8 +6728,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
             };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
+            let (Some(schema), Some(table)) = (grid.base_schema.clone(), grid.base_table.clone())
             else {
                 return Update::unchanged();
             };
@@ -6798,8 +6744,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
             };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
+            let (Some(schema), Some(table)) = (grid.base_schema.clone(), grid.base_table.clone())
             else {
                 return Update::unchanged();
             };
@@ -6815,8 +6760,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
             };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
+            let (Some(schema), Some(table)) = (grid.base_schema.clone(), grid.base_table.clone())
             else {
                 return Update::unchanged();
             };
@@ -6832,8 +6776,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
             };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
+            let (Some(schema), Some(table)) = (grid.base_schema.clone(), grid.base_table.clone())
             else {
                 return Update::unchanged();
             };
@@ -6916,11 +6859,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
             };
-            if !model
-                .workbench()
-                .engine_kind
-                .eq_ignore_ascii_case("Redis")
-            {
+            if !model.workbench().engine_kind.eq_ignore_ascii_case("Redis") {
                 return Update::unchanged();
             }
             // Catalog tree filter becomes SCAN MATCH (empty → all keys).
@@ -7067,8 +7006,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
             };
-            let (Some(database), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
+            let (Some(database), Some(table)) = (grid.base_schema.clone(), grid.base_table.clone())
             else {
                 return Update::unchanged();
             };
@@ -7116,8 +7054,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     grid.layout_json(),
                 )
             };
-            let (Some(profile_id_hex), Some(schema), Some(table)) =
-                (profile_id_hex, schema, table)
+            let (Some(profile_id_hex), Some(schema), Some(table)) = (profile_id_hex, schema, table)
             else {
                 return Update::unchanged();
             };
@@ -7134,7 +7071,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
-        ActionId::Cancel if model.screen() == Screen::Workbench && model.workbench().completion.is_some() =>
+        ActionId::Cancel
+            if model.screen() == Screen::Workbench && model.workbench().completion.is_some() =>
         {
             model.workbench_mut().dismiss_completion();
             Update::render()
@@ -7594,11 +7532,7 @@ fn run_sql_or_bind_params(model: &mut Model) -> Update {
     };
     let session_id_hex = session.session_id_hex.clone();
     // Redis command editor: sequential pipeline (no MULTI/EXEC).
-    if model
-        .workbench()
-        .engine_kind
-        .eq_ignore_ascii_case("Redis")
-    {
+    if model.workbench().engine_kind.eq_ignore_ascii_case("Redis") {
         return run_redis_pipeline(model, session_id_hex);
     }
     // Multi-statement script: only when an explicit selection covers ≥2 spans
@@ -7649,11 +7583,7 @@ fn run_script_entire_buffer(model: &mut Model) -> Update {
         return Update::unchanged();
     };
     let session_id_hex = session.session_id_hex.clone();
-    if model
-        .workbench()
-        .engine_kind
-        .eq_ignore_ascii_case("Redis")
-    {
+    if model.workbench().engine_kind.eq_ignore_ascii_case("Redis") {
         return run_redis_pipeline(model, session_id_hex);
     }
     let Some(ed) = model.workbench_mut().active_editor_mut() else {
@@ -7674,9 +7604,7 @@ fn run_redis_pipeline(model: &mut Model, session_id_hex: String) -> Update {
     let Some(ed) = model.workbench().active_editor() else {
         return Update::unchanged();
     };
-    let text = ed
-        .run_text()
-        .unwrap_or_else(|| ed.text().to_owned());
+    let text = ed.run_text().unwrap_or_else(|| ed.text().to_owned());
     let mut commands: Vec<(String, Vec<String>)> = Vec::new();
     let mut isolated_blocking: Option<(String, String)> = None;
     for raw in text.lines() {
@@ -7722,9 +7650,7 @@ fn run_redis_pipeline(model: &mut Model, session_id_hex: String) -> Update {
     if let Some((_name, key)) = isolated_blocking {
         if !commands.is_empty() {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                grid.mark_failed(
-                    "blocking BLPOP/BRPOP must be alone for isolated connection",
-                );
+                grid.mark_failed("blocking BLPOP/BRPOP must be alone for isolated connection");
             }
             return Update::render();
         }
@@ -8121,10 +8047,8 @@ fn copy_structure_ddl(model: &mut Model) -> Update {
         }
         return Update::render();
     }
-    let (Some(schema), Some(table)) = (
-        insp.structure_schema.clone(),
-        insp.structure_table.clone(),
-    ) else {
+    let (Some(schema), Some(table)) = (insp.structure_schema.clone(), insp.structure_table.clone())
+    else {
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.error_label = Some("CopyDdl: no structure target".into());
         }
@@ -8166,11 +8090,7 @@ fn selected_connection_group(model: &Model) -> Option<String> {
             ..
         } if id.starts_with("g:") => {
             let name = id.strip_prefix("g:").unwrap_or("").to_owned();
-            if name.is_empty() {
-                None
-            } else {
-                Some(name)
-            }
+            if name.is_empty() { None } else { Some(name) }
         }
         _ => None,
     }
@@ -8187,9 +8107,7 @@ fn is_safe_group_name(name: &str) -> bool {
 
 fn relation_ddl_target(model: &Model) -> Option<(String, String)> {
     if let Some(grid) = model.workbench().active_grid() {
-        if let (Some(schema), Some(table)) =
-            (grid.base_schema.clone(), grid.base_table.clone())
-        {
+        if let (Some(schema), Some(table)) = (grid.base_schema.clone(), grid.base_table.clone()) {
             return Some((schema, table));
         }
     }
@@ -8221,11 +8139,7 @@ fn open_ddl_review(model: &mut Model, kind: &str, preview_fmt: &str) -> Update {
 }
 
 fn open_redis_stage_confirm(model: &mut Model, add: bool) -> Update {
-    if !model
-        .workbench()
-        .engine_kind
-        .eq_ignore_ascii_case("Redis")
-    {
+    if !model.workbench().engine_kind.eq_ignore_ascii_case("Redis") {
         return Update::unchanged();
     }
     let Some((logical_db, key, kind_label)) = model.workbench().redis_stage_target.clone() else {
@@ -8252,7 +8166,12 @@ fn open_redis_stage_confirm(model: &mut Model, add: bool) -> Update {
 
 fn collect_mutation_specs(
     model: &Model,
-) -> Option<(String, String, String, Vec<crate::effect::MutationChangeSpec>)> {
+) -> Option<(
+    String,
+    String,
+    String,
+    Vec<crate::effect::MutationChangeSpec>,
+)> {
     use crate::effect::MutationChangeSpec;
     // Redis collection staging path (independent of relational grid editability).
     if model.workbench().engine_kind.eq_ignore_ascii_case("Redis") {
@@ -8544,11 +8463,7 @@ fn resolve_column_index(grid: &crate::model::grid::DataGridModel, needle: &str) 
         .filter(|(_, c)| c.eq_ignore_ascii_case(needle))
         .map(|(i, _)| i)
         .collect();
-    if hits.len() == 1 {
-        Some(hits[0])
-    } else {
-        None
-    }
+    if hits.len() == 1 { Some(hits[0]) } else { None }
 }
 
 /// Parse `scope format` for CopyPick (e.g. `row csv`, `loaded:json`).
@@ -8771,9 +8686,10 @@ fn jump_to_row(model: &mut Model, target: u64) -> Update {
 }
 
 fn rebrowse_active_table(model: &mut Model) -> Update {
-    let identity = model.workbench().active_grid().and_then(|g| {
-        Some((g.base_schema.clone()?, g.base_table.clone()?))
-    });
+    let identity = model
+        .workbench()
+        .active_grid()
+        .and_then(|g| Some((g.base_schema.clone()?, g.base_table.clone()?)));
     let Some((schema, table)) = identity else {
         return Update::render();
     };
@@ -8912,10 +8828,7 @@ fn copy_cursor_cell(model: &mut Model, mode: CellCopyMode) -> Update {
     }
 }
 
-fn copy_cursor_row(
-    model: &mut Model,
-    format: crate::model::copy_format::CopyFormat,
-) -> Update {
+fn copy_cursor_row(model: &mut Model, format: crate::model::copy_format::CopyFormat) -> Update {
     use crate::model::copy_format::{CopyScope, format_copy};
     let Some(grid) = model.workbench().active_grid() else {
         return Update::unchanged();
@@ -9375,10 +9288,7 @@ fn activate_catalog_node(model: &mut Model) -> Update {
             node.kind_label.as_str(),
             "string" | "key" | "hash" | "list" | "set" | "zset" | "stream"
         ) || engine_label.eq_ignore_ascii_case("Redis")
-            && !matches!(
-                node.kind_label.as_str(),
-                "database" | "db" | "namespace"
-            );
+            && !matches!(node.kind_label.as_str(), "database" | "db" | "namespace");
         if is_redis_key {
             model.workbench_mut().open_preview_tab(node.label.clone());
             let token = model.mint_request_token();
@@ -9609,9 +9519,7 @@ fn connection_draft_from_editor(
                         account_id: reference.account_id().as_str().to_owned(),
                         vault_id: reference.vault_id().as_str().to_owned(),
                         item_id: reference.item_id().as_str().to_owned(),
-                        section_id: reference
-                            .section_id()
-                            .map(|s| s.as_str().to_owned()),
+                        section_id: reference.section_id().map(|s| s.as_str().to_owned()),
                         field_id: reference.field_id().as_str().to_owned(),
                         breadcrumb: reference.breadcrumb().to_owned(),
                     },
@@ -9964,11 +9872,13 @@ mod tests {
         model.set_action(ActionId::RunSql);
         let blocked = update(&mut model, Message::Activate);
         assert!(blocked.effects().next().is_none());
-        assert!(model
-            .workbench()
-            .active_grid()
-            .and_then(|g| g.error_label.as_deref())
-            .is_some_and(|l| l.contains("blocking")));
+        assert!(
+            model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.error_label.as_deref())
+                .is_some_and(|l| l.contains("blocking"))
+        );
     }
 
     #[test]
@@ -10029,11 +9939,13 @@ mod tests {
         model.workbench_mut().redis_collection_skip = None;
         model.set_action(ActionId::RedisCollectionMore);
         let _ = update(&mut model, Message::Activate);
-        assert!(model
-            .workbench()
-            .active_grid()
-            .and_then(|g| g.error_label.as_deref())
-            .is_some_and(|l| l.contains("no more")));
+        assert!(
+            model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.error_label.as_deref())
+                .is_some_and(|l| l.contains("no more"))
+        );
     }
 
     #[test]
@@ -10063,7 +9975,11 @@ mod tests {
             }),
         );
         assert_eq!(
-            model.workbench().redis_stage_target.as_ref().map(|t| (&t.0, &t.1, &t.2)),
+            model
+                .workbench()
+                .redis_stage_target
+                .as_ref()
+                .map(|t| (&t.0, &t.1, &t.2)),
             Some((&"0".to_owned(), &"myhash".to_owned(), &"hash".to_owned()))
         );
         let _ = model.request_focus(FocusRegion::Actions);
@@ -10075,10 +9991,7 @@ mod tests {
             Some(ConfirmDialog::StageRedis { op, key, .. })
                 if op == "hset" && key == "myhash"
         ));
-        if let Some(ConfirmDialog::StageRedis {
-            confirm_buffer, ..
-        }) = model.confirm_mut()
-        {
+        if let Some(ConfirmDialog::StageRedis { confirm_buffer, .. }) = model.confirm_mut() {
             *confirm_buffer = "field1=hello".into();
         }
         model.set_action(ActionId::Submit);
@@ -10139,11 +10052,7 @@ mod tests {
         model.set_action(ActionId::ScanRedisKeys);
         let out = update(&mut model, Message::Activate);
         match out.effects().next() {
-            Some(Effect::ScanRedisKeys {
-                pattern,
-                count,
-                ..
-            }) => {
+            Some(Effect::ScanRedisKeys { pattern, count, .. }) => {
                 assert_eq!(&*pattern, "user:*");
                 assert_eq!(*count, 100);
             }
@@ -10162,8 +10071,7 @@ mod tests {
             engine_label: "PostgreSQL".into(),
             status: Some("connected".into()),
         }));
-        model.workbench_mut().profile_id_hex =
-            Some("0000000000000001000000000000000a".into());
+        model.workbench_mut().profile_id_hex = Some("0000000000000001000000000000000a".into());
         model.workbench_mut().open_preview_tab("users");
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.base_schema = Some("public".into());
@@ -10179,10 +10087,7 @@ mod tests {
             model.confirm(),
             Some(ConfirmDialog::SaveFilter { .. })
         ));
-        if let Some(ConfirmDialog::SaveFilter {
-            confirm_buffer, ..
-        }) = model.confirm_mut()
-        {
+        if let Some(ConfirmDialog::SaveFilter { confirm_buffer, .. }) = model.confirm_mut() {
             *confirm_buffer = "active_only".into();
         }
         model.set_action(ActionId::Submit);
@@ -10247,10 +10152,7 @@ mod tests {
         }
         model.set_action(ActionId::ApplyFilter);
         let _ = update(&mut model, Message::Activate);
-        if let Some(ConfirmDialog::ApplyFilter {
-            confirm_buffer, ..
-        }) = model.confirm_mut()
-        {
+        if let Some(ConfirmDialog::ApplyFilter { confirm_buffer, .. }) = model.confirm_mut() {
             *confirm_buffer = "arch".into();
         }
         model.set_action(ActionId::Submit);
@@ -10294,10 +10196,7 @@ mod tests {
         model.set_action(ActionId::ApplyFilter);
         let _ = model.request_focus(FocusRegion::Actions);
         let _ = update(&mut model, Message::Activate);
-        if let Some(ConfirmDialog::ApplyFilter {
-            confirm_buffer, ..
-        }) = model.confirm_mut()
-        {
+        if let Some(ConfirmDialog::ApplyFilter { confirm_buffer, .. }) = model.confirm_mut() {
             *confirm_buffer = "act".into();
         }
         model.set_action(ActionId::Submit);
@@ -10320,8 +10219,7 @@ mod tests {
             engine_label: "PostgreSQL".into(),
             status: Some("connected".into()),
         }));
-        model.workbench_mut().profile_id_hex =
-            Some("0000000000000001000000000000000b".into());
+        model.workbench_mut().profile_id_hex = Some("0000000000000001000000000000000b".into());
         let json = r#"[{"name":"default","schema":"public","table":"users","raw_where":null,"filters":[{"column":"id","operator":"eq","value":"1"}]}]"#;
         let out = update(
             &mut model,
@@ -10330,8 +10228,17 @@ mod tests {
                 library_json: Some(json.into()),
             }),
         );
-        assert!(model.workbench().filter_library.get("default", "public", "users").is_some());
-        assert!(matches!(out.effects().next(), Some(Effect::LoadCatalog { .. })));
+        assert!(
+            model
+                .workbench()
+                .filter_library
+                .get("default", "public", "users")
+                .is_some()
+        );
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::LoadCatalog { .. })
+        ));
     }
 
     #[test]
@@ -10363,10 +10270,7 @@ mod tests {
             }) if database == "default" && table == "kill_mut"
         ));
         // Wrong charset stays open, no effect.
-        if let Some(ConfirmDialog::KillMutation {
-            confirm_buffer, ..
-        }) = model.confirm_mut()
-        {
+        if let Some(ConfirmDialog::KillMutation { confirm_buffer, .. }) = model.confirm_mut() {
             *confirm_buffer = "bad;drop".into();
         }
         model.set_action(ActionId::Submit);
@@ -10374,10 +10278,7 @@ mod tests {
         assert!(reject.effects().next().is_none());
         assert!(model.confirm().is_some());
         // Valid mutation id → KillClickHouseMutation effect.
-        if let Some(ConfirmDialog::KillMutation {
-            confirm_buffer, ..
-        }) = model.confirm_mut()
-        {
+        if let Some(ConfirmDialog::KillMutation { confirm_buffer, .. }) = model.confirm_mut() {
             *confirm_buffer = "mutation_2.txt".into();
         }
         model.set_action(ActionId::Submit);
@@ -10763,7 +10664,10 @@ mod tests {
             grid.error_label.as_deref(),
             Some("notice: NOTICE: table-rock-notice")
         );
-        assert_eq!(grid.notice_history.as_slice(), ["NOTICE: table-rock-notice"]);
+        assert_eq!(
+            grid.notice_history.as_slice(),
+            ["NOTICE: table-rock-notice"]
+        );
     }
 
     #[test]
@@ -10794,7 +10698,12 @@ mod tests {
             grid.identity_columns.clear();
         }
         model.set_action(ActionId::CopyPkNames);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -10825,7 +10734,12 @@ mod tests {
             grid.base_table = None;
         }
         model.set_action(ActionId::CopyTableName);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -10859,7 +10773,12 @@ mod tests {
             grid.clear_sort();
         }
         model.set_action(ActionId::CopySortBar);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -10895,7 +10814,12 @@ mod tests {
             grid.raw_where = None;
         }
         model.set_action(ActionId::CopyFiltersOnly);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -10940,13 +10864,33 @@ mod tests {
             grid.base_table = None;
         }
         model.set_action(ActionId::CopySchema);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         model.set_action(ActionId::CopySchemaIdent);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         model.set_action(ActionId::CopyBareTable);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         model.set_action(ActionId::CopyBareTableIdent);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -10990,7 +10934,12 @@ mod tests {
             other => panic!("expected grid window, got {other:?}"),
         }
         model.set_action(ActionId::CopyQuickFilter);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.quick_filter = "needle".into();
         }
@@ -11029,7 +10978,12 @@ mod tests {
         model.workbench_mut().open_preview_tab("t");
         let _ = model.request_focus(FocusRegion::Actions);
         model.set_action(ActionId::CopyQueryId);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.server_query_id = Some("tr-99-abc".into());
         }
@@ -11069,7 +11023,12 @@ mod tests {
             assert!(grid.show_all_columns());
         }
         model.set_action(ActionId::CopyHiddenColumnNames);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -11157,8 +11116,10 @@ mod tests {
             grid.viewport_row = 0;
         }
         model.set_action(ActionId::PageUp);
-        assert!(!update(&mut model, Message::Activate).needs_render()
-            || model.workbench().active_grid().map(|g| g.cursor_row) == Some(0));
+        assert!(
+            !update(&mut model, Message::Activate).needs_render()
+                || model.workbench().active_grid().map(|g| g.cursor_row) == Some(0)
+        );
         assert_eq!(
             model.workbench().active_grid().map(|g| g.cursor_row),
             Some(0)
@@ -11219,13 +11180,23 @@ mod tests {
             tab.dirty = false;
         }
         model.set_action(ActionId::CopyDirtyTabTitles);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         // Clear all preview → fail closed for preview titles.
         for tab in &mut model.workbench_mut().tabs {
             tab.preview = false;
         }
         model.set_action(ActionId::CopyPreviewTabTitles);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -11268,10 +11239,12 @@ mod tests {
         let _ = model.request_focus(FocusRegion::Actions);
         model.set_action(ActionId::CancelCellEdit);
         let _ = update(&mut model, Message::Activate);
-        assert!(model
-            .workbench()
-            .active_grid()
-            .is_some_and(|g| g.cell_edit.is_none()));
+        assert!(
+            model
+                .workbench()
+                .active_grid()
+                .is_some_and(|g| g.cell_edit.is_none())
+        );
         model.set_action(ActionId::CancelCellEdit);
         assert!(!update(&mut model, Message::Activate).needs_render());
     }
@@ -11334,10 +11307,12 @@ mod tests {
         }
         model.set_action(ActionId::CommitCellEdit);
         let _ = update(&mut model, Message::Activate);
-        assert!(model
-            .workbench()
-            .active_grid()
-            .is_some_and(|g| g.cell_edit.is_none()));
+        assert!(
+            model
+                .workbench()
+                .active_grid()
+                .is_some_and(|g| g.cell_edit.is_none())
+        );
         assert_eq!(
             model
                 .workbench()
@@ -11408,15 +11383,25 @@ mod tests {
             grid.cancel_cell_edit();
         }
         model.set_action(ActionId::CopyCellEditBuffer);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         model.set_action(ActionId::CopyCellEditOriginal);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
     fn copy_cursor_staged_diff_action() {
-        use tablerock_core::ProfileSafetyMode;
         use crate::model::mutation_draft::StagedCellEdit;
+        use tablerock_core::ProfileSafetyMode;
         let mut model = Model::default();
         model.set_screen(Screen::Workbench);
         model.set_session(Some(SessionFacts {
@@ -11469,13 +11454,18 @@ mod tests {
             grid.drafts.discard_all();
         }
         model.set_action(ActionId::CopyCursorStagedDiff);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
     fn copy_staged_status_action() {
-        use tablerock_core::ProfileSafetyMode;
         use crate::model::mutation_draft::StagedCellEdit;
+        use tablerock_core::ProfileSafetyMode;
         let mut model = Model::default();
         model.set_screen(Screen::Workbench);
         model.set_session(Some(SessionFacts {
@@ -11510,7 +11500,12 @@ mod tests {
         }
         let _ = model.request_focus(FocusRegion::Actions);
         model.set_action(ActionId::CopyStagedStatus);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             assert!(grid.drafts.stage_cell_edit(StagedCellEdit {
                 abs_row: 0,
@@ -11665,7 +11660,12 @@ mod tests {
             grid.cursor_col = 0;
         }
         model.set_action(ActionId::CopyUpdateWhereSql);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -11720,9 +11720,19 @@ mod tests {
             grid.identity_columns.clear();
         }
         model.set_action(ActionId::CopyDeleteWhereSql);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         model.set_action(ActionId::CopyExistsSql);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -11790,10 +11800,7 @@ mod tests {
         model.set_action(ActionId::CopyInsertLoadedSql);
         match update(&mut model, Message::Activate).effects().next() {
             Some(Effect::CopyToClipboard { text, .. }) => {
-                assert!(
-                    text.contains(r#"INSERT INTO "public"."users""#),
-                    "{text}"
-                );
+                assert!(text.contains(r#"INSERT INTO "public"."users""#), "{text}");
                 assert!(text.contains("(7, 'ada')"), "{text}");
             }
             other => panic!("expected INSERT loaded, got {other:?}"),
@@ -11817,9 +11824,19 @@ mod tests {
             grid.base_table = None;
         }
         model.set_action(ActionId::CopyInsertSql);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         model.set_action(ActionId::CopyInsertRowSql);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -11937,7 +11954,10 @@ mod tests {
             Some(Effect::CopyToClipboard { text, .. }) => {
                 assert!(text.starts_with("SELECT \"id\", \"name\"\n"), "{text}");
                 assert!(text.contains("FROM \"public\".\"users\""), "{text}");
-                assert!(text.contains("ORDER BY \"name\" ASC, \"id\" DESC"), "{text}");
+                assert!(
+                    text.contains("ORDER BY \"name\" ASC, \"id\" DESC"),
+                    "{text}"
+                );
             }
             other => panic!("expected SELECT ORDER, got {other:?}"),
         }
@@ -12028,7 +12048,12 @@ mod tests {
             grid.base_table = None;
         }
         model.set_action(ActionId::CopyCountSql);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -12080,7 +12105,12 @@ mod tests {
             grid.identity_columns.clear();
         }
         model.set_action(ActionId::CopySelectWhereSql);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -12106,10 +12136,7 @@ mod tests {
         model.set_action(ActionId::CopySelectSql);
         match update(&mut model, Message::Activate).effects().next() {
             Some(Effect::CopyToClipboard { text, .. }) => {
-                assert_eq!(
-                    text,
-                    "SELECT \"id\"\nFROM \"public\".\"users\""
-                );
+                assert_eq!(text, "SELECT \"id\"\nFROM \"public\".\"users\"");
             }
             other => panic!("expected SELECT sql, got {other:?}"),
         }
@@ -12118,7 +12145,12 @@ mod tests {
             grid.base_table = None;
         }
         model.set_action(ActionId::CopySelectSql);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -12185,7 +12217,12 @@ mod tests {
             grid.identity_columns.clear();
         }
         model.set_action(ActionId::CopyPkIdents);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -12267,8 +12304,7 @@ mod tests {
         }
         model.workbench_mut().context.connection_name = "prod-pg".into();
         model.workbench_mut().context.engine_label = "PostgreSQL".into();
-        model.workbench_mut().profile_id_hex =
-            Some("00112233445566778899aabbccddeeff".into());
+        model.workbench_mut().profile_id_hex = Some("00112233445566778899aabbccddeeff".into());
         model.set_action(ActionId::CopyConnectionName);
         match update(&mut model, Message::Activate).effects().next() {
             Some(Effect::CopyToClipboard { text, .. }) => {
@@ -12382,7 +12418,12 @@ mod tests {
         model.workbench_mut().open_preview_tab("t");
         let _ = model.request_focus(FocusRegion::Actions);
         model.set_action(ActionId::CopyResultToken);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.result_token = 42;
         }
@@ -12407,7 +12448,12 @@ mod tests {
         model.workbench_mut().open_preview_tab("t");
         let _ = model.request_focus(FocusRegion::Actions);
         model.set_action(ActionId::CopyServerProgress);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.server_progress = Some("read 10 rows · 128 B".into());
         }
@@ -12754,24 +12800,33 @@ mod tests {
             model.workbench().active_grid().unwrap().quick_filter,
             "needle"
         );
-        assert!(model
-            .workbench()
-            .active_grid()
-            .unwrap()
-            .filter_chip_bar()
-            .unwrap()
-            .contains("[page:needle]"));
+        assert!(
+            model
+                .workbench()
+                .active_grid()
+                .unwrap()
+                .filter_chip_bar()
+                .unwrap()
+                .contains("[page:needle]")
+        );
         model.set_action(ActionId::ClearQuickFilter);
         let cleared = update(&mut model, Message::Activate);
         assert!(cleared.effects().next().is_none());
-        assert!(model
-            .workbench()
-            .active_grid()
-            .unwrap()
-            .quick_filter
-            .is_empty());
+        assert!(
+            model
+                .workbench()
+                .active_grid()
+                .unwrap()
+                .quick_filter
+                .is_empty()
+        );
         // Second clear is no-op.
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -12804,7 +12859,12 @@ mod tests {
             other => panic!("expected BrowseTable cleared sort, got {other:?}"),
         }
         // No sort: no-op
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -12962,7 +13022,12 @@ mod tests {
             };
         }
         model.set_action(ActionId::FilterLike);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         // Comparison operators on numeric text
         if let Some(g) = model.workbench_mut().active_grid_mut() {
             g.filters.clear();
@@ -13311,9 +13376,7 @@ mod tests {
         model.set_action(ActionId::ClearFilters);
         let cleared = update(&mut model, Message::Activate);
         match cleared.effects().next() {
-            Some(Effect::BrowseTable {
-                sort, filters, ..
-            }) => {
+            Some(Effect::BrowseTable { sort, filters, .. }) => {
                 assert!(sort.is_empty());
                 assert!(filters.is_empty());
             }
@@ -13383,7 +13446,12 @@ mod tests {
     fn health_tick_probes_only_when_auto_reconnect_and_session() {
         let mut model = Model::default();
         // No session: no effect.
-        assert!(update(&mut model, Message::HealthTick).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::HealthTick)
+                .effects()
+                .next()
+                .is_none()
+        );
         model.set_session(Some(SessionFacts {
             session_id_hex: "00000000000000010000000000000077".into(),
             identity: "pg".into(),
@@ -13393,7 +13461,12 @@ mod tests {
         }));
         // Manual: no continuous probe.
         model.reconnect_preference = "Manual".into();
-        assert!(update(&mut model, Message::HealthTick).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::HealthTick)
+                .effects()
+                .next()
+                .is_none()
+        );
         // BoundedAutomatic: emit CheckSessionHealth.
         model.reconnect_preference = "BoundedAutomatic".into();
         let out = update(&mut model, Message::HealthTick);
@@ -13411,7 +13484,12 @@ mod tests {
             engine_label: "PostgreSQL".into(),
             status: Some("reconnecting attempt 1".into()),
         }));
-        assert!(update(&mut model, Message::HealthTick).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::HealthTick)
+                .effects()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -13470,10 +13548,12 @@ mod tests {
             }
             other => panic!("expected ReconnectSession re-dispatch, got {other:?}"),
         }
-        assert!(model
-            .session()
-            .and_then(|s| s.status.as_deref())
-            .is_some_and(|s| s.contains("reconnecting attempt 2")));
+        assert!(
+            model
+                .session()
+                .and_then(|s| s.status.as_deref())
+                .is_some_and(|s| s.contains("reconnecting attempt 2"))
+        );
     }
 
     #[test]
@@ -13510,19 +13590,14 @@ mod tests {
                 ..
             }) if old_name == "dev"
         ));
-        if let Some(ConfirmDialog::RenameGroup {
-            confirm_buffer, ..
-        }) = model.confirm_mut()
-        {
+        if let Some(ConfirmDialog::RenameGroup { confirm_buffer, .. }) = model.confirm_mut() {
             *confirm_buffer = "prod".into();
         }
         model.set_action(ActionId::Submit);
         let out = update(&mut model, Message::Activate);
         match out.effects().next() {
             Some(Effect::RenameGroup {
-                old_name,
-                new_name,
-                ..
+                old_name, new_name, ..
             }) => {
                 assert_eq!(old_name, "dev");
                 assert_eq!(new_name, "prod");
@@ -13577,24 +13652,16 @@ mod tests {
         assert!(ask.effects().next().is_none());
         assert!(matches!(
             model.confirm(),
-            Some(ConfirmDialog::RedisSubscribe {
-                pattern: false,
-                ..
-            })
+            Some(ConfirmDialog::RedisSubscribe { pattern: false, .. })
         ));
-        if let Some(ConfirmDialog::RedisSubscribe {
-            confirm_buffer, ..
-        }) = model.confirm_mut()
-        {
+        if let Some(ConfirmDialog::RedisSubscribe { confirm_buffer, .. }) = model.confirm_mut() {
             *confirm_buffer = "news".into();
         }
         model.set_action(ActionId::Submit);
         let out = update(&mut model, Message::Activate);
         match out.effects().next() {
             Some(Effect::RedisSubscribe {
-                selector,
-                pattern,
-                ..
+                selector, pattern, ..
             }) => {
                 assert_eq!(selector, "news");
                 assert!(!pattern);
@@ -13650,14 +13717,16 @@ mod tests {
         assert!(done.needs_render());
         assert!(model.workbench().inspector.open);
         assert!(model.workbench().inspector.title.contains("cancelled"));
-        assert!(model
-            .workbench()
-            .active_grid()
-            .unwrap()
-            .operation
-            .label()
-            .to_ascii_lowercase()
-            .contains("cancel"));
+        assert!(
+            model
+                .workbench()
+                .active_grid()
+                .unwrap()
+                .operation
+                .label()
+                .to_ascii_lowercase()
+                .contains("cancel")
+        );
     }
 
     #[test]
@@ -13677,11 +13746,13 @@ mod tests {
             }),
         );
         assert!(out.needs_render());
-        assert!(model
-            .workbench()
-            .active_grid()
-            .and_then(|g| g.error_label.as_deref())
-            .is_some_and(|l| l.contains("permission denied") && l.contains("cancel")));
+        assert!(
+            model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.error_label.as_deref())
+                .is_some_and(|l| l.contains("permission denied") && l.contains("cancel"))
+        );
     }
 
     #[test]
@@ -13756,9 +13827,7 @@ mod tests {
             }),
         );
         match applied.effects().next() {
-            Some(Effect::BrowseTable {
-                table, filters, ..
-            }) => {
+            Some(Effect::BrowseTable { table, filters, .. }) => {
                 assert_eq!(table, "users");
                 assert_eq!(filters.len(), 2);
                 assert_eq!(filters[0].0, "tenant_id");
@@ -13801,8 +13870,7 @@ mod tests {
             }) if path.ends_with(".sql") && text == "SELECT 7"
         ));
         // Intent requires a profile id.
-        model.workbench_mut().profile_id_hex =
-            Some("00000000000000010000000000000001".into());
+        model.workbench_mut().profile_id_hex = Some("00000000000000010000000000000001".into());
         model.set_action(ActionId::SaveIntent);
         let intent = update(&mut model, Message::Activate);
         assert!(matches!(
@@ -13858,7 +13926,10 @@ mod tests {
         assert!(filled.needs_render());
         model.set_action(ActionId::RestoreHistory);
         let restore = update(&mut model, Message::Activate);
-        assert!(restore.effects().next().is_none(), "restore must not auto-execute");
+        assert!(
+            restore.effects().next().is_none(),
+            "restore must not auto-execute"
+        );
         let editor = model.workbench().active_editor().expect("sql tab");
         assert_eq!(editor.text(), "SELECT 42");
         assert!(!model.workbench().history.is_open());
@@ -13889,7 +13960,8 @@ mod tests {
         match effect {
             Effect::ExecuteSql { statement, .. } => {
                 assert!(
-                    statement.contains("SELECT 2") || statement.trim_start().starts_with("SELECT 2"),
+                    statement.contains("SELECT 2")
+                        || statement.trim_start().starts_with("SELECT 2"),
                     "{statement}"
                 );
             }
@@ -13961,10 +14033,7 @@ mod tests {
         );
         assert!(observed.needs_render());
         let grid = model.workbench().active_grid().unwrap();
-        assert_eq!(
-            grid.operation,
-            GridOperationState::ServerConfirmedCancelled
-        );
+        assert_eq!(grid.operation, GridOperationState::ServerConfirmedCancelled);
         assert_eq!(grid.operation.label(), "server confirmed cancelled");
         assert_eq!(
             grid.error_label.as_deref(),
@@ -14174,14 +14243,16 @@ mod tests {
         model.set_action(ActionId::ApplyMutations);
         let blocked = update(&mut model, Message::Activate);
         assert!(blocked.effects().next().is_none());
-        assert!(model
-            .workbench()
-            .active_grid()
-            .unwrap()
-            .error_label
-            .as_deref()
-            .unwrap_or("")
-            .contains("review required"));
+        assert!(
+            model
+                .workbench()
+                .active_grid()
+                .unwrap()
+                .error_label
+                .as_deref()
+                .unwrap_or("")
+                .contains("review required")
+        );
         // Review dispatches ReviewMutations with change specs (registry path).
         model.set_action(ActionId::ReviewMutations);
         let reviewed = update(&mut model, Message::Activate);
@@ -14259,7 +14330,10 @@ mod tests {
         assert!(wrong.effects().next().is_none());
         assert!(model.confirm().is_some());
         // Paste exact name then submit.
-        let _ = update(&mut model, Message::Paste(PasteText::bounded("users".into())));
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("users".into())),
+        );
         model.set_action(ActionId::Submit);
         let ok = update(&mut model, Message::Activate);
         assert!(matches!(
@@ -14310,10 +14384,7 @@ mod tests {
         let same = update(&mut model, Message::Activate);
         assert!(same.effects().next().is_none());
         // New name dispatches rename.
-        if let Some(ConfirmDialog::RenameTable {
-            confirm_buffer, ..
-        }) = model.confirm_mut()
-        {
+        if let Some(ConfirmDialog::RenameTable { confirm_buffer, .. }) = model.confirm_mut() {
             *confirm_buffer = "users_v2".into();
         }
         model.set_action(ActionId::Submit);
@@ -14404,10 +14475,10 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
             stale: false,
             structure_schema: Some("public".into()),
             structure_table: Some("users".into()),
-                hex_source: String::new(),
-                hex_offset: 0,
-                tree_source: String::new(),
-                tree_depth: 0
+            hex_source: String::new(),
+            hex_offset: 0,
+            tree_source: String::new(),
+            tree_depth: 0,
         };
         let _ = model.request_focus(FocusRegion::Actions);
         model.set_action(ActionId::CopyStructureDdl);
@@ -14488,7 +14559,12 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
             Some(ConfirmDialog::AnalyzeTable { table, .. }) if table == "orders"
         ));
         model.set_action(ActionId::Submit);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         let _ = update(
             &mut model,
             Message::Paste(PasteText::bounded("orders".into())),
@@ -14525,7 +14601,12 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
                 if table == "events" && schema == "default"
         ));
         model.set_action(ActionId::Submit);
-        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        assert!(
+            update(&mut model, Message::Activate)
+                .effects()
+                .next()
+                .is_none()
+        );
         let _ = update(
             &mut model,
             Message::Paste(PasteText::bounded("events".into())),
@@ -14867,9 +14948,7 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
 
     #[test]
     fn quick_switch_ranks_profiles_on_connections() {
-        use crate::model::profiles::{
-            LiveConnectionState, ProfileListState, ProfileRowProjection,
-        };
+        use crate::model::profiles::{LiveConnectionState, ProfileListState, ProfileRowProjection};
         let mut model = Model::default();
         model.set_screen(Screen::Connections);
         model.set_profiles(ProfileListState::Loaded {
@@ -14957,10 +15036,7 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
         let out = update(&mut model, Message::Activate);
         assert!(matches!(
             out.effects().next(),
-            Some(Effect::LoadNamedQuery {
-                query_id: 42,
-                ..
-            })
+            Some(Effect::LoadNamedQuery { query_id: 42, .. })
         ));
     }
 
@@ -15017,11 +15093,13 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
         model.set_action(ActionId::Explain);
         let out = update(&mut model, Message::Activate);
         assert!(out.effects().next().is_none());
-        assert!(model
-            .workbench()
-            .active_grid()
-            .and_then(|g| g.error_label.as_ref())
-            .is_some_and(|e| e.contains("unsupported")));
+        assert!(
+            model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.error_label.as_ref())
+                .is_some_and(|e| e.contains("unsupported"))
+        );
     }
 
     #[test]
@@ -15083,9 +15161,7 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
 
     #[test]
     fn open_external_url_matches_saved_profile() {
-        use crate::model::profiles::{
-            LiveConnectionState, ProfileListState, ProfileRowProjection,
-        };
+        use crate::model::profiles::{LiveConnectionState, ProfileListState, ProfileRowProjection};
         let mut model = Model::default();
         model.set_screen(Screen::Connections);
         model.set_profiles(ProfileListState::Loaded {
@@ -15155,11 +15231,13 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
         model.set_action(ActionId::Submit);
         let _ = update(&mut model, Message::Activate);
         assert!(model.confirm().is_none());
-        assert!(model
-            .editor()
-            .validation_error
-            .as_deref()
-            .is_some_and(|e| e.contains("hostile") || e.contains("unsupported")));
+        assert!(
+            model
+                .editor()
+                .validation_error
+                .as_deref()
+                .is_some_and(|e| e.contains("hostile") || e.contains("unsupported"))
+        );
     }
 
     #[test]
@@ -15252,10 +15330,10 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
             stale: false,
             structure_schema: Some("public".into()),
             structure_table: Some("orders".into()),
-                hex_source: String::new(),
-                hex_offset: 0,
-                tree_source: String::new(),
-                tree_depth: 0
+            hex_source: String::new(),
+            hex_offset: 0,
+            tree_source: String::new(),
+            tree_depth: 0,
         };
         let _ = model.request_focus(FocusRegion::Actions);
         model.set_action(ActionId::DdlAddColumn);
@@ -15446,8 +15524,7 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
             .active_grid()
             .and_then(|g| g.error_label.clone());
         assert!(
-            err.as_deref()
-                .is_some_and(|e| e.contains("base table")),
+            err.as_deref().is_some_and(|e| e.contains("base table")),
             "{err:?}"
         );
     }

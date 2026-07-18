@@ -40,7 +40,10 @@ impl RuntimeOwner {
         Ok(())
     }
 
-    pub(crate) fn block_on<T>(&self, future: impl std::future::Future<Output = T> + Send) -> Result<T, BridgeError>
+    pub(crate) fn block_on<T>(
+        &self,
+        future: impl std::future::Future<Output = T> + Send,
+    ) -> Result<T, BridgeError>
     where
         T: Send,
     {

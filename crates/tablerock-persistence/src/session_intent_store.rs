@@ -59,9 +59,7 @@ pub async fn get(
     let Some(row) = rows.next().await.map_err(|_| PersistenceError::Query)? else {
         return Ok(None);
     };
-    let _blob = row
-        .get::<Vec<u8>>(0)
-        .map_err(|_| PersistenceError::Query)?;
+    let _blob = row.get::<Vec<u8>>(0).map_err(|_| PersistenceError::Query)?;
     let intent_json = row.get::<String>(1).map_err(|_| PersistenceError::Query)?;
     let updated_at = row.get::<String>(2).map_err(|_| PersistenceError::Query)?;
     Ok(Some(SessionIntentRecord {

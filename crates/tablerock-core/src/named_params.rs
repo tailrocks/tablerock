@@ -34,7 +34,10 @@ impl fmt::Display for NamedParamError {
         match self {
             Self::EmptyName => f.write_str("parameter name is empty"),
             Self::NameTooLong { actual } => {
-                write!(f, "parameter name {actual} bytes exceeds max {MAX_PARAM_NAME_BYTES}")
+                write!(
+                    f,
+                    "parameter name {actual} bytes exceeds max {MAX_PARAM_NAME_BYTES}"
+                )
             }
             Self::TooManyParams { actual } => {
                 write!(f, "parameter count {actual} exceeds max {MAX_NAMED_PARAMS}")
@@ -146,9 +149,7 @@ pub fn rewrite_named_params(sql: &str) -> Result<NamedParamPlan, NamedParamError
         {
             let name_start = i + 1;
             let mut j = name_start;
-            while j < bytes.len()
-                && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_')
-            {
+            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
                 j += 1;
             }
             let name = &sql[name_start..j];
@@ -156,9 +157,7 @@ pub fn rewrite_named_params(sql: &str) -> Result<NamedParamPlan, NamedParamError
                 return Err(NamedParamError::EmptyName);
             }
             if name.len() > MAX_PARAM_NAME_BYTES {
-                return Err(NamedParamError::NameTooLong {
-                    actual: name.len(),
-                });
+                return Err(NamedParamError::NameTooLong { actual: name.len() });
             }
             if !is_valid_name(name) {
                 return Err(NamedParamError::InvalidName {
@@ -263,18 +262,12 @@ mod tests {
         let plan =
             rewrite_named_params("SELECT :id::int, :name, :id FROM t WHERE x = :name").unwrap();
         assert_eq!(plan.names, vec!["id".to_owned(), "name".to_owned()]);
-        assert_eq!(
-            plan.sql,
-            "SELECT $1::int, $2, $1 FROM t WHERE x = $2"
-        );
+        assert_eq!(plan.sql, "SELECT $1::int, $2, $1 FROM t WHERE x = $2");
     }
 
     #[test]
     fn ignores_params_inside_strings_and_comments() {
-        let plan = rewrite_named_params(
-            "SELECT ':not' /* :nope */, -- :no\n :yes FROM t",
-        )
-        .unwrap();
+        let plan = rewrite_named_params("SELECT ':not' /* :nope */, -- :no\n :yes FROM t").unwrap();
         assert_eq!(plan.names, vec!["yes".to_owned()]);
         assert!(plan.sql.contains("$1"));
         assert!(plan.sql.contains("':not'"));

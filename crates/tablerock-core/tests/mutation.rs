@@ -192,9 +192,7 @@ fn redis_collection_mutations_are_sequential_and_engine_gated() {
                 logical_database: 0,
                 key: bytes(b"k"),
             },
-            vec![MutationChange::RedisHashDeleteField {
-                field: bytes(b""),
-            }],
+            vec![MutationChange::RedisHashDeleteField { field: bytes(b"") }],
             limits(),
         ),
         Err(MutationBuildError::EmptyFields { change: 0 })

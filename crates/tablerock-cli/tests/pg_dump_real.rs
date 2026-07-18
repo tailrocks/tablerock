@@ -8,7 +8,8 @@ use std::{
 };
 
 use tablerock_cli::{
-    PgToolRunOutcome, cancel_channel, discover_tool, run_pg_dump, run_pg_restore, validate_dump_path,
+    PgToolRunOutcome, cancel_channel, discover_tool, run_pg_dump, run_pg_restore,
+    validate_dump_path,
 };
 use tablerock_core::{BoundedText, ByteLimit};
 use tablerock_engine::{PostgresConnectConfig, PostgresSession, PostgresTlsMode};

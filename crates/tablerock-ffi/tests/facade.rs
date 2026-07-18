@@ -43,7 +43,9 @@ impl DriverSession for FixedPageSession {
         _request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
         let page = self.page.clone();
-        Box::pin(async move { Ok(Box::new(OnePageStream(Some(page))) as Box<dyn DriverPageStream>) })
+        Box::pin(
+            async move { Ok(Box::new(OnePageStream(Some(page))) as Box<dyn DriverPageStream>) },
+        )
     }
 
     fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
@@ -51,9 +53,7 @@ impl DriverSession for FixedPageSession {
     }
 
     fn health<'a>(&'a self) -> DriverFuture<'a, Result<SessionHealth, AdapterError>> {
-        Box::pin(async {
-            Ok(SessionHealth::new(Engine::PostgreSql, true, 0))
-        })
+        Box::pin(async { Ok(SessionHealth::new(Engine::PostgreSql, true, 0)) })
     }
 
     fn catalog<'a>(
@@ -69,9 +69,7 @@ impl DriverSession for FixedPageSession {
     }
 
     fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>> {
-        Box::pin(async {
-            Ok(ServerDescribe::new(Engine::PostgreSql, "test", 0))
-        })
+        Box::pin(async { Ok(ServerDescribe::new(Engine::PostgreSql, "test", 0)) })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
@@ -163,8 +161,8 @@ fn open_submit_pump_fetch_shutdown_round_trip() {
         .unwrap();
     assert_eq!(fetched, expected_bytes);
 
-    let decoded = ResultPage::decode_v1(&fetched, PageLimits::new(500, 64, 1024 * 1024, 64 * 1024))
-        .unwrap();
+    let decoded =
+        ResultPage::decode_v1(&fetched, PageLimits::new(500, 64, 1024 * 1024, 64 * 1024)).unwrap();
     assert_eq!(decoded.cell(0, 0).unwrap().bytes(), &42_i64.to_be_bytes());
 
     let shutdown = bridge.shutdown(false, 1_000).unwrap();

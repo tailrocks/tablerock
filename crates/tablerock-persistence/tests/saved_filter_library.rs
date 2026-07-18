@@ -48,15 +48,21 @@ fn put_get_delete_saved_filter_library() {
     );
 
     // Reject result-shaped / secret-shaped payloads.
-    assert!(actor
-        .put_saved_filter_library(id, r#"{"cells":[]}"#.into())
-        .is_err());
-    assert!(actor
-        .put_saved_filter_library(id, r#"[{"password":"x"}]"#.into())
-        .is_err());
-    assert!(actor
-        .put_saved_filter_library(id, "not-json".into())
-        .is_err());
+    assert!(
+        actor
+            .put_saved_filter_library(id, r#"{"cells":[]}"#.into())
+            .is_err()
+    );
+    assert!(
+        actor
+            .put_saved_filter_library(id, r#"[{"password":"x"}]"#.into())
+            .is_err()
+    );
+    assert!(
+        actor
+            .put_saved_filter_library(id, "not-json".into())
+            .is_err()
+    );
 
     actor.delete_saved_filter_library(id).expect("delete");
     assert!(actor.get_saved_filter_library(id).expect("get3").is_none());

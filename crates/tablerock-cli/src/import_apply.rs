@@ -52,12 +52,17 @@ pub async fn apply_csv_inserts(
     now_ms: u64,
     review_validity_ms: u64,
 ) -> Result<MutationApplyOutcome, ImportApplyError> {
-    let changes =
-        csv_to_insert_changes(table, max_cell_bytes).map_err(ImportApplyError::Csv)?;
+    let changes = csv_to_insert_changes(table, max_cell_bytes).map_err(ImportApplyError::Csv)?;
     validate_insert_batch_size(&changes, max_changes)
         .map_err(|e| ImportApplyError::Plan(e.to_string()))?;
-    let limits = MutationPlanLimits::new(max_changes, 64, 64 * 1024, 4 * 1024 * 1024, review_validity_ms)
-        .map_err(|e| ImportApplyError::Plan(e.to_string()))?;
+    let limits = MutationPlanLimits::new(
+        max_changes,
+        64,
+        64 * 1024,
+        4 * 1024 * 1024,
+        review_validity_ms,
+    )
+    .map_err(|e| ImportApplyError::Plan(e.to_string()))?;
     let plan = MutationPlan::new(mutation_id, scope, revision, target, changes, limits)
         .map_err(|e| ImportApplyError::Plan(e.to_string()))?;
     let expires = now_ms
@@ -66,8 +71,8 @@ pub async fn apply_csv_inserts(
     let reviewed = plan
         .review(review_token_id, now_ms, expires)
         .map_err(|e| ImportApplyError::Review(e.to_string()))?;
-    let mut registry = MutationReviewRegistry::new(16)
-        .map_err(|e| ImportApplyError::Review(e.to_string()))?;
+    let mut registry =
+        MutationReviewRegistry::new(16).map_err(|e| ImportApplyError::Review(e.to_string()))?;
     registry
         .insert(reviewed, now_ms)
         .map_err(|e| ImportApplyError::Review(e.to_string()))?;

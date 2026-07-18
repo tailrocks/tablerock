@@ -117,7 +117,11 @@ async fn clickhouse_startup_actions_auto_run() {
     .unwrap();
     let report = run_clickhouse_startup_actions(&session, &set, false).await;
     assert_eq!(
-        report.outcomes().iter().map(|(_, o)| *o).collect::<Vec<_>>(),
+        report
+            .outcomes()
+            .iter()
+            .map(|(_, o)| *o)
+            .collect::<Vec<_>>(),
         vec![
             StartupActionOutcome::Succeeded,
             StartupActionOutcome::SkippedNeedsReview,
@@ -153,7 +157,11 @@ async fn redis_startup_actions_auto_run() {
     .unwrap();
     let report = run_redis_startup_actions(&session, &set, false).await;
     assert_eq!(
-        report.outcomes().iter().map(|(_, o)| *o).collect::<Vec<_>>(),
+        report
+            .outcomes()
+            .iter()
+            .map(|(_, o)| *o)
+            .collect::<Vec<_>>(),
         vec![
             StartupActionOutcome::Succeeded,
             StartupActionOutcome::SkippedNeedsReview,

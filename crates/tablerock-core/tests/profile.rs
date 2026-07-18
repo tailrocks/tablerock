@@ -93,7 +93,8 @@ fn ssh_tunnel_properties_bind_as_optional_literals_and_secrets() {
     let set = ProfilePropertySet::new(vec![
         ProfilePropertyBinding::literal(ProfileProperty::Host, text("db.internal")).unwrap(),
         ProfilePropertyBinding::literal(ProfileProperty::Port, text("5432")).unwrap(),
-        ProfilePropertyBinding::literal(ProfileProperty::SshHost, text("bastion.internal")).unwrap(),
+        ProfilePropertyBinding::literal(ProfileProperty::SshHost, text("bastion.internal"))
+            .unwrap(),
         ProfilePropertyBinding::literal(ProfileProperty::SshPort, text("22")).unwrap(),
         ProfilePropertyBinding::literal(ProfileProperty::SshUsername, text("tunnel")).unwrap(),
         ProfilePropertyBinding::literal(

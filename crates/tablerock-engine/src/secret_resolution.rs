@@ -55,7 +55,9 @@ impl fmt::Debug for ResolvedSecret {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecretResolutionError {
-    SourceNotYetSupported { kind: SecretSourceKindLabel },
+    SourceNotYetSupported {
+        kind: SecretSourceKindLabel,
+    },
     PromptFailed,
     MissingSource,
     /// Named environment variable is unset or empty (fail closed).
@@ -112,10 +114,7 @@ pub trait SecretPromptPort: Send {
 
 /// Port for account-pinned `op read`. Default implementation spawns the CLI.
 pub trait OnePasswordReadPort: Send {
-    fn read(
-        &mut self,
-        reference: &OnePasswordReference,
-    ) -> Result<Vec<u8>, SecretResolutionError>;
+    fn read(&mut self, reference: &OnePasswordReference) -> Result<Vec<u8>, SecretResolutionError>;
 }
 
 /// Bounded `op read --account <id> --no-newline <uri>` implementation.
@@ -138,10 +137,7 @@ impl Default for OpCliReader {
 }
 
 impl OnePasswordReadPort for OpCliReader {
-    fn read(
-        &mut self,
-        reference: &OnePasswordReference,
-    ) -> Result<Vec<u8>, SecretResolutionError> {
+    fn read(&mut self, reference: &OnePasswordReference) -> Result<Vec<u8>, SecretResolutionError> {
         let uri = reference.secret_reference_uri();
         let mut child = Command::new(&self.program)
             .args([
@@ -172,7 +168,9 @@ impl OnePasswordReadPort for OpCliReader {
                                     if stdout.len() + n > self.max_output_bytes {
                                         stdout.zeroize();
                                         buf.zeroize();
-                                        return Err(SecretResolutionError::OnePasswordOutputTooLarge);
+                                        return Err(
+                                            SecretResolutionError::OnePasswordOutputTooLarge,
+                                        );
                                     }
                                     stdout.extend_from_slice(&buf[..n]);
                                 }
@@ -395,8 +393,7 @@ mod tests {
         } else if std::env::var_os("HOME").is_some() {
             "HOME"
         } else {
-            let missing =
-                EnvironmentReference::parse("TABLEROCK_TEST_SECRET_MISSING_XYZ").unwrap();
+            let missing = EnvironmentReference::parse("TABLEROCK_TEST_SECRET_MISSING_XYZ").unwrap();
             let binding_missing = ProfilePropertyBinding::secret(
                 ProfileProperty::Password,
                 SecretSource::new(SecretSourceKind::HostEnvironment(missing)),

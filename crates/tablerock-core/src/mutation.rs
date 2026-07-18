@@ -231,10 +231,7 @@ impl fmt::Debug for MutationChange {
                     .field("kind", &"redis_set_remove_member")
                     .field("member_bytes", &member.len());
             }
-            Self::RedisZSetAddMember {
-                member,
-                score_bits,
-            } => {
+            Self::RedisZSetAddMember { member, score_bits } => {
                 debug
                     .field("kind", &"redis_zset_add_member")
                     .field("member_bytes", &member.len())

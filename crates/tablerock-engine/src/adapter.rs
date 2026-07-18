@@ -244,11 +244,7 @@ impl AdapterError {
 impl fmt::Display for AdapterError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.class == AdapterFailureClass::PermissionDenied {
-            return write!(
-                formatter,
-                "permission denied ({:?})",
-                self.engine
-            );
+            return write!(formatter, "permission denied ({:?})", self.engine);
         }
         write!(
             formatter,
@@ -550,8 +546,7 @@ impl DriverSession for PostgresSession {
                 .into_iter()
                 .map(|delivery| match delivery {
                     crate::PostgresNoticeDelivery::Notice(notice) => {
-                        let mut line =
-                            format!("{}: {}", notice.severity(), notice.message());
+                        let mut line = format!("{}: {}", notice.severity(), notice.message());
                         if let Some(detail) = notice.detail() {
                             if !detail.is_empty() {
                                 line.push_str(" · detail: ");
@@ -922,10 +917,7 @@ impl DriverSession for RedisSession {
                 .await
                 .map(|t| format!("{t:?}"))
                 .unwrap_or_else(|_| "unavailable".into());
-            let mut lines = vec![
-                format!("type: {kind:?}"),
-                format!("ttl: {ttl}"),
-            ];
+            let mut lines = vec![format!("type: {kind:?}"), format!("ttl: {ttl}")];
             let kind_label = match kind {
                 RedisKeyKind::String => "string",
                 RedisKeyKind::Hash => "hash",
@@ -941,13 +933,12 @@ impl DriverSession for RedisSession {
                     if let Ok(Some(v)) = self.read_binary(&key, 4 * 1024).await {
                         let bytes = match v.as_ref() {
                             tablerock_core::ValueRef::Binary { value, .. } => value.to_vec(),
-                            tablerock_core::ValueRef::Text { value, .. } => value.as_bytes().to_vec(),
+                            tablerock_core::ValueRef::Text { value, .. } => {
+                                value.as_bytes().to_vec()
+                            }
                             _ => Vec::new(),
                         };
-                        lines.push(format!(
-                            "value: {}",
-                            String::from_utf8_lossy(&bytes)
-                        ));
+                        lines.push(format!("value: {}", String::from_utf8_lossy(&bytes)));
                         if v.is_truncated() {
                             lines.push("truncated: yes".into());
                         }
@@ -1011,9 +1002,7 @@ impl DriverSession for RedisSession {
         &'a self,
         commands: &'a [crate::RedisPipelineCommand],
     ) -> DriverFuture<'a, Result<Vec<crate::RedisPipelineOutcome>, AdapterError>> {
-        Box::pin(async move {
-            self.execute_pipeline(commands).await.map_err(map_redis)
-        })
+        Box::pin(async move { self.execute_pipeline(commands).await.map_err(map_redis) })
     }
 
     fn execute_startup_authorized<'a>(
@@ -1094,10 +1083,8 @@ async fn redis_collection_page_lines(
     kind: tablerock_core::RedisKeyKind,
     skip: u64,
 ) -> Result<(Vec<String>, Option<u64>), AdapterError> {
-    use tablerock_core::{
-        IdParts, PageIdentity, PageLimits, ResultId, Revision, ValueKind,
-    };
     use crate::{RedisCollectionScanKind, RedisCollectionScanOptions};
+    use tablerock_core::{IdParts, PageIdentity, PageLimits, ResultId, Revision, ValueKind};
 
     const TAKE: u32 = 32;
     let scan_kind = match kind {

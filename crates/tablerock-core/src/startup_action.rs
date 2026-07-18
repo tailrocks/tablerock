@@ -78,14 +78,12 @@ impl StartupAction {
         timeout_ms: u32,
         run_on_reconnect: bool,
     ) -> Result<Self, StartupActionError> {
-        let bounded = BoundedText::copy_from_str(
-            statement,
-            ByteLimit::new(MAX_STARTUP_STATEMENT_BYTES),
-        )
-        .map_err(|_| StartupActionError::StatementTooLarge {
-            actual: statement.len() as u64,
-            maximum: MAX_STARTUP_STATEMENT_BYTES,
-        })?;
+        let bounded =
+            BoundedText::copy_from_str(statement, ByteLimit::new(MAX_STARTUP_STATEMENT_BYTES))
+                .map_err(|_| StartupActionError::StatementTooLarge {
+                    actual: statement.len() as u64,
+                    maximum: MAX_STARTUP_STATEMENT_BYTES,
+                })?;
         Self::new(bounded, safety, timeout_ms, run_on_reconnect)
     }
 
@@ -290,17 +288,16 @@ mod tests {
 
     #[test]
     fn timeout_bounds() {
-        assert!(StartupAction::from_str("SELECT 1", StartupSafetyClass::ReadOnly, 50, false)
-            .is_err());
-        assert!(StartupAction::from_str(
-            "SELECT 1",
-            StartupSafetyClass::ReadOnly,
-            200_000,
-            false
-        )
-        .is_err());
-        assert!(StartupAction::from_str("SELECT 1", StartupSafetyClass::ReadOnly, 5_000, true)
-            .is_ok());
+        assert!(
+            StartupAction::from_str("SELECT 1", StartupSafetyClass::ReadOnly, 50, false).is_err()
+        );
+        assert!(
+            StartupAction::from_str("SELECT 1", StartupSafetyClass::ReadOnly, 200_000, false)
+                .is_err()
+        );
+        assert!(
+            StartupAction::from_str("SELECT 1", StartupSafetyClass::ReadOnly, 5_000, true).is_ok()
+        );
     }
 
     #[test]
@@ -348,9 +345,13 @@ mod tests {
 
     #[test]
     fn debug_redacts_statement_text() {
-        let action =
-            StartupAction::from_str("SELECT secret_token FROM t", StartupSafetyClass::ReadOnly, 1_000, false)
-                .unwrap();
+        let action = StartupAction::from_str(
+            "SELECT secret_token FROM t",
+            StartupSafetyClass::ReadOnly,
+            1_000,
+            false,
+        )
+        .unwrap();
         let debug = format!("{action:?}");
         assert!(!debug.contains("secret_token"));
         assert!(debug.contains("statement_bytes"));

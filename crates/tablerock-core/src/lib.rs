@@ -10,7 +10,6 @@ mod id;
 mod mutation;
 mod named_params;
 mod operation;
-mod sql_format;
 mod page;
 mod profile;
 mod profile_aggregate;
@@ -20,6 +19,7 @@ mod revision;
 mod secret;
 mod service;
 mod sql_analysis;
+mod sql_format;
 mod startup_action;
 mod value;
 

@@ -917,9 +917,7 @@ impl PostgresSession {
                     crate::browse_plan::FilterValue::Integer(n) => Box::new(*n),
                     crate::browse_plan::FilterValue::Float(n) => Box::new(*n),
                     crate::browse_plan::FilterValue::Boolean(b) => Box::new(*b),
-                    crate::browse_plan::FilterValue::Null => {
-                        Box::new(None::<String>)
-                    }
+                    crate::browse_plan::FilterValue::Null => Box::new(None::<String>),
                 }
             })
             .collect();
@@ -962,11 +960,7 @@ impl PostgresSession {
     /// Returns `Ok(true)` when the server acknowledged the signal, `Ok(false)`
     /// when the function returned false (pid not signalable), and
     /// `Err(PermissionDenied)` when the role lacks rights.
-    pub async fn signal_backend(
-        &self,
-        terminate: bool,
-        pid: i32,
-    ) -> Result<bool, PostgresError> {
+    pub async fn signal_backend(&self, terminate: bool, pid: i32) -> Result<bool, PostgresError> {
         let sql = if terminate {
             "SELECT pg_catalog.pg_terminate_backend($1::int4)"
         } else {
@@ -985,23 +979,24 @@ impl PostgresSession {
         &self,
         plan: &tablerock_core::DdlPlan,
     ) -> Result<(), PostgresError> {
-        use tablerock_core::{DdlKind, DdlTarget};
         use crate::ident::quote_ident;
+        use tablerock_core::{DdlKind, DdlTarget};
         if plan.engine != tablerock_core::Engine::PostgreSql {
             return Err(PostgresError::Query);
         }
         let sql = match (&plan.kind, &plan.target) {
-            (
-                DdlKind::AddColumn,
-                DdlTarget::PostgreSqlRelation { schema, relation },
-            ) => {
+            (DdlKind::AddColumn, DdlTarget::PostgreSqlRelation { schema, relation }) => {
                 let col = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
                 let ty = plan.type_text.as_deref().ok_or(PostgresError::Query)?;
                 // Type text is restricted: must look like a simple type token.
-                if !ty
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '(' || c == ')' || c == ',' || c == ' ' || c == '"')
-                {
+                if !ty.chars().all(|c| {
+                    c.is_ascii_alphanumeric()
+                        || c == '('
+                        || c == ')'
+                        || c == ','
+                        || c == ' '
+                        || c == '"'
+                }) {
                     return Err(PostgresError::Query);
                 }
                 format!(
@@ -1012,10 +1007,7 @@ impl PostgresSession {
                     ty
                 )
             }
-            (
-                DdlKind::DropColumn,
-                DdlTarget::PostgreSqlRelation { schema, relation },
-            ) => {
+            (DdlKind::DropColumn, DdlTarget::PostgreSqlRelation { schema, relation }) => {
                 let col = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
                 format!(
                     "ALTER TABLE {}.{} DROP COLUMN {}",
@@ -1024,30 +1016,21 @@ impl PostgresSession {
                     quote_ident(col).map_err(|_| PostgresError::Query)?,
                 )
             }
-            (
-                DdlKind::Vacuum,
-                DdlTarget::PostgreSqlRelation { schema, relation },
-            ) => {
+            (DdlKind::Vacuum, DdlTarget::PostgreSqlRelation { schema, relation }) => {
                 format!(
                     "VACUUM {}.{}",
                     quote_ident(schema).map_err(|_| PostgresError::Query)?,
                     quote_ident(relation).map_err(|_| PostgresError::Query)?,
                 )
             }
-            (
-                DdlKind::Analyze,
-                DdlTarget::PostgreSqlRelation { schema, relation },
-            ) => {
+            (DdlKind::Analyze, DdlTarget::PostgreSqlRelation { schema, relation }) => {
                 format!(
                     "ANALYZE {}.{}",
                     quote_ident(schema).map_err(|_| PostgresError::Query)?,
                     quote_ident(relation).map_err(|_| PostgresError::Query)?,
                 )
             }
-            (
-                DdlKind::CreateIndex,
-                DdlTarget::PostgreSqlRelation { schema, relation },
-            ) => {
+            (DdlKind::CreateIndex, DdlTarget::PostgreSqlRelation { schema, relation }) => {
                 let index = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
                 let columns = plan.type_text.as_deref().ok_or(PostgresError::Query)?;
                 // Columns: comma-separated simple idents only (no expressions).
@@ -1074,10 +1057,7 @@ impl PostgresSession {
                     col_sql
                 )
             }
-            (
-                DdlKind::DropIndex,
-                DdlTarget::PostgreSqlRelation { schema, .. },
-            ) => {
+            (DdlKind::DropIndex, DdlTarget::PostgreSqlRelation { schema, .. }) => {
                 let index = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
                 // Index names are schema-qualified when provided as object_name only;
                 // drop schema.index for explicit ownership.
@@ -1087,10 +1067,7 @@ impl PostgresSession {
                     quote_ident(index).map_err(|_| PostgresError::Query)?,
                 )
             }
-            (
-                DdlKind::AddConstraint,
-                DdlTarget::PostgreSqlRelation { schema, relation },
-            ) => {
+            (DdlKind::AddConstraint, DdlTarget::PostgreSqlRelation { schema, relation }) => {
                 let name = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
                 let body = plan.type_text.as_deref().ok_or(PostgresError::Query)?;
                 // Allow UNIQUE (col) / PRIMARY KEY (col) / CHECK (col > 0) with tight charset.
@@ -1101,10 +1078,10 @@ impl PostgresSession {
                 {
                     return Err(PostgresError::Query);
                 }
-                if !body.chars().all(|c| {
-                    c.is_ascii_alphanumeric()
-                        || " _(),.><=!\"'+-*/".contains(c)
-                }) {
+                if !body
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || " _(),.><=!\"'+-*/".contains(c))
+                {
                     return Err(PostgresError::Query);
                 }
                 format!(
@@ -1115,10 +1092,7 @@ impl PostgresSession {
                     body.trim()
                 )
             }
-            (
-                DdlKind::DropConstraint,
-                DdlTarget::PostgreSqlRelation { schema, relation },
-            ) => {
+            (DdlKind::DropConstraint, DdlTarget::PostgreSqlRelation { schema, relation }) => {
                 let name = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
                 format!(
                     "ALTER TABLE {}.{} DROP CONSTRAINT {}",
@@ -1278,11 +1252,7 @@ impl PostgresSession {
                  FROM information_schema.table_privileges \
                  WHERE table_schema = $1 AND table_name = $2 \
                  ORDER BY 1, 2 LIMIT $3::int4",
-                &[
-                    &schema,
-                    &table,
-                    &i32::try_from(limit).unwrap_or(i32::MAX),
-                ],
+                &[&schema, &table, &i32::try_from(limit).unwrap_or(i32::MAX)],
             )
             .await
             .map_err(|_| PostgresError::Query)?;

@@ -171,11 +171,7 @@ impl MutationDraftModel {
     }
 
     /// Replace values on an existing insert draft. Returns false if missing/blocked.
-    pub fn replace_insert_values(
-        &mut self,
-        draft_id: u64,
-        values: Vec<(String, String)>,
-    ) -> bool {
+    pub fn replace_insert_values(&mut self, draft_id: u64, values: Vec<(String, String)>) -> bool {
         if !self.staging_allowed {
             return false;
         }
@@ -469,7 +465,11 @@ mod tests {
         draft.apply_editability(&read_only());
         assert!(!draft.staging_allowed());
         assert!(!draft.stage_cell_edit(cell(0, "name", "a", "b")));
-        assert!(draft.stage_insert(vec![("id".into(), "1".into())]).is_none());
+        assert!(
+            draft
+                .stage_insert(vec![("id".into(), "1".into())])
+                .is_none()
+        );
         assert!(!draft.stage_delete(StagedDelete {
             abs_row: 0,
             locator: vec![],
@@ -538,7 +538,10 @@ mod tests {
         let mut draft = MutationDraftModel::new();
         draft.apply_editability(&editable());
         let id = draft
-            .stage_insert(vec![("id".into(), String::new()), ("name".into(), String::new())])
+            .stage_insert(vec![
+                ("id".into(), String::new()),
+                ("name".into(), String::new()),
+            ])
             .unwrap();
         assert!(draft.replace_insert_values(
             id,
@@ -558,8 +561,18 @@ mod tests {
         assert!(draft.stage_cell_edit(cell(1, "age", "1", "2")));
         assert!(draft.stage_cell_edit(cell(2, "name", "x", "y")));
         assert!(draft.discard_cell_edit(1, "name"));
-        assert!(!draft.cell_edits.iter().any(|e| e.column == "name" && e.abs_row == 1));
-        assert!(draft.cell_edits.iter().any(|e| e.column == "age" && e.abs_row == 1));
+        assert!(
+            !draft
+                .cell_edits
+                .iter()
+                .any(|e| e.column == "name" && e.abs_row == 1)
+        );
+        assert!(
+            draft
+                .cell_edits
+                .iter()
+                .any(|e| e.column == "age" && e.abs_row == 1)
+        );
         assert!(draft.stage_delete(StagedDelete {
             abs_row: 2,
             locator: vec![DraftLocatorField {
@@ -580,12 +593,8 @@ mod tests {
     fn discard_last_insert_only() {
         let mut draft = MutationDraftModel::new();
         draft.apply_editability(&editable());
-        draft
-            .stage_insert(vec![("id".into(), "1".into())])
-            .unwrap();
-        draft
-            .stage_insert(vec![("id".into(), "2".into())])
-            .unwrap();
+        draft.stage_insert(vec![("id".into(), "1".into())]).unwrap();
+        draft.stage_insert(vec![("id".into(), "2".into())]).unwrap();
         assert!(draft.stage_cell_edit(cell(0, "name", "a", "b")));
         assert!(draft.discard_last_insert());
         assert_eq!(draft.inserts.len(), 1);
@@ -602,9 +611,7 @@ mod tests {
         let mut draft = MutationDraftModel::new();
         draft.apply_editability(&editable());
         assert_eq!(draft.staged_panel_text(), "no staged changes");
-        draft
-            .stage_insert(vec![("id".into(), "1".into())])
-            .unwrap();
+        draft.stage_insert(vec![("id".into(), "1".into())]).unwrap();
         assert!(draft.stage_cell_edit(cell(0, "name", "a", "b")));
         assert!(draft.stage_delete(StagedDelete {
             abs_row: 3,

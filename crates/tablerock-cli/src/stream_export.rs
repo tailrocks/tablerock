@@ -67,9 +67,7 @@ impl StreamExporter {
         let dest = validate_export_path(path).map_err(StreamExportError::Path)?;
         let mut writer = AtomicFileWriter::create(dest).map_err(StreamExportError::Path)?;
         if format == StreamExportFormat::Json {
-            writer
-                .write_all(b"[\n")
-                .map_err(StreamExportError::Path)?;
+            writer.write_all(b"[\n").map_err(StreamExportError::Path)?;
         }
         Ok(Self {
             writer,
@@ -120,9 +118,7 @@ impl StreamExporter {
             StreamExportFormat::Tsv => self.write_tsv_page(columns, rows)?,
             StreamExportFormat::Json => self.write_json_page(columns, rows)?,
         }
-        self.rows_written = self
-            .rows_written
-            .saturating_add(rows.len() as u64);
+        self.rows_written = self.rows_written.saturating_add(rows.len() as u64);
         self.check_cancel()
     }
 
@@ -219,11 +215,7 @@ impl StreamExporter {
                         .map_err(StreamExportError::Path)?;
                 }
                 let val = row.get(ci).map(String::as_str).unwrap_or("");
-                let piece = format!(
-                    "\"{}\":{}",
-                    json_escape_key(col),
-                    json_value(val)
-                );
+                let piece = format!("\"{}\":{}", json_escape_key(col), json_value(val));
                 self.writer
                     .write_all(piece.as_bytes())
                     .map_err(StreamExportError::Path)?;
@@ -264,8 +256,7 @@ pub struct StreamExportOutcome {
 }
 
 fn csv_escape(value: &str) -> String {
-    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r')
-    {
+    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r') {
         format!("\"{}\"", value.replace('"', "\"\""))
     } else {
         value.to_owned()
@@ -399,7 +390,10 @@ mod tests {
         let err = run_stream_export(&path, StreamExportFormat::Csv, cancel, || {
             page_idx += 1;
             if page_idx == 1 {
-                Ok(Some((columns.clone(), vec![vec!["1".into()], vec!["2".into()]])))
+                Ok(Some((
+                    columns.clone(),
+                    vec![vec!["1".into()], vec!["2".into()]],
+                )))
             } else if page_idx == 2 {
                 cancel_flag.store(true, Ordering::SeqCst);
                 Ok(Some((columns.clone(), vec![vec!["3".into()]])))

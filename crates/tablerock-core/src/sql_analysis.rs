@@ -351,7 +351,11 @@ fn line_start_bytes(source: &str) -> Vec<usize> {
     starts
 }
 
-fn location_to_byte(source: &str, line_starts: &[usize], loc: sqlparser::tokenizer::Location) -> usize {
+fn location_to_byte(
+    source: &str,
+    line_starts: &[usize],
+    loc: sqlparser::tokenizer::Location,
+) -> usize {
     let line = loc.line.max(1) as usize;
     let column = loc.column.max(1) as usize;
     let line_idx = line - 1;
@@ -432,7 +436,10 @@ mod tests {
         let sql = "/* outer /* nest */ still */ SELECT \"🙂\" AS face; SELECT 1";
         let spans = statements(sql, SqlDialect::PostgreSql);
         assert!(spans.len() >= 1);
-        assert!(spans[0].slice(sql).contains("🙂") || spans.iter().any(|s| s.slice(sql).contains("face")));
+        assert!(
+            spans[0].slice(sql).contains("🙂")
+                || spans.iter().any(|s| s.slice(sql).contains("face"))
+        );
     }
 
     #[test]

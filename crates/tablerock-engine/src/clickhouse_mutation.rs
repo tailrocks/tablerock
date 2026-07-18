@@ -51,10 +51,7 @@ impl ClickHouseSession {
         };
         let mut parts = line.splitn(4, '\t');
         Ok(vec![
-            (
-                "mutation_id".into(),
-                parts.next().unwrap_or("").to_owned(),
-            ),
+            ("mutation_id".into(), parts.next().unwrap_or("").to_owned()),
             ("is_done".into(), parts.next().unwrap_or("").to_owned()),
             ("is_killed".into(), parts.next().unwrap_or("").to_owned()),
             (
@@ -324,9 +321,9 @@ fn is_safe_mutation_id(mutation_id: &str) -> bool {
     const MAX_LEN: usize = 128;
     !mutation_id.is_empty()
         && mutation_id.len() <= MAX_LEN
-        && mutation_id.bytes().all(|b| {
-            b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.'
-        })
+        && mutation_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
 }
 
 /// Split `"db"."table"` or `db.table` produced by quote_ident into parts.
@@ -370,10 +367,7 @@ mod tests {
     fn literals_escape_and_reject_truncated() {
         assert_eq!(sql_literal(&OwnedValue::signed(7)).unwrap(), "7");
         assert_eq!(
-            sql_literal(
-                &OwnedValue::text(text("a'b"), Truncation::Complete).unwrap()
-            )
-            .unwrap(),
+            sql_literal(&OwnedValue::text(text("a'b"), Truncation::Complete).unwrap()).unwrap(),
             "'a\\'b'"
         );
         let trunc = OwnedValue::text(
@@ -395,10 +389,7 @@ mod tests {
 
     #[test]
     fn async_mutation_markers_are_non_transactional() {
-        assert_eq!(
-            ("transactional", "false"),
-            ("transactional", "false")
-        );
+        assert_eq!(("transactional", "false"), ("transactional", "false"));
     }
 
     #[test]

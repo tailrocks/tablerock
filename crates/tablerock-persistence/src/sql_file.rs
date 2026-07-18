@@ -41,11 +41,7 @@ pub fn write_sql_file_atomic(path: &Path, text: &str) -> Result<SqlFileFacts, Pe
         .file_name()
         .ok_or(PersistenceError::InvalidPath)?
         .to_string_lossy();
-    let temp = parent.join(format!(
-        ".{}.tmp.{}",
-        file_name,
-        std::process::id()
-    ));
+    let temp = parent.join(format!(".{}.tmp.{}", file_name, std::process::id()));
     {
         let mut file = fs::File::create(&temp).map_err(|_| PersistenceError::Query)?;
         file.write_all(text.as_bytes())
@@ -68,9 +64,7 @@ pub fn write_sql_file_atomic(path: &Path, text: &str) -> Result<SqlFileFacts, Pe
 #[must_use]
 pub fn external_change_detected(previous: &SqlFileFacts) -> bool {
     match file_facts(&previous.path) {
-        Ok(current) => {
-            current.len != previous.len || current.mtime != previous.mtime
-        }
+        Ok(current) => current.len != previous.len || current.mtime != previous.mtime,
         // Missing file or unreadable counts as external change.
         Err(_) => true,
     }
@@ -148,7 +142,10 @@ mod tests {
         fs::set_permissions(&parent, perms).unwrap();
 
         let result = write_sql_file_atomic(&path, "SELECT 1;\n");
-        assert!(result.is_err(), "readonly parent must fail atomic SQL write");
+        assert!(
+            result.is_err(),
+            "readonly parent must fail atomic SQL write"
+        );
 
         let mut restore = fs::metadata(&parent).unwrap().permissions();
         restore.set_mode(0o755);

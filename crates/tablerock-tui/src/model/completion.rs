@@ -43,11 +43,57 @@ impl CompletionSession {
 }
 
 const KEYWORDS: &[&str] = &[
-    "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "INSERT", "INTO", "VALUES", "UPDATE",
-    "SET", "DELETE", "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "ON", "GROUP", "BY", "ORDER",
-    "ASC", "DESC", "LIMIT", "OFFSET", "AS", "WITH", "UNION", "ALL", "DISTINCT", "HAVING",
-    "CREATE", "TABLE", "VIEW", "INDEX", "DROP", "ALTER", "NULL", "IS", "IN", "LIKE", "BETWEEN",
-    "EXISTS", "CASE", "WHEN", "THEN", "ELSE", "END", "TRUE", "FALSE", "RETURNING",
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "AND",
+    "OR",
+    "NOT",
+    "INSERT",
+    "INTO",
+    "VALUES",
+    "UPDATE",
+    "SET",
+    "DELETE",
+    "JOIN",
+    "LEFT",
+    "RIGHT",
+    "INNER",
+    "OUTER",
+    "ON",
+    "GROUP",
+    "BY",
+    "ORDER",
+    "ASC",
+    "DESC",
+    "LIMIT",
+    "OFFSET",
+    "AS",
+    "WITH",
+    "UNION",
+    "ALL",
+    "DISTINCT",
+    "HAVING",
+    "CREATE",
+    "TABLE",
+    "VIEW",
+    "INDEX",
+    "DROP",
+    "ALTER",
+    "NULL",
+    "IS",
+    "IN",
+    "LIKE",
+    "BETWEEN",
+    "EXISTS",
+    "CASE",
+    "WHEN",
+    "THEN",
+    "ELSE",
+    "END",
+    "TRUE",
+    "FALSE",
+    "RETURNING",
 ];
 
 /// Catalog generation used for staleness (0 when catalog not loaded).
@@ -336,7 +382,8 @@ mod tests {
         let ed2 = editor_with("SEL", 3);
         let session2 = build_redis_session(&ed2, 1);
         assert!(
-            session2.candidates.is_empty() || !session2.candidates.iter().any(|c| c.label == "SELECT")
+            session2.candidates.is_empty()
+                || !session2.candidates.iter().any(|c| c.label == "SELECT")
         );
     }
 

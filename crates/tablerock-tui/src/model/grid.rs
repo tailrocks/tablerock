@@ -510,8 +510,19 @@ fn is_leap_year(y: i32) -> bool {
 /// Month grid with selected day marked `*dd`.
 fn format_month_calendar(y: i32, m: u32, selected_day: u32) -> String {
     let month_names = [
-        "", "January", "February", "March", "April", "May", "June", "July", "August",
-        "September", "October", "November", "December",
+        "",
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
     ];
     let name = month_names.get(m as usize).copied().unwrap_or("?");
     let mut out = format!("{name} {y}\nSu Mo Tu We Th Fr Sa\n");
@@ -918,7 +929,11 @@ impl DataGridModel {
     /// Glyph `+` marks inserted rows (never color alone). Empty values show `∅`.
     #[must_use]
     pub fn insert_row_display(&self, draft_id: u64, visible: &[String]) -> Option<Vec<String>> {
-        let insert = self.drafts.inserts.iter().find(|i| i.draft_id == draft_id)?;
+        let insert = self
+            .drafts
+            .inserts
+            .iter()
+            .find(|i| i.draft_id == draft_id)?;
         Some(
             visible
                 .iter()
@@ -1085,7 +1100,12 @@ impl DataGridModel {
             if self.identity_columns.is_empty() {
                 String::new()
             } else {
-                let keys = self.identity_columns.iter().take(4).cloned().collect::<Vec<_>>();
+                let keys = self
+                    .identity_columns
+                    .iter()
+                    .take(4)
+                    .cloned()
+                    .collect::<Vec<_>>();
                 let more = if self.identity_columns.len() > 4 {
                     format!("+{}", self.identity_columns.len() - 4)
                 } else {
@@ -1220,7 +1240,10 @@ impl DataGridModel {
         if self.start_row == 0 {
             Some(format!("LIMIT {}", self.row_count))
         } else {
-            Some(format!("LIMIT {}\nOFFSET {}", self.row_count, self.start_row))
+            Some(format!(
+                "LIMIT {}\nOFFSET {}",
+                self.row_count, self.start_row
+            ))
         }
     }
 
@@ -1551,10 +1574,11 @@ impl DataGridModel {
         if locator.is_empty() {
             return false;
         }
-        self.drafts.stage_delete(super::mutation_draft::StagedDelete {
-            abs_row: self.cursor_row,
-            locator,
-        })
+        self.drafts
+            .stage_delete(super::mutation_draft::StagedDelete {
+                abs_row: self.cursor_row,
+                locator,
+            })
     }
 
     /// Unstage the cursor cell edit only.
@@ -2285,11 +2309,7 @@ impl DataGridModel {
             Some(i) if dir < 0 => i.checked_sub(1),
             Some(i) if dir > 0 => {
                 let n = i.saturating_add(1);
-                if n < visible.len() {
-                    Some(n)
-                } else {
-                    None
-                }
+                if n < visible.len() { Some(n) } else { None }
             }
             // Cursor is on a hidden column: snap to nearest visible.
             None if dir < 0 => Some(visible.len().saturating_sub(1)),
@@ -2664,7 +2684,12 @@ impl DataGridModel {
         true
     }
 
-    pub fn add_filter_chip(&mut self, column: impl Into<String>, operator: impl Into<String>, value: Option<String>) {
+    pub fn add_filter_chip(
+        &mut self,
+        column: impl Into<String>,
+        operator: impl Into<String>,
+        value: Option<String>,
+    ) {
         self.filters.push(GridFilterChip {
             column: column.into(),
             operator: operator.into(),
@@ -2747,8 +2772,7 @@ fn is_plausible_temporal(t: &str) -> bool {
             {
                 // Remainder may include :SS, .frac, Z, ±offset — digits/colon/dot/plus/minus/Z only.
                 return rest.chars().all(|c| {
-                    c.is_ascii_digit()
-                        || matches!(c, ':' | '.' | '+' | '-' | 'Z' | 'z' | ' ')
+                    c.is_ascii_digit() || matches!(c, ':' | '.' | '+' | '-' | 'Z' | 'z' | ' ')
                 });
             }
         }
@@ -2777,7 +2801,9 @@ fn is_plausible_structured(t: &str) -> bool {
     let first = t.as_bytes()[0];
     let last = t.as_bytes()[t.len() - 1];
     if (first == b'{' && last == b'}') || (first == b'[' && last == b']') {
-        if t.chars().any(|c| c.is_control() && c != '\n' && c != '\t' && c != '\r') {
+        if t.chars()
+            .any(|c| c.is_control() && c != '\n' && c != '\t' && c != '\r')
+        {
             return false;
         }
         return braces_balanced(t);
@@ -2820,7 +2846,10 @@ fn braces_balanced(t: &str) -> bool {
 fn extract_layout_string(json: &str, key: &str) -> Option<String> {
     let needle = format!("\"{key}\"");
     let idx = json.find(&needle)?;
-    let after = json[idx + needle.len()..].trim_start().strip_prefix(':')?.trim_start();
+    let after = json[idx + needle.len()..]
+        .trim_start()
+        .strip_prefix(':')?
+        .trim_start();
     let after = after.strip_prefix('"')?;
     let mut out = String::new();
     let mut chars = after.chars();
@@ -2837,13 +2866,15 @@ fn extract_layout_string(json: &str, key: &str) -> Option<String> {
 fn extract_layout_number(json: &str, key: &str) -> Option<u64> {
     let needle = format!("\"{key}\"");
     let idx = json.find(&needle)?;
-    let after = json[idx + needle.len()..].trim_start().strip_prefix(':')?.trim_start();
+    let after = json[idx + needle.len()..]
+        .trim_start()
+        .strip_prefix(':')?
+        .trim_start();
     let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
     digits.parse().ok()
 }
 
 impl DataGridModel {
-
     /// Rows matching page-local quick filter (no I/O).
     #[must_use]
     pub fn quick_filter_matches(&self) -> Vec<u64> {
@@ -3072,7 +3103,10 @@ mod tests {
         let mut g2 = DataGridModel::default();
         g2.columns = g.columns.clone();
         assert!(g2.apply_layout_json(&json));
-        assert_eq!(g2.visible_columns(), vec!["id".to_owned(), "age".to_owned()]);
+        assert_eq!(
+            g2.visible_columns(),
+            vec!["id".to_owned(), "age".to_owned()]
+        );
         // Cannot hide last visible column.
         assert!(g2.toggle_column_visible("id"));
         assert!(!g2.toggle_column_visible("age"));
@@ -3417,13 +3451,19 @@ mod tests {
         g.cursor_col = 1; // name
         assert!(g.move_cursor_column_to_edge(1)); // to last
         assert_eq!(
-            g.column_layout.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            g.column_layout
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["id", "age", "name"]
         );
         assert!(!g.move_cursor_column_to_edge(1)); // already last
         assert!(g.move_cursor_column_to_edge(-1)); // to first
         assert_eq!(
-            g.column_layout.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            g.column_layout
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect::<Vec<_>>(),
             vec!["name", "id", "age"]
         );
         assert!(!g.move_cursor_column_to_edge(-1));
@@ -4038,8 +4078,14 @@ mod tests {
         let blank = grid.stage_insert_blank().expect("blank");
         assert_eq!(blank, 0);
         assert_eq!(grid.drafts.inserts.len(), 1);
-        assert_eq!(grid.drafts.inserts[0].values[0], ("id".into(), String::new()));
-        assert_eq!(grid.drafts.inserts[0].values[1], ("name".into(), String::new()));
+        assert_eq!(
+            grid.drafts.inserts[0].values[0],
+            ("id".into(), String::new())
+        );
+        assert_eq!(
+            grid.drafts.inserts[0].values[1],
+            ("name".into(), String::new())
+        );
         let dup = grid.stage_insert_from_cursor().expect("dup");
         assert_eq!(dup, 1);
         assert_eq!(grid.drafts.inserts[1].values[0].1, "7");
@@ -4141,8 +4187,8 @@ mod tests {
 
     #[test]
     fn go_to_next_prev_staged_cycles() {
-        use tablerock_core::ProfileSafetyMode;
         use crate::model::mutation_draft::StagedCellEdit;
+        use tablerock_core::ProfileSafetyMode;
 
         let mut grid = DataGridModel::default();
         grid.columns = vec!["id".into(), "name".into(), "age".into()];
@@ -4381,7 +4427,9 @@ mod tests {
         assert!(!grid.is_resident(999_900));
         assert!(grid.needs_fetch(999_900));
         assert_eq!(grid.totals, GridRowTotal::Exact(1_000_000));
-        assert!(grid.status_line().contains("total 1000000") || grid.status_line().contains("1000000"));
+        assert!(
+            grid.status_line().contains("total 1000000") || grid.status_line().contains("1000000")
+        );
     }
 
     #[test]

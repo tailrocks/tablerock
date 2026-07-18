@@ -63,10 +63,7 @@ impl InspectorModel {
                 0,
             ),
             CellDistinction::Boolean => (
-                format!(
-                    "{}\n(toggle: TogBool · null: SetNull)",
-                    cell.display()
-                ),
+                format!("{}\n(toggle: TogBool · null: SetNull)", cell.display()),
                 String::new(),
                 0,
             ),
@@ -312,7 +309,9 @@ mod tests {
 
     #[test]
     fn hex_window_pages_beyond_first_256() {
-        let payload: String = (0..600).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+        let payload: String = (0..600)
+            .map(|i| char::from(b'a' + (i % 26) as u8))
+            .collect();
         let cell = ProjectedCell {
             text: payload.clone(),
             distinction: CellDistinction::Binary,
@@ -361,7 +360,10 @@ mod tests {
     #[test]
     fn pretty_structured_invalid_falls_back() {
         assert_eq!(pretty_structured("not-json"), "not-json");
-        assert_eq!(structured_tree_lines("not-json"), vec!["not-json".to_owned()]);
+        assert_eq!(
+            structured_tree_lines("not-json"),
+            vec!["not-json".to_owned()]
+        );
     }
 
     #[test]
@@ -405,7 +407,11 @@ mod tests {
         let plan = "Seq Scan on t  (cost=0.00..1.00 rows=1)\n  Filter: (id = 1)\n  ->  Index Scan on t_pkey";
         let lines = explain_tree_lines(plan);
         assert!(lines.iter().any(|l| l.contains("Seq Scan")));
-        assert!(lines.iter().any(|l| l.contains("│") || l.contains("└") || l.contains("  ")));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("│") || l.contains("└") || l.contains("  "))
+        );
         let insp = InspectorModel::from_explain_text("explain", plan);
         let joined = insp.lines().join("\n");
         assert!(joined.contains("plan:"));
@@ -528,10 +534,7 @@ fn format_hex_window(bytes: &[u8], offset: usize) -> String {
         lines.push(format!("{off:04x}  {hex}  |{ascii}|"));
     }
     if end < bytes.len() {
-        lines.push(format!(
-            "… ({} more bytes · Hex+)",
-            bytes.len() - end
-        ));
+        lines.push(format!("… ({} more bytes · Hex+)", bytes.len() - end));
     }
     if offset > 0 {
         lines.insert(0, format!("… ({} bytes before · Hex-)", offset));
@@ -678,7 +681,10 @@ fn annotate_temporal(raw: &str) -> String {
     } else if let Some((d, r)) = t.split_once(' ') {
         (Some(d), Some(r))
     } else if t.len() >= 10 && t.as_bytes().get(4) == Some(&b'-') {
-        (Some(&t[..10]), if t.len() > 10 { Some(&t[10..]) } else { None })
+        (
+            Some(&t[..10]),
+            if t.len() > 10 { Some(&t[10..]) } else { None },
+        )
     } else {
         (None, Some(t))
     };
@@ -702,11 +708,7 @@ fn annotate_temporal(raw: &str) -> String {
             Some("UTC")
         } else if let Some(pos) = r.char_indices().rev().find(|(_, c)| *c == '+' || *c == '-') {
             // timezone offset starts at last + or - after time body
-            if pos.0 >= 8 {
-                Some(&r[pos.0..])
-            } else {
-                None
-            }
+            if pos.0 >= 8 { Some(&r[pos.0..]) } else { None }
         } else {
             None
         };

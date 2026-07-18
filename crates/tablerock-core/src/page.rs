@@ -870,8 +870,7 @@ impl ResultPage {
                 .u64_le()
                 .ok_or(PageValidationError::TruncatedEncoding)?,
         );
-        let engine =
-            engine_from_wire(cursor.u8().ok_or(PageValidationError::TruncatedEncoding)?)?;
+        let engine = engine_from_wire(cursor.u8().ok_or(PageValidationError::TruncatedEncoding)?)?;
         let start_row = cursor
             .u64_le()
             .ok_or(PageValidationError::TruncatedEncoding)?;
@@ -930,14 +929,9 @@ impl ResultPage {
 
         let cells_u64 = u64::from(row_count)
             .checked_mul(u64::from(column_count))
-            .ok_or(PageValidationError::CellCountUnsupported {
-                cells: u64::MAX,
-            })?;
-        let cells = usize::try_from(cells_u64).map_err(|_| {
-            PageValidationError::CellCountUnsupported {
-                cells: cells_u64,
-            }
-        })?;
+            .ok_or(PageValidationError::CellCountUnsupported { cells: u64::MAX })?;
+        let cells = usize::try_from(cells_u64)
+            .map_err(|_| PageValidationError::CellCountUnsupported { cells: cells_u64 })?;
 
         let mut columns = Vec::with_capacity(column_count as usize);
         let mut observed_column_text = 0_u64;
@@ -986,9 +980,9 @@ impl ResultPage {
             });
         }
 
-        let offset_count = cells.checked_add(1).ok_or(PageValidationError::CellCountUnsupported {
-            cells: cells_u64,
-        })?;
+        let offset_count = cells
+            .checked_add(1)
+            .ok_or(PageValidationError::CellCountUnsupported { cells: cells_u64 })?;
         let mut cell_offsets = Vec::with_capacity(offset_count);
         for _ in 0..offset_count {
             cell_offsets.push(
@@ -1404,9 +1398,7 @@ fn write_bounded_str(out: &mut Vec<u8>, value: &str) {
     out.extend_from_slice(value.as_bytes());
 }
 
-fn read_length_prefixed<'a>(
-    cursor: &mut ByteCursor<'a>,
-) -> Result<&'a [u8], PageValidationError> {
+fn read_length_prefixed<'a>(cursor: &mut ByteCursor<'a>) -> Result<&'a [u8], PageValidationError> {
     let len = cursor
         .u32_le()
         .ok_or(PageValidationError::TruncatedEncoding)? as usize;

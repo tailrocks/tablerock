@@ -15,10 +15,17 @@ use crate::tool_discovery::{pg_dump_argv, pg_restore_argv};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PgToolRunOutcome {
-    Succeeded { exit_code: i32 },
-    Failed { exit_code: Option<i32>, detail: String },
+    Succeeded {
+        exit_code: i32,
+    },
+    Failed {
+        exit_code: Option<i32>,
+        detail: String,
+    },
     Cancelled,
-    SpawnFailed { detail: String },
+    SpawnFailed {
+        detail: String,
+    },
 }
 
 /// Run pg_dump with optional password (env only) and cancel support.

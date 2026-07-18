@@ -1843,8 +1843,16 @@ impl RedisSession {
         let upper = name.to_ascii_uppercase();
         // Shared-session deny list (matches TUI BlockingDenied).
         const BLOCKING: &[&str] = &[
-            "BLPOP", "BRPOP", "BRPOPLPUSH", "BLMOVE", "BZPOPMIN", "BZPOPMAX", "BZMPOP",
-            "BLMPOP", "XREAD", "XREADGROUP",
+            "BLPOP",
+            "BRPOP",
+            "BRPOPLPUSH",
+            "BLMOVE",
+            "BZPOPMIN",
+            "BZPOPMAX",
+            "BZMPOP",
+            "BLMPOP",
+            "XREAD",
+            "XREADGROUP",
         ];
         if BLOCKING.contains(&upper.as_str()) {
             return Err(RedisError::InvalidMutation);
@@ -2068,10 +2076,7 @@ impl RedisSession {
                         returned: vec![("command".into(), "SREM".into())],
                     }
                 }
-                MutationChange::RedisZSetAddMember {
-                    member,
-                    score_bits,
-                } => {
+                MutationChange::RedisZSetAddMember { member, score_bits } => {
                     let score = f64::from_bits(*score_bits);
                     if !score.is_finite() {
                         MutationChangeOutcome::Failed {
@@ -3520,7 +3525,6 @@ mod tests {
         assert_eq!(values[1], OwnedValue::float64_bits((-1.25_f64).to_bits()));
     }
 }
-
 
 #[cfg(test)]
 mod scan_policy_tests {

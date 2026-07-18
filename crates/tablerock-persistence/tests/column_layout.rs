@@ -25,18 +25,24 @@ fn put_get_delete_column_layout() {
         schema: "public".into(),
         table: "users".into(),
     };
-    let json = r#"[{"name":"id","visible":true,"width":8},{"name":"name","visible":false,"width":16}]"#;
+    let json =
+        r#"[{"name":"id","visible":true,"width":8},{"name":"name","visible":false,"width":16}]"#;
     actor
         .put_column_layout(key.clone(), json.into())
         .expect("put");
-    let loaded = actor.get_column_layout(key.clone()).expect("get").expect("row");
+    let loaded = actor
+        .get_column_layout(key.clone())
+        .expect("get")
+        .expect("row");
     assert_eq!(loaded.layout_json, json);
     assert!(actor.health().unwrap().schema_version >= 10);
 
     // Reject result-shaped payloads.
-    assert!(actor
-        .put_column_layout(key.clone(), r#"{"cells":[]}"#.into())
-        .is_err());
+    assert!(
+        actor
+            .put_column_layout(key.clone(), r#"{"cells":[]}"#.into())
+            .is_err()
+    );
 
     actor.delete_column_layout(key.clone()).expect("delete");
     assert!(actor.get_column_layout(key).expect("get2").is_none());

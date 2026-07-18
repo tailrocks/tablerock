@@ -849,9 +849,14 @@ impl EffectExecutor {
                 let results = Arc::clone(&self.results);
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
-                    let message =
-                        fetch_page(results, request_token, context_revision, result_token, start_row)
-                            .await;
+                    let message = fetch_page(
+                        results,
+                        request_token,
+                        context_revision,
+                        result_token,
+                        start_row,
+                    )
+                    .await;
                     let _ = ingress.try_send_event(message);
                 });
             }
@@ -960,9 +965,13 @@ impl EffectExecutor {
                 let persistence = Arc::clone(&self.persistence);
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
-                    let message =
-                        save_session_intent(persistence, request_token, profile_id_hex, intent_json)
-                            .await;
+                    let message = save_session_intent(
+                        persistence,
+                        request_token,
+                        profile_id_hex,
+                        intent_json,
+                    )
+                    .await;
                     let _ = ingress.try_send_event(message);
                 });
             }
@@ -1048,9 +1057,13 @@ impl EffectExecutor {
                 let persistence = Arc::clone(&self.persistence);
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
-                    let message =
-                        save_saved_filter_library(persistence, request_token, profile_id_hex, library_json)
-                            .await;
+                    let message = save_saved_filter_library(
+                        persistence,
+                        request_token,
+                        profile_id_hex,
+                        library_json,
+                    )
+                    .await;
                     let _ = ingress.try_send_event(message);
                 });
             }
@@ -1345,12 +1358,14 @@ async fn save_sql_file(request_token: RequestToken, path: String, text: String) 
     })
     .await;
     match joined {
-        Ok(Ok((path, mtime_secs, len))) => Message::Engine(tablerock_tui::EngineMsg::SqlFileSaved {
-            request_token,
-            path,
-            mtime_secs,
-            len,
-        }),
+        Ok(Ok((path, mtime_secs, len))) => {
+            Message::Engine(tablerock_tui::EngineMsg::SqlFileSaved {
+                request_token,
+                path,
+                mtime_secs,
+                len,
+            })
+        }
         Ok(Err(_)) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
             request_token,
             reason: FailureProjection::Label("sql file write failed".into()),
@@ -1422,7 +1437,9 @@ async fn save_session_intent(
     })
     .await;
     match joined {
-        Ok(Ok(())) => Message::Engine(tablerock_tui::EngineMsg::SessionIntentSaved { request_token }),
+        Ok(Ok(())) => {
+            Message::Engine(tablerock_tui::EngineMsg::SessionIntentSaved { request_token })
+        }
         Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::SessionIntentFailed {
             request_token,
             reason: FailureProjection::Label(label),
@@ -1503,7 +1520,9 @@ async fn save_column_layout(
     })
     .await;
     match joined {
-        Ok(Ok(())) => Message::Engine(tablerock_tui::EngineMsg::ColumnLayoutSaved { request_token }),
+        Ok(Ok(())) => {
+            Message::Engine(tablerock_tui::EngineMsg::ColumnLayoutSaved { request_token })
+        }
         Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::ColumnLayoutFailed {
             request_token,
             reason: FailureProjection::Label(label),
@@ -1581,9 +1600,9 @@ async fn save_saved_filter_library(
     })
     .await;
     match joined {
-        Ok(Ok(())) => Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibrarySaved {
-            request_token,
-        }),
+        Ok(Ok(())) => {
+            Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibrarySaved { request_token })
+        }
         Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibraryFailed {
             request_token,
             reason: FailureProjection::Label(label),
@@ -1616,10 +1635,12 @@ async fn load_saved_filter_library(
     })
     .await;
     match joined {
-        Ok(Ok(library_json)) => Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibraryLoaded {
-            request_token,
-            library_json,
-        }),
+        Ok(Ok(library_json)) => {
+            Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibraryLoaded {
+                request_token,
+                library_json,
+            })
+        }
         Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibraryFailed {
             request_token,
             reason: FailureProjection::Label(label),
@@ -1631,9 +1652,7 @@ async fn load_saved_filter_library(
     }
 }
 
-fn history_row(
-    entry: tablerock_persistence::HistoryEntry,
-) -> tablerock_tui::HistoryRowProjection {
+fn history_row(entry: tablerock_persistence::HistoryEntry) -> tablerock_tui::HistoryRowProjection {
     use tablerock_core::Engine;
     let engine_label = match entry.engine {
         Engine::PostgreSql => "PostgreSQL",
@@ -2222,9 +2241,10 @@ async fn execute_sql(
             }
             use tablerock_core::{BoundedText, ByteLimit};
             let qid = server_query_id.as_deref().unwrap_or("tr-query");
-            let query_id = BoundedText::copy_from_str(qid, ByteLimit::new(128)).unwrap_or_else(
-                |_| BoundedText::copy_from_str("tr", ByteLimit::new(8)).expect("short qid"),
-            );
+            let query_id =
+                BoundedText::copy_from_str(qid, ByteLimit::new(128)).unwrap_or_else(|_| {
+                    BoundedText::copy_from_str("tr", ByteLimit::new(8)).expect("short qid")
+                });
             DriverPageRequest::ClickHouseStatement {
                 statement,
                 query_id,
@@ -2405,9 +2425,7 @@ async fn fetch_page(
             return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
                 request_token,
                 context_revision,
-                reason: FailureProjection::Label(format!(
-                    "page at row {start_row} not resident"
-                )),
+                reason: FailureProjection::Label(format!("page at row {start_row} not resident")),
             });
         }
         store.get(key).cloned()
@@ -2524,9 +2542,7 @@ fn parse_mut_value(text: &str) -> Result<tablerock_core::OwnedValue, String> {
     OwnedValue::text(bound, Truncation::Complete).map_err(|_| "invalid text".into())
 }
 
-fn mut_fields(
-    pairs: &[(String, String)],
-) -> Result<Vec<tablerock_core::FieldValue>, String> {
+fn mut_fields(pairs: &[(String, String)]) -> Result<Vec<tablerock_core::FieldValue>, String> {
     use tablerock_core::FieldValue;
     pairs
         .iter()
@@ -2564,10 +2580,12 @@ fn typed_changes_from_specs(
             MutationChangeSpec::Delete { locator } => MutationChange::DeleteRow {
                 locator: mut_fields(locator)?,
             },
-            MutationChangeSpec::RedisHashSet { field, value } => MutationChange::RedisHashSetField {
-                field: redis_bytes(field)?,
-                value: redis_bytes(value)?,
-            },
+            MutationChangeSpec::RedisHashSet { field, value } => {
+                MutationChange::RedisHashSetField {
+                    field: redis_bytes(field)?,
+                    value: redis_bytes(value)?,
+                }
+            }
             MutationChangeSpec::RedisHashDelete { field } => MutationChange::RedisHashDeleteField {
                 field: redis_bytes(field)?,
             },
@@ -2590,9 +2608,11 @@ fn typed_changes_from_specs(
                     score_bits: score.to_bits(),
                 }
             }
-            MutationChangeSpec::RedisZSetRemove { member } => MutationChange::RedisZSetRemoveMember {
-                member: redis_bytes(member)?,
-            },
+            MutationChangeSpec::RedisZSetRemove { member } => {
+                MutationChange::RedisZSetRemoveMember {
+                    member: redis_bytes(member)?,
+                }
+            }
         });
     }
     Ok(typed)
@@ -2668,8 +2688,8 @@ async fn review_mutations(
     changes: Vec<tablerock_tui::effect::MutationChangeSpec>,
 ) -> Message {
     use tablerock_core::{
-        Engine as CoreEngine, IdParts, MutationId, MutationPlan, MutationPlanLimits, MutationTarget,
-        Revision, ReviewTokenId, SessionId,
+        Engine as CoreEngine, IdParts, MutationId, MutationPlan, MutationPlanLimits,
+        MutationTarget, ReviewTokenId, Revision, SessionId,
     };
 
     let session_id = match session_id_hex.parse::<SessionId>() {
@@ -2876,7 +2896,7 @@ async fn apply_mutations(
     context_revision: u64,
     review_token_hex: String,
 ) -> Message {
-    use tablerock_core::{Revision, ReviewTokenId, SessionId};
+    use tablerock_core::{ReviewTokenId, Revision, SessionId};
     use tablerock_engine::MutationTransactionState;
 
     let session_id = match session_id_hex.parse::<SessionId>() {
@@ -3213,7 +3233,10 @@ async fn load_relation_structure(
     let mut stream = match session
         .start_page_stream(DriverPageRequest::PostgreSqlStatement {
             statement,
-            parameters: vec![FilterValue::Text(schema.clone()), FilterValue::Text(table.clone())],
+            parameters: vec![
+                FilterValue::Text(schema.clone()),
+                FilterValue::Text(table.clone()),
+            ],
             limits,
             max_cell_bytes: 8 * 1024,
         })
@@ -3456,18 +3479,14 @@ async fn execute_table_op(
     };
     // Fixed op vocabulary only — never free-form operator SQL.
     let (sql, page_engine) = match (engine, op.as_str()) {
-        (CoreEngine::PostgreSql, "truncate") => (
-            format!("TRUNCATE TABLE {qs}.{qt}"),
-            CoreEngine::PostgreSql,
-        ),
-        (CoreEngine::PostgreSql, "drop") => (
-            format!("DROP TABLE {qs}.{qt}"),
-            CoreEngine::PostgreSql,
-        ),
-        // Maintenance: quote_ident only; VACUUM outside BEGIN (simple statement stream).
-        (CoreEngine::PostgreSql, "vacuum") => {
-            (format!("VACUUM {qs}.{qt}"), CoreEngine::PostgreSql)
+        (CoreEngine::PostgreSql, "truncate") => {
+            (format!("TRUNCATE TABLE {qs}.{qt}"), CoreEngine::PostgreSql)
         }
+        (CoreEngine::PostgreSql, "drop") => {
+            (format!("DROP TABLE {qs}.{qt}"), CoreEngine::PostgreSql)
+        }
+        // Maintenance: quote_ident only; VACUUM outside BEGIN (simple statement stream).
+        (CoreEngine::PostgreSql, "vacuum") => (format!("VACUUM {qs}.{qt}"), CoreEngine::PostgreSql),
         (CoreEngine::PostgreSql, "analyze") => {
             (format!("ANALYZE {qs}.{qt}"), CoreEngine::PostgreSql)
         }
@@ -3488,10 +3507,9 @@ async fn execute_table_op(
             )
         }
         // ClickHouse table maintenance (schema = database).
-        (CoreEngine::ClickHouse, "optimize") => (
-            format!("OPTIMIZE TABLE {qs}.{qt}"),
-            CoreEngine::ClickHouse,
-        ),
+        (CoreEngine::ClickHouse, "optimize") => {
+            (format!("OPTIMIZE TABLE {qs}.{qt}"), CoreEngine::ClickHouse)
+        }
         (CoreEngine::ClickHouse, _) => {
             return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
                 request_token,
@@ -4237,9 +4255,8 @@ async fn import_csv_apply(
     };
 
     let bt = |s: &str| {
-        BoundedText::copy_from_str(s, ByteLimit::new(256)).unwrap_or_else(|_| {
-            BoundedText::copy_from_str("x", ByteLimit::new(1)).expect("tiny")
-        })
+        BoundedText::copy_from_str(s, ByteLimit::new(256))
+            .unwrap_or_else(|_| BoundedText::copy_from_str("x", ByteLimit::new(1)).expect("tiny"))
     };
     let target = match session.engine() {
         Engine::PostgreSql => MutationTarget::PostgreSqlRelation {
@@ -4270,8 +4287,7 @@ async fn import_csv_apply(
     };
 
     let scope = OperationScope::new(
-        ProfileId::from_parts(IdParts::new(0, request_token.max(1)).expect("id"))
-            .expect("profile"),
+        ProfileId::from_parts(IdParts::new(0, request_token.max(1)).expect("id")).expect("profile"),
         // Reuse session id parts when possible; otherwise mint stable opaque IDs.
         CoreSessionId::from_bytes(session_id.to_bytes()).unwrap_or_else(|_| {
             CoreSessionId::from_parts(IdParts::new(0, request_token.max(1) + 1).expect("id"))
@@ -4285,9 +4301,8 @@ async fn import_csv_apply(
     let mutation_id =
         MutationId::from_parts(IdParts::new(0, request_token.max(1) + 3).expect("id"))
             .expect("mutation");
-    let token =
-        ReviewTokenId::from_parts(IdParts::new(0, request_token.max(1) + 4).expect("id"))
-            .expect("token");
+    let token = ReviewTokenId::from_parts(IdParts::new(0, request_token.max(1) + 4).expect("id"))
+        .expect("token");
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -4439,13 +4454,11 @@ async fn export_stream_query(
             max_cell_bytes: 64 * 1024,
         },
         Engine::ClickHouse => {
-            let query_id = BoundedText::copy_from_str(
-                &format!("export-{request_token}"),
-                ByteLimit::new(128),
-            )
-            .unwrap_or_else(|_| {
-                BoundedText::copy_from_str("export", ByteLimit::new(16)).expect("short")
-            });
+            let query_id =
+                BoundedText::copy_from_str(&format!("export-{request_token}"), ByteLimit::new(128))
+                    .unwrap_or_else(|_| {
+                        BoundedText::copy_from_str("export", ByteLimit::new(16)).expect("short")
+                    });
             DriverPageRequest::ClickHouseStatement {
                 statement: sql,
                 query_id,
@@ -4488,8 +4501,8 @@ async fn export_stream_query(
     };
 
     let low = request_token.max(1);
-    let result_id = ResultId::from_parts(IdParts::new(0, low).expect("nonzero token"))
-        .expect("result id");
+    let result_id =
+        ResultId::from_parts(IdParts::new(0, low).expect("nonzero token")).expect("result id");
     let identity = PageIdentity::new(result_id, Revision::INITIAL, engine);
     let mut start_row = 0_u64;
     let cancel = AtomicBool::new(false);
@@ -4693,9 +4706,7 @@ async fn execute_redis_subscribe(
         BoundedBytes, ByteLimit, Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId,
         Revision,
     };
-    use tablerock_engine::{
-        DriverPageRequest, RedisSubscriptionKind, RedisSubscriptionOptions,
-    };
+    use tablerock_engine::{DriverPageRequest, RedisSubscriptionKind, RedisSubscriptionOptions};
 
     // First page: short wait so empty channels finish honestly.
     // After first message: listen until Cancel / max lines / max pages (no idle stop).
@@ -5632,14 +5643,7 @@ async fn connect_profile(
                 });
             }
         };
-    connect_session(
-        sessions,
-        request_token,
-        draft,
-        false,
-        Some(profile_id_hex),
-    )
-    .await
+    connect_session(sessions, request_token, draft, false, Some(profile_id_hex)).await
 }
 
 async fn check_session_health(
@@ -5825,9 +5829,7 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
                         account_id: reference.account_id().as_str().to_owned(),
                         vault_id: reference.vault_id().as_str().to_owned(),
                         item_id: reference.item_id().as_str().to_owned(),
-                        section_id: reference
-                            .section_id()
-                            .map(|s| s.as_str().to_owned()),
+                        section_id: reference.section_id().map(|s| s.as_str().to_owned()),
                         field_id: reference.field_id().as_str().to_owned(),
                         breadcrumb: reference.breadcrumb().to_owned(),
                     };
@@ -5913,10 +5915,7 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
         username: literal(ProfileProperty::Username).unwrap_or_default(),
         password,
         tls_mode,
-        plaintext_acknowledged: matches!(
-            password_source,
-            PasswordSourceSpec::DangerousPlaintext
-        ),
+        plaintext_acknowledged: matches!(password_source, PasswordSourceSpec::DangerousPlaintext),
         password_source,
         ssh_host: literal(ProfileProperty::SshHost).unwrap_or_default(),
         ssh_port: literal(ProfileProperty::SshPort).unwrap_or_else(|| "22".to_owned()),
@@ -5951,9 +5950,7 @@ fn format_startup_summary(report: &tablerock_core::StartupRunReport) -> Option<S
     for (_, outcome) in report.outcomes() {
         match outcome {
             StartupActionOutcome::Succeeded => ok += 1,
-            StartupActionOutcome::SkippedNeedsReview | StartupActionOutcome::Cancelled => {
-                skip += 1
-            }
+            StartupActionOutcome::SkippedNeedsReview | StartupActionOutcome::Cancelled => skip += 1,
             StartupActionOutcome::Failed => fail += 1,
             StartupActionOutcome::TimedOut => timeout += 1,
         }
@@ -6001,8 +5998,8 @@ async fn open_described_session(
         LocalForwardTunnel, PostgresConnectConfig, PostgresSession, PostgresTlsMode,
         RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
         RedisTlsMode, SshAgentAuth, SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth,
-        SshPublicKeyAuth, SshTunnelConfig, open_local_forward_tunnel, run_clickhouse_startup_actions,
-        run_postgres_startup_actions, run_redis_startup_actions,
+        SshPublicKeyAuth, SshTunnelConfig, open_local_forward_tunnel,
+        run_clickhouse_startup_actions, run_postgres_startup_actions, run_redis_startup_actions,
     };
     let mut host = draft.host.clone();
     let mut port: u16 = draft.port.parse().map_err(|_| "invalid port".to_owned())?;
@@ -6014,7 +6011,8 @@ async fn open_described_session(
         let bastion_port: u16 = if draft.ssh_port.trim().is_empty() {
             22
         } else {
-            draft.ssh_port
+            draft
+                .ssh_port
                 .parse()
                 .map_err(|_| "invalid SSH port".to_owned())?
         };
@@ -6049,9 +6047,9 @@ async fn open_described_session(
             bastion_host: draft.ssh_host.clone(),
             bastion_port,
             auth,
-            host_key_policy: SshHostKeyPolicy::KnownHostsPath(
-                std::path::PathBuf::from(draft.ssh_known_hosts_path.trim()),
-            ),
+            host_key_policy: SshHostKeyPolicy::KnownHostsPath(std::path::PathBuf::from(
+                draft.ssh_known_hosts_path.trim(),
+            )),
         };
         let opened = open_local_forward_tunnel(&config, host.as_str(), port)
             .await
@@ -6067,17 +6065,15 @@ async fn open_described_session(
     // Resolve reference password sources only for this attempt; never log.
     // Zeroize on drop so attempt-scoped material does not linger on the heap.
     let resolved_password = zeroize::Zeroizing::new(match &draft.password_source {
-        PasswordSourceSpec::HostEnvironment { var } => {
-            match std::env::var(var.trim()) {
-                Ok(v) if !v.is_empty() => v,
-                _ => {
-                    return Err(format!(
-                        "environment variable '{}' is unset or empty",
-                        var.trim()
-                    ));
-                }
+        PasswordSourceSpec::HostEnvironment { var } => match std::env::var(var.trim()) {
+            Ok(v) if !v.is_empty() => v,
+            _ => {
+                return Err(format!(
+                    "environment variable '{}' is unset or empty",
+                    var.trim()
+                ));
             }
-        }
+        },
         PasswordSourceSpec::OnePassword {
             account_id,
             vault_id,
@@ -6091,23 +6087,22 @@ async fn open_described_session(
                 OnePasswordSegment, ProfileProperty, ProfilePropertyBinding, SecretSource,
                 SecretSourceKind,
             };
-            use tablerock_engine::{
-                SecretPromptPort, SecretResolutionError, resolve_for_connect,
-            };
+            use tablerock_engine::{SecretPromptPort, SecretResolutionError, resolve_for_connect};
             struct FailPrompt;
             impl SecretPromptPort for FailPrompt {
                 fn request(
                     &mut self,
                     _field: tablerock_core::SecretField,
                     _profile: &tablerock_core::ProfileName,
-                ) -> Result<tablerock_engine::ResolvedSecret, SecretResolutionError> {
+                ) -> Result<tablerock_engine::ResolvedSecret, SecretResolutionError>
+                {
                     Err(SecretResolutionError::PromptFailed)
                 }
             }
             let section = match section_id.as_deref() {
-                Some(s) if !s.is_empty() => Some(
-                    OnePasswordSegment::parse(s).map_err(|e| e.to_string())?,
-                ),
+                Some(s) if !s.is_empty() => {
+                    Some(OnePasswordSegment::parse(s).map_err(|e| e.to_string())?)
+                }
                 _ => None,
             };
             let reference = OnePasswordReference::new(
@@ -6145,9 +6140,7 @@ async fn open_described_session(
             .map_err(|e| e.to_string())?;
             let mut prompt = FailPrompt;
             match resolve_for_connect(&binding, &profile_name, &mut prompt) {
-                Ok(Some(secret)) => {
-                    String::from_utf8_lossy(secret.as_bytes()).into_owned()
-                }
+                Ok(Some(secret)) => String::from_utf8_lossy(secret.as_bytes()).into_owned(),
                 Ok(None) => String::new(),
                 Err(error) => return Err(error.to_string()),
             }
@@ -6418,13 +6411,11 @@ fn draft_to_aggregate(draft: &ConnectionDraft) -> Result<ProfileAggregate, Strin
             field_id,
             breadcrumb,
         } => {
-            use tablerock_core::{
-                OnePasswordObjectId, OnePasswordReference, OnePasswordSegment,
-            };
+            use tablerock_core::{OnePasswordObjectId, OnePasswordReference, OnePasswordSegment};
             let section = match section_id.as_deref() {
-                Some(s) if !s.is_empty() => Some(
-                    OnePasswordSegment::parse(s).map_err(|e| e.to_string())?,
-                ),
+                Some(s) if !s.is_empty() => {
+                    Some(OnePasswordSegment::parse(s).map_err(|e| e.to_string())?)
+                }
                 _ => None,
             };
             let crumb = if breadcrumb.trim().is_empty() {
@@ -6557,22 +6548,14 @@ mod redis_collection_spec_tests {
                 field: "f".into(),
                 value: "v".into(),
             },
-            MutationChangeSpec::RedisHashDelete {
-                field: "f".into(),
-            },
-            MutationChangeSpec::RedisSetAdd {
-                member: "m".into(),
-            },
-            MutationChangeSpec::RedisSetRemove {
-                member: "m".into(),
-            },
+            MutationChangeSpec::RedisHashDelete { field: "f".into() },
+            MutationChangeSpec::RedisSetAdd { member: "m".into() },
+            MutationChangeSpec::RedisSetRemove { member: "m".into() },
             MutationChangeSpec::RedisZSetAdd {
                 member: "z".into(),
                 score: "2.5".into(),
             },
-            MutationChangeSpec::RedisZSetRemove {
-                member: "z".into(),
-            },
+            MutationChangeSpec::RedisZSetRemove { member: "z".into() },
         ])
         .unwrap();
         assert_eq!(changes.len(), 6);
@@ -6590,9 +6573,9 @@ mod redis_collection_spec_tests {
             // by building a throwaway plan
             &{
                 use tablerock_core::{
-                    IdParts, MutationId, MutationPlan, MutationPlanLimits, MutationTarget,
-                    OperationScope, ProfileId, ContextId, SessionId, Revision, BoundedBytes,
-                    ByteLimit,
+                    BoundedBytes, ByteLimit, ContextId, IdParts, MutationId, MutationPlan,
+                    MutationPlanLimits, MutationTarget, OperationScope, ProfileId, Revision,
+                    SessionId,
                 };
                 let scope = OperationScope::new(
                     ProfileId::from_parts(IdParts::new(1, 1).unwrap()).unwrap(),
@@ -6619,15 +6602,19 @@ mod redis_collection_spec_tests {
 
     #[test]
     fn reject_empty_and_nonfinite_zset_score() {
-        assert!(typed_changes_from_specs(&[MutationChangeSpec::RedisHashSet {
-            field: "".into(),
-            value: "v".into(),
-        }])
-        .is_err());
-        assert!(typed_changes_from_specs(&[MutationChangeSpec::RedisZSetAdd {
-            member: "z".into(),
-            score: "nan".into(),
-        }])
-        .is_err());
+        assert!(
+            typed_changes_from_specs(&[MutationChangeSpec::RedisHashSet {
+                field: "".into(),
+                value: "v".into(),
+            }])
+            .is_err()
+        );
+        assert!(
+            typed_changes_from_specs(&[MutationChangeSpec::RedisZSetAdd {
+                member: "z".into(),
+                score: "nan".into(),
+            }])
+            .is_err()
+        );
     }
 }

@@ -326,7 +326,9 @@ mod tests {
         // quote_ident doubles internal quotes: `"\""; DROP TABLE x; --"`
         let expected_table = quote_ident("\"; DROP TABLE x; --").unwrap();
         assert!(
-            rendered.sql.contains(&format!("\"public\".{expected_table}")),
+            rendered
+                .sql
+                .contains(&format!("\"public\".{expected_table}")),
             "sql={}",
             rendered.sql
         );
@@ -393,7 +395,11 @@ mod tests {
             },
         ];
         let rendered = plan.render_sql().unwrap();
-        assert!(rendered.sql.contains("\"name\" NOT LIKE $1"), "{}", rendered.sql);
+        assert!(
+            rendered.sql.contains("\"name\" NOT LIKE $1"),
+            "{}",
+            rendered.sql
+        );
         assert!(
             rendered.sql.contains("\"email\" NOT ILIKE $2"),
             "{}",
@@ -449,7 +455,11 @@ mod tests {
         }];
         plan.raw_where = Some("status = 'open'".into());
         let rendered = plan.render_sql().unwrap();
-        assert!(rendered.sql.contains("WHERE \"active\" = $1 AND (status = 'open')"));
+        assert!(
+            rendered
+                .sql
+                .contains("WHERE \"active\" = $1 AND (status = 'open')")
+        );
     }
 
     #[test]

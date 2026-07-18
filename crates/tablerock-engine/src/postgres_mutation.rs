@@ -108,8 +108,7 @@ impl PostgresSession {
                         changes: outcomes,
                     });
                 }
-                Err(PostgresError::ServerCancelled)
-                | Err(PostgresError::WriteOutcomeUnknown) => {
+                Err(PostgresError::ServerCancelled) | Err(PostgresError::WriteOutcomeUnknown) => {
                     // Dispatched write without confirmed terminal — never auto-retry.
                     let _ = self.client.batch_execute("ROLLBACK").await;
                     return Ok(MutationApplyOutcome {
@@ -166,10 +165,7 @@ async fn apply_one_change(
                     detail: "insert requires at least one field".into(),
                 });
             }
-            let cols: Result<Vec<_>, _> = values
-                .iter()
-                .map(|f| quote_ident(f.field()))
-                .collect();
+            let cols: Result<Vec<_>, _> = values.iter().map(|f| quote_ident(f.field())).collect();
             let cols = cols.map_err(|_| PostgresError::Query)?;
             let params = bind_fields(values)?;
             // Cast placeholders to the wire type we send so prepare inference
@@ -227,9 +223,8 @@ async fn apply_one_change(
                 .enumerate()
                 .map(|(i, f)| {
                     let bound = &locator_params[i];
-                    quote_ident(f.field()).map(|c| {
-                        format!("{c} = {}", sql_placeholder(where_start + i, bound))
-                    })
+                    quote_ident(f.field())
+                        .map(|c| format!("{c} = {}", sql_placeholder(where_start + i, bound)))
                 })
                 .collect();
             let where_parts = where_parts.map_err(|_| PostgresError::Query)?;

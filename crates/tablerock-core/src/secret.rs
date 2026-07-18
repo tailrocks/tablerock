@@ -199,13 +199,11 @@ impl OnePasswordReference {
         match parts.as_slice() {
             [account, vault, item, field] => {
                 let field_seg = OnePasswordSegment::parse(field)?;
-                let breadcrumb = BoundedText::copy_from_str(
-                    field,
-                    ByteLimit::new(Self::MAX_BREADCRUMB_BYTES),
-                )
-                .map_err(|_| SecretBuildError::EmptyField {
-                    field: SecretField::Breadcrumb,
-                })?;
+                let breadcrumb =
+                    BoundedText::copy_from_str(field, ByteLimit::new(Self::MAX_BREADCRUMB_BYTES))
+                        .map_err(|_| SecretBuildError::EmptyField {
+                        field: SecretField::Breadcrumb,
+                    })?;
                 Self::new(
                     OnePasswordObjectId::parse(account)?,
                     OnePasswordObjectId::parse(vault)?,
@@ -217,13 +215,11 @@ impl OnePasswordReference {
             }
             [account, vault, item, section, field] => {
                 let field_seg = OnePasswordSegment::parse(field)?;
-                let breadcrumb = BoundedText::copy_from_str(
-                    field,
-                    ByteLimit::new(Self::MAX_BREADCRUMB_BYTES),
-                )
-                .map_err(|_| SecretBuildError::EmptyField {
-                    field: SecretField::Breadcrumb,
-                })?;
+                let breadcrumb =
+                    BoundedText::copy_from_str(field, ByteLimit::new(Self::MAX_BREADCRUMB_BYTES))
+                        .map_err(|_| SecretBuildError::EmptyField {
+                        field: SecretField::Breadcrumb,
+                    })?;
                 Self::new(
                     OnePasswordObjectId::parse(account)?,
                     OnePasswordObjectId::parse(vault)?,
