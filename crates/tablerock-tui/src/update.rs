@@ -3505,6 +3505,32 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyColumn if model.screen() == Screen::Workbench => {
+            use crate::model::copy_format::format_cursor_column;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let text = match format_cursor_column(grid) {
+                Ok(t) => t,
+                Err(err) => {
+                    if let Some(g) = model.workbench_mut().active_grid_mut() {
+                        g.error_label = Some(err.to_string());
+                    }
+                    return Update::render();
+                }
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied column ({} lines)", text.lines().count()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -4764,6 +4790,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyRowSqlUpdate
         | ActionId::CopyPick
         | ActionId::CopyColumnNames
+        | ActionId::CopyColumn
         | ActionId::CycleSort
         | ActionId::PushSort
         | ActionId::PopSort
@@ -6356,6 +6383,7 @@ fn cycle_action(
                 ActionId::CopyRowSqlUpdate,
                 ActionId::CopyPick,
                 ActionId::CopyColumnNames,
+                ActionId::CopyColumn,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,

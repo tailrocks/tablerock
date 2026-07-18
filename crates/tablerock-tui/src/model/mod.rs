@@ -126,6 +126,8 @@ pub enum ActionId {
     CopyPick,
     /// Copy visible column names (tab-separated) to clipboard.
     CopyColumnNames,
+    /// Copy cursor column values for all resident rows (one per line).
+    CopyColumn,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Append cursor column as secondary sort (or cycle its direction in place).

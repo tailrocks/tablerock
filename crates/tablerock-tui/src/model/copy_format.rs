@@ -70,6 +70,27 @@ pub fn format_cursor_cell_hex(grid: &DataGridModel) -> Result<String, CopyError>
         .join(""))
 }
 
+/// Copy the cursor column for all resident rows (one value per line).
+pub fn format_cursor_column(grid: &DataGridModel) -> Result<String, CopyError> {
+    if grid.columns.is_empty() || grid.row_count == 0 {
+        return Err(CopyError::Empty);
+    }
+    let col = grid.cursor_col.min(grid.columns.len().saturating_sub(1));
+    let mut lines = Vec::with_capacity(grid.row_count as usize);
+    for local in 0..grid.row_count {
+        let abs = grid.start_row.saturating_add(u64::from(local));
+        let cell = grid.cell_at(abs, col);
+        if matches!(cell.distinction, super::grid::CellDistinction::Pending) {
+            continue;
+        }
+        lines.push(cell_copy_text(&cell));
+    }
+    if lines.is_empty() {
+        return Err(CopyError::Empty);
+    }
+    Ok(lines.join("\n"))
+}
+
 /// Format selection from the grid. Returns UTF-8 text for the clipboard effect.
 pub fn format_copy(
     grid: &DataGridModel,
@@ -426,6 +447,20 @@ mod tests {
         assert!(csv.contains("id,name"));
         assert!(csv.contains("\"a,b\""));
         assert!(csv.contains("NULL"));
+    }
+
+    #[test]
+    fn format_cursor_column_resident_values() {
+        let mut g = sample_grid();
+        g.cursor_col = 0; // id column: 1 and NULL
+        let col = format_cursor_column(&g).unwrap();
+        let lines: Vec<_> = col.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], "1");
+        assert_eq!(lines[1], "NULL");
+        g.cursor_col = 1;
+        let names = format_cursor_column(&g).unwrap();
+        assert!(names.contains("a,b") || names.contains("x"), "{names}");
     }
 
     #[test]
