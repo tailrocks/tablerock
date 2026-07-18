@@ -294,6 +294,36 @@ fn preview_change(qualified: &str, change: &MutationChange) -> ReviewStatementLi
             parameters: vec![],
             kind: "redis_expire",
         },
+        MutationChange::RedisHashSetField { .. } => ReviewStatementLine {
+            sql: "REDIS HSET …".into(),
+            parameters: vec![],
+            kind: "redis_hset",
+        },
+        MutationChange::RedisHashDeleteField { .. } => ReviewStatementLine {
+            sql: "REDIS HDEL …".into(),
+            parameters: vec![],
+            kind: "redis_hdel",
+        },
+        MutationChange::RedisSetAddMember { .. } => ReviewStatementLine {
+            sql: "REDIS SADD …".into(),
+            parameters: vec![],
+            kind: "redis_sadd",
+        },
+        MutationChange::RedisSetRemoveMember { .. } => ReviewStatementLine {
+            sql: "REDIS SREM …".into(),
+            parameters: vec![],
+            kind: "redis_srem",
+        },
+        MutationChange::RedisZSetAddMember { .. } => ReviewStatementLine {
+            sql: "REDIS ZADD …".into(),
+            parameters: vec![],
+            kind: "redis_zadd",
+        },
+        MutationChange::RedisZSetRemoveMember { .. } => ReviewStatementLine {
+            sql: "REDIS ZREM …".into(),
+            parameters: vec![],
+            kind: "redis_zrem",
+        },
     }
 }
 

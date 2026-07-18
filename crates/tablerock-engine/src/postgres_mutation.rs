@@ -291,7 +291,13 @@ async fn apply_one_change(
         }
         MutationChange::RedisSetString { .. }
         | MutationChange::RedisDeleteKey
-        | MutationChange::RedisSetExpiration(_) => Ok(MutationChangeOutcome::Failed {
+        | MutationChange::RedisSetExpiration(_)
+        | MutationChange::RedisHashSetField { .. }
+        | MutationChange::RedisHashDeleteField { .. }
+        | MutationChange::RedisSetAddMember { .. }
+        | MutationChange::RedisSetRemoveMember { .. }
+        | MutationChange::RedisZSetAddMember { .. }
+        | MutationChange::RedisZSetRemoveMember { .. } => Ok(MutationChangeOutcome::Failed {
             index,
             detail: "redis mutation not valid on PostgreSQL session".into(),
         }),

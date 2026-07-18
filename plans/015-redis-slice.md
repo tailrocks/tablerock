@@ -119,7 +119,8 @@ extended; CI updated.
 
 - ~~HSCAN/SSCAN/ZSCAN first-page wiring in OpenRedisKey~~ (closed: evidence 311)
 - Full command editor tab + pipeline outcomes UI
-- Multi-type staged hash/list/set/zset edits beyond SET/DEL/TTL
+- ~~Multi-type collection mutations (HSET/HDEL/SADD/SREM/ZADD/ZREM) on apply path~~
+  (closed: evidence 312; TUI stage UI still residual)
 - ~~MATCH pattern filter on ScanRedisKeys~~ (closed: evidence 311)
 - Collection next-page affordance beyond first-page preview
 

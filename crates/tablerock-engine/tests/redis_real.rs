@@ -2822,6 +2822,181 @@ async fn seed(port: u16) {
 }
 
 #[tokio::test]
+async fn applies_multi_type_collection_mutations_non_transactionally() {
+    use tablerock_engine::MutationChangeOutcome;
+
+    let container = GenericImage::new("redis", "8.8.0")
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let session = RedisSession::connect(
+        &RedisConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            0,
+            RedisProtocol::Resp3,
+            RedisTlsMode::Disable,
+        ),
+        RedisConnectionSecurity::new(),
+    )
+    .await
+    .unwrap();
+
+    let hash_key = b"tablerock-mut-hash";
+    let set_key = b"tablerock-mut-set";
+    let zset_key = b"tablerock-mut-zset";
+
+    // HSET then HDEL
+    let hset = session
+        .apply_authorized_mutation(authorized_ttl_plan(
+            0,
+            hash_key,
+            vec![MutationChange::RedisHashSetField {
+                field: bytes(b"field"),
+                value: bytes(b"value"),
+            }],
+        ))
+        .await
+        .unwrap();
+    assert!(matches!(
+        &hset.changes[0],
+        MutationChangeOutcome::Applied {
+            returned,
+            ..
+        } if returned.iter().any(|(k, v)| k == "command" && v == "HSET")
+    ));
+    let hget: Option<Vec<u8>> = {
+        let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+        let mut c = client.get_multiplexed_async_connection().await.unwrap();
+        redis::cmd("HGET")
+            .arg(hash_key)
+            .arg(b"field")
+            .query_async(&mut c)
+            .await
+            .unwrap()
+    };
+    assert_eq!(hget.as_deref(), Some(b"value".as_slice()));
+
+    let hdel = session
+        .apply_authorized_mutation(authorized_ttl_plan(
+            0,
+            hash_key,
+            vec![MutationChange::RedisHashDeleteField {
+                field: bytes(b"field"),
+            }],
+        ))
+        .await
+        .unwrap();
+    assert!(matches!(
+        &hdel.changes[0],
+        MutationChangeOutcome::Applied { .. }
+    ));
+
+    // SADD then SREM
+    let sadd = session
+        .apply_authorized_mutation(authorized_ttl_plan(
+            0,
+            set_key,
+            vec![MutationChange::RedisSetAddMember {
+                member: bytes(b"member"),
+            }],
+        ))
+        .await
+        .unwrap();
+    assert!(matches!(
+        &sadd.changes[0],
+        MutationChangeOutcome::Applied {
+            returned,
+            ..
+        } if returned.iter().any(|(k, v)| k == "command" && v == "SADD")
+    ));
+    let sismember: i64 = {
+        let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+        let mut c = client.get_multiplexed_async_connection().await.unwrap();
+        redis::cmd("SISMEMBER")
+            .arg(set_key)
+            .arg(b"member")
+            .query_async(&mut c)
+            .await
+            .unwrap()
+    };
+    assert_eq!(sismember, 1);
+
+    session
+        .apply_authorized_mutation(authorized_ttl_plan(
+            0,
+            set_key,
+            vec![MutationChange::RedisSetRemoveMember {
+                member: bytes(b"member"),
+            }],
+        ))
+        .await
+        .unwrap();
+
+    // ZADD then ZREM (score as IEEE bits)
+    let zadd = session
+        .apply_authorized_mutation(authorized_ttl_plan(
+            0,
+            zset_key,
+            vec![MutationChange::RedisZSetAddMember {
+                member: bytes(b"member"),
+                score_bits: 2.5_f64.to_bits(),
+            }],
+        ))
+        .await
+        .unwrap();
+    assert!(matches!(
+        &zadd.changes[0],
+        MutationChangeOutcome::Applied {
+            returned,
+            ..
+        } if returned.iter().any(|(k, v)| k == "command" && v == "ZADD")
+    ));
+    let zscore: Option<f64> = {
+        let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+        let mut c = client.get_multiplexed_async_connection().await.unwrap();
+        redis::cmd("ZSCORE")
+            .arg(zset_key)
+            .arg(b"member")
+            .query_async(&mut c)
+            .await
+            .unwrap()
+    };
+    assert_eq!(zscore, Some(2.5));
+
+    session
+        .apply_authorized_mutation(authorized_ttl_plan(
+            0,
+            zset_key,
+            vec![MutationChange::RedisZSetRemoveMember {
+                member: bytes(b"member"),
+            }],
+        ))
+        .await
+        .unwrap();
+
+    // Non-finite score fail-closed
+    let bad = session
+        .apply_authorized_mutation(authorized_ttl_plan(
+            0,
+            zset_key,
+            vec![MutationChange::RedisZSetAddMember {
+                member: bytes(b"nan"),
+                score_bits: f64::NAN.to_bits(),
+            }],
+        ))
+        .await
+        .unwrap();
+    assert!(matches!(
+        &bad.changes[0],
+        MutationChangeOutcome::Failed { detail, .. } if detail.contains("finite")
+    ));
+}
+
+#[tokio::test]
 async fn lists_catalog_logical_databases() {
     use tablerock_core::{CatalogNodeKind, PageLimits};
     use tablerock_engine::{

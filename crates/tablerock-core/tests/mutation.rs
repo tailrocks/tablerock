@@ -144,6 +144,64 @@ fn clickhouse_insert_and_async_mutation_models_never_mix() {
 }
 
 #[test]
+fn redis_collection_mutations_are_sequential_and_engine_gated() {
+    let collection_plan = plan(
+        MutationTarget::RedisKey {
+            logical_database: 0,
+            key: bytes(b"col"),
+        },
+        vec![
+            MutationChange::RedisHashSetField {
+                field: bytes(b"f"),
+                value: bytes(b"v"),
+            },
+            MutationChange::RedisSetAddMember {
+                member: bytes(b"m"),
+            },
+            MutationChange::RedisZSetAddMember {
+                member: bytes(b"z"),
+                score_bits: 1.5_f64.to_bits(),
+            },
+        ],
+    );
+    assert_eq!(
+        collection_plan.execution_model(),
+        MutationExecutionModel::RedisSequentialNoRollback
+    );
+    assert_eq!(collection_plan.changes().len(), 3);
+    assert!(matches!(
+        MutationPlan::new(
+            mutation_id(),
+            scope(1),
+            Revision::INITIAL,
+            postgres_target(),
+            vec![MutationChange::RedisHashSetField {
+                field: bytes(b"f"),
+                value: bytes(b"v"),
+            }],
+            limits(),
+        ),
+        Err(MutationBuildError::ChangeEngineMismatch { change: 0 })
+    ));
+    assert!(matches!(
+        MutationPlan::new(
+            mutation_id(),
+            scope(1),
+            Revision::INITIAL,
+            MutationTarget::RedisKey {
+                logical_database: 0,
+                key: bytes(b"k"),
+            },
+            vec![MutationChange::RedisHashDeleteField {
+                field: bytes(b""),
+            }],
+            limits(),
+        ),
+        Err(MutationBuildError::EmptyFields { change: 0 })
+    ));
+}
+
+#[test]
 fn redis_plan_keeps_raw_key_value_ttl_and_no_rollback_truth() {
     let target = MutationTarget::RedisKey {
         logical_database: 3,

@@ -145,6 +145,32 @@ pub enum MutationChange {
     },
     RedisDeleteKey,
     RedisSetExpiration(RedisExpiration),
+    /// HSET key field value (non-transactional sequential apply).
+    RedisHashSetField {
+        field: BoundedBytes,
+        value: BoundedBytes,
+    },
+    /// HDEL key field.
+    RedisHashDeleteField {
+        field: BoundedBytes,
+    },
+    /// SADD key member.
+    RedisSetAddMember {
+        member: BoundedBytes,
+    },
+    /// SREM key member.
+    RedisSetRemoveMember {
+        member: BoundedBytes,
+    },
+    /// ZADD key score member (`score_bits` = f64 IEEE bits).
+    RedisZSetAddMember {
+        member: BoundedBytes,
+        score_bits: u64,
+    },
+    /// ZREM key member.
+    RedisZSetRemoveMember {
+        member: BoundedBytes,
+    },
 }
 
 impl fmt::Debug for MutationChange {
@@ -183,6 +209,41 @@ impl fmt::Debug for MutationChange {
                 debug
                     .field("kind", &"redis_set_expiration")
                     .field("expiration", expiration);
+            }
+            Self::RedisHashSetField { field, value } => {
+                debug
+                    .field("kind", &"redis_hash_set_field")
+                    .field("field_bytes", &field.len())
+                    .field("value_bytes", &value.len());
+            }
+            Self::RedisHashDeleteField { field } => {
+                debug
+                    .field("kind", &"redis_hash_delete_field")
+                    .field("field_bytes", &field.len());
+            }
+            Self::RedisSetAddMember { member } => {
+                debug
+                    .field("kind", &"redis_set_add_member")
+                    .field("member_bytes", &member.len());
+            }
+            Self::RedisSetRemoveMember { member } => {
+                debug
+                    .field("kind", &"redis_set_remove_member")
+                    .field("member_bytes", &member.len());
+            }
+            Self::RedisZSetAddMember {
+                member,
+                score_bits,
+            } => {
+                debug
+                    .field("kind", &"redis_zset_add_member")
+                    .field("member_bytes", &member.len())
+                    .field("score_bits", score_bits);
+            }
+            Self::RedisZSetRemoveMember { member } => {
+                debug
+                    .field("kind", &"redis_zset_remove_member")
+                    .field("member_bytes", &member.len());
             }
         }
         debug.finish()
@@ -671,6 +732,32 @@ fn validate_change(
         }
         MutationChange::RedisSetExpiration(expiration) => validate_expiration(*expiration, index),
         MutationChange::RedisDeleteKey => Ok(()),
+        MutationChange::RedisHashSetField { field, value } => {
+            if field.is_empty() {
+                return Err(MutationBuildError::EmptyFields { change: index });
+            }
+            *value_bytes = value_bytes
+                .checked_add(portable_len(field.len()))
+                .and_then(|n| n.checked_add(portable_len(value.len())))
+                .unwrap_or(u64::MAX);
+            Ok(())
+        }
+        MutationChange::RedisHashDeleteField { field }
+        | MutationChange::RedisSetAddMember { member: field }
+        | MutationChange::RedisSetRemoveMember { member: field }
+        | MutationChange::RedisZSetAddMember {
+            member: field,
+            score_bits: _,
+        }
+        | MutationChange::RedisZSetRemoveMember { member: field } => {
+            if field.is_empty() {
+                return Err(MutationBuildError::EmptyFields { change: index });
+            }
+            *value_bytes = value_bytes
+                .checked_add(portable_len(field.len()))
+                .unwrap_or(u64::MAX);
+            Ok(())
+        }
     }
 }
 
@@ -687,7 +774,13 @@ fn validate_change_engine(
         }
         MutationChange::RedisSetString { .. }
         | MutationChange::RedisDeleteKey
-        | MutationChange::RedisSetExpiration(_) => engine == Engine::Redis,
+        | MutationChange::RedisSetExpiration(_)
+        | MutationChange::RedisHashSetField { .. }
+        | MutationChange::RedisHashDeleteField { .. }
+        | MutationChange::RedisSetAddMember { .. }
+        | MutationChange::RedisSetRemoveMember { .. }
+        | MutationChange::RedisZSetAddMember { .. }
+        | MutationChange::RedisZSetRemoveMember { .. } => engine == Engine::Redis,
     };
     valid
         .then_some(())

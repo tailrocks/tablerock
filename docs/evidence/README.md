@@ -198,6 +198,7 @@ How to read an evidence document:
 - 309 — [Disconnect mid-stream marks live ops](delivery/309-plan-018-disconnect-mid-stream.md)
 - 310 — [Multi-named filter presets](delivery/310-plan-016-named-filter-presets.md)
 - 311 — [Redis SCAN MATCH + collection first-page views](delivery/311-plan-015-redis-scan-match-collections.md)
+- 312 — [Redis multi-type collection mutations](delivery/312-plan-015-redis-collection-mutations.md)
 
 ## TermRock pins
 

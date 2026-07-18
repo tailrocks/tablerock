@@ -1941,6 +1941,97 @@ impl RedisSession {
                         detail: "use apply_reviewed_ttl_mutation for pure TTL changes".into(),
                     }
                 }
+                MutationChange::RedisHashSetField { field, value } => {
+                    let n: i64 = redis::cmd("HSET")
+                        .arg(key.as_slice())
+                        .arg(field.as_slice())
+                        .arg(value.as_slice())
+                        .query_async(&mut connection)
+                        .await
+                        .map_err(map_command_error)?;
+                    MutationChangeOutcome::Applied {
+                        index,
+                        rows_affected: u64::try_from(n.max(0)).unwrap_or(0),
+                        returned: vec![("command".into(), "HSET".into())],
+                    }
+                }
+                MutationChange::RedisHashDeleteField { field } => {
+                    let n: i64 = redis::cmd("HDEL")
+                        .arg(key.as_slice())
+                        .arg(field.as_slice())
+                        .query_async(&mut connection)
+                        .await
+                        .map_err(map_command_error)?;
+                    MutationChangeOutcome::Applied {
+                        index,
+                        rows_affected: u64::try_from(n.max(0)).unwrap_or(0),
+                        returned: vec![("command".into(), "HDEL".into())],
+                    }
+                }
+                MutationChange::RedisSetAddMember { member } => {
+                    let n: i64 = redis::cmd("SADD")
+                        .arg(key.as_slice())
+                        .arg(member.as_slice())
+                        .query_async(&mut connection)
+                        .await
+                        .map_err(map_command_error)?;
+                    MutationChangeOutcome::Applied {
+                        index,
+                        rows_affected: u64::try_from(n.max(0)).unwrap_or(0),
+                        returned: vec![("command".into(), "SADD".into())],
+                    }
+                }
+                MutationChange::RedisSetRemoveMember { member } => {
+                    let n: i64 = redis::cmd("SREM")
+                        .arg(key.as_slice())
+                        .arg(member.as_slice())
+                        .query_async(&mut connection)
+                        .await
+                        .map_err(map_command_error)?;
+                    MutationChangeOutcome::Applied {
+                        index,
+                        rows_affected: u64::try_from(n.max(0)).unwrap_or(0),
+                        returned: vec![("command".into(), "SREM".into())],
+                    }
+                }
+                MutationChange::RedisZSetAddMember {
+                    member,
+                    score_bits,
+                } => {
+                    let score = f64::from_bits(*score_bits);
+                    if !score.is_finite() {
+                        MutationChangeOutcome::Failed {
+                            index,
+                            detail: "zset score must be finite".into(),
+                        }
+                    } else {
+                        let n: i64 = redis::cmd("ZADD")
+                            .arg(key.as_slice())
+                            .arg(score)
+                            .arg(member.as_slice())
+                            .query_async(&mut connection)
+                            .await
+                            .map_err(map_command_error)?;
+                        MutationChangeOutcome::Applied {
+                            index,
+                            rows_affected: u64::try_from(n.max(0)).unwrap_or(0),
+                            returned: vec![("command".into(), "ZADD".into())],
+                        }
+                    }
+                }
+                MutationChange::RedisZSetRemoveMember { member } => {
+                    let n: i64 = redis::cmd("ZREM")
+                        .arg(key.as_slice())
+                        .arg(member.as_slice())
+                        .query_async(&mut connection)
+                        .await
+                        .map_err(map_command_error)?;
+                    MutationChangeOutcome::Applied {
+                        index,
+                        rows_affected: u64::try_from(n.max(0)).unwrap_or(0),
+                        returned: vec![("command".into(), "ZREM".into())],
+                    }
+                }
                 MutationChange::InsertRow { .. }
                 | MutationChange::UpdateRow { .. }
                 | MutationChange::DeleteRow { .. } => MutationChangeOutcome::Failed {
