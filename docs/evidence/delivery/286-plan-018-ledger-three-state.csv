@@ -18,7 +18,7 @@ Workbench,Object tabs,Core,implemented,preview/pin/independent state,plan 007
 Workbench,Query/command tabs,Core,implemented,editor + run + history,plan 011
 Workbench,Result tabs,Parity,gap,multi-statement result tabs partial,
 Workbench,Responsive layout,Core,implemented,wide/medium/narrow shells,plan 007
-Workbench,Quick switcher,Parity,gap,blocks Parity claim,
+Workbench,Quick switcher,Parity,implemented,tab title/index quick switch dialog,evidence 291
 Workbench,Favorites and saved queries,Parity,implemented,named queries persistence,plan 011
 Workbench,Session restoration,Core,implemented,intent only never results,plan 007
 Workbench,Multi-window,Native,gap,blocked on plan 019-020 packaging,

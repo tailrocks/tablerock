@@ -103,7 +103,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::TerminateBackend { confirm_buffer, .. }
                     | ConfirmDialog::StartupReview { confirm_buffer, .. }
                     | ConfirmDialog::PgTool { confirm_buffer, .. }
-                    | ConfirmDialog::ImportUrl { confirm_buffer, .. } => {
+                    | ConfirmDialog::ImportUrl { confirm_buffer, .. }
+                    | ConfirmDialog::QuickSwitch { confirm_buffer, .. } => {
                         *confirm_buffer = text.text().to_owned();
                     }
                     _ => {}
@@ -1768,6 +1769,37 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         }
                     }
                 }
+                ConfirmDialog::QuickSwitch { confirm_buffer } => {
+                    let needle = confirm_buffer.trim();
+                    let tabs = &model.workbench().tabs;
+                    if tabs.is_empty() {
+                        model.set_confirm(None);
+                        return Update::render();
+                    }
+                    let selected = if needle.is_empty() {
+                        Some(model.workbench().selected_tab)
+                    } else if let Ok(n) = needle.parse::<usize>() {
+                        // 1-based index.
+                        if n >= 1 && n <= tabs.len() {
+                            Some(n - 1)
+                        } else {
+                            None
+                        }
+                    } else {
+                        let lower = needle.to_ascii_lowercase();
+                        tabs.iter().position(|t| {
+                            t.title.to_ascii_lowercase().contains(&lower)
+                                || t.id.to_string() == needle
+                        })
+                    };
+                    model.set_confirm(None);
+                    if let Some(idx) = selected {
+                        model.workbench_mut().selected_tab = idx;
+                    } else if let Some(g) = model.workbench_mut().active_grid_mut() {
+                        g.mark_failed(format!("no tab matches '{needle}'"));
+                    }
+                    Update::render()
+                }
                 ConfirmDialog::RenameTable {
                     schema,
                     table,
@@ -2535,6 +2567,13 @@ fn activate_selected_action(model: &mut Model) -> Update {
         }
         ActionId::ImportCsv if model.screen() == Screen::Workbench => import_csv_apply(model),
         ActionId::Explain if model.screen() == Screen::Workbench => explain_active_sql(model),
+        ActionId::QuickSwitch if model.screen() == Screen::Workbench => {
+            model.set_confirm(Some(ConfirmDialog::QuickSwitch {
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::PgDump if model.screen() == Screen::Workbench => {
             if !model
                 .session()
@@ -2684,6 +2723,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::PgRestore
         | ActionId::ImportUrl
         | ActionId::Explain
+        | ActionId::QuickSwitch
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -3207,6 +3247,7 @@ fn cycle_action(
             Screen::Workbench => &[
                 ActionId::NextDatabase,
                 ActionId::NextTab,
+                ActionId::QuickSwitch,
                 ActionId::PinTab,
                 ActionId::NewSql,
                 ActionId::RunSql,
@@ -4792,6 +4833,35 @@ mod tests {
                 ..
             }) if kind == "drop_column" && object_name == "email" && type_text.is_empty()
         ));
+    }
+
+    #[test]
+    fn quick_switch_selects_tab_by_title_substring() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().open_sql_tab();
+        model.workbench_mut().tabs[1].title = "report.sql".into();
+        model.workbench_mut().open_sql_tab();
+        model.workbench_mut().tabs[2].title = "orders".into();
+        assert_eq!(model.workbench().selected_tab, 2);
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::QuickSwitch);
+        let _ = update(&mut model, Message::Activate);
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("report".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(model.workbench().selected_tab, 1);
+        assert_eq!(model.workbench().tabs[1].title, "report.sql");
     }
 
     #[test]

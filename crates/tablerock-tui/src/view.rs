@@ -237,6 +237,22 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "Paste postgres/redis/clickhouse URL then Submit [{confirm_buffer}]"
             ),
         ),
+        crate::model::ConfirmDialog::QuickSwitch { confirm_buffer } => {
+            let tabs = &model.workbench().tabs;
+            let preview: Vec<String> = tabs
+                .iter()
+                .enumerate()
+                .take(8)
+                .map(|(i, t)| format!("{}:{}", i + 1, t.title))
+                .collect();
+            (
+                "Switch tab?",
+                format!(
+                    "Tabs: {}. Paste 1-based index or title substring [{confirm_buffer}]",
+                    preview.join(" ")
+                ),
+            )
+        }
     };
     let panel = Panel::new(&model.theme)
         .title(title)
@@ -360,6 +376,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let disconnect = action_label(model, ActionId::Disconnect, "Disconnect");
     let next_db = action_label(model, ActionId::NextDatabase, "Next DB");
     let next_tab = action_label(model, ActionId::NextTab, "Next Tab");
+    let quick = action_label(model, ActionId::QuickSwitch, "Switch");
     let pin_tab = action_label(model, ActionId::PinTab, "Pin");
     let new_sql = action_label(model, ActionId::NewSql, "SQL");
     let run_sql = action_label(model, ActionId::RunSql, "Run");
@@ -481,6 +498,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::NextTab,
                         label: next_tab.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::QuickSwitch,
+                        label: quick.as_str(),
                         enabled: true,
                         style: None,
                     },

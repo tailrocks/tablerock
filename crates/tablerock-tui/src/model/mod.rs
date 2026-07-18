@@ -176,6 +176,8 @@ pub enum ActionId {
     ImportUrl,
     /// Run EXPLAIN on the active SQL editor statement (PG/CH only).
     Explain,
+    /// Fuzzy switch across open tabs (stable titles).
+    QuickSwitch,
     Submit,
     Cancel,
     Quit,
@@ -242,6 +244,10 @@ pub enum ConfirmDialog {
     },
     /// Import connection URL: paste URL into buffer, Submit applies to editor.
     ImportUrl {
+        confirm_buffer: String,
+    },
+    /// Quick switch: paste filter or 1-based index, Submit selects matching tab.
+    QuickSwitch {
         confirm_buffer: String,
     },
 }
