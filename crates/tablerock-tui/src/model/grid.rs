@@ -1474,6 +1474,16 @@ impl DataGridModel {
         true
     }
 
+    /// Move the newest filter chip to the front (AND primary). Needs ≥2 chips.
+    pub fn promote_last_filter(&mut self) -> bool {
+        if self.filters.len() < 2 {
+            return false;
+        }
+        let last = self.filters.pop().expect("len checked");
+        self.filters.insert(0, last);
+        true
+    }
+
     /// Remove all server filters for a column name (keeps sort/raw_where).
     pub fn remove_filters_for_column(&mut self, column: &str) -> usize {
         let before = self.filters.len();
@@ -2996,6 +3006,24 @@ mod tests {
         g.filters.clear();
         g.add_filter_chip("solo", "eq", Some("1".into()));
         assert!(!g.reverse_filters());
+        g.add_filter_chip("a", "eq", Some("1".into()));
+        g.add_filter_chip("b", "eq", Some("2".into()));
+        g.add_filter_chip("c", "eq", Some("3".into()));
+        assert!(g.promote_last_filter());
+        assert_eq!(
+            g.filters
+                .iter()
+                .map(|f| f.column.as_str())
+                .collect::<Vec<_>>(),
+            vec!["c", "a", "b"]
+        );
+        assert!(g.promote_last_filter());
+        assert_eq!(g.filters[0].column, "b");
+        assert_eq!(g.filters[1].column, "c");
+        assert_eq!(g.filters[2].column, "a");
+        g.filters.clear();
+        g.add_filter_chip("solo", "eq", Some("1".into()));
+        assert!(!g.promote_last_filter());
     }
 
     #[test]
