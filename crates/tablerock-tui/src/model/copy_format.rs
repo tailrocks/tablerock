@@ -99,7 +99,13 @@ pub fn format_copy(
         }
         CopyFormat::SqlUpdate => {
             let (schema, table) = table_identity(grid)?;
-            Ok(format_sql_update(schema, table, &columns, &rows))
+            Ok(format_sql_update(
+                schema,
+                table,
+                &columns,
+                &rows,
+                &grid.identity_columns,
+            ))
         }
     }
 }
@@ -295,14 +301,21 @@ fn format_sql_insert(schema: &str, table: &str, columns: &[String], rows: &[Vec<
     out
 }
 
-fn format_sql_update(schema: &str, table: &str, columns: &[String], rows: &[Vec<String>]) -> String {
-    // Without PK facts we emit SET for all columns; WHERE is left as a comment
-    // requiring identity — still gated by base table presence.
+fn format_sql_update(
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    rows: &[Vec<String>],
+    identity_columns: &[String],
+) -> String {
+    // Prefer WHERE from proven identity columns; otherwise comment that WHERE
+    // needs a primary key (still gated by base table presence).
     let mut out = String::new();
     for row in rows {
         let sets: Vec<_> = columns
             .iter()
             .zip(row.iter())
+            .filter(|(c, _)| !identity_columns.iter().any(|id| id == *c))
             .map(|(c, v)| {
                 format!(
                     "\"{}\" = {}",
@@ -311,11 +324,49 @@ fn format_sql_update(schema: &str, table: &str, columns: &[String], rows: &[Vec<
                 )
             })
             .collect();
+        // If every column is identity, SET all columns so the statement is usable.
+        let sets = if sets.is_empty() {
+            columns
+                .iter()
+                .zip(row.iter())
+                .map(|(c, v)| {
+                    format!(
+                        "\"{}\" = {}",
+                        c.replace('"', "\"\""),
+                        sql_literal(v)
+                    )
+                })
+                .collect::<Vec<_>>()
+        } else {
+            sets
+        };
+        let where_clause = if identity_columns.is_empty() {
+            "-- WHERE requires primary key".to_owned()
+        } else {
+            let parts: Vec<String> = identity_columns
+                .iter()
+                .filter_map(|id| {
+                    let idx = columns.iter().position(|c| c == id)?;
+                    let val = row.get(idx)?;
+                    Some(format!(
+                        "\"{}\" = {}",
+                        id.replace('"', "\"\""),
+                        sql_literal(val)
+                    ))
+                })
+                .collect();
+            if parts.is_empty() {
+                "-- WHERE requires primary key".to_owned()
+            } else {
+                format!("WHERE {}", parts.join(" AND "))
+            }
+        };
         out.push_str(&format!(
-            "UPDATE \"{}\".\"{}\" SET {}; -- WHERE requires primary key\n",
+            "UPDATE \"{}\".\"{}\" SET {} {};\n",
             schema.replace('"', "\"\""),
             table.replace('"', "\"\""),
-            sets.join(", ")
+            sets.join(", "),
+            where_clause
         ));
     }
     out
@@ -436,6 +487,12 @@ mod tests {
         let upd = format_copy(&g, CopyScope::Row, CopyFormat::SqlUpdate).unwrap();
         assert!(upd.contains("UPDATE"), "{upd}");
         assert!(upd.contains("users"), "{upd}");
+        assert!(upd.contains("WHERE requires primary key") || upd.contains("WHERE"), "{upd}");
+        g.identity_columns = vec!["id".into()];
+        let upd_id = format_copy(&g, CopyScope::Row, CopyFormat::SqlUpdate).unwrap();
+        assert!(upd_id.contains("WHERE"), "{upd_id}");
+        assert!(upd_id.contains("\"id\""), "{upd_id}");
+        assert!(!upd_id.contains("WHERE requires"), "{upd_id}");
     }
 
     #[test]

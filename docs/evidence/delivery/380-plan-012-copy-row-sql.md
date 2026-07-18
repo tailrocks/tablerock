@@ -26,4 +26,4 @@ cargo test -p tablerock-tui --lib
 
 ## Remaining work
 
-- WHERE clause from proven identity columns on row UPDATE (optional)
+- WHERE clause from proven identity columns — shipped as evidence 381
