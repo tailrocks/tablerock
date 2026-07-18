@@ -606,6 +606,14 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
  */
 public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     
+    /**
+     * Consume-once authorize by review-token handle (never plan bytes).
+     *
+     * Returns the token id bytes on success for correlation; authority is
+     * removed even when later apply fails (core registry contract).
+     */
+    func authorizeReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data, expectedRevision: UInt64) throws  -> Data
+    
     func cancel(operationId: Data) throws  -> CancelOutcome
     
     /**
@@ -642,6 +650,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Pumps driver updates for `operation_id` until a terminal fact or no pending work.
      */
     func pump(operationId: Data) throws 
+    
+    /**
+     * Drop a review token without authorizing (operator discard).
+     */
+    func revokeReviewToken(tokenId: Data) throws  -> Bool
     
     /**
      * Graceful or cancel-active shutdown. `deadline_ms` reserved for future hard caps.
@@ -717,6 +730,25 @@ public static func create() -> TableRockBridge  {
 }
     
 
+    
+    /**
+     * Consume-once authorize by review-token handle (never plan bytes).
+     *
+     * Returns the token id bytes on success for correlation; authority is
+     * removed even when later apply fails (core registry contract).
+     */
+open func authorizeReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data, expectedRevision: UInt64)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_authorize_review_token(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(tokenId),
+        FfiConverterUInt64.lower(nowMs),
+        FfiConverterData.lower(sessionId),
+        FfiConverterUInt64.lower(expectedRevision),uniffiCallStatus
+    )
+})
+}
     
 open func cancel(operationId: Data)throws  -> CancelOutcome  {
     return try  FfiConverterTypeCancelOutcome_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
@@ -813,6 +845,19 @@ open func pump(operationId: Data)throws   {try rustCallWithError(FfiConverterTyp
         FfiConverterData.lower(operationId),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * Drop a review token without authorizing (operator discard).
+     */
+open func revokeReviewToken(tokenId: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_revoke_review_token(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(tokenId),uniffiCallStatus
+    )
+})
 }
     
     /**
@@ -1636,6 +1681,9 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_authorize_review_token() != 34315) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel() != 18861) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1658,6 +1706,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_pump() != 15232) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_review_token() != 712) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_shutdown() != 28522) {

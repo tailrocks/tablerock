@@ -402,3 +402,46 @@ fn uniffi_surface_has_no_per_cell_export() {
     // Only coarse methods: if this compiles, fetch_page returns Vec<u8>.
     let _ = bridge.fetch_page(vec![0; 16], 0, 0);
 }
+
+#[test]
+fn review_token_is_consume_once_and_expiry_blocks() {
+    let (_, page) = sample_page(Engine::PostgreSql, 90, &[1]);
+    let bridge = TableRockBridge::new_for_test();
+    let session_id = open_fixed(&bridge, Engine::PostgreSql, page);
+
+    let token = bridge
+        .insert_reviewed_probe(session_id.clone(), 1_000, 2_000, 1_100)
+        .unwrap();
+
+    // Expired authorize consumes the handle (core contract: remove then fail).
+    let expired = bridge
+        .authorize_review_token(token.clone(), 3_000, session_id.clone(), 0)
+        .unwrap_err();
+    assert!(matches!(
+        expired,
+        BridgeError::Rejected { ref code, .. } if code == "authorize"
+    ));
+    // Second attempt: token already gone.
+    let missing = bridge
+        .authorize_review_token(token, 1_500, session_id.clone(), 0)
+        .unwrap_err();
+    assert!(matches!(
+        missing,
+        BridgeError::Rejected { ref code, .. } if code == "authorize"
+    ));
+
+    // Fresh token authorizes once, then is gone.
+    let token2 = bridge
+        .insert_reviewed_probe(session_id.clone(), 1_000, 2_000, 1_100)
+        .unwrap();
+    bridge
+        .authorize_review_token(token2.clone(), 1_500, session_id.clone(), 0)
+        .unwrap();
+    let second = bridge
+        .authorize_review_token(token2, 1_600, session_id, 0)
+        .unwrap_err();
+    assert!(matches!(
+        second,
+        BridgeError::Rejected { ref code, .. } if code == "authorize"
+    ));
+}

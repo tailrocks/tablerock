@@ -14,10 +14,11 @@ Date: 2026-07-18
 | Redaction | `OpenParams` Debug redacts password |
 | Oversized page decode | arena limit before body allocation |
 | No per-cell UniFFI export | generated Swift has no `cell`/`fetchCell`; facade returns `Vec<u8>` only |
+| Review-token consume-once / expiry | `review_token_is_consume_once_and_expiry_blocks` (handle only) |
 
 ```text
 cargo test -p tablerock-ffi
-# 12 passed (4 suites)
+# 13 passed (4 suites)
 ```
 
 Live Docker three-engine paths remain on the engine real-server CI matrix;

@@ -1,5 +1,5 @@
 use tablerock_core::{
-    ContextId, IdDecodeError, IdParts, OperationId, ProfileId, ResultId, SessionId,
+    ContextId, IdDecodeError, IdParts, OperationId, ProfileId, ResultId, ReviewTokenId, SessionId,
 };
 
 pub(crate) fn session_from_bytes(bytes: &[u8]) -> Result<SessionId, IdDecodeError> {
@@ -14,11 +14,19 @@ pub(crate) fn result_from_bytes(bytes: &[u8]) -> Result<ResultId, IdDecodeError>
     ResultId::from_bytes(as_array16(bytes)?)
 }
 
+pub(crate) fn review_token_from_bytes(bytes: &[u8]) -> Result<ReviewTokenId, IdDecodeError> {
+    ReviewTokenId::from_bytes(as_array16(bytes)?)
+}
+
 pub(crate) fn session_bytes(id: SessionId) -> Vec<u8> {
     id.to_bytes().to_vec()
 }
 
 pub(crate) fn operation_bytes(id: OperationId) -> Vec<u8> {
+    id.to_bytes().to_vec()
+}
+
+pub(crate) fn review_token_bytes(id: ReviewTokenId) -> Vec<u8> {
     id.to_bytes().to_vec()
 }
 
@@ -60,5 +68,13 @@ impl IdFactory {
 
     pub(crate) fn result(&mut self) -> ResultId {
         ResultId::from_parts(self.parts()).expect("nonzero id")
+    }
+
+    pub(crate) fn review_token(&mut self) -> ReviewTokenId {
+        ReviewTokenId::from_parts(self.parts()).expect("nonzero id")
+    }
+
+    pub(crate) fn mutation(&mut self) -> tablerock_core::MutationId {
+        tablerock_core::MutationId::from_parts(self.parts()).expect("nonzero id")
     }
 }

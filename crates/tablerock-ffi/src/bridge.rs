@@ -7,8 +7,9 @@ use std::{
 
 use tablerock_core::{
     BoundedText, ByteLimit, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
-    CommandScope, Engine, MutationReviewRegistry, OperationId, OperationOutcome, OperationScope,
-    PageIdentity, PageKey, PageRequest, ResultStore, ResultStoreLimits, Revision,
+    CommandScope, Engine, FieldValue, MutationChange, MutationPlan, MutationPlanLimits,
+    MutationReviewRegistry, MutationTarget, OperationId, OperationOutcome, OperationScope,
+    OwnedValue, PageIdentity, PageKey, PageRequest, ResultStore, ResultStoreLimits, Revision,
     ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText,
 };
 use tablerock_engine::{
@@ -22,8 +23,8 @@ use tablerock_engine::{
 use crate::{
     error::{catch_entry, BridgeError},
     ids::{
-        operation_bytes, operation_from_bytes, result_from_bytes, session_bytes, session_from_bytes,
-        IdFactory,
+        operation_bytes, operation_from_bytes, result_from_bytes, review_token_bytes,
+        review_token_from_bytes, session_bytes, session_from_bytes, IdFactory,
     },
     page_limits::default_page_limits,
     runtime::RuntimeOwner,
@@ -124,7 +125,6 @@ struct RegisteredSession {
 struct BridgeInner {
     service: EngineService,
     results: ResultStore,
-    #[allow(dead_code)]
     reviews: MutationReviewRegistry,
     sessions: BTreeMap<SessionId, RegisteredSession>,
     /// Operation -> result identity used when admitting streamed pages.
@@ -218,6 +218,27 @@ impl TableRockBridge {
             panic!("tablerock-ffi panic probe");
         })
     }
+
+    /// Consume-once authorize by review-token handle (never plan bytes).
+    ///
+    /// Returns the token id bytes on success for correlation; authority is
+    /// removed even when later apply fails (core registry contract).
+    pub fn authorize_review_token(
+        &self,
+        token_id: Vec<u8>,
+        now_ms: u64,
+        session_id: Vec<u8>,
+        expected_revision: u64,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| {
+            self.authorize_review_token_inner(token_id, now_ms, session_id, expected_revision)
+        })
+    }
+
+    /// Drop a review token without authorizing (operator discard).
+    pub fn revoke_review_token(&self, token_id: Vec<u8>) -> Result<bool, BridgeError> {
+        catch_entry(|| self.revoke_review_token_inner(token_id))
+    }
 }
 
 impl TableRockBridge {
@@ -230,6 +251,23 @@ impl TableRockBridge {
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| self.open_driver_session_inner(engine, session))
+    }
+
+    /// Inserts a minimal reviewed plan for the session (test/conformance only).
+    ///
+    /// Production Swift never builds plans; it receives token ids from Rust after
+    /// Stage/Review commands. This seam proves handle consume-once/expiry without
+    /// shipping plan bytes over UniFFI.
+    pub fn insert_reviewed_probe(
+        &self,
+        session_id: Vec<u8>,
+        issued_at_ms: u64,
+        expires_at_ms: u64,
+        now_ms: u64,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| {
+            self.insert_reviewed_probe_inner(session_id, issued_at_ms, expires_at_ms, now_ms)
+        })
     }
 
     #[must_use]
@@ -252,6 +290,118 @@ impl TableRockBridge {
             *guard = Some(BridgeInner::new()?);
         }
         Ok(())
+    }
+
+    fn insert_reviewed_probe_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        issued_at_ms: u64,
+        expires_at_ms: u64,
+        now_ms: u64,
+    ) -> Result<Vec<u8>, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        let registered = inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        let scope = OperationScope::new(
+            registered.profile_id,
+            registered.session_id,
+            registered.context_id,
+        );
+        let revision = registered.context_revision;
+        let mutation_id = inner.ids.mutation();
+        let token_id = inner.ids.review_token();
+        let name = BoundedText::copy_from_str("id", ByteLimit::new(8))
+            .map_err(|error| BridgeError::rejected("mutation-field", error.to_string()))?;
+        let plan = MutationPlan::new(
+            mutation_id,
+            scope,
+            revision,
+            MutationTarget::PostgreSqlRelation {
+                database: BoundedText::copy_from_str("app", ByteLimit::new(8))
+                    .map_err(|error| BridgeError::rejected("mutation-target", error.to_string()))?,
+                schema: BoundedText::copy_from_str("public", ByteLimit::new(8))
+                    .map_err(|error| BridgeError::rejected("mutation-target", error.to_string()))?,
+                relation: BoundedText::copy_from_str("users", ByteLimit::new(8))
+                    .map_err(|error| BridgeError::rejected("mutation-target", error.to_string()))?,
+            },
+            vec![MutationChange::DeleteRow {
+                locator: vec![FieldValue::new(name, OwnedValue::unsigned(1))],
+            }],
+            MutationPlanLimits::new(16, 16, 4096, 4096, 60_000)
+                .map_err(|error| BridgeError::rejected("mutation-limits", error.to_string()))?,
+        )
+        .map_err(|error| BridgeError::rejected("mutation-plan", error.to_string()))?;
+        let reviewed = plan
+            .review(token_id, issued_at_ms, expires_at_ms)
+            .map_err(|error| BridgeError::rejected("review", error.to_string()))?;
+        inner
+            .reviews
+            .insert(reviewed, now_ms)
+            .map_err(|error| BridgeError::rejected("review-insert", error.to_string()))?;
+        Ok(review_token_bytes(token_id))
+    }
+
+    fn authorize_review_token_inner(
+        &self,
+        token_id_bytes: Vec<u8>,
+        now_ms: u64,
+        session_id_bytes: Vec<u8>,
+        expected_revision: u64,
+    ) -> Result<Vec<u8>, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let token_id = review_token_from_bytes(&token_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-token-id", "review token id must be 16 bytes")
+        })?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        let registered = inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        let scope = OperationScope::new(
+            registered.profile_id,
+            registered.session_id,
+            registered.context_id,
+        );
+        let authorized = inner
+            .reviews
+            .authorize(
+                token_id,
+                now_ms,
+                scope,
+                Revision::from_wire_u64(expected_revision),
+            )
+            .map_err(|error| BridgeError::rejected("authorize", error.to_string()))?;
+        // Drop authorized plan immediately: bridge proves handle consume, not apply.
+        drop(authorized);
+        Ok(token_id_bytes)
+    }
+
+    fn revoke_review_token_inner(&self, token_id_bytes: Vec<u8>) -> Result<bool, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let token_id = review_token_from_bytes(&token_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-token-id", "review token id must be 16 bytes")
+        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        Ok(inner.reviews.revoke(token_id))
     }
 
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
