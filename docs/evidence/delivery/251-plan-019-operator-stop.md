@@ -45,6 +45,12 @@ on Command Line Tools alone.
 
 ## Non-blocked residual (optional polish)
 
-- Persistence-backed `open(profile_id)` (OpenParams path is live today)
 - Instruments leak pass (needs Xcode Instruments)
 - UniFFI `@unchecked Sendable` Swift wrapper for plan 020
+
+The persistence-backed `open_profile(profile_id)` path (open a saved profile
+by id without re-supplying OpenParams) is implemented in `bridge.rs`
+(`open_profile_inner` loads the aggregate from the persistence actor and
+builds OpenParams) and covered by
+`open_profile_requires_persistence_and_loads_literals` in the conformance
+suite, so it is no longer an open residual.
