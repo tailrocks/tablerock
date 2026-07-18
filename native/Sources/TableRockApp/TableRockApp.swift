@@ -37,6 +37,7 @@ final class BridgeModel: ObservableObject {
     @Published var catalogSummary: String?
     @Published var catalogError: String?
     @Published var catalogTable: PageV1Table?
+    @Published var writeOutcome: String?
     // Pagination state for the current result (fetch_page).
     var resultIdData: Data?
     var resultRevision: UInt64 = 0
@@ -173,9 +174,13 @@ final class BridgeModel: ObservableObject {
                     resultIdData = env.resultId
                     resultRevision = env.revision
                     nextStartRow = env.startRow + UInt64(env.rowCount)
+                    writeOutcome = nil
                     return try PageV1.decodeTable(page)
                 }
-                if event.kind == "terminal" { return nil }
+                if event.kind == "terminal" {
+                    writeOutcome = event.outcome ?? "ok"
+                    return nil
+                }
             }
             cursor = batch.nextCursor
         }
@@ -252,8 +257,10 @@ final class BridgeModel: ObservableObject {
             if let table = try fetchPage(intent: "execute", statement: sql) {
                 catalogTable = table
                 catalogSummary = "result · \(table.columns.count) columns · \(table.rows.count) rows"
+            } else if let outcome = writeOutcome {
+                catalogSummary = "write ok · \(outcome)"
             } else {
-                catalogSummary = "query: no result page (terminal)"
+                catalogSummary = "query: no result"
             }
         } catch {
             catalogError = "Query failed: \(error)"
