@@ -255,6 +255,10 @@ pub enum ActionId {
     MoveColumnLeft,
     /// Move cursor column right in display order.
     MoveColumnRight,
+    /// Move cursor column to first display slot.
+    MoveColumnFirst,
+    /// Move cursor column to last display slot.
+    MoveColumnLast,
     /// Narrow cursor column width by 2 (min 4).
     NarrowColumn,
     /// Widen cursor column width by 2 (max 64).

@@ -1682,6 +1682,31 @@ impl DataGridModel {
         true
     }
 
+    /// Move cursor column to first (edge < 0) or last (edge > 0) layout slot.
+    pub fn move_cursor_column_to_edge(&mut self, edge: i8) -> bool {
+        if edge == 0 {
+            return false;
+        }
+        self.ensure_column_layout();
+        let Some(name) = self.columns.get(self.cursor_col).cloned() else {
+            return false;
+        };
+        let Some(idx) = self.column_layout.iter().position(|c| c.name == name) else {
+            return false;
+        };
+        let target = if edge < 0 {
+            0
+        } else {
+            self.column_layout.len().saturating_sub(1)
+        };
+        if idx == target {
+            return false;
+        }
+        let entry = self.column_layout.remove(idx);
+        self.column_layout.insert(target, entry);
+        true
+    }
+
     /// Adjust width of the cursor column in layout (`delta` usually ±2). Bounds 4..=64.
     pub fn adjust_cursor_column_width(&mut self, delta: i16) -> bool {
         if delta == 0 {
@@ -2329,6 +2354,25 @@ mod tests {
         assert!(!g.show_all_columns());
         g.reset_column_layout();
         assert_eq!(g.visible_columns().len(), 3);
+    }
+
+    #[test]
+    fn move_cursor_column_to_edge_jumps_layout() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into(), "age".into()];
+        g.cursor_col = 1; // name
+        assert!(g.move_cursor_column_to_edge(1)); // to last
+        assert_eq!(
+            g.column_layout.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            vec!["id", "age", "name"]
+        );
+        assert!(!g.move_cursor_column_to_edge(1)); // already last
+        assert!(g.move_cursor_column_to_edge(-1)); // to first
+        assert_eq!(
+            g.column_layout.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            vec!["name", "id", "age"]
+        );
+        assert!(!g.move_cursor_column_to_edge(-1));
     }
 
     #[test]

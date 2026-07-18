@@ -680,6 +680,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
+    let col_first = action_label(model, ActionId::MoveColumnFirst, "ColHome");
+    let col_last = action_label(model, ActionId::MoveColumnLast, "ColEnd");
     let col_narrow = action_label(model, ActionId::NarrowColumn, "Col-");
     let col_widen = action_label(model, ActionId::WidenColumn, "Col+");
     let col_fit = action_label(model, ActionId::FitColumn, "ColFit");
@@ -1226,6 +1228,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::MoveColumnRight,
                         label: col_right.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::MoveColumnFirst,
+                        label: col_first.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::MoveColumnLast,
+                        label: col_last.as_str(),
                         enabled: true,
                         style: None,
                     },
