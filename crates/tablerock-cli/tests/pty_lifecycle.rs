@@ -21,7 +21,8 @@ fn semantic_quit_restores_terminal_modes() {
         writer.write_all(b"\t\t\t\t")?;
         writer.flush()?;
         thread::sleep(Duration::from_millis(50));
-        writer.write_all(b"\x1b[C")?;
+        // Actions: Open -> New -> Quit
+        writer.write_all(b"\x1b[C\x1b[C")?;
         writer.flush()?;
         thread::sleep(Duration::from_millis(50));
         writer.write_all(b"\r")?;
@@ -74,9 +75,8 @@ fn resized_render_authorizes_focus_paste_and_mouse_quit() {
         writer.write_all(b"\x1b[Z")?;
         writer.write_all(b"\x1b[<64;2;28M")?;
         writer.flush()?;
-        // Wheel focus selects Open on resized action row 28. Without that
-        // semantic mouse mapping, both following keys are inert.
-        writer.write_all(b"\x1b[C\r")?;
+        // Wheel focus selects Open on resized action row 28. Move Open->New->Quit.
+        writer.write_all(b"\x1b[C\x1b[C\r")?;
         writer.flush()
     });
     assert_restored(&output);

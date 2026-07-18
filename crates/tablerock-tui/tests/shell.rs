@@ -52,6 +52,8 @@ fn actions_are_root_owned_and_only_activate_from_action_focus() {
     assert!(update(&mut model, Message::Activate).needs_render());
     assert_eq!(model.screen(), Screen::ConnectionPicker);
     let _ = update(&mut model, Message::ActionNext);
+    assert_eq!(model.selected_action(), ActionId::New);
+    let _ = update(&mut model, Message::ActionNext);
     assert_eq!(model.selected_action(), ActionId::Quit);
     assert_eq!(
         update(&mut model, Message::Activate)
@@ -61,7 +63,7 @@ fn actions_are_root_owned_and_only_activate_from_action_focus() {
         [Effect::Exit]
     );
     let _ = update(&mut model, Message::ActionPrevious);
-    assert_eq!(model.selected_action(), ActionId::Open);
+    assert_eq!(model.selected_action(), ActionId::New);
 }
 
 #[test]

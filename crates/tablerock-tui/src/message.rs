@@ -60,6 +60,13 @@ pub enum ProfilesMsg {
         request_token: u64,
         reason: FailureProjection,
     },
+    Saved {
+        request_token: u64,
+    },
+    SaveFailed {
+        request_token: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

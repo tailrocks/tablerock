@@ -181,37 +181,53 @@ fn render_body(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut 
 }
 
 fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
-    let open_label = if model.focus() == Some(FocusRegion::Actions)
-        && model.selected_action() == ActionId::Open
-    {
-        "> Open"
-    } else if model.hovered() == Some(ShellTarget::Action(ActionId::Open)) {
-        "~ Open"
-    } else {
-        "Open"
-    };
-    let actions = [
-        Action {
-            id: ActionId::Open,
-            label: open_label,
-            enabled: true,
-            style: None,
-        },
-        Action {
-            id: ActionId::Quit,
-            label: if model.focus() == Some(FocusRegion::Actions)
-                && model.selected_action() == ActionId::Quit
-            {
-                "> Quit"
-            } else if model.hovered() == Some(ShellTarget::Action(ActionId::Quit)) {
-                "~ Quit"
-            } else {
-                "Quit"
+    let open = action_label(model, ActionId::Open, "Open");
+    let new = action_label(model, ActionId::New, "New");
+    let save = action_label(model, ActionId::Save, "Save");
+    let cancel = action_label(model, ActionId::Cancel, "Cancel");
+    let quit = action_label(model, ActionId::Quit, "Quit");
+    let actions: Vec<Action<'_, ActionId>> = match model.screen() {
+        crate::Screen::Editor => vec![
+            Action {
+                id: ActionId::Save,
+                label: save.as_str(),
+                enabled: true,
+                style: None,
             },
-            enabled: true,
-            style: None,
-        },
-    ];
+            Action {
+                id: ActionId::Cancel,
+                label: cancel.as_str(),
+                enabled: true,
+                style: None,
+            },
+            Action {
+                id: ActionId::Quit,
+                label: quit.as_str(),
+                enabled: true,
+                style: None,
+            },
+        ],
+        _ => vec![
+            Action {
+                id: ActionId::Open,
+                label: open.as_str(),
+                enabled: true,
+                style: None,
+            },
+            Action {
+                id: ActionId::New,
+                label: new.as_str(),
+                enabled: true,
+                style: None,
+            },
+            Action {
+                id: ActionId::Quit,
+                label: quit.as_str(),
+                enabled: true,
+                style: None,
+            },
+        ],
+    };
     let mut state = ActionBarState {
         focused: (model.focus() == Some(FocusRegion::Actions)).then_some(model.selected_action()),
         regions: Vec::new(),
@@ -223,6 +239,16 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     );
     for region in state.regions {
         geometry.push(ShellTarget::Action(region.id), region.area);
+    }
+}
+
+fn action_label(model: &Model, id: ActionId, base: &str) -> String {
+    if model.focus() == Some(FocusRegion::Actions) && model.selected_action() == id {
+        format!("> {base}")
+    } else if model.hovered() == Some(ShellTarget::Action(id)) {
+        format!("~ {base}")
+    } else {
+        base.to_owned()
     }
 }
 
@@ -315,7 +341,12 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
             );
             y = y.saturating_add(1);
         }
-        if title == "Workspace" || title.ends_with("Workspace") {
+        if (title == "Workspace" || title.ends_with("Workspace"))
+            && matches!(
+                model.screen(),
+                crate::Screen::Connections | crate::Screen::ConnectionPicker
+            )
+        {
             if let crate::model::profiles::ProfileListState::Loaded { rows, .. } = model.profiles()
             {
                 for row in rows {
@@ -339,6 +370,58 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
                     );
                     y = y.saturating_add(1);
                 }
+            }
+        }
+        if model.screen() == crate::Screen::Editor
+            && (title == "Workspace" || title.ends_with("Workspace"))
+        {
+            use crate::model::editor::EditorField;
+            for field in [
+                EditorField::Engine,
+                EditorField::Name,
+                EditorField::Group,
+                EditorField::Environment,
+                EditorField::Host,
+                EditorField::Port,
+                EditorField::Database,
+                EditorField::Username,
+                EditorField::PasswordSource,
+                EditorField::TlsMode,
+            ] {
+                if y >= max_y {
+                    break;
+                }
+                let marker = if model.editor().focused == field {
+                    ">"
+                } else {
+                    " "
+                };
+                let line = format!("{marker} {field:?}: {}", model.editor().field_value(field));
+                let clipped: String = line.chars().take(width as usize).collect();
+                ratatui_core::text::Line::from(clipped).render(
+                    Rect {
+                        x,
+                        y,
+                        width,
+                        height: 1,
+                    },
+                    frame.buffer_mut(),
+                );
+                y = y.saturating_add(1);
+            }
+            if let Some(error) = &model.editor().validation_error
+                && y < max_y
+            {
+                let clipped: String = format!("! {error}").chars().take(width as usize).collect();
+                ratatui_core::text::Line::from(clipped).render(
+                    Rect {
+                        x,
+                        y,
+                        width,
+                        height: 1,
+                    },
+                    frame.buffer_mut(),
+                );
             }
         }
     }

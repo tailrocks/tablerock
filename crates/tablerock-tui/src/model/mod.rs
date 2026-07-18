@@ -1,5 +1,6 @@
 //! Root-owned terminal presentation state.
 
+pub mod editor;
 pub mod profiles;
 
 use termrock::{
@@ -10,6 +11,7 @@ use termrock::{
 };
 
 use crate::{ShellGeometry, ShellKeyAction, default_keymap, effect::RequestToken};
+use editor::ConnectionFormModel;
 use profiles::ProfileListState;
 
 pub const MINIMUM_WIDTH: u16 = 40;
@@ -41,6 +43,9 @@ pub(crate) enum FocusScope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActionId {
     Open,
+    New,
+    Save,
+    Cancel,
     Quit,
 }
 
@@ -48,6 +53,8 @@ pub enum ActionId {
 pub enum Screen {
     Connections,
     ConnectionPicker,
+    /// First-version connection editor (new/edit).
+    Editor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +88,9 @@ impl FocusRegion {
         Self::Actions,
         Self::Footer,
     ];
+
+    pub(crate) const EDITOR_ORDER: [Self; 4] =
+        [Self::Context, Self::Content, Self::Actions, Self::Footer];
 }
 
 #[derive(Debug)]
@@ -99,6 +109,7 @@ pub struct Model {
     /// Monotonic effect correlation counter (no clocks).
     next_request_token: RequestToken,
     profiles: ProfileListState,
+    editor: ConnectionFormModel,
     bootstrapped: bool,
 }
 
@@ -118,6 +129,7 @@ impl Default for Model {
             engine_resync_required: false,
             next_request_token: 1,
             profiles: ProfileListState::default(),
+            editor: ConnectionFormModel::default(),
             bootstrapped: false,
         }
     }
@@ -229,6 +241,7 @@ impl Model {
         let order: &[FocusRegion] = match self.screen {
             Screen::Connections => &FocusRegion::CONNECTION_ORDER,
             Screen::ConnectionPicker => &FocusRegion::PICKER_ORDER,
+            Screen::Editor => &FocusRegion::EDITOR_ORDER,
         };
         let enabled = self.layout_mode() != LayoutMode::TooSmall;
         self.focus.register_order(
@@ -277,6 +290,19 @@ impl Model {
 
     pub(crate) fn set_profiles(&mut self, state: ProfileListState) {
         self.profiles = state;
+    }
+
+    #[must_use]
+    pub const fn editor(&self) -> &ConnectionFormModel {
+        &self.editor
+    }
+
+    pub(crate) fn editor_mut(&mut self) -> &mut ConnectionFormModel {
+        &mut self.editor
+    }
+
+    pub(crate) fn reset_editor(&mut self) {
+        self.editor = ConnectionFormModel::default();
     }
 
     pub(crate) const fn set_bootstrapped(&mut self, value: bool) {

@@ -8,7 +8,10 @@ pub mod subscriptions;
 pub mod update;
 pub mod view;
 
-pub use effect::{Effect, EngineKind, ProfileListFilterSpec, ProfileRef, RequestToken};
+pub use effect::{
+    ConnectionDraft, Effect, EngineKind, PasswordSourceSpec, ProfileListFilterSpec, ProfileRef,
+    RequestToken, TlsModeSpec,
+};
 pub use keymap::{ShellKeyAction, default_keymap};
 pub use message::{EngineMsg, MAX_PASTE_BYTES, Message, PasteText, ProfilesMsg};
 pub use model::{

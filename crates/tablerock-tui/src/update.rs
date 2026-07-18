@@ -4,7 +4,7 @@ use crate::{
     ActionId, Effect, FocusRegion, Message, Model, Screen, ShellTarget,
     effect::ProfileListFilterSpec,
     message::{EngineMsg, ProfilesMsg},
-    model::profiles::ProfileListState,
+    model::profiles::{FailureProjection, ProfileListState},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,6 +158,37 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             });
             Update::render()
         }
+        Message::Profiles(ProfilesMsg::Saved { request_token }) => {
+            if model.profiles().active_token() != Some(request_token) {
+                return Update::unchanged();
+            }
+            model.set_screen(Screen::Connections);
+            model.set_action(ActionId::Open);
+            // Reload list under a new token.
+            let token = model.mint_request_token();
+            model.set_profiles(ProfileListState::Loading {
+                request_token: token,
+            });
+            Update {
+                render: true,
+                effect: Some(Effect::LoadProfileList {
+                    request_token: token,
+                    filter: ProfileListFilterSpec::default(),
+                }),
+            }
+        }
+        Message::Profiles(ProfilesMsg::SaveFailed {
+            request_token,
+            reason,
+        }) => {
+            if model.profiles().active_token() != Some(request_token) {
+                return Update::unchanged();
+            }
+            model.editor_mut().validation_error = Some(match reason {
+                FailureProjection::Label(label) => label,
+            });
+            Update::render()
+        }
         Message::Engine(EngineMsg::HealthOk { .. } | EngineMsg::HealthFailed { .. }) => {
             // Health UI lands with plan 006; accept for token plumbing only.
             Update::unchanged()
@@ -179,11 +210,12 @@ pub fn update(model: &mut Model, message: Message) -> Update {
         Message::ActionNext | Message::ActionPrevious
             if model.focus() == Some(FocusRegion::Actions) =>
         {
-            let action = match model.selected_action() {
-                ActionId::Open => ActionId::Quit,
-                ActionId::Quit => ActionId::Open,
-            };
-            model.set_action(action);
+            let reverse = matches!(message, Message::ActionPrevious);
+            model.set_action(cycle_action(
+                model.screen(),
+                model.selected_action(),
+                reverse,
+            ));
             Update::render()
         }
         Message::ActionNext | Message::ActionPrevious => Update::unchanged(),
@@ -214,7 +246,79 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_screen(Screen::ConnectionPicker);
             Update::render()
         }
+        ActionId::New => {
+            model.reset_editor();
+            model.set_screen(Screen::Editor);
+            model.set_action(ActionId::Save);
+            Update::render()
+        }
+        ActionId::Save if model.screen() == Screen::Editor => {
+            if !model.editor_mut().validate() {
+                return Update::render();
+            }
+            let token = model.mint_request_token();
+            model.set_profiles(ProfileListState::Loading {
+                request_token: token,
+            });
+            // Persist via CLI; reload list after save completes (reuse Load token).
+            Update {
+                render: true,
+                effect: Some(Effect::SaveConnection {
+                    request_token: token,
+                    draft: connection_draft_from_editor(model.editor()),
+                }),
+            }
+        }
+        ActionId::Cancel if model.screen() == Screen::Editor => {
+            model.set_screen(Screen::Connections);
+            model.set_action(ActionId::Open);
+            Update::render()
+        }
         ActionId::Quit => Update::with_effect(Effect::Exit),
+        ActionId::Save | ActionId::Cancel => Update::unchanged(),
+    }
+}
+
+fn cycle_action(screen: Screen, current: ActionId, reverse: bool) -> ActionId {
+    let actions: &[ActionId] = match screen {
+        Screen::Editor => &[ActionId::Save, ActionId::Cancel, ActionId::Quit],
+        Screen::Connections | Screen::ConnectionPicker => {
+            &[ActionId::Open, ActionId::New, ActionId::Quit]
+        }
+    };
+    let idx = actions.iter().position(|a| *a == current).unwrap_or(0);
+    if reverse {
+        actions[(idx + actions.len() - 1) % actions.len()]
+    } else {
+        actions[(idx + 1) % actions.len()]
+    }
+}
+
+fn connection_draft_from_editor(
+    editor: &crate::model::editor::ConnectionFormModel,
+) -> crate::effect::ConnectionDraft {
+    use crate::effect::{ConnectionDraft, PasswordSourceSpec, TlsModeSpec};
+    use crate::model::editor::{PasswordSourceChoice, TlsModeChoice};
+    ConnectionDraft {
+        engine: editor.engine,
+        name: editor.name.clone(),
+        group: editor.group.clone(),
+        environment: editor.environment.clone(),
+        host: editor.host.clone(),
+        port: editor.port.clone(),
+        database: editor.database.clone(),
+        username: editor.username.clone(),
+        password: editor.password.clone(),
+        password_source: match editor.password_source {
+            PasswordSourceChoice::PromptOnConnect => PasswordSourceSpec::PromptOnConnect,
+            PasswordSourceChoice::DangerousPlaintext => PasswordSourceSpec::DangerousPlaintext,
+        },
+        tls_mode: match editor.tls_mode {
+            TlsModeChoice::Off => TlsModeSpec::Off,
+            TlsModeChoice::VerifyCa => TlsModeSpec::VerifyCa,
+            TlsModeChoice::VerifyFull => TlsModeSpec::VerifyFull,
+        },
+        plaintext_acknowledged: editor.plaintext_acknowledged,
     }
 }
 

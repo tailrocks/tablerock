@@ -28,6 +28,36 @@ pub struct ProfileRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PasswordSourceSpec {
+    PromptOnConnect,
+    DangerousPlaintext,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TlsModeSpec {
+    Off,
+    VerifyCa,
+    VerifyFull,
+}
+
+/// First-version connection editor payload for create/save.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectionDraft {
+    pub engine: EngineKind,
+    pub name: String,
+    pub group: String,
+    pub environment: String,
+    pub host: String,
+    pub port: String,
+    pub database: String,
+    pub username: String,
+    pub password: String,
+    pub password_source: PasswordSourceSpec,
+    pub tls_mode: TlsModeSpec,
+    pub plaintext_acknowledged: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
     Exit,
     LoadProfileList {
@@ -37,5 +67,9 @@ pub enum Effect {
     CheckSessionHealth {
         request_token: RequestToken,
         profile: ProfileRef,
+    },
+    SaveConnection {
+        request_token: RequestToken,
+        draft: ConnectionDraft,
     },
 }
