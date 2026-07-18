@@ -192,6 +192,8 @@ pub enum ActionId {
     InvertPrimarySort,
     /// Promote secondary sort key to primary (rotate left).
     RotateSort,
+    /// Promote last sort key to primary (rotate right).
+    RotateSortRight,
     /// Drop secondary sort keys; keep only the primary ORDER BY.
     KeepPrimarySort,
     /// Promote cursor column to primary sort without cycling direction.

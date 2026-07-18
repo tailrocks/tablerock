@@ -671,6 +671,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let pop_sort = action_label(model, ActionId::PopSort, "Sort-");
     let inv_sort = action_label(model, ActionId::InvertPrimarySort, "SortInv");
     let rot_sort = action_label(model, ActionId::RotateSort, "SortRot");
+    let rot_sort_r = action_label(model, ActionId::RotateSortRight, "SortRotR");
     let keep_sort = action_label(model, ActionId::KeepPrimarySort, "Sort1");
     let promote_sort = action_label(model, ActionId::PromoteSort, "SortPri");
     let inv_all_sort = action_label(model, ActionId::InvertAllSort, "SortInvA");
@@ -1181,6 +1182,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RotateSort,
                         label: rot_sort.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RotateSortRight,
+                        label: rot_sort_r.as_str(),
                         enabled: true,
                         style: None,
                     },

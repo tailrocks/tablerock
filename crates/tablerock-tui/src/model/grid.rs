@@ -1362,6 +1362,16 @@ impl DataGridModel {
         true
     }
 
+    /// Rotate sort keys right: last key becomes primary. Needs ≥2 keys.
+    pub fn rotate_sort_keys_right(&mut self) -> bool {
+        if self.sort.len() < 2 {
+            return false;
+        }
+        let last = self.sort.pop().expect("len checked");
+        self.sort.insert(0, last);
+        true
+    }
+
     /// Drop secondary sort keys; keep only the primary. Needs ≥2 keys.
     pub fn keep_primary_sort(&mut self) -> bool {
         if self.sort.len() < 2 {
@@ -2587,12 +2597,21 @@ mod tests {
         assert!(g.rotate_sort_keys());
         assert_eq!(g.sort[0].column, "age");
         assert_eq!(g.sort[1].column, "name");
+        // Right-rotate undoes a left-rotate on two keys.
+        assert!(g.rotate_sort_keys_right());
+        assert_eq!(g.sort[0].column, "name");
+        assert_eq!(g.sort[1].column, "age");
         g.push_sort_column("id");
         assert_eq!(g.sort.len(), 3);
+        assert!(g.rotate_sort_keys_right());
+        assert_eq!(g.sort[0].column, "id");
+        assert_eq!(g.sort[1].column, "name");
+        assert_eq!(g.sort[2].column, "age");
         assert!(g.keep_primary_sort());
         assert_eq!(g.sort.len(), 1);
-        assert_eq!(g.sort[0].column, "age");
+        assert_eq!(g.sort[0].column, "id");
         assert!(!g.keep_primary_sort());
+        assert!(!g.rotate_sort_keys_right());
     }
 
     #[test]
