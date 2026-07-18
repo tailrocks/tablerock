@@ -158,6 +158,14 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "DROP TABLE {schema}.{table}. Paste table name '{table}' to confirm [{confirm_buffer}]"
             ),
         ),
+        crate::model::ConfirmDialog::CancelBackend { confirm_buffer, .. } => (
+            "Cancel backend?",
+            format!("Paste pid digits to pg_cancel_backend [{confirm_buffer}]"),
+        ),
+        crate::model::ConfirmDialog::TerminateBackend { confirm_buffer, .. } => (
+            "Terminate backend?",
+            format!("Paste pid digits to pg_terminate_backend [{confirm_buffer}]"),
+        ),
     };
     let panel = Panel::new(&model.theme)
         .title(title)
@@ -302,6 +310,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let truncate = action_label(model, ActionId::TruncateTable, "Truncate");
     let drop_t = action_label(model, ActionId::DropTable, "Drop");
     let activity = action_label(model, ActionId::ShowActivity, "Activity");
+    let cancel_be = action_label(model, ActionId::CancelBackend, "CancelBE");
+    let term_be = action_label(model, ActionId::TerminateBackend, "TermBE");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
@@ -507,6 +517,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ShowActivity,
                         label: activity.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CancelBackend,
+                        label: cancel_be.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::TerminateBackend,
+                        label: term_be.as_str(),
                         enabled: true,
                         style: None,
                     },

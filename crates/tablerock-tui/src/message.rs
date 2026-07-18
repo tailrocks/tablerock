@@ -311,6 +311,18 @@ pub enum EngineMsg {
         context_revision: u64,
         reason: FailureProjection,
     },
+    BackendSignalDone {
+        request_token: u64,
+        context_revision: u64,
+        kind: String,
+        pid: i32,
+        acknowledged: bool,
+    },
+    BackendSignalFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

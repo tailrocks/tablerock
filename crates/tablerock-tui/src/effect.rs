@@ -214,6 +214,15 @@ pub enum Effect {
         session_id_hex: String,
         context_revision: u64,
     },
+    /// pg_cancel_backend / pg_terminate_backend after pid confirm.
+    SignalBackend {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// "cancel" | "terminate"
+        kind: String,
+        pid: i32,
+    },
     /// Run a single SQL statement (first page) into the active tab grid.
     ExecuteSql {
         request_token: RequestToken,

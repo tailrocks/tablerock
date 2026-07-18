@@ -96,7 +96,9 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if let Some(confirm) = model.confirm_mut() {
                 match confirm {
                     ConfirmDialog::TruncateTable { confirm_buffer, .. }
-                    | ConfirmDialog::DropTable { confirm_buffer, .. } => {
+                    | ConfirmDialog::DropTable { confirm_buffer, .. }
+                    | ConfirmDialog::CancelBackend { confirm_buffer, .. }
+                    | ConfirmDialog::TerminateBackend { confirm_buffer, .. } => {
                         *confirm_buffer = text.text().to_owned();
                     }
                     _ => {}
@@ -930,6 +932,40 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::BackendSignalDone {
+            context_revision,
+            kind,
+            pid,
+            acknowledged,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.error_label = Some(format!(
+                    "{kind} backend {pid}: {}",
+                    if acknowledged { "acked" } else { "not acked" }
+                ));
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::BackendSignalFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::GridFailed {
             context_revision,
             reason,
@@ -1230,6 +1266,46 @@ fn activate_selected_action(model: &mut Model) -> Update {
                             op: "drop".into(),
                             schema,
                             table,
+                        }),
+                    }
+                }
+                ConfirmDialog::CancelBackend {
+                    ref confirm_buffer,
+                    ..
+                }
+                | ConfirmDialog::TerminateBackend {
+                    ref confirm_buffer,
+                    ..
+                } => {
+                    let trimmed = confirm_buffer.trim();
+                    let Ok(pid) = trimmed.parse::<i32>() else {
+                        return Update::render();
+                    };
+                    if pid <= 0 {
+                        return Update::render();
+                    }
+                    let kind = match &confirm {
+                        ConfirmDialog::CancelBackend { .. } => "cancel",
+                        ConfirmDialog::TerminateBackend { .. } => "terminate",
+                        _ => unreachable!(),
+                    };
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let token = model.mint_request_token();
+                    let context_revision = model.workbench().context_revision;
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::SignalBackend {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            kind: kind.into(),
+                            pid,
                         }),
                     }
                 }
@@ -1815,6 +1891,22 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CancelBackend if model.screen() == Screen::Workbench => {
+            model.set_confirm(Some(ConfirmDialog::CancelBackend {
+                pid: String::new(),
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::TerminateBackend if model.screen() == Screen::Workbench => {
+            model.set_confirm(Some(ConfirmDialog::TerminateBackend {
+                pid: String::new(),
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::SaveColumns if model.screen() == Screen::Workbench => {
             let profile_id_hex = model.workbench().profile_id_hex.clone();
             let database = model.workbench().context.database.clone();
@@ -1895,6 +1987,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::TruncateTable
         | ActionId::DropTable
         | ActionId::ShowActivity
+        | ActionId::CancelBackend
+        | ActionId::TerminateBackend
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -2246,6 +2340,8 @@ fn cycle_action(
                 ActionId::TruncateTable,
                 ActionId::DropTable,
                 ActionId::ShowActivity,
+                ActionId::CancelBackend,
+                ActionId::TerminateBackend,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,

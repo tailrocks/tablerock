@@ -377,6 +377,28 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::SignalBackend {
+                request_token,
+                session_id_hex,
+                context_revision,
+                kind,
+                pid,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = signal_backend(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        kind,
+                        pid,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::ExecuteSql {
                 request_token,
                 session_id_hex,
@@ -2516,6 +2538,115 @@ async fn load_activity(
         context_revision,
         lines,
     })
+}
+
+async fn signal_backend(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    kind: String,
+    pid: i32,
+) -> Message {
+    use tablerock_core::{
+        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
+    };
+    use tablerock_engine::{DriverPageRequest, FilterValue};
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    // Fixed function vocabulary only; pid is a bound integer parameter.
+    let sql = match kind.as_str() {
+        "cancel" => "SELECT pg_catalog.pg_cancel_backend($1::int4)::text",
+        "terminate" => "SELECT pg_catalog.pg_terminate_backend($1::int4)::text",
+        other => {
+            return Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(format!("unknown signal: {other}")),
+            });
+        }
+    };
+    let statement = match StatementText::new(sql) {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let limits = PageLimits::new(1, 1, 1024, 64);
+    let mut stream = match session
+        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+            statement,
+            parameters: vec![FilterValue::Integer(i64::from(pid))],
+            limits,
+            max_cell_bytes: 64,
+        })
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let identity = PageIdentity::new(
+        ResultId::from_parts(IdParts::new(1, 9_006).unwrap()).unwrap(),
+        Revision::INITIAL,
+        CoreEngine::PostgreSql,
+    );
+    match stream.next_page(identity, 0).await {
+        Ok(Some(page)) => {
+            let ack = page
+                .cell(0, 0)
+                .map(|c| String::from_utf8_lossy(c.bytes()) == "t" || String::from_utf8_lossy(c.bytes()) == "true")
+                .unwrap_or(false);
+            Message::Engine(tablerock_tui::EngineMsg::BackendSignalDone {
+                request_token,
+                context_revision,
+                kind,
+                pid,
+                acknowledged: ack,
+            })
+        }
+        Ok(None) => Message::Engine(tablerock_tui::EngineMsg::BackendSignalDone {
+            request_token,
+            context_revision,
+            kind,
+            pid,
+            acknowledged: false,
+        }),
+        Err(e) => Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(e.to_string()),
+        }),
+    }
 }
 
 /// Load PRIMARY KEY column names via the driver page stream (bound params).

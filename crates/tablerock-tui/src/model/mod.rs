@@ -128,6 +128,10 @@ pub enum ActionId {
     DropTable,
     /// Snapshot pg_stat_activity into the inspector.
     ShowActivity,
+    /// Cancel a backend by pid (gated confirm).
+    CancelBackend,
+    /// Terminate a backend by pid (gated confirm).
+    TerminateBackend,
     Submit,
     Cancel,
     Quit,
@@ -149,6 +153,15 @@ pub enum ConfirmDialog {
     DropTable {
         schema: String,
         table: String,
+        confirm_buffer: String,
+    },
+    /// Cancel/terminate backend: confirm_buffer must equal pid digits.
+    CancelBackend {
+        pid: String,
+        confirm_buffer: String,
+    },
+    TerminateBackend {
+        pid: String,
         confirm_buffer: String,
     },
 }
