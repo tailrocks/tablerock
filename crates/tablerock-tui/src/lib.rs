@@ -13,7 +13,7 @@ pub use keymap::{ShellKeyAction, default_keymap};
 pub use message::{EngineMsg, MAX_PASTE_BYTES, Message, PasteText, ProfilesMsg};
 pub use model::{
     ActionId, FocusRegion, LayoutMode, Model, Screen, ScrollDirection, ShellTarget,
-    profiles::{FailureProjection, ProfileListState, ProfileRowProjection},
+    profiles::{FailureProjection, LiveConnectionState, ProfileListState, ProfileRowProjection},
 };
 pub use update::{Update, update};
 pub use view::{ShellGeometry, ShellView};

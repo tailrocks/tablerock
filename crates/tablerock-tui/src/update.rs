@@ -279,10 +279,17 @@ mod tests {
             Message::Profiles(ProfilesMsg::ListLoaded {
                 request_token: 1,
                 items: vec![ProfileRowProjection {
+                    id_hex: "1".into(),
                     name: "a".into(),
                     engine_label: "PostgreSQL".into(),
                     group: None,
                     favorite: false,
+                    target_summary: "localhost:5432".into(),
+                    environment: None,
+                    production_warning: false,
+                    safety_label: "Read only".into(),
+                    plaintext_secret_warning: false,
+                    live_state: crate::model::profiles::LiveConnectionState::Disconnected,
                 }],
             }),
         );

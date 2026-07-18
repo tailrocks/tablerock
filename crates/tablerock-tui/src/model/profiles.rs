@@ -4,10 +4,70 @@ use crate::effect::RequestToken;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileRowProjection {
+    pub id_hex: String,
     pub name: String,
     pub engine_label: String,
     pub group: Option<String>,
     pub favorite: bool,
+    /// `host:port/database` (Redis: logical DB index as database).
+    pub target_summary: String,
+    pub environment: Option<String>,
+    pub production_warning: bool,
+    pub safety_label: String,
+    pub plaintext_secret_warning: bool,
+    pub live_state: LiveConnectionState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiveConnectionState {
+    Disconnected,
+    Connecting,
+    Connected,
+    Reconnecting,
+    Failed,
+}
+
+impl LiveConnectionState {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Disconnected => "disconnected",
+            Self::Connecting => "connecting",
+            Self::Connected => "connected",
+            Self::Reconnecting => "reconnecting",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl ProfileRowProjection {
+    #[must_use]
+    pub fn list_line(&self) -> String {
+        let env = self
+            .environment
+            .as_deref()
+            .map(|value| {
+                if self.production_warning {
+                    format!(" [{value}!]")
+                } else {
+                    format!(" [{value}]")
+                }
+            })
+            .unwrap_or_default();
+        let secret = if self.plaintext_secret_warning {
+            " *plaintext*"
+        } else {
+            ""
+        };
+        format!(
+            "{}  {}  {}  {}  {}{env}{secret}",
+            self.engine_label,
+            self.name,
+            self.target_summary,
+            self.safety_label,
+            self.live_state.label(),
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

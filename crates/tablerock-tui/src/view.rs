@@ -296,18 +296,50 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
     // Prefer body when TermRock Panel supports content; fall back to title-only.
     let _ = body.as_ref();
     frame.render_widget(&panel, area);
-    if let Some(status) = body
-        && area.height > 2
-        && area.width > 2
-    {
+    if area.height > 2 && area.width > 2 {
         use ratatui_core::widgets::Widget;
-        let text = ratatui_core::text::Line::from(status);
-        let inner = Rect {
-            x: area.x.saturating_add(1),
-            y: area.y.saturating_add(1),
-            width: area.width.saturating_sub(2),
-            height: 1,
-        };
-        text.render(inner, frame.buffer_mut());
+        let mut y = area.y.saturating_add(1);
+        let max_y = area.y.saturating_add(area.height.saturating_sub(1));
+        let x = area.x.saturating_add(1);
+        let width = area.width.saturating_sub(2);
+        if let Some(status) = body.as_ref() {
+            let text = ratatui_core::text::Line::from(status.as_str());
+            text.render(
+                Rect {
+                    x,
+                    y,
+                    width,
+                    height: 1,
+                },
+                frame.buffer_mut(),
+            );
+            y = y.saturating_add(1);
+        }
+        if title == "Workspace" || title.ends_with("Workspace") {
+            if let crate::model::profiles::ProfileListState::Loaded { rows, .. } = model.profiles()
+            {
+                for row in rows {
+                    if y >= max_y {
+                        break;
+                    }
+                    let line = row.list_line();
+                    let clipped = if line.len() > width as usize {
+                        line.chars().take(width as usize).collect::<String>()
+                    } else {
+                        line
+                    };
+                    ratatui_core::text::Line::from(clipped).render(
+                        Rect {
+                            x,
+                            y,
+                            width,
+                            height: 1,
+                        },
+                        frame.buffer_mut(),
+                    );
+                    y = y.saturating_add(1);
+                }
+            }
+        }
     }
 }
