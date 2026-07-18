@@ -146,7 +146,8 @@ unchanged-green.
 - [ ] Glass rules hold: no glass on content surfaces; one cluster per region; accessibility degradation verified (screenshot matrix)
 - [x] Strict-concurrency build clean; no `ObservableObject`, no GCD (evidence
       407–408; Swift 6 complete checking + warnings-as-errors)
-- [ ] Instruments: stable page latency + scroll at measured sizes recorded
+- [ ] Instruments: native 10k-grid scroll/RSS recorded (evidence 505); UniFFI
+      page-decode latency and retained-object attribution remain
 - [ ] Conformance suite green through the app's bridge path
 - [ ] Evidence + ROADMAP Phase 13 complete; `plans/README.md` updated
 

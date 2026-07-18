@@ -220,17 +220,35 @@ struct TableRockApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(model)
-                .modifier(NativeAppearanceFixtureModifier(
-                    fixture: NativeAppearanceFixture.current))
-                .frame(minWidth: 760, minHeight: 520)
+            if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"] != nil {
+                PerformanceFixtureView(table: model.resultTable)
+                    .frame(minWidth: 760, minHeight: 520)
+            } else {
+                ContentView()
+                    .environment(model)
+                    .modifier(NativeAppearanceFixtureModifier(
+                        fixture: NativeAppearanceFixture.current))
+                    .frame(minWidth: 760, minHeight: 520)
+            }
         }
         .commands {
             WorkbenchCommands()
         }
         Settings {
             NativeSettingsView()
+        }
+    }
+}
+
+private struct PerformanceFixtureView: View {
+    let table: PageV1Table?
+
+    var body: some View {
+        if let table {
+            CatalogGrid(table: table)
+                .padding(16)
+        } else {
+            ProgressView("Preparing bounded grid fixture…")
         }
     }
 }
@@ -282,6 +300,10 @@ final class BridgeModel {
         return base
     }()
 
+    init() {
+        installPerformanceFixtureIfRequested()
+    }
+
     func initialize() async {
         do {
             client = try BridgeClient(persistencePath: Self.persistenceDirectory
@@ -291,6 +313,30 @@ final class BridgeModel {
             bridgeError = "Bridge init failed: \(error)"
             status = "error"
         }
+    }
+
+    private func installPerformanceFixtureIfRequested() {
+        guard let raw = ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"],
+              let requested = Int(raw), requested > 0
+        else { return }
+        let count = min(requested, 10_000)
+        let columns = ["id", "engine", "schema", "object", "status", "rows", "bytes", "note"]
+        let started = Date()
+        var rows: [[String]] = []
+        rows.reserveCapacity(count)
+        for index in 0..<count {
+            let status = index.isMultiple(of: 3) ? "ready" : "idle"
+            rows.append([
+                String(index), "PostgreSQL", "public", "fixture_\(index)", status,
+                String(index * 10), String(index * 128), "resident snapshot",
+            ])
+        }
+        resultTable = PageV1Table(columns: columns, rows: rows)
+        let elapsed = Date().timeIntervalSince(started)
+        catalogSummary = "Performance fixture · \(count) rows · \(columns.count) columns"
+        writePerformanceMetric(
+            "PERF_FIXTURE_READY rows=\(count) columns=\(columns.count) build_seconds=\(String(format: "%.6f", elapsed))"
+        )
     }
 
     func refreshProfiles() async {
@@ -606,8 +652,11 @@ struct ContentView: View {
                         }
                     }
                 }
-                if let table = model.resultTable {
+                if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"] == nil,
+                   let table = model.resultTable
+                {
                     CatalogGrid(table: table)
+                        .frame(minHeight: 220)
                     if model.nextStartRow != nil {
                         Button("Load more rows") { Task { await model.loadMore() } }
                     }
@@ -864,23 +913,23 @@ struct CatalogGrid: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let grid = NSTableView()
-        grid.delegate = context.coordinator
-        grid.dataSource = context.coordinator
         grid.usesAlternatingRowBackgroundColors = true
         grid.allowsColumnReordering = true
         grid.allowsColumnResizing = true
         grid.allowsMultipleSelection = true
-        grid.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         grid.rowSizeStyle = .small
         grid.setAccessibilityLabel("Query results")
-        context.coordinator.installColumns(on: grid)
-
         let scroll = NSScrollView()
         scroll.documentView = grid
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
         scroll.borderType = .bezelBorder
+        context.coordinator.installColumns(on: grid)
+        grid.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+        grid.delegate = context.coordinator
+        grid.dataSource = context.coordinator
+        context.coordinator.startPerformanceScrollIfRequested(on: grid)
         return scroll
     }
 
@@ -890,6 +939,7 @@ struct CatalogGrid: NSViewRepresentable {
         context.coordinator.snapshot = table
         context.coordinator.installColumns(on: grid)
         grid.reloadData()
+        context.coordinator.startPerformanceScrollIfRequested(on: grid)
         let validSelection = selectedRows.filter { $0 < table.rows.count }
         grid.selectRowIndexes(IndexSet(validSelection), byExtendingSelection: false)
     }
@@ -897,9 +947,36 @@ struct CatalogGrid: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         var snapshot: PageV1Table
+        private var fixtureScrollTask: Task<Void, Never>?
 
         init(_ snapshot: PageV1Table) {
             self.snapshot = snapshot
+        }
+
+        func startPerformanceScrollIfRequested(on tableView: NSTableView) {
+            guard fixtureScrollTask == nil,
+                  ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_AUTOSCROLL"] == "1",
+                  !snapshot.rows.isEmpty
+            else { return }
+            let finalRow = snapshot.rows.count - 1
+            writePerformanceMetric("PERF_SCROLL_ARMED rows=\(finalRow + 1)")
+            fixtureScrollTask = Task { @MainActor [weak tableView] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let tableView, !Task.isCancelled else { return }
+                let started = Date()
+                for row in stride(from: 0, through: finalRow, by: 250) {
+                    tableView.scrollRowToVisible(row)
+                    try? await Task.sleep(for: .milliseconds(16))
+                }
+                for row in stride(from: finalRow, through: 0, by: -250) {
+                    tableView.scrollRowToVisible(row)
+                    try? await Task.sleep(for: .milliseconds(16))
+                }
+                let elapsed = Date().timeIntervalSince(started)
+                writePerformanceMetric(
+                    "PERF_SCROLL_DONE rows=\(finalRow + 1) elapsed_seconds=\(String(format: "%.6f", elapsed))"
+                )
+            }
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int { snapshot.rows.count }
@@ -963,6 +1040,10 @@ struct CatalogGrid: NSViewRepresentable {
             return cell
         }
     }
+}
+
+private func writePerformanceMetric(_ metric: String) {
+    FileHandle.standardError.write(Data("\(metric)\n".utf8))
 }
 
 struct SqlTextEditor: NSViewRepresentable {

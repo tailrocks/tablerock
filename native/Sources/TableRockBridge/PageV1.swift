@@ -149,6 +149,11 @@ public struct PageV1Table: Sendable, Equatable {
     public let columns: [String]
     /// One display string per cell. `∅` for NULL; `<kind N>` for non-text kinds.
     public var rows: [[String]]
+
+    public init(columns: [String], rows: [[String]]) {
+        self.columns = columns
+        self.rows = rows
+    }
 }
 
 extension PageV1 {
