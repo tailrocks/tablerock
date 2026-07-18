@@ -10,9 +10,8 @@ use tablerock_core::{
     CommandScope, Engine, FieldValue, MutationChange, MutationPlan, MutationPlanLimits,
     MutationReviewRegistry, MutationTarget, OperationId, OperationOutcome, OperationScope,
     OwnedValue, PageIdentity, PageKey, PageRequest, ProfileId, ProfileListFilter,
-    ProfileListRequest, ProfileProperty, ResultStore,
-    ResultStoreLimits, Revision, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
-    StatementText,
+    ProfileListRequest, ProfileProperty, ResultStore, ResultStoreLimits, Revision,
+    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText,
 };
 use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession,
@@ -692,9 +691,10 @@ impl TableRockBridge {
             .lock()
             .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
         let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
-        let actor = inner.persistence.as_ref().ok_or_else(|| {
-            BridgeError::rejected("persistence", "configure_persistence first")
-        })?;
+        let actor = inner
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
         let request = ProfileListRequest::new(ProfileListFilter::new(None, None), None, 100)
             .map_err(|error| BridgeError::rejected("profile-list-request", error.to_string()))?;
         let page = actor
