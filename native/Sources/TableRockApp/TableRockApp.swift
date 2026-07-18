@@ -34,7 +34,10 @@ final class BridgeModel: ObservableObject {
     @Published var sessionHex: String?
     @Published var connectError: String?
     @Published var connectingName: String?
+    @Published var catalogSummary: String?
+    @Published var catalogError: String?
     var bridge: TableRockBridge?
+    var sessionData: Data?
 
     private static let persistenceDirectory: URL = {
         let base = FileManager.default.temporaryDirectory
@@ -81,14 +84,59 @@ final class BridgeModel: ObservableObject {
         guard let bridge else { return }
         connectingName = item.name
         sessionHex = nil
+        sessionData = nil
         connectError = nil
+        catalogSummary = nil
+        catalogError = nil
         do {
             let session = try bridge.openProfile(profileId: item.idBytes, passwordOverride: nil)
+            sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
         } catch {
             connectError = "Connect failed: \(error)"
         }
         connectingName = nil
+    }
+
+    /// Submit a catalog refresh and poll events until the page arrives, then
+    /// decode the v1 page envelope. Proves the operation/event/page flow.
+    func browse() {
+        guard let bridge, let session = sessionData else { return }
+        catalogSummary = nil
+        catalogError = nil
+        do {
+            let spec = SubmitSpec(
+                intent: "refresh_catalog",
+                sessionId: session,
+                statement: nil,
+                resultId: nil,
+                startRow: nil,
+                rowCount: 50,
+                expectedRevision: 0
+            )
+            _ = try bridge.submit(spec: spec)
+            var cursor: UInt64 = 0
+            for _ in 0..<64 {
+                let batch = try bridge.nextEvents(cursor: cursor, maximum: 64)
+                if batch.events.isEmpty { break }
+                for event in batch.events {
+                    if event.kind == "page", let page = event.pageBytes {
+                        let envelope = try PageV1.decodeEnvelope(page)
+                        catalogSummary =
+                            "catalog page · \(envelope.columnCount) columns · \(envelope.rowCount) rows"
+                        return
+                    }
+                    if event.kind == "terminal" {
+                        catalogSummary = "catalog: terminal (no page)"
+                        return
+                    }
+                }
+                cursor = batch.nextCursor
+            }
+            catalogSummary = "catalog: no page event"
+        } catch {
+            catalogError = "Browse failed: \(error)"
+        }
     }
 }
 
@@ -133,6 +181,14 @@ struct ContentView: View {
                         systemImage: "checkmark.circle.fill"
                     )
                     .foregroundStyle(.green)
+                    Button("Browse catalog") { model.browse() }
+                        .buttonStyle(.borderedProminent)
+                }
+                if let catalogSummary = model.catalogSummary {
+                    Text(catalogSummary).foregroundStyle(.secondary)
+                }
+                if let catalogError = model.catalogError {
+                    Text(catalogError).foregroundStyle(.red).font(.callout).textSelection(.enabled)
                 }
                 if let connectError = model.connectError {
                     Text(connectError)
