@@ -485,6 +485,18 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::ExportResult {
+                request_token,
+                path,
+                format: _,
+                body,
+            } => {
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = export_result(request_token, path, body).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::ExecuteSql {
                 request_token,
                 session_id_hex,
@@ -2877,6 +2889,51 @@ async fn scan_redis_keys(
         keys,
         has_more,
     })
+}
+
+async fn export_result(request_token: RequestToken, path: String, body: String) -> Message {
+    use crate::file_effects::{AtomicFileWriter, validate_export_path};
+
+    let dest = match validate_export_path(&path) {
+        Ok(p) => p,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                request_token,
+                reason: FailureProjection::Label(e.to_string()),
+                partial_removed: false,
+            });
+        }
+    };
+    let mut writer = match AtomicFileWriter::create(dest.clone()) {
+        Ok(w) => w,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                request_token,
+                reason: FailureProjection::Label(e.to_string()),
+                partial_removed: false,
+            });
+        }
+    };
+    if let Err(e) = writer.write_all(body.as_bytes()) {
+        writer.abort();
+        return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+            request_token,
+            reason: FailureProjection::Label(e.to_string()),
+            partial_removed: true,
+        });
+    }
+    match writer.finish() {
+        Ok(bytes) => Message::Engine(tablerock_tui::EngineMsg::ExportDone {
+            request_token,
+            path: dest.display().to_string(),
+            bytes,
+        }),
+        Err(e) => Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+            request_token,
+            reason: FailureProjection::Label(e.to_string()),
+            partial_removed: true,
+        }),
+    }
 }
 
 async fn open_redis_key(

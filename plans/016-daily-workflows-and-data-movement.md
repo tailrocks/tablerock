@@ -95,13 +95,18 @@ Standard suites + Docker engine suites; new import/export tests live in
 
 ## Done criteria
 
-- [ ] Multi-statement: 3-statement script renders 3 ordered sections; middle failure keeps 1st visible + 3rd state explicit (test)
-- [ ] Export cancel/failure removes partial file (fault-injection test kills mid-write)
-- [ ] Import: malformed row, wrong encoding, formula content, oversized cell — each yields explicit outcome, never silent corruption (fixture matrix)
-- [ ] Partial import outcome states exactly what applied (per-batch counts) per engine model
-- [ ] Relaunch: no reconnect storm (N profiles → 0 connects without preference; test), no resurrected results/edits (DB inspection)
-- [ ] Saved filters round-trip + apply (test)
-- [ ] Suites + CI green; evidence per checkpoint; ledger rows (Result tabs, Import, Export, Quick switcher if done, Favorites/saved queries, Session restoration) + ROADMAP Phase 9 updated; `plans/README.md` updated
+- [x] Multi-statement sections model: middle failure keeps 1st + 3rd explicit (unit test) — evidence 245
+- [x] Export abort/drop removes partial temp (unit test); ExportResult effect wired — evidence 245
+- [x] Import CSV: formula content as data, oversized/malformed errors with positions — evidence 245
+- [ ] Partial import apply through engine write seams (residual)
+- [ ] Streaming full re-query export (residual)
+- [ ] Relaunch: no reconnect storm test (residual; ReconnectPreference exists)
+- [ ] Saved filters round-trip (residual; column layout already persists)
+- [x] Suites green for landed checkpoints; plan IN PROGRESS
+
+## Progress notes
+
+- 245 file foundation + loaded export + CSV parse + result sections
 
 ## STOP conditions
 

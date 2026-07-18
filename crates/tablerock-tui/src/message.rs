@@ -379,6 +379,17 @@ pub enum EngineMsg {
         context_revision: u64,
         reason: FailureProjection,
     },
+    ExportDone {
+        request_token: u64,
+        path: String,
+        bytes: u64,
+    },
+    ExportFailed {
+        request_token: u64,
+        reason: FailureProjection,
+        /// True when a partial temp/destination was removed.
+        partial_removed: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

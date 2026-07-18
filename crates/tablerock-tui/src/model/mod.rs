@@ -12,6 +12,7 @@ pub mod mutation_plan_build;
 pub mod redis_command;
 pub mod redis_key_view;
 pub mod redis_namespace;
+pub mod result_sections;
 pub mod profiles;
 pub mod query_editor;
 pub mod saved_query;
@@ -141,6 +142,10 @@ pub enum ActionId {
     ScanRedisKeys,
     /// Load Redis INFO overview into the inspector.
     RedisInfo,
+    /// Export loaded result as CSV (path via paste/status; default export.csv).
+    ExportCsv,
+    ExportJson,
+    ExportTsv,
     Submit,
     Cancel,
     Quit,

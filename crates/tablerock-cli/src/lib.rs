@@ -1,10 +1,15 @@
 //! Process and terminal adapters for TableRock.
 
 mod effects;
+mod file_effects;
+mod import_csv;
 mod ingress;
 mod input;
 mod projection;
 mod run;
+
+pub use file_effects::{AtomicFileWriter, FileEffectError, validate_export_path, write_atomic};
+pub use import_csv::{CsvImportError, CsvTable, is_formula_like, parse_csv};
 
 #[cfg(test)]
 #[path = "../tests/support/mod.rs"]

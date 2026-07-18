@@ -1172,6 +1172,27 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::ExportDone { path, bytes, .. }) => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.error_label = Some(format!("exported {bytes} B → {path}"));
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::ExportFailed {
+            reason,
+            partial_removed,
+            ..
+        }) => {
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(format!(
+                    "export failed: {label} (partial_removed={partial_removed})"
+                ));
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::GridFailed {
             context_revision,
             reason,
@@ -2166,6 +2187,15 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::ExportCsv if model.screen() == Screen::Workbench => {
+            export_loaded_result(model, "csv", "export.csv")
+        }
+        ActionId::ExportJson if model.screen() == Screen::Workbench => {
+            export_loaded_result(model, "json", "export.json")
+        }
+        ActionId::ExportTsv if model.screen() == Screen::Workbench => {
+            export_loaded_result(model, "tsv", "export.tsv")
+        }
         ActionId::CancelBackend if model.screen() == Screen::Workbench => {
             model.set_confirm(Some(ConfirmDialog::CancelBackend {
                 pid: String::new(),
@@ -2267,8 +2297,42 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::TerminateBackend
         | ActionId::ScanRedisKeys
         | ActionId::RedisInfo
+        | ActionId::ExportCsv
+        | ActionId::ExportJson
+        | ActionId::ExportTsv
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
+    }
+}
+
+fn export_loaded_result(model: &mut Model, format: &str, default_path: &str) -> Update {
+    use crate::model::copy_format::{CopyFormat, CopyScope, format_copy};
+    let Some(grid) = model.workbench().active_grid() else {
+        return Update::unchanged();
+    };
+    let fmt = match format {
+        "json" => CopyFormat::Json,
+        "tsv" => CopyFormat::Tsv,
+        _ => CopyFormat::Csv,
+    };
+    let body = match format_copy(grid, CopyScope::LoadedResult, fmt) {
+        Ok(s) => s,
+        Err(e) => {
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.mark_failed(e.to_string());
+            }
+            return Update::render();
+        }
+    };
+    let token = model.mint_request_token();
+    Update {
+        render: true,
+        effect: Some(Effect::ExportResult {
+            request_token: token,
+            path: default_path.into(),
+            format: format.into(),
+            body,
+        }),
     }
 }
 
@@ -2654,6 +2718,9 @@ fn cycle_action(
                 ActionId::TerminateBackend,
                 ActionId::ScanRedisKeys,
                 ActionId::RedisInfo,
+                ActionId::ExportCsv,
+                ActionId::ExportJson,
+                ActionId::ExportTsv,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,

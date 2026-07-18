@@ -254,6 +254,16 @@ pub enum Effect {
         session_id_hex: String,
         context_revision: u64,
     },
+    /// Export the loaded grid result to a file (CSV/JSON/TSV).
+    ExportResult {
+        request_token: RequestToken,
+        /// Absolute or relative destination path.
+        path: String,
+        /// "csv" | "json" | "tsv"
+        format: String,
+        /// Preformatted body from pure formatters (no credentials).
+        body: String,
+    },
     /// Run a single SQL statement (first page) into the active tab grid.
     ExecuteSql {
         request_token: RequestToken,
