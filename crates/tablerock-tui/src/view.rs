@@ -684,6 +684,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let show_staged = action_label(model, ActionId::ShowStaged, "Staged");
     let show_notices = action_label(model, ActionId::ShowNotices, "Notices");
     let clear_notices = action_label(model, ActionId::ClearNotices, "ClrNtc");
+    let copy_notices = action_label(model, ActionId::CopyNotices, "CopyNtc");
     let hex_more = action_label(model, ActionId::HexMore, "Hex+");
     let hex_less = action_label(model, ActionId::HexLess, "Hex-");
     let expand_tree = action_label(model, ActionId::ExpandTree, "Tree+");
@@ -1298,6 +1299,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ClearNotices,
                         label: clear_notices.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyNotices,
+                        label: copy_notices.as_str(),
                         enabled: true,
                         style: None,
                     },

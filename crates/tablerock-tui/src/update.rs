@@ -4121,6 +4121,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::CopyNotices if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            if grid.notice_history.is_empty() {
+                return Update::unchanged();
+            }
+            let text = grid.notices_panel_text();
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied notices ({} bytes)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::HexMore if model.screen() == Screen::Workbench => {
             if model.workbench_mut().inspector.page_hex(1) {
                 return Update::render();
@@ -4627,6 +4647,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ShowStaged
         | ActionId::ShowNotices
         | ActionId::ClearNotices
+        | ActionId::CopyNotices
         | ActionId::HexMore
         | ActionId::HexLess
         | ActionId::ExpandTree
@@ -6181,6 +6202,7 @@ fn cycle_action(
                 ActionId::ShowStaged,
                 ActionId::ShowNotices,
                 ActionId::ClearNotices,
+                ActionId::CopyNotices,
                 ActionId::HexMore,
                 ActionId::HexLess,
                 ActionId::ExpandTree,

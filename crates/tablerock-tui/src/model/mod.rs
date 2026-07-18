@@ -237,6 +237,8 @@ pub enum ActionId {
     ShowNotices,
     /// Clear NOTICE history for the active grid tab.
     ClearNotices,
+    /// Copy NOTICE history text to clipboard (OSC 52).
+    CopyNotices,
     /// Page hex dump forward one 256-byte window.
     HexMore,
     /// Page hex dump backward one 256-byte window.
