@@ -237,6 +237,38 @@ impl WorkbenchModel {
         }
     }
 
+    /// Select the next dirty tab after the current one (wrap). Returns false if none dirty.
+    pub fn select_next_dirty_tab(&mut self) -> bool {
+        let n = self.tabs.len();
+        if n == 0 {
+            return false;
+        }
+        for step in 1..=n {
+            let i = (self.selected_tab + step) % n;
+            if self.tabs[i].dirty {
+                self.selected_tab = i;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Select the previous dirty tab before the current one (wrap). Returns false if none dirty.
+    pub fn select_prev_dirty_tab(&mut self) -> bool {
+        let n = self.tabs.len();
+        if n == 0 {
+            return false;
+        }
+        for step in 1..=n {
+            let i = (self.selected_tab + n - step) % n;
+            if self.tabs[i].dirty {
+                self.selected_tab = i;
+                return true;
+            }
+        }
+        false
+    }
+
     /// Multi-line inventory of tabs for the inspector panel.
     #[must_use]
     pub fn tabs_panel_text(&self) -> String {
@@ -934,6 +966,27 @@ mod tests {
         assert!(panel.contains("two"), "{panel}");
         assert!(panel.contains('*') || panel.contains("dirty"), "{panel}");
         assert!(panel.contains('>'), "{panel}");
+    }
+
+    #[test]
+    fn select_next_prev_dirty_tab_wraps() {
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("a");
+        wb.open_preview_tab("b");
+        wb.open_preview_tab("c");
+        // selected = c (last)
+        assert!(!wb.select_next_dirty_tab());
+        wb.tabs[0].dirty = true;
+        wb.tabs[2].dirty = true;
+        wb.selected_tab = 1; // clean middle
+        assert!(wb.select_next_dirty_tab());
+        assert_eq!(wb.selected_tab, 2); // c dirty
+        assert!(wb.select_next_dirty_tab());
+        assert_eq!(wb.selected_tab, 0); // wrap to a
+        assert!(wb.select_prev_dirty_tab());
+        assert_eq!(wb.selected_tab, 2);
+        assert!(wb.select_prev_dirty_tab());
+        assert_eq!(wb.selected_tab, 0);
     }
 
     #[test]

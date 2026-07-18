@@ -3289,6 +3289,20 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.workbench_mut().select_previous_tab();
             Update::render()
         }
+        ActionId::NextDirtyTab if model.screen() == Screen::Workbench => {
+            if model.workbench_mut().select_next_dirty_tab() {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
+        ActionId::PrevDirtyTab if model.screen() == Screen::Workbench => {
+            if model.workbench_mut().select_prev_dirty_tab() {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
         ActionId::PinTab if model.screen() == Screen::Workbench => {
             model.workbench_mut().promote_active_tab();
             Update::render()
@@ -6962,6 +6976,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::NextDatabase
         | ActionId::NextTab
         | ActionId::PrevTab
+        | ActionId::NextDirtyTab
+        | ActionId::PrevDirtyTab
         | ActionId::CloseTab
         | ActionId::CloseOtherTabs
         | ActionId::CloseTabsToRight
@@ -8822,6 +8838,8 @@ fn cycle_action(
                 ActionId::NextDatabase,
                 ActionId::NextTab,
                 ActionId::PrevTab,
+                ActionId::NextDirtyTab,
+                ActionId::PrevDirtyTab,
                 ActionId::CloseOtherTabs,
                 ActionId::CloseTabsToRight,
                 ActionId::CloseTabsToLeft,

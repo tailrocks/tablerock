@@ -74,6 +74,10 @@ pub enum ActionId {
     NextTab,
     /// Select previous workbench tab (wrap).
     PrevTab,
+    /// Select next dirty workbench tab (wrap; fail closed if none dirty).
+    NextDirtyTab,
+    /// Select previous dirty workbench tab (wrap; fail closed if none dirty).
+    PrevDirtyTab,
     CloseTab,
     /// Close all tabs except the active one (fails closed if others dirty).
     CloseOtherTabs,

@@ -622,6 +622,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let next_db = action_label(model, ActionId::NextDatabase, "Next DB");
     let next_tab = action_label(model, ActionId::NextTab, "Next Tab");
     let prev_tab = action_label(model, ActionId::PrevTab, "Prev Tab");
+    let next_dirty = action_label(model, ActionId::NextDirtyTab, "NextDirty");
+    let prev_dirty = action_label(model, ActionId::PrevDirtyTab, "PrevDirty");
     let quick = action_label(model, ActionId::QuickSwitch, "Switch");
     let pin_tab = action_label(model, ActionId::PinTab, "Pin");
     let new_sql = action_label(model, ActionId::NewSql, "SQL");
@@ -986,6 +988,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::NextTab,
                         label: next_tab.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::NextDirtyTab,
+                        label: next_dirty.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PrevDirtyTab,
+                        label: prev_dirty.as_str(),
                         enabled: true,
                         style: None,
                     },
