@@ -590,6 +590,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let edit_cell = action_label(model, ActionId::EditCell, "Edit");
     let toggle_bool = action_label(model, ActionId::ToggleBool, "TogBool");
     let set_null = action_label(model, ActionId::SetNull, "SetNull");
+    let set_today = action_label(model, ActionId::SetToday, "Today");
+    let set_now = action_label(model, ActionId::SetNow, "Now");
     let delete_row = action_label(model, ActionId::DeleteRow, "DelRow");
     let apply_mut = action_label(model, ActionId::ApplyMutations, "Apply");
     let follow_fk = action_label(model, ActionId::FollowForeignKey, "FollowFK");
@@ -858,6 +860,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::SetNull,
                         label: set_null.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SetToday,
+                        label: set_today.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SetNow,
+                        label: set_now.as_str(),
                         enabled: true,
                         style: None,
                     },

@@ -1110,7 +1110,6 @@ async fn load_history(
     search: Option<String>,
     limit: u32,
 ) -> Message {
-    use tablerock_persistence::HistoryEntry;
     let joined = tokio::task::spawn_blocking(move || {
         let guard = persistence.blocking_lock();
         let Some(actor) = guard.as_ref() else {

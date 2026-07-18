@@ -37,6 +37,66 @@ impl CellEditSession {
     pub fn set_null(&mut self) {
         self.buffer = "null".into();
     }
+
+    /// Stamp local calendar date `YYYY-MM-DD` for temporal cells.
+    pub fn set_today(&mut self) -> bool {
+        if self.kind != CellDistinction::Temporal {
+            return false;
+        }
+        self.buffer = local_today_iso();
+        true
+    }
+
+    /// Stamp local timestamp `YYYY-MM-DDTHH:MM:SS` for temporal cells.
+    pub fn set_now(&mut self) -> bool {
+        if self.kind != CellDistinction::Temporal {
+            return false;
+        }
+        self.buffer = local_now_iso();
+        true
+    }
+}
+
+fn local_today_iso() -> String {
+    // Format via chrono-less wall clock: use UTC date from system time for
+    // portability without new deps (host local TZ would need OS helpers).
+    // Operators still edit freely; this is a staging affordance only.
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let days = secs.div_euclid(86_400);
+    let (y, m, d) = civil_from_days(days);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+fn local_now_iso() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let days = secs.div_euclid(86_400);
+    let tod = secs.rem_euclid(86_400) as u32;
+    let (y, m, d) = civil_from_days(days);
+    let hh = tod / 3600;
+    let mm = (tod % 3600) / 60;
+    let ss = tod % 60;
+    format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z")
+}
+
+/// Howard Hinnant civil-from-days (proleptic Gregorian).
+fn civil_from_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as i32, m as u32, d as u32)
 }
 
 /// Visual distinction class (text+glyph; never color alone).
@@ -1276,6 +1336,40 @@ mod tests {
         assert_eq!(grid.next_fetch_start(), 1);
         grid.operation = GridOperationState::Idle;
         assert!(!grid.needs_fetch(1));
+    }
+
+    #[test]
+    fn temporal_set_today_and_now_stamps() {
+        let mut session = CellEditSession {
+            abs_row: 0,
+            column: "ts".into(),
+            original_text: String::new(),
+            buffer: String::new(),
+            locator: Vec::new(),
+            kind: CellDistinction::Temporal,
+        };
+        assert!(session.set_today());
+        assert!(staged_value_ok_for_distinction(
+            &session.buffer,
+            CellDistinction::Temporal
+        ));
+        assert!(session.buffer.chars().filter(|c| *c == '-').count() >= 2);
+        assert!(session.set_now());
+        assert!(session.buffer.contains('T'));
+        assert!(staged_value_ok_for_distinction(
+            &session.buffer,
+            CellDistinction::Temporal
+        ));
+        let mut text = CellEditSession {
+            abs_row: 0,
+            column: "t".into(),
+            original_text: String::new(),
+            buffer: "x".into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Text,
+        };
+        assert!(!text.set_today());
+        assert!(!text.set_now());
     }
 
     #[test]

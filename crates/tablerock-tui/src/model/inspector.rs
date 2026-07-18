@@ -37,7 +37,10 @@ impl InspectorModel {
         };
         let text = match cell.distinction {
             CellDistinction::Structured => pretty_structured(&cell.text),
-            CellDistinction::Temporal => annotate_temporal(&cell.text),
+            CellDistinction::Temporal => format!(
+                "{}\n(Today / Now · null: SetNull)",
+                annotate_temporal(&cell.text)
+            ),
             CellDistinction::Boolean => format!(
                 "{}\n(toggle: TogBool · null: SetNull)",
                 cell.display()

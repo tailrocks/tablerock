@@ -132,6 +132,10 @@ pub enum ActionId {
     ToggleBool,
     /// Set cell edit buffer to null while editing.
     SetNull,
+    /// Stamp today (YYYY-MM-DD) while editing a temporal cell.
+    SetToday,
+    /// Stamp now (YYYY-MM-DDTHH:MM:SSZ) while editing a temporal cell.
+    SetNow,
     /// Stage delete of the cursor row.
     DeleteRow,
     /// Apply reviewed/staged mutations (typed plan rebuild from drafts).

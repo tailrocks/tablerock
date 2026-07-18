@@ -3477,6 +3477,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::SetToday if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.set_today() {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::SetNow if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.set_now() {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::DeleteRow if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if grid.stage_delete_cursor_row() {
@@ -3914,6 +3934,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::EditCell
         | ActionId::ToggleBool
         | ActionId::SetNull
+        | ActionId::SetToday
+        | ActionId::SetNow
         | ActionId::DeleteRow
         | ActionId::ApplyMutations
         | ActionId::FollowForeignKey
@@ -5114,6 +5136,8 @@ fn cycle_action(
                 ActionId::EditCell,
                 ActionId::ToggleBool,
                 ActionId::SetNull,
+                ActionId::SetToday,
+                ActionId::SetNow,
                 ActionId::DeleteRow,
                 ActionId::ApplyMutations,
                 ActionId::FollowForeignKey,
