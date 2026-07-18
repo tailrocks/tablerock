@@ -199,7 +199,7 @@ extension PageV1 {
         let arenaByteLen = Int(try u64())
         _ = try u64()                    // column_text_byte_len
         _ = try u8()                     // delivery
-        _ = try bytes(4)                 // warnings
+        _ = try u16()                    // warnings (u16 bitset)
 
         // Columns: bounded_str(name) + u8(engine) + bounded_str(engine_name) + u8(nullable).
         var columns: [String] = []
@@ -231,20 +231,40 @@ extension PageV1 {
                 let isNull = (bitmap[i / 8] & (1 << (i % 8))) != 0
                 if isNull {
                     row.append("∅")
-                } else if kinds[i] == 7 {
-                    let start = Int(offsets[i])
-                    let end = Int(offsets[i + 1])
-                    if start <= end && end <= arena.count {
-                        row.append(String(data: arena.subdata(in: start..<end), encoding: .utf8) ?? "<text>")
-                    } else {
-                        row.append("<text>")
-                    }
-                } else {
-                    row.append("<kind \(kinds[i])>")
+                    continue
+                }
+                let start = Int(offsets[i])
+                let end = Int(offsets[i + 1])
+                let slice = (start <= end && end <= arena.count)
+                    ? arena.subdata(in: start..<end) : Data()
+                switch kinds[i] {
+                case 0: row.append("∅")
+                case 1: row.append(slice.first.map { $0 != 0 ? "true" : "false" } ?? "false")
+                case 2: row.append(formatSigned(slice))
+                case 3: row.append(formatUnsigned(slice))
+                case 7: row.append(String(data: slice, encoding: .utf8) ?? "<text>")
+                default: row.append("<kind \(kinds[i])>")
                 }
             }
             rows.append(row)
         }
         return PageV1Table(columns: columns, rows: rows)
+    }
+
+    /// Big-endian signed integer of the slice width (PostgreSQL network order).
+    private static func formatSigned(_ slice: Data) -> String {
+        guard slice.count <= 8 else { return "<int>" }
+        var v: Int64 = 0
+        let n = slice.count
+        for (i, b) in slice.enumerated() { v |= Int64(b) << (8 * (n - 1 - i)) }
+        return String(v)
+    }
+
+    private static func formatUnsigned(_ slice: Data) -> String {
+        guard slice.count <= 8 else { return "<uint>" }
+        var v: UInt64 = 0
+        let n = slice.count
+        for (i, b) in slice.enumerated() { v |= UInt64(b) << (8 * (n - 1 - i)) }
+        return String(v)
     }
 }

@@ -117,7 +117,8 @@ final class BridgeModel: ObservableObject {
             rowCount: 500,
             expectedRevision: 0
         )
-        _ = try bridge.submit(spec: spec)
+        let operationId = try bridge.submit(spec: spec)
+        try bridge.pump(operationId: operationId)
         var cursor: UInt64 = 0
         for _ in 0..<64 {
             let batch = try bridge.nextEvents(cursor: cursor, maximum: 64)
