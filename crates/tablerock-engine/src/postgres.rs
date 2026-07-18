@@ -1081,8 +1081,8 @@ impl PostgresSession {
 
     /// Direct role membership edges (role → member) from `pg_auth_members`.
     ///
-    /// Bounded by `limit`. Does not expand inheritance recursively (that is a
-    /// separate later checkpoint with cycle/self-lockout tests).
+    /// Bounded by `limit`. Pair with [`RoleMembershipGraph::effective_roles`] for
+    /// transitive expansion and self-cycle detection.
     pub async fn list_role_memberships(
         &self,
         limit: u32,
@@ -1103,6 +1103,26 @@ impl PostgresSession {
             .await
             .map_err(|_| PostgresError::Query)?;
         Ok(rows.into_iter().map(|r| (r.get(0), r.get(1))).collect())
+    }
+
+    /// Load membership graph and expand effective roles for `member`.
+    pub async fn effective_roles_for(
+        &self,
+        member: &str,
+        edge_limit: u32,
+        max_roles: usize,
+    ) -> Result<(Vec<String>, Vec<(String, String)>, bool), PostgresError> {
+        if member.is_empty() || max_roles == 0 {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let edges = self.list_role_memberships(edge_limit).await?;
+        let mut graph = tablerock_core::RoleMembershipGraph::default();
+        for (role, m) in edges {
+            graph.push(tablerock_core::RoleMembershipEdge { role, member: m });
+        }
+        let (roles, cycles) = graph.effective_roles(member, max_roles);
+        let self_cycle = graph.has_self_cycle_through(member);
+        Ok((roles, cycles, self_cycle))
     }
 
     /// Table-level privileges for a relation (`information_schema.table_privileges`).

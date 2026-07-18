@@ -233,6 +233,96 @@ pub struct RolePrivilegeRow {
     pub is_grantable: bool,
 }
 
+/// Direct membership edge: `member` is granted `role` (`GRANT role TO member`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoleMembershipEdge {
+    pub role: String,
+    pub member: String,
+}
+
+/// Bounded role membership graph for effective-privilege expansion.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RoleMembershipGraph {
+    pub edges: Vec<RoleMembershipEdge>,
+}
+
+impl RoleMembershipGraph {
+    pub fn push(&mut self, edge: RoleMembershipEdge) {
+        self.edges.push(edge);
+    }
+
+    /// Roles that `member` is a direct member of.
+    #[must_use]
+    pub fn direct_roles_of(&self, member: &str) -> Vec<&str> {
+        self.edges
+            .iter()
+            .filter(|e| e.member == member)
+            .map(|e| e.role.as_str())
+            .collect()
+    }
+
+    /// Transitive roles for `member` including itself (BFS, cycle-safe).
+    ///
+    /// When a cycle is hit, expansion stops that branch; `cycles` lists pairs
+    /// `(from, to)` observed on a revisit.
+    #[must_use]
+    pub fn effective_roles(
+        &self,
+        member: &str,
+        max_roles: usize,
+    ) -> (Vec<String>, Vec<(String, String)>) {
+        use std::collections::{HashSet, VecDeque};
+        let mut seen = HashSet::new();
+        let mut order = Vec::new();
+        let mut cycles = Vec::new();
+        let mut queue = VecDeque::new();
+        seen.insert(member.to_owned());
+        order.push(member.to_owned());
+        queue.push_back(member.to_owned());
+        while let Some(current) = queue.pop_front() {
+            if order.len() >= max_roles {
+                break;
+            }
+            for role in self.direct_roles_of(&current) {
+                if !seen.insert(role.to_owned()) {
+                    // Revisit while expanding → cycle/path merge.
+                    if role != member {
+                        cycles.push((current.clone(), role.to_owned()));
+                    }
+                    continue;
+                }
+                order.push(role.to_owned());
+                queue.push_back(role.to_owned());
+                if order.len() >= max_roles {
+                    break;
+                }
+            }
+        }
+        (order, cycles)
+    }
+
+    /// True when expanding `member` would re-enter itself through grants
+    /// (self-lockout / circular grant risk signal for review UI).
+    #[must_use]
+    pub fn has_self_cycle_through(&self, member: &str) -> bool {
+        use std::collections::{HashSet, VecDeque};
+        let mut seen = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(member.to_owned());
+        while let Some(current) = queue.pop_front() {
+            for role in self.direct_roles_of(&current) {
+                if role == member {
+                    return true;
+                }
+                if seen.insert(role.to_owned()) {
+                    queue.push_back(role.to_owned());
+                }
+            }
+        }
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,6 +421,33 @@ mod tests {
             Some("c".into()),
         )
         .is_ok());
+    }
+
+    #[test]
+    fn role_membership_effective_roles_and_self_cycle() {
+        let mut g = RoleMembershipGraph::default();
+        // child → parent → grand (child is member of parent, parent of grand)
+        g.push(RoleMembershipEdge {
+            role: "parent".into(),
+            member: "child".into(),
+        });
+        g.push(RoleMembershipEdge {
+            role: "grand".into(),
+            member: "parent".into(),
+        });
+        // cycle: grand also member of child
+        g.push(RoleMembershipEdge {
+            role: "child".into(),
+            member: "grand".into(),
+        });
+        let (roles, _cycles) = g.effective_roles("child", 16);
+        assert!(roles.contains(&"child".into()));
+        assert!(roles.contains(&"parent".into()));
+        assert!(roles.contains(&"grand".into()));
+        assert!(g.has_self_cycle_through("child"));
+        assert!(!g.has_self_cycle_through("lonely"));
+        let (bounded, _) = g.effective_roles("child", 2);
+        assert_eq!(bounded.len(), 2);
     }
 
     #[test]

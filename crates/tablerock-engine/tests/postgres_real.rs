@@ -2748,6 +2748,17 @@ async fn role_memberships_and_table_privileges() {
         }),
         "expected SELECT for tr_child on priv_probe, got {privs:?}"
     );
+
+    // Transitive expansion: child inherits parent.
+    // (PostgreSQL rejects circular GRANTs server-side; self-cycle detection is
+    // unit-tested on RoleMembershipGraph with synthetic edges.)
+    let (effective, _cycles, self_cycle) = session
+        .effective_roles_for("tr_child", 64, 16)
+        .await
+        .unwrap();
+    assert!(effective.iter().any(|r| r == "tr_child"));
+    assert!(effective.iter().any(|r| r == "tr_parent"));
+    assert!(!self_cycle);
 }
 
 #[tokio::test]

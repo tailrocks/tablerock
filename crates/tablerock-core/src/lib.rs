@@ -32,7 +32,7 @@ pub use command::{
 };
 pub use ddl::{
     DdlBuildError, DdlKind, DdlPlan, DdlTarget, RelationshipEdge, RelationshipGraph,
-    RolePrivilegeRow,
+    RoleMembershipEdge, RoleMembershipGraph, RolePrivilegeRow,
 };
 pub use diagnostic::{
     ApplicationCode, DiagnosticBuildError, DiagnosticPosition, FailureClass, OperationSafety,
