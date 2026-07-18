@@ -737,6 +737,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let restore_edit = action_label(model, ActionId::RestoreCellEdit, "RestoreEd");
     let copy_edit_buf = action_label(model, ActionId::CopyCellEditBuffer, "CopyEdBuf");
     let copy_edit_orig = action_label(model, ActionId::CopyCellEditOriginal, "CopyEdOrig");
+    let copy_stg_diff = action_label(model, ActionId::CopyCursorStagedDiff, "CopyStgDiff");
     let copy_cell = action_label(model, ActionId::CopyCell, "CopyCell");
     let copy_cell_hex = action_label(model, ActionId::CopyCellHex, "CopyHex");
     let copy_cell_sql = action_label(model, ActionId::CopyCellSql, "CopySql");
@@ -1669,6 +1670,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyCellEditOriginal,
                         label: copy_edit_orig.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyCursorStagedDiff,
+                        label: copy_stg_diff.as_str(),
                         enabled: true,
                         style: None,
                     },

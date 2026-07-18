@@ -5985,6 +5985,34 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyCursorStagedDiff if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(col) = grid.columns.get(grid.cursor_col).cloned() else {
+                return Update::unchanged();
+            };
+            let Some(edit) = grid
+                .drafts
+                .cell_edits
+                .iter()
+                .find(|e| e.abs_row == grid.cursor_row && e.column == col)
+            else {
+                return Update::unchanged();
+            };
+            let text = format!("{} → {}", edit.original_text, edit.staged_text);
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied staged diff ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::ToggleBool if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if let Some(edit) = grid.cell_edit.as_mut() {
@@ -7018,6 +7046,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::RestoreCellEdit
         | ActionId::CopyCellEditBuffer
         | ActionId::CopyCellEditOriginal
+        | ActionId::CopyCursorStagedDiff
         | ActionId::ToggleBool
         | ActionId::SetNull
         | ActionId::SetToday
@@ -8871,6 +8900,7 @@ fn cycle_action(
                 ActionId::RestoreCellEdit,
                 ActionId::CopyCellEditBuffer,
                 ActionId::CopyCellEditOriginal,
+                ActionId::CopyCursorStagedDiff,
                 ActionId::ToggleBool,
                 ActionId::SetNull,
                 ActionId::SetToday,
@@ -10930,6 +10960,65 @@ mod tests {
         model.set_action(ActionId::CopyCellEditBuffer);
         assert!(update(&mut model, Message::Activate).effects().next().is_none());
         model.set_action(ActionId::CopyCellEditOriginal);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+    }
+
+    #[test]
+    fn copy_cursor_staged_diff_action() {
+        use tablerock_core::ProfileSafetyMode;
+        use crate::model::mutation_draft::StagedCellEdit;
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into()];
+            grid.row_count = 1;
+            grid.cells = vec![
+                crate::model::grid::ProjectedCell {
+                    text: "1".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                },
+                crate::model::grid::ProjectedCell {
+                    text: "alice".into(),
+                    distinction: crate::model::grid::CellDistinction::Text,
+                    byte_len: 5,
+                    original_byte_len: None,
+                },
+            ];
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.identity_columns = vec!["id".into()];
+            grid.cursor_col = 1;
+            grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+            assert!(grid.drafts.stage_cell_edit(StagedCellEdit {
+                abs_row: 0,
+                column: "name".into(),
+                original_text: "alice".into(),
+                staged_text: "bob".into(),
+                locator: vec![],
+            }));
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyCursorStagedDiff);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "alice → bob");
+            }
+            other => panic!("expected staged diff, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.drafts.discard_all();
+        }
+        model.set_action(ActionId::CopyCursorStagedDiff);
         assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 

@@ -449,6 +449,8 @@ pub enum ActionId {
     CopyCellEditBuffer,
     /// Copy original cell text of open edit (fail closed if not editing).
     CopyCellEditOriginal,
+    /// Copy staged cursor cell as `original → staged` (fail closed if unstaged).
+    CopyCursorStagedDiff,
     /// Toggle boolean cell buffer while editing (type-specific).
     ToggleBool,
     /// Set cell edit buffer to null while editing.
