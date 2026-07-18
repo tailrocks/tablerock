@@ -8420,10 +8420,7 @@ fn open_pick_date(model: &mut Model) -> Update {
         return Update::unchanged();
     }
     let cal = edit.month_calendar_text().unwrap_or_default();
-    let (year, month, day, time_suffix) = parse_temporal_parts(&edit.buffer).unwrap_or_else(|| {
-        let today = chrono_today_fallback();
-        (today.0, today.1, today.2, String::new())
-    });
+    let (year, month, day, time_suffix) = edit.temporal_base();
     model.set_confirm(Some(ConfirmDialog::PickDate {
         year,
         month,
@@ -8544,37 +8541,6 @@ fn parse_insert_value_buffer(buf: &str) -> Option<Vec<(String, String)>> {
     }
 }
 
-fn parse_temporal_parts(buf: &str) -> Option<(i32, u32, u32, String)> {
-    let t = buf.trim();
-    if t.is_empty() || t.eq_ignore_ascii_case("null") {
-        return None;
-    }
-    let (date_part, rest) = if let Some((d, r)) = t.split_once('T') {
-        (d, format!("T{r}"))
-    } else if let Some((d, r)) = t.split_once(' ') {
-        (d, format!(" {r}"))
-    } else if t.len() >= 10 {
-        (
-            &t[..10],
-            if t.len() > 10 {
-                t[10..].to_owned()
-            } else {
-                String::new()
-            },
-        )
-    } else {
-        return None;
-    };
-    let parts: Vec<&str> = date_part.split('-').collect();
-    if parts.len() != 3 {
-        return None;
-    }
-    let y: i32 = parts[0].parse().ok()?;
-    let m: u32 = parts[1].parse().ok()?;
-    let d: u32 = parts[2].parse().ok()?;
-    Some((y, m, d, rest))
-}
-
 fn parse_pick_date(s: &str) -> Option<(i32, u32, u32)> {
     let parts: Vec<&str> = s.split('-').collect();
     if parts.len() != 3 {
@@ -8600,27 +8566,6 @@ fn days_in_month_public(y: i32, m: u32) -> u32 {
         }
         _ => 30,
     }
-}
-
-fn chrono_today_fallback() -> (i32, u32, u32) {
-    // Match local_today_iso path without exposing private helpers.
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let days = secs.div_euclid(86_400);
-    // Reuse same civil conversion as grid (inline copy of Howard formula end).
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = (yoe as i64) + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y as i32, m as u32, d as u32)
 }
 
 /// Jump to absolute row; FetchPage when outside resident window.

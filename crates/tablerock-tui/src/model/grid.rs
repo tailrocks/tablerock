@@ -213,6 +213,21 @@ impl CellEditSession {
         Some(format_month_calendar(y, m, d))
     }
 
+    /// Parsed `(year, month, day, time_suffix)` for this edit, defaulting to
+    /// today's local date (empty time suffix) when the buffer is not a
+    /// parseable temporal value. Today is resolved here in the model layer so
+    /// the reducer can stay free of wall-clock reads.
+    pub fn temporal_base(&self) -> (i32, u32, u32, String) {
+        if let Some((y, m, d, time)) = split_temporal_buffer(&self.buffer) {
+            return (y, m, d, time.unwrap_or_default());
+        }
+        let today = local_today_iso();
+        if let Some((y, m, d, time)) = split_temporal_buffer(&today) {
+            return (y, m, d, time.unwrap_or_default());
+        }
+        (1970, 1, 1, String::new())
+    }
+
     fn ensure_temporal_date_base(&mut self) {
         let trimmed = self.buffer.trim();
         if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
