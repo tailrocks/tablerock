@@ -3,7 +3,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use tablerock_persistence::PersistenceActor;
+use tablerock_core::{IdParts, ProfileId, Revision};
+use tablerock_persistence::{PersistenceActor, ProfileOrderUpdate};
 
 fn path() -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
@@ -57,7 +58,7 @@ fn migration_backfills_groups_from_existing_profiles() {
         connection
             .execute_batch(
                 "DROP TABLE saved_profile_groups;
-                 DELETE FROM schema_migrations WHERE version = 14;
+                 DELETE FROM schema_migrations WHERE version >= 14;
                  INSERT INTO saved_profiles(
                     profile_id, aggregate_schema, connection_schema, property_schema,
                     revision, engine, name, tls_policy, safety_mode, connect_timeout_ms,
@@ -69,6 +70,16 @@ fn migration_backfills_groups_from_existing_profiles() {
                     X'0000000000000000', 1, 'Existing', 1, 1, 1000,
                     1000, 100, 1024, 'Legacy', 0, 0, 1, 1, 100,
                     NULL, NULL, 0
+                 ), (
+                    X'00000000000000000000000000000002', 1, 1, 1,
+                    X'0000000000000000', 1, 'Second', 1, 1, 1000,
+                    1000, 100, 1024, 'Legacy', 0, 1, 1, 1, 100,
+                    NULL, NULL, 0
+                 ), (
+                    X'00000000000000000000000000000003', 1, 1, 1,
+                    X'0000000000000000', 1, 'Third', 1, 1, 1000,
+                    1000, 100, 1024, 'Legacy', 0, 2, 1, 1, 100,
+                    NULL, NULL, 0
                  );",
             )
             .await
@@ -76,10 +87,49 @@ fn migration_backfills_groups_from_existing_profiles() {
     });
 
     let reopened = PersistenceActor::open(&path).unwrap();
-    assert_eq!(reopened.health().unwrap().schema_version, 14);
+    assert_eq!(reopened.health().unwrap().schema_version, 15);
     assert_eq!(reopened.list_groups().unwrap(), ["Legacy"]);
-    assert_eq!(reopened.rename_group("Legacy", "Modern").unwrap(), 1);
-    assert_eq!(reopened.delete_group("Modern").unwrap(), 1);
+    assert_eq!(
+        reopened.list_group_settings().unwrap()[0].alphabetical,
+        false
+    );
+    reopened.set_group_alphabetical("Legacy", true).unwrap();
+    assert!(reopened.list_group_settings().unwrap()[0].alphabetical);
+    let profile = |low| ProfileId::from_parts(IdParts::new(0, low).unwrap()).unwrap();
+    reopened
+        .set_profile_favorite(profile(1), Revision::INITIAL, true)
+        .unwrap();
+    assert_eq!(
+        reopened
+            .set_profile_favorite(profile(1), Revision::INITIAL, false)
+            .unwrap_err(),
+        tablerock_persistence::PersistenceError::ProfileStaleRevision
+    );
+    let order = vec![
+        ProfileOrderUpdate {
+            id: profile(3),
+            expected_revision: Revision::INITIAL,
+        },
+        ProfileOrderUpdate {
+            id: profile(1),
+            expected_revision: Revision::from_wire_u64(1),
+        },
+        ProfileOrderUpdate {
+            id: profile(2),
+            expected_revision: Revision::INITIAL,
+        },
+    ];
+    reopened
+        .reorder_profiles(Some("Legacy"), order.clone())
+        .unwrap();
+    assert_eq!(
+        reopened
+            .reorder_profiles(Some("Legacy"), order)
+            .unwrap_err(),
+        tablerock_persistence::PersistenceError::ProfileStaleRevision
+    );
+    assert_eq!(reopened.rename_group("Legacy", "Modern").unwrap(), 3);
+    assert_eq!(reopened.delete_group("Modern").unwrap(), 3);
     reopened.shutdown().unwrap();
     runtime.block_on(async {
         let database = turso::Builder::new_local(path.to_str().unwrap())
@@ -88,13 +138,24 @@ fn migration_backfills_groups_from_existing_profiles() {
             .unwrap();
         let connection = database.connect().unwrap();
         let mut rows = connection
-            .query("SELECT revision, group_name FROM saved_profiles", ())
+            .query(
+                "SELECT revision, group_name, favorite, saved_order \
+                 FROM saved_profiles ORDER BY profile_id",
+                (),
+            )
             .await
             .unwrap();
-        let row = rows.next().await.unwrap().unwrap();
-        let revision = row.get::<Vec<u8>>(0).unwrap();
-        assert_eq!(revision, 2_u64.to_be_bytes());
-        assert!(row.get::<Option<String>>(1).unwrap().is_none());
+        let first = rows.next().await.unwrap().unwrap();
+        assert_eq!(first.get::<Vec<u8>>(0).unwrap(), 4_u64.to_be_bytes());
+        assert!(first.get::<Option<String>>(1).unwrap().is_none());
+        assert_eq!(first.get::<u32>(2).unwrap(), 1);
+        assert_eq!(first.get::<u32>(3).unwrap(), 1);
+        let second = rows.next().await.unwrap().unwrap();
+        assert_eq!(second.get::<Vec<u8>>(0).unwrap(), 3_u64.to_be_bytes());
+        assert_eq!(second.get::<u32>(3).unwrap(), 2);
+        let third = rows.next().await.unwrap().unwrap();
+        assert_eq!(third.get::<Vec<u8>>(0).unwrap(), 3_u64.to_be_bytes());
+        assert_eq!(third.get::<u32>(3).unwrap(), 0);
     });
     fs::remove_file(path).unwrap();
 }

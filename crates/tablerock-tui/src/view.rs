@@ -893,6 +893,11 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let quit = action_label(model, ActionId::Quit, "Quit");
     let remove = action_label(model, ActionId::Remove, "Remove");
     let rename_group = action_label(model, ActionId::RenameGroup, "RenGroup");
+    let favorite = action_label(model, ActionId::ToggleFavorite, "Fav");
+    let profile_up = action_label(model, ActionId::MoveProfileUp, "Up");
+    let profile_down = action_label(model, ActionId::MoveProfileDown, "Down");
+    let group_manual = action_label(model, ActionId::GroupManualOrder, "Man");
+    let group_alpha = action_label(model, ActionId::GroupAlphabeticalOrder, "A-Z");
     let reconnect = action_label(model, ActionId::Reconnect, "Reconn");
     let session_health = action_label(model, ActionId::SessionHealth, "Health");
     let actions: Vec<Action<'_, ActionId>> =
@@ -2761,14 +2766,44 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                         style: None,
                     },
                     Action {
-                        id: ActionId::Reconnect,
-                        label: reconnect.as_str(),
+                        id: ActionId::Quit,
+                        label: quit.as_str(),
                         enabled: true,
                         style: None,
                     },
                     Action {
-                        id: ActionId::Quit,
-                        label: quit.as_str(),
+                        id: ActionId::ToggleFavorite,
+                        label: favorite.as_str(),
+                        enabled: model.profiles().selected_row().is_some(),
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::MoveProfileUp,
+                        label: profile_up.as_str(),
+                        enabled: model.profiles().selected_row().is_some(),
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::MoveProfileDown,
+                        label: profile_down.as_str(),
+                        enabled: model.profiles().selected_row().is_some(),
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::GroupManualOrder,
+                        label: group_manual.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::GroupAlphabeticalOrder,
+                        label: group_alpha.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Reconnect,
+                        label: reconnect.as_str(),
                         enabled: true,
                         style: None,
                     },

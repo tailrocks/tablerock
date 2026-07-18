@@ -228,6 +228,57 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::SetProfileFavorite {
+                request_token,
+                profile_id_hex,
+                expected_revision,
+                favorite,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = set_profile_favorite(
+                        persistence,
+                        request_token,
+                        profile_id_hex,
+                        expected_revision,
+                        favorite,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::ReorderProfiles {
+                request_token,
+                group_name,
+                ordered,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        reorder_profiles(persistence, request_token, group_name, ordered).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::SetGroupAlphabetical {
+                request_token,
+                group_name,
+                alphabetical,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = set_group_alphabetical(
+                        persistence,
+                        request_token,
+                        group_name,
+                        alphabetical,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::LoadCatalog {
                 request_token,
                 session_id_hex,
@@ -1688,16 +1739,58 @@ async fn load_profile_list(
         let Some(actor) = guard.as_ref() else {
             return Err("persistence unavailable".to_owned());
         };
-        let request = ProfileListRequest::new(ProfileListFilter::default(), None, 100)
+        let filter = ProfileListFilter::default();
+        let mut after = None;
+        let mut items = Vec::new();
+        loop {
+            let request = ProfileListRequest::new(filter.clone(), after, 100)
+                .map_err(|error| error.to_string())?;
+            let page = actor
+                .list_profiles(request)
+                .map_err(|error| error.to_string())?;
+            items.extend(page.items().iter().map(projection::profile_row));
+            if items.len() > ProfileListRequest::MAX_SEARCH_CANDIDATES {
+                return Err("profile list exceeds bounded capacity".to_owned());
+            }
+            let Some(next) = page.next() else { break };
+            after = Some(next);
+        }
+        let settings = actor
+            .list_group_settings()
             .map_err(|error| error.to_string())?;
-        actor
-            .list_profiles(request)
-            .map_err(|error| error.to_string())
+        Ok((items, settings))
     })
     .await;
     match joined {
-        Ok(Ok(page)) => {
-            let items = page.items().iter().map(projection::profile_row).collect();
+        Ok(Ok((mut items, settings))) => {
+            let alphabetical = settings
+                .into_iter()
+                .filter(|group| group.alphabetical)
+                .map(|group| group.name)
+                .collect::<std::collections::BTreeSet<_>>();
+            for group in alphabetical {
+                let positions = items
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, item)| {
+                        (item.group.as_deref() == Some(&group)).then_some(index)
+                    })
+                    .collect::<Vec<_>>();
+                let mut sorted = positions
+                    .iter()
+                    .map(|index| items[*index].clone())
+                    .collect::<Vec<_>>();
+                sorted.sort_by(|left, right| {
+                    right.favorite.cmp(&left.favorite).then_with(|| {
+                        left.name
+                            .to_ascii_lowercase()
+                            .cmp(&right.name.to_ascii_lowercase())
+                    })
+                });
+                for (index, item) in positions.into_iter().zip(sorted) {
+                    items[index] = item;
+                }
+            }
             Message::Profiles(ProfilesMsg::ListLoaded {
                 request_token,
                 items,
@@ -5608,6 +5701,96 @@ async fn rename_group(
     .await;
     match joined {
         // Reuse Deleted → reloads list (same as delete/rename success path).
+        Ok(Ok(())) => Message::Profiles(ProfilesMsg::Deleted { request_token }),
+        Ok(Err(label)) => Message::Profiles(ProfilesMsg::DeleteFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Profiles(ProfilesMsg::DeleteFailed {
+            request_token,
+            reason: FailureProjection::Label("task-failed".into()),
+        }),
+    }
+}
+
+async fn set_profile_favorite(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    profile_id_hex: String,
+    expected_revision: u64,
+    favorite: bool,
+) -> Message {
+    let joined = tokio::task::spawn_blocking(move || {
+        let id = profile_id_hex
+            .parse::<ProfileId>()
+            .map_err(|_| "invalid profile id".to_owned())?;
+        let guard = persistence.blocking_lock();
+        let actor = guard
+            .as_ref()
+            .ok_or_else(|| "persistence unavailable".to_owned())?;
+        actor
+            .set_profile_favorite(id, Revision::from_wire_u64(expected_revision), favorite)
+            .map_err(|error| error.to_string())
+    })
+    .await;
+    profile_organization_message(joined, request_token)
+}
+
+async fn reorder_profiles(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    group_name: Option<String>,
+    ordered: Vec<tablerock_tui::effect::ProfileOrderSpec>,
+) -> Message {
+    let joined = tokio::task::spawn_blocking(move || {
+        let updates = ordered
+            .into_iter()
+            .map(|item| {
+                Ok(tablerock_persistence::ProfileOrderUpdate {
+                    id: item
+                        .id_hex
+                        .parse::<ProfileId>()
+                        .map_err(|_| "invalid profile id".to_owned())?,
+                    expected_revision: Revision::from_wire_u64(item.expected_revision),
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let guard = persistence.blocking_lock();
+        let actor = guard
+            .as_ref()
+            .ok_or_else(|| "persistence unavailable".to_owned())?;
+        actor
+            .reorder_profiles(group_name.as_deref(), updates)
+            .map_err(|error| error.to_string())
+    })
+    .await;
+    profile_organization_message(joined, request_token)
+}
+
+async fn set_group_alphabetical(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    group_name: String,
+    alphabetical: bool,
+) -> Message {
+    let joined = tokio::task::spawn_blocking(move || {
+        let guard = persistence.blocking_lock();
+        let actor = guard
+            .as_ref()
+            .ok_or_else(|| "persistence unavailable".to_owned())?;
+        actor
+            .set_group_alphabetical(&group_name, alphabetical)
+            .map_err(|error| error.to_string())
+    })
+    .await;
+    profile_organization_message(joined, request_token)
+}
+
+fn profile_organization_message(
+    joined: Result<Result<(), String>, tokio::task::JoinError>,
+    request_token: RequestToken,
+) -> Message {
+    match joined {
         Ok(Ok(())) => Message::Profiles(ProfilesMsg::Deleted { request_token }),
         Ok(Err(label)) => Message::Profiles(ProfilesMsg::DeleteFailed {
             request_token,

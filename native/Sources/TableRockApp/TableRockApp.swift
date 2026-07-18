@@ -170,13 +170,31 @@ private actor BridgeClient {
     func testProfile(id: Data) throws -> BridgeConnectionTestReport {
         try bridge.testProfile(profileId: id, passwordOverride: nil)
     }
-    func listProfileGroups() throws -> [String] { try bridge.listProfileGroups() }
+    func listProfileGroups() throws -> [BridgeProfileGroup] { try bridge.listProfileGroups() }
     func createProfileGroup(_ name: String) throws { try bridge.createProfileGroup(name: name) }
     func renameProfileGroup(_ oldName: String, _ newName: String) throws -> UInt32 {
         try bridge.renameProfileGroup(oldName: oldName, newName: newName)
     }
     func deleteProfileGroup(_ name: String) throws -> UInt32 {
         try bridge.deleteProfileGroup(name: name)
+    }
+    func setGroupAlphabetical(_ name: String, _ alphabetical: Bool) throws {
+        try bridge.setProfileGroupAlphabetical(name: name, alphabetical: alphabetical)
+    }
+    func setProfileFavorite(_ item: BridgeProfileItem, _ favorite: Bool) throws {
+        try bridge.setProfileFavorite(
+            profileId: item.idBytes,
+            expectedRevision: item.revision,
+            favorite: favorite
+        )
+    }
+    func reorderProfiles(group: String?, profiles: [BridgeProfileItem]) throws {
+        try bridge.reorderProfiles(
+            group: group,
+            ordered: profiles.map {
+                BridgeProfileOrderItem(idBytes: $0.idBytes, expectedRevision: $0.revision)
+            }
+        )
     }
     func open(params: OpenParams) throws -> Data { try bridge.open(params: params) }
     func openProfile(id: Data) throws -> Data {
@@ -334,7 +352,7 @@ private func runNativeProfileGroupAudit() {
         return
     }
     writePerformanceMetric(
-        "PROFILE_GROUP_PROOF_PASSED empty_groups=2 hosting_tree=true"
+        "PROFILE_GROUP_PROOF_PASSED empty_group=true alphabetical=Alpha_Zebra hosting_tree=true"
     )
 }
 
@@ -485,6 +503,7 @@ struct ProfileSection: Identifiable {
     let id: String
     let title: String
     let profiles: [BridgeProfileItem]
+    let alphabetical: Bool
 }
 
 struct ProfileGroupDialog: Identifiable {
@@ -528,7 +547,7 @@ final class BridgeModel {
     var status: String = "starting…"
     var bridgeError: String?
     var profiles: [BridgeProfileItem] = []
-    var profileGroups: [String] = []
+    var profileGroups: [BridgeProfileGroup] = []
     var collapsedProfileGroups: Set<String> = []
     var profileSearch = ""
     private(set) var profilesLoading = false
@@ -541,7 +560,10 @@ final class BridgeModel {
     var groupDialog: ProfileGroupDialog?
     var pendingGroupRemoval: String?
     var profileSections: [ProfileSection] {
-        var order = profileGroups
+        var order = profileGroups.map(\.name)
+        let alphabetical = Dictionary(
+            uniqueKeysWithValues: profileGroups.map { ($0.name, $0.alphabetical) }
+        )
         var grouped: [String: [BridgeProfileItem]] = [:]
         for profile in profiles {
             let group = profile.group ?? ""
@@ -551,10 +573,18 @@ final class BridgeModel {
         if grouped[""] != nil { order.append("") }
         if !profileSearch.isEmpty { order.removeAll { grouped[$0]?.isEmpty != false } }
         return order.map { group in
-            ProfileSection(
+            var profiles = grouped[group] ?? []
+            if alphabetical[group] == true {
+                profiles.sort {
+                    if $0.favorite != $1.favorite { return $0.favorite && !$1.favorite }
+                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+            }
+            return ProfileSection(
                 id: group.isEmpty ? "ungrouped" : group,
                 title: group.isEmpty ? "Ungrouped" : group,
-                profiles: grouped[group] ?? []
+                profiles: profiles,
+                alphabetical: alphabetical[group] ?? false
             )
         }
     }
@@ -612,10 +642,30 @@ final class BridgeModel {
 
     func initialize() async {
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_PROFILE_GROUPS"] == "1" {
-            profileGroups = ["Empty", "Production"]
+            profileGroups = [
+                BridgeProfileGroup(name: "Empty", alphabetical: false),
+                BridgeProfileGroup(name: "Production", alphabetical: true),
+            ]
+            profiles = [
+                BridgeProfileItem(
+                    idBytes: Data(repeating: 1, count: 16), revision: 0,
+                    name: "Zebra", engine: "postgresql", group: "Production",
+                    favorite: false, savedOrder: 0, host: "z.internal", port: "5432",
+                    context: "db", safetyMode: "confirm_writes", environment: "production",
+                    productionWarning: true, dangerousPlaintext: false
+                ),
+                BridgeProfileItem(
+                    idBytes: Data(repeating: 2, count: 16), revision: 0,
+                    name: "Alpha", engine: "postgresql", group: "Production",
+                    favorite: false, savedOrder: 1, host: "a.internal", port: "5432",
+                    context: "db", safetyMode: "read_only", environment: "production",
+                    productionWarning: true, dangerousPlaintext: false
+                ),
+            ]
             status = "Profile group fixture"
             guard profileSections.map(\.title) == ["Empty", "Production"],
-                  profileSections.allSatisfy({ $0.profiles.isEmpty })
+                  profileSections[0].profiles.isEmpty,
+                  profileSections[1].profiles.map(\.name) == ["Alpha", "Zebra"]
             else {
                 writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED group projection mismatch")
                 return
@@ -720,6 +770,57 @@ final class BridgeModel {
             profileActionOutcome = "Group removed · \(moved) connection(s) moved to Ungrouped"
             await refreshProfiles()
         } catch { profileActionError = "Remove group failed: \(error)" }
+    }
+
+    func setGroupAlphabetical(_ section: ProfileSection, _ alphabetical: Bool) async {
+        guard let client, section.id != "ungrouped" else { return }
+        profileActionError = nil
+        do {
+            try await client.setGroupAlphabetical(section.title, alphabetical)
+            profileActionOutcome = alphabetical
+                ? "\(section.title) sorted alphabetically"
+                : "\(section.title) uses manual order"
+            await refreshProfiles()
+        } catch { profileActionError = "Group ordering failed: \(error)" }
+    }
+
+    func toggleFavorite(_ item: BridgeProfileItem) async {
+        guard let client else { return }
+        profileActionError = nil
+        do {
+            try await client.setProfileFavorite(item, !item.favorite)
+            profileActionOutcome = item.favorite
+                ? "Removed from favorites: \(item.name)"
+                : "Added to favorites: \(item.name)"
+            await refreshProfiles()
+        } catch { profileActionError = "Favorite change failed: \(error)" }
+    }
+
+    func canMove(_ item: BridgeProfileItem, in section: ProfileSection, offset: Int) -> Bool {
+        guard !section.alphabetical,
+              let index = section.profiles.firstIndex(where: { $0.idBytes == item.idBytes })
+        else { return false }
+        let target = index + offset
+        return section.profiles.indices.contains(target)
+            && section.profiles[target].favorite == item.favorite
+    }
+
+    func move(_ item: BridgeProfileItem, in section: ProfileSection, offset: Int) async {
+        guard let client,
+              canMove(item, in: section, offset: offset),
+              let index = section.profiles.firstIndex(where: { $0.idBytes == item.idBytes })
+        else { return }
+        var ordered = section.profiles
+        ordered.swapAt(index, index + offset)
+        profileActionError = nil
+        do {
+            try await client.reorderProfiles(
+                group: section.id == "ungrouped" ? nil : section.title,
+                profiles: ordered
+            )
+            profileActionOutcome = "Connection order updated"
+            await refreshProfiles()
+        } catch { profileActionError = "Reorder failed: \(error)" }
     }
 
     func createProfile() {
@@ -996,6 +1097,17 @@ struct ContentView: View {
                                         Button("Edit…") { Task { await model.editProfile(profile) } }
                                         Button("Duplicate…") { Task { await model.duplicateProfile(profile) } }
                                         Button("Test") { Task { await model.testProfile(profile) } }
+                                        Button(profile.favorite ? "Remove Favorite" : "Add Favorite") {
+                                            Task { await model.toggleFavorite(profile) }
+                                        }
+                                        Button("Move Up") {
+                                            Task { await model.move(profile, in: section, offset: -1) }
+                                        }
+                                        .disabled(!model.canMove(profile, in: section, offset: -1))
+                                        Button("Move Down") {
+                                            Task { await model.move(profile, in: section, offset: 1) }
+                                        }
+                                        .disabled(!model.canMove(profile, in: section, offset: 1))
                                         Divider()
                                         Button("Remove…", role: .destructive) {
                                             model.pendingRemoval = profile
@@ -1011,6 +1123,17 @@ struct ContentView: View {
                                     Button("Edit…") { Task { await model.editProfile(profile) } }
                                     Button("Duplicate…") { Task { await model.duplicateProfile(profile) } }
                                     Button("Test") { Task { await model.testProfile(profile) } }
+                                    Button(profile.favorite ? "Remove Favorite" : "Add Favorite") {
+                                        Task { await model.toggleFavorite(profile) }
+                                    }
+                                    Button("Move Up") {
+                                        Task { await model.move(profile, in: section, offset: -1) }
+                                    }
+                                    .disabled(!model.canMove(profile, in: section, offset: -1))
+                                    Button("Move Down") {
+                                        Task { await model.move(profile, in: section, offset: 1) }
+                                    }
+                                    .disabled(!model.canMove(profile, in: section, offset: 1))
                                     Divider()
                                     Button("Remove…", role: .destructive) {
                                         model.pendingRemoval = profile
@@ -1037,6 +1160,19 @@ struct ContentView: View {
                                 Spacer()
                                 if section.id != "ungrouped" {
                                     Menu {
+                                        Button {
+                                            Task { await model.setGroupAlphabetical(section, false) }
+                                        } label: {
+                                            Label("Manual Order", systemImage: section.alphabetical
+                                                ? "circle" : "checkmark")
+                                        }
+                                        Button {
+                                            Task { await model.setGroupAlphabetical(section, true) }
+                                        } label: {
+                                            Label("Alphabetical", systemImage: section.alphabetical
+                                                ? "checkmark" : "circle")
+                                        }
+                                        Divider()
                                         Button("Rename Group…") {
                                             model.beginRenameGroup(section.title)
                                         }

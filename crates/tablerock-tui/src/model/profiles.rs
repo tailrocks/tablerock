@@ -5,6 +5,8 @@ use crate::effect::RequestToken;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileRowProjection {
     pub id_hex: String,
+    pub revision: u64,
+    pub saved_order: u32,
     pub name: String,
     pub engine_label: String,
     pub group: Option<String>,
@@ -361,6 +363,8 @@ mod tests {
     fn row(id: &str, name: &str, group: Option<&str>, engine: &str) -> ProfileRowProjection {
         ProfileRowProjection {
             id_hex: id.into(),
+            revision: 0,
+            saved_order: 0,
             name: name.into(),
             engine_label: engine.into(),
             group: group.map(str::to_owned),

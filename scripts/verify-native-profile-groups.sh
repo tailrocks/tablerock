@@ -19,6 +19,11 @@ for pattern in \
   'Label\("New group", systemImage: "folder.badge.plus"\)' \
   'Button\("Rename Group…"\)' \
   'Button\("Remove Group…", role: \.destructive\)' \
+  'Label\("Manual Order"' \
+  'Label\("Alphabetical"' \
+  'Button\(profile.favorite \? "Remove Favorite" : "Add Favorite"\)' \
+  'Button\("Move Up"\)' \
+  'Button\("Move Down"\)' \
   'Connections in .* move to Ungrouped. No connection is deleted.'
 do
   rg -q "$pattern" "$SOURCE" || {

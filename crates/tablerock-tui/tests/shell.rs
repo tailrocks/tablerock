@@ -444,6 +444,8 @@ fn assert_render_model_contains(model: &Model, width: u16, height: u16, expected
 fn unicode_extreme_profile_row(id: u8, name: &str) -> ProfileRowProjection {
     ProfileRowProjection {
         id_hex: format!("{id:02x}"),
+        revision: 0,
+        saved_order: u32::from(id),
         name: name.to_owned(),
         engine_label: "PostgreSQL".to_owned(),
         group: None,

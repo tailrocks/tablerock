@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, DangerousPlaintext, DangerousTlsAcknowledgement, Engine,
     EnvironmentReference, EnvironmentTag, KeychainReference, OnePasswordObjectId,
@@ -12,7 +14,7 @@ use tablerock_core::{
 };
 use zeroize::Zeroize;
 
-use crate::{PersistenceError, query_u32};
+use crate::{PersistenceError, ProfileGroupSettings, ProfileOrderUpdate, query_u32};
 
 pub(crate) struct EncodedProfile {
     id: [u8; 16],
@@ -1460,6 +1462,166 @@ pub(crate) async fn list_groups(
         }
     }
     Ok(groups)
+}
+
+pub(crate) async fn list_group_settings(
+    connection: &turso::Connection,
+) -> Result<Vec<ProfileGroupSettings>, PersistenceError> {
+    let mut rows = connection
+        .query(
+            "SELECT name, sort_mode FROM saved_profile_groups ORDER BY name",
+            (),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?;
+    let mut groups = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::ProfileRead)?
+    {
+        groups.push(ProfileGroupSettings {
+            name: get::<String>(&row, 0)?,
+            alphabetical: match get::<u8>(&row, 1)? {
+                1 => false,
+                2 => true,
+                _ => return Err(PersistenceError::ProfileDecode),
+            },
+        });
+    }
+    Ok(groups)
+}
+
+pub(crate) async fn set_group_alphabetical(
+    connection: &mut turso::Connection,
+    name: &str,
+    alphabetical: bool,
+) -> Result<(), PersistenceError> {
+    let changed = connection
+        .execute(
+            "UPDATE saved_profile_groups SET sort_mode = ?1 WHERE name = ?2",
+            (if alphabetical { 2_u8 } else { 1_u8 }, name),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    if changed == 1 {
+        Ok(())
+    } else {
+        Err(PersistenceError::ProfileWrite)
+    }
+}
+
+pub(crate) async fn set_favorite(
+    connection: &mut turso::Connection,
+    id: ProfileId,
+    expected_revision: Revision,
+    favorite: bool,
+) -> Result<(), PersistenceError> {
+    let next = expected_revision
+        .checked_next()
+        .map_err(|_| PersistenceError::ProfileInvalidRevision)?;
+    let changed = connection
+        .execute(
+            "UPDATE saved_profiles SET favorite = ?1, revision = ?2, \
+             updated_at = CURRENT_TIMESTAMP WHERE profile_id = ?3 AND revision = ?4",
+            turso::params![
+                u8::from(favorite),
+                next.get().to_be_bytes().as_slice(),
+                id.to_bytes().as_slice(),
+                expected_revision.get().to_be_bytes().as_slice(),
+            ],
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    if changed == 1 {
+        return Ok(());
+    }
+    let exists = query_u32(
+        connection,
+        "SELECT COUNT(*) FROM saved_profiles WHERE profile_id = ?1",
+        (id.to_bytes().as_slice(),),
+    )
+    .await?;
+    if exists == 0 {
+        Err(PersistenceError::ProfileNotFound)
+    } else {
+        Err(PersistenceError::ProfileStaleRevision)
+    }
+}
+
+pub(crate) async fn reorder_profiles(
+    connection: &mut turso::Connection,
+    group: Option<&str>,
+    updates: &[ProfileOrderUpdate],
+) -> Result<(), PersistenceError> {
+    if updates.len() > ProfileListRequest::MAX_SEARCH_CANDIDATES {
+        return Err(PersistenceError::ProfileCapacity);
+    }
+    let transaction = connection
+        .transaction()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    let (sql, parameters) = match group {
+        Some(group) => (
+            "SELECT profile_id, revision FROM saved_profiles WHERE group_name = ?1",
+            vec![turso::Value::Text(group.to_owned())],
+        ),
+        None => (
+            "SELECT profile_id, revision FROM saved_profiles WHERE group_name IS NULL",
+            Vec::new(),
+        ),
+    };
+    let mut rows = transaction
+        .query(sql, parameters)
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    let mut current = BTreeMap::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?
+    {
+        let id = ProfileId::from_bytes(get::<[u8; 16]>(&row, 0)?)
+            .map_err(|_| PersistenceError::ProfileDecode)?;
+        let revision = Revision::from_wire_u64(u64::from_be_bytes(get::<[u8; 8]>(&row, 1)?));
+        current.insert(id, revision);
+    }
+    drop(rows);
+    if current.len() != updates.len() {
+        return Err(PersistenceError::ProfileStaleRevision);
+    }
+    let mut seen = BTreeSet::new();
+    for update in updates {
+        if !seen.insert(update.id) || current.get(&update.id) != Some(&update.expected_revision) {
+            return Err(PersistenceError::ProfileStaleRevision);
+        }
+    }
+    for (index, update) in updates.iter().enumerate() {
+        let next = update
+            .expected_revision
+            .checked_next()
+            .map_err(|_| PersistenceError::ProfileInvalidRevision)?;
+        let changed = transaction
+            .execute(
+                "UPDATE saved_profiles SET saved_order = ?1, revision = ?2, \
+                 updated_at = CURRENT_TIMESTAMP WHERE profile_id = ?3 AND revision = ?4",
+                turso::params![
+                    u32::try_from(index).map_err(|_| PersistenceError::ProfileCapacity)?,
+                    next.get().to_be_bytes().as_slice(),
+                    update.id.to_bytes().as_slice(),
+                    update.expected_revision.get().to_be_bytes().as_slice(),
+                ],
+            )
+            .await
+            .map_err(|_| PersistenceError::ProfileWrite)?;
+        if changed != 1 {
+            return Err(PersistenceError::ProfileStaleRevision);
+        }
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)
 }
 #[cfg(test)]
 mod tests {

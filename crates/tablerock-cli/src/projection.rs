@@ -16,8 +16,18 @@ pub fn profile_row(item: &ProfileListItem) -> ProfileRowProjection {
         ProfileEndpointPart::Literal(value) => value.as_str().to_owned(),
         ProfileEndpointPart::SecretSource => "•".to_owned(),
     };
-    // Default database is not on list projection yet; host:port is the Phase-3 baseline.
-    let target_summary = format!("{host}:{port}");
+    let context = endpoint
+        .context()
+        .map(|part| match part {
+            ProfileEndpointPart::Literal(value) => value.as_str(),
+            ProfileEndpointPart::SecretSource => "•",
+        })
+        .unwrap_or_default();
+    let target_summary = if context.is_empty() {
+        format!("{host}:{port}")
+    } else {
+        format!("{host}:{port}/{context}")
+    };
     let (environment, production_warning) = match item.environment() {
         Some(EnvironmentTag::Production) => (Some("production".into()), true),
         Some(EnvironmentTag::Staging) => (Some("staging".into()), false),
@@ -28,6 +38,8 @@ pub fn profile_row(item: &ProfileListItem) -> ProfileRowProjection {
     };
     ProfileRowProjection {
         id_hex: format!("{:032x}", id_as_u128(item.id())),
+        revision: item.revision().get(),
+        saved_order: item.saved_order(),
         name: item.name().as_str().to_owned(),
         engine_label: engine_label(item.engine()).to_owned(),
         group: item.group().map(|group| group.as_str().to_owned()),

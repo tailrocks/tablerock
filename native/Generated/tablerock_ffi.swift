@@ -663,7 +663,7 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      */
     func getProfileDraft(profileId: Data) throws  -> BridgeProfileDraft
     
-    func listProfileGroups() throws  -> [String]
+    func listProfileGroups() throws  -> [BridgeProfileGroup]
     
     /**
      * Lists saved profiles (all engines) for the native connection screen.
@@ -705,6 +705,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     
     func renameProfileGroup(oldName: String, newName: String) throws  -> UInt32
     
+    func reorderProfiles(group: String?, ordered: [BridgeProfileOrderItem]) throws 
+    
     /**
      * Drop a review token without authorizing (operator discard).
      */
@@ -719,6 +721,10 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Rust-owned normalized profile search across name, endpoint, database, and group.
      */
     func searchProfiles(search: String?) throws  -> [BridgeProfileItem]
+    
+    func setProfileFavorite(profileId: Data, expectedRevision: UInt64, favorite: Bool) throws 
+    
+    func setProfileGroupAlphabetical(name: String, alphabetical: Bool) throws 
     
     /**
      * Graceful or cancel-active shutdown. `deadline_ms` reserved for future hard caps.
@@ -962,8 +968,8 @@ open func getProfileDraft(profileId: Data)throws  -> BridgeProfileDraft  {
 })
 }
     
-open func listProfileGroups()throws  -> [String]  {
-    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+open func listProfileGroups()throws  -> [BridgeProfileGroup]  {
+    return try  FfiConverterSequenceTypeBridgeProfileGroup.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
         uniffiCallStatus in
     uniffi_tablerock_ffi_fn_method_tablerockbridge_list_profile_groups(
             self.uniffiCloneHandle(),uniffiCallStatus
@@ -1075,6 +1081,16 @@ open func renameProfileGroup(oldName: String, newName: String)throws  -> UInt32 
 })
 }
     
+open func reorderProfiles(group: String?, ordered: [BridgeProfileOrderItem])throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_reorder_profiles(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(group),
+        FfiConverterSequenceTypeBridgeProfileOrderItem.lower(ordered),uniffiCallStatus
+    )
+}
+}
+    
     /**
      * Drop a review token without authorizing (operator discard).
      */
@@ -1112,6 +1128,27 @@ open func searchProfiles(search: String?)throws  -> [BridgeProfileItem]  {
         FfiConverterOptionString.lower(search),uniffiCallStatus
     )
 })
+}
+    
+open func setProfileFavorite(profileId: Data, expectedRevision: UInt64, favorite: Bool)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_set_profile_favorite(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(profileId),
+        FfiConverterUInt64.lower(expectedRevision),
+        FfiConverterBool.lower(favorite),uniffiCallStatus
+    )
+}
+}
+    
+open func setProfileGroupAlphabetical(name: String, alphabetical: Bool)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_set_profile_group_alphabetical(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterBool.lower(alphabetical),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -1683,6 +1720,60 @@ public func FfiConverterTypeBridgeProfileDraft_lower(_ value: BridgeProfileDraft
 }
 
 
+public struct BridgeProfileGroup: Equatable, Hashable {
+    public var name: String
+    public var alphabetical: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, alphabetical: Bool) {
+        self.name = name
+        self.alphabetical = alphabetical
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BridgeProfileGroup: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeProfileGroup: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeProfileGroup {
+        return
+            try BridgeProfileGroup(
+                name: FfiConverterString.read(from: &buf), 
+                alphabetical: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeProfileGroup, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterBool.write(value.alphabetical, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeProfileGroup_lift(_ buf: RustBuffer) throws -> BridgeProfileGroup {
+    return try FfiConverterTypeBridgeProfileGroup.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeProfileGroup_lower(_ value: BridgeProfileGroup) -> RustBuffer {
+    return FfiConverterTypeBridgeProfileGroup.lower(value)
+}
+
+
 /**
  * One saved profile row for the native connection screen.
  */
@@ -1696,6 +1787,7 @@ public struct BridgeProfileItem: Equatable, Hashable {
     public var engine: String
     public var group: String?
     public var favorite: Bool
+    public var savedOrder: UInt32
     public var host: String?
     public var port: String?
     public var context: String?
@@ -1709,13 +1801,14 @@ public struct BridgeProfileItem: Equatable, Hashable {
     public init(
         /**
          * 16-byte ProfileId (same form `open_profile` accepts).
-         */idBytes: Data, revision: UInt64, name: String, engine: String, group: String?, favorite: Bool, host: String?, port: String?, context: String?, safetyMode: String, environment: String?, productionWarning: Bool, dangerousPlaintext: Bool) {
+         */idBytes: Data, revision: UInt64, name: String, engine: String, group: String?, favorite: Bool, savedOrder: UInt32, host: String?, port: String?, context: String?, safetyMode: String, environment: String?, productionWarning: Bool, dangerousPlaintext: Bool) {
         self.idBytes = idBytes
         self.revision = revision
         self.name = name
         self.engine = engine
         self.group = group
         self.favorite = favorite
+        self.savedOrder = savedOrder
         self.host = host
         self.port = port
         self.context = context
@@ -1747,6 +1840,7 @@ public struct FfiConverterTypeBridgeProfileItem: FfiConverterRustBuffer {
                 engine: FfiConverterString.read(from: &buf), 
                 group: FfiConverterOptionString.read(from: &buf), 
                 favorite: FfiConverterBool.read(from: &buf), 
+                savedOrder: FfiConverterUInt32.read(from: &buf), 
                 host: FfiConverterOptionString.read(from: &buf), 
                 port: FfiConverterOptionString.read(from: &buf), 
                 context: FfiConverterOptionString.read(from: &buf), 
@@ -1764,6 +1858,7 @@ public struct FfiConverterTypeBridgeProfileItem: FfiConverterRustBuffer {
         FfiConverterString.write(value.engine, into: &buf)
         FfiConverterOptionString.write(value.group, into: &buf)
         FfiConverterBool.write(value.favorite, into: &buf)
+        FfiConverterUInt32.write(value.savedOrder, into: &buf)
         FfiConverterOptionString.write(value.host, into: &buf)
         FfiConverterOptionString.write(value.port, into: &buf)
         FfiConverterOptionString.write(value.context, into: &buf)
@@ -1787,6 +1882,60 @@ public func FfiConverterTypeBridgeProfileItem_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeBridgeProfileItem_lower(_ value: BridgeProfileItem) -> RustBuffer {
     return FfiConverterTypeBridgeProfileItem.lower(value)
+}
+
+
+public struct BridgeProfileOrderItem: Equatable, Hashable {
+    public var idBytes: Data
+    public var expectedRevision: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(idBytes: Data, expectedRevision: UInt64) {
+        self.idBytes = idBytes
+        self.expectedRevision = expectedRevision
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BridgeProfileOrderItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeProfileOrderItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeProfileOrderItem {
+        return
+            try BridgeProfileOrderItem(
+                idBytes: FfiConverterData.read(from: &buf), 
+                expectedRevision: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeProfileOrderItem, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.idBytes, into: &buf)
+        FfiConverterUInt64.write(value.expectedRevision, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeProfileOrderItem_lift(_ buf: RustBuffer) throws -> BridgeProfileOrderItem {
+    return try FfiConverterTypeBridgeProfileOrderItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeProfileOrderItem_lower(_ value: BridgeProfileOrderItem) -> RustBuffer {
+    return FfiConverterTypeBridgeProfileOrderItem.lower(value)
 }
 
 
@@ -2365,31 +2514,6 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
-    typealias SwiftType = [String]
-
-    public static func write(_ value: [String], into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        for item in value {
-            FfiConverterString.write(item, into: &buf)
-        }
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String] {
-        let len: Int32 = try readInt(&buf)
-        var seq = [String]()
-        seq.reserveCapacity(Int(len))
-        for _ in 0 ..< len {
-            seq.append(try FfiConverterString.read(from: &buf))
-        }
-        return seq
-    }
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
 fileprivate struct FfiConverterSequenceTypeBridgeCatalogNode: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeCatalogNode]
 
@@ -2440,6 +2564,31 @@ fileprivate struct FfiConverterSequenceTypeBridgeEventRecord: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeProfileGroup: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeProfileGroup]
+
+    public static func write(_ value: [BridgeProfileGroup], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeProfileGroup.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeProfileGroup] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeProfileGroup]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeProfileGroup.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeProfileItem: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeProfileItem]
 
@@ -2457,6 +2606,31 @@ fileprivate struct FfiConverterSequenceTypeBridgeProfileItem: FfiConverterRustBu
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeBridgeProfileItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeBridgeProfileOrderItem: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeProfileOrderItem]
+
+    public static func write(_ value: [BridgeProfileOrderItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeProfileOrderItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeProfileOrderItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeProfileOrderItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeProfileOrderItem.read(from: &buf))
         }
         return seq
     }
@@ -2513,7 +2687,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_get_profile_draft() != 6880) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_profile_groups() != 52593) {
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_profile_groups() != 47421) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_profiles() != 34048) {
@@ -2540,6 +2714,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_rename_profile_group() != 49627) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_reorder_profiles() != 8154) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_review_token() != 712) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2547,6 +2724,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_search_profiles() != 41691) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_set_profile_favorite() != 9636) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_set_profile_group_alphabetical() != 29963) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_shutdown() != 28522) {

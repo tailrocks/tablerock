@@ -76,6 +76,10 @@ const MIGRATIONS: &[(u32, &str)] = &[
         include_str!("../migrations/0013-saved-filter-library.sql"),
     ),
     (14, include_str!("../migrations/0014-profile-groups.sql")),
+    (
+        15,
+        include_str!("../migrations/0015-profile-group-ordering.sql"),
+    ),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +87,18 @@ pub struct PersistenceHealth {
     pub schema_version: u32,
     pub foreign_keys_enabled: bool,
     pub integrity_ok: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileGroupSettings {
+    pub name: String,
+    pub alphabetical: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProfileOrderUpdate {
+    pub id: ProfileId,
+    pub expected_revision: Revision,
 }
 
 pub struct PersistenceActor {
@@ -211,6 +227,60 @@ impl PersistenceActor {
     pub fn list_groups(&self) -> Result<Vec<String>, PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::ListGroups(sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn list_group_settings(&self) -> Result<Vec<ProfileGroupSettings>, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::ListGroupSettings(sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn set_group_alphabetical(
+        &self,
+        name: &str,
+        alphabetical: bool,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::SetGroupAlphabetical(name.to_owned(), alphabetical, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn set_profile_favorite(
+        &self,
+        id: ProfileId,
+        expected_revision: Revision,
+        favorite: bool,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::SetProfileFavorite(id, expected_revision, favorite, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn reorder_profiles(
+        &self,
+        group: Option<&str>,
+        updates: Vec<ProfileOrderUpdate>,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::ReorderProfiles(group.map(str::to_owned), updates, sender),
+        )?;
         receiver
             .recv_timeout(CALLER_TIMEOUT)
             .map_err(map_receive_error)?
@@ -465,6 +535,19 @@ enum Command {
     ),
     DeleteGroup(String, mpsc::SyncSender<Result<u32, PersistenceError>>),
     ListGroups(mpsc::SyncSender<Result<Vec<String>, PersistenceError>>),
+    ListGroupSettings(mpsc::SyncSender<Result<Vec<ProfileGroupSettings>, PersistenceError>>),
+    SetGroupAlphabetical(String, bool, mpsc::SyncSender<Result<(), PersistenceError>>),
+    SetProfileFavorite(
+        ProfileId,
+        Revision,
+        bool,
+        mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
+    ReorderProfiles(
+        Option<String>,
+        Vec<ProfileOrderUpdate>,
+        mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
     AppendHistory(
         HistoryAppend,
         u32,
@@ -830,6 +913,54 @@ fn worker_main(
                     tokio::time::timeout(OPERATION_TIMEOUT, profile_store::list_groups(&connection))
                         .await
                         .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::ListGroupSettings(reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::list_group_settings(&connection),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::SetGroupAlphabetical(name, alphabetical, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::set_group_alphabetical(&mut connection, &name, alphabetical),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::SetProfileFavorite(id, revision, favorite, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::set_favorite(&mut connection, id, revision, favorite),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::ReorderProfiles(group, updates, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::reorder_profiles(
+                            &mut connection,
+                            group.as_deref(),
+                            &updates,
+                        ),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
                 });
                 let _ = reply.send(result);
             }

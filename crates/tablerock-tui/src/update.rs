@@ -3066,6 +3066,103 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::ToggleFavorite if model.screen() == Screen::Connections => {
+            let Some(row) = model.profiles().selected_row().cloned() else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            model.set_profiles(ProfileListState::Loading {
+                request_token: token,
+            });
+            Update {
+                render: true,
+                effect: Some(Effect::SetProfileFavorite {
+                    request_token: token,
+                    profile_id_hex: row.id_hex,
+                    expected_revision: row.revision,
+                    favorite: !row.favorite,
+                }),
+            }
+        }
+        ActionId::MoveProfileUp | ActionId::MoveProfileDown
+            if model.screen() == Screen::Connections =>
+        {
+            let (rows, selected_id) = match model.profiles() {
+                ProfileListState::Loaded {
+                    rows, selected_id, ..
+                } => (rows.clone(), selected_id.clone()),
+                _ => return Update::unchanged(),
+            };
+            let Some(selected_id) = selected_id else {
+                return Update::unchanged();
+            };
+            let Some(selected) = rows.iter().find(|row| row.id_hex == selected_id).cloned() else {
+                return Update::unchanged();
+            };
+            let mut group_rows = rows
+                .into_iter()
+                .filter(|row| row.group == selected.group)
+                .collect::<Vec<_>>();
+            let Some(index) = group_rows
+                .iter()
+                .position(|row| row.id_hex == selected.id_hex)
+            else {
+                return Update::unchanged();
+            };
+            let target = if model.selected_action() == ActionId::MoveProfileUp {
+                index.checked_sub(1)
+            } else if index + 1 < group_rows.len() {
+                Some(index + 1)
+            } else {
+                None
+            };
+            let Some(target) = target else {
+                return Update::unchanged();
+            };
+            if group_rows[target].favorite != selected.favorite {
+                return Update::unchanged();
+            }
+            group_rows.swap(index, target);
+            let ordered = group_rows
+                .into_iter()
+                .map(|row| crate::effect::ProfileOrderSpec {
+                    id_hex: row.id_hex,
+                    expected_revision: row.revision,
+                })
+                .collect();
+            let token = model.mint_request_token();
+            model.set_profiles(ProfileListState::Loading {
+                request_token: token,
+            });
+            Update {
+                render: true,
+                effect: Some(Effect::ReorderProfiles {
+                    request_token: token,
+                    group_name: selected.group,
+                    ordered,
+                }),
+            }
+        }
+        ActionId::GroupManualOrder | ActionId::GroupAlphabeticalOrder
+            if model.screen() == Screen::Connections =>
+        {
+            let Some(group_name) = selected_connection_group(model) else {
+                return Update::unchanged();
+            };
+            let alphabetical = model.selected_action() == ActionId::GroupAlphabeticalOrder;
+            let token = model.mint_request_token();
+            model.set_profiles(ProfileListState::Loading {
+                request_token: token,
+            });
+            Update {
+                render: true,
+                effect: Some(Effect::SetGroupAlphabetical {
+                    request_token: token,
+                    group_name,
+                    alphabetical,
+                }),
+            }
+        }
         ActionId::Reconnect
             if matches!(
                 model.screen(),
@@ -7083,6 +7180,11 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::Disconnect
         | ActionId::Remove
         | ActionId::RenameGroup
+        | ActionId::ToggleFavorite
+        | ActionId::MoveProfileUp
+        | ActionId::MoveProfileDown
+        | ActionId::GroupManualOrder
+        | ActionId::GroupAlphabeticalOrder
         | ActionId::Reconnect
         | ActionId::SessionHealth
         | ActionId::NextDatabase
@@ -9185,6 +9287,11 @@ fn cycle_action(
                 ActionId::QuickSwitch,
                 ActionId::Remove,
                 ActionId::RenameGroup,
+                ActionId::ToggleFavorite,
+                ActionId::MoveProfileUp,
+                ActionId::MoveProfileDown,
+                ActionId::GroupManualOrder,
+                ActionId::GroupAlphabeticalOrder,
                 ActionId::Reconnect,
                 ActionId::Quit,
             ],
@@ -9619,6 +9726,8 @@ mod tests {
                 request_token: 1,
                 items: vec![ProfileRowProjection {
                     id_hex: "1".into(),
+                    revision: 0,
+                    saved_order: 0,
                     name: "a".into(),
                     engine_label: "PostgreSQL".into(),
                     group: None,
@@ -9735,6 +9844,8 @@ mod tests {
             request_token: 1,
             rows: vec![crate::model::profiles::ProfileRowProjection {
                 id_hex: "aa".into(),
+                revision: 0,
+                saved_order: 0,
                 name: "local".into(),
                 engine_label: "PostgreSQL".into(),
                 group: None,
@@ -13509,6 +13620,8 @@ mod tests {
             request_token: 1,
             rows: vec![crate::model::profiles::ProfileRowProjection {
                 id_hex: "aa".into(),
+                revision: 0,
+                saved_order: 0,
                 name: "local".into(),
                 engine_label: "PostgreSQL".into(),
                 group: Some("dev".into()),
@@ -13554,6 +13667,8 @@ mod tests {
             request_token: 2,
             rows: vec![crate::model::profiles::ProfileRowProjection {
                 id_hex: "aa".into(),
+                revision: 0,
+                saved_order: 0,
                 name: "local".into(),
                 engine_label: "PostgreSQL".into(),
                 group: Some("dev".into()),
@@ -13575,6 +13690,84 @@ mod tests {
         assert!(matches!(
             model.confirm(),
             Some(ConfirmDialog::RemoveGroup { name }) if name == "dev"
+        ));
+    }
+
+    #[test]
+    fn profile_organization_actions_are_revision_safe() {
+        use crate::model::profiles::{LiveConnectionState, ProfileRowProjection};
+        let row = |id: &str, revision, order, name: &str| ProfileRowProjection {
+            id_hex: id.into(),
+            revision,
+            saved_order: order,
+            name: name.into(),
+            engine_label: "PostgreSQL".into(),
+            group: Some("dev".into()),
+            favorite: false,
+            target_summary: "db:5432/app".into(),
+            environment: None,
+            production_warning: false,
+            safety_label: "Confirm writes".into(),
+            plaintext_secret_warning: false,
+            live_state: LiveConnectionState::Disconnected,
+        };
+        let loaded = |selected: &str| ProfileListState::Loaded {
+            request_token: 1,
+            rows: vec![row("01", 7, 0, "A"), row("02", 9, 1, "B")],
+            selected_id: Some(selected.into()),
+            search: String::new(),
+            collapsed: Vec::new(),
+        };
+
+        let mut model = Model::default();
+        model.set_screen(Screen::Connections);
+        model.set_profiles(loaded("01"));
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::ToggleFavorite);
+        let favorite = update(&mut model, Message::Activate);
+        assert!(matches!(
+            favorite.effects().next(),
+            Some(Effect::SetProfileFavorite {
+                profile_id_hex,
+                expected_revision: 7,
+                favorite: true,
+                ..
+            }) if profile_id_hex == "01"
+        ));
+
+        model.set_profiles(loaded("01"));
+        model.set_action(ActionId::MoveProfileDown);
+        let moved = update(&mut model, Message::Activate);
+        match moved.effects().next() {
+            Some(Effect::ReorderProfiles {
+                group_name,
+                ordered,
+                ..
+            }) => {
+                assert_eq!(group_name.as_deref(), Some("dev"));
+                assert_eq!(
+                    ordered
+                        .iter()
+                        .map(|item| item.id_hex.as_str())
+                        .collect::<Vec<_>>(),
+                    ["02", "01"]
+                );
+                assert_eq!(ordered[0].expected_revision, 9);
+                assert_eq!(ordered[1].expected_revision, 7);
+            }
+            other => panic!("expected ReorderProfiles, got {other:?}"),
+        }
+
+        model.set_profiles(loaded("g:dev"));
+        model.set_action(ActionId::GroupAlphabeticalOrder);
+        let alphabetical = update(&mut model, Message::Activate);
+        assert!(matches!(
+            alphabetical.effects().next(),
+            Some(Effect::SetGroupAlphabetical {
+                group_name,
+                alphabetical: true,
+                ..
+            }) if group_name == "dev"
         ));
     }
 
@@ -14901,6 +15094,8 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
             rows: vec![
                 ProfileRowProjection {
                     id_hex: "1111".into(),
+                    revision: 0,
+                    saved_order: 0,
                     name: "staging".into(),
                     engine_label: "PostgreSQL".into(),
                     group: None,
@@ -14914,6 +15109,8 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
                 },
                 ProfileRowProjection {
                     id_hex: "2222".into(),
+                    revision: 0,
+                    saved_order: 1,
                     name: "prod-app".into(),
                     engine_label: "PostgreSQL".into(),
                     group: None,
@@ -15113,6 +15310,8 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
             request_token: 1,
             rows: vec![ProfileRowProjection {
                 id_hex: "aabbccdd".into(),
+                revision: 0,
+                saved_order: 0,
                 name: "prod-app".into(),
                 engine_label: "PostgreSQL".into(),
                 group: None,

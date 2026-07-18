@@ -28,6 +28,12 @@ pub struct ProfileRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileOrderSpec {
+    pub id_hex: String,
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PasswordSourceSpec {
     PromptOnConnect,
     DangerousPlaintext,
@@ -197,6 +203,22 @@ pub enum Effect {
         request_token: RequestToken,
         old_name: String,
         new_name: String,
+    },
+    SetProfileFavorite {
+        request_token: RequestToken,
+        profile_id_hex: String,
+        expected_revision: u64,
+        favorite: bool,
+    },
+    ReorderProfiles {
+        request_token: RequestToken,
+        group_name: Option<String>,
+        ordered: Vec<ProfileOrderSpec>,
+    },
+    SetGroupAlphabetical {
+        request_token: RequestToken,
+        group_name: String,
+        alphabetical: bool,
     },
     /// Load one catalog level from a registered session.
     LoadCatalog {

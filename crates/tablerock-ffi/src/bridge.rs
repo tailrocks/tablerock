@@ -29,7 +29,7 @@ use tablerock_engine::{
     RedisSession, RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError,
     resolve_for_connect,
 };
-use tablerock_persistence::PersistenceActor;
+use tablerock_persistence::{PersistenceActor, ProfileOrderUpdate};
 
 use crate::{
     error::{BridgeError, catch_entry},
@@ -196,6 +196,7 @@ pub struct BridgeProfileItem {
     pub engine: String,
     pub group: Option<String>,
     pub favorite: bool,
+    pub saved_order: u32,
     pub host: Option<String>,
     pub port: Option<String>,
     pub context: Option<String>,
@@ -203,6 +204,18 @@ pub struct BridgeProfileItem {
     pub environment: Option<String>,
     pub production_warning: bool,
     pub dangerous_plaintext: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeProfileGroup {
+    pub name: String,
+    pub alphabetical: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeProfileOrderItem {
+    pub id_bytes: Vec<u8>,
+    pub expected_revision: u64,
 }
 
 /// Editable saved-profile projection. Secret references are IDs only; resolved
@@ -316,7 +329,7 @@ impl TableRockBridge {
         catch_entry(|| self.test_profile_inner(profile_id, password_override))
     }
 
-    pub fn list_profile_groups(&self) -> Result<Vec<String>, BridgeError> {
+    pub fn list_profile_groups(&self) -> Result<Vec<BridgeProfileGroup>, BridgeError> {
         catch_entry(|| self.list_profile_groups_inner())
     }
 
@@ -334,6 +347,31 @@ impl TableRockBridge {
 
     pub fn delete_profile_group(&self, name: String) -> Result<u32, BridgeError> {
         catch_entry(|| self.delete_profile_group_inner(name))
+    }
+
+    pub fn set_profile_group_alphabetical(
+        &self,
+        name: String,
+        alphabetical: bool,
+    ) -> Result<(), BridgeError> {
+        catch_entry(|| self.set_profile_group_alphabetical_inner(name, alphabetical))
+    }
+
+    pub fn set_profile_favorite(
+        &self,
+        profile_id: Vec<u8>,
+        expected_revision: u64,
+        favorite: bool,
+    ) -> Result<(), BridgeError> {
+        catch_entry(|| self.set_profile_favorite_inner(profile_id, expected_revision, favorite))
+    }
+
+    pub fn reorder_profiles(
+        &self,
+        group: Option<String>,
+        ordered: Vec<BridgeProfileOrderItem>,
+    ) -> Result<(), BridgeError> {
+        catch_entry(|| self.reorder_profiles_inner(group, ordered))
     }
 
     /// Load one typed catalog level. `parent_node_id` is an opaque id previously
@@ -990,43 +1028,29 @@ impl TableRockBridge {
             })
             .transpose()?;
         let filter = ProfileListFilter::new(None, None).with_search(search);
-        let request = ProfileListRequest::new(filter, None, 100)
-            .map_err(|error| BridgeError::rejected("profile-list-request", error.to_string()))?;
-        let page = actor
-            .list_profiles(request)
-            .map_err(|error| BridgeError::rejected("profile-list", error.to_string()))?;
-        Ok(page
-            .items()
-            .iter()
-            .map(|item| BridgeProfileItem {
-                id_bytes: item.id().to_bytes().to_vec(),
-                revision: item.revision().get(),
-                name: item.name().as_str().to_owned(),
-                engine: engine_label(item.engine()).to_owned(),
-                group: item.group().map(|g| g.as_str().to_owned()),
-                favorite: item.favorite(),
-                host: item.endpoint().host().literal_value().map(str::to_owned),
-                port: item.endpoint().port().literal_value().map(str::to_owned),
-                context: item
-                    .endpoint()
-                    .context()
-                    .and_then(ProfileEndpointPart::literal_value)
-                    .map(str::to_owned),
-                safety_mode: match item.safety_mode() {
-                    ProfileSafetyMode::ReadOnly => "read_only",
-                    ProfileSafetyMode::ConfirmWrites => "confirm_writes",
-                }
-                .to_owned(),
-                environment: item.environment().map(environment_label),
-                production_warning: item
-                    .environment()
-                    .is_some_and(EnvironmentTag::is_production_warning),
-                dangerous_plaintext: item.sources().has_dangerous_plaintext(),
-            })
-            .collect())
+        let mut after = None;
+        let mut items = Vec::new();
+        loop {
+            let request = ProfileListRequest::new(filter.clone(), after, 100).map_err(|error| {
+                BridgeError::rejected("profile-list-request", error.to_string())
+            })?;
+            let page = actor
+                .list_profiles(request)
+                .map_err(|error| BridgeError::rejected("profile-list", error.to_string()))?;
+            items.extend(page.items().iter().map(bridge_profile_item));
+            if items.len() > ProfileListRequest::MAX_SEARCH_CANDIDATES {
+                return Err(BridgeError::rejected(
+                    "profile-list",
+                    "profile list exceeds bounded capacity",
+                ));
+            }
+            let Some(next) = page.next() else { break };
+            after = Some(next);
+        }
+        Ok(items)
     }
 
-    fn list_profile_groups_inner(&self) -> Result<Vec<String>, BridgeError> {
+    fn list_profile_groups_inner(&self) -> Result<Vec<BridgeProfileGroup>, BridgeError> {
         let guard = self
             .inner
             .lock()
@@ -1038,7 +1062,16 @@ impl TableRockBridge {
             .as_ref()
             .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
         actor
-            .list_groups()
+            .list_group_settings()
+            .map(|groups| {
+                groups
+                    .into_iter()
+                    .map(|group| BridgeProfileGroup {
+                        name: group.name,
+                        alphabetical: group.alphabetical,
+                    })
+                    .collect()
+            })
             .map_err(|error| BridgeError::rejected("profile-groups", error.to_string()))
     }
 
@@ -1096,6 +1129,88 @@ impl TableRockBridge {
         actor
             .delete_group(&name)
             .map_err(|error| BridgeError::rejected("profile-group-delete", error.to_string()))
+    }
+
+    fn set_profile_group_alphabetical_inner(
+        &self,
+        name: String,
+        alphabetical: bool,
+    ) -> Result<(), BridgeError> {
+        let name = validate_bridge_group_name(&name)?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let actor = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        actor
+            .set_group_alphabetical(&name, alphabetical)
+            .map_err(|error| BridgeError::rejected("profile-group-order", error.to_string()))
+    }
+
+    fn set_profile_favorite_inner(
+        &self,
+        profile_id: Vec<u8>,
+        expected_revision: u64,
+        favorite: bool,
+    ) -> Result<(), BridgeError> {
+        let id = decode_profile_id(&profile_id)?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let actor = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        actor
+            .set_profile_favorite(id, Revision::from_wire_u64(expected_revision), favorite)
+            .map_err(|error| BridgeError::rejected("profile-favorite", error.to_string()))
+    }
+
+    fn reorder_profiles_inner(
+        &self,
+        group: Option<String>,
+        ordered: Vec<BridgeProfileOrderItem>,
+    ) -> Result<(), BridgeError> {
+        if ordered.len() > ProfileListRequest::MAX_SEARCH_CANDIDATES {
+            return Err(BridgeError::rejected(
+                "profile-order",
+                "profile order exceeds bounded capacity",
+            ));
+        }
+        let group = group
+            .as_deref()
+            .map(validate_bridge_group_name)
+            .transpose()?;
+        let updates = ordered
+            .into_iter()
+            .map(|item| {
+                Ok(ProfileOrderUpdate {
+                    id: decode_profile_id(&item.id_bytes)?,
+                    expected_revision: Revision::from_wire_u64(item.expected_revision),
+                })
+            })
+            .collect::<Result<Vec<_>, BridgeError>>()?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let actor = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        actor
+            .reorder_profiles(group.as_deref(), updates)
+            .map_err(|error| BridgeError::rejected("profile-order", error.to_string()))
     }
 
     fn refresh_catalog_inner(
@@ -1814,6 +1929,35 @@ fn environment_label(environment: &EnvironmentTag) -> String {
         EnvironmentTag::Development => "Development".into(),
         EnvironmentTag::Testing => "Testing".into(),
         EnvironmentTag::Custom(_) => environment.custom_label().unwrap_or("Custom").to_owned(),
+    }
+}
+
+fn bridge_profile_item(item: &tablerock_core::ProfileListItem) -> BridgeProfileItem {
+    BridgeProfileItem {
+        id_bytes: item.id().to_bytes().to_vec(),
+        revision: item.revision().get(),
+        name: item.name().as_str().to_owned(),
+        engine: engine_label(item.engine()).to_owned(),
+        group: item.group().map(|group| group.as_str().to_owned()),
+        favorite: item.favorite(),
+        saved_order: item.saved_order(),
+        host: item.endpoint().host().literal_value().map(str::to_owned),
+        port: item.endpoint().port().literal_value().map(str::to_owned),
+        context: item
+            .endpoint()
+            .context()
+            .and_then(ProfileEndpointPart::literal_value)
+            .map(str::to_owned),
+        safety_mode: match item.safety_mode() {
+            ProfileSafetyMode::ReadOnly => "read_only",
+            ProfileSafetyMode::ConfirmWrites => "confirm_writes",
+        }
+        .to_owned(),
+        environment: item.environment().map(environment_label),
+        production_warning: item
+            .environment()
+            .is_some_and(EnvironmentTag::is_production_warning),
+        dangerous_plaintext: item.sources().has_dangerous_plaintext(),
     }
 }
 

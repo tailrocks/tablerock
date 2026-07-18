@@ -15,7 +15,8 @@ mod page_limits;
 mod runtime;
 
 pub use bridge::{
-    ApplyOutcome, BridgeEventBatch, BridgeEventRecord, CancelOutcome, OpenParams, ShutdownOutcome,
-    SubmitSpec, TableRockBridge,
+    ApplyOutcome, BridgeConnectionTestReport, BridgeEventBatch, BridgeEventRecord,
+    BridgeProfileDraft, BridgeProfileGroup, BridgeProfileItem, BridgeProfileOrderItem,
+    CancelOutcome, OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
 };
 pub use error::BridgeError;

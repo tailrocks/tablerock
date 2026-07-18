@@ -589,6 +589,11 @@ pub enum ActionId {
     ShowActivity,
     /// Rename selected connection group (Connections tree).
     RenameGroup,
+    ToggleFavorite,
+    MoveProfileUp,
+    MoveProfileDown,
+    GroupManualOrder,
+    GroupAlphabeticalOrder,
     /// Bounded automatic reconnect using current editor draft.
     Reconnect,
     /// Probe live session health (may auto-reconnect when preference allows).

@@ -20,7 +20,7 @@ use tablerock_engine::{
     CatalogSubtree, DriverFuture, DriverPageRequest, DriverPageStream, DriverSession,
     ServerDescribe, SessionHealth,
 };
-use tablerock_ffi::{BridgeError, SubmitSpec, TableRockBridge};
+use tablerock_ffi::{BridgeError, BridgeProfileOrderItem, SubmitSpec, TableRockBridge};
 
 struct OnePageStream(Option<ResultPage>);
 
@@ -614,15 +614,51 @@ fn open_profile_requires_persistence_and_loads_literals() {
     assert_eq!(bridge.list_profiles().unwrap().len(), 2);
     bridge.delete_profile(copy_id, 0).unwrap();
     assert_eq!(bridge.list_profiles().unwrap().len(), 1);
+    bridge
+        .set_profile_favorite(profile_id.to_bytes().to_vec(), 1, true)
+        .unwrap();
+    let favorite = bridge.list_profiles().unwrap().remove(0);
+    assert!(favorite.favorite);
+    assert_eq!(favorite.revision, 2);
+    bridge
+        .reorder_profiles(
+            Some("g".into()),
+            vec![BridgeProfileOrderItem {
+                id_bytes: favorite.id_bytes,
+                expected_revision: favorite.revision,
+            }],
+        )
+        .unwrap();
+    assert_eq!(bridge.list_profiles().unwrap()[0].revision, 3);
     bridge.create_profile_group("Empty".into()).unwrap();
-    assert_eq!(bridge.list_profile_groups().unwrap(), ["Empty", "g"]);
+    let groups = bridge.list_profile_groups().unwrap();
+    assert_eq!(
+        groups
+            .iter()
+            .map(|group| group.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Empty", "g"]
+    );
+    assert!(!groups[0].alphabetical);
+    bridge
+        .set_profile_group_alphabetical("Empty".into(), true)
+        .unwrap();
+    assert!(bridge.list_profile_groups().unwrap()[0].alphabetical);
     assert_eq!(
         bridge
             .rename_profile_group("Empty".into(), "Renamed".into())
             .unwrap(),
         0
     );
-    assert_eq!(bridge.list_profile_groups().unwrap(), ["Renamed", "g"]);
+    assert_eq!(
+        bridge
+            .list_profile_groups()
+            .unwrap()
+            .iter()
+            .map(|group| group.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Renamed", "g"]
+    );
     assert_eq!(bridge.delete_profile_group("Renamed".into()).unwrap(), 0);
     let prompt = bridge
         .open_profile(profile_id.to_bytes().to_vec(), None)
@@ -639,6 +675,23 @@ fn open_profile_requires_persistence_and_loads_literals() {
         err,
         BridgeError::Rejected { ref code, .. } if code == "connect"
     ));
+    let mut copy = bridge
+        .get_profile_draft(profile_id.to_bytes().to_vec())
+        .unwrap();
+    copy.id_bytes = None;
+    copy.revision = 0;
+    for index in 0..100 {
+        copy.name = format!("paged-{index:03}");
+        bridge.save_profile(copy.clone()).unwrap();
+    }
+    assert_eq!(bridge.list_profiles().unwrap().len(), 101);
+    assert_eq!(
+        bridge
+            .search_profiles(Some("paged-099".into()))
+            .unwrap()
+            .len(),
+        1
+    );
     let _ = fs::remove_file(&path);
     let _ = fs::remove_file(format!("{}-wal", path.display()));
     let _ = fs::remove_file(format!("{}-shm", path.display()));
