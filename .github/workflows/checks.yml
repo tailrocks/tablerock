@@ -54,3 +54,5 @@ jobs:
         run: cargo test -p tablerock-ffi --test bridge_real
       - name: CSV import apply through mutation seam
         run: cargo test -p tablerock-cli --test import_apply_real
+      - name: Streaming re-query export
+        run: cargo test -p tablerock-cli --test stream_export_real

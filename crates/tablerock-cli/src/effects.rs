@@ -497,6 +497,30 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::ExportStreamQuery {
+                request_token,
+                session_id_hex,
+                context_revision,
+                statement,
+                path,
+                format,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = export_stream_query(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        statement,
+                        path,
+                        format,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::ExecuteSql {
                 request_token,
                 session_id_hex,
@@ -2934,6 +2958,260 @@ async fn export_result(request_token: RequestToken, path: String, body: String) 
             partial_removed: true,
         }),
     }
+}
+
+/// Streaming full re-query export: SELECT pages → encoder → atomic file.
+async fn export_stream_query(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    statement: String,
+    path: String,
+    format: String,
+) -> Message {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use tablerock_core::{
+        BoundedText, ByteLimit, Engine, IdParts, PageIdentity, PageLimits, ResultId, Revision,
+        StatementText,
+    };
+    use tablerock_engine::DriverPageRequest;
+
+    use crate::stream_export::{StreamExportError, StreamExportFormat, StreamExporter};
+
+    let _ = context_revision;
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                request_token,
+                reason: FailureProjection::Label("invalid session id".into()),
+                partial_removed: false,
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+            request_token,
+            reason: FailureProjection::Label("session not registered".into()),
+            partial_removed: false,
+        });
+    };
+
+    let sql = match StatementText::new(statement) {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                request_token,
+                reason: FailureProjection::Label(e.to_string()),
+                partial_removed: false,
+            });
+        }
+    };
+
+    let engine = session.engine();
+    let limits = PageLimits::new(PAGE_ROWS, 256, 4 * 1024 * 1024, 64 * 1024);
+    let request = match engine {
+        Engine::PostgreSql => DriverPageRequest::PostgreSqlStatement {
+            statement: sql,
+            parameters: Vec::new(),
+            limits,
+            max_cell_bytes: 64 * 1024,
+        },
+        Engine::ClickHouse => {
+            let query_id = BoundedText::copy_from_str(
+                &format!("export-{request_token}"),
+                ByteLimit::new(128),
+            )
+            .unwrap_or_else(|_| {
+                BoundedText::copy_from_str("export", ByteLimit::new(16)).expect("short")
+            });
+            DriverPageRequest::ClickHouseStatement {
+                statement: sql,
+                query_id,
+                limits,
+                max_cell_bytes: 64 * 1024,
+            }
+        }
+        Engine::Redis => {
+            return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                request_token,
+                reason: FailureProjection::Label(
+                    "streaming re-query export unsupported for Redis".into(),
+                ),
+                partial_removed: false,
+            });
+        }
+    };
+
+    let mut stream = match session.start_page_stream(request).await {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                request_token,
+                reason: FailureProjection::Label(e.to_string()),
+                partial_removed: false,
+            });
+        }
+    };
+
+    let fmt = StreamExportFormat::parse(&format);
+    let mut exporter = match StreamExporter::create(&path, fmt, None) {
+        Ok(e) => e,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                request_token,
+                reason: FailureProjection::Label(e.to_string()),
+                partial_removed: false,
+            });
+        }
+    };
+
+    let low = request_token.max(1);
+    let result_id = ResultId::from_parts(IdParts::new(0, low).expect("nonzero token"))
+        .expect("result id");
+    let identity = PageIdentity::new(result_id, Revision::INITIAL, engine);
+    let mut start_row = 0_u64;
+    let cancel = AtomicBool::new(false);
+    // Best-effort: if session cancel is requested externally, mid-page loops still finish;
+    // Drop of exporter on failure aborts the temp file.
+    let _ = &cancel;
+
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            exporter.abort();
+            return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                request_token,
+                reason: FailureProjection::Label("export cancelled".into()),
+                partial_removed: true,
+            });
+        }
+        match stream.next_page(identity, start_row).await {
+            Ok(Some(page)) => {
+                let (columns, rows) = page_to_string_table(&page);
+                if let Err(e) = exporter.write_page(&columns, &rows) {
+                    exporter.abort();
+                    return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                        request_token,
+                        reason: FailureProjection::Label(e.to_string()),
+                        partial_removed: true,
+                    });
+                }
+                let count = u64::from(page.envelope().row_count());
+                start_row = start_row.saturating_add(count);
+                if start_row >= MAX_QUERY_ROWS {
+                    break;
+                }
+                if page.envelope().delivery() == tablerock_core::PageDelivery::Final {
+                    break;
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                exporter.abort();
+                return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                    request_token,
+                    reason: FailureProjection::Label(e.to_string()),
+                    partial_removed: true,
+                });
+            }
+        }
+    }
+
+    match exporter.finish() {
+        Ok(outcome) => Message::Engine(tablerock_tui::EngineMsg::ExportDone {
+            request_token,
+            path,
+            bytes: outcome.bytes,
+        }),
+        Err(StreamExportError::Cancelled { .. }) => {
+            Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                request_token,
+                reason: FailureProjection::Label("export cancelled".into()),
+                partial_removed: true,
+            })
+        }
+        Err(e) => Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+            request_token,
+            reason: FailureProjection::Label(e.to_string()),
+            partial_removed: true,
+        }),
+    }
+}
+
+fn page_to_string_table(page: &tablerock_core::ResultPage) -> (Vec<String>, Vec<Vec<String>>) {
+    use tablerock_core::{Truncation, ValueKind};
+    let envelope = page.envelope();
+    let columns: Vec<String> = page.columns().iter().map(|c| c.name().to_owned()).collect();
+    let col_count = envelope.column_count();
+    let row_count = envelope.row_count();
+    let mut rows = Vec::with_capacity(row_count as usize);
+    for row in 0..row_count {
+        let mut cells = Vec::with_capacity(col_count as usize);
+        for col in 0..col_count {
+            let cell = page.cell(row, col).expect("in-range cell");
+            let text = if cell.is_null() {
+                "NULL".into()
+            } else {
+                match cell.kind() {
+                    ValueKind::Boolean => {
+                        if cell.bytes().first() == Some(&1) {
+                            "true".into()
+                        } else {
+                            "false".into()
+                        }
+                    }
+                    ValueKind::Signed => {
+                        let mut buf = [0u8; 8];
+                        let b = cell.bytes();
+                        let n = b.len().min(8);
+                        buf[8 - n..].copy_from_slice(&b[..n]);
+                        i64::from_be_bytes(buf).to_string()
+                    }
+                    ValueKind::Unsigned | ValueKind::Float64 => {
+                        let mut buf = [0u8; 8];
+                        let b = cell.bytes();
+                        let n = b.len().min(8);
+                        buf[8 - n..].copy_from_slice(&b[..n]);
+                        if cell.kind() == ValueKind::Float64 {
+                            f64::from_bits(u64::from_be_bytes(buf)).to_string()
+                        } else {
+                            u64::from_be_bytes(buf).to_string()
+                        }
+                    }
+                    ValueKind::Binary | ValueKind::Unknown | ValueKind::Invalid => {
+                        let b = cell.bytes();
+                        let take = b.len().min(16);
+                        let hex: String = b[..take]
+                            .iter()
+                            .map(|x| format!("{x:02x}"))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        if b.len() > take {
+                            format!("{hex} …")
+                        } else {
+                            hex
+                        }
+                    }
+                    _ => {
+                        let mut s = String::from_utf8_lossy(cell.bytes()).into_owned();
+                        if matches!(cell.truncation(), Truncation::Truncated { .. }) {
+                            s.push('…');
+                        }
+                        s
+                    }
+                }
+            };
+            cells.push(text);
+        }
+        rows.push(cells);
+    }
+    (columns, rows)
 }
 
 async fn open_redis_key(

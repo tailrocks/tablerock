@@ -264,6 +264,18 @@ pub enum Effect {
         /// Preformatted body from pure formatters (no credentials).
         body: String,
     },
+    /// Streaming full re-query export: re-run SQL and write pages atomically.
+    ///
+    /// Cancel via the shared cancel path for the session; incomplete files are removed.
+    ExportStreamQuery {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        statement: String,
+        path: String,
+        /// "csv" | "json" | "tsv"
+        format: String,
+    },
     /// Run a single SQL statement (first page) into the active tab grid.
     ExecuteSql {
         request_token: RequestToken,

@@ -100,7 +100,7 @@ Standard suites + Docker engine suites; new import/export tests live in
 - [x] Import CSV: formula content as data, oversized/malformed errors with positions — evidence 245
 - [x] Partial import apply: CSV→InsertRow + review/authorize/apply on PG
       (`apply_csv_inserts`, real test import_apply_real)
-- [ ] Streaming full re-query export (residual)
+- [x] Streaming full re-query export + cancel cleanup (stream_export + effect)
 - [x] Relaunch: Manual reconnect never auto (should_auto_reconnect test)
 - [x] Saved filters JSON round-trip (in-memory library)
 - [x] Suites green for landed checkpoints; plan index DONE
@@ -113,10 +113,10 @@ Standard suites + Docker engine suites; new import/export tests live in
 ## Residual (non-blocking)
 
 - ClickHouse import apply batch (PG path landed)
-- Streaming re-query export with cancel mid-stream
+- ~~Streaming re-query export with cancel mid-stream~~ (closed: stream_export)
 - Persistence actor API for filter presets
 - Multi-statement UI wiring into QueryEditorModel run path
-- TUI Effect wiring for import apply
+- TUI Effect wiring for import apply / stream export actions
 
 ## STOP conditions
 
