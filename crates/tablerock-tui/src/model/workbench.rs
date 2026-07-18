@@ -237,6 +237,42 @@ impl WorkbenchModel {
         }
     }
 
+    /// Select tab by title: exact match, else unique case-insensitive prefix.
+    pub fn select_tab_by_title(&mut self, needle: &str) -> bool {
+        if needle.is_empty() || self.tabs.is_empty() {
+            return false;
+        }
+        if let Some(i) = self.tabs.iter().position(|t| t.title == needle) {
+            self.selected_tab = i;
+            return true;
+        }
+        let lower = needle.to_ascii_lowercase();
+        let hits: Vec<usize> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.title.to_ascii_lowercase().starts_with(&lower))
+            .map(|(i, _)| i)
+            .collect();
+        if hits.len() == 1 {
+            self.selected_tab = hits[0];
+            return true;
+        }
+        let exact_ci: Vec<usize> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.title.eq_ignore_ascii_case(needle))
+            .map(|(i, _)| i)
+            .collect();
+        if exact_ci.len() == 1 {
+            self.selected_tab = exact_ci[0];
+            true
+        } else {
+            false
+        }
+    }
+
     /// Wrap-around previous/next for tests and callers.
     #[must_use]
     pub fn selected_tab_index(&self) -> usize {
@@ -803,6 +839,23 @@ mod tests {
         ));
         wb.force_close_tab(wb.selected_tab);
         assert!(wb.tabs.iter().all(|t| t.title != "users"));
+    }
+
+    #[test]
+    fn select_tab_by_title_exact_and_prefix() {
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("alpha");
+        wb.open_preview_tab("beta");
+        wb.open_preview_tab("gamma");
+        wb.open_preview_tab("apricot");
+        assert!(wb.select_tab_by_title("alpha"));
+        assert_eq!(wb.active_tab().unwrap().title, "alpha");
+        assert!(wb.select_tab_by_title("ga"));
+        assert_eq!(wb.active_tab().unwrap().title, "gamma");
+        assert!(!wb.select_tab_by_title("a")); // alpha + apricot
+        assert!(!wb.select_tab_by_title(""));
+        assert!(wb.select_tab_by_title("apri"));
+        assert_eq!(wb.active_tab().unwrap().title, "apricot");
     }
 
     #[test]

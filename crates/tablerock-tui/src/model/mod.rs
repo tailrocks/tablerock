@@ -85,6 +85,8 @@ pub enum ActionId {
     MoveTabRight,
     /// Duplicate the active tab (shallow grid/editor snapshot; drafts not cloned).
     DuplicateTab,
+    /// Jump to tab by title (exact or unique prefix).
+    GoToTab,
     PinTab,
     NewSql,
     RunSql,
@@ -477,6 +479,10 @@ pub enum ConfirmDialog {
     },
     /// Rename active tab: confirm_buffer is the new title.
     RenameTab {
+        confirm_buffer: String,
+    },
+    /// Jump to tab by title: exact or unique prefix.
+    GoToTab {
         confirm_buffer: String,
     },
     /// Text month calendar for temporal edit: paste day 1-31 (or full YYYY-MM-DD).

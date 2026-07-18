@@ -112,6 +112,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::GoToRow { confirm_buffer, .. }
                     | ConfirmDialog::GoToColumn { confirm_buffer, .. }
                     | ConfirmDialog::RenameTab { confirm_buffer, .. }
+                    | ConfirmDialog::GoToTab { confirm_buffer, .. }
                     | ConfirmDialog::PickDate { confirm_buffer, .. }
                     | ConfirmDialog::CopyPick { confirm_buffer, .. }
                     | ConfirmDialog::EditInsertValues { confirm_buffer, .. }
@@ -2917,6 +2918,17 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     }
                     Update::render()
                 }
+                ConfirmDialog::GoToTab { confirm_buffer } => {
+                    let needle = confirm_buffer.trim();
+                    if needle.is_empty() {
+                        return Update::render();
+                    }
+                    if !model.workbench_mut().select_tab_by_title(needle) {
+                        return Update::render();
+                    }
+                    model.set_confirm(None);
+                    Update::render()
+                }
                 ConfirmDialog::PickDate {
                     year,
                     month,
@@ -3330,6 +3342,21 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 return Update::render();
             }
             Update::unchanged()
+        }
+        ActionId::GoToTab if model.screen() == Screen::Workbench => {
+            if model.workbench().tabs.is_empty() {
+                return Update::unchanged();
+            }
+            let hint = model
+                .workbench()
+                .active_tab()
+                .map(|t| t.title.clone())
+                .unwrap_or_default();
+            model.set_confirm(Some(ConfirmDialog::GoToTab {
+                confirm_buffer: hint,
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
         }
         ActionId::NewSql if model.screen() == Screen::Workbench => {
             model.workbench_mut().open_sql_tab();
@@ -4912,6 +4939,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::MoveTabLeft
         | ActionId::MoveTabRight
         | ActionId::DuplicateTab
+        | ActionId::GoToTab
         | ActionId::PinTab
         | ActionId::NewSql
         | ActionId::RunSql
@@ -6553,6 +6581,7 @@ fn cycle_action(
                 ActionId::MoveTabLeft,
                 ActionId::MoveTabRight,
                 ActionId::DuplicateTab,
+                ActionId::GoToTab,
                 ActionId::CloseTab,
                 ActionId::QuickSwitch,
                 ActionId::PinTab,

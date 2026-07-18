@@ -294,6 +294,10 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             "Rename tab?",
             format!("Paste new tab title (1–128 chars) [{confirm_buffer}]"),
         ),
+        crate::model::ConfirmDialog::GoToTab { confirm_buffer } => (
+            "Go to tab?",
+            format!("Paste tab title or unique prefix [{confirm_buffer}]"),
+        ),
         crate::model::ConfirmDialog::PickDate {
             year,
             month,
@@ -764,6 +768,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let tab_left = action_label(model, ActionId::MoveTabLeft, "TabL");
     let tab_right = action_label(model, ActionId::MoveTabRight, "TabR");
     let dup_tab = action_label(model, ActionId::DuplicateTab, "DupTab");
+    let go_tab = action_label(model, ActionId::GoToTab, "GoTab");
     let submit = action_label(model, ActionId::Submit, "Submit");
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
     let quit = action_label(model, ActionId::Quit, "Quit");
@@ -1731,6 +1736,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::DuplicateTab,
                         label: dup_tab.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::GoToTab,
+                        label: go_tab.as_str(),
                         enabled: true,
                         style: None,
                     },
