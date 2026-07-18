@@ -1002,13 +1002,10 @@ mod tests {
         // Default Welcome tab remains; open two more.
         wb.open_preview_tab("a");
         wb.open_preview_tab("b");
-        wb.mark_active_dirty(true);
+        wb.mark_active_dirty(true); // promotes b out of preview
         wb.tabs[0].running = true; // Welcome
         let s = wb.tab_counts_summary();
-        assert!(s.contains("total=3"), "{s}");
-        assert!(s.contains("dirty=1"), "{s}");
-        assert!(s.contains("preview=3"), "{s}");
-        assert!(s.contains("running=1"), "{s}");
+        assert_eq!(s, "tabs total=3 dirty=1 preview=2 running=1");
     }
 
     #[test]
