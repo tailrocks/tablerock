@@ -152,6 +152,8 @@ pub enum ActionId {
     CopyTableName,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
+    /// Copy locator values for the cursor row (pk=value pairs).
+    CopyLocator,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Append cursor column as secondary sort (or cycle its direction in place).

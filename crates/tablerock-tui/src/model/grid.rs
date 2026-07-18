@@ -1476,6 +1476,25 @@ impl DataGridModel {
     }
 
     /// Move the cursor's column one step in display layout order (`dir` = -1 left, +1 right).
+    /// Presentation of identity locator for the cursor row (`col=value` lines).
+    #[must_use]
+    pub fn cursor_locator_text(&self) -> Option<String> {
+        if self.identity_columns.is_empty() {
+            return None;
+        }
+        let fields = self.locator_for_row(self.cursor_row);
+        if fields.is_empty() {
+            return None;
+        }
+        Some(
+            fields
+                .iter()
+                .map(|f| format!("{}={}", f.column, f.original_text))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    }
+
     /// Align horizontal viewport so the cursor column is the first visible
     /// physical column when possible (wide grids after GoToColumn).
     pub fn reveal_cursor_column(&mut self) {
@@ -2035,6 +2054,33 @@ mod tests {
         // Cannot hide last visible column.
         assert!(g2.toggle_column_visible("id"));
         assert!(!g2.toggle_column_visible("age"));
+    }
+
+    #[test]
+    fn cursor_locator_text_for_identity() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into()];
+        g.row_count = 1;
+        g.cells = vec![
+            ProjectedCell {
+                text: "7".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "x".into(),
+                distinction: CellDistinction::Text,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+        ];
+        g.identity_columns = vec!["id".into()];
+        g.cursor_row = 0;
+        let loc = g.cursor_locator_text().expect("locator");
+        assert_eq!(loc, "id=7");
+        g.identity_columns.clear();
+        assert!(g.cursor_locator_text().is_none());
     }
 
     #[test]

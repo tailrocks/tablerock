@@ -3743,6 +3743,25 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyLocator if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(text) = grid.cursor_locator_text() else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied locator ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -5056,6 +5075,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyStatus
         | ActionId::CopyTableName
         | ActionId::CopyPkNames
+        | ActionId::CopyLocator
         | ActionId::CycleSort
         | ActionId::PushSort
         | ActionId::PopSort
@@ -6700,6 +6720,7 @@ fn cycle_action(
                 ActionId::CopyStatus,
                 ActionId::CopyTableName,
                 ActionId::CopyPkNames,
+                ActionId::CopyLocator,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,
