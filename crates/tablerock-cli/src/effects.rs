@@ -4119,7 +4119,8 @@ async fn open_described_session(
         LocalForwardTunnel, PostgresConnectConfig, PostgresSession, PostgresTlsMode,
         RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
         RedisTlsMode, SshAgentAuth, SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth,
-        SshPublicKeyAuth, SshTunnelConfig, open_local_forward_tunnel, run_postgres_startup_actions,
+        SshPublicKeyAuth, SshTunnelConfig, open_local_forward_tunnel, run_clickhouse_startup_actions,
+        run_postgres_startup_actions, run_redis_startup_actions,
     };
     let mut host = draft.host.clone();
     let mut port: u16 = draft.port.parse().map_err(|_| "invalid port".to_owned())?;
@@ -4241,6 +4242,9 @@ async fn open_described_session(
                 ch_tls,
                 ClickHouseCompression::None,
             ));
+            let _startup =
+                run_clickhouse_startup_actions(&session, &draft.startup_actions, is_reconnect)
+                    .await;
             let described = session.describe().await.map_err(|e| e.to_string())?;
             Ok((
                 Box::new(session) as Box<dyn DriverSession>,
@@ -4272,6 +4276,8 @@ async fn open_described_session(
             )
             .await
             .map_err(|e| e.to_string())?;
+            let _startup =
+                run_redis_startup_actions(&session, &draft.startup_actions, is_reconnect).await;
             let described = session.describe().await.map_err(|e| e.to_string())?;
             Ok((
                 Box::new(session) as Box<dyn DriverSession>,
