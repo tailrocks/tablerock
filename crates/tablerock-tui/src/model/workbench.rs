@@ -486,6 +486,8 @@ impl WorkbenchModel {
     /// Open inspector for the cursor cell of the active grid.
     ///
     /// Toggles closed when the inspector is already open on the same cursor title.
+    /// When drafts exist, appends staged/original/delete facts so originals stay
+    /// reachable without color alone (product editing requirement).
     pub fn inspect_cursor(&mut self) {
         let Some(grid) = self.active_grid() else {
             self.inspector = InspectorModel::default();
@@ -502,7 +504,42 @@ impl WorkbenchModel {
             self.inspector = InspectorModel::default();
             return;
         }
-        self.inspector = InspectorModel::from_cell(title, &cell, false);
+        let mut insp = InspectorModel::from_cell(title, &cell, false);
+        let row = grid.cursor_row;
+        let mut draft_lines: Vec<String> = Vec::new();
+        let row_marker = grid.drafts.row_marker(row);
+        if matches!(
+            row_marker,
+            crate::model::mutation_draft::DraftMarker::Deleted
+        ) {
+            draft_lines.push(format!(
+                "draft: {} (row staged for delete)",
+                row_marker.label()
+            ));
+        }
+        if let Some(staged) = grid.drafts.staged_for_cell(row, &col_name) {
+            draft_lines.push(format!("staged: {staged}"));
+            if let Some(orig) = grid.drafts.original_for_cell(row, &col_name) {
+                draft_lines.push(format!("original: {orig}"));
+            }
+        } else if matches!(
+            row_marker,
+            crate::model::mutation_draft::DraftMarker::Modified
+        ) {
+            draft_lines.push("draft: modified row (other cells staged)".into());
+        }
+        if let Some(edit) = grid.cell_edit.as_ref() {
+            if edit.abs_row == row && edit.column == col_name {
+                draft_lines.push(format!("editing: {}", edit.buffer));
+            }
+        }
+        if !draft_lines.is_empty() {
+            insp.text = format!("{}\n{}", insp.text, draft_lines.join("\n"));
+            if insp.kind_label != "structured" {
+                // Multi-line path in inspector panel.
+            }
+        }
+        self.inspector = insp;
     }
 
     /// Force-close the inspector panel.
@@ -823,5 +860,60 @@ mod tests {
         assert!(wb.inspector.open);
         wb.close_inspector();
         assert!(!wb.inspector.open);
+    }
+
+    #[test]
+    fn inspect_cursor_shows_staged_and_original() {
+        use crate::model::mutation_draft::{DraftLocatorField, StagedCellEdit};
+        use tablerock_core::ProfileSafetyMode;
+
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("t");
+        if let Some(grid) = wb.active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into()];
+            grid.row_count = 1;
+            grid.cells = vec![
+                crate::model::grid::ProjectedCell {
+                    text: "1".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                },
+                crate::model::grid::ProjectedCell {
+                    text: "alice".into(),
+                    distinction: crate::model::grid::CellDistinction::Text,
+                    byte_len: 5,
+                    original_byte_len: None,
+                },
+            ];
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.identity_columns = vec!["id".into()];
+            grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+            assert!(grid.drafts.stage_cell_edit(StagedCellEdit {
+                abs_row: 0,
+                column: "name".into(),
+                original_text: "alice".into(),
+                staged_text: "bob".into(),
+                locator: vec![DraftLocatorField {
+                    column: "id".into(),
+                    original_text: "1".into(),
+                }],
+            }));
+            grid.cursor_row = 0;
+            grid.cursor_col = 1;
+        }
+        wb.inspect_cursor();
+        assert!(wb.inspector.open);
+        assert!(
+            wb.inspector.text.contains("staged: bob"),
+            "{}",
+            wb.inspector.text
+        );
+        assert!(
+            wb.inspector.text.contains("original: alice"),
+            "{}",
+            wb.inspector.text
+        );
     }
 }
