@@ -58,8 +58,12 @@ jobs:
         run: cargo test -p tablerock-cli --test stream_export_real -- --include-ignored
       - name: First-row streaming performance budgets
         run: cargo test -p tablerock-engine --test performance_real -- --nocapture
-      - name: Install PostgreSQL client tools
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install PostgreSQL client tools (18, matching the test server)
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-18
       - name: pg_dump/pg_restore real matrix
         run: cargo test -p tablerock-cli --test pg_dump_real -- --nocapture --include-ignored
       - name: ENOSPC fail-closed on 1MiB tmpfs
