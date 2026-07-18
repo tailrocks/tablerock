@@ -16,6 +16,10 @@ pub use effect::{
 pub use keymap::{ShellKeyAction, default_keymap};
 pub use message::{EngineMsg, MAX_PASTE_BYTES, Message, PasteText, ProfilesMsg};
 pub use model::catalog::{CatalogModel, CatalogNodeProjection, CatalogNodeStatus};
+pub use model::grid::{
+    CellDistinction, DataGridModel, GridOperationState, GridRowTotal, ProjectedCell,
+    distinction_from_kind_label,
+};
 pub use model::{
     ActionId, FocusRegion, LayoutMode, Model, PasswordPrompt, Screen, ScrollDirection,
     SessionFacts, ShellTarget,

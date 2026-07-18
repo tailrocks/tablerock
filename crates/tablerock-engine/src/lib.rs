@@ -3,6 +3,7 @@
 mod adapter;
 mod catalog;
 mod clickhouse;
+mod ident;
 mod postgres;
 mod redis;
 mod runtime;
@@ -23,6 +24,7 @@ pub use clickhouse::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseError, ClickHouseProbeQuery,
     ClickHouseRowStream, ClickHouseSession, ClickHouseTlsMode,
 };
+pub use ident::{QuoteIdentError, qualify_table, quote_ident};
 pub use postgres::{
     PostgresCancellationOutcome, PostgresClientIdentity, PostgresConnectConfig, PostgresCopyChunk,
     PostgresCopyLimits, PostgresCopyOutStream, PostgresCopyOutcome, PostgresError, PostgresNotice,

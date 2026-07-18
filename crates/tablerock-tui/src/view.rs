@@ -9,9 +9,10 @@ use ratatui_core::{
 use termrock::{
     interaction::HitRegion,
     widgets::{
-        Action, ActionBar, ActionBarState, Form, FormField, FormSection, FormState, Panel,
-        PanelEmphasis, StatusBar, StatusBarState, StatusSlot, Tab, Tabs, TabsState, Tree, TreeNode,
-        TreeNodeStatus, TreeState, render_hint_bar,
+        Action, ActionBar, ActionBarState, Form, FormField, FormSection, FormState, GridCell,
+        GridColumn, GridRow, Panel, PanelEmphasis, StatusBar, StatusBarState, StatusSlot, Tab,
+        Tabs, TabsState, Tree, TreeNode, TreeNodeStatus, TreeState, VirtualGrid, VirtualGridState,
+        render_hint_bar,
     },
 };
 
@@ -838,27 +839,26 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
     let wb = model.workbench();
     let mut y = area.y;
     let max_y = area.y.saturating_add(area.height);
-    let lines = [
+    let tab_line = wb
+        .tabs
+        .get(wb.selected_tab)
+        .map(|tab| {
+            format!(
+                "tab: {}{}{}",
+                tab.title,
+                if tab.dirty { " *" } else { "" },
+                if tab.running { " …" } else { "" }
+            )
+        })
+        .unwrap_or_else(|| "tab: —".into());
+    let header = [
         wb.context.line(),
-        wb.catalog_status_line(),
-        wb.tabs
-            .get(wb.selected_tab)
-            .map(|tab| {
-                format!(
-                    "tab: {}{}{}",
-                    tab.title,
-                    if tab.dirty { " *" } else { "" },
-                    if tab.running { " …" } else { "" }
-                )
-            })
-            .unwrap_or_else(|| "tab: —".into()),
-        wb.status.summary(),
-        model
-            .session()
-            .map(|session| format!("session: {}", session.session_id_hex))
-            .unwrap_or_default(),
+        tab_line,
+        wb.active_grid()
+            .map(|g| g.status_line())
+            .unwrap_or_else(|| wb.status.summary()),
     ];
-    for line in lines {
+    for line in header {
         if y >= max_y || line.is_empty() {
             continue;
         }
@@ -874,4 +874,83 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
         );
         y = y.saturating_add(1);
     }
+    let grid_area = Rect {
+        x: area.x,
+        y,
+        width: area.width,
+        height: max_y.saturating_sub(y),
+    };
+    if grid_area.height > 1 {
+        if let Some(grid) = wb.active_grid() {
+            render_data_grid(model, frame, grid_area, grid);
+        }
+    }
+}
+
+fn render_data_grid(
+    model: &Model,
+    frame: &mut Frame<'_>,
+    area: Rect,
+    grid: &crate::model::grid::DataGridModel,
+) {
+    use ratatui_core::widgets::Widget;
+    if grid.columns.is_empty() {
+        Line::from("(no result)").render(area, frame.buffer_mut());
+        return;
+    }
+    let columns: Vec<GridColumn<'_, usize>> = grid
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(i, name)| GridColumn::fixed(i, name.as_str(), 12))
+        .collect();
+    let body_rows = u64::from(area.height.saturating_sub(1).max(1));
+    let first = grid.viewport_row.max(grid.start_row);
+    let mut owned_rows: Vec<Vec<String>> = Vec::new();
+    for slot in 0..body_rows {
+        let abs = first.saturating_add(slot);
+        let mut texts = Vec::with_capacity(grid.columns.len());
+        for col in 0..grid.columns.len() {
+            texts.push(grid.cell_at(abs, col).display());
+        }
+        owned_rows.push(texts);
+    }
+    let mut cell_bufs: Vec<Vec<GridCell<'_>>> = Vec::new();
+    for texts in &owned_rows {
+        cell_bufs.push(
+            texts
+                .iter()
+                .map(|t| {
+                    if t == "…" || t.starts_with('…') {
+                        GridCell::pending()
+                    } else {
+                        GridCell::text(t.as_str())
+                    }
+                })
+                .collect(),
+        );
+    }
+    let rows: Vec<GridRow<'_, u64>> = cell_bufs
+        .iter()
+        .enumerate()
+        .map(|(i, cells)| {
+            let abs = first.saturating_add(i as u64);
+            GridRow::new(abs, abs, cells.as_slice())
+        })
+        .collect();
+    let total = match grid.totals {
+        crate::model::grid::GridRowTotal::Exact(n)
+        | crate::model::grid::GridRowTotal::Estimated(n) => n.max(grid.rows_loaded),
+        crate::model::grid::GridRowTotal::Unknown => grid
+            .start_row
+            .saturating_add(u64::from(grid.row_count))
+            .saturating_add(body_rows),
+    };
+    let mut state = VirtualGridState::new();
+    state.set_focused(model.focus() == Some(FocusRegion::Content));
+    let widget = VirtualGrid::new(&columns, &rows, &model.theme)
+        .total_rows(total.max(1))
+        .gutter(true)
+        .header(true);
+    frame.render_stateful_widget(&widget, area, &mut state);
 }

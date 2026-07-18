@@ -2,6 +2,7 @@
 
 pub mod catalog;
 pub mod editor;
+pub mod grid;
 pub mod profiles;
 pub mod workbench;
 

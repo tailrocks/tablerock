@@ -1,6 +1,7 @@
 //! Workbench shell submodel (TableRock-local; TermRock widgets render it).
 
 use super::catalog::CatalogModel;
+use super::grid::DataGridModel;
 
 /// Context-bar projection for the active session.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -47,7 +48,7 @@ impl ContextBarModel {
     }
 }
 
-/// One workbench tab (content is placeholder until plans 009/011).
+/// One workbench tab (grid content for data tabs; SQL later).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkbenchTab {
     pub id: u64,
@@ -55,6 +56,9 @@ pub struct WorkbenchTab {
     pub dirty: bool,
     pub running: bool,
     pub preview: bool,
+    pub grid: DataGridModel,
+    /// Optional SQL text for a statement tab.
+    pub sql: Option<String>,
 }
 
 /// Status-bar facts for the active tab/session.
@@ -110,6 +114,8 @@ impl Default for WorkbenchModel {
                 dirty: false,
                 running: false,
                 preview: true,
+                grid: DataGridModel::default(),
+                sql: None,
             }],
             selected_tab: 0,
             status: WorkbenchStatus {
@@ -200,8 +206,33 @@ impl WorkbenchModel {
             dirty: false,
             running: false,
             preview: true,
+            grid: DataGridModel::default(),
+            sql: None,
         });
         self.selected_tab = self.tabs.len() - 1;
+    }
+
+    /// Open a SQL statement tab (single-line input until plan 011).
+    pub fn open_sql_tab(&mut self) {
+        let id = self.tabs.iter().map(|t| t.id).max().unwrap_or(0) + 1;
+        self.tabs.push(WorkbenchTab {
+            id,
+            title: "SQL".into(),
+            dirty: false,
+            running: false,
+            preview: false,
+            grid: DataGridModel::default(),
+            sql: Some(String::new()),
+        });
+        self.selected_tab = self.tabs.len() - 1;
+    }
+
+    pub fn active_grid_mut(&mut self) -> Option<&mut DataGridModel> {
+        self.tabs.get_mut(self.selected_tab).map(|t| &mut t.grid)
+    }
+
+    pub fn active_grid(&self) -> Option<&DataGridModel> {
+        self.tabs.get(self.selected_tab).map(|t| &t.grid)
     }
 
     /// Promote the active preview tab to durable (edit/pin/filter/sort).
