@@ -113,6 +113,16 @@ pub struct ShutdownOutcome {
     pub active_operations: u32,
 }
 
+/// Safe summary of a handle-based mutation apply (no SQL, no cell values).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ApplyOutcome {
+    pub transaction: String,
+    pub change_count: u32,
+    pub applied_count: u32,
+    pub conflict_count: u32,
+    pub failed_count: u32,
+}
+
 struct RegisteredSession {
     profile_id: tablerock_core::ProfileId,
     session_id: SessionId,
@@ -238,6 +248,27 @@ impl TableRockBridge {
     /// Drop a review token without authorizing (operator discard).
     pub fn revoke_review_token(&self, token_id: Vec<u8>) -> Result<bool, BridgeError> {
         catch_entry(|| self.revoke_review_token_inner(token_id))
+    }
+
+    /// Consume-once authorize + apply by review-token handle (never plan bytes).
+    ///
+    /// Token is removed before apply; a failed apply cannot be retried with the
+    /// same handle (ambiguous-write non-retry / single-use authority).
+    pub fn apply_review_token(
+        &self,
+        token_id: Vec<u8>,
+        now_ms: u64,
+        session_id: Vec<u8>,
+        expected_revision: u64,
+    ) -> Result<ApplyOutcome, BridgeError> {
+        catch_entry(|| {
+            self.apply_review_token_inner(token_id, now_ms, session_id, expected_revision)
+        })
+    }
+
+    /// Disconnect a session once no operation still holds it.
+    pub fn disconnect(&self, session_id: Vec<u8>) -> Result<(), BridgeError> {
+        catch_entry(|| self.disconnect_inner(session_id))
     }
 }
 
@@ -402,6 +433,103 @@ impl TableRockBridge {
             .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
         let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
         Ok(inner.reviews.revoke(token_id))
+    }
+
+    fn apply_review_token_inner(
+        &self,
+        token_id_bytes: Vec<u8>,
+        now_ms: u64,
+        session_id_bytes: Vec<u8>,
+        expected_revision: u64,
+    ) -> Result<ApplyOutcome, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let token_id = review_token_from_bytes(&token_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-token-id", "review token id must be 16 bytes")
+        })?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let (authorized, driver) = {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+            if !inner.accepting {
+                return Err(BridgeError::ShuttingDown);
+            }
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let scope = OperationScope::new(
+                registered.profile_id,
+                registered.session_id,
+                registered.context_id,
+            );
+            // Consume-once before any apply I/O.
+            let authorized = inner
+                .reviews
+                .authorize(
+                    token_id,
+                    now_ms,
+                    scope,
+                    Revision::from_wire_u64(expected_revision),
+                )
+                .map_err(|error| BridgeError::rejected("authorize", error.to_string()))?;
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (authorized, driver)
+        };
+        let outcome = self
+            .runtime
+            .block_on(driver.apply_authorized_mutation(authorized))?
+            .map_err(|error| BridgeError::rejected("apply", error.to_string()))?;
+        let mut applied = 0_u32;
+        let mut conflict = 0_u32;
+        let mut failed = 0_u32;
+        for change in &outcome.changes {
+            match change {
+                tablerock_engine::MutationChangeOutcome::Applied { .. } => {
+                    applied = applied.saturating_add(1);
+                }
+                tablerock_engine::MutationChangeOutcome::Conflict { .. } => {
+                    conflict = conflict.saturating_add(1);
+                }
+                tablerock_engine::MutationChangeOutcome::Failed { .. } => {
+                    failed = failed.saturating_add(1);
+                }
+            }
+        }
+        Ok(ApplyOutcome {
+            transaction: format!("{:?}", outcome.transaction),
+            change_count: u32::try_from(outcome.changes.len()).unwrap_or(u32::MAX),
+            applied_count: applied,
+            conflict_count: conflict,
+            failed_count: failed,
+        })
+    }
+
+    fn disconnect_inner(&self, session_id_bytes: Vec<u8>) -> Result<(), BridgeError> {
+        self.ensure_runtime_inner()?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        self.runtime
+            .block_on(inner.service.disconnect(session_id))?
+            .map_err(|error| match error {
+                tablerock_engine::EngineServiceError::SessionBusy => {
+                    BridgeError::rejected("session-busy", "session still has active operations")
+                }
+                other => BridgeError::rejected("disconnect", other.to_string()),
+            })?;
+        inner.sessions.remove(&session_id);
+        Ok(())
     }
 
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {

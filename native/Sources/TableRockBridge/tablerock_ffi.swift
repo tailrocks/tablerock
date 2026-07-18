@@ -607,6 +607,14 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     
     /**
+     * Consume-once authorize + apply by review-token handle (never plan bytes).
+     *
+     * Token is removed before apply; a failed apply cannot be retried with the
+     * same handle (ambiguous-write non-retry / single-use authority).
+     */
+    func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data, expectedRevision: UInt64) throws  -> ApplyOutcome
+    
+    /**
      * Consume-once authorize by review-token handle (never plan bytes).
      *
      * Returns the token id bytes on success for correlation; authority is
@@ -620,6 +628,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Drops the Tokio runtime after service shutdown. Idempotent.
      */
     func destroyRuntime() throws 
+    
+    /**
+     * Disconnect a session once no operation still holds it.
+     */
+    func disconnect(sessionId: Data) throws 
     
     /**
      * Ensures the Tokio runtime and service coordinator exist (idempotent).
@@ -732,6 +745,25 @@ public static func create() -> TableRockBridge  {
 
     
     /**
+     * Consume-once authorize + apply by review-token handle (never plan bytes).
+     *
+     * Token is removed before apply; a failed apply cannot be retried with the
+     * same handle (ambiguous-write non-retry / single-use authority).
+     */
+open func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data, expectedRevision: UInt64)throws  -> ApplyOutcome  {
+    return try  FfiConverterTypeApplyOutcome_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_apply_review_token(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(tokenId),
+        FfiConverterUInt64.lower(nowMs),
+        FfiConverterData.lower(sessionId),
+        FfiConverterUInt64.lower(expectedRevision),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Consume-once authorize by review-token handle (never plan bytes).
      *
      * Returns the token id bytes on success for correlation; authority is
@@ -767,6 +799,18 @@ open func destroyRuntime()throws   {try rustCallWithError(FfiConverterTypeBridge
         uniffiCallStatus in
     uniffi_tablerock_ffi_fn_method_tablerockbridge_destroy_runtime(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Disconnect a session once no operation still holds it.
+     */
+open func disconnect(sessionId: Data)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_disconnect(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),uniffiCallStatus
     )
 }
 }
@@ -933,6 +977,75 @@ public func FfiConverterTypeTableRockBridge_lower(_ value: TableRockBridge) -> U
 }
 
 
+
+
+/**
+ * Safe summary of a handle-based mutation apply (no SQL, no cell values).
+ */
+public struct ApplyOutcome: Equatable, Hashable {
+    public var transaction: String
+    public var changeCount: UInt32
+    public var appliedCount: UInt32
+    public var conflictCount: UInt32
+    public var failedCount: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(transaction: String, changeCount: UInt32, appliedCount: UInt32, conflictCount: UInt32, failedCount: UInt32) {
+        self.transaction = transaction
+        self.changeCount = changeCount
+        self.appliedCount = appliedCount
+        self.conflictCount = conflictCount
+        self.failedCount = failedCount
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ApplyOutcome: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeApplyOutcome: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ApplyOutcome {
+        return
+            try ApplyOutcome(
+                transaction: FfiConverterString.read(from: &buf), 
+                changeCount: FfiConverterUInt32.read(from: &buf), 
+                appliedCount: FfiConverterUInt32.read(from: &buf), 
+                conflictCount: FfiConverterUInt32.read(from: &buf), 
+                failedCount: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ApplyOutcome, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.transaction, into: &buf)
+        FfiConverterUInt32.write(value.changeCount, into: &buf)
+        FfiConverterUInt32.write(value.appliedCount, into: &buf)
+        FfiConverterUInt32.write(value.conflictCount, into: &buf)
+        FfiConverterUInt32.write(value.failedCount, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApplyOutcome_lift(_ buf: RustBuffer) throws -> ApplyOutcome {
+    return try FfiConverterTypeApplyOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApplyOutcome_lower(_ value: ApplyOutcome) -> RustBuffer {
+    return FfiConverterTypeApplyOutcome.lower(value)
+}
 
 
 public struct BridgeEventBatch: Equatable, Hashable {
@@ -1681,6 +1794,9 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_apply_review_token() != 161) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_authorize_review_token() != 34315) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1688,6 +1804,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_destroy_runtime() != 55977) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_disconnect() != 49103) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_ensure_runtime() != 35672) {

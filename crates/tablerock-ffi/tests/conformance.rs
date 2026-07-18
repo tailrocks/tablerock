@@ -404,6 +404,51 @@ fn uniffi_surface_has_no_per_cell_export() {
 }
 
 #[test]
+fn apply_review_token_consumes_handle_even_when_apply_fails() {
+    let (_, page) = sample_page(Engine::PostgreSql, 91, &[1]);
+    let bridge = TableRockBridge::new_for_test();
+    let session_id = open_fixed(&bridge, Engine::PostgreSql, page);
+    let token = bridge
+        .insert_reviewed_probe(session_id.clone(), 1_000, 2_000, 1_100)
+        .unwrap();
+
+    // FixedPageSession apply fails closed; token is still consumed first.
+    let err = bridge
+        .apply_review_token(token.clone(), 1_500, session_id.clone(), 0)
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        BridgeError::Rejected { ref code, .. } if code == "apply"
+    ));
+    // Second use cannot retry the same handle (ambiguous-write non-retry).
+    let again = bridge
+        .apply_review_token(token, 1_600, session_id.clone(), 0)
+        .unwrap_err();
+    assert!(matches!(
+        again,
+        BridgeError::Rejected { ref code, .. } if code == "authorize"
+    ));
+
+    bridge.disconnect(session_id).unwrap();
+}
+
+#[test]
+fn disconnect_rejects_unknown_session() {
+    let bridge = TableRockBridge::new_for_test();
+    bridge.ensure_runtime().unwrap();
+    let bogus = ResultId::from_parts(IdParts::new(0, 5).unwrap())
+        .unwrap()
+        .to_bytes()
+        .to_vec();
+    // Session id layout is 16 bytes; unknown id is a disconnect error path.
+    let err = bridge.disconnect(bogus).unwrap_err();
+    assert!(matches!(
+        err,
+        BridgeError::Rejected { .. } | BridgeError::UnknownSession
+    ));
+}
+
+#[test]
 fn review_token_is_consume_once_and_expiry_blocks() {
     let (_, page) = sample_page(Engine::PostgreSql, 90, &[1]);
     let bridge = TableRockBridge::new_for_test();

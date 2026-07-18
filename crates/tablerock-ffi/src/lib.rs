@@ -15,7 +15,7 @@ mod page_limits;
 mod runtime;
 
 pub use bridge::{
-    BridgeEventBatch, BridgeEventRecord, CancelOutcome, OpenParams, ShutdownOutcome, SubmitSpec,
-    TableRockBridge,
+    ApplyOutcome, BridgeEventBatch, BridgeEventRecord, CancelOutcome, OpenParams, ShutdownOutcome,
+    SubmitSpec, TableRockBridge,
 };
 pub use error::BridgeError;

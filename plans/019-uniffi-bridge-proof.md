@@ -29,6 +29,7 @@
   - `docs/evidence/delivery/251-plan-019-operator-stop.md`
   - `docs/evidence/delivery/252-plan-019-conformance-and-universal-lib.md`
   - `docs/evidence/delivery/253-plan-019-bridge-real-servers.md`
+  - `docs/evidence/delivery/254-plan-019-apply-disconnect.md`
 
 ## Fixed constraints (inline — non-negotiable without recorded revision)
 
