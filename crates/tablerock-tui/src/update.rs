@@ -6040,6 +6040,46 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::IncHour if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.step_hour(1) {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::DecHour if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.step_hour(-1) {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::IncMinute if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.step_minute(1) {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::DecMinute if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.step_minute(-1) {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::PickDate if model.screen() == Screen::Workbench => open_pick_date(model),
         ActionId::IncNumber if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
@@ -6892,6 +6932,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DecMonth
         | ActionId::IncYear
         | ActionId::DecYear
+        | ActionId::IncHour
+        | ActionId::DecHour
+        | ActionId::IncMinute
+        | ActionId::DecMinute
         | ActionId::PickDate
         | ActionId::IncNumber
         | ActionId::DecNumber
@@ -8734,6 +8778,10 @@ fn cycle_action(
                 ActionId::DecMonth,
                 ActionId::IncYear,
                 ActionId::DecYear,
+                ActionId::IncHour,
+                ActionId::DecHour,
+                ActionId::IncMinute,
+                ActionId::DecMinute,
                 ActionId::PickDate,
                 ActionId::IncNumber,
                 ActionId::DecNumber,

@@ -111,6 +111,56 @@ impl CellEditSession {
         self.step_month(delta_years.saturating_mul(12))
     }
 
+    /// Step the time-of-day by `delta_hours` (carries into the date; date-only gets 00:00:00).
+    pub fn step_hour(&mut self, delta_hours: i32) -> bool {
+        if self.kind != CellDistinction::Temporal || delta_hours == 0 {
+            return false;
+        }
+        self.ensure_temporal_date_base();
+        let Some((y, m, d, rest)) = split_temporal_buffer(&self.buffer) else {
+            return false;
+        };
+        let (h, min, sec, tz) = parse_time_rest(rest.as_deref()).unwrap_or((0, 0, 0, None));
+        let total = i64::from(h) + i64::from(delta_hours);
+        let day_delta = total.div_euclid(24) as i32;
+        let nh = total.rem_euclid(24) as u32;
+        let time_part = match &tz {
+            Some(z) => format!("T{nh:02}:{min:02}:{sec:02}{z}"),
+            None => format!("T{nh:02}:{min:02}:{sec:02}"),
+        };
+        self.buffer = join_temporal_date(y, m, d, Some(&time_part));
+        if day_delta != 0 {
+            return self.step_day(day_delta);
+        }
+        true
+    }
+
+    /// Step the time-of-day by `delta_minutes` (carries into hours/days).
+    pub fn step_minute(&mut self, delta_minutes: i32) -> bool {
+        if self.kind != CellDistinction::Temporal || delta_minutes == 0 {
+            return false;
+        }
+        self.ensure_temporal_date_base();
+        let Some((y, m, d, rest)) = split_temporal_buffer(&self.buffer) else {
+            return false;
+        };
+        let (h, min, sec, tz) = parse_time_rest(rest.as_deref()).unwrap_or((0, 0, 0, None));
+        let total_min = i64::from(h) * 60 + i64::from(min) + i64::from(delta_minutes);
+        let day_delta = total_min.div_euclid(24 * 60) as i32;
+        let within = total_min.rem_euclid(24 * 60) as u32;
+        let nh = within / 60;
+        let nmin = within % 60;
+        let time_part = match &tz {
+            Some(z) => format!("T{nh:02}:{nmin:02}:{sec:02}{z}"),
+            None => format!("T{nh:02}:{nmin:02}:{sec:02}"),
+        };
+        self.buffer = join_temporal_date(y, m, d, Some(&time_part));
+        if day_delta != 0 {
+            return self.step_day(day_delta);
+        }
+        true
+    }
+
     /// Text month grid for the date currently in the buffer (or today).
     #[must_use]
     pub fn month_calendar_text(&self) -> Option<String> {
@@ -366,6 +416,30 @@ fn join_temporal_date(y: i32, m: u32, d: u32, rest: Option<&str>) -> String {
         Some(r) => format!("{new_date}{r}"),
         None => new_date,
     }
+}
+
+/// Parse `THH:MM:SS…` or ` HH:MM:SS…` suffix; trailing timezone text preserved.
+fn parse_time_rest(rest: Option<&str>) -> Option<(u32, u32, u32, Option<String>)> {
+    let r = rest?.trim();
+    let r = r
+        .strip_prefix('T')
+        .or_else(|| r.strip_prefix(' '))
+        .unwrap_or(r);
+    if r.len() < 8 || r.as_bytes().get(2) != Some(&b':') || r.as_bytes().get(5) != Some(&b':') {
+        return None;
+    }
+    let h: u32 = r[0..2].parse().ok()?;
+    let min: u32 = r[3..5].parse().ok()?;
+    let sec: u32 = r[6..8].parse().ok()?;
+    if h > 23 || min > 59 || sec > 59 {
+        return None;
+    }
+    let tz = if r.len() > 8 {
+        Some(r[8..].to_owned())
+    } else {
+        None
+    };
+    Some((h, min, sec, tz))
 }
 
 fn add_months(y: i32, m: u32, delta: i32) -> (i32, u32) {
@@ -4084,6 +4158,30 @@ mod tests {
             kind: CellDistinction::Text,
         };
         assert!(!text.step_day(1));
+    }
+
+    #[test]
+    fn temporal_step_hour_and_minute_carry() {
+        let mut session = CellEditSession {
+            abs_row: 0,
+            column: "ts".into(),
+            original_text: "2024-01-15T23:30:00Z".into(),
+            buffer: "2024-01-15T23:30:00Z".into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Temporal,
+        };
+        assert!(session.step_hour(1));
+        assert_eq!(session.buffer, "2024-01-16T00:30:00Z");
+        assert!(session.step_hour(-1));
+        assert_eq!(session.buffer, "2024-01-15T23:30:00Z");
+        assert!(session.step_minute(45));
+        assert_eq!(session.buffer, "2024-01-16T00:15:00Z");
+        assert!(session.step_minute(-20));
+        assert_eq!(session.buffer, "2024-01-15T23:55:00Z");
+        // Date-only: inject midnight then step.
+        session.buffer = "2024-06-01".into();
+        assert!(session.step_hour(3));
+        assert_eq!(session.buffer, "2024-06-01T03:00:00");
     }
 
     #[test]

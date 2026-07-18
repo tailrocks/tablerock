@@ -465,6 +465,14 @@ pub enum ActionId {
     IncYear,
     /// Step temporal date by -1 year while editing.
     DecYear,
+    /// Step temporal time by +1 hour while editing.
+    IncHour,
+    /// Step temporal time by -1 hour while editing.
+    DecHour,
+    /// Step temporal time by +1 minute while editing.
+    IncMinute,
+    /// Step temporal time by -1 minute while editing.
+    DecMinute,
     /// Open text month calendar for temporal edit (paste day 1-31).
     PickDate,
     /// Step number cell buffer by +1 while editing.

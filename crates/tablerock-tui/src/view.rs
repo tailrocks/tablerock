@@ -806,6 +806,10 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let dec_month = action_label(model, ActionId::DecMonth, "Mon-");
     let inc_year = action_label(model, ActionId::IncYear, "Year+");
     let dec_year = action_label(model, ActionId::DecYear, "Year-");
+    let inc_hour = action_label(model, ActionId::IncHour, "Hour+");
+    let dec_hour = action_label(model, ActionId::DecHour, "Hour-");
+    let inc_min = action_label(model, ActionId::IncMinute, "Min+");
+    let dec_min = action_label(model, ActionId::DecMinute, "Min-");
     let pick_date = action_label(model, ActionId::PickDate, "Cal");
     let inc_num = action_label(model, ActionId::IncNumber, "Num+");
     let dec_num = action_label(model, ActionId::DecNumber, "Num-");
@@ -2072,6 +2076,30 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::DecYear,
                         label: dec_year.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::IncHour,
+                        label: inc_hour.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DecHour,
+                        label: dec_hour.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::IncMinute,
+                        label: inc_min.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DecMinute,
+                        label: dec_min.as_str(),
                         enabled: true,
                         style: None,
                     },
