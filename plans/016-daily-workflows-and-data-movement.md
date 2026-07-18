@@ -98,7 +98,8 @@ Standard suites + Docker engine suites; new import/export tests live in
 - [x] Multi-statement sections model: middle failure keeps 1st + 3rd explicit (unit test) — evidence 245
 - [x] Export abort/drop removes partial temp (unit test); ExportResult effect wired — evidence 245
 - [x] Import CSV: formula content as data, oversized/malformed errors with positions — evidence 245
-- [ ] Partial import apply through engine write seams (residual)
+- [~] Partial import apply: CSV→InsertRow conversion landed (no SQL concat);
+  engine batch apply residual
 - [ ] Streaming full re-query export (residual)
 - [x] Relaunch: Manual reconnect never auto (should_auto_reconnect test)
 - [x] Saved filters JSON round-trip (in-memory library)

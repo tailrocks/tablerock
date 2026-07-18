@@ -35,7 +35,7 @@ plan).
 | 016 | Daily workflows + data movement (Phase 9) | P2 | L | 013, 014, 015 | DONE |
 | 017 | Scoped parity expansion: SSH, pg_dump, DDL, roles, Vim (Phase 10) | P2 | L | 016 | DONE |
 | 018 | TUI hardening + parity release gate (Phase 11) | P2 | L | 017 | DONE |
-| 019 | UniFFI bridge + XCFramework + notarization proof (Phase 12) | P2 | L | 018 | IN PROGRESS |
+| 019 | UniFFI bridge + XCFramework + notarization proof (Phase 12) | P2 | L | 018 | BLOCKED (software green; need full Xcode + Developer ID for XCFramework/notarize) |
 | 020 | Native macOS vertical slice, Liquid Glass (Phase 13) | P2 | L | 019 | TODO |
 | 021 | Native parity + release evidence + closure (Phases 14–15) | P3 | L | 020 | TODO |
 

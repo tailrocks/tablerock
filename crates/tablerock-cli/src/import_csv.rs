@@ -3,8 +3,15 @@
 //! Formula-like cells (`=SUM(...)`) are imported as plain text data and never
 //! evaluated. Encoding is UTF-8; invalid UTF-8 yields an explicit error with
 //! byte offset.
+//!
+//! Apply path (residual 016): build typed `MutationChange::InsertRow` values
+//! only — never SQL string concatenation. Engine apply uses `$n` binds.
 
 use std::fmt;
+
+use tablerock_core::{
+    BoundedText, ByteLimit, FieldValue, MutationBuildError, MutationChange, OwnedValue, Truncation,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CsvImportError {
@@ -127,6 +134,82 @@ pub fn is_formula_like(cell: &str) -> bool {
     t.starts_with('=') || t.starts_with('+') || t.starts_with('-') && t.contains('(')
 }
 
+/// Convert a parsed CSV table into insert mutation changes (one change per row).
+///
+/// All cells become text field values under the header names. Formula-like
+/// cells remain ordinary text. Empty tables or header/row width mismatches
+/// fail with a position-aware error. Does not build SQL.
+pub fn csv_to_insert_changes(
+    table: &CsvTable,
+    max_cell_bytes: u64,
+) -> Result<Vec<MutationChange>, CsvImportError> {
+    if table.headers.is_empty() {
+        return Err(CsvImportError {
+            row: 0,
+            column: 0,
+            message: "csv has no columns".into(),
+        });
+    }
+    let limit = ByteLimit::new(max_cell_bytes.max(1));
+    let mut changes = Vec::with_capacity(table.rows.len());
+    for (row_index, row) in table.rows.iter().enumerate() {
+        let line = u32::try_from(row_index + 2).unwrap_or(u32::MAX); // 1-based data row after header
+        if row.len() != table.headers.len() {
+            return Err(CsvImportError {
+                row: line,
+                column: 0,
+                message: format!(
+                    "column count {} does not match header count {}",
+                    row.len(),
+                    table.headers.len()
+                ),
+            });
+        }
+        let mut values = Vec::with_capacity(row.len());
+        for (col_index, (header, cell)) in table.headers.iter().zip(row.iter()).enumerate() {
+            let col = u32::try_from(col_index + 1).unwrap_or(u32::MAX);
+            let field = BoundedText::copy_from_str(header, limit).map_err(|_| CsvImportError {
+                row: 1,
+                column: col,
+                message: format!("header exceeds {max_cell_bytes} bytes"),
+            })?;
+            let text = BoundedText::copy_from_str(cell, limit).map_err(|_| CsvImportError {
+                row: line,
+                column: col,
+                message: format!("cell exceeds {max_cell_bytes} bytes"),
+            })?;
+            let value = OwnedValue::text(text, Truncation::Complete).map_err(|_| {
+                CsvImportError {
+                    row: line,
+                    column: col,
+                    message: "invalid text cell".into(),
+                }
+            })?;
+            values.push(FieldValue::new(field, value));
+        }
+        changes.push(MutationChange::InsertRow { values });
+    }
+    Ok(changes)
+}
+
+/// Validate that insert changes can form a mutation plan target shape without
+/// building SQL. Used by import apply residual before review/authorize.
+pub fn validate_insert_batch_size(
+    changes: &[MutationChange],
+    max_changes: u32,
+) -> Result<(), MutationBuildError> {
+    if changes.is_empty() {
+        return Err(MutationBuildError::NoChanges);
+    }
+    if changes.len() as u64 > u64::from(max_changes) {
+        return Err(MutationBuildError::ChangeLimitExceeded {
+            actual: changes.len() as u64,
+            limit: max_changes,
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,6 +219,31 @@ mod tests {
         let t = parse_csv("a,b\n1,\"x,y\"\n", 10, 64).unwrap();
         assert_eq!(t.headers, vec!["a", "b"]);
         assert_eq!(t.rows[0], vec!["1", "x,y"]);
+    }
+
+    #[test]
+    fn csv_to_insert_changes_keeps_formula_as_text_and_rejects_width_mismatch() {
+        let t = parse_csv("name,expr\nalice,=SUM(A1)\n", 10, 64).unwrap();
+        let changes = csv_to_insert_changes(&t, 64).unwrap();
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            MutationChange::InsertRow { values } => {
+                assert_eq!(values.len(), 2);
+                assert_eq!(values[0].field(), "name");
+                assert_eq!(values[1].field(), "expr");
+                // Formula-like cell remains data — no evaluation.
+                assert!(is_formula_like("=SUM(A1)"));
+            }
+            other => panic!("expected InsertRow, got {other:?}"),
+        }
+        validate_insert_batch_size(&changes, 16).unwrap();
+        assert!(validate_insert_batch_size(&changes, 0).is_err());
+
+        let bad = CsvTable {
+            headers: vec!["a".into(), "b".into()],
+            rows: vec![vec!["only-one".into()]],
+        };
+        assert!(csv_to_insert_changes(&bad, 64).is_err());
     }
 
     #[test]
