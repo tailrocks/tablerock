@@ -4,6 +4,7 @@ mod column_layout_store;
 mod history_store;
 mod profile_store;
 mod recovery;
+mod saved_filter_store;
 mod saved_query_store;
 mod session_intent_store;
 mod sql_file;
@@ -25,6 +26,7 @@ pub use column_layout_store::{ColumnLayoutKey, ColumnLayoutRecord};
 pub use history_store::{
     DEFAULT_HISTORY_LIMIT, HistoryAppend, HistoryEntry, HistoryOutcomeClass, HistoryRetention,
 };
+pub use saved_filter_store::SavedFilterLibraryRecord;
 use profile_store::EncodedProfile;
 pub use recovery::{
     BACKUP_FORMAT_VERSION, BackupManifest, MAX_BACKUP_BYTES, create_backup, read_backup_manifest,
@@ -70,6 +72,10 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (
         12,
         include_str!("../migrations/0012-ssh-use-agent-preference.sql"),
+    ),
+    (
+        13,
+        include_str!("../migrations/0013-saved-filter-library.sql"),
     ),
 ];
 
@@ -357,6 +363,50 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
+    /// Persist the full named-filter library JSON for a profile (no cell values).
+    pub fn put_saved_filter_library(
+        &self,
+        profile_id: ProfileId,
+        library_json: String,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::PutSavedFilterLibrary(profile_id, library_json, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn get_saved_filter_library(
+        &self,
+        profile_id: ProfileId,
+    ) -> Result<Option<SavedFilterLibraryRecord>, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::GetSavedFilterLibrary(profile_id, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn delete_saved_filter_library(
+        &self,
+        profile_id: ProfileId,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::DeleteSavedFilterLibrary(profile_id, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
     pub fn shutdown(mut self) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::Shutdown(sender))?;
@@ -466,6 +516,16 @@ enum Command {
         mpsc::SyncSender<Result<Option<ColumnLayoutRecord>, PersistenceError>>,
     ),
     DeleteColumnLayout(ColumnLayoutKey, mpsc::SyncSender<Result<(), PersistenceError>>),
+    PutSavedFilterLibrary(
+        ProfileId,
+        String,
+        mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
+    GetSavedFilterLibrary(
+        ProfileId,
+        mpsc::SyncSender<Result<Option<SavedFilterLibraryRecord>, PersistenceError>>,
+    ),
+    DeleteSavedFilterLibrary(ProfileId, mpsc::SyncSender<Result<(), PersistenceError>>),
     Shutdown(mpsc::SyncSender<Result<(), PersistenceError>>),
 }
 
@@ -719,6 +779,39 @@ fn worker_main(
                     tokio::time::timeout(
                         OPERATION_TIMEOUT,
                         column_layout_store::delete(&connection, &key),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::PutSavedFilterLibrary(profile_id, library_json, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        saved_filter_store::put(&connection, profile_id, &library_json),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::GetSavedFilterLibrary(profile_id, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        saved_filter_store::get(&connection, profile_id),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::DeleteSavedFilterLibrary(profile_id, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        saved_filter_store::delete(&connection, profile_id),
                     )
                     .await
                     .map_err(|_| PersistenceError::Timeout)?
