@@ -2544,6 +2544,34 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
         .unwrap();
     assert!(no_pk.is_empty());
 
+    // Structure + FK facts.
+    session
+        .execute_sql(
+            "CREATE TABLE mut_orders (
+                id int PRIMARY KEY,
+                user_id int REFERENCES mut_users(id),
+                total int NOT NULL DEFAULT 0
+             );",
+        )
+        .await
+        .unwrap();
+    let cols = session
+        .relation_column_facts("public", "mut_orders")
+        .await
+        .unwrap();
+    assert!(cols.iter().any(|(n, _, nn, _)| n == "total" && *nn));
+    let fks = session
+        .relation_foreign_keys("public", "mut_orders")
+        .await
+        .unwrap();
+    assert!(
+        fks.iter()
+            .any(|(local, fs, ft, fc)| local == "user_id"
+                && fs == "public"
+                && ft == "mut_users"
+                && fc == "id")
+    );
+
     // Session still usable.
     let health = session.health_check().await;
     assert!(health.is_ok());

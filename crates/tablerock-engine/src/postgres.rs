@@ -944,6 +944,91 @@ impl PostgresSession {
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
+    /// Foreign-key edges from a relation: (local_col, foreign_schema, foreign_table, foreign_col).
+    pub async fn relation_foreign_keys(
+        &self,
+        schema: &str,
+        table: &str,
+    ) -> Result<Vec<(String, String, String, String)>, PostgresError> {
+        if schema.is_empty() || table.is_empty() {
+            return Err(PostgresError::InvalidLimits);
+        }
+        // One row per single-column FK edge (multi-column FKs expand per position).
+        let rows = self
+            .client
+            .query(
+                "SELECT \
+                    la.attname::text AS local_col, \
+                    fn.nspname::text AS foreign_schema, \
+                    fc.relname::text AS foreign_table, \
+                    fa.attname::text AS foreign_col \
+                 FROM pg_catalog.pg_constraint con \
+                 JOIN pg_catalog.pg_class c ON c.oid = con.conrelid \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                 JOIN pg_catalog.pg_class fc ON fc.oid = con.confrelid \
+                 JOIN pg_catalog.pg_namespace fn ON fn.oid = fc.relnamespace \
+                 JOIN LATERAL unnest(con.conkey, con.confkey) \
+                   WITH ORDINALITY AS u(local_attnum, foreign_attnum, ord) ON true \
+                 JOIN pg_catalog.pg_attribute la \
+                   ON la.attrelid = c.oid AND la.attnum = u.local_attnum \
+                 JOIN pg_catalog.pg_attribute fa \
+                   ON fa.attrelid = fc.oid AND fa.attnum = u.foreign_attnum \
+                 WHERE con.contype = 'f' \
+                   AND n.nspname = $1 \
+                   AND c.relname = $2 \
+                 ORDER BY con.conname, u.ord",
+                &[&schema, &table],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.get(0), row.get(1), row.get(2), row.get(3)))
+            .collect())
+    }
+
+    /// Column structure facts: (name, type, not_null, default_expr).
+    pub async fn relation_column_facts(
+        &self,
+        schema: &str,
+        table: &str,
+    ) -> Result<Vec<(String, String, bool, Option<String>)>, PostgresError> {
+        if schema.is_empty() || table.is_empty() {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let rows = self
+            .client
+            .query(
+                "SELECT a.attname::text, \
+                        pg_catalog.format_type(a.atttypid, a.atttypmod), \
+                        a.attnotnull, \
+                        pg_catalog.pg_get_expr(d.adbin, d.adrelid) \
+                 FROM pg_catalog.pg_attribute a \
+                 JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                 LEFT JOIN pg_catalog.pg_attrdef d \
+                   ON d.adrelid = a.attrelid AND d.adnum = a.attnum \
+                 WHERE n.nspname = $1 \
+                   AND c.relname = $2 \
+                   AND a.attnum > 0 \
+                   AND NOT a.attisdropped \
+                 ORDER BY a.attnum",
+                &[&schema, &table],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let name: String = row.get(0);
+                let ty: String = row.get(1);
+                let not_null: bool = row.get(2);
+                let default: Option<String> = row.get(3);
+                (name, ty, not_null, default)
+            })
+            .collect())
+    }
+
     pub async fn describe_server(&self) -> Result<ServerDescribe, PostgresError> {
         let started = std::time::Instant::now();
         let row = self

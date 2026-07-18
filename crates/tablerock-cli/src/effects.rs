@@ -291,6 +291,54 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::LoadForeignKeys {
+                request_token,
+                session_id_hex,
+                context_revision,
+                schema,
+                table,
+                local_column,
+                cell_value,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = load_foreign_keys(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        schema,
+                        table,
+                        local_column,
+                        cell_value,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::LoadRelationStructure {
+                request_token,
+                session_id_hex,
+                context_revision,
+                schema,
+                table,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = load_relation_structure(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        schema,
+                        table,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::ExecuteSql {
                 request_token,
                 session_id_hex,
@@ -1921,6 +1969,282 @@ async fn apply_mutations(
             reason: FailureProjection::Label(error.to_string()),
         }),
     }
+}
+
+async fn load_foreign_keys(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    schema: String,
+    table: String,
+    local_column: String,
+    cell_value: String,
+) -> Message {
+    use tablerock_core::{
+        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
+    };
+    use tablerock_engine::{DriverPageRequest, FilterValue};
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ForeignKeysFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::ForeignKeysFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    if session.engine() != CoreEngine::PostgreSql {
+        return Message::Engine(tablerock_tui::EngineMsg::ForeignKeysFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("foreign keys only for PostgreSQL".into()),
+        });
+    }
+    let sql = "SELECT \
+        la.attname::text, \
+        fn.nspname::text, \
+        fc.relname::text, \
+        fa.attname::text \
+     FROM pg_catalog.pg_constraint con \
+     JOIN pg_catalog.pg_class c ON c.oid = con.conrelid \
+     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+     JOIN pg_catalog.pg_class fc ON fc.oid = con.confrelid \
+     JOIN pg_catalog.pg_namespace fn ON fn.oid = fc.relnamespace \
+     JOIN LATERAL unnest(con.conkey, con.confkey) \
+       WITH ORDINALITY AS u(local_attnum, foreign_attnum, ord) ON true \
+     JOIN pg_catalog.pg_attribute la \
+       ON la.attrelid = c.oid AND la.attnum = u.local_attnum \
+     JOIN pg_catalog.pg_attribute fa \
+       ON fa.attrelid = fc.oid AND fa.attnum = u.foreign_attnum \
+     WHERE con.contype = 'f' \
+       AND n.nspname = $1 \
+       AND c.relname = $2 \
+       AND la.attname = $3 \
+     ORDER BY con.conname, u.ord \
+     LIMIT 8";
+    let statement = match StatementText::new(sql) {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ForeignKeysFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let limits = PageLimits::new(8, 8, 64 * 1024, 4 * 1024);
+    let mut stream = match session
+        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+            statement,
+            parameters: vec![
+                FilterValue::Text(schema),
+                FilterValue::Text(table),
+                FilterValue::Text(local_column),
+            ],
+            limits,
+            max_cell_bytes: 4 * 1024,
+        })
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ForeignKeysFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let identity = PageIdentity::new(
+        ResultId::from_parts(IdParts::new(1, 9_002).unwrap()).unwrap(),
+        Revision::INITIAL,
+        CoreEngine::PostgreSql,
+    );
+    let page = match stream.next_page(identity, 0).await {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ForeignKeysFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("no foreign key on this column".into()),
+            });
+        }
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ForeignKeysFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    if page.envelope().row_count() == 0 {
+        return Message::Engine(tablerock_tui::EngineMsg::ForeignKeysFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("no foreign key on this column".into()),
+        });
+    }
+    // Columns: local, foreign_schema, foreign_table, foreign_col
+    let text_at = |row: u32, col: u32| -> String {
+        page.cell(row, col)
+            .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+            .unwrap_or_default()
+    };
+    Message::Engine(tablerock_tui::EngineMsg::ForeignKeyEdge {
+        request_token,
+        context_revision,
+        foreign_schema: text_at(0, 1),
+        foreign_table: text_at(0, 2),
+        foreign_column: text_at(0, 3),
+        filter_value: cell_value,
+    })
+}
+
+async fn load_relation_structure(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    schema: String,
+    table: String,
+) -> Message {
+    use tablerock_core::{
+        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
+    };
+    use tablerock_engine::{DriverPageRequest, FilterValue};
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RelationStructureFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::RelationStructureFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    let sql = "SELECT a.attname::text, \
+            pg_catalog.format_type(a.atttypid, a.atttypmod), \
+            CASE WHEN a.attnotnull THEN 'NOT NULL' ELSE 'NULL' END, \
+            COALESCE(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '') \
+     FROM pg_catalog.pg_attribute a \
+     JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
+     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+     LEFT JOIN pg_catalog.pg_attrdef d \
+       ON d.adrelid = a.attrelid AND d.adnum = a.attnum \
+     WHERE n.nspname = $1 \
+       AND c.relname = $2 \
+       AND a.attnum > 0 \
+       AND NOT a.attisdropped \
+     ORDER BY a.attnum \
+     LIMIT 256";
+    let statement = match StatementText::new(sql) {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RelationStructureFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let limits = PageLimits::new(256, 8, 256 * 1024, 8 * 1024);
+    let mut stream = match session
+        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+            statement,
+            parameters: vec![FilterValue::Text(schema.clone()), FilterValue::Text(table.clone())],
+            limits,
+            max_cell_bytes: 8 * 1024,
+        })
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RelationStructureFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let identity = PageIdentity::new(
+        ResultId::from_parts(IdParts::new(1, 9_003).unwrap()).unwrap(),
+        Revision::INITIAL,
+        CoreEngine::PostgreSql,
+    );
+    let page = match stream.next_page(identity, 0).await {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RelationStructureFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("relation has no columns".into()),
+            });
+        }
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RelationStructureFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let mut columns = Vec::new();
+    for row in 0..page.envelope().row_count() {
+        let name = page
+            .cell(row, 0)
+            .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+            .unwrap_or_default();
+        let ty = page
+            .cell(row, 1)
+            .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+            .unwrap_or_default();
+        let nulls = page
+            .cell(row, 2)
+            .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+            .unwrap_or_default();
+        let default = page
+            .cell(row, 3)
+            .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+            .unwrap_or_default();
+        if default.is_empty() {
+            columns.push(format!("{name} {ty} {nulls}"));
+        } else {
+            columns.push(format!("{name} {ty} {nulls} DEFAULT {default}"));
+        }
+    }
+    Message::Engine(tablerock_tui::EngineMsg::RelationStructure {
+        request_token,
+        context_revision,
+        schema,
+        table,
+        columns,
+    })
 }
 
 /// Load PRIMARY KEY column names via the driver page stream (bound params).

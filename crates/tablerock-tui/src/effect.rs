@@ -178,6 +178,26 @@ pub enum Effect {
         /// the payload builder.
         changes: Vec<MutationChangeSpec>,
     },
+    /// Load foreign-key edges for a base table (for FollowForeignKey).
+    LoadForeignKeys {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        schema: String,
+        table: String,
+        /// Column the operator is on; filter edges to this local column.
+        local_column: String,
+        /// Cell text used as the equality filter value on the foreign side.
+        cell_value: String,
+    },
+    /// Load column structure facts into the inspector.
+    LoadRelationStructure {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        schema: String,
+        table: String,
+    },
     /// Run a single SQL statement (first page) into the active tab grid.
     ExecuteSql {
         request_token: RequestToken,

@@ -751,6 +751,96 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::ForeignKeyEdge {
+            context_revision,
+            foreign_schema,
+            foreign_table,
+            foreign_column,
+            filter_value,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+                return Update::unchanged();
+            };
+            let title = format!("{foreign_table} · {foreign_column}={filter_value}");
+            model.workbench_mut().open_preview_tab(&title);
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.base_schema = Some(foreign_schema.clone());
+                grid.base_table = Some(foreign_table.clone());
+                grid.clear_server_controls();
+                grid.add_filter_chip(foreign_column, "eq", Some(filter_value));
+                grid.operation = GridOperationState::Running;
+            }
+            let token = model.mint_request_token();
+            Update {
+                render: true,
+                effect: Some(browse_table_effect(
+                    token,
+                    session_id_hex,
+                    context_revision,
+                    foreign_schema,
+                    foreign_table,
+                    model.workbench().active_grid(),
+                )),
+            }
+        }
+        Message::Engine(EngineMsg::ForeignKeysFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::RelationStructure {
+            context_revision,
+            schema,
+            table,
+            columns,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: format!("{schema}.{table} structure"),
+                kind_label: "structure".into(),
+                text: columns.join("\n"),
+                hex: String::new(),
+                byte_len: columns.iter().map(|c| c.len() as u64).sum(),
+                original_byte_len: None,
+                stale: false,
+            };
+            Update::render()
+        }
+        Message::Engine(EngineMsg::RelationStructureFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::GridFailed {
             context_revision,
             reason,
@@ -1514,6 +1604,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::ApplyMutations if model.screen() == Screen::Workbench => {
             apply_staged_mutations(model)
         }
+        ActionId::FollowForeignKey if model.screen() == Screen::Workbench => {
+            follow_foreign_key(model)
+        }
+        ActionId::ShowStructure if model.screen() == Screen::Workbench => show_structure(model),
         ActionId::SaveColumns if model.screen() == Screen::Workbench => {
             let profile_id_hex = model.workbench().profile_id_hex.clone();
             let database = model.workbench().context.database.clone();
@@ -1589,8 +1683,73 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::EditCell
         | ActionId::DeleteRow
         | ActionId::ApplyMutations
+        | ActionId::FollowForeignKey
+        | ActionId::ShowStructure
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
+    }
+}
+
+fn follow_foreign_key(model: &mut Model) -> Update {
+    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+        return Update::unchanged();
+    };
+    let context_revision = model.workbench().context_revision;
+    let (schema, table, local_column, cell_value) = {
+        let Some(grid) = model.workbench().active_grid() else {
+            return Update::unchanged();
+        };
+        let (schema, table) = match (grid.base_schema.clone(), grid.base_table.clone()) {
+            (Some(s), Some(t)) => (s, t),
+            _ => return Update::unchanged(),
+        };
+        if grid.columns.is_empty() {
+            return Update::unchanged();
+        }
+        let col_idx = grid.cursor_col.min(grid.columns.len().saturating_sub(1));
+        let local_column = grid.columns[col_idx].clone();
+        let cell_value = grid.cell_at(grid.cursor_row, col_idx).text;
+        (schema, table, local_column, cell_value)
+    };
+    let token = model.mint_request_token();
+    Update {
+        render: true,
+        effect: Some(Effect::LoadForeignKeys {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            schema,
+            table,
+            local_column,
+            cell_value,
+        }),
+    }
+}
+
+fn show_structure(model: &mut Model) -> Update {
+    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+        return Update::unchanged();
+    };
+    let context_revision = model.workbench().context_revision;
+    let (schema, table) = {
+        let Some(grid) = model.workbench().active_grid() else {
+            return Update::unchanged();
+        };
+        match (grid.base_schema.clone(), grid.base_table.clone()) {
+            (Some(s), Some(t)) => (s, t),
+            _ => return Update::unchanged(),
+        }
+    };
+    let token = model.mint_request_token();
+    Update {
+        render: true,
+        effect: Some(Effect::LoadRelationStructure {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            schema,
+            table,
+        }),
     }
 }
 
@@ -1872,6 +2031,8 @@ fn cycle_action(
                 ActionId::EditCell,
                 ActionId::DeleteRow,
                 ActionId::ApplyMutations,
+                ActionId::FollowForeignKey,
+                ActionId::ShowStructure,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,

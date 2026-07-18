@@ -118,6 +118,10 @@ pub enum ActionId {
     DeleteRow,
     /// Apply reviewed/staged mutations (typed plan rebuild from drafts).
     ApplyMutations,
+    /// Follow FK from cursor column → filtered browse of referenced table.
+    FollowForeignKey,
+    /// Load structure facts (columns/types) into the inspector.
+    ShowStructure,
     Submit,
     Cancel,
     Quit,

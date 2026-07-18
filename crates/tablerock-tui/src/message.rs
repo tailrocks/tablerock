@@ -261,6 +261,34 @@ pub enum EngineMsg {
         context_revision: u64,
         reason: FailureProjection,
     },
+    /// FK edge for follow-navigation: open filtered browse of foreign table.
+    ForeignKeyEdge {
+        request_token: u64,
+        context_revision: u64,
+        foreign_schema: String,
+        foreign_table: String,
+        foreign_column: String,
+        filter_value: String,
+    },
+    ForeignKeysFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
+    /// Column structure lines for the inspector panel.
+    RelationStructure {
+        request_token: u64,
+        context_revision: u64,
+        schema: String,
+        table: String,
+        /// (name, type, not_null, default) display lines.
+        columns: Vec<String>,
+    },
+    RelationStructureFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

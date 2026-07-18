@@ -277,6 +277,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let edit_cell = action_label(model, ActionId::EditCell, "Edit");
     let delete_row = action_label(model, ActionId::DeleteRow, "DelRow");
     let apply_mut = action_label(model, ActionId::ApplyMutations, "Apply");
+    let follow_fk = action_label(model, ActionId::FollowForeignKey, "FollowFK");
+    let structure = action_label(model, ActionId::ShowStructure, "Structure");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
@@ -452,6 +454,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ApplyMutations,
                         label: apply_mut.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FollowForeignKey,
+                        label: follow_fk.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ShowStructure,
+                        label: structure.as_str(),
                         enabled: true,
                         style: None,
                     },
