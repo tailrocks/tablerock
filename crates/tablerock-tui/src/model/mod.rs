@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod completion;
 pub mod editor;
 pub mod grid;
+pub mod history;
 pub mod inspector;
 pub mod profiles;
 pub mod query_editor;
@@ -67,6 +68,10 @@ pub enum ActionId {
     Inspect,
     /// Open or commit SQL completion for the active editor.
     Complete,
+    /// Open/refresh query history panel.
+    History,
+    /// Restore selected history entry into the active SQL editor.
+    RestoreHistory,
     Submit,
     Cancel,
     Quit,

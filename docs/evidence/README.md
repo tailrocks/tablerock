@@ -185,6 +185,7 @@ How to read an evidence document:
 - 218 — [QueryEditorModel multiline SQL tab](delivery/218-query-editor-model-multiline.md)
 - 219 — [SQL completion session](delivery/219-sql-completion-session.md)
 - 220 — [Query history persistence](delivery/220-query-history-persistence.md)
+- 221 — [Query history TUI panel](delivery/221-query-history-tui-panel.md)
 
 ## TermRock pins
 

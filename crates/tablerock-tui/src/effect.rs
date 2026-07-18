@@ -167,6 +167,23 @@ pub enum Effect {
         result_token: RequestToken,
         start_row: u64,
     },
+    /// List/search bounded query history (newest first).
+    LoadHistory {
+        request_token: RequestToken,
+        search: Option<String>,
+        limit: u32,
+    },
+    /// Append one executed statement to history (retention-aware).
+    AppendHistory {
+        request_token: RequestToken,
+        engine_label: String,
+        database: String,
+        schema: Option<String>,
+        statement: String,
+        outcome: String,
+        /// "full" | "metadata" | "private"
+        retention: String,
+    },
 }
 
 /// Helper: build a root LoadCatalog effect for the current workbench session.

@@ -3,6 +3,7 @@
 use super::catalog::CatalogModel;
 use super::completion::CompletionSession;
 use super::grid::DataGridModel;
+use super::history::HistoryPanel;
 use super::inspector::InspectorModel;
 use super::query_editor::QueryEditorModel;
 use tablerock_core::SqlDialect;
@@ -100,6 +101,9 @@ pub struct WorkbenchModel {
     pub inspector: InspectorModel,
     /// Open completion popup for the active SQL editor, if any.
     pub completion: Option<CompletionSession>,
+    pub history: HistoryPanel,
+    /// History retention policy projection: "full" | "metadata" | "private".
+    pub history_retention: String,
 }
 
 impl Default for WorkbenchModel {
@@ -137,6 +141,8 @@ impl Default for WorkbenchModel {
             engine_kind: "PostgreSQL".into(),
             inspector: InspectorModel::default(),
             completion: None,
+            history: HistoryPanel::Closed,
+            history_retention: "full".into(),
         }
     }
 }

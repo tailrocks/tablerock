@@ -428,10 +428,10 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::GridStreamComplete {
+            request_token,
             context_revision,
             rows_loaded,
             truncated,
-            ..
         }) => {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
@@ -447,8 +447,74 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
                 tab.running = false;
             }
+            // Best-effort history append for the SQL that just completed.
+            let statement = model
+                .workbench()
+                .active_editor()
+                .and_then(|ed| ed.run_text())
+                .unwrap_or_default();
+            if statement.trim().is_empty() {
+                return Update::render();
+            }
+            let engine_label = model.workbench().engine_kind.clone();
+            let database = model.workbench().context.database.clone();
+            let schema = model.workbench().context.schema.clone();
+            let retention = model.workbench().history_retention.clone();
+            Update {
+                render: true,
+                effect: Some(Effect::AppendHistory {
+                    request_token,
+                    engine_label,
+                    database,
+                    schema,
+                    statement,
+                    outcome: "completed".into(),
+                    retention,
+                }),
+            }
+        }
+        Message::Engine(EngineMsg::HistoryLoaded {
+            request_token,
+            entries,
+        }) => {
+            let loading = matches!(
+                model.workbench().history,
+                crate::model::history::HistoryPanel::Loading { request_token: t }
+                    if t == request_token
+            );
+            if !loading {
+                return Update::unchanged();
+            }
+            model.workbench_mut().history = crate::model::history::HistoryPanel::Open {
+                request_token,
+                entries,
+                selected: 0,
+                search: String::new(),
+            };
             Update::render()
         }
+        Message::Engine(EngineMsg::HistoryFailed {
+            request_token,
+            reason,
+        }) => {
+            let loading = matches!(
+                model.workbench().history,
+                crate::model::history::HistoryPanel::Loading { request_token: t }
+                    if t == request_token
+            );
+            if !loading {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            model.workbench_mut().history = crate::model::history::HistoryPanel::Failed {
+                request_token,
+                reason: label,
+            };
+            Update::render()
+        }
+        Message::Engine(EngineMsg::HistoryAppended { .. }) => Update::unchanged(),
         Message::Engine(EngineMsg::GridFailed {
             context_revision,
             reason,
@@ -871,6 +937,47 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::render()
         }
+        ActionId::History if model.screen() == Screen::Workbench => {
+            if model.workbench().history.is_open() {
+                model.workbench_mut().history = crate::model::history::HistoryPanel::Closed;
+                return Update::render();
+            }
+            let token = model.mint_request_token();
+            model.workbench_mut().history =
+                crate::model::history::HistoryPanel::Loading { request_token: token };
+            Update {
+                render: true,
+                effect: Some(Effect::LoadHistory {
+                    request_token: token,
+                    search: None,
+                    limit: 50,
+                }),
+            }
+        }
+        ActionId::RestoreHistory if model.screen() == Screen::Workbench => {
+            let text = model
+                .workbench()
+                .history
+                .selected_entry()
+                .map(|e| e.statement_preview.clone())
+                .filter(|s| !s.is_empty() && s != "(no text)");
+            let Some(text) = text else {
+                return Update::unchanged();
+            };
+            // Ensure a SQL tab exists, then restore text without auto-executing.
+            if model.workbench().active_editor().is_none() {
+                model.workbench_mut().open_sql_tab();
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(editor) = model.workbench_mut().active_editor_mut() {
+                editor.set_text(text);
+            }
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.dirty = true;
+            }
+            model.workbench_mut().history = crate::model::history::HistoryPanel::Closed;
+            Update::render()
+        }
         ActionId::Cancel if model.screen() == Screen::Workbench && model.workbench().completion.is_some() =>
         {
             model.workbench_mut().dismiss_completion();
@@ -890,6 +997,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CancelQuery
         | ActionId::Inspect
         | ActionId::Complete
+        | ActionId::History
+        | ActionId::RestoreHistory
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -968,6 +1077,8 @@ fn cycle_action(
                 ActionId::NewSql,
                 ActionId::RunSql,
                 ActionId::Complete,
+                ActionId::History,
+                ActionId::RestoreHistory,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,
@@ -1719,6 +1830,56 @@ mod tests {
         let grid = model.workbench().active_grid().unwrap();
         assert_eq!(grid.operation, GridOperationState::Completed);
         assert_eq!(grid.rows_loaded, 2500);
+    }
+
+    #[test]
+    fn history_load_and_restore_into_editor_without_auto_run() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::History);
+        let load = update(&mut model, Message::Activate);
+        assert!(matches!(
+            load.effects().next(),
+            Some(Effect::LoadHistory {
+                limit: 50,
+                search: None,
+                ..
+            })
+        ));
+        let token = match &model.workbench().history {
+            crate::model::history::HistoryPanel::Loading { request_token } => *request_token,
+            other => panic!("expected loading, got {other:?}"),
+        };
+        let filled = update(
+            &mut model,
+            Message::Engine(EngineMsg::HistoryLoaded {
+                request_token: token,
+                entries: vec![crate::model::history::HistoryRowProjection {
+                    history_id: 1,
+                    engine_label: "PostgreSQL".into(),
+                    database: "postgres".into(),
+                    schema: Some("public".into()),
+                    statement_preview: "SELECT 42".into(),
+                    outcome: "completed".into(),
+                    created_at: "now".into(),
+                }],
+            }),
+        );
+        assert!(filled.needs_render());
+        model.set_action(ActionId::RestoreHistory);
+        let restore = update(&mut model, Message::Activate);
+        assert!(restore.effects().next().is_none(), "restore must not auto-execute");
+        let editor = model.workbench().active_editor().expect("sql tab");
+        assert_eq!(editor.text(), "SELECT 42");
+        assert!(!model.workbench().history.is_open());
     }
 
     #[test]

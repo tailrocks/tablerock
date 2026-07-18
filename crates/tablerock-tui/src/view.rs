@@ -264,6 +264,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let new_sql = action_label(model, ActionId::NewSql, "SQL");
     let run_sql = action_label(model, ActionId::RunSql, "Run");
     let complete = action_label(model, ActionId::Complete, "Complete");
+    let history = action_label(model, ActionId::History, "History");
+    let restore_hist = action_label(model, ActionId::RestoreHistory, "Restore");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
@@ -361,6 +363,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::Complete,
                         label: complete.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::History,
+                        label: history.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RestoreHistory,
+                        label: restore_hist.as_str(),
                         enabled: true,
                         style: None,
                     },
@@ -871,7 +885,7 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _status: Option<&str>) {
-    use ratatui_core::widgets::{StatefulWidget, Widget};
+    use ratatui_core::widgets::Widget;
     let wb = model.workbench();
     let mut y = area.y;
     let max_y = area.y.saturating_add(area.height);
@@ -891,10 +905,12 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
         .active_editor()
         .map(|ed| ed.status_line())
         .unwrap_or_default();
+    let history_status = wb.history.status_line();
     let header = [
         wb.context.line(),
         tab_line,
         editor_status,
+        history_status,
         wb.active_grid()
             .map(|g| g.status_line())
             .unwrap_or_else(|| wb.status.summary()),

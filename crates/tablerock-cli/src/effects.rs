@@ -308,7 +308,169 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::LoadHistory {
+                request_token,
+                search,
+                limit,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = load_history(persistence, request_token, search, limit).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::AppendHistory {
+                request_token,
+                engine_label,
+                database,
+                schema,
+                statement,
+                outcome,
+                retention,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = append_history(
+                        persistence,
+                        request_token,
+                        engine_label,
+                        database,
+                        schema,
+                        statement,
+                        outcome,
+                        retention,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
         }
+    }
+}
+
+async fn load_history(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    search: Option<String>,
+    limit: u32,
+) -> Message {
+    use tablerock_persistence::HistoryEntry;
+    let joined = tokio::task::spawn_blocking(move || {
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .list_history(search, limit)
+            .map_err(|error| error.to_string())
+    })
+    .await;
+    match joined {
+        Ok(Ok(entries)) => Message::Engine(tablerock_tui::EngineMsg::HistoryLoaded {
+            request_token,
+            entries: entries.into_iter().map(history_row).collect(),
+        }),
+        Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::HistoryFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::HistoryFailed {
+            request_token,
+            reason: FailureProjection::Label("history task failed".into()),
+        }),
+    }
+}
+
+async fn append_history(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    engine_label: String,
+    database: String,
+    schema: Option<String>,
+    statement: String,
+    outcome: String,
+    retention: String,
+) -> Message {
+    use tablerock_core::Engine;
+    use tablerock_persistence::{HistoryAppend, HistoryOutcomeClass, HistoryRetention};
+    let engine = match engine_label.as_str() {
+        "ClickHouse" => Engine::ClickHouse,
+        "Redis" => Engine::Redis,
+        _ => Engine::PostgreSql,
+    };
+    let outcome = match outcome.as_str() {
+        "cancelled" => HistoryOutcomeClass::Cancelled,
+        "failed" => HistoryOutcomeClass::Failed,
+        "disconnected" => HistoryOutcomeClass::Disconnected,
+        "completed" => HistoryOutcomeClass::Completed,
+        _ => HistoryOutcomeClass::Unknown,
+    };
+    let retention = match retention.as_str() {
+        "metadata" => HistoryRetention::MetadataOnly,
+        "private" => HistoryRetention::Private,
+        _ => HistoryRetention::Full,
+    };
+    let joined = tokio::task::spawn_blocking(move || {
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .append_history(HistoryAppend {
+                engine,
+                database_name: database,
+                schema_name: schema,
+                statement_text: statement,
+                outcome,
+                retention,
+            })
+            .map_err(|error| error.to_string())
+    })
+    .await;
+    match joined {
+        Ok(Ok(history_id)) => Message::Engine(tablerock_tui::EngineMsg::HistoryAppended {
+            request_token,
+            history_id,
+        }),
+        Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::HistoryFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::HistoryFailed {
+            request_token,
+            reason: FailureProjection::Label("history append task failed".into()),
+        }),
+    }
+}
+
+fn history_row(
+    entry: tablerock_persistence::HistoryEntry,
+) -> tablerock_tui::HistoryRowProjection {
+    use tablerock_core::Engine;
+    let engine_label = match entry.engine {
+        Engine::PostgreSql => "PostgreSQL",
+        Engine::ClickHouse => "ClickHouse",
+        Engine::Redis => "Redis",
+    }
+    .to_owned();
+    let preview = entry
+        .statement_text
+        .as_deref()
+        .map(|s| {
+            let one_line: String = s.chars().take(120).collect();
+            one_line
+        })
+        .unwrap_or_else(|| "(no text)".into());
+    tablerock_tui::HistoryRowProjection {
+        history_id: entry.history_id,
+        engine_label,
+        database: entry.database_name,
+        schema: entry.schema_name,
+        statement_preview: preview,
+        outcome: entry.outcome.as_str().to_owned(),
+        created_at: entry.created_at,
     }
 }
 

@@ -172,6 +172,18 @@ pub enum EngineMsg {
         rows_loaded: u64,
         truncated: bool,
     },
+    HistoryLoaded {
+        request_token: u64,
+        entries: Vec<crate::model::history::HistoryRowProjection>,
+    },
+    HistoryFailed {
+        request_token: u64,
+        reason: FailureProjection,
+    },
+    HistoryAppended {
+        request_token: u64,
+        history_id: Option<i64>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

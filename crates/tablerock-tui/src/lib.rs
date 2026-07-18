@@ -21,6 +21,7 @@ pub use model::grid::{
     distinction_from_kind_label,
 };
 pub use model::completion::{CompletionCandidateView, CompletionSession, StaleCompletion};
+pub use model::history::{HistoryPanel, HistoryRowProjection};
 pub use model::query_editor::{QueryEditorModel, StatementSpanView};
 pub use model::{
     ActionId, FocusRegion, LayoutMode, Model, PasswordPrompt, Screen, ScrollDirection,
