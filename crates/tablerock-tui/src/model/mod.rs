@@ -124,6 +124,8 @@ pub enum ActionId {
     CopyRowSqlUpdate,
     /// Format picker: paste `scope format` (row|loaded + csv|tsv|json|md|insert|update).
     CopyPick,
+    /// Copy visible column names (tab-separated) to clipboard.
+    CopyColumnNames,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Append cursor column as secondary sort (or cycle its direction in place).

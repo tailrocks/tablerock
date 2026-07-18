@@ -3484,6 +3484,27 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::CopyColumnNames if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let names = grid.visible_columns();
+            if names.is_empty() {
+                return Update::unchanged();
+            }
+            let text = names.join("\t");
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied {} column names", names.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -4734,6 +4755,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyRowSqlInsert
         | ActionId::CopyRowSqlUpdate
         | ActionId::CopyPick
+        | ActionId::CopyColumnNames
         | ActionId::CycleSort
         | ActionId::PushSort
         | ActionId::PopSort
@@ -6324,6 +6346,7 @@ fn cycle_action(
                 ActionId::CopyRowSqlInsert,
                 ActionId::CopyRowSqlUpdate,
                 ActionId::CopyPick,
+                ActionId::CopyColumnNames,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,
@@ -7885,6 +7908,32 @@ mod tests {
             Some("notice: NOTICE: table-rock-notice")
         );
         assert_eq!(grid.notice_history.as_slice(), ["NOTICE: table-rock-notice"]);
+    }
+
+    #[test]
+    fn copy_column_names_emits_tsv_headers() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into(), "age".into()];
+            grid.cursor_col = 0;
+            assert!(grid.solo_cursor_column()); // only id visible
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyColumnNames);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "id"),
+            other => panic!("expected CopyToClipboard, got {other:?}"),
+        }
     }
 
     #[test]

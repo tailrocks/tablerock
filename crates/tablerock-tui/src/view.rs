@@ -675,6 +675,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_row_ins = action_label(model, ActionId::CopyRowSqlInsert, "RowIns");
     let copy_row_upd = action_label(model, ActionId::CopyRowSqlUpdate, "RowUpd");
     let copy_pick = action_label(model, ActionId::CopyPick, "CopyPick");
+    let copy_cols = action_label(model, ActionId::CopyColumnNames, "CopyCols");
     let toggle_bool = action_label(model, ActionId::ToggleBool, "TogBool");
     let set_null = action_label(model, ActionId::SetNull, "SetNull");
     let set_today = action_label(model, ActionId::SetToday, "Today");
@@ -1224,6 +1225,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyPick,
                         label: copy_pick.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyColumnNames,
+                        label: copy_cols.as_str(),
                         enabled: true,
                         style: None,
                     },
