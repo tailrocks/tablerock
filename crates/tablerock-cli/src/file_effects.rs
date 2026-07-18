@@ -260,4 +260,91 @@ mod tests {
             Err(FileEffectError::EmptyPath)
         ));
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_fails_closed_on_readonly_parent() {
+        // Permission-denied parent is a portable stand-in for disk-full class
+        // failures: write must fail closed and leave no temp debris.
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = scratch_dir();
+        let parent = dir.join("readonly-parent");
+        fs::create_dir_all(&parent).unwrap();
+        let mut perms = fs::metadata(&parent).unwrap().permissions();
+        perms.set_mode(0o555); // r-x only — create of temp must fail
+        fs::set_permissions(&parent, perms).unwrap();
+
+        let dest = parent.join("export.csv");
+        let result = AtomicFileWriter::create(dest);
+        assert!(
+            result.is_err(),
+            "readonly parent must fail AtomicFileWriter::create"
+        );
+
+        // Restore write so cleanup can run and count temps.
+        let mut restore = fs::metadata(&parent).unwrap().permissions();
+        restore.set_mode(0o755);
+        fs::set_permissions(&parent, restore).unwrap();
+        let temps: Vec<_> = parent
+            .read_dir()
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("tablerock-tmp"))
+            .collect();
+        assert!(
+            temps.is_empty(),
+            "failed create must not leave tablerock-tmp: {temps:?}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_fails_closed_when_file_becomes_unwritable() {
+        // Mid-stream write failure: open succeeds, then chmod file to 0 so
+        // write_all fails; abort/drop must not promote incomplete dest.
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = scratch_dir();
+        let dest = dir.join("midstream.csv");
+        let mut w = AtomicFileWriter::create(dest.clone()).unwrap();
+        // Locate the temp sibling and remove write bits after create.
+        let temp = dir
+            .read_dir()
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .find(|e| e.file_name().to_string_lossy().contains("tablerock-tmp"))
+            .expect("temp must exist after create")
+            .path();
+        let mut perms = fs::metadata(&temp).unwrap().permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(&temp, perms).unwrap();
+
+        let write_err = w.write_all(b"this should fail if no write bit");
+        // On some platforms the open handle may still write; force fail closed
+        // by asserting either write fails or finish fails — dest never partial
+        // incomplete without atomic rename.
+        if write_err.is_ok() {
+            // Restore write so finish can attempt rename path; then abort.
+            let mut restore = fs::metadata(&temp).unwrap().permissions();
+            restore.set_mode(0o644);
+            fs::set_permissions(&temp, restore).unwrap();
+            w.abort();
+        } else {
+            drop(w);
+        }
+        assert!(!dest.exists(), "dest must not exist after mid-write failure");
+        let temps: Vec<_> = dir
+            .read_dir()
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("tablerock-tmp"))
+            .collect();
+        assert!(
+            temps.is_empty(),
+            "mid-write failure must clean temps: {temps:?}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

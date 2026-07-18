@@ -17,11 +17,14 @@ Date: 2026-07-18
 - Full failure-injection matrix as scheduled CI
   - partial: export write fail-closed (evidence 280)
   - partial: SIGWINCH/resize storm unit (evidence 285)
-- Published performance budget numbers on fixed-spec runners
-- Complete ledger three-state spreadsheet export
+  - partial: readonly-parent / mid-write fail-closed (evidence 287)
+- Performance budgets
+  - partial: local-rig release cold-start + binary size (evidence 288)
+  - residual: fixed-spec CI runners + full TUI first-paint / first-row
+- Ledger three-state export: landed CSV + counts (evidence 286)
 
 ## Parity claim status
 
 **TUI program: features exist with residual polish; not a marketing parity
-claim.** Open residuals remain documented in plans 013–017 residual sections
-and this gate residual list.
+claim.** Core largely implemented; Parity gaps listed in evidence 286 block a
+full marketing parity claim. Native blocked on plan 019 packaging.

@@ -133,4 +133,37 @@ mod tests {
         assert!(external_change_detected(&facts));
         let _ = fs::remove_file(&path);
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_fails_closed_on_readonly_parent() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let parent = tmp("readonly-sql-parent");
+        let _ = fs::remove_dir_all(&parent);
+        fs::create_dir_all(&parent).unwrap();
+        let path = parent.join("query.sql");
+        let mut perms = fs::metadata(&parent).unwrap().permissions();
+        perms.set_mode(0o555);
+        fs::set_permissions(&parent, perms).unwrap();
+
+        let result = write_sql_file_atomic(&path, "SELECT 1;\n");
+        assert!(result.is_err(), "readonly parent must fail atomic SQL write");
+
+        let mut restore = fs::metadata(&parent).unwrap().permissions();
+        restore.set_mode(0o755);
+        fs::set_permissions(&parent, restore).unwrap();
+        let temps: Vec<_> = parent
+            .read_dir()
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(
+            temps.is_empty(),
+            "failed SQL write must not leave temps: {temps:?}"
+        );
+        assert!(!path.exists());
+        let _ = fs::remove_dir_all(&parent);
+    }
 }

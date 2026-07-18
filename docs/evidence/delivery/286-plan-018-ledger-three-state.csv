@@ -1,0 +1,65 @@
+section,capability,sequencing,three_state,notes,evidence
+Connection,Connection list,Core,implemented,list/search/empty/loading/fail states,plans 004-006
+Connection,Create/edit/duplicate/remove,Core,implemented,form + persistence CAS,plans 004-006
+Connection,Engine chooser,Core,implemented,PG/CH/Redis only,plan 006
+Connection,URL import,Parity,gap,blocks Parity claim until parser fixtures land,
+Connection,External URL open,Later,gap,deliberately deferred,
+Connection,Test connection,Core,implemented,describe + startup summary,plans 006/017
+Connection,Temporary connection,Core,implemented,no durable profile/secret,plan 006
+Connection,Profile organization,Parity,implemented,groups/tags/favorites/filters,plans 004-006
+Connection,Environment tag,Core,implemented,list/editor/context projection,plan 004
+Connection,Context switcher,Core,implemented,engine-correct DB/schema,plan 007
+Connection,Health and reconnect,Core,implemented,backoff + auth stop,plan 007
+Connection,Startup actions,Later,implemented,ReadOnly auto-run + Write/Danger review,evidence 270-274 282
+Connection,SSH transport,Core,implemented,russh bastion matrix,evidence 260-269
+Connection,Cloud-provider proxy/identity,Excluded,excluded,product boundary,
+Workbench,Lazy catalog,Core,implemented,PG/CH/Redis subtree + filter,plans 003 007
+Workbench,Object tabs,Core,implemented,preview/pin/independent state,plan 007
+Workbench,Query/command tabs,Core,implemented,editor + run + history,plan 011
+Workbench,Result tabs,Parity,gap,multi-statement result tabs partial,
+Workbench,Responsive layout,Core,implemented,wide/medium/narrow shells,plan 007
+Workbench,Quick switcher,Parity,gap,blocks Parity claim,
+Workbench,Favorites and saved queries,Parity,implemented,named queries persistence,plan 011
+Workbench,Session restoration,Core,implemented,intent only never results,plan 007
+Workbench,Multi-window,Native,gap,blocked on plan 019-020 packaging,
+Editor,Multiline editing,Core,implemented,TermRock TextArea,plans 010-011
+Editor,Syntax projection,Core,implemented,statement spans core,plan 011
+Editor,Statement selection,Core,implemented,statement_at,plan 011
+Editor,Revisioned completion,Core,implemented,CompletionMenu,plans 010-011
+Editor,Query parameters,Parity,gap,blocks full Parity,
+Editor,Find/replace,Parity,gap,deferred by plan 011 residual,
+Editor,Formatting,Parity,gap,deferred by plan 011 residual,
+Editor,Query limits,Core,implemented,PageLimits + result store,plans 002 009
+Editor,Explain,Parity,gap,blocks Parity claim,
+Editor,Vim mode,Later,implemented,keymap layer off by default,plan 017
+Editor,SQL files,Parity,implemented,atomic open/save/external change,plan 011
+Editor,Query history,Core,implemented,bounded searchable history,plan 011
+Grid,Virtualized grid,Core,implemented,VirtualGrid + DataGridModel,plans 008 009 012
+Grid,Typed display,Core,implemented,distinction classes,evidence 211
+Grid,Column controls,Parity,implemented,toggle/reset/persist layout,plan 012
+Grid,Sorting,Core,implemented,BrowsePlan CycleSort,plan 012
+Grid,Filtering,Core,implemented,filters + raw WHERE,plan 012
+Grid,Selection/copy,Parity,implemented,six formats + OSC52,plan 012
+Grid,Paging,Core,implemented,FetchPage + ResultStore,evidence 214
+Grid,Row/value inspector,Core,implemented,text/hex/stale,plan 009
+Grid,Type-specific editors,Parity,gap,paste heuristics only,
+Grid,Stable editability,Core,implemented,EditabilityFacts + PK,plan 013
+Grid,Staged changes,Core,implemented,drafts undo discard,plan 013
+Grid,Operation preview,Core,implemented,typed plan review,plan 013
+Grid,Conflict handling,Core,implemented,PG rollback + keep staged,plan 013
+Grid,Foreign-key navigation,Parity,implemented,FollowForeignKey,evidence 231
+Schema,Structure inspection,Core,implemented,columns + structure DDL targets,evidence 231 283
+Schema,Structure editing,Later,implemented,reviewed DDL add/drop col/idx/con,evidence 276-278 283
+Schema,Table operations,Parity,implemented,truncate/drop/rename gates,plan 013
+Schema,Import,Parity,implemented,CSV import mutation path,plan 016
+Schema,Export,Parity,implemented,atomic + stream export fail-closed,plan 016 evidence 280
+Schema,Backup/restore,Later,implemented,pg_dump/pg_restore real matrix,evidence 275 284
+Schema,ER relationships,Later,implemented,graph contract + cycle detection,plan 017
+Schema,Server dashboard,Parity,implemented,activity cancel/terminate,plan 013
+Schema,Users and roles,Later,implemented,list + effective membership TUI,evidence 277-281
+Boundary,Other databases,Excluded,excluded,fixed decision,
+Boundary,Driver plugins,Excluded,excluded,fixed decision,
+Boundary,Copied reference UI,Excluded,excluded,clean-room,
+Boundary,iOS/iPadOS,Excluded,excluded,fixed decision,
+Boundary,Commerce/AI/MCP,Excluded,excluded,fixed decision,
+Boundary,Cloud identity proxies,Excluded,excluded,fixed decision,
