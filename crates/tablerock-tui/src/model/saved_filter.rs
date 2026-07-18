@@ -362,4 +362,45 @@ mod tests {
         assert!(!should_auto_reconnect("manual"));
         assert!(should_auto_reconnect("BoundedAutomatic"));
     }
+
+    fn preset(name: &str, schema: &str, table: &str, raw: Option<&str>) -> SavedFilterPreset {
+        SavedFilterPreset {
+            name: name.into(),
+            schema: schema.into(),
+            table: table.into(),
+            filters: Vec::new(),
+            raw_where: raw.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn upsert_replaces_same_triple_and_get_retrieves() {
+        let mut lib = SavedFilterLibrary::default();
+        lib.upsert(preset("active", "public", "users", None));
+        assert_eq!(lib.presets.len(), 1);
+        assert!(lib.get("active", "public", "users").is_some());
+        // Mismatch on any of name/schema/table misses.
+        assert!(lib.get("active", "public", "orders").is_none());
+        assert!(lib.get("active", "analytics", "users").is_none());
+        assert!(lib.get("missing", "public", "users").is_none());
+
+        // Same (name, schema, table) replaces instead of appending.
+        lib.upsert(preset("active", "public", "users", Some("id > 10")));
+        assert_eq!(lib.presets.len(), 1);
+        assert_eq!(
+            lib.get("active", "public", "users")
+                .unwrap()
+                .raw_where
+                .as_deref(),
+            Some("id > 10")
+        );
+
+        // A different name under the same table creates a new entry.
+        lib.upsert(preset("inactive", "public", "users", None));
+        assert_eq!(lib.presets.len(), 2);
+        assert_eq!(
+            lib.names_for_table("public", "users"),
+            vec!["active".to_owned(), "inactive".to_owned()]
+        );
+    }
 }
