@@ -7,6 +7,7 @@ use crate::{
     model::{
         ConfirmDialog, PasswordPrompt, SessionFacts,
         profiles::{FailureProjection, ProfileListState},
+        workbench::WorkbenchModel,
     },
 };
 
@@ -274,12 +275,18 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             ..
         }) => {
             model.set_session(Some(SessionFacts {
-                session_id_hex,
-                identity,
+                session_id_hex: session_id_hex.clone(),
+                identity: identity.clone(),
                 temporary,
-                engine_label,
+                engine_label: engine_label.clone(),
                 status: Some("connected".into()),
             }));
+            model.set_workbench(WorkbenchModel::from_session(
+                if temporary { "temporary" } else { "profile" },
+                engine_label,
+                temporary,
+                identity,
+            ));
             model.set_screen(Screen::Workbench);
             model.set_action(ActionId::Disconnect);
             Update::render()
@@ -948,6 +955,7 @@ mod tests {
         );
         assert_eq!(model.screen(), Screen::Workbench);
         assert!(model.session().is_some());
+        assert!(model.workbench().context.line().contains("PostgreSQL"));
         assert_eq!(model.selected_action(), ActionId::Disconnect);
 
         let _ = update(

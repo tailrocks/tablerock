@@ -23,7 +23,7 @@ plan).
 | 004 | Profile domain gaps + secret resolution (env tag, groups, search, prompt/plaintext) | P1 | M | 001 | DONE |
 | 005 | TUI effect executor + engine bridge + submodel architecture | P1 | L | 002, 004 | DONE |
 | 006 | Connection experience screens (Phase 3 exit) | P1 | L | 002, 004, 005 | DONE |
-| 007 | Workbench shell + session/context lifecycle | P1 | M | 003, 006 | TODO |
+| 007 | Workbench shell + session/context lifecycle | P1 | M | 003, 006 | IN PROGRESS |
 | 008 | TermRock T2: `VirtualGrid` (upstream) | P1 | M | — (parallel) | DONE |
 | 009 | PostgreSQL read-only vertical slice (Phase 4 exit) | P1 | L | 002, 003, 007, 008 | TODO |
 | 010 | TermRock T3: `TextArea` audit + `CompletionMenu` (upstream) | P1 | M | 008 (workflow precedent) | TODO |

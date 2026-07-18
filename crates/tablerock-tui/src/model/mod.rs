@@ -2,6 +2,7 @@
 
 pub mod editor;
 pub mod profiles;
+pub mod workbench;
 
 use termrock::{
     Theme,
@@ -13,6 +14,7 @@ use termrock::{
 use crate::{ShellGeometry, ShellKeyAction, default_keymap, effect::RequestToken};
 use editor::ConnectionFormModel;
 use profiles::ProfileListState;
+use workbench::WorkbenchModel;
 
 pub const MINIMUM_WIDTH: u16 = 40;
 pub const MINIMUM_HEIGHT: u16 = 10;
@@ -156,6 +158,7 @@ pub struct Model {
     profiles: ProfileListState,
     editor: ConnectionFormModel,
     session: Option<SessionFacts>,
+    workbench: WorkbenchModel,
     password_prompt: Option<PasswordPrompt>,
     confirm: Option<ConfirmDialog>,
     bootstrapped: bool,
@@ -179,6 +182,7 @@ impl Default for Model {
             profiles: ProfileListState::default(),
             editor: ConnectionFormModel::default(),
             session: None,
+            workbench: WorkbenchModel::default(),
             password_prompt: None,
             confirm: None,
             bootstrapped: false,
@@ -368,6 +372,19 @@ impl Model {
 
     pub(crate) fn set_session(&mut self, session: Option<SessionFacts>) {
         self.session = session;
+    }
+
+    #[must_use]
+    pub const fn workbench(&self) -> &WorkbenchModel {
+        &self.workbench
+    }
+
+    pub(crate) fn workbench_mut(&mut self) -> &mut WorkbenchModel {
+        &mut self.workbench
+    }
+
+    pub(crate) fn set_workbench(&mut self, workbench: WorkbenchModel) {
+        self.workbench = workbench;
     }
 
     #[must_use]

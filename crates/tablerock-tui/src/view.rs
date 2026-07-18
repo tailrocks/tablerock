@@ -435,21 +435,12 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
     let focused_title = focused.then(|| format!("> {title}"));
     let body = if title == "Workspace" || title.ends_with("Workspace") {
         if model.screen() == crate::Screen::Workbench {
-            model.session().map(|session| {
-                format!(
-                    "{} · {}{}",
-                    session.engine_label,
-                    session.identity,
-                    if session.temporary {
-                        " · temporary"
-                    } else {
-                        ""
-                    }
-                )
-            })
+            Some(model.workbench().context.line())
         } else {
             Some(model.profiles().status_line())
         }
+    } else if title == "Catalog" && model.screen() == crate::Screen::Workbench {
+        Some(model.workbench().catalog_status.clone())
     } else {
         None
     };
@@ -732,43 +723,32 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
     frame.render_stateful_widget(&Form::new(&sections, &model.theme), form_area, &mut state);
 }
 
-fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, status: Option<&str>) {
+fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _status: Option<&str>) {
     use ratatui_core::widgets::Widget;
+    let wb = model.workbench();
     let mut y = area.y;
     let max_y = area.y.saturating_add(area.height);
-    if let Some(status) = status {
-        Line::from(status).render(
-            Rect {
-                x: area.x,
-                y,
-                width: area.width,
-                height: 1,
-            },
-            frame.buffer_mut(),
-        );
-        y = y.saturating_add(1);
-    }
-    let Some(session) = model.session() else {
-        return;
-    };
-    for line in [
-        format!("session: {}", session.session_id_hex),
-        format!("engine: {}", session.engine_label),
-        format!("identity: {}", session.identity),
-        format!(
-            "durability: {}",
-            if session.temporary {
-                "temporary"
-            } else {
-                "saved"
-            }
-        ),
-        session
-            .status
-            .as_ref()
-            .map(|status| format!("status: {status}"))
+    let lines = [
+        wb.context.line(),
+        wb.catalog_status.clone(),
+        wb.tabs
+            .get(wb.selected_tab)
+            .map(|tab| {
+                format!(
+                    "tab: {}{}{}",
+                    tab.title,
+                    if tab.dirty { " *" } else { "" },
+                    if tab.running { " …" } else { "" }
+                )
+            })
+            .unwrap_or_else(|| "tab: —".into()),
+        wb.status.summary(),
+        model
+            .session()
+            .map(|session| format!("session: {}", session.session_id_hex))
             .unwrap_or_default(),
-    ] {
+    ];
+    for line in lines {
         if y >= max_y || line.is_empty() {
             continue;
         }
