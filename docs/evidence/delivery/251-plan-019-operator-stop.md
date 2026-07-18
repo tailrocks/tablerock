@@ -2,12 +2,13 @@
 
 Date: 2026-07-18
 Host: macOS with Command Line Tools only
+Reconfirmed: 2026-07-18 @ commit `0e30f2a` (still blocked)
 
 ## Binding STOP conditions (from plan 019)
 
 | Gate | Host state | Decision |
 |------|------------|----------|
-| Full Xcode for `xcodebuild -create-xcframework` | `xcode-select` → `/Library/Developer/CommandLineTools`; `xcodebuild` errors | **STOP** packaging until full Xcode.app is selected |
+| Full Xcode for `xcodebuild -create-xcframework` | `xcode-select` → `/Library/Developer/CommandLineTools`; no `/Applications/Xcode.app`; `xcodebuild` requires Xcode | **STOP** packaging until full Xcode.app is selected |
 | Developer ID + notarization credentials | `security find-identity -v -p codesigning` → **0 valid identities**; `notarytool` not found | **STOP** distribution proof until operator provisions certs |
 
 These are operator-provisioned gates, not architecture failures. The Rust
