@@ -489,12 +489,7 @@ impl TableRockBridge {
         );
         let authorized = inner
             .reviews
-            .authorize(
-                token_id,
-                now_ms,
-                scope,
-                Revision::from_wire_u64(expected_revision),
-            )
+            .authorize(token_id, now_ms, scope, registered.context_revision)
             .map_err(|error| BridgeError::rejected("authorize", error.to_string()))?;
         // Drop authorized plan immediately: bridge proves handle consume, not apply.
         drop(authorized);
@@ -548,12 +543,7 @@ impl TableRockBridge {
             // Consume-once before any apply I/O.
             let authorized = inner
                 .reviews
-                .authorize(
-                    token_id,
-                    now_ms,
-                    scope,
-                    Revision::from_wire_u64(expected_revision),
-                )
+                .authorize(token_id, now_ms, scope, registered.context_revision)
                 .map_err(|error| BridgeError::rejected("authorize", error.to_string()))?;
             let driver = inner
                 .service

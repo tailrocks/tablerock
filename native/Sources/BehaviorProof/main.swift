@@ -61,6 +61,25 @@ for _ in 0..<64 {
 }
 _ = try bridge.shutdown(cancelActive: false, deadlineMs: 0)
 
+// Edit/review flow test (if requested).
+if ProcessInfo.processInfo.environment["TABLEROCK_REVIEW"] != nil {
+    let bridge2 = TableRockBridge.create()
+    try bridge2.ensureRuntime()
+    let session2 = try bridge2.open(params: OpenParams(
+        engine: engine, host: host, port: port, database: database, user: user, password: password))
+    let now = UInt64(Date().timeIntervalSince1970 * 1000)
+    let token = try bridge2.stageProbeReview(sessionId: session2, nowMs: now)
+    _ = try bridge2.authorizeReviewToken(tokenId: token, nowMs: now, sessionId: session2, expectedRevision: 0)
+    let outcome = try bridge2.applyReviewToken(tokenId: token, nowMs: now, sessionId: session2, expectedRevision: 0)
+    print("review: \(outcome.transaction) applied=\(outcome.appliedCount) conflict=\(outcome.conflictCount) failed=\(outcome.failedCount)")
+    guard outcome.appliedCount > 0 else {
+        FileHandle.standardError.write("FAIL: review applied 0\n".data(using: .utf8)!)
+        exit(1)
+    }
+    print("REVIEW PROOF PASSED: stage → authorize → apply succeeded")
+    exit(0)
+}
+
 guard let table = decoded else {
     FileHandle.standardError.write("FAIL: no page event decoded\n".data(using: .utf8)!)
     exit(1)
