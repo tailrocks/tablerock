@@ -180,6 +180,7 @@ How to read an evidence document:
 - 213 — [SQL tab, cancel dispatch, and cell inspector](delivery/213-sql-tab-cancel-inspector.md)
 - 214 — [FetchPage + ResultStore multi-page pump](delivery/214-fetchpage-resultstore-multipage.md)
 - 215 — [Phase 4 PostgreSQL read-only exit](delivery/215-phase-4-postgresql-readonly-exit.md)
+- 216 — [TermRock TextArea audit + CompletionMenu pin](delivery/216-termrock-textarea-completionmenu.md)
 
 ## TermRock pins
 

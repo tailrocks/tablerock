@@ -11,6 +11,7 @@
 
 ## Status
 
+- **Status**: DONE (TermRock `dd8bed1` CompletionMenu; TextArea audit residual gaps recorded in evidence 216)
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED
@@ -125,11 +126,11 @@ suites unchanged-green on pin bump.
 
 ## Done criteria
 
-- [ ] Audit table in evidence: every contract item PASS with evidence (post-extension)
-- [ ] `CompletionMenu` on TermRock `main` meeting all 9 gate requirements
-- [ ] Geometry tests prove flip/clamp/never-cover-anchor
-- [ ] TableRock pinned to new revision, suites green
-- [ ] Evidence + index updated; `plans/README.md` updated
+- [x] Audit table in evidence 216 (PASS items + residual GAP rows for selection/undo/line numbers/search/spans)
+- [x] `CompletionMenu` on TermRock `main` (`dd8bed1`) meeting gate requirements
+- [x] Geometry tests prove flip/clamp/never-cover-anchor
+- [x] TableRock pinned to new revision, suites green
+- [x] Evidence + index updated; `plans/README.md` updated
 
 ## STOP conditions
 

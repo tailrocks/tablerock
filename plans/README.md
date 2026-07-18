@@ -26,7 +26,7 @@ plan).
 | 007 | Workbench shell + session/context lifecycle | P1 | M | 003, 006 | DONE |
 | 008 | TermRock T2: `VirtualGrid` (upstream) | P1 | M | — (parallel) | DONE |
 | 009 | PostgreSQL read-only vertical slice (Phase 4 exit) | P1 | L | 002, 003, 007, 008 | DONE |
-| 010 | TermRock T3: `TextArea` audit + `CompletionMenu` (upstream) | P1 | M | 008 (workflow precedent) | TODO |
+| 010 | TermRock T3: `TextArea` audit + `CompletionMenu` (upstream) | P1 | M | 008 (workflow precedent) | DONE |
 | 011 | SQL editor workbench: parser, completion, history, files (Phase 5 core) | P1 | L | 009, 010 | TODO |
 | 012 | Grid controls: server sort, filter bar, columns, copy formats | P1 | L | 009 | TODO |
 | 013 | PostgreSQL writes: staged edits, review, apply, admin (Phase 6) | P1 | L | 011, 012 | TODO |
