@@ -10,8 +10,8 @@ Date: 2026-07-18
 | Fail closed: wrong name never dispatches effect (reducer test) | done |
 | `ExecuteTableOp` with fixed op vocabulary + `quote_ident` only | done |
 | `LoadActivity` / `pg_stat_activity` snapshot in inspector | done |
-| Permission-aware cancel/terminate backends | open |
-| Rename table gate | open |
+| Permission-aware cancel/terminate backends | done (evidence 327) |
+| Rename table gate | done (evidence 340) |
 
 ## Verification
 

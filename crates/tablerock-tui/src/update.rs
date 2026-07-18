@@ -7382,6 +7382,66 @@ mod tests {
     }
 
     #[test]
+    fn rename_table_confirm_emits_execute_table_op() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "01".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::RenameTable);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::RenameTable { table, .. }) if table == "users"
+        ));
+        // Empty / same name: no effect.
+        model.set_action(ActionId::Submit);
+        let empty = update(&mut model, Message::Activate);
+        assert!(empty.effects().next().is_none());
+        assert!(model.confirm().is_some());
+        // Same as current name rejected.
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("users".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let same = update(&mut model, Message::Activate);
+        assert!(same.effects().next().is_none());
+        // New name dispatches rename.
+        if let Some(ConfirmDialog::RenameTable {
+            confirm_buffer, ..
+        }) = model.confirm_mut()
+        {
+            *confirm_buffer = "users_v2".into();
+        }
+        model.set_action(ActionId::Submit);
+        let ok = update(&mut model, Message::Activate);
+        assert!(matches!(
+            ok.effects().next(),
+            Some(Effect::ExecuteTableOp {
+                op,
+                table,
+                new_table,
+                schema,
+                ..
+            }) if op == "rename"
+                && table == "users"
+                && new_table == "users_v2"
+                && schema == "public"
+        ));
+        assert!(model.confirm().is_none());
+    }
+
+    #[test]
     fn ddl_add_column_review_emits_execute_ddl_plan() {
         let mut model = Model::default();
         model.set_screen(Screen::Workbench);
