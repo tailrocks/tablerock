@@ -27,4 +27,4 @@ cargo test -p tablerock-tui --lib
 
 ## Remaining work
 
-- Side-by-side original/staged compare view (optional)
+- Side-by-side original/staged compare — shipped as evidence 396

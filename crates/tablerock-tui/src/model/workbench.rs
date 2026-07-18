@@ -521,6 +521,7 @@ impl WorkbenchModel {
             draft_lines.push(format!("staged: {staged}"));
             if let Some(orig) = grid.drafts.original_for_cell(row, &col_name) {
                 draft_lines.push(format!("original: {orig}"));
+                draft_lines.push(compare_original_staged(orig, staged));
             }
         } else if matches!(
             row_marker,
@@ -535,9 +536,6 @@ impl WorkbenchModel {
         }
         if !draft_lines.is_empty() {
             insp.text = format!("{}\n{}", insp.text, draft_lines.join("\n"));
-            if insp.kind_label != "structured" {
-                // Multi-line path in inspector panel.
-            }
         }
         self.inspector = insp;
     }
@@ -915,5 +913,56 @@ mod tests {
             "{}",
             wb.inspector.text
         );
+        assert!(
+            wb.inspector.text.contains("compare:"),
+            "{}",
+            wb.inspector.text
+        );
+        assert!(
+            wb.inspector.text.contains("alice") && wb.inspector.text.contains("bob"),
+            "{}",
+            wb.inspector.text
+        );
     }
+
+    #[test]
+    fn compare_original_staged_layout() {
+        let block = compare_original_staged("alice", "bob");
+        assert!(block.contains("compare:"), "{block}");
+        assert!(block.contains("original"), "{block}");
+        assert!(block.contains("staged"), "{block}");
+        assert!(block.contains("alice"), "{block}");
+        assert!(block.contains("bob"), "{block}");
+        let multi = compare_original_staged("a\nb", "a\nc");
+        assert!(multi.lines().count() >= 3, "{multi}");
+    }
+}
+
+/// Side-by-side original | staged block for inspector (glyph+text, no color).
+fn compare_original_staged(original: &str, staged: &str) -> String {
+    let o_lines: Vec<&str> = if original.is_empty() {
+        vec!["∅"]
+    } else {
+        original.lines().collect()
+    };
+    let s_lines: Vec<&str> = if staged.is_empty() {
+        vec!["∅"]
+    } else {
+        staged.lines().collect()
+    };
+    let rows = o_lines.len().max(s_lines.len()).max(1);
+    let o_w = o_lines.iter().map(|l| l.chars().count()).max().unwrap_or(0).max("original".len());
+    let mut out = Vec::with_capacity(rows + 2);
+    out.push("compare:".into());
+    out.push(format!(
+        "  {:o_w$} | staged",
+        "original",
+        o_w = o_w
+    ));
+    for i in 0..rows {
+        let o = o_lines.get(i).copied().unwrap_or("");
+        let s = s_lines.get(i).copied().unwrap_or("");
+        out.push(format!("  {o:o_w$} | {s}", o_w = o_w));
+    }
+    out.join("\n")
 }
