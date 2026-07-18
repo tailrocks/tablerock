@@ -156,12 +156,15 @@ pub enum Effect {
         request_token: RequestToken,
         session_id_hex: String,
     },
-    /// Fetch another page past the resident window (scroll).
+    /// Project an already-admitted ResultStore page into the grid resident window.
+    ///
+    /// `result_token` is the original Execute/Browse request token used as the
+    /// ResultId seed; pages were pumped into the store during that effect.
     FetchPage {
         request_token: RequestToken,
         session_id_hex: String,
         context_revision: u64,
-        statement: String,
+        result_token: RequestToken,
         start_row: u64,
     },
 }

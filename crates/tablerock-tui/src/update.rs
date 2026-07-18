@@ -1,7 +1,7 @@
 //! Deterministic root update path.
 
 use crate::{
-    ActionId, Effect, FocusRegion, Message, Model, Screen, ShellTarget,
+    ActionId, Effect, FocusRegion, Message, Model, Screen, ScrollDirection, ShellTarget,
     effect::ProfileListFilterSpec,
     message::{EngineMsg, ProfilesMsg},
     model::{
@@ -152,9 +152,14 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
-        Message::PointerScrolled { target, .. } => {
+        Message::PointerScrolled { target, direction } => {
             if let Some(target) = target {
                 focus_target(model, target);
+            }
+            if model.screen() == Screen::Workbench {
+                return scroll_grid(model, direction);
+            }
+            if target.is_some() {
                 Update::render()
             } else {
                 Update::unchanged()
@@ -382,6 +387,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::GridPage {
+            request_token,
             context_revision,
             start_row,
             columns,
@@ -392,7 +398,6 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             bytes,
             truncated,
             complete,
-            ..
         }) => {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
@@ -405,6 +410,10 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 GridRowTotal::Unknown
             };
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                // First page from Execute/Browse stamps the result_token seed.
+                if start_row == 0 {
+                    grid.result_token = request_token;
+                }
                 grid.replace_page(
                     start_row, columns, cells, row_count, totals, bytes, truncated,
                 );
@@ -415,6 +424,28 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             let selected = model.workbench().selected_tab;
             if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
                 tab.running = !complete;
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::GridStreamComplete {
+            context_revision,
+            rows_loaded,
+            truncated,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.rows_loaded = grid.rows_loaded.max(rows_loaded);
+                if truncated {
+                    grid.truncated = true;
+                }
+                grid.mark_completed();
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.running = false;
             }
             Update::render()
         }
@@ -1059,6 +1090,60 @@ fn activate_catalog_node(model: &mut Model) -> Update {
     }
 }
 
+/// Move the grid viewport; emit FetchPage only when the target row is outside
+/// the resident window (no I/O for pure resident scroll).
+fn scroll_grid(model: &mut Model, direction: ScrollDirection) -> Update {
+    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+        return Update::unchanged();
+    };
+    let context_revision = model.workbench().context_revision;
+    let fetch = {
+        let Some(grid) = model.workbench_mut().active_grid_mut() else {
+            return Update::unchanged();
+        };
+        match direction {
+            ScrollDirection::Down => {
+                grid.viewport_row = grid.viewport_row.saturating_add(1);
+                grid.cursor_row = grid.cursor_row.saturating_add(1);
+            }
+            ScrollDirection::Up => {
+                grid.viewport_row = grid.viewport_row.saturating_sub(1);
+                grid.cursor_row = grid.cursor_row.saturating_sub(1);
+            }
+            ScrollDirection::Left => {
+                grid.viewport_col = grid.viewport_col.saturating_sub(1);
+                grid.cursor_col = grid.cursor_col.saturating_sub(1);
+                return Update::render();
+            }
+            ScrollDirection::Right => {
+                grid.viewport_col = grid.viewport_col.saturating_add(1);
+                grid.cursor_col = grid.cursor_col.saturating_add(1);
+                return Update::render();
+            }
+        }
+        let target = grid.viewport_row.max(grid.cursor_row);
+        if !grid.needs_fetch(target) || grid.result_token == 0 {
+            None
+        } else {
+            Some((grid.next_fetch_start(), grid.result_token))
+        }
+    };
+    let Some((start_row, result_token)) = fetch else {
+        return Update::render();
+    };
+    let token = model.mint_request_token();
+    Update {
+        render: true,
+        effect: Some(Effect::FetchPage {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            result_token,
+            start_row,
+        }),
+    }
+}
+
 fn catalog_level_for_expand(
     engine_label: &str,
     node: &crate::model::catalog::CatalogNodeProjection,
@@ -1500,6 +1585,13 @@ mod tests {
     fn resident_scroll_does_not_request_fetch() {
         let mut model = Model::default();
         model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
         model.workbench_mut().open_preview_tab("t");
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.replace_page(
@@ -1519,11 +1611,135 @@ mod tests {
                 false,
             );
             grid.operation = GridOperationState::Completed;
-            grid.viewport_row = 3;
+            grid.result_token = 7;
+            grid.viewport_row = 0;
         }
-        // No FetchPage effect is produced by merely updating viewport inside resident.
+        // Scroll inside resident window → no FetchPage effect.
+        let scrolled = update(
+            &mut model,
+            Message::PointerScrolled {
+                target: Some(ShellTarget::Focus(FocusRegion::Content)),
+                direction: crate::ScrollDirection::Down,
+            },
+        );
+        assert!(scrolled.effects().next().is_none());
         assert!(!model.workbench().active_grid().unwrap().needs_fetch(3));
         assert!(model.workbench().active_grid().unwrap().is_resident(3));
+    }
+
+    #[test]
+    fn scroll_past_resident_emits_fetch_page() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.replace_page(
+                0,
+                vec!["id".into()],
+                vec![crate::model::grid::ProjectedCell {
+                    text: "1".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                }],
+                1,
+                GridRowTotal::Unknown,
+                1,
+                false,
+            );
+            grid.operation = GridOperationState::Streaming;
+            grid.result_token = 42;
+            grid.viewport_row = 0;
+        }
+        let scrolled = update(
+            &mut model,
+            Message::PointerScrolled {
+                target: Some(ShellTarget::Focus(FocusRegion::Content)),
+                direction: crate::ScrollDirection::Down,
+            },
+        );
+        let effect = scrolled.effects().next().expect("FetchPage effect");
+        match effect {
+            Effect::FetchPage {
+                result_token,
+                start_row,
+                ..
+            } => {
+                assert_eq!(*result_token, 42);
+                assert_eq!(*start_row, 1);
+            }
+            other => panic!("expected FetchPage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn grid_stream_complete_marks_completed() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.workbench_mut().context_revision = 1;
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.operation = GridOperationState::Streaming;
+            grid.rows_loaded = 500;
+        }
+        let done = update(
+            &mut model,
+            Message::Engine(EngineMsg::GridStreamComplete {
+                request_token: 1,
+                context_revision: 1,
+                rows_loaded: 2500,
+                truncated: false,
+            }),
+        );
+        assert!(done.needs_render());
+        let grid = model.workbench().active_grid().unwrap();
+        assert_eq!(grid.operation, GridOperationState::Completed);
+        assert_eq!(grid.rows_loaded, 2500);
+    }
+
+    #[test]
+    fn cancel_dispatch_and_outcome_labels_are_distinct() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.operation = GridOperationState::Streaming;
+        }
+        let requested = update(
+            &mut model,
+            Message::Engine(EngineMsg::GridCancelDispatched { request_token: 1 }),
+        );
+        assert!(requested.needs_render());
+        assert_eq!(
+            model.workbench().active_grid().unwrap().operation,
+            GridOperationState::CancelRequested
+        );
+        assert_eq!(
+            model.workbench().active_grid().unwrap().operation.label(),
+            "cancel requested"
+        );
+        let observed = update(
+            &mut model,
+            Message::Engine(EngineMsg::GridCancelled {
+                request_token: 1,
+                label: "server confirmed cancelled".into(),
+            }),
+        );
+        assert!(observed.needs_render());
+        let grid = model.workbench().active_grid().unwrap();
+        assert_eq!(grid.operation, GridOperationState::Cancelled);
+        assert_eq!(grid.operation.label(), "cancelled");
+        assert_eq!(
+            grid.error_label.as_deref(),
+            Some("server confirmed cancelled")
+        );
     }
 
     #[test]

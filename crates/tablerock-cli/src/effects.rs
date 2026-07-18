@@ -3,12 +3,13 @@
 use std::{path::PathBuf, sync::Arc};
 
 use tablerock_core::{
-    BoundedText, ByteLimit, DangerousPlaintext, Engine, EnvironmentTag, IdParts,
+    BoundedText, ByteLimit, DangerousPlaintext, Engine, EnvironmentTag, IdParts, PageKey,
     PlaintextAcknowledgement, ProfileAggregate, ProfileConnectionSnapshot, ProfileDurability,
     ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits, ProfileListFilter,
     ProfileListRequest, ProfileName, ProfileOrganization, ProfilePolicy, ProfilePreferences,
     ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag,
-    ReconnectPreference, Revision, SecretSource, SecretSourceKind, SessionId, TlsPolicy,
+    ReconnectPreference, ResultStore, ResultStoreLimits, Revision, SecretSource, SecretSourceKind,
+    SessionId, TlsPolicy,
 };
 use tablerock_engine::{
     CatalogRequest, DriverPageRequest, DriverSession, SessionRegistry, qualify_table,
@@ -26,10 +27,23 @@ use crate::{RootMessageSender, projection};
 static NEXT_PROFILE_LOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 static NEXT_SESSION_LOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+/// Arbitrary-query row cap (fixed decision: result budgets).
+const MAX_QUERY_ROWS: u64 = 10_000;
+/// Default page size for browse/SQL streams.
+const PAGE_ROWS: u32 = 500;
+
+fn default_result_store() -> ResultStore {
+    // Enough slots for multi-page pumps (10k/500 ≈ 20 pages) with pin room.
+    ResultStore::new(
+        ResultStoreLimits::new(32, 64, 64 * 2 * 1024 * 1024).expect("valid result store limits"),
+    )
+}
+
 /// Owns process-local handles used by effect tasks.
 pub struct EffectExecutor {
     persistence: Arc<Mutex<Option<PersistenceActor>>>,
     sessions: Arc<Mutex<SessionRegistry>>,
+    results: Arc<Mutex<ResultStore>>,
     ingress: RootMessageSender,
 }
 
@@ -41,6 +55,7 @@ impl EffectExecutor {
             sessions: Arc::new(Mutex::new(
                 SessionRegistry::new(64).expect("valid session registry capacity"),
             )),
+            results: Arc::new(Mutex::new(default_result_store())),
             ingress,
         }
     }
@@ -226,10 +241,13 @@ impl EffectExecutor {
                 table,
             } => {
                 let sessions = Arc::clone(&self.sessions);
+                let results = Arc::clone(&self.results);
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
                     let message = browse_table(
                         sessions,
+                        results,
+                        ingress.clone(),
                         request_token,
                         session_id_hex,
                         context_revision,
@@ -247,10 +265,13 @@ impl EffectExecutor {
                 statement,
             } => {
                 let sessions = Arc::clone(&self.sessions);
+                let results = Arc::clone(&self.results);
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
                     let message = execute_sql(
                         sessions,
+                        results,
+                        ingress.clone(),
                         request_token,
                         session_id_hex,
                         context_revision,
@@ -273,24 +294,17 @@ impl EffectExecutor {
             }
             Effect::FetchPage {
                 request_token,
-                session_id_hex,
+                session_id_hex: _,
                 context_revision,
-                statement,
+                result_token,
                 start_row,
             } => {
-                let sessions = Arc::clone(&self.sessions);
+                let results = Arc::clone(&self.results);
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
-                    // Re-run statement and skip pages until start_row (simple first-cut).
-                    let _ = start_row;
-                    let message = execute_sql(
-                        sessions,
-                        request_token,
-                        session_id_hex,
-                        context_revision,
-                        statement,
-                    )
-                    .await;
+                    let message =
+                        fetch_page(results, request_token, context_revision, result_token, start_row)
+                            .await;
                     let _ = ingress.try_send_event(message);
                 });
             }
@@ -574,6 +588,8 @@ async fn load_catalog(
 
 async fn browse_table(
     sessions: Arc<Mutex<SessionRegistry>>,
+    results: Arc<Mutex<ResultStore>>,
+    ingress: RootMessageSender,
     request_token: RequestToken,
     session_id_hex: String,
     context_revision: u64,
@@ -593,6 +609,8 @@ async fn browse_table(
     let statement = format!("SELECT * FROM {qualified}");
     execute_sql(
         sessions,
+        results,
+        ingress,
         request_token,
         session_id_hex,
         context_revision,
@@ -601,8 +619,13 @@ async fn browse_table(
     .await
 }
 
+/// Pump-and-store: stream pages into ResultStore up to the query cap; surface
+/// the first page before completion so the grid can paint early. Further
+/// pages are projected via FetchPage (no OFFSET re-query).
 async fn execute_sql(
     sessions: Arc<Mutex<SessionRegistry>>,
+    results: Arc<Mutex<ResultStore>>,
+    ingress: RootMessageSender,
     request_token: RequestToken,
     session_id_hex: String,
     context_revision: u64,
@@ -642,7 +665,7 @@ async fn execute_sql(
             });
         }
     };
-    let limits = PageLimits::new(500, 64, 2 * 1024 * 1024, 64 * 1024);
+    let limits = PageLimits::new(PAGE_ROWS, 64, 2 * 1024 * 1024, 64 * 1024);
     let mut stream = match session
         .start_page_stream(DriverPageRequest::PostgreSqlStatement {
             statement,
@@ -664,9 +687,84 @@ async fn execute_sql(
     let result_id =
         ResultId::from_parts(IdParts::new(1, low).expect("id parts")).expect("result id");
     let identity = PageIdentity::new(result_id, Revision::INITIAL, CoreEngine::PostgreSql);
-    match stream.next_page(identity, 0).await {
-        Ok(Some(page)) => project_page_message(request_token, context_revision, page, true),
-        Ok(None) => Message::Engine(tablerock_tui::EngineMsg::GridPage {
+    {
+        let mut store = results.lock().await;
+        let _ = store.open_result(identity);
+    }
+
+    let mut start_row = 0_u64;
+    let mut first_sent = false;
+    let mut hit_cap = false;
+    let mut total_rows = 0_u64;
+
+    loop {
+        if start_row >= MAX_QUERY_ROWS {
+            hit_cap = true;
+            break;
+        }
+        match stream.next_page(identity, start_row).await {
+            Ok(Some(page)) => {
+                let row_count = u64::from(page.envelope().row_count());
+                let page_start = page.envelope().start_row();
+                {
+                    let mut store = results.lock().await;
+                    match store.admit(page.clone()) {
+                        Ok(outcome) => {
+                            // Pin the first page so the resident viewport is not
+                            // LRU-evicted while later pages stream in.
+                            if page_start == 0 {
+                                let _ = store.set_pinned(outcome.admitted(), true);
+                            }
+                        }
+                        Err(error) => {
+                            return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                                request_token,
+                                context_revision,
+                                reason: FailureProjection::Label(error.to_string()),
+                            });
+                        }
+                    }
+                }
+                total_rows = total_rows.max(page_start.saturating_add(row_count));
+                if !first_sent {
+                    // First rows before stream completion (Phase 4 exit).
+                    let msg = project_page_message(
+                        request_token,
+                        context_revision,
+                        page,
+                        false,
+                    );
+                    let _ = ingress.try_send_event(msg);
+                    first_sent = true;
+                }
+                start_row = page_start.saturating_add(row_count);
+                if start_row >= MAX_QUERY_ROWS {
+                    hit_cap = true;
+                    break;
+                }
+            }
+            Ok(None) => break,
+            Err(error) => {
+                let label = error.to_string();
+                // Honest race: server-confirmed cancel vs other stream failures.
+                if label.contains("cancel") {
+                    return Message::Engine(tablerock_tui::EngineMsg::GridCancelled {
+                        request_token,
+                        label: "server confirmed cancelled".into(),
+                    });
+                }
+                return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                    request_token,
+                    context_revision,
+                    reason: FailureProjection::Label(label),
+                });
+            }
+        }
+    }
+
+    if !first_sent {
+        // Empty result set.
+        return Message::Engine(tablerock_tui::EngineMsg::GridPage {
             request_token,
             context_revision,
             start_row: 0,
@@ -678,13 +776,55 @@ async fn execute_sql(
             bytes: 0,
             truncated: false,
             complete: true,
-        }),
-        Err(error) => Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+        });
+    }
+
+    Message::Engine(tablerock_tui::EngineMsg::GridStreamComplete {
+        request_token,
+        context_revision,
+        rows_loaded: total_rows,
+        truncated: hit_cap,
+    })
+}
+
+async fn fetch_page(
+    results: Arc<Mutex<ResultStore>>,
+    request_token: RequestToken,
+    context_revision: u64,
+    result_token: RequestToken,
+    start_row: u64,
+) -> Message {
+    use tablerock_core::{IdParts, ResultId, Revision};
+    let low = result_token.max(1);
+    let result_id =
+        ResultId::from_parts(IdParts::new(1, low).expect("id parts")).expect("result id");
+    let key = PageKey::new(result_id, Revision::INITIAL, start_row);
+    let page = {
+        let mut store = results.lock().await;
+        // Pin the requested page (viewport) so LRU cannot evict it.
+        let pinned = store.set_pinned(key, true);
+        if !pinned {
+            // Page not admitted (evicted or never pumped) — honest miss.
+            return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(format!(
+                    "page at row {start_row} not resident"
+                )),
+            });
+        }
+        store.get(key).cloned()
+    };
+    let Some(page) = page else {
+        return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
             request_token,
             context_revision,
-            reason: FailureProjection::Label(error.to_string()),
-        }),
-    }
+            reason: FailureProjection::Label(format!("page at row {start_row} not resident")),
+        });
+    };
+    // complete=false: FetchPage only swaps the resident window; terminal
+    // completion already arrived (or will) via GridStreamComplete.
+    project_page_message(request_token, context_revision, page, false)
 }
 
 async fn cancel_query(
@@ -716,7 +856,10 @@ async fn cancel_query(
     };
     let low = request_token.max(1);
     let op = OperationId::from_parts(IdParts::new(1, low).expect("id parts")).expect("op id");
-    let _dispatch = session.cancel(op).await;
+    let dispatch = session.cancel(op).await;
+    // Dispatch fact only — terminal race outcome arrives via the stream task
+    // (GridCancelled / GridFailed / GridStreamComplete).
+    let _ = dispatch;
     Message::Engine(tablerock_tui::EngineMsg::GridCancelDispatched { request_token })
 }
 

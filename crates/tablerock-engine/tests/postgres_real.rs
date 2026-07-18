@@ -583,6 +583,140 @@ async fn streams_bounded_pages_from_real_postgres() {
     assert_eq!(page_rows, 3);
 }
 
+/// Plan 009: 2,500-row browse fixture — 500-row pages, first page before
+/// completion, ResultStore admit+pin for scroll FetchPage semantics.
+#[tokio::test]
+async fn browses_2500_row_table_in_500_row_pages_with_result_store_pin() {
+    use tablerock_core::{
+        OpenResultOutcome, ResultStore, ResultStoreLimits, StatementText,
+    };
+
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+
+    session
+        .execute_sql(
+            "CREATE TABLE browse_2500 (id integer PRIMARY KEY, label text);\
+             INSERT INTO browse_2500 SELECT g, 'row-' || g::text FROM generate_series(1, 2500) AS g;",
+        )
+        .await
+        .unwrap();
+
+    let page_limits = PageLimits::new(500, 8, 2 * 1024 * 1024, 64 * 1024);
+    let mut stream = session
+        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+            statement: StatementText::new("SELECT id, label FROM browse_2500 ORDER BY id").unwrap(),
+            limits: page_limits,
+            max_cell_bytes: 64 * 1024,
+        })
+        .await
+        .unwrap();
+
+    let mut store = ResultStore::new(ResultStoreLimits::new(8, 32, 64 * 1024 * 1024).unwrap());
+    let id = support::identity(Engine::PostgreSql, 2500);
+    assert_eq!(store.open_result(id), Ok(OpenResultOutcome::Opened));
+
+    let mut start_row = 0_u64;
+    let mut pages = 0_u32;
+    let mut total = 0_u64;
+    let mut first_page_seen = false;
+    loop {
+        match stream.next_page(id, start_row).await.unwrap() {
+            Some(page) => {
+                let rows = u64::from(page.envelope().row_count());
+                assert!(rows <= 500);
+                if !first_page_seen {
+                    assert_eq!(page.envelope().start_row(), 0);
+                    assert_eq!(rows, 500);
+                    first_page_seen = true;
+                }
+                let outcome = store.admit(page).unwrap();
+                if start_row == 0 {
+                    assert!(store.set_pinned(outcome.admitted(), true));
+                }
+                start_row = start_row.saturating_add(rows);
+                total = total.saturating_add(rows);
+                pages += 1;
+            }
+            None => break,
+        }
+    }
+    assert!(first_page_seen, "first page must render before stream end");
+    assert_eq!(total, 2500);
+    assert_eq!(pages, 5);
+    // Scroll FetchPage: page at row 500 is resident after pump-and-store.
+    let key = tablerock_core::PageKey::new(id.result_id(), id.revision(), 500);
+    let page2 = store.get(key).expect("second page admitted");
+    assert_eq!(page2.envelope().row_count(), 500);
+    assert_eq!(page2.cell(0, 0).unwrap().kind(), ValueKind::Signed);
+    assert_eq!(
+        i64::from_be_bytes(page2.cell(0, 0).unwrap().bytes().try_into().unwrap()),
+        501
+    );
+    assert_eq!(page2.cell(0, 1).unwrap().bytes(), b"row-501");
+    // Viewport pin survives further access.
+    assert!(store.set_pinned(key, true));
+    assert!(stream.next_page(id, start_row).await.unwrap().is_none());
+    drop(stream);
+
+    // EngineService path: Started + Page precede Terminal.
+    let operation_id = support::operation(2501);
+    let mut service = support::service(1, 8);
+    service
+        .submit(
+            operation_id,
+            support::command(2501),
+            Arc::new(session),
+            DriverPageRequest::PostgreSqlStatement {
+                statement: StatementText::new("SELECT id FROM browse_2500 ORDER BY id").unwrap(),
+                limits: page_limits,
+                max_cell_bytes: 64 * 1024,
+            },
+            support::identity(Engine::PostgreSql, 2501),
+        )
+        .await
+        .unwrap();
+    let mut saw_started = false;
+    let mut saw_page = false;
+    let mut service_rows = 0_u64;
+    loop {
+        match service.next_update(operation_id).await.unwrap().unwrap() {
+            EngineServiceUpdate::Started => {
+                assert!(!saw_page, "Started must precede first Page");
+                saw_started = true;
+            }
+            EngineServiceUpdate::Page(page) => {
+                assert!(saw_started, "Page must follow Started");
+                saw_page = true;
+                service_rows += u64::from(page.envelope().row_count());
+            }
+            EngineServiceUpdate::Terminal(tablerock_core::OperationOutcome::Completed) => {
+                assert!(saw_page, "at least one Page before Terminal");
+                break;
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+    assert_eq!(service_rows, 2500);
+}
+
 #[tokio::test]
 async fn reports_request_delivery_and_server_confirmed_cancellation_through_service() {
     let container = GenericImage::new("postgres", "18.4-alpine")

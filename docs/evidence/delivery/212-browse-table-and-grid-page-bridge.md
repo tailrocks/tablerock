@@ -25,7 +25,7 @@ into `ProjectedCell` rows, and admits into the active `DataGridModel`. Stale
 
 ## Remaining work
 
-- Scroll-driven FetchPage + ResultStore pin/evict.
-- SQL tab input + Cancel full outcome labels.
-- Inspector panel.
-- Docker multi-page browse fixture.
+- ~~Scroll-driven FetchPage + ResultStore pin/evict.~~ → evidence 214
+- ~~SQL tab input + Cancel full outcome labels.~~ → evidence 213 (partial)
+- ~~Inspector panel.~~ → evidence 213
+- ~~Docker multi-page browse fixture.~~ → evidence 214

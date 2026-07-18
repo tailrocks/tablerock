@@ -185,12 +185,14 @@ Ledger + ROADMAP updates.
 
 ## Done criteria
 
-- [ ] Table browse: 500-row pages, scroll-fetch, pinned viewport, LRU eviction (tests)
-- [ ] All 12 `ValueKind`s render distinctly; never color-alone (test asserts glyph/text differs)
-- [ ] First rows render before completion (test)
-- [ ] Stale revisions cannot deliver (test)
-- [ ] Cancel renders requested vs observed outcome distinctly (real-server test)
-- [ ] Inspector: text/JSON/hex + metadata + stale (tests)
+- [x] Table browse: 500-row pages, scroll-fetch, pinned viewport, LRU eviction (tests)
+      — `browses_2500_row_table…`, FetchPage pin, evidence 214
+- [x] All 12 `ValueKind`s render distinctly; never color-alone (test asserts glyph/text differs)
+- [x] First rows render before completion (test) — ingress first GridPage + EngineService Started/Page before Terminal
+- [x] Stale revisions cannot deliver (test) — context_revision gate
+- [x] Cancel renders requested vs observed outcome distinctly (real-server test)
+      — TUI CancelRequested vs Cancelled+label; engine `postgres_real` cancel races
+- [x] Inspector: text/JSON/hex + metadata + stale (tests)
 - [ ] clippy green; evidence + ledger + ROADMAP Phase 4 updated; `plans/README.md` updated
 
 ## STOP conditions

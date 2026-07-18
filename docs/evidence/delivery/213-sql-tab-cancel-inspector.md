@@ -25,7 +25,8 @@ and hex projections.
 
 ## Remaining work
 
-- FetchPage on scroll + ResultStore pin.
-- Honest cancel terminal outcomes from engine pump.
-- Docker multi-page browse + cancel fixture.
-- Phase 4 ROADMAP exit when those land.
+- ~~FetchPage on scroll + ResultStore pin.~~ → evidence 214
+- Honest cancel terminal outcomes from engine pump (TUI labels still
+  dispatch/cancel-requested; engine race outcomes proven in postgres_real).
+- ~~Docker multi-page browse fixture.~~ → evidence 214
+- Phase 4 ROADMAP exit when cancel UI race labels land.

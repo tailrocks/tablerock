@@ -165,6 +165,13 @@ pub enum EngineMsg {
         request_token: u64,
         label: String,
     },
+    /// Stream pump finished after the first page was already delivered.
+    GridStreamComplete {
+        request_token: u64,
+        context_revision: u64,
+        rows_loaded: u64,
+        truncated: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
