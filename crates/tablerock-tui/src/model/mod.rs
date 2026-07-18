@@ -128,6 +128,11 @@ pub enum ActionId {
     FilterILike,
     /// Add inequality filter (ne) for cursor column using cell text.
     FilterNe,
+    /// Comparison filters on cursor column (value from cell).
+    FilterLt,
+    FilterLe,
+    FilterGt,
+    FilterGe,
     /// Persist current grid filters as the named "default" preset for base table.
     SaveFilter,
     /// Apply the named "default" filter preset for the active base table.

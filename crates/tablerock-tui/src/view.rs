@@ -591,6 +591,10 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let filt_like = action_label(model, ActionId::FilterLike, "Like");
     let filt_ilike = action_label(model, ActionId::FilterILike, "ILike");
     let filt_ne = action_label(model, ActionId::FilterNe, "NotEq");
+    let filt_lt = action_label(model, ActionId::FilterLt, "Lt");
+    let filt_le = action_label(model, ActionId::FilterLe, "Le");
+    let filt_gt = action_label(model, ActionId::FilterGt, "Gt");
+    let filt_ge = action_label(model, ActionId::FilterGe, "Ge");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
@@ -890,6 +894,30 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::FilterNe,
                         label: filt_ne.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterLt,
+                        label: filt_lt.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterLe,
+                        label: filt_le.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterGt,
+                        label: filt_gt.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterGe,
+                        label: filt_ge.as_str(),
                         enabled: true,
                         style: None,
                     },

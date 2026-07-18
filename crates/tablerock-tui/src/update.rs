@@ -3378,6 +3378,18 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::FilterNe if model.screen() == Screen::Workbench => {
             add_value_filter(model, "ne", false)
         }
+        ActionId::FilterLt if model.screen() == Screen::Workbench => {
+            add_value_filter(model, "lt", false)
+        }
+        ActionId::FilterLe if model.screen() == Screen::Workbench => {
+            add_value_filter(model, "le", false)
+        }
+        ActionId::FilterGt if model.screen() == Screen::Workbench => {
+            add_value_filter(model, "gt", false)
+        }
+        ActionId::FilterGe if model.screen() == Screen::Workbench => {
+            add_value_filter(model, "ge", false)
+        }
         ActionId::SaveFilter if model.screen() == Screen::Workbench => {
             if model.workbench().profile_id_hex.is_none() {
                 return Update::unchanged();
@@ -4118,6 +4130,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::FilterLike
         | ActionId::FilterILike
         | ActionId::FilterNe
+        | ActionId::FilterLt
+        | ActionId::FilterLe
+        | ActionId::FilterGt
+        | ActionId::FilterGe
         | ActionId::SaveFilter
         | ActionId::ApplyFilter
         | ActionId::ClearFilters
@@ -5439,6 +5455,10 @@ fn cycle_action(
                 ActionId::FilterLike,
                 ActionId::FilterILike,
                 ActionId::FilterNe,
+                ActionId::FilterLt,
+                ActionId::FilterLe,
+                ActionId::FilterGt,
+                ActionId::FilterGe,
                 ActionId::SaveFilter,
                 ActionId::ApplyFilter,
                 ActionId::ClearFilters,
@@ -7012,6 +7032,25 @@ mod tests {
         }
         model.set_action(ActionId::FilterLike);
         assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        // Comparison operators on numeric text
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.filters.clear();
+            g.cells[0] = crate::model::grid::ProjectedCell {
+                text: "42".into(),
+                distinction: crate::model::grid::CellDistinction::Number,
+                byte_len: 2,
+                original_byte_len: None,
+            };
+        }
+        model.set_action(ActionId::FilterGt);
+        let gt = update(&mut model, Message::Activate);
+        match gt.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].1, "gt");
+                assert_eq!(filters[0].2.as_deref(), Some("42"));
+            }
+            other => panic!("expected gt, got {other:?}"),
+        }
     }
 
     #[test]
