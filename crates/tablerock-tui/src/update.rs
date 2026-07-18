@@ -4659,6 +4659,14 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::SnapCursorVisible if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.ensure_cursor_on_visible_column() {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::ShowAllColumns if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if grid.show_all_columns() {
@@ -5693,6 +5701,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::SoloColumn
         | ActionId::SoloIdentityColumns
         | ActionId::HideEmptyColumns
+        | ActionId::SnapCursorVisible
         | ActionId::ShowAllColumns
         | ActionId::InvertColumns
         | ActionId::SaveColumns
@@ -7439,6 +7448,7 @@ fn cycle_action(
                 ActionId::SoloColumn,
                 ActionId::SoloIdentityColumns,
                 ActionId::HideEmptyColumns,
+                ActionId::SnapCursorVisible,
                 ActionId::ShowAllColumns,
                 ActionId::InvertColumns,
                 ActionId::SaveColumns,

@@ -299,6 +299,8 @@ pub enum ActionId {
     SoloIdentityColumns,
     /// Hide columns empty across the resident page (page-local).
     HideEmptyColumns,
+    /// Snap cursor onto a visible column if currently on a hidden one.
+    SnapCursorVisible,
     /// Show all columns; keep widths/order (unlike ResetColumns).
     ShowAllColumns,
     /// Invert column visibility (at least one remains visible).

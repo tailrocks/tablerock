@@ -707,6 +707,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let col_solo = action_label(model, ActionId::SoloColumn, "ColSolo");
     let col_solo_pk = action_label(model, ActionId::SoloIdentityColumns, "ColPk");
     let col_hide_empty = action_label(model, ActionId::HideEmptyColumns, "ColHideE");
+    let col_snap = action_label(model, ActionId::SnapCursorVisible, "ColSnap");
     let col_all = action_label(model, ActionId::ShowAllColumns, "ColAll");
     let col_inv = action_label(model, ActionId::InvertColumns, "ColInv");
     let col_save = action_label(model, ActionId::SaveColumns, "ColSave");
@@ -1419,6 +1420,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::HideEmptyColumns,
                         label: col_hide_empty.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SnapCursorVisible,
+                        label: col_snap.as_str(),
                         enabled: true,
                         style: None,
                     },

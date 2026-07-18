@@ -1618,6 +1618,7 @@ impl DataGridModel {
                 changed = true;
             }
         }
+        // Cursor already on the solo column; no snap needed.
         changed
     }
 
@@ -1648,6 +1649,9 @@ impl DataGridModel {
                 first.visible = true;
                 changed = true;
             }
+        }
+        if self.ensure_cursor_on_visible_column() {
+            changed = true;
         }
         changed
     }
@@ -1695,6 +1699,9 @@ impl DataGridModel {
             if let Some(first) = self.column_layout.first_mut() {
                 first.visible = true;
             }
+        }
+        if self.ensure_cursor_on_visible_column() {
+            changed = true;
         }
         changed
     }
@@ -1832,6 +1839,32 @@ impl DataGridModel {
             .find(|c| c.name == name)
             .map(|c| c.visible)
             .unwrap_or(true)
+    }
+
+    /// If the cursor sits on a hidden column, snap to the first visible one.
+    ///
+    /// Returns true when the cursor moved.
+    pub fn ensure_cursor_on_visible_column(&mut self) -> bool {
+        if self.columns.is_empty() {
+            return false;
+        }
+        let name = self
+            .columns
+            .get(self.cursor_col.min(self.columns.len().saturating_sub(1)))
+            .cloned()
+            .unwrap_or_default();
+        if self.is_column_visible(&name) {
+            return false;
+        }
+        let Some(first) = self.visible_columns().into_iter().next() else {
+            return false;
+        };
+        let Some(idx) = self.columns.iter().position(|c| c == &first) else {
+            return false;
+        };
+        self.cursor_col = idx;
+        self.reveal_cursor_column();
+        true
     }
 
     /// Step cursor to the next/previous **visible** column (layout order).
@@ -2674,6 +2707,23 @@ mod tests {
         assert!(g.go_to_last_identity_column());
         assert_eq!(g.cursor_col, 2); // id last in identity list
         assert!(!g.go_to_last_identity_column());
+    }
+
+    #[test]
+    fn ensure_cursor_on_visible_column_snaps() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into(), "age".into()];
+        g.cursor_col = 1; // name
+        assert!(g.solo_cursor_column()); // only name visible
+        // Manually hide name and show id (simulate stale cursor).
+        g.ensure_column_layout();
+        for e in &mut g.column_layout {
+            e.visible = e.name == "id";
+        }
+        assert_eq!(g.cursor_col, 1);
+        assert!(g.ensure_cursor_on_visible_column());
+        assert_eq!(g.cursor_col, 0);
+        assert!(!g.ensure_cursor_on_visible_column());
     }
 
     #[test]
