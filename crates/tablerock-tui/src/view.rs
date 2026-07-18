@@ -748,6 +748,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_distinct = action_label(model, ActionId::CopyDistinctSql, "CopyDist");
     let copy_order = action_label(model, ActionId::CopyOrderBySql, "CopyOrd");
     let copy_sel_ord = action_label(model, ActionId::CopySelectOrderSql, "CopySelO");
+    let copy_filt_where = action_label(model, ActionId::CopyFilterWhereSql, "CopyFWhere");
+    let copy_sel_filt = action_label(model, ActionId::CopySelectFilterSql, "CopySelF");
     let copy_pk = action_label(model, ActionId::CopyPkNames, "CopyPk");
     let copy_pk_q = action_label(model, ActionId::CopyPkIdents, "CopyPkQ");
     let copy_loc = action_label(model, ActionId::CopyLocator, "CopyLoc");
@@ -1678,6 +1680,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopySelectOrderSql,
                         label: copy_sel_ord.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyFilterWhereSql,
+                        label: copy_filt_where.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopySelectFilterSql,
+                        label: copy_sel_filt.as_str(),
                         enabled: true,
                         style: None,
                     },

@@ -971,6 +971,71 @@ impl DataGridModel {
         )
     }
 
+    /// SQL WHERE fragment from typed filter chips + raw WHERE (presentation aid).
+    ///
+    /// Values are single-quoted with `'` doubled. Null operators emit IS NULL /
+    /// IS NOT NULL. Page-local quick filter is excluded (not server SQL).
+    #[must_use]
+    pub fn filters_where_sql(&self) -> Option<String> {
+        let mut parts: Vec<String> = Vec::new();
+        for f in &self.filters {
+            let col = format!("\"{}\"", f.column.replace('"', "\"\""));
+            let op = f.operator.to_ascii_lowercase();
+            let part = match op.as_str() {
+                "isnull" | "is null" => format!("{col} IS NULL"),
+                "isnotnull" | "is not null" => format!("{col} IS NOT NULL"),
+                "eq" | "=" => {
+                    let v = f.value.as_deref().unwrap_or("");
+                    format!("{col} = '{}'", v.replace('\'', "''"))
+                }
+                "ne" | "<>" | "!=" => {
+                    let v = f.value.as_deref().unwrap_or("");
+                    format!("{col} <> '{}'", v.replace('\'', "''"))
+                }
+                "lt" | "<" => {
+                    let v = f.value.as_deref().unwrap_or("");
+                    format!("{col} < '{}'", v.replace('\'', "''"))
+                }
+                "le" | "<=" => {
+                    let v = f.value.as_deref().unwrap_or("");
+                    format!("{col} <= '{}'", v.replace('\'', "''"))
+                }
+                "gt" | ">" => {
+                    let v = f.value.as_deref().unwrap_or("");
+                    format!("{col} > '{}'", v.replace('\'', "''"))
+                }
+                "ge" | ">=" => {
+                    let v = f.value.as_deref().unwrap_or("");
+                    format!("{col} >= '{}'", v.replace('\'', "''"))
+                }
+                "like" => {
+                    let v = f.value.as_deref().unwrap_or("");
+                    format!("{col} LIKE '{}'", v.replace('\'', "''"))
+                }
+                "ilike" => {
+                    let v = f.value.as_deref().unwrap_or("");
+                    format!("{col} ILIKE '{}'", v.replace('\'', "''"))
+                }
+                other => {
+                    // Unknown operator: fail closed (skip) rather than invent SQL.
+                    let _ = other;
+                    continue;
+                }
+            };
+            parts.push(part);
+        }
+        if let Some(raw) = self.raw_where.as_deref() {
+            let t = raw.trim();
+            if !t.is_empty() {
+                parts.push(format!("({t})"));
+            }
+        }
+        if parts.is_empty() {
+            return None;
+        }
+        Some(format!("WHERE {}", parts.join(" AND ")))
+    }
+
     /// SQL ORDER BY fragment from sort keys (quoted idents; presentation aid).
     ///
     /// Empty when no sort. Directions use ASC/DESC; ColumnSort::None skipped.
@@ -3010,6 +3075,32 @@ mod tests {
         assert_eq!(sql, "ORDER BY \"name\" ASC, \"age\" DESC");
         g.sort.clear();
         assert!(g.order_by_sql().is_none());
+    }
+
+    #[test]
+    fn filters_where_sql_from_chips_and_raw() {
+        let mut g = DataGridModel::default();
+        assert!(g.filters_where_sql().is_none());
+        g.add_filter_chip("status", "eq", Some("open".into()));
+        g.add_filter_chip("amount", "gt", Some("10".into()));
+        g.add_filter_chip("deleted_at", "isnull", None);
+        g.raw_where = Some("tenant_id = 1".into());
+        g.quick_filter = "page-local-ignored".into();
+        let sql = g.filters_where_sql().expect("where");
+        assert!(sql.starts_with("WHERE "), "{sql}");
+        assert!(sql.contains("\"status\" = 'open'"), "{sql}");
+        assert!(sql.contains("\"amount\" > '10'"), "{sql}");
+        assert!(sql.contains("\"deleted_at\" IS NULL"), "{sql}");
+        assert!(sql.contains("(tenant_id = 1)"), "{sql}");
+        assert!(!sql.contains("page-local"), "{sql}");
+        // LIKE + escape
+        g.filters.clear();
+        g.raw_where = None;
+        g.add_filter_chip("name", "like", Some("o'brien%".into()));
+        assert_eq!(
+            g.filters_where_sql().as_deref(),
+            Some("WHERE \"name\" LIKE 'o''brien%'")
+        );
     }
 
     #[test]

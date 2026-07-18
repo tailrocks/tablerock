@@ -194,6 +194,10 @@ pub enum ActionId {
     CopyOrderBySql,
     /// Copy SELECT visible cols FROM base ORDER BY current sort.
     CopySelectOrderSql,
+    /// Copy WHERE fragment from typed filter chips (+ raw WHERE).
+    CopyFilterWhereSql,
+    /// Copy SELECT visible cols FROM base WHERE filter chips [ORDER BY].
+    CopySelectFilterSql,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).

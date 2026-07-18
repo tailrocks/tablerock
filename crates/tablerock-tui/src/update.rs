@@ -4244,6 +4244,70 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyFilterWhereSql if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(text) = grid.filters_where_sql() else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied filter WHERE ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopySelectFilterSql if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) = (grid.base_schema.as_ref(), grid.base_table.as_ref())
+            else {
+                return Update::unchanged();
+            };
+            if schema.is_empty() || table.is_empty() {
+                return Update::unchanged();
+            }
+            let cols = grid.visible_columns();
+            if cols.is_empty() {
+                return Update::unchanged();
+            }
+            let Some(where_sql) = grid.filters_where_sql() else {
+                return Update::unchanged();
+            };
+            let col_list = cols
+                .iter()
+                .map(|c| quote_ident_sql(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut text = format!(
+                "SELECT {col_list}\nFROM {}.{}\n{where_sql}",
+                quote_ident_sql(schema),
+                quote_ident_sql(table)
+            );
+            if let Some(order) = grid.order_by_sql() {
+                text.push('\n');
+                text.push_str(&order);
+            }
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some("copied SELECT … WHERE filters".into());
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyPkNames if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -6007,6 +6071,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyDistinctSql
         | ActionId::CopyOrderBySql
         | ActionId::CopySelectOrderSql
+        | ActionId::CopyFilterWhereSql
+        | ActionId::CopySelectFilterSql
         | ActionId::CopyPkNames
         | ActionId::CopyPkIdents
         | ActionId::CopyLocator
@@ -7763,6 +7829,8 @@ fn cycle_action(
                 ActionId::CopyDistinctSql,
                 ActionId::CopyOrderBySql,
                 ActionId::CopySelectOrderSql,
+                ActionId::CopyFilterWhereSql,
+                ActionId::CopySelectFilterSql,
                 ActionId::CopyPkNames,
                 ActionId::CopyPkIdents,
                 ActionId::CopyLocator,
@@ -9649,6 +9717,45 @@ mod tests {
                 assert!(text.contains("width") || text.contains("16"), "{text}");
             }
             other => panic!("expected layout json copy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copy_filter_where_and_select_filter_sql() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "status".into()];
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("orders".into());
+            grid.add_filter_chip("status", "eq", Some("open".into()));
+            grid.push_sort_column("id");
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyFilterWhereSql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "WHERE \"status\" = 'open'");
+            }
+            other => panic!("expected filter WHERE, got {other:?}"),
+        }
+        model.set_action(ActionId::CopySelectFilterSql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("SELECT \"id\", \"status\""), "{text}");
+                assert!(text.contains("FROM \"public\".\"orders\""), "{text}");
+                assert!(text.contains("WHERE \"status\" = 'open'"), "{text}");
+                assert!(text.contains("ORDER BY \"id\" ASC"), "{text}");
+            }
+            other => panic!("expected SELECT filter, got {other:?}"),
         }
     }
 
