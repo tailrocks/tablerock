@@ -2635,6 +2635,138 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
     assert!(health.is_ok());
 }
 
+/// Mutation apply must surface Unknown when COMMIT is interrupted after a
+/// deferred write (no automatic retry / no false RolledBack).
+#[tokio::test]
+async fn mutation_apply_commit_loss_is_unknown_without_retry() {
+    use tablerock_core::{
+        BoundedText, ByteLimit, ContextId, FieldValue, IdParts, MutationChange, MutationId,
+        MutationPlan, MutationPlanLimits, MutationTarget, OperationScope, OwnedValue, ProfileId,
+        ReviewTokenId, Revision, SessionId, Truncation,
+    };
+    use tablerock_engine::MutationTransactionState;
+
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+    let observer = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+
+    // Deferred constraint trigger holds COMMIT in pg_sleep so we can kill the
+    // server after the write has been dispatched but before terminal confirm.
+    session
+        .execute_sql(
+            "CREATE TABLE mut_ambiguous (
+                id int PRIMARY KEY,
+                name text NOT NULL
+             );
+             CREATE FUNCTION mut_ambiguous_delay() RETURNS trigger
+             LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(10); RETURN NEW; END $$;
+             CREATE CONSTRAINT TRIGGER mut_ambiguous_delay
+             AFTER INSERT ON mut_ambiguous
+             DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+             EXECUTE FUNCTION mut_ambiguous_delay();",
+        )
+        .await
+        .unwrap();
+
+    fn bt(s: &str) -> BoundedText {
+        BoundedText::copy_from_str(s, ByteLimit::new(10_000)).unwrap()
+    }
+    fn field(name: &str, value: OwnedValue) -> FieldValue {
+        FieldValue::new(bt(name), value)
+    }
+    let limits = MutationPlanLimits::new(8, 16, 4096, 4096, 60_000).unwrap();
+    let scope = OperationScope::new(
+        ProfileId::from_parts(IdParts::new(1, 1).unwrap()).unwrap(),
+        SessionId::from_parts(IdParts::new(1, 2).unwrap()).unwrap(),
+        ContextId::from_parts(IdParts::new(1, 3).unwrap()).unwrap(),
+    );
+    let plan = MutationPlan::new(
+        MutationId::from_parts(IdParts::new(1, 40).unwrap()).unwrap(),
+        scope,
+        Revision::INITIAL,
+        MutationTarget::PostgreSqlRelation {
+            database: bt("postgres"),
+            schema: bt("public"),
+            relation: bt("mut_ambiguous"),
+        },
+        vec![MutationChange::InsertRow {
+            values: vec![
+                field("id", OwnedValue::signed(1)),
+                field(
+                    "name",
+                    OwnedValue::text(bt("ambig"), Truncation::Complete).unwrap(),
+                ),
+            ],
+        }],
+        limits,
+    )
+    .unwrap();
+    let authorized = plan
+        .review(
+            ReviewTokenId::from_parts(IdParts::new(1, 41).unwrap()).unwrap(),
+            1_000,
+            30_000,
+        )
+        .unwrap()
+        .authorize(5_000, scope, Revision::INITIAL)
+        .unwrap();
+
+    let apply = session.apply_authorized_mutation(authorized);
+    let stop = async {
+        tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                if observer
+                    .mutation_ambiguous_waiting_probe()
+                    .await
+                    .unwrap_or(false)
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("deferred COMMIT reaches pg_sleep");
+        container.stop_with_timeout(Some(1)).await.unwrap();
+    };
+    let (outcome, ()) = tokio::join!(apply, stop);
+    let outcome = outcome.expect("apply returns Ok outcome with Unknown state");
+    assert_eq!(
+        outcome.transaction,
+        MutationTransactionState::Unknown,
+        "interrupted COMMIT must not claim RolledBack/Committed: {outcome:?}"
+    );
+    // Single attempt only — test does not re-call apply (no automatic retry).
+    assert_eq!(outcome.changes.len(), 1);
+    let _ = session.shutdown().await;
+    let _ = observer.shutdown().await;
+}
+
 #[tokio::test]
 async fn ddl_add_column_and_list_roles() {
     use tablerock_core::{

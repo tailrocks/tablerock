@@ -1873,6 +1873,26 @@ impl PostgresSession {
         row.try_get(0).map_err(|_| PostgresError::Protocol)
     }
 
+    /// True when another backend is in `pg_sleep` during mutation apply COMMIT
+    /// (deferred trigger on `mut_ambiguous` fixture table).
+    pub async fn mutation_ambiguous_waiting_probe(&self) -> Result<bool, PostgresError> {
+        let row = self
+            .client
+            .query_one(
+                "SELECT EXISTS(\
+                    SELECT 1 FROM pg_stat_activity \
+                    WHERE pid <> pg_backend_pid() \
+                      AND state = 'active' \
+                      AND wait_event = 'PgSleep' \
+                      AND (query LIKE '%mut_ambiguous%' OR query ILIKE '%commit%')\
+                 )",
+                &[],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        row.try_get(0).map_err(|_| PostgresError::Protocol)
+    }
+
     pub async fn ambiguous_transport_commit_count_probe(&self) -> Result<u64, PostgresError> {
         let row = self
             .client

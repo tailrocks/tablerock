@@ -135,8 +135,8 @@ silently discard; ambiguous writes never retry.
 
 ## Residual (explicit, non-blocking for plan index DONE)
 
-- Ambiguity-inject Docker fixture for mutation apply → `Unknown` (mapping
-  already: `ServerCancelled` / COMMIT failure → `Unknown`, no replay)
+- ~~Ambiguity-inject Docker fixture for mutation apply → `Unknown`~~
+  (closed: evidence 323; deferred trigger + server stop; no auto-retry)
 - Full ValueKind editor widgets (bool/temporal/JSON/bytes) beyond kind gates
 - Multi-column FK follow polish; indexes/constraints raw DDL in structure
 - Permission-denied activity signal fixtures

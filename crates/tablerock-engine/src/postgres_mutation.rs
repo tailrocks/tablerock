@@ -108,7 +108,9 @@ impl PostgresSession {
                         changes: outcomes,
                     });
                 }
-                Err(PostgresError::ServerCancelled) => {
+                Err(PostgresError::ServerCancelled)
+                | Err(PostgresError::WriteOutcomeUnknown) => {
+                    // Dispatched write without confirmed terminal — never auto-retry.
                     let _ = self.client.batch_execute("ROLLBACK").await;
                     return Ok(MutationApplyOutcome {
                         mutation_id: plan.mutation_id(),
