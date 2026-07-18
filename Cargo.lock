@@ -4501,6 +4501,7 @@ dependencies = [
  "termrock",
  "testcontainers",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]
