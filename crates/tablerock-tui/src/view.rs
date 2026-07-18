@@ -1,5 +1,6 @@
 //! Pure full-frame shell rendering and render-authorized hit geometry.
 
+use ratatui_core::text::Line;
 use ratatui_core::{
     layout::{Constraint, Direction, Layout, Position, Rect},
     style::Style,
@@ -8,12 +9,16 @@ use ratatui_core::{
 use termrock::{
     interaction::HitRegion,
     widgets::{
-        Action, ActionBar, ActionBarState, Panel, PanelEmphasis, StatusBar, StatusBarState,
-        StatusSlot, Tab, Tabs, TabsState, render_hint_bar,
+        Action, ActionBar, ActionBarState, Form, FormField, FormSection, FormState, Panel,
+        PanelEmphasis, StatusBar, StatusBarState, StatusSlot, Tab, Tabs, TabsState, Tree, TreeNode,
+        TreeNodeStatus, TreeState, render_hint_bar,
     },
 };
 
-use crate::{ActionId, FocusRegion, LayoutMode, Model, Screen, ShellKeyAction, ShellTarget};
+use crate::{
+    ActionId, FocusRegion, LayoutMode, Model, Screen, ShellKeyAction, ShellTarget,
+    model::editor::EditorField,
+};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ShellView;
@@ -363,196 +368,328 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
         } else {
             PanelEmphasis::Normal
         });
-    // Prefer body when TermRock Panel supports content; fall back to title-only.
-    let _ = body.as_ref();
     frame.render_widget(&panel, area);
-    if area.height > 2 && area.width > 2 {
-        use ratatui_core::widgets::Widget;
-        let mut y = area.y.saturating_add(1);
-        let max_y = area.y.saturating_add(area.height.saturating_sub(1));
-        let x = area.x.saturating_add(1);
-        let width = area.width.saturating_sub(2);
+    if area.height <= 2 || area.width <= 2 {
+        return;
+    }
+    let inner = Rect {
+        x: area.x.saturating_add(1),
+        y: area.y.saturating_add(1),
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    };
+    let is_workspace = title == "Workspace" || title.ends_with("Workspace");
+    if !is_workspace {
         if let Some(status) = body.as_ref() {
-            let text = ratatui_core::text::Line::from(status.as_str());
-            text.render(
-                Rect {
-                    x,
-                    y,
-                    width,
-                    height: 1,
-                },
-                frame.buffer_mut(),
-            );
-            y = y.saturating_add(1);
+            use ratatui_core::widgets::Widget;
+            Line::from(status.as_str()).render(inner, frame.buffer_mut());
         }
-        if (title == "Workspace" || title.ends_with("Workspace"))
-            && matches!(
-                model.screen(),
-                crate::Screen::Connections | crate::Screen::ConnectionPicker
-            )
-        {
-            if matches!(
-                model.profiles(),
-                crate::model::profiles::ProfileListState::Loaded { .. }
-            ) {
-                let selected = match model.profiles() {
-                    crate::model::profiles::ProfileListState::Loaded { selected, .. } => *selected,
-                    _ => 0,
-                };
-                let search = match model.profiles() {
-                    crate::model::profiles::ProfileListState::Loaded { search, .. } => {
-                        search.clone()
-                    }
-                    _ => String::new(),
-                };
-                if !search.is_empty() && y < max_y {
-                    let filter_line = format!("filter: {search}");
-                    let clipped: String = filter_line.chars().take(width as usize).collect();
-                    ratatui_core::text::Line::from(clipped).render(
-                        Rect {
-                            x,
-                            y,
-                            width,
-                            height: 1,
-                        },
-                        frame.buffer_mut(),
-                    );
-                    y = y.saturating_add(1);
-                }
-                let rows: Vec<_> = model
-                    .profiles()
-                    .visible_rows()
-                    .into_iter()
-                    .cloned()
-                    .collect();
-                for (index, row) in rows.iter().enumerate() {
-                    if y >= max_y {
-                        break;
-                    }
-                    let marker = if index == selected { ">" } else { " " };
-                    let line = format!("{marker} {}", row.list_line());
-                    let clipped: String = line.chars().take(width as usize).collect();
-                    ratatui_core::text::Line::from(clipped).render(
-                        Rect {
-                            x,
-                            y,
-                            width,
-                            height: 1,
-                        },
-                        frame.buffer_mut(),
-                    );
-                    y = y.saturating_add(1);
-                }
-            }
+        return;
+    }
+    match model.screen() {
+        Screen::Connections | Screen::ConnectionPicker => {
+            render_connection_tree(model, frame, inner, body.as_deref());
         }
-        if model.screen() == crate::Screen::Editor
-            && (title == "Workspace" || title.ends_with("Workspace"))
-        {
-            use crate::model::editor::EditorField;
-            for field in [
-                EditorField::Engine,
-                EditorField::Name,
-                EditorField::Group,
-                EditorField::Environment,
-                EditorField::Host,
-                EditorField::Port,
-                EditorField::Database,
-                EditorField::Username,
-                EditorField::Password,
-                EditorField::PasswordSource,
-                EditorField::TlsMode,
-            ] {
-                if y >= max_y {
-                    break;
-                }
-                let marker = if model.editor().focused == field {
-                    ">"
-                } else {
-                    " "
-                };
-                let line = format!("{marker} {field:?}: {}", model.editor().field_value(field));
-                let clipped: String = line.chars().take(width as usize).collect();
-                ratatui_core::text::Line::from(clipped).render(
-                    Rect {
-                        x,
-                        y,
-                        width,
-                        height: 1,
-                    },
-                    frame.buffer_mut(),
-                );
-                y = y.saturating_add(1);
+        Screen::Editor => render_connection_form(model, frame, inner),
+        Screen::Workbench => render_workbench_facts(model, frame, inner, body.as_deref()),
+    }
+}
+
+fn render_connection_tree(model: &Model, frame: &mut Frame<'_>, area: Rect, status: Option<&str>) {
+    use ratatui_core::widgets::Widget;
+    let mut content = area;
+    if let Some(status) = status {
+        Line::from(status).render(
+            Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: 1,
+            },
+            frame.buffer_mut(),
+        );
+        content.y = content.y.saturating_add(1);
+        content.height = content.height.saturating_sub(1);
+    }
+    let search = match model.profiles() {
+        crate::model::profiles::ProfileListState::Loaded { search, .. } => search.clone(),
+        _ => String::new(),
+    };
+    if !search.is_empty() && content.height > 0 {
+        Line::from(format!("filter: {search}")).render(
+            Rect {
+                x: content.x,
+                y: content.y,
+                width: content.width,
+                height: 1,
+            },
+            frame.buffer_mut(),
+        );
+        content.y = content.y.saturating_add(1);
+        content.height = content.height.saturating_sub(1);
+    }
+    let (nodes, labels, depths, selected_key) = build_connection_tree_nodes(model);
+    let tree_nodes: Vec<TreeNode<'_, String>> = nodes
+        .iter()
+        .zip(labels.iter())
+        .zip(depths.iter())
+        .map(|((id, label), depth)| {
+            let is_group = id.starts_with("g:");
+            TreeNode {
+                id: id.clone(),
+                label: Line::from(label.as_str()),
+                trailing: None,
+                depth: *depth,
+                branch: is_group,
+                expanded: is_group
+                    && !model
+                        .profiles()
+                        .is_group_collapsed(id.strip_prefix("g:").unwrap_or("")),
+                enabled: true,
+                status: TreeNodeStatus::Ready,
             }
-            if let Some(error) = &model.editor().validation_error
-                && y < max_y
-            {
-                let clipped: String = format!("! {error}").chars().take(width as usize).collect();
-                ratatui_core::text::Line::from(clipped).render(
-                    Rect {
-                        x,
-                        y,
-                        width,
-                        height: 1,
-                    },
-                    frame.buffer_mut(),
-                );
-                y = y.saturating_add(1);
-            }
-            if let Some(status) = &model.editor().test_status
-                && y < max_y
-            {
-                let clipped: String = format!("test: {status}")
-                    .chars()
-                    .take(width as usize)
-                    .collect();
-                ratatui_core::text::Line::from(clipped).render(
-                    Rect {
-                        x,
-                        y,
-                        width,
-                        height: 1,
-                    },
-                    frame.buffer_mut(),
-                );
-            }
+        })
+        .collect();
+    let mut state = TreeState::new(selected_key);
+    state.set_focused(model.focus() == Some(FocusRegion::Content));
+    frame.render_stateful_widget(&Tree::new(&tree_nodes, &model.theme), content, &mut state);
+}
+
+/// Build TermRock Tree projection: group branches + profile leaves.
+fn build_connection_tree_nodes(
+    model: &Model,
+) -> (Vec<String>, Vec<String>, Vec<u16>, Option<String>) {
+    let rows = model.profiles().visible_rows();
+    let mut groups: Vec<Option<String>> = Vec::new();
+    for row in &rows {
+        let key = row.group.clone();
+        if !groups.iter().any(|existing| existing == &key) {
+            groups.push(key);
         }
-        if model.screen() == crate::Screen::Workbench
-            && (title == "Workspace" || title.ends_with("Workspace"))
-            && let Some(session) = model.session()
-        {
-            for line in [
-                format!("session: {}", session.session_id_hex),
-                format!("engine: {}", session.engine_label),
-                format!("identity: {}", session.identity),
-                format!(
-                    "durability: {}",
-                    if session.temporary {
-                        "temporary"
-                    } else {
-                        "saved"
-                    }
-                ),
-                session
-                    .status
-                    .as_ref()
-                    .map(|status| format!("status: {status}"))
-                    .unwrap_or_default(),
-            ] {
-                if y >= max_y || line.is_empty() {
+    }
+    groups.sort_by(|left, right| match (left, right) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (Some(a), Some(b)) => a.cmp(b),
+    });
+    let mut ids = Vec::new();
+    let mut labels = Vec::new();
+    let mut depths = Vec::new();
+    for group in groups {
+        match &group {
+            Some(name) => {
+                ids.push(format!("g:{name}"));
+                labels.push(name.clone());
+                depths.push(0);
+                if model.profiles().is_group_collapsed(name) {
                     continue;
                 }
-                let clipped: String = line.chars().take(width as usize).collect();
-                ratatui_core::text::Line::from(clipped).render(
-                    Rect {
-                        x,
-                        y,
-                        width,
-                        height: 1,
-                    },
-                    frame.buffer_mut(),
-                );
-                y = y.saturating_add(1);
+                for row in &rows {
+                    if row.group.as_deref() == Some(name.as_str()) {
+                        ids.push(format!("p:{}", row.id_hex));
+                        labels.push(row.list_line());
+                        depths.push(1);
+                    }
+                }
+            }
+            None => {
+                for row in &rows {
+                    if row.group.is_none() {
+                        ids.push(format!("p:{}", row.id_hex));
+                        labels.push(row.list_line());
+                        depths.push(0);
+                    }
+                }
             }
         }
+    }
+    let selected_key = model
+        .profiles()
+        .selected_row()
+        .map(|row| format!("p:{}", row.id_hex));
+    (ids, labels, depths, selected_key)
+}
+
+fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
+    use ratatui_core::widgets::Widget;
+    let editor = model.editor();
+    let mut form_area = area;
+    if let Some(error) = editor.validation_error.as_ref() {
+        Line::from(format!("! {error}")).render(
+            Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: 1,
+            },
+            frame.buffer_mut(),
+        );
+        form_area.y = form_area.y.saturating_add(1);
+        form_area.height = form_area.height.saturating_sub(1);
+    } else if let Some(status) = editor.test_status.as_ref() {
+        Line::from(format!("test: {status}")).render(
+            Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: 1,
+            },
+            frame.buffer_mut(),
+        );
+        form_area.y = form_area.y.saturating_add(1);
+        form_area.height = form_area.height.saturating_sub(1);
+    }
+    // Owned display values live for this render frame.
+    let engine = editor.field_value(EditorField::Engine);
+    let name = editor.field_value(EditorField::Name);
+    let group = editor.field_value(EditorField::Group);
+    let environment = editor.field_value(EditorField::Environment);
+    let host = editor.field_value(EditorField::Host);
+    let port = editor.field_value(EditorField::Port);
+    let database = editor.field_value(EditorField::Database);
+    let username = editor.field_value(EditorField::Username);
+    let password = editor.field_value(EditorField::Password);
+    let password_source = editor.field_value(EditorField::PasswordSource);
+    let tls_mode = editor.field_value(EditorField::TlsMode);
+
+    let general = [
+        FormField::new(
+            EditorField::Engine,
+            Line::from("Engine"),
+            Line::from(engine.as_str()),
+        ),
+        FormField::new(
+            EditorField::Name,
+            Line::from("Name"),
+            Line::from(name.as_str()),
+        )
+        .required(true),
+        FormField::new(
+            EditorField::Group,
+            Line::from("Group"),
+            Line::from(group.as_str()),
+        ),
+        FormField::new(
+            EditorField::Environment,
+            Line::from("Environment"),
+            Line::from(environment.as_str()),
+        ),
+    ];
+    let connection = [
+        FormField::new(
+            EditorField::Host,
+            Line::from("Host"),
+            Line::from(host.as_str()),
+        )
+        .required(true),
+        FormField::new(
+            EditorField::Port,
+            Line::from("Port"),
+            Line::from(port.as_str()),
+        )
+        .required(true),
+        FormField::new(
+            EditorField::Database,
+            Line::from("Database"),
+            Line::from(database.as_str()),
+        ),
+    ];
+    let credentials = [
+        FormField::new(
+            EditorField::Username,
+            Line::from("Username"),
+            Line::from(username.as_str()),
+        ),
+        FormField::new(
+            EditorField::Password,
+            Line::from("Password"),
+            Line::from(password.as_str()),
+        ),
+        FormField::new(
+            EditorField::PasswordSource,
+            Line::from("Password source"),
+            Line::from(password_source.as_str()),
+        ),
+    ];
+    let tls = [FormField::new(
+        EditorField::TlsMode,
+        Line::from("TLS mode"),
+        Line::from(tls_mode.as_str()),
+    )];
+    let sections = [
+        FormSection {
+            title: Line::from("General"),
+            fields: &general,
+        },
+        FormSection {
+            title: Line::from("Connection"),
+            fields: &connection,
+        },
+        FormSection {
+            title: Line::from("Credentials"),
+            fields: &credentials,
+        },
+        FormSection {
+            title: Line::from("TLS"),
+            fields: &tls,
+        },
+    ];
+    let mut state = FormState::new(Some(editor.focused));
+    state.set_active(model.focus() == Some(FocusRegion::Content));
+    frame.render_stateful_widget(&Form::new(&sections, &model.theme), form_area, &mut state);
+}
+
+fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, status: Option<&str>) {
+    use ratatui_core::widgets::Widget;
+    let mut y = area.y;
+    let max_y = area.y.saturating_add(area.height);
+    if let Some(status) = status {
+        Line::from(status).render(
+            Rect {
+                x: area.x,
+                y,
+                width: area.width,
+                height: 1,
+            },
+            frame.buffer_mut(),
+        );
+        y = y.saturating_add(1);
+    }
+    let Some(session) = model.session() else {
+        return;
+    };
+    for line in [
+        format!("session: {}", session.session_id_hex),
+        format!("engine: {}", session.engine_label),
+        format!("identity: {}", session.identity),
+        format!(
+            "durability: {}",
+            if session.temporary {
+                "temporary"
+            } else {
+                "saved"
+            }
+        ),
+        session
+            .status
+            .as_ref()
+            .map(|status| format!("status: {status}"))
+            .unwrap_or_default(),
+    ] {
+        if y >= max_y || line.is_empty() {
+            continue;
+        }
+        let clipped: String = line.chars().take(area.width as usize).collect();
+        Line::from(clipped).render(
+            Rect {
+                x: area.x,
+                y,
+                width: area.width,
+                height: 1,
+            },
+            frame.buffer_mut(),
+        );
+        y = y.saturating_add(1);
     }
 }

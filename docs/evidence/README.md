@@ -168,6 +168,7 @@ How to read an evidence document:
 - 200 — [Connection editor Test Connection effect](delivery/200-connection-test-effect.md)
 - 201 — [Connect session registration and stub workbench](delivery/201-connect-session-workbench.md)
 - 202 — [Connection list selection, search, and Open profile](delivery/202-list-selection-connect-profile.md)
+- 204 — [TermRock Form/Tree on connection screens](delivery/204-termrock-form-tree-connection-screens.md)
 
 ## TermRock pins
 

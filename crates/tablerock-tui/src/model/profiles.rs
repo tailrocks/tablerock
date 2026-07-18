@@ -76,6 +76,31 @@ pub enum FailureProjection {
     Label(String),
 }
 
+/// Tree node identity for connection list (group branch or profile leaf).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConnectionNodeId {
+    Group(String),
+    Profile(String),
+}
+
+impl ConnectionNodeId {
+    #[must_use]
+    pub fn as_key(&self) -> String {
+        match self {
+            Self::Group(name) => format!("g:{name}"),
+            Self::Profile(id) => format!("p:{id}"),
+        }
+    }
+
+    #[must_use]
+    pub fn profile_id(&self) -> Option<&str> {
+        match self {
+            Self::Profile(id) => Some(id.as_str()),
+            Self::Group(_) => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProfileListState {
     Idle,
@@ -85,10 +110,12 @@ pub enum ProfileListState {
     Loaded {
         request_token: RequestToken,
         rows: Vec<ProfileRowProjection>,
-        /// Selected row in the current (search-filtered) view.
-        selected: usize,
+        /// Selected profile id (leaf), if any.
+        selected_id: Option<String>,
         /// Client-side search text (name/host/group).
         search: String,
+        /// Collapsed group names.
+        collapsed: Vec<String>,
     },
     Failed {
         request_token: RequestToken,
@@ -146,71 +173,147 @@ impl ProfileListState {
         match self {
             Self::Loaded {
                 rows,
-                selected,
+                selected_id: Some(id),
                 search,
                 ..
-            } => {
-                let visible = Self::filter_rows(rows, search);
-                visible.get(*selected).copied()
-            }
+            } => Self::filter_rows(rows, search)
+                .into_iter()
+                .find(|row| row.id_hex == *id),
             _ => None,
         }
     }
 
     pub fn select_next(&mut self) {
-        if let Self::Loaded {
-            rows,
-            selected,
-            search,
-            ..
-        } = self
-        {
-            let len = Self::filter_rows(rows, search).len();
-            if len == 0 {
-                *selected = 0;
-            } else {
-                *selected = (*selected + 1) % len;
-            }
-        }
+        self.move_selection(1);
     }
 
     pub fn select_previous(&mut self) {
-        if let Self::Loaded {
+        self.move_selection(-1);
+    }
+
+    fn move_selection(&mut self, delta: isize) {
+        let Self::Loaded {
             rows,
-            selected,
+            selected_id,
             search,
+            collapsed,
             ..
         } = self
-        {
-            let len = Self::filter_rows(rows, search).len();
-            if len == 0 {
-                *selected = 0;
-            } else if *selected == 0 {
-                *selected = len - 1;
-            } else {
-                *selected -= 1;
-            }
+        else {
+            return;
+        };
+        let leaf_ids = Self::leaf_profile_ids(rows, search, collapsed);
+        if leaf_ids.is_empty() {
+            *selected_id = None;
+            return;
         }
+        let current = selected_id
+            .as_ref()
+            .and_then(|id| leaf_ids.iter().position(|candidate| candidate == id))
+            .unwrap_or(0);
+        let next = if delta < 0 {
+            if current == 0 {
+                leaf_ids.len() - 1
+            } else {
+                current - 1
+            }
+        } else {
+            (current + 1) % leaf_ids.len()
+        };
+        *selected_id = Some(leaf_ids[next].clone());
     }
 
     pub fn push_search(&mut self, text: &str) {
         if let Self::Loaded {
-            selected, search, ..
+            selected_id,
+            search,
+            rows,
+            collapsed,
+            ..
         } = self
         {
             search.push_str(text);
-            *selected = 0;
+            let leaves = Self::leaf_profile_ids(rows, search, collapsed);
+            *selected_id = leaves.into_iter().next();
         }
     }
 
     pub fn clear_search(&mut self) {
         if let Self::Loaded {
-            selected, search, ..
+            selected_id,
+            search,
+            rows,
+            collapsed,
+            ..
         } = self
         {
             search.clear();
-            *selected = 0;
+            let leaves = Self::leaf_profile_ids(rows, search, collapsed);
+            *selected_id = leaves.into_iter().next();
         }
+    }
+
+    pub fn toggle_group(&mut self, group: &str) {
+        if let Self::Loaded { collapsed, .. } = self {
+            if let Some(index) = collapsed.iter().position(|name| name == group) {
+                collapsed.remove(index);
+            } else {
+                collapsed.push(group.to_owned());
+            }
+        }
+    }
+
+    pub fn set_selected_id(&mut self, id: Option<String>) {
+        if let Self::Loaded { selected_id, .. } = self {
+            *selected_id = id;
+        }
+    }
+
+    #[must_use]
+    pub fn is_group_collapsed(&self, group: &str) -> bool {
+        match self {
+            Self::Loaded { collapsed, .. } => collapsed.iter().any(|name| name == group),
+            _ => false,
+        }
+    }
+
+    /// Flat leaf profile ids in tree display order (expanded groups only).
+    fn leaf_profile_ids(
+        rows: &[ProfileRowProjection],
+        search: &str,
+        collapsed: &[String],
+    ) -> Vec<String> {
+        let visible = Self::filter_rows(rows, search);
+        let mut groups: Vec<Option<String>> = Vec::new();
+        for row in &visible {
+            let key = row.group.clone();
+            if !groups.iter().any(|existing| existing == &key) {
+                groups.push(key);
+            }
+        }
+        groups.sort_by(|left, right| match (left, right) {
+            (None, None) => std::cmp::Ordering::Equal,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (Some(a), Some(b)) => a.cmp(b),
+        });
+        let mut out = Vec::new();
+        for group in groups {
+            let name = group.as_deref().unwrap_or("");
+            let is_collapsed = group
+                .as_ref()
+                .is_some_and(|g| collapsed.iter().any(|c| c == g));
+            if group.is_some() && is_collapsed {
+                continue;
+            }
+            for row in &visible {
+                let row_group = row.group.as_deref().unwrap_or("");
+                if row_group == name {
+                    out.push(row.id_hex.clone());
+                }
+            }
+        }
+        out
     }
 
     fn filter_rows<'a>(

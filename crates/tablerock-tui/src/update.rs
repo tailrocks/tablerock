@@ -153,11 +153,13 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.profiles().active_token() != Some(request_token) {
                 return Update::unchanged();
             }
+            let selected_id = items.first().map(|row| row.id_hex.clone());
             model.set_profiles(ProfileListState::Loaded {
                 request_token,
                 rows: items,
-                selected: 0,
+                selected_id,
                 search: String::new(),
+                collapsed: Vec::new(),
             });
             Update::render()
         }
@@ -675,6 +677,28 @@ mod tests {
             model.editor().test_status.as_deref(),
             Some("failed: connect")
         );
+    }
+
+    #[test]
+    fn temporary_connect_effect_sets_temporary_flag() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Editor);
+        model.set_action(ActionId::Connect);
+        model.editor_mut().name = "tmp".into();
+        model.editor_mut().host = "127.0.0.1".into();
+        model.editor_mut().port = "5432".into();
+        for _ in 0..4 {
+            let _ = update(&mut model, Message::FocusNext);
+        }
+        model.set_action(ActionId::Connect);
+        let result = update(&mut model, Message::Activate);
+        assert!(matches!(
+            result.effects().next(),
+            Some(Effect::ConnectSession {
+                temporary: true,
+                ..
+            })
+        ));
     }
 
     #[test]
