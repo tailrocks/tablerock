@@ -110,6 +110,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::EditRawWhere { confirm_buffer, .. }
                     | ConfirmDialog::EditQuickFilter { confirm_buffer, .. }
                     | ConfirmDialog::GoToRow { confirm_buffer, .. }
+                    | ConfirmDialog::PickDate { confirm_buffer, .. }
                     | ConfirmDialog::StageRedis { confirm_buffer, .. }
                     | ConfirmDialog::RedisSubscribe { confirm_buffer, .. }
                     | ConfirmDialog::RenameGroup { confirm_buffer, .. }
@@ -2831,6 +2832,47 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     model.set_confirm(None);
                     jump_to_row(model, target)
                 }
+                ConfirmDialog::PickDate {
+                    year,
+                    month,
+                    confirm_buffer,
+                    time_suffix,
+                    ..
+                } => {
+                    let trimmed = confirm_buffer.trim();
+                    if trimmed.is_empty() {
+                        return Update::render();
+                    }
+                    let date = if let Some((y, m, d)) = parse_pick_date(trimmed) {
+                        (y, m, d)
+                    } else if let Ok(day) = trimmed.parse::<u32>() {
+                        if !(1..=31).contains(&day) {
+                            return Update::render();
+                        }
+                        let max = days_in_month_public(year, month);
+                        if day > max {
+                            return Update::render();
+                        }
+                        (year, month, day)
+                    } else {
+                        return Update::render();
+                    };
+                    let (y, m, d) = date;
+                    let value = if time_suffix.is_empty() {
+                        format!("{y:04}-{m:02}-{d:02}")
+                    } else {
+                        format!("{y:04}-{m:02}-{d:02}{time_suffix}")
+                    };
+                    model.set_confirm(None);
+                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                        if let Some(edit) = grid.cell_edit.as_mut() {
+                            if edit.kind == crate::model::grid::CellDistinction::Temporal {
+                                edit.buffer = value;
+                            }
+                        }
+                    }
+                    Update::render()
+                }
                 ConfirmDialog::StageRedis {
                     op,
                     logical_db,
@@ -3813,6 +3855,27 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::IncMonth if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.step_month(1) {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::DecMonth if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.step_month(-1) {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::PickDate if model.screen() == Screen::Workbench => open_pick_date(model),
         ActionId::IncNumber if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if let Some(edit) = grid.cell_edit.as_mut() {
@@ -4322,6 +4385,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::SetNow
         | ActionId::IncDay
         | ActionId::DecDay
+        | ActionId::IncMonth
+        | ActionId::DecMonth
+        | ActionId::PickDate
         | ActionId::IncNumber
         | ActionId::DecNumber
         | ActionId::FormatJson
@@ -5359,6 +5425,111 @@ fn add_value_filter(model: &mut Model, operator: &str, wrap_like: bool) -> Updat
     rebrowse_active_table(model)
 }
 
+fn open_pick_date(model: &mut Model) -> Update {
+    let Some(grid) = model.workbench().active_grid() else {
+        return Update::unchanged();
+    };
+    let Some(edit) = grid.cell_edit.as_ref() else {
+        return Update::unchanged();
+    };
+    if edit.kind != crate::model::grid::CellDistinction::Temporal {
+        return Update::unchanged();
+    }
+    let cal = edit.month_calendar_text().unwrap_or_default();
+    let (year, month, day, time_suffix) = parse_temporal_parts(&edit.buffer).unwrap_or_else(|| {
+        let today = chrono_today_fallback();
+        (today.0, today.1, today.2, String::new())
+    });
+    model.set_confirm(Some(ConfirmDialog::PickDate {
+        year,
+        month,
+        confirm_buffer: day.to_string(),
+        time_suffix,
+        calendar_text: cal,
+    }));
+    model.set_action(ActionId::Submit);
+    Update::render()
+}
+
+fn parse_temporal_parts(buf: &str) -> Option<(i32, u32, u32, String)> {
+    let t = buf.trim();
+    if t.is_empty() || t.eq_ignore_ascii_case("null") {
+        return None;
+    }
+    let (date_part, rest) = if let Some((d, r)) = t.split_once('T') {
+        (d, format!("T{r}"))
+    } else if let Some((d, r)) = t.split_once(' ') {
+        (d, format!(" {r}"))
+    } else if t.len() >= 10 {
+        (
+            &t[..10],
+            if t.len() > 10 {
+                t[10..].to_owned()
+            } else {
+                String::new()
+            },
+        )
+    } else {
+        return None;
+    };
+    let parts: Vec<&str> = date_part.split('-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let y: i32 = parts[0].parse().ok()?;
+    let m: u32 = parts[1].parse().ok()?;
+    let d: u32 = parts[2].parse().ok()?;
+    Some((y, m, d, rest))
+}
+
+fn parse_pick_date(s: &str) -> Option<(i32, u32, u32)> {
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    Some((
+        parts[0].parse().ok()?,
+        parts[1].parse().ok()?,
+        parts[2].parse().ok()?,
+    ))
+}
+
+fn days_in_month_public(y: i32, m: u32) -> u32 {
+    match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 30,
+    }
+}
+
+fn chrono_today_fallback() -> (i32, u32, u32) {
+    // Match local_today_iso path without exposing private helpers.
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let days = secs.div_euclid(86_400);
+    // Reuse same civil conversion as grid (inline copy of Howard formula end).
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as i32, m as u32, d as u32)
+}
+
 /// Jump to absolute row; FetchPage when outside resident window.
 fn jump_to_row(model: &mut Model, target: u64) -> Update {
     let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
@@ -5690,6 +5861,9 @@ fn cycle_action(
                 ActionId::SetNow,
                 ActionId::IncDay,
                 ActionId::DecDay,
+                ActionId::IncMonth,
+                ActionId::DecMonth,
+                ActionId::PickDate,
                 ActionId::IncNumber,
                 ActionId::DecNumber,
                 ActionId::FormatJson,

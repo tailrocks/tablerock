@@ -193,6 +193,12 @@ pub enum ActionId {
     IncDay,
     /// Step temporal date by -1 day while editing.
     DecDay,
+    /// Step temporal date by +1 month while editing.
+    IncMonth,
+    /// Step temporal date by -1 month while editing.
+    DecMonth,
+    /// Open text month calendar for temporal edit (paste day 1-31).
+    PickDate,
     /// Step number cell buffer by +1 while editing.
     IncNumber,
     /// Step number cell buffer by -1 while editing.
@@ -382,6 +388,17 @@ pub enum ConfirmDialog {
     /// Jump to absolute row: confirm_buffer is decimal row index.
     GoToRow {
         confirm_buffer: String,
+    },
+    /// Text month calendar for temporal edit: paste day 1-31 (or full YYYY-MM-DD).
+    PickDate {
+        year: i32,
+        month: u32,
+        /// Day number or full ISO date.
+        confirm_buffer: String,
+        /// Time suffix to preserve (e.g. `T12:00:00Z`).
+        time_suffix: String,
+        /// Calendar grid for the dialog body.
+        calendar_text: String,
     },
     /// Stage Redis collection mutation: paste field/member/score payload.
     ///

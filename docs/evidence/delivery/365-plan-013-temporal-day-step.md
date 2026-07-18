@@ -27,4 +27,4 @@ cargo check -p tablerock-tui
 
 ## Remaining work
 
-- Full calendar month picker widget (optional)
+- Full calendar month picker — shipped as evidence 369

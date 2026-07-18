@@ -286,6 +286,18 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             "Go to row?",
             format!("Paste absolute 0-based row index [{confirm_buffer}]"),
         ),
+        crate::model::ConfirmDialog::PickDate {
+            year,
+            month,
+            confirm_buffer,
+            calendar_text,
+            ..
+        } => (
+            "Pick date?",
+            format!(
+                "{calendar_text}Paste day 1-31 or YYYY-MM-DD for {year:04}-{month:02} [{confirm_buffer}]"
+            ),
+        ),
         crate::model::ConfirmDialog::StageRedis {
             op,
             logical_db,
@@ -641,6 +653,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let set_now = action_label(model, ActionId::SetNow, "Now");
     let inc_day = action_label(model, ActionId::IncDay, "Day+");
     let dec_day = action_label(model, ActionId::DecDay, "Day-");
+    let inc_month = action_label(model, ActionId::IncMonth, "Mon+");
+    let dec_month = action_label(model, ActionId::DecMonth, "Mon-");
+    let pick_date = action_label(model, ActionId::PickDate, "Cal");
     let inc_num = action_label(model, ActionId::IncNumber, "Num+");
     let dec_num = action_label(model, ActionId::DecNumber, "Num-");
     let fmt_json = action_label(model, ActionId::FormatJson, "FmtJson");
@@ -1124,6 +1139,24 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::DecDay,
                         label: dec_day.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::IncMonth,
+                        label: inc_month.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DecMonth,
+                        label: dec_month.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PickDate,
+                        label: pick_date.as_str(),
                         enabled: true,
                         style: None,
                     },

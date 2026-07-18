@@ -158,7 +158,7 @@ multi-column FK follow, gated truncate/drop/rename, activity +
 cancel/terminate with permission-denied signals, mutation apply Unknown on
 interrupted COMMIT, temporal/structured staging validation, structured JSON
 tree inspector; VACUUM/ANALYZE (341); CopyStructureDdl (342); temporal
-Today/Now (346) + Day± (365). Residual polish: full calendar month widget.
+Today/Now (346) + Day± (365) + Mon±/PickDate calendar (369).
 
 Deliver proven editability, typed value editors, inserts/updates/deletes
 staged in memory with visible row/cell highlighting, undo/discard, the review

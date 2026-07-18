@@ -61,35 +61,50 @@ impl CellEditSession {
         if self.kind != CellDistinction::Temporal || delta_days == 0 {
             return false;
         }
-        let trimmed = self.buffer.trim();
-        if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
-            // Start from today then step.
-            self.buffer = local_today_iso();
-            if delta_days == 0 {
-                return true;
-            }
-        }
-        let t = self.buffer.trim();
-        let (date_part, rest) = if let Some((d, r)) = t.split_once('T') {
-            (d, Some(format!("T{r}")))
-        } else if let Some((d, r)) = t.split_once(' ') {
-            (d, Some(format!(" {r}")))
-        } else if t.len() >= 10 && t.as_bytes().get(4) == Some(&b'-') {
-            (&t[..10], if t.len() > 10 { Some(t[10..].to_owned()) } else { None })
-        } else {
-            return false;
-        };
-        let Some((y, m, d)) = parse_ymd(date_part) else {
+        self.ensure_temporal_date_base();
+        let Some((y, m, d, rest)) = split_temporal_buffer(&self.buffer) else {
             return false;
         };
         let days = days_from_civil(y, m, d).saturating_add(i64::from(delta_days));
         let (ny, nm, nd) = civil_from_days(days);
-        let new_date = format!("{ny:04}-{nm:02}-{nd:02}");
-        self.buffer = match rest {
-            Some(r) => format!("{new_date}{r}"),
-            None => new_date,
-        };
+        self.buffer = join_temporal_date(ny, nm, nd, rest.as_deref());
         true
+    }
+
+    /// Step calendar month by `delta_months` (clamps day into target month).
+    pub fn step_month(&mut self, delta_months: i32) -> bool {
+        if self.kind != CellDistinction::Temporal || delta_months == 0 {
+            return false;
+        }
+        self.ensure_temporal_date_base();
+        let Some((y, m, d, rest)) = split_temporal_buffer(&self.buffer) else {
+            return false;
+        };
+        let (ny, nm) = add_months(y, m, delta_months);
+        let max_d = days_in_month(ny, nm);
+        let nd = d.min(max_d);
+        self.buffer = join_temporal_date(ny, nm, nd, rest.as_deref());
+        true
+    }
+
+    /// Text month grid for the date currently in the buffer (or today).
+    #[must_use]
+    pub fn month_calendar_text(&self) -> Option<String> {
+        if self.kind != CellDistinction::Temporal {
+            return None;
+        }
+        let (y, m, d, _) = split_temporal_buffer(&self.buffer).or_else(|| {
+            let today = local_today_iso();
+            split_temporal_buffer(&today)
+        })?;
+        Some(format_month_calendar(y, m, d))
+    }
+
+    fn ensure_temporal_date_base(&mut self) {
+        let trimmed = self.buffer.trim();
+        if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
+            self.buffer = local_today_iso();
+        }
     }
 
     /// Pretty-indent structured/JSON buffer (best-effort; fail closed on non-JSON).
@@ -297,6 +312,111 @@ fn parse_ymd(s: &str) -> Option<(i32, u32, u32)> {
         return None;
     }
     Some((y, m, d))
+}
+
+fn split_temporal_buffer(t: &str) -> Option<(i32, u32, u32, Option<String>)> {
+    let t = t.trim();
+    let (date_part, rest) = if let Some((d, r)) = t.split_once('T') {
+        (d, Some(format!("T{r}")))
+    } else if let Some((d, r)) = t.split_once(' ') {
+        (d, Some(format!(" {r}")))
+    } else if t.len() >= 10 && t.as_bytes().get(4) == Some(&b'-') {
+        (
+            &t[..10],
+            if t.len() > 10 {
+                Some(t[10..].to_owned())
+            } else {
+                None
+            },
+        )
+    } else {
+        return None;
+    };
+    let (y, m, d) = parse_ymd(date_part)?;
+    Some((y, m, d, rest))
+}
+
+fn join_temporal_date(y: i32, m: u32, d: u32, rest: Option<&str>) -> String {
+    let new_date = format!("{y:04}-{m:02}-{d:02}");
+    match rest {
+        Some(r) => format!("{new_date}{r}"),
+        None => new_date,
+    }
+}
+
+fn add_months(y: i32, m: u32, delta: i32) -> (i32, u32) {
+    let idx = i64::from(y) * 12 + i64::from(m as i32 - 1) + i64::from(delta);
+    let ny = idx.div_euclid(12) as i32;
+    let nm = (idx.rem_euclid(12) as u32) + 1;
+    (ny, nm)
+}
+
+fn days_in_month(y: i32, m: u32) -> u32 {
+    match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if is_leap_year(y) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 30,
+    }
+}
+
+fn is_leap_year(y: i32) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
+}
+
+/// Month grid with selected day marked `*dd`.
+fn format_month_calendar(y: i32, m: u32, selected_day: u32) -> String {
+    let month_names = [
+        "", "January", "February", "March", "April", "May", "June", "July", "August",
+        "September", "October", "November", "December",
+    ];
+    let name = month_names.get(m as usize).copied().unwrap_or("?");
+    let mut out = format!("{name} {y}\nSu Mo Tu We Th Fr Sa\n");
+    let wd1 = weekday_sunday0(y, m, 1);
+    let dim = days_in_month(y, m);
+    let mut line = String::new();
+    for _ in 0..wd1 {
+        line.push_str("   ");
+    }
+    let mut col = wd1;
+    for day in 1..=dim {
+        let cell = if day == selected_day {
+            format!("*{day:2}")
+        } else {
+            format!(" {day:2}")
+        };
+        line.push_str(&cell);
+        col += 1;
+        if col == 7 {
+            out.push_str(&line);
+            out.push('\n');
+            line.clear();
+            col = 0;
+        }
+    }
+    if !line.is_empty() {
+        out.push_str(&line);
+        out.push('\n');
+    }
+    out
+}
+
+/// 0=Sunday .. 6=Saturday for civil date.
+fn weekday_sunday0(y: i32, m: u32, d: u32) -> u32 {
+    // days_from_civil epoch 1970-01-01 was Thursday; Unix day 0 weekday:
+    // 1970-01-01 = Thursday = 4 if Sunday=0.
+    let days = days_from_civil(y, m, d);
+    // 1970-01-01 civil days = 0 relative? days_from_civil(1970,1,1):
+    // Use known: days_from_civil returns days since 1970-01-01 for that function?
+    // Our days_from_civil uses Howard algorithm with -719468 offset; for 1970-01-01
+    // result is 0. Weekday of 1970-01-01 is Thursday (4).
+    ((days + 4).rem_euclid(7)) as u32
 }
 
 /// Howard Hinnant days-from-civil (proleptic Gregorian).
@@ -2005,6 +2125,31 @@ mod tests {
             kind: CellDistinction::Text,
         };
         assert!(!text.step_day(1));
+    }
+
+    #[test]
+    fn temporal_step_month_and_calendar_text() {
+        let mut session = CellEditSession {
+            abs_row: 0,
+            column: "ts".into(),
+            original_text: "2024-01-31T12:00:00Z".into(),
+            buffer: "2024-01-31T12:00:00Z".into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Temporal,
+        };
+        assert!(session.step_month(1));
+        // Jan 31 → Feb 29 (2024 leap)
+        assert_eq!(session.buffer, "2024-02-29T12:00:00Z");
+        assert!(session.step_month(-1));
+        assert_eq!(session.buffer, "2024-01-29T12:00:00Z");
+        let cal = session.month_calendar_text().expect("calendar");
+        assert!(cal.contains("January 2024"), "{cal}");
+        assert!(cal.contains("Su Mo Tu We Th Fr Sa"), "{cal}");
+        assert!(cal.contains("*29") || cal.contains(" 29"), "{cal}");
+        // Non-leap Feb clamp
+        session.buffer = "2023-01-31".into();
+        assert!(session.step_month(1));
+        assert_eq!(session.buffer, "2023-02-28");
     }
 
     #[test]
