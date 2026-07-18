@@ -441,6 +441,10 @@ pub enum ActionId {
     CommitCellEdit,
     /// Restore edit buffer to original text while still editing.
     RestoreCellEdit,
+    /// Copy open cell edit buffer to clipboard (fail closed if not editing).
+    CopyCellEditBuffer,
+    /// Copy original cell text of open edit (fail closed if not editing).
+    CopyCellEditOriginal,
     /// Toggle boolean cell buffer while editing (type-specific).
     ToggleBool,
     /// Set cell edit buffer to null while editing.

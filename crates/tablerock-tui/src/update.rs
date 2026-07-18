@@ -5921,6 +5921,48 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 Update::unchanged()
             }
         }
+        ActionId::CopyCellEditBuffer if model.screen() == Screen::Workbench => {
+            let Some(text) = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.cell_edit.as_ref())
+                .map(|e| e.buffer.clone())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied edit buffer ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopyCellEditOriginal if model.screen() == Screen::Workbench => {
+            let Some(text) = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.cell_edit.as_ref())
+                .map(|e| e.original_text.clone())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied edit original ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::ToggleBool if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if let Some(edit) = grid.cell_edit.as_mut() {
@@ -6950,6 +6992,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CancelCellEdit
         | ActionId::CommitCellEdit
         | ActionId::RestoreCellEdit
+        | ActionId::CopyCellEditBuffer
+        | ActionId::CopyCellEditOriginal
         | ActionId::ToggleBool
         | ActionId::SetNull
         | ActionId::SetToday
@@ -8799,6 +8843,8 @@ fn cycle_action(
                 ActionId::CancelCellEdit,
                 ActionId::CommitCellEdit,
                 ActionId::RestoreCellEdit,
+                ActionId::CopyCellEditBuffer,
+                ActionId::CopyCellEditOriginal,
                 ActionId::ToggleBool,
                 ActionId::SetNull,
                 ActionId::SetToday,
@@ -10799,6 +10845,66 @@ mod tests {
         assert!(!update(&mut model, Message::Activate).needs_render());
         model.set_action(ActionId::RestoreCellEdit);
         assert!(!update(&mut model, Message::Activate).needs_render());
+    }
+
+    #[test]
+    fn copy_cell_edit_buffer_and_original() {
+        use tablerock_core::ProfileSafetyMode;
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into()];
+            grid.row_count = 1;
+            grid.cells = vec![
+                crate::model::grid::ProjectedCell {
+                    text: "1".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                },
+                crate::model::grid::ProjectedCell {
+                    text: "alice".into(),
+                    distinction: crate::model::grid::CellDistinction::Text,
+                    byte_len: 5,
+                    original_byte_len: None,
+                },
+            ];
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.identity_columns = vec!["id".into()];
+            grid.cursor_col = 1;
+            grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+            assert!(grid.begin_cell_edit());
+            if let Some(edit) = grid.cell_edit.as_mut() {
+                edit.buffer = "bob".into();
+            }
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyCellEditBuffer);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "bob"),
+            other => panic!("expected edit buffer, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyCellEditOriginal);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "alice"),
+            other => panic!("expected original, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.cancel_cell_edit();
+        }
+        model.set_action(ActionId::CopyCellEditBuffer);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        model.set_action(ActionId::CopyCellEditOriginal);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
     #[test]
