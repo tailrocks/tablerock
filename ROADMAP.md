@@ -229,6 +229,11 @@ XCFramework packaging, cancellation, ownership, and performance. Failure blocks
 native work and requires an explicit architecture revision; no secondary bridge
 or distribution path is carried in the roadmap.
 
+**In progress (plan 019):** page v1 codec, `tablerock-ffi` facade, UniFFI Swift
+bindings, CLT proof harness, and live `open` are on `main`. XCFramework
+packaging and notarization are **operator-blocked** (full Xcode + Developer ID
+required; see `docs/evidence/delivery/251-plan-019-operator-stop.md`).
+
 ## Phase 13 — native vertical slice
 
 Build the SwiftUI `App`/window/commands/settings shell in the Liquid Glass
