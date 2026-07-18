@@ -265,6 +265,38 @@ impl WorkbenchModel {
         true
     }
 
+    /// Duplicate the active tab as a new durable tab (shallow clone).
+    ///
+    /// Grid page data and column layout copy; staged drafts and live cell edit
+    /// do **not** clone (fail closed — no accidental dual apply of the same
+    /// mutation set). Returns false if no active tab.
+    pub fn duplicate_active_tab(&mut self) -> bool {
+        let Some(src) = self.tabs.get(self.selected_tab).cloned() else {
+            return false;
+        };
+        let mut copy = src;
+        let base = copy.title.clone();
+        let mut title = if base.ends_with(" (copy)") {
+            format!("{base} 2")
+        } else {
+            format!("{base} (copy)")
+        };
+        if title.chars().count() > 128 {
+            title = title.chars().take(128).collect();
+        }
+        copy.title = title;
+        copy.preview = false;
+        copy.dirty = false;
+        copy.running = false;
+        // Clear mutation drafts so operators cannot double-apply by accident.
+        copy.grid.drafts = crate::model::mutation_draft::MutationDraftModel::new();
+        copy.grid.cell_edit = None;
+        self.tabs.push(copy);
+        self.selected_tab = self.tabs.len() - 1;
+        self.recompute_pending();
+        true
+    }
+
     pub fn bump_context_revision(&mut self) -> u64 {
         self.context_revision = self.context_revision.saturating_add(1);
         self.context_revision
@@ -771,6 +803,41 @@ mod tests {
         ));
         wb.force_close_tab(wb.selected_tab);
         assert!(wb.tabs.iter().all(|t| t.title != "users"));
+    }
+
+    #[test]
+    fn duplicate_active_tab_clears_drafts() {
+        use crate::model::mutation_draft::{DraftLocatorField, StagedCellEdit};
+        use tablerock_core::ProfileSafetyMode;
+
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("orders");
+        if let Some(grid) = wb.active_grid_mut() {
+            grid.columns = vec!["id".into()];
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("orders".into());
+            grid.identity_columns = vec!["id".into()];
+            grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+            assert!(grid.drafts.stage_cell_edit(StagedCellEdit {
+                abs_row: 0,
+                column: "id".into(),
+                original_text: "1".into(),
+                staged_text: "2".into(),
+                locator: vec![DraftLocatorField {
+                    column: "id".into(),
+                    original_text: "1".into(),
+                }],
+            }));
+            wb.mark_active_dirty(true);
+        }
+        let before = wb.tabs.len();
+        assert!(wb.duplicate_active_tab());
+        assert_eq!(wb.tabs.len(), before + 1);
+        let tab = wb.active_tab().unwrap();
+        assert!(tab.title.contains("copy"), "{}", tab.title);
+        assert!(!tab.preview);
+        assert!(!tab.dirty);
+        assert!(tab.grid.drafts.is_empty());
     }
 
     #[test]

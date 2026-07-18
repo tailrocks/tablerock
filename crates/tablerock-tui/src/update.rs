@@ -3324,6 +3324,12 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::DuplicateTab if model.screen() == Screen::Workbench => {
+            if model.workbench_mut().duplicate_active_tab() {
+                return Update::render();
+            }
+            Update::unchanged()
+        }
         ActionId::NewSql if model.screen() == Screen::Workbench => {
             model.workbench_mut().open_sql_tab();
             Update::render()
@@ -4887,6 +4893,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::RenameTab
         | ActionId::MoveTabLeft
         | ActionId::MoveTabRight
+        | ActionId::DuplicateTab
         | ActionId::PinTab
         | ActionId::NewSql
         | ActionId::RunSql
@@ -6526,6 +6533,7 @@ fn cycle_action(
                 ActionId::RenameTab,
                 ActionId::MoveTabLeft,
                 ActionId::MoveTabRight,
+                ActionId::DuplicateTab,
                 ActionId::CloseTab,
                 ActionId::QuickSwitch,
                 ActionId::PinTab,

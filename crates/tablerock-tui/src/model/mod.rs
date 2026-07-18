@@ -83,6 +83,8 @@ pub enum ActionId {
     MoveTabLeft,
     /// Move active tab one slot right in the strip.
     MoveTabRight,
+    /// Duplicate the active tab (shallow grid/editor snapshot; drafts not cloned).
+    DuplicateTab,
     PinTab,
     NewSql,
     RunSql,
