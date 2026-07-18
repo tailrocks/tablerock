@@ -27,9 +27,8 @@ show engine/context/outcome/time, and restore retained text into the current
 editor without execution. Metadata-only rows are visibly unavailable. A
 retention picker exposes Full SQL, Metadata only, and Private.
 
-History rows are durable. The selected native retention mode is currently
-process-scoped and resets to Full on relaunch; durable preference storage
-remains a visible Plan 021 checkpoint.
+History rows are durable. Schema-16 durable retention and relaunch projection
+landed in [evidence 520](520-plan-021-durable-history-retention.md).
 
 ## Lifecycle corrections
 

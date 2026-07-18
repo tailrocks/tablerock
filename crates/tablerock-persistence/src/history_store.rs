@@ -241,3 +241,47 @@ pub async fn count(connection: &turso::Connection) -> Result<u64, PersistenceErr
     let n = row.get::<i64>(0).map_err(|_| PersistenceError::Query)?;
     Ok(u64::try_from(n).unwrap_or(0))
 }
+
+pub async fn get_retention(
+    connection: &turso::Connection,
+) -> Result<HistoryRetention, PersistenceError> {
+    let mut rows = connection
+        .query(
+            "SELECT retention FROM history_preferences WHERE singleton = 1",
+            (),
+        )
+        .await
+        .map_err(|_| PersistenceError::Query)?;
+    let Some(row) = rows.next().await.map_err(|_| PersistenceError::Query)? else {
+        return Err(PersistenceError::Query);
+    };
+    match row.get::<i64>(0).map_err(|_| PersistenceError::Query)? {
+        1 => Ok(HistoryRetention::Full),
+        2 => Ok(HistoryRetention::MetadataOnly),
+        3 => Ok(HistoryRetention::Private),
+        _ => Err(PersistenceError::Query),
+    }
+}
+
+pub async fn set_retention(
+    connection: &turso::Connection,
+    retention: HistoryRetention,
+) -> Result<(), PersistenceError> {
+    let encoded = match retention {
+        HistoryRetention::Full => 1_i64,
+        HistoryRetention::MetadataOnly => 2,
+        HistoryRetention::Private => 3,
+    };
+    let changed = connection
+        .execute(
+            "UPDATE history_preferences SET retention = ?1 WHERE singleton = 1",
+            (encoded,),
+        )
+        .await
+        .map_err(|_| PersistenceError::Query)?;
+    if changed == 1 {
+        Ok(())
+    } else {
+        Err(PersistenceError::Query)
+    }
+}

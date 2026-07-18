@@ -188,6 +188,7 @@ private actor BridgeClient {
     func setHistoryRetention(_ retention: String) throws {
         try bridge.setHistoryRetention(retention: retention)
     }
+    func historyRetention() throws -> String { try bridge.historyRetention() }
     func setProfileFavorite(_ item: BridgeProfileItem, _ favorite: Bool) throws {
         try bridge.setProfileFavorite(
             profileId: item.idBytes,
@@ -782,7 +783,9 @@ final class BridgeModel {
             return
         }
         do {
-            client = try BridgeClient(persistencePath: Self.persistencePath())
+            let loadedClient = try BridgeClient(persistencePath: Self.persistencePath())
+            client = loadedClient
+            historyRetention = try await loadedClient.historyRetention()
             await refreshProfiles()
         } catch {
             bridgeError = "Bridge init failed: \(error)"

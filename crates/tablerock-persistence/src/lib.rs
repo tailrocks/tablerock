@@ -80,6 +80,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
         15,
         include_str!("../migrations/0015-profile-group-ordering.sql"),
     ),
+    (16, include_str!("../migrations/0016-history-retention.sql")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -314,6 +315,28 @@ impl PersistenceActor {
     pub fn history_count(&self) -> Result<u64, PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::HistoryCount(sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn history_retention(&self) -> Result<HistoryRetention, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::GetHistoryRetention(sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn set_history_retention(
+        &self,
+        retention: HistoryRetention,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::SetHistoryRetention(retention, sender),
+        )?;
         receiver
             .recv_timeout(CALLER_TIMEOUT)
             .map_err(map_receive_error)?
@@ -559,6 +582,11 @@ enum Command {
         mpsc::SyncSender<Result<Vec<HistoryEntry>, PersistenceError>>,
     ),
     HistoryCount(mpsc::SyncSender<Result<u64, PersistenceError>>),
+    GetHistoryRetention(mpsc::SyncSender<Result<HistoryRetention, PersistenceError>>),
+    SetHistoryRetention(
+        HistoryRetention,
+        mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
     UpsertSavedQuery(
         SavedQueryUpsert,
         mpsc::SyncSender<Result<i64, PersistenceError>>,
@@ -762,6 +790,28 @@ fn worker_main(
                     tokio::time::timeout(OPERATION_TIMEOUT, history_store::count(&connection))
                         .await
                         .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::GetHistoryRetention(reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        history_store::get_retention(&connection),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::SetHistoryRetention(retention, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        history_store::set_retention(&connection, retention),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
                 });
                 let _ = reply.send(result);
             }

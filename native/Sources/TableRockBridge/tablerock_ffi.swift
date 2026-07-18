@@ -684,6 +684,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      */
     func getProfileDraft(profileId: Data) throws  -> BridgeProfileDraft
     
+    func historyRetention() throws  -> String
+    
     /**
      * Lists newest local query-history entries with optional SQL-text search.
      */
@@ -1018,6 +1020,15 @@ open func getProfileDraft(profileId: Data)throws  -> BridgeProfileDraft  {
     uniffi_tablerock_ffi_fn_method_tablerockbridge_get_profile_draft(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(profileId),uniffiCallStatus
+    )
+})
+}
+    
+open func historyRetention()throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_history_retention(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -3083,6 +3094,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_get_profile_draft() != 6880) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_history_retention() != 30796) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_history() != 19762) {

@@ -607,6 +607,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
     bridge
         .configure_persistence(path.to_string_lossy().into_owned())
         .unwrap();
+    assert_eq!(bridge.history_retention().unwrap(), "full");
     let listed = bridge.list_profiles().unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].name, "bridge-test");
@@ -695,6 +696,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
     bridge
         .set_history_retention("metadata_only".into())
         .unwrap();
+    assert_eq!(bridge.history_retention().unwrap(), "metadata_only");
     let (metadata_result_id, metadata_page) = sample_page(Engine::PostgreSql, 143, &[2]);
     let metadata_session = bridge
         .open_driver_session_for_profile(
@@ -720,6 +722,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
     assert_eq!(history[0].statement_text, None);
 
     bridge.set_history_retention("private".into()).unwrap();
+    assert_eq!(bridge.history_retention().unwrap(), "private");
     let (private_result_id, private_page) = sample_page(Engine::PostgreSql, 144, &[3]);
     let private_session = bridge
         .open_driver_session_for_profile(

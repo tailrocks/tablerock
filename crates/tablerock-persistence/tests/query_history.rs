@@ -17,6 +17,7 @@ fn append_list_search_and_private_modes() {
     let db = path("modes");
     let _ = fs::remove_file(&db);
     let actor = PersistenceActor::open(&db).expect("open");
+    assert_eq!(actor.history_retention().unwrap(), HistoryRetention::Full);
 
     let id = actor
         .append_history(HistoryAppend {
@@ -81,7 +82,23 @@ fn append_list_search_and_private_modes() {
     assert!(secret.is_empty());
 
     assert_eq!(actor.history_count().expect("count"), 2);
+    actor
+        .set_history_retention(HistoryRetention::MetadataOnly)
+        .unwrap();
     actor.shutdown().expect("shutdown");
+    let actor = PersistenceActor::open(&db).expect("reopen");
+    assert_eq!(
+        actor.history_retention().unwrap(),
+        HistoryRetention::MetadataOnly
+    );
+    actor
+        .set_history_retention(HistoryRetention::Private)
+        .unwrap();
+    assert_eq!(
+        actor.history_retention().unwrap(),
+        HistoryRetention::Private
+    );
+    actor.shutdown().expect("shutdown reopened");
     let _ = fs::remove_file(&db);
 }
 
@@ -111,5 +128,38 @@ fn enforces_bounded_row_cap() {
     assert_eq!(list[0].statement_text.as_deref(), Some("SELECT 4"));
     assert_eq!(actor.history_count().expect("count"), 5);
     actor.shutdown().expect("shutdown");
+    let _ = fs::remove_file(&db);
+}
+
+#[test]
+fn migration_16_defaults_existing_store_to_full_retention() {
+    let db = path("migration-16");
+    let _ = fs::remove_file(&db);
+    let actor = PersistenceActor::open(&db).unwrap();
+    actor.shutdown().unwrap();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let database = turso::Builder::new_local(db.to_str().unwrap())
+            .build()
+            .await
+            .unwrap();
+        let connection = database.connect().unwrap();
+        connection
+            .execute_batch(
+                "DROP TABLE history_preferences;
+                 DELETE FROM schema_migrations WHERE version = 16;",
+            )
+            .await
+            .unwrap();
+    });
+
+    let actor = PersistenceActor::open(&db).unwrap();
+    assert_eq!(actor.health().unwrap().schema_version, 16);
+    assert_eq!(actor.history_retention().unwrap(), HistoryRetention::Full);
+    actor.shutdown().unwrap();
     let _ = fs::remove_file(&db);
 }

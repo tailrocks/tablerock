@@ -22,7 +22,8 @@ for pattern in \
   'Restore this statement into the editor without running it' \
   'Text\("Full SQL"\).tag\("full"\)' \
   'Text\("Metadata only"\).tag\("metadata_only"\)' \
-  'Text\("Private"\).tag\("private"\)'
+  'Text\("Private"\).tag\("private"\)' \
+  'historyRetention = try await loadedClient.historyRetention\(\)'
 do
   rg -q "$pattern" "$SOURCE" || {
     echo "error: missing native history contract: $pattern" >&2

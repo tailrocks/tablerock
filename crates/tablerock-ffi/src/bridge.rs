@@ -386,6 +386,10 @@ impl TableRockBridge {
         catch_entry(|| self.set_history_retention_inner(retention))
     }
 
+    pub fn history_retention(&self) -> Result<String, BridgeError> {
+        catch_entry(|| self.history_retention_inner())
+    }
+
     pub fn create_profile_group(&self, name: String) -> Result<(), BridgeError> {
         catch_entry(|| self.create_profile_group_inner(name))
     }
@@ -1064,6 +1068,9 @@ impl TableRockBridge {
         self.ensure_runtime_inner()?;
         let actor = PersistenceActor::open(&path)
             .map_err(|error| BridgeError::rejected("persistence-open", error.to_string()))?;
+        let history_retention = actor
+            .history_retention()
+            .map_err(|error| BridgeError::rejected("history-retention", error.to_string()))?;
         let mut guard = self
             .inner
             .lock()
@@ -1073,6 +1080,7 @@ impl TableRockBridge {
             let _ = previous.shutdown();
         }
         inner.persistence = Some(actor);
+        inner.history_retention = history_retention;
         Ok(())
     }
 
@@ -1435,11 +1443,32 @@ impl TableRockBridge {
             .inner
             .lock()
             .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
-        guard
-            .as_mut()
-            .ok_or(BridgeError::RuntimeUnavailable)?
-            .history_retention = retention;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        inner
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
+            .set_history_retention(retention)
+            .map_err(|error| BridgeError::rejected("history-retention", error.to_string()))?;
+        inner.history_retention = retention;
         Ok(())
+    }
+
+    fn history_retention_inner(&self) -> Result<String, BridgeError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let retention = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .history_retention;
+        Ok(match retention {
+            HistoryRetention::Full => "full",
+            HistoryRetention::MetadataOnly => "metadata_only",
+            HistoryRetention::Private => "private",
+        }
+        .into())
     }
 
     fn create_profile_group_inner(&self, name: String) -> Result<(), BridgeError> {
