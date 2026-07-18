@@ -62,3 +62,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: pg_dump/pg_restore real matrix
         run: cargo test -p tablerock-cli --test pg_dump_real -- --nocapture
+      - name: ENOSPC fail-closed on 1MiB tmpfs
+        run: |
+          set -euo pipefail
+          MNT="${RUNNER_TEMP}/tablerock-enospc"
+          mkdir -p "$MNT"
+          sudo mount -t tmpfs -o size=1M,mode=1777 tmpfs "$MNT"
+          # Pre-fill most of the volume so AtomicFileWriter hits ENOSPC.
+          dd if=/dev/zero of="$MNT/prefill.bin" bs=1k count=900 status=none || true
+          export TABLEROCK_ENOSPC_MNT="$MNT"
+          cargo test -p tablerock-cli --lib enospc_volume_fails_closed -- --nocapture
+          sudo umount "$MNT"

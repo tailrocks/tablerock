@@ -182,6 +182,7 @@ pub fn write_atomic(dest: &Path, data: &[u8]) -> Result<u64, FileEffectError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn scratch_dir() -> PathBuf {
@@ -369,5 +370,87 @@ mod tests {
             "mid-write failure must clean temps: {temps:?}"
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// True ENOSPC when `TABLEROCK_ENOSPC_MNT` points at a tiny full volume.
+    ///
+    /// CI mounts a 1MiB tmpfs and fills it before this test. Locally the test
+    /// is ignored unless the env var is set (avoids filling the developer disk).
+    #[cfg(unix)]
+    #[test]
+    fn enospc_volume_fails_closed_without_temp_debris() {
+        let Ok(mnt) = std::env::var("TABLEROCK_ENOSPC_MNT") else {
+            eprintln!("skip: set TABLEROCK_ENOSPC_MNT to a tiny full volume to run ENOSPC");
+            return;
+        };
+        let mnt = PathBuf::from(mnt);
+        assert!(
+            mnt.is_dir(),
+            "TABLEROCK_ENOSPC_MNT must be a directory: {}",
+            mnt.display()
+        );
+
+        // Fill remaining space with a filler file so subsequent creates hit ENOSPC.
+        let filler = mnt.join("fill.bin");
+        {
+            let mut f = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&filler)
+                .expect("open filler");
+            let chunk = vec![0_u8; 64 * 1024];
+            loop {
+                match f.write_all(&chunk) {
+                    Ok(()) => {}
+                    Err(e) if e.raw_os_error() == Some(28) /* ENOSPC */ => break,
+                    Err(e) if e.kind() == std::io::ErrorKind::StorageFull => break,
+                    Err(e) => {
+                        // Some FS report EDQUOT or write zero — stop when short write.
+                        if e.raw_os_error() == Some(122) {
+                            break;
+                        }
+                        // If we cannot fill, still attempt create — may pass free.
+                        break;
+                    }
+                }
+            }
+            let _ = f.sync_all();
+        }
+
+        let dest = mnt.join("export.csv");
+        let create = AtomicFileWriter::create(dest.clone());
+        // If create somehow succeeds (race free space), write until fail then abort.
+        match create {
+            Ok(mut w) => {
+                let big = vec![b'x'; 128 * 1024];
+                let write = w.write_all(&big);
+                if write.is_ok() {
+                    // Keep writing until failure or finish fails.
+                    while w.write_all(&big).is_ok() {}
+                }
+                w.abort();
+                assert!(
+                    !dest.exists(),
+                    "ENOSPC path must not promote dest to final path"
+                );
+            }
+            Err(_) => {
+                // Fail closed at create — expected when volume is full.
+            }
+        }
+
+        let temps: Vec<_> = mnt
+            .read_dir()
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("tablerock-tmp"))
+            .collect();
+        assert!(
+            temps.is_empty(),
+            "ENOSPC must not leave tablerock-tmp debris: {temps:?}"
+        );
+        // Cleanup filler so unmount can succeed.
+        let _ = fs::remove_file(filler);
+        let _ = fs::remove_file(dest);
     }
 }

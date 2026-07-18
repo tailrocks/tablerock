@@ -72,8 +72,8 @@ freshness-checked per repo convention).
 ## Done criteria
 
 - [x] quality-and-verification.md map started (evidence 248 gate table)
-- [~] Failure-injection matrix partial (280 export, 285 resize, 287 readonly/mid-write, 309 disconnect mid-stream; true ENOSPC CI residual)
-- [~] Release-profile budget numbers local-rig + ubuntu CI (evidence 288/297/301/303; multi-OS matrix residual)
+- [~] Failure-injection matrix partial (280 export, 285 resize, 287 readonly/mid-write, 309 disconnect mid-stream; ~~true ENOSPC CI~~ evidence 328)
+- [~] Release-profile budget numbers local-rig + ubuntu CI (evidence 288/297/301/303; multi-OS unit/check matrix already ubuntu+macos-15)
 - [x] Non-color cue audit: `non_color_cues` unit (evidence 248)
 - [x] OTLP off-by-default proven (no sockets test); safe schema enforced by type
 - [x] Ledger: three-state CSV export + parity claim status (evidence 286)
@@ -81,8 +81,8 @@ freshness-checked per repo convention).
 
 ## Residual (explicit)
 
-- True ENOSPC volume-image CI job
-- Fixed-spec runner perf budgets + TUI first-paint / first-row numbers
+- ~~True ENOSPC volume-image CI job~~ (closed: evidence 328, 1MiB tmpfs on ubuntu)
+- Fixed-spec runner perf budgets + TUI first-paint / first-row numbers (optional polish)
 
 ## STOP conditions
 

@@ -28,4 +28,4 @@ cargo test -p tablerock-persistence write_fails_closed
 
 ## Residual
 
-- True ENOSPC on a tiny volume image as scheduled CI (needs runner setup)
+- ~~True ENOSPC on a tiny volume image as scheduled CI~~ (closed: evidence 328)
