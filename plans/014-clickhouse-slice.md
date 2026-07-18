@@ -94,7 +94,7 @@ extended with the new fixtures; CI list updated.
 ## Done criteria
 
 - [x] TLS modes: Disable + RequireSystemRoots (native-roots feature); custom CA/mTLS residual (HttpClient)
-- [ ] Partial rows + late error both visible in one operation (test) — residual
+- [x] Partial rows + late error both visible in one operation (test) — residual closed
 - [x] Structure engine facts + columns — evidence 236; explain raw/AST — evidence 239
 - [x] INSERT progressive apply non-transactional — evidence 236
 - [x] UPDATE/DELETE async mutations + system.mutations poll to done — evidence 237
@@ -105,7 +105,7 @@ extended with the new fixtures; CI list updated.
 
 - Custom CA / mTLS via `clickhouse::Client::with_http_client` fixture matrix
 - Progress/query-id OperationEvent surface into status bar
-- Partial-page + late HTTP error single-operation fixture
+- ~~Partial-page + late error single-operation fixture~~ (closed: clickhouse_real)
 - KILL MUTATION destructive gate
 - Editor Explain action wiring to explain_raw/structured
 

@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use tablerock_core::{
     BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity, PageLimits,
-    Truncation, ValueKind,
+    PageWarning, Truncation, ValueKind,
 };
 use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession,
@@ -827,4 +827,102 @@ async fn explain_raw_and_structured_with_fallback() {
             || !joined.is_empty(),
         "{joined}"
     );
+}
+
+/// Residual plan 014: one operation delivers a partial page of rows, then a
+/// late cancel/error terminal — without invalidating the already-owned page.
+#[tokio::test]
+async fn partial_rows_and_late_error_both_visible_on_one_operation() {
+    use tablerock_core::OperationOutcome;
+
+    let image =
+        "26.3.17.4-jammy@sha256:158dcce6f6fdc59309650aad6b79484abf4eed07d4e0bdba31d732e64b5a25fb";
+    let container = GenericImage::new("clickhouse", image)
+        .with_exposed_port(8123.tcp())
+        .with_env_var("CLICKHOUSE_SKIP_USER_SETUP", "1")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
+    let session = ready_clickhouse_session(port, ClickHouseCompression::Lz4).await;
+
+    let operation_id = support::operation(70);
+    let mut service = support::service(1, 4);
+    service
+        .submit(
+            operation_id,
+            support::command(71),
+            Arc::new(session),
+            DriverPageRequest::ClickHouseProbe {
+                // Long-running series so cancel can land after the first page.
+                query: ClickHouseProbeQuery::CancellationStream,
+                query_id: text(&format!("tablerock-partial-late-op-{port}")),
+                limits: PageLimits::new(1, 1, 256, 64),
+                max_cell_bytes: 32,
+            },
+            identity(),
+        )
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        service.next_update(operation_id).await.unwrap().unwrap(),
+        EngineServiceUpdate::Started
+    ));
+
+    let page = match service.next_update(operation_id).await.unwrap().unwrap() {
+        EngineServiceUpdate::Page(page) => *page,
+        other => panic!("expected first page, got {other:?}"),
+    };
+    assert!(page.envelope().row_count() >= 1);
+    assert!(
+        page.envelope().delivery() == PageDelivery::Partial
+            || page
+                .envelope()
+                .warnings()
+                .contains(PageWarning::RowLimitReached),
+        "first page should be partial under max_rows=1"
+    );
+    let retained_rows = page.envelope().row_count();
+    let retained_bytes = page.cell(0, 0).unwrap().bytes().to_vec();
+
+    let cancel = service.cancel(operation_id).unwrap();
+    assert_eq!(
+        cancel.core,
+        tablerock_core::CancelRequestOutcome::Requested
+    );
+
+    let mut saw_terminal = false;
+    tokio::time::timeout(CLICKHOUSE_CANCEL_EVIDENCE_DEADLINE, async {
+        loop {
+            match service.next_update(operation_id).await.unwrap() {
+                Some(EngineServiceUpdate::Page(_))
+                | Some(EngineServiceUpdate::CancelDispatched(_))
+                | Some(EngineServiceUpdate::Started) => {}
+                Some(EngineServiceUpdate::Terminal(
+                    OperationOutcome::ServerConfirmedCancelled
+                    | OperationOutcome::ClientStopped
+                    | OperationOutcome::Failed
+                    | OperationOutcome::CompletedBeforeCancel
+                    | OperationOutcome::Completed
+                    | OperationOutcome::Unknown
+                    | OperationOutcome::Disconnected,
+                )) => {
+                    saw_terminal = true;
+                    break;
+                }
+                None => break,
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for late terminal after partial page");
+    assert!(
+        saw_terminal,
+        "late cancel/error terminal must be observed on the same operation"
+    );
+
+    // Partial rows already delivered remain owned and readable.
+    assert_eq!(page.envelope().row_count(), retained_rows);
+    assert_eq!(page.cell(0, 0).unwrap().bytes(), retained_bytes.as_slice());
 }
