@@ -11,7 +11,7 @@ Date: 2026-07-18
 | Fail-closed validation (array-only, no cells/secrets) | done |
 | Schema version 13 | done |
 | Integration test | done |
-| TUI load-on-connect / save-on-upsert wiring | residual |
+| TUI load-on-connect / SaveFilter / ApplyFilter wiring | done (evidence 307) |
 
 ## Decision
 
@@ -36,4 +36,4 @@ cargo test -p tablerock-persistence --test actor
 
 ## Remaining work
 
-- TUI Effect load on ConnectOk and save after preset upsert.
+- ~~TUI Effect load on connect and save after preset upsert~~ → evidence 307.

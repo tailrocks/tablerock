@@ -104,6 +104,10 @@ pub enum ActionId {
     CycleSort,
     /// Add an equality filter for the cursor column using the cursor cell text.
     AddFilter,
+    /// Persist current grid filters as the named "default" preset for base table.
+    SaveFilter,
+    /// Apply the named "default" filter preset for the active base table.
+    ApplyFilter,
     /// Clear server filters/sort and re-browse.
     ClearFilters,
     /// Toggle visibility of the cursor column.

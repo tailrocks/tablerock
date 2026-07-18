@@ -112,6 +112,8 @@ pub struct WorkbenchModel {
     pub saved_queries: SavedQueryPanel,
     /// Profile id for intent-only session restore (hex), when non-temporary.
     pub profile_id_hex: Option<String>,
+    /// Named filter presets for this profile (loaded/saved via persistence).
+    pub filter_library: crate::model::saved_filter::SavedFilterLibrary,
     /// Open mutation review dialog (typed plan preview; never executed text).
     pub mutation_review: Option<MutationReviewView>,
     /// Handle from MutationReviewReady; required for ApplyMutations (consume-once).
@@ -162,6 +164,7 @@ impl Default for WorkbenchModel {
             history_retention: "full".into(),
             saved_queries: SavedQueryPanel::Closed,
             profile_id_hex: None,
+            filter_library: crate::model::saved_filter::SavedFilterLibrary::default(),
             mutation_review: None,
             pending_review_token_hex: None,
             pending_review_expires_at_ms: None,

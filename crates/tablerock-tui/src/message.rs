@@ -259,6 +259,18 @@ pub enum EngineMsg {
         request_token: u64,
         reason: FailureProjection,
     },
+    /// Named filter library JSON for the connected profile (None = empty).
+    SavedFilterLibraryLoaded {
+        request_token: u64,
+        library_json: Option<String>,
+    },
+    SavedFilterLibrarySaved {
+        request_token: u64,
+    },
+    SavedFilterLibraryFailed {
+        request_token: u64,
+        reason: FailureProjection,
+    },
     /// Review registered; apply must use `review_token_hex` before expiry.
     MutationReviewReady {
         request_token: u64,

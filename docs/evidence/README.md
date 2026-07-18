@@ -193,6 +193,7 @@ How to read an evidence document:
 - 226 — [Plan 012 grid controls exit](delivery/226-plan-012-grid-controls-exit.md)
 - 305 — [ClickHouse KILL MUTATION destructive gate](delivery/305-plan-014-kill-mutation.md)
 - 306 — [Saved filter library persistence actor](delivery/306-plan-016-saved-filter-persist.md)
+- 307 — [Saved filter TUI load/save wiring](delivery/307-plan-016-saved-filter-tui-wire.md)
 
 ## TermRock pins
 

@@ -468,6 +468,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let load_q = action_label(model, ActionId::LoadQuery, "LoadQ");
     let save_file = action_label(model, ActionId::SaveFile, "SaveFile");
     let save_intent = action_label(model, ActionId::SaveIntent, "SaveIntent");
+    let save_filter = action_label(model, ActionId::SaveFilter, "SaveFilt");
+    let apply_filter = action_label(model, ActionId::ApplyFilter, "LoadFilt");
     let undo_staged = action_label(model, ActionId::UndoStaged, "UndoEdit");
     let discard_staged = action_label(model, ActionId::DiscardStaged, "DiscardEdits");
     let review_mut = action_label(model, ActionId::ReviewMutations, "Review");
@@ -676,6 +678,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::SaveIntent,
                         label: save_intent.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SaveFilter,
+                        label: save_filter.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ApplyFilter,
+                        label: apply_filter.as_str(),
                         enabled: true,
                         style: None,
                     },

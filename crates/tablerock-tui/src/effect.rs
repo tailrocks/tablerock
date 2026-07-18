@@ -481,6 +481,17 @@ pub enum Effect {
         schema: String,
         table: String,
     },
+    /// Persist the full named-filter library JSON for a profile.
+    SaveSavedFilterLibrary {
+        request_token: RequestToken,
+        profile_id_hex: String,
+        library_json: String,
+    },
+    /// Load the named-filter library JSON for a profile.
+    LoadSavedFilterLibrary {
+        request_token: RequestToken,
+        profile_id_hex: String,
+    },
 }
 
 /// Helper: build a root LoadCatalog effect for the current workbench session.

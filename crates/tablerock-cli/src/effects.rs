@@ -957,6 +957,32 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::SaveSavedFilterLibrary {
+                request_token,
+                profile_id_hex,
+                library_json,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        save_saved_filter_library(persistence, request_token, profile_id_hex, library_json)
+                            .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::LoadSavedFilterLibrary {
+                request_token,
+                profile_id_hex,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        load_saved_filter_library(persistence, request_token, profile_id_hex).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
         }
     }
 }
@@ -1448,6 +1474,77 @@ async fn load_column_layout(
         Err(_) => Message::Engine(tablerock_tui::EngineMsg::ColumnLayoutFailed {
             request_token,
             reason: FailureProjection::Label("load column layout task failed".into()),
+        }),
+    }
+}
+
+async fn save_saved_filter_library(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    profile_id_hex: String,
+    library_json: String,
+) -> Message {
+    use tablerock_core::ProfileId;
+    let joined = tokio::task::spawn_blocking(move || {
+        let id: ProfileId = profile_id_hex
+            .parse()
+            .map_err(|_| "invalid profile id".to_owned())?;
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .put_saved_filter_library(id, library_json)
+            .map_err(|e| e.to_string())
+    })
+    .await;
+    match joined {
+        Ok(Ok(())) => Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibrarySaved {
+            request_token,
+        }),
+        Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibraryFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibraryFailed {
+            request_token,
+            reason: FailureProjection::Label("save filter library task failed".into()),
+        }),
+    }
+}
+
+async fn load_saved_filter_library(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    profile_id_hex: String,
+) -> Message {
+    use tablerock_core::ProfileId;
+    let joined = tokio::task::spawn_blocking(move || {
+        let id: ProfileId = profile_id_hex
+            .parse()
+            .map_err(|_| "invalid profile id".to_owned())?;
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .get_saved_filter_library(id)
+            .map_err(|e| e.to_string())
+            .map(|opt| opt.map(|r| r.library_json))
+    })
+    .await;
+    match joined {
+        Ok(Ok(library_json)) => Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibraryLoaded {
+            request_token,
+            library_json,
+        }),
+        Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibraryFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::SavedFilterLibraryFailed {
+            request_token,
+            reason: FailureProjection::Label("load filter library task failed".into()),
         }),
     }
 }

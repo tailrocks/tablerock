@@ -720,31 +720,33 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if let Some(json) = intent_json {
                 let _ = model.workbench_mut().apply_intent_json(&json);
             }
-            // After intent restore, load catalog for the restored context.
-            let Some(session) = model.session() else {
-                return Update::render();
-            };
-            let session_id_hex = session.session_id_hex.clone();
-            let engine_label = model.workbench().engine_kind.clone();
-            let token = model.mint_request_token();
-            let context_revision = model.workbench().context_revision;
-            model.workbench_mut().catalog = CatalogModel::Loading {
-                request_token: token,
-                context_revision,
-            };
-            Update {
-                render: true,
-                effect: Some(Effect::LoadCatalog {
-                    request_token: token,
-                    session_id_hex,
-                    context_revision,
-                    engine_label,
-                    level: crate::effect::CatalogLevelSpec::Root,
-                    parent_id: None,
-                }),
+            // After intent, load saved filter library (then catalog).
+            if let Some(profile_id_hex) = model.workbench().profile_id_hex.clone() {
+                let token = model.mint_request_token();
+                return Update {
+                    render: true,
+                    effect: Some(Effect::LoadSavedFilterLibrary {
+                        request_token: token,
+                        profile_id_hex,
+                    }),
+                };
             }
+            load_workbench_root_catalog(model)
         }
-        Message::Engine(EngineMsg::SessionIntentFailed { .. }) => Update::unchanged(),
+        Message::Engine(EngineMsg::SessionIntentFailed { .. }) => {
+            // Intent miss is non-fatal; still try filter library then catalog.
+            if let Some(profile_id_hex) = model.workbench().profile_id_hex.clone() {
+                let token = model.mint_request_token();
+                return Update {
+                    render: true,
+                    effect: Some(Effect::LoadSavedFilterLibrary {
+                        request_token: token,
+                        profile_id_hex,
+                    }),
+                };
+            }
+            load_workbench_root_catalog(model)
+        }
         Message::Engine(EngineMsg::ClipboardCopied { bytes, .. }) => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.error_label = Some(format!("copied {bytes} B"));
@@ -774,6 +776,38 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             let label = match reason {
                 FailureProjection::Label(label) => label,
             };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::SavedFilterLibraryLoaded { library_json, .. }) => {
+            if let Some(json) = library_json {
+                if let Some(lib) =
+                    crate::model::saved_filter::SavedFilterLibrary::from_json(&json)
+                {
+                    model.workbench_mut().filter_library = lib;
+                }
+            }
+            // Continue connect path: catalog for restored context.
+            load_workbench_root_catalog(model)
+        }
+        Message::Engine(EngineMsg::SavedFilterLibrarySaved { .. }) => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.error_label = Some("filter preset saved".into());
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::SavedFilterLibraryFailed { reason, .. }) => {
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            // Connect-path load failures still open the catalog.
+            if model.session().is_some()
+                && matches!(model.workbench().catalog, CatalogModel::Idle)
+            {
+                return load_workbench_root_catalog(model);
+            }
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -2594,6 +2628,71 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::SaveFilter if model.screen() == Screen::Workbench => {
+            let Some(profile_id_hex) = model.workbench().profile_id_hex.clone() else {
+                return Update::unchanged();
+            };
+            let (schema, table, filters, raw_where) = {
+                let Some(grid) = model.workbench().active_grid() else {
+                    return Update::unchanged();
+                };
+                (
+                    grid.base_schema.clone(),
+                    grid.base_table.clone(),
+                    grid.filters.clone(),
+                    grid.raw_where.clone(),
+                )
+            };
+            let (Some(schema), Some(table)) = (schema, table) else {
+                return Update::unchanged();
+            };
+            model.workbench_mut().filter_library.upsert(
+                crate::model::saved_filter::SavedFilterPreset {
+                    name: "default".into(),
+                    schema,
+                    table,
+                    filters,
+                    raw_where,
+                },
+            );
+            let library_json = model.workbench().filter_library.to_json();
+            let token = model.mint_request_token();
+            Update {
+                render: true,
+                effect: Some(Effect::SaveSavedFilterLibrary {
+                    request_token: token,
+                    profile_id_hex,
+                    library_json,
+                }),
+            }
+        }
+        ActionId::ApplyFilter if model.screen() == Screen::Workbench => {
+            let (schema, table) = {
+                let Some(grid) = model.workbench().active_grid() else {
+                    return Update::unchanged();
+                };
+                (grid.base_schema.clone(), grid.base_table.clone())
+            };
+            let (Some(schema), Some(table)) = (schema, table) else {
+                return Update::unchanged();
+            };
+            let preset = model
+                .workbench()
+                .filter_library
+                .get("default", &schema, &table)
+                .cloned();
+            let Some(preset) = preset else {
+                if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                    grid.error_label = Some("no saved filter for table".into());
+                }
+                return Update::render();
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.filters = preset.filters;
+                grid.raw_where = preset.raw_where;
+            }
+            rebrowse_active_table(model)
+        }
         ActionId::ClearFilters if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.clear_server_controls();
@@ -3046,6 +3145,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopySqlUpdate
         | ActionId::CycleSort
         | ActionId::AddFilter
+        | ActionId::SaveFilter
+        | ActionId::ApplyFilter
         | ActionId::ClearFilters
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
@@ -3754,6 +3855,32 @@ fn apply_staged_mutations(model: &mut Model) -> Update {
     }
 }
 
+/// After connect-path restores (intent + filter library), load root catalog.
+fn load_workbench_root_catalog(model: &mut Model) -> Update {
+    let Some(session) = model.session() else {
+        return Update::render();
+    };
+    let session_id_hex = session.session_id_hex.clone();
+    let engine_label = model.workbench().engine_kind.clone();
+    let token = model.mint_request_token();
+    let context_revision = model.workbench().context_revision;
+    model.workbench_mut().catalog = CatalogModel::Loading {
+        request_token: token,
+        context_revision,
+    };
+    Update {
+        render: true,
+        effect: Some(Effect::LoadCatalog {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            engine_label,
+            level: crate::effect::CatalogLevelSpec::Root,
+            parent_id: None,
+        }),
+    }
+}
+
 fn rebrowse_active_table(model: &mut Model) -> Update {
     let identity = model.workbench().active_grid().and_then(|g| {
         Some((g.base_schema.clone()?, g.base_table.clone()?))
@@ -3945,6 +4072,8 @@ fn cycle_action(
                 ActionId::CopySqlUpdate,
                 ActionId::CycleSort,
                 ActionId::AddFilter,
+                ActionId::SaveFilter,
+                ActionId::ApplyFilter,
                 ActionId::ClearFilters,
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
@@ -4544,6 +4673,83 @@ mod tests {
                 ..
             }) if profile_id_hex == "aa"
         ));
+    }
+
+    #[test]
+    fn save_and_apply_filter_preset_round_trip() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000003".into(),
+            identity: "pg".into(),
+            temporary: false,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().profile_id_hex =
+            Some("0000000000000001000000000000000a".into());
+        model.workbench_mut().open_preview_tab("users");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.columns = vec!["status".into()];
+            grid.add_filter_chip("status", "eq", Some("active".into()));
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::SaveFilter);
+        let save = update(&mut model, Message::Activate);
+        match save.effects().next() {
+            Some(Effect::SaveSavedFilterLibrary {
+                profile_id_hex,
+                library_json,
+                ..
+            }) => {
+                assert_eq!(profile_id_hex, "0000000000000001000000000000000a");
+                assert!(library_json.contains("status"));
+                assert!(library_json.contains("active"));
+            }
+            other => panic!("expected SaveSavedFilterLibrary, got {other:?}"),
+        }
+        // Clear live filters then apply saved preset.
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.clear_server_controls();
+            assert!(grid.filters.is_empty());
+        }
+        model.set_action(ActionId::ApplyFilter);
+        let apply = update(&mut model, Message::Activate);
+        assert!(matches!(
+            apply.effects().next(),
+            Some(Effect::BrowseTable { .. })
+        ));
+        let grid = model.workbench().active_grid().unwrap();
+        assert_eq!(grid.filters.len(), 1);
+        assert_eq!(grid.filters[0].column, "status");
+        assert_eq!(grid.filters[0].value.as_deref(), Some("active"));
+    }
+
+    #[test]
+    fn loaded_filter_library_restores_presets_then_catalog() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000004".into(),
+            identity: "pg".into(),
+            temporary: false,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().profile_id_hex =
+            Some("0000000000000001000000000000000b".into());
+        let json = r#"[{"name":"default","schema":"public","table":"users","raw_where":null,"filters":[{"column":"id","operator":"eq","value":"1"}]}]"#;
+        let out = update(
+            &mut model,
+            Message::Engine(EngineMsg::SavedFilterLibraryLoaded {
+                request_token: 1,
+                library_json: Some(json.into()),
+            }),
+        );
+        assert!(model.workbench().filter_library.get("default", "public", "users").is_some());
+        assert!(matches!(out.effects().next(), Some(Effect::LoadCatalog { .. })));
     }
 
     #[test]
