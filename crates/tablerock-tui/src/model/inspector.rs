@@ -23,6 +23,10 @@ pub struct InspectorModel {
     pub hex_source: String,
     /// Byte offset into `hex_source` for the current hex window.
     pub hex_offset: usize,
+    /// Raw structured payload for tree expand/collapse (empty if not structured).
+    pub tree_source: String,
+    /// Max nesting depth for structured tree pretty-print.
+    pub tree_depth: i32,
 }
 
 impl InspectorModel {
@@ -38,31 +42,52 @@ impl InspectorModel {
         let hex = format_hex_window(hex_source.as_bytes(), 0);
         let total = hex_source.len();
         let shown = total.min(HEX_WINDOW);
-        let text = match cell.distinction {
-            CellDistinction::Structured => pretty_structured(&cell.text),
-            CellDistinction::Temporal => format!(
-                "{}\n(Today / Now / Day± / Mon± / Cal · null: SetNull)",
-                annotate_temporal(&cell.text)
+        let (text, tree_source, tree_depth) = match cell.distinction {
+            CellDistinction::Structured => {
+                let depth = MAX_STRUCTURED_TREE_DEPTH;
+                (
+                    format!(
+                        "{}\n(Tree+/Tree- depth {depth})",
+                        pretty_structured_depth(&cell.text, depth)
+                    ),
+                    cell.text.clone(),
+                    depth,
+                )
+            }
+            CellDistinction::Temporal => (
+                format!(
+                    "{}\n(Today / Now / Day± / Mon± / Cal · null: SetNull)",
+                    annotate_temporal(&cell.text)
+                ),
+                String::new(),
+                0,
             ),
-            CellDistinction::Boolean => format!(
-                "{}\n(toggle: TogBool · null: SetNull)",
-                cell.display()
+            CellDistinction::Boolean => (
+                format!(
+                    "{}\n(toggle: TogBool · null: SetNull)",
+                    cell.display()
+                ),
+                String::new(),
+                0,
             ),
-            CellDistinction::Binary => {
+            CellDistinction::Binary => (
                 format!(
                     "{}\n(binary · hex bytes {shown}/{total} from 0 · Hex+/Hex- · CopyHex)",
                     cell.display()
-                )
-            }
+                ),
+                String::new(),
+                0,
+            ),
             _ => {
-                if total > HEX_WINDOW {
+                let t = if total > HEX_WINDOW {
                     format!(
                         "{}\n(hex window {shown}/{total} from 0 · Hex+/Hex-)",
                         cell.display()
                     )
                 } else {
                     cell.display()
-                }
+                };
+                (t, String::new(), 0)
             }
         };
         Self {
@@ -78,6 +103,8 @@ impl InspectorModel {
             structure_table: None,
             hex_source,
             hex_offset: 0,
+            tree_source,
+            tree_depth,
         }
     }
 
@@ -118,6 +145,40 @@ impl InspectorModel {
         true
     }
 
+    /// Increase structured tree depth by 1 (max 32). Returns true if changed.
+    pub fn expand_tree(&mut self) -> bool {
+        if self.kind_label != "structured" || self.tree_source.is_empty() {
+            return false;
+        }
+        if self.tree_depth >= 32 {
+            return false;
+        }
+        self.tree_depth += 1;
+        self.refresh_structured_text();
+        true
+    }
+
+    /// Decrease structured tree depth by 1 (min 1). Returns true if changed.
+    pub fn collapse_tree(&mut self) -> bool {
+        if self.kind_label != "structured" || self.tree_source.is_empty() {
+            return false;
+        }
+        if self.tree_depth <= 1 {
+            return false;
+        }
+        self.tree_depth -= 1;
+        self.refresh_structured_text();
+        true
+    }
+
+    fn refresh_structured_text(&mut self) {
+        let depth = self.tree_depth;
+        self.text = format!(
+            "{}\n(Tree+/Tree- depth {depth})",
+            pretty_structured_depth(&self.tree_source, depth)
+        );
+    }
+
     /// True when this inspector holds a relation structure target for DDL.
     #[must_use]
     pub fn has_structure_target(&self) -> bool {
@@ -149,8 +210,13 @@ impl InspectorModel {
                 out.push(line);
             }
         } else if self.kind_label == "structured" {
-            out.push("tree:".into());
-            for line in structured_tree_lines(&self.text) {
+            out.push(format!("tree (depth {}):", self.tree_depth.max(1)));
+            let source = if self.tree_source.is_empty() {
+                &self.text
+            } else {
+                &self.tree_source
+            };
+            for line in structured_tree_lines_depth(source, self.tree_depth.max(1)) {
                 out.push(line);
             }
         } else if self.kind_label == "structure" || self.text.contains('\n') {
@@ -201,6 +267,8 @@ impl InspectorModel {
             structure_table: None,
             hex_source: String::new(),
             hex_offset: 0,
+            tree_source: String::new(),
+            tree_depth: 0,
         }
     }
 }
@@ -276,7 +344,7 @@ mod tests {
         assert!(insp.text.contains('\n') || insp.text.contains("  "));
         assert!(insp.text.contains("\"a\""));
         let lines = insp.lines().join("\n");
-        assert!(lines.contains("tree:"));
+        assert!(lines.contains("tree"), "{lines}");
         assert!(lines.contains("\"a\""));
 
         let temp = ProjectedCell {
@@ -307,6 +375,29 @@ mod tests {
             "expected collapse marker in {joined:?}"
         );
         assert!(lines.len() <= 64);
+    }
+
+    #[test]
+    fn expand_and_collapse_structured_tree_depth() {
+        let deep = "[[[[1]]]]";
+        let cell = ProjectedCell {
+            text: deep.into(),
+            distinction: CellDistinction::Structured,
+            byte_len: deep.len() as u64,
+            original_byte_len: None,
+        };
+        let mut insp = InspectorModel::from_cell("j", &cell, false);
+        assert_eq!(insp.tree_depth, MAX_STRUCTURED_TREE_DEPTH);
+        let shallow = pretty_structured_depth(deep, 1);
+        assert!(shallow.contains('…') || shallow.chars().filter(|c| *c == '[').count() <= 2);
+        assert!(insp.collapse_tree() || insp.tree_depth > 1);
+        // Collapse down to 1
+        while insp.collapse_tree() {}
+        assert_eq!(insp.tree_depth, 1);
+        assert!(!insp.collapse_tree());
+        assert!(insp.expand_tree());
+        assert_eq!(insp.tree_depth, 2);
+        assert!(insp.text.contains("depth 2"));
     }
 
     #[test]
@@ -364,7 +455,11 @@ const MAX_STRUCTURED_PRETTY_BYTES: usize = 16 * 1024;
 
 /// Multi-line tree projection for structured cells (glyph indent + depth cap).
 fn structured_tree_lines(raw: &str) -> Vec<String> {
-    let pretty = pretty_structured(raw);
+    structured_tree_lines_depth(raw, MAX_STRUCTURED_TREE_DEPTH)
+}
+
+fn structured_tree_lines_depth(raw: &str, max_depth: i32) -> Vec<String> {
+    let pretty = pretty_structured_depth(raw, max_depth);
     if pretty == raw && !(raw.trim().starts_with('{') || raw.trim().starts_with('[')) {
         return vec![raw.to_owned()];
     }
@@ -451,9 +546,14 @@ fn format_hex_panel(cell: &ProjectedCell) -> String {
 
 /// Indent JSON-like structured text for inspector readability (best-effort).
 ///
-/// Depth beyond [`MAX_STRUCTURED_TREE_DEPTH`] is collapsed to `…` so nested
-/// containers remain navigable without dumping unbounded trees.
+/// Depth beyond the default cap is collapsed to `…` so nested containers remain
+/// navigable without dumping unbounded trees.
 fn pretty_structured(raw: &str) -> String {
+    pretty_structured_depth(raw, MAX_STRUCTURED_TREE_DEPTH)
+}
+
+fn pretty_structured_depth(raw: &str, max_depth: i32) -> String {
+    let max_depth = max_depth.clamp(1, 32);
     let trimmed = raw.trim();
     if !(trimmed.starts_with('{') || trimmed.starts_with('[')) {
         return raw.to_owned();
@@ -521,7 +621,7 @@ fn pretty_structured(raw: &str) -> String {
                 out.push('"');
             }
             b'{' | b'[' => {
-                if depth >= MAX_STRUCTURED_TREE_DEPTH {
+                if depth >= max_depth {
                     out.push(b as char);
                     out.push('…');
                     collapse_until = Some(depth);

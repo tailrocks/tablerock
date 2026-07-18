@@ -683,6 +683,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let clear_notices = action_label(model, ActionId::ClearNotices, "ClrNtc");
     let hex_more = action_label(model, ActionId::HexMore, "Hex+");
     let hex_less = action_label(model, ActionId::HexLess, "Hex-");
+    let expand_tree = action_label(model, ActionId::ExpandTree, "Tree+");
+    let collapse_tree = action_label(model, ActionId::CollapseTree, "Tree-");
     let apply_mut = action_label(model, ActionId::ApplyMutations, "Apply");
     let follow_fk = action_label(model, ActionId::FollowForeignKey, "FollowFK");
     let structure = action_label(model, ActionId::ShowStructure, "Structure");
@@ -1287,6 +1289,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::HexLess,
                         label: hex_less.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ExpandTree,
+                        label: expand_tree.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CollapseTree,
+                        label: collapse_tree.as_str(),
                         enabled: true,
                         style: None,
                     },

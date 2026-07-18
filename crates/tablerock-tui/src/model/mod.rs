@@ -235,6 +235,10 @@ pub enum ActionId {
     HexMore,
     /// Page hex dump backward one 256-byte window.
     HexLess,
+    /// Expand structured JSON tree depth by one.
+    ExpandTree,
+    /// Collapse structured JSON tree depth by one.
+    CollapseTree,
     /// Apply reviewed/staged mutations (typed plan rebuild from drafts).
     ApplyMutations,
     /// Follow FK from cursor column → filtered browse of referenced table.
