@@ -431,6 +431,8 @@ pub enum ActionId {
     ReviewMutations,
     /// Begin inline edit of the cursor cell (editable results only).
     EditCell,
+    /// Cancel open cell edit without staging (no-op if not editing).
+    CancelCellEdit,
     /// Toggle boolean cell buffer while editing (type-specific).
     ToggleBool,
     /// Set cell edit buffer to null while editing.

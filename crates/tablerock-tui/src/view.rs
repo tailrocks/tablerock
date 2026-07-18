@@ -728,6 +728,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let discard_staged = action_label(model, ActionId::DiscardStaged, "DiscardEdits");
     let review_mut = action_label(model, ActionId::ReviewMutations, "Review");
     let edit_cell = action_label(model, ActionId::EditCell, "Edit");
+    let cancel_edit = action_label(model, ActionId::CancelCellEdit, "CancelEd");
     let copy_cell = action_label(model, ActionId::CopyCell, "CopyCell");
     let copy_cell_hex = action_label(model, ActionId::CopyCellHex, "CopyHex");
     let copy_cell_sql = action_label(model, ActionId::CopyCellSql, "CopySql");
@@ -1599,6 +1600,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::EditCell,
                         label: edit_cell.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CancelCellEdit,
+                        label: cancel_edit.as_str(),
                         enabled: true,
                         style: None,
                     },

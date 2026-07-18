@@ -3818,6 +3818,43 @@ mod tests {
     }
 
     #[test]
+    fn cancel_cell_edit_discards_buffer_without_stage() {
+        use tablerock_core::ProfileSafetyMode;
+
+        let mut grid = DataGridModel::default();
+        grid.columns = vec!["id".into(), "name".into()];
+        grid.row_count = 1;
+        grid.cells = vec![
+            ProjectedCell {
+                text: "1".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "alice".into(),
+                distinction: CellDistinction::Text,
+                byte_len: 5,
+                original_byte_len: None,
+            },
+        ];
+        grid.base_schema = Some("public".into());
+        grid.base_table = Some("users".into());
+        grid.identity_columns = vec!["id".into()];
+        grid.cursor_row = 0;
+        grid.cursor_col = 1;
+        grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+        assert!(grid.begin_cell_edit());
+        if let Some(edit) = grid.cell_edit.as_mut() {
+            edit.buffer = "bob".into();
+        }
+        grid.cancel_cell_edit();
+        assert!(grid.cell_edit.is_none());
+        assert_eq!(grid.drafts.pending_count(), 0);
+        assert_eq!(grid.cell_display_at(0, 1), "alice");
+    }
+
+    #[test]
     fn number_cell_rejects_non_numeric_stage() {
         use tablerock_core::ProfileSafetyMode;
 
