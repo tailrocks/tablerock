@@ -1371,6 +1371,15 @@ impl DataGridModel {
         true
     }
 
+    /// Swap primary and secondary sort keys. Needs ≥2 keys.
+    pub fn swap_primary_secondary_sort(&mut self) -> bool {
+        if self.sort.len() < 2 {
+            return false;
+        }
+        self.sort.swap(0, 1);
+        true
+    }
+
     /// Promote `column` to primary ORDER BY without cycling direction.
     ///
     /// - Already primary: no-op (false).
@@ -2606,6 +2615,23 @@ mod tests {
         assert_eq!(g.sort[0].direction, ColumnSort::Desc);
         assert_eq!(g.sort[1].column, "name");
         assert_eq!(g.sort[2].column, "id");
+    }
+
+    #[test]
+    fn swap_primary_secondary_sort_exchanges_first_two() {
+        let mut g = DataGridModel::default();
+        assert!(!g.swap_primary_secondary_sort());
+        g.push_sort_column("name");
+        assert!(!g.swap_primary_secondary_sort());
+        g.push_sort_column("age");
+        g.push_sort_column("id");
+        assert_eq!(g.sort[0].column, "name");
+        assert_eq!(g.sort[1].column, "age");
+        assert_eq!(g.sort[2].column, "id");
+        assert!(g.swap_primary_secondary_sort());
+        assert_eq!(g.sort[0].column, "age");
+        assert_eq!(g.sort[1].column, "name");
+        assert_eq!(g.sort[2].column, "id"); // tertiary untouched
     }
 
     #[test]

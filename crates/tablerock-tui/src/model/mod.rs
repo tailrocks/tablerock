@@ -198,6 +198,8 @@ pub enum ActionId {
     PromoteSort,
     /// Invert direction of every sort key (Asc↔Desc).
     InvertAllSort,
+    /// Swap primary and secondary sort keys.
+    SwapSortKeys,
     /// Remove the last server filter chip and re-browse.
     RemoveLastFilter,
     /// Remove the oldest server filter chip and re-browse.

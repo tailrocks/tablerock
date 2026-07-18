@@ -674,6 +674,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let keep_sort = action_label(model, ActionId::KeepPrimarySort, "Sort1");
     let promote_sort = action_label(model, ActionId::PromoteSort, "SortPri");
     let inv_all_sort = action_label(model, ActionId::InvertAllSort, "SortInvA");
+    let swap_sort = action_label(model, ActionId::SwapSortKeys, "SortSwap");
     let quick_filt = action_label(model, ActionId::EditQuickFilter, "PgFilt");
     let clear_quick = action_label(model, ActionId::ClearQuickFilter, "ClrPgF");
     let go_row = action_label(model, ActionId::GoToRow, "GoRow");
@@ -1198,6 +1199,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::InvertAllSort,
                         label: inv_all_sort.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SwapSortKeys,
+                        label: swap_sort.as_str(),
                         enabled: true,
                         style: None,
                     },
