@@ -66,9 +66,9 @@ pub use session_pool::{
     MAX_REGISTERED_SESSIONS, SessionRegistry, SessionRegistryError, SessionSlot,
 };
 pub use ssh_tunnel::{
-    ClientHandler, SshHostKeyPolicy, SshPasswordAuth, SshTunnelConfig, SshTunnelError,
-    channel_stream, connect_session, connect_session_capture_host_key, learn_host_key,
-    open_direct_tcpip, spawn_local_forward,
+    ClientHandler, LocalForwardTunnel, SshHostKeyPolicy, SshPasswordAuth, SshTunnelConfig,
+    SshTunnelError, channel_stream, connect_session, connect_session_capture_host_key,
+    learn_host_key, open_direct_tcpip, open_local_forward_tunnel, spawn_local_forward,
 };
 // SQL analysis is pure and lives in core; re-export for engine consumers.
 pub use tablerock_core::{SqlDialect, StatementSpan, statement_at, statements};

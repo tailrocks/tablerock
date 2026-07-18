@@ -5,10 +5,12 @@
 
 use std::path::PathBuf;
 
+use tablerock_core::{BoundedText, ByteLimit};
 use tablerock_engine::{
-    SshHostKeyPolicy, SshPasswordAuth, SshTunnelConfig, SshTunnelError, channel_stream,
-    connect_session, connect_session_capture_host_key, learn_host_key, open_direct_tcpip,
-    spawn_local_forward,
+    LocalForwardTunnel, PostgresConnectConfig, PostgresSession, PostgresTlsMode, SshHostKeyPolicy,
+    SshPasswordAuth, SshTunnelConfig, SshTunnelError, channel_stream, connect_session,
+    connect_session_capture_host_key, learn_host_key, open_direct_tcpip,
+    open_local_forward_tunnel, spawn_local_forward,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -222,4 +224,58 @@ async fn known_hosts_fail_closed_and_accept_learned_key() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn postgres_driver_connects_through_local_forward_only() {
+    let (_postgres, _ssh, pg_name, ssh_port) = start_bastion_and_pg().await;
+
+    let config = SshTunnelConfig {
+        bastion_host: "127.0.0.1".into(),
+        bastion_port: ssh_port,
+        auth: SshPasswordAuth::new("root", "tunnel-pass"),
+        host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
+    };
+
+    let mut tunnel = None;
+    for _ in 0..40 {
+        match open_local_forward_tunnel(&config, pg_name.as_str(), 5432).await {
+            Ok(t) => {
+                tunnel = Some(t);
+                break;
+            }
+            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
+        }
+    }
+    let tunnel = tunnel.expect("local forward tunnel");
+
+    // Driver sees only the local endpoint — no bastion credentials.
+    let host = BoundedText::copy_from_str(LocalForwardTunnel::local_host(), ByteLimit::new(253))
+        .unwrap();
+    let database = BoundedText::copy_from_str("postgres", ByteLimit::new(128)).unwrap();
+    let user = BoundedText::copy_from_str("postgres", ByteLimit::new(128)).unwrap();
+    let pg = PostgresConnectConfig::new(
+        host,
+        tunnel.local_port(),
+        database,
+        user,
+        PostgresTlsMode::Disabled,
+    );
+    let session = PostgresSession::connect(&pg)
+        .await
+        .expect("PostgresSession via SSH local forward");
+    session
+        .health_check()
+        .await
+        .expect("health through tunnel");
+    let describe = session
+        .describe_server()
+        .await
+        .expect("describe_server through tunnel");
+    assert!(
+        !describe.identity().is_empty(),
+        "server identity must flow through tunnel"
+    );
+    session.shutdown().await.ok();
+    drop(tunnel);
 }

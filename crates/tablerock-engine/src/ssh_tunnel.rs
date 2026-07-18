@@ -211,10 +211,57 @@ pub fn channel_stream(channel: Channel<client::Msg>) -> ChannelStream<client::Ms
     channel.into_stream()
 }
 
-/// Local listener that accepts one connection and bridges it over direct-tcpip.
+/// Live local forward: drivers connect to `127.0.0.1:local_port` only.
 ///
-/// Returns the bound local port. A background task serves the first accepted
-/// connection; drop the returned join handle / session to stop.
+/// Dropping this value aborts the accept loop and closes the SSH session.
+pub struct LocalForwardTunnel {
+    local_port: u16,
+    join: tokio::task::JoinHandle<()>,
+}
+
+impl LocalForwardTunnel {
+    #[must_use]
+    pub const fn local_host() -> &'static str {
+        "127.0.0.1"
+    }
+
+    #[must_use]
+    pub const fn local_port(&self) -> u16 {
+        self.local_port
+    }
+}
+
+impl Drop for LocalForwardTunnel {
+    fn drop(&mut self) {
+        self.join.abort();
+    }
+}
+
+impl fmt::Debug for LocalForwardTunnel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LocalForwardTunnel")
+            .field("local_host", &Self::local_host())
+            .field("local_port", &self.local_port)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Bind `127.0.0.1:0`, open SSH session, and accept multiple TCP bridges.
+pub async fn open_local_forward_tunnel(
+    config: &SshTunnelConfig,
+    target_host: impl Into<String>,
+    target_port: u16,
+) -> Result<LocalForwardTunnel, SshTunnelError> {
+    let handle = connect_session(config).await?;
+    let target_host = target_host.into();
+    spawn_local_forward(handle, target_host, target_port)
+        .await
+        .map(|(local_port, join)| LocalForwardTunnel { local_port, join })
+}
+
+/// Local listener that accepts connections and bridges each over direct-tcpip.
+///
+/// Returns the bound local port. Drop the join handle (or abort it) to stop.
 pub async fn spawn_local_forward(
     handle: Handle<ClientHandler>,
     target_host: String,
@@ -229,14 +276,19 @@ pub async fn spawn_local_forward(
         .port();
 
     let join = tokio::spawn(async move {
-        let Ok((mut local, _)) = listener.accept().await else {
-            return;
-        };
-        let Ok(channel) = open_direct_tcpip(&handle, &target_host, target_port).await else {
-            return;
-        };
-        let mut remote = channel_stream(channel);
-        let _ = tokio::io::copy_bidirectional(&mut local, &mut remote).await;
+        loop {
+            let Ok((mut local, _)) = listener.accept().await else {
+                break;
+            };
+            let Ok(channel) = open_direct_tcpip(&handle, &target_host, target_port).await else {
+                break;
+            };
+            let mut remote = channel_stream(channel);
+            // Concurrent bridges: spawn per accept so multi-statement drivers work.
+            tokio::spawn(async move {
+                let _ = tokio::io::copy_bidirectional(&mut local, &mut remote).await;
+            });
+        }
         drop(handle);
     });
 
