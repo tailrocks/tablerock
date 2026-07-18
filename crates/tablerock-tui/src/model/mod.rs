@@ -181,6 +181,10 @@ pub enum ActionId {
     SetToday,
     /// Stamp now (YYYY-MM-DDTHH:MM:SSZ) while editing a temporal cell.
     SetNow,
+    /// Step temporal date by +1 day while editing.
+    IncDay,
+    /// Step temporal date by -1 day while editing.
+    DecDay,
     /// Step number cell buffer by +1 while editing.
     IncNumber,
     /// Step number cell buffer by -1 while editing.

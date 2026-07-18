@@ -56,6 +56,42 @@ impl CellEditSession {
         true
     }
 
+    /// Step date portion by `delta_days` for temporal cells (keeps time suffix if present).
+    pub fn step_day(&mut self, delta_days: i32) -> bool {
+        if self.kind != CellDistinction::Temporal || delta_days == 0 {
+            return false;
+        }
+        let trimmed = self.buffer.trim();
+        if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
+            // Start from today then step.
+            self.buffer = local_today_iso();
+            if delta_days == 0 {
+                return true;
+            }
+        }
+        let t = self.buffer.trim();
+        let (date_part, rest) = if let Some((d, r)) = t.split_once('T') {
+            (d, Some(format!("T{r}")))
+        } else if let Some((d, r)) = t.split_once(' ') {
+            (d, Some(format!(" {r}")))
+        } else if t.len() >= 10 && t.as_bytes().get(4) == Some(&b'-') {
+            (&t[..10], if t.len() > 10 { Some(t[10..].to_owned()) } else { None })
+        } else {
+            return false;
+        };
+        let Some((y, m, d)) = parse_ymd(date_part) else {
+            return false;
+        };
+        let days = days_from_civil(y, m, d).saturating_add(i64::from(delta_days));
+        let (ny, nm, nd) = civil_from_days(days);
+        let new_date = format!("{ny:04}-{nm:02}-{nd:02}");
+        self.buffer = match rest {
+            Some(r) => format!("{new_date}{r}"),
+            None => new_date,
+        };
+        true
+    }
+
     /// Pretty-indent structured/JSON buffer (best-effort; fail closed on non-JSON).
     pub fn format_structured(&mut self) -> bool {
         if self.kind != CellDistinction::Structured {
@@ -247,6 +283,33 @@ fn compact_json_like(raw: &str) -> String {
         }
     }
     out
+}
+
+fn parse_ymd(s: &str) -> Option<(i32, u32, u32)> {
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let y: i32 = parts[0].parse().ok()?;
+    let m: u32 = parts[1].parse().ok()?;
+    let d: u32 = parts[2].parse().ok()?;
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    Some((y, m, d))
+}
+
+/// Howard Hinnant days-from-civil (proleptic Gregorian).
+fn days_from_civil(y: i32, m: u32, d: u32) -> i64 {
+    let mut y = i64::from(y);
+    let m = i64::from(m);
+    let d = i64::from(d);
+    y -= i64::from(m <= 2);
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
 }
 
 /// Howard Hinnant civil-from-days (proleptic Gregorian).
@@ -1889,6 +1952,38 @@ mod tests {
         };
         assert!(!text.set_today());
         assert!(!text.set_now());
+    }
+
+    #[test]
+    fn temporal_step_day_preserves_time_suffix() {
+        let mut session = CellEditSession {
+            abs_row: 0,
+            column: "ts".into(),
+            original_text: "2024-01-15T12:30:00Z".into(),
+            buffer: "2024-01-15T12:30:00Z".into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Temporal,
+        };
+        assert!(session.step_day(1));
+        assert_eq!(session.buffer, "2024-01-16T12:30:00Z");
+        assert!(session.step_day(-2));
+        assert_eq!(session.buffer, "2024-01-14T12:30:00Z");
+        // Month boundary
+        session.buffer = "2024-01-31".into();
+        assert!(session.step_day(1));
+        assert_eq!(session.buffer, "2024-02-01");
+        // Invalid date text: no-op
+        session.buffer = "not-a-date".into();
+        assert!(!session.step_day(1));
+        let mut text = CellEditSession {
+            abs_row: 0,
+            column: "t".into(),
+            original_text: String::new(),
+            buffer: "2024-01-01".into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Text,
+        };
+        assert!(!text.step_day(1));
     }
 
     #[test]

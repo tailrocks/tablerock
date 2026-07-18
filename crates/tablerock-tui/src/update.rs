@@ -3742,6 +3742,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::IncDay if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.step_day(1) {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::DecDay if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.step_day(-1) {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::IncNumber if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if let Some(edit) = grid.cell_edit.as_mut() {
@@ -4245,6 +4265,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::SetNull
         | ActionId::SetToday
         | ActionId::SetNow
+        | ActionId::IncDay
+        | ActionId::DecDay
         | ActionId::IncNumber
         | ActionId::DecNumber
         | ActionId::FormatJson
@@ -5573,6 +5595,8 @@ fn cycle_action(
                 ActionId::SetNull,
                 ActionId::SetToday,
                 ActionId::SetNow,
+                ActionId::IncDay,
+                ActionId::DecDay,
                 ActionId::IncNumber,
                 ActionId::DecNumber,
                 ActionId::FormatJson,

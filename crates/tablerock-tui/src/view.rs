@@ -632,6 +632,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let set_null = action_label(model, ActionId::SetNull, "SetNull");
     let set_today = action_label(model, ActionId::SetToday, "Today");
     let set_now = action_label(model, ActionId::SetNow, "Now");
+    let inc_day = action_label(model, ActionId::IncDay, "Day+");
+    let dec_day = action_label(model, ActionId::DecDay, "Day-");
     let inc_num = action_label(model, ActionId::IncNumber, "Num+");
     let dec_num = action_label(model, ActionId::DecNumber, "Num-");
     let fmt_json = action_label(model, ActionId::FormatJson, "FmtJson");
@@ -1084,6 +1086,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::SetNow,
                         label: set_now.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::IncDay,
+                        label: inc_day.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DecDay,
+                        label: dec_day.as_str(),
                         enabled: true,
                         style: None,
                     },
