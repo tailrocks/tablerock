@@ -190,6 +190,10 @@ pub enum ActionId {
     CopyCountWhereSql,
     /// Copy SELECT DISTINCT cursor column FROM base table.
     CopyDistinctSql,
+    /// Copy ORDER BY fragment from current multi-key sort.
+    CopyOrderBySql,
+    /// Copy SELECT visible cols FROM base ORDER BY current sort.
+    CopySelectOrderSql,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).

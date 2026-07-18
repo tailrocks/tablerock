@@ -4184,6 +4184,66 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyOrderBySql if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(text) = grid.order_by_sql() else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopySelectOrderSql if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) = (grid.base_schema.as_ref(), grid.base_table.as_ref())
+            else {
+                return Update::unchanged();
+            };
+            if schema.is_empty() || table.is_empty() {
+                return Update::unchanged();
+            }
+            let cols = grid.visible_columns();
+            if cols.is_empty() {
+                return Update::unchanged();
+            }
+            let Some(order) = grid.order_by_sql() else {
+                return Update::unchanged();
+            };
+            let col_list = cols
+                .iter()
+                .map(|c| quote_ident_sql(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let text = format!(
+                "SELECT {col_list}\nFROM {}.{}\n{order}",
+                quote_ident_sql(schema),
+                quote_ident_sql(table)
+            );
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some("copied SELECT … ORDER BY".into());
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyPkNames if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5945,6 +6005,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyCountSql
         | ActionId::CopyCountWhereSql
         | ActionId::CopyDistinctSql
+        | ActionId::CopyOrderBySql
+        | ActionId::CopySelectOrderSql
         | ActionId::CopyPkNames
         | ActionId::CopyPkIdents
         | ActionId::CopyLocator
@@ -7699,6 +7761,8 @@ fn cycle_action(
                 ActionId::CopyCountSql,
                 ActionId::CopyCountWhereSql,
                 ActionId::CopyDistinctSql,
+                ActionId::CopyOrderBySql,
+                ActionId::CopySelectOrderSql,
                 ActionId::CopyPkNames,
                 ActionId::CopyPkIdents,
                 ActionId::CopyLocator,
@@ -9585,6 +9649,45 @@ mod tests {
                 assert!(text.contains("width") || text.contains("16"), "{text}");
             }
             other => panic!("expected layout json copy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copy_order_by_and_select_order_sql() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into()];
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.push_sort_column("name");
+            grid.push_sort_column("id");
+            grid.push_sort_column("id"); // DESC
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyOrderBySql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "ORDER BY \"name\" ASC, \"id\" DESC");
+            }
+            other => panic!("expected ORDER BY, got {other:?}"),
+        }
+        model.set_action(ActionId::CopySelectOrderSql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.starts_with("SELECT \"id\", \"name\"\n"), "{text}");
+                assert!(text.contains("FROM \"public\".\"users\""), "{text}");
+                assert!(text.contains("ORDER BY \"name\" ASC, \"id\" DESC"), "{text}");
+            }
+            other => panic!("expected SELECT ORDER, got {other:?}"),
         }
     }
 

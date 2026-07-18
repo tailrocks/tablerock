@@ -971,6 +971,33 @@ impl DataGridModel {
         )
     }
 
+    /// SQL ORDER BY fragment from sort keys (quoted idents; presentation aid).
+    ///
+    /// Empty when no sort. Directions use ASC/DESC; ColumnSort::None skipped.
+    #[must_use]
+    pub fn order_by_sql(&self) -> Option<String> {
+        if self.sort.is_empty() {
+            return None;
+        }
+        let parts: Vec<String> = self
+            .sort
+            .iter()
+            .filter_map(|k| {
+                let dir = match k.direction {
+                    ColumnSort::Asc => "ASC",
+                    ColumnSort::Desc => "DESC",
+                    ColumnSort::None => return None,
+                };
+                let col = format!("\"{}\"", k.column.replace('"', "\"\""));
+                Some(format!("{col} {dir}"))
+            })
+            .collect();
+        if parts.is_empty() {
+            return None;
+        }
+        Some(format!("ORDER BY {}", parts.join(", ")))
+    }
+
     /// Visual multi-column sort chip bar (glyph + text, never color alone).
     ///
     /// Empty when no server sort keys. Index 0 is primary ORDER BY.
@@ -2970,6 +2997,19 @@ mod tests {
         assert_eq!(hits, vec![0]);
         assert!(g.status_line().contains("page-local [alp]"));
         assert!(g.status_line().contains("sort"));
+    }
+
+    #[test]
+    fn order_by_sql_from_multi_key_sort() {
+        let mut g = DataGridModel::default();
+        assert!(g.order_by_sql().is_none());
+        g.push_sort_column("name");
+        g.push_sort_column("age");
+        g.push_sort_column("age"); // Desc secondary
+        let sql = g.order_by_sql().expect("order");
+        assert_eq!(sql, "ORDER BY \"name\" ASC, \"age\" DESC");
+        g.sort.clear();
+        assert!(g.order_by_sql().is_none());
     }
 
     #[test]

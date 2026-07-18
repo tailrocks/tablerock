@@ -746,6 +746,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_count = action_label(model, ActionId::CopyCountSql, "CopyCnt");
     let copy_count_w = action_label(model, ActionId::CopyCountWhereSql, "CopyCntW");
     let copy_distinct = action_label(model, ActionId::CopyDistinctSql, "CopyDist");
+    let copy_order = action_label(model, ActionId::CopyOrderBySql, "CopyOrd");
+    let copy_sel_ord = action_label(model, ActionId::CopySelectOrderSql, "CopySelO");
     let copy_pk = action_label(model, ActionId::CopyPkNames, "CopyPk");
     let copy_pk_q = action_label(model, ActionId::CopyPkIdents, "CopyPkQ");
     let copy_loc = action_label(model, ActionId::CopyLocator, "CopyLoc");
@@ -1664,6 +1666,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyDistinctSql,
                         label: copy_distinct.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyOrderBySql,
+                        label: copy_order.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopySelectOrderSql,
+                        label: copy_sel_ord.as_str(),
                         enabled: true,
                         style: None,
                     },
