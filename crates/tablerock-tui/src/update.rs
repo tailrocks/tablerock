@@ -108,6 +108,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::SaveFilter { confirm_buffer, .. }
                     | ConfirmDialog::ApplyFilter { confirm_buffer, .. }
                     | ConfirmDialog::EditRawWhere { confirm_buffer, .. }
+                    | ConfirmDialog::EditQuickFilter { confirm_buffer, .. }
                     | ConfirmDialog::StageRedis { confirm_buffer, .. }
                     | ConfirmDialog::RedisSubscribe { confirm_buffer, .. }
                     | ConfirmDialog::RenameGroup { confirm_buffer, .. }
@@ -2793,6 +2794,18 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     model.set_confirm(None);
                     rebrowse_active_table(model)
                 }
+                ConfirmDialog::EditQuickFilter { confirm_buffer } => {
+                    let trimmed = confirm_buffer.trim();
+                    // Page-local only: cap length; no server I/O.
+                    if trimmed.len() > 256 {
+                        return Update::render();
+                    }
+                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                        grid.quick_filter = trimmed.to_owned();
+                    }
+                    model.set_confirm(None);
+                    Update::render()
+                }
                 ConfirmDialog::StageRedis {
                     op,
                     logical_db,
@@ -3478,6 +3491,21 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             let existing = grid.raw_where.clone().unwrap_or_default();
             model.set_confirm(Some(ConfirmDialog::EditRawWhere {
+                confirm_buffer: existing,
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::EditQuickFilter if model.screen() == Screen::Workbench => {
+            if model.workbench().active_grid().is_none() {
+                return Update::unchanged();
+            }
+            let existing = model
+                .workbench()
+                .active_grid()
+                .map(|g| g.quick_filter.clone())
+                .unwrap_or_default();
+            model.set_confirm(Some(ConfirmDialog::EditQuickFilter {
                 confirm_buffer: existing,
             }));
             model.set_action(ActionId::Submit);
@@ -4182,6 +4210,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ApplyFilter
         | ActionId::ClearFilters
         | ActionId::EditRawWhere
+        | ActionId::EditQuickFilter
         | ActionId::RefreshTable
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
@@ -5509,6 +5538,7 @@ fn cycle_action(
                 ActionId::ApplyFilter,
                 ActionId::ClearFilters,
                 ActionId::EditRawWhere,
+                ActionId::EditQuickFilter,
                 ActionId::RefreshTable,
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
@@ -7016,6 +7046,41 @@ mod tests {
             grid.error_label.as_deref(),
             Some("notice: NOTICE: table-rock-notice")
         );
+    }
+
+    #[test]
+    fn edit_quick_filter_is_local_no_effect() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "01".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::EditQuickFilter);
+        let open = update(&mut model, Message::Activate);
+        assert!(open.effects().next().is_none());
+        if let Some(ConfirmDialog::EditQuickFilter { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = "needle".into();
+        }
+        model.set_action(ActionId::Submit);
+        let set = update(&mut model, Message::Activate);
+        assert!(set.effects().next().is_none());
+        assert_eq!(
+            model.workbench().active_grid().unwrap().quick_filter,
+            "needle"
+        );
+        assert!(model
+            .workbench()
+            .active_grid()
+            .unwrap()
+            .filter_chip_bar()
+            .unwrap()
+            .contains("[page:needle]"));
     }
 
     #[test]

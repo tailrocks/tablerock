@@ -143,6 +143,8 @@ pub enum ActionId {
     ClearFilters,
     /// Paste/edit raw WHERE predicate for browse plan.
     EditRawWhere,
+    /// Edit page-local quick filter (no server I/O).
+    EditQuickFilter,
     /// Re-browse the active base table (keep sort/filters).
     RefreshTable,
     /// Toggle visibility of the cursor column.
@@ -359,6 +361,10 @@ pub enum ConfirmDialog {
     },
     /// Edit raw WHERE fragment for browse plan (paste SQL predicate only).
     EditRawWhere {
+        confirm_buffer: String,
+    },
+    /// Edit page-local quick filter (resident rows only; no server I/O).
+    EditQuickFilter {
         confirm_buffer: String,
     },
     /// Stage Redis collection mutation: paste field/member/score payload.
