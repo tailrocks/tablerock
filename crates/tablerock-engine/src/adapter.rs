@@ -214,6 +214,8 @@ pub enum AdapterFailureClass {
     ClientCancelled,
     ServerCancelled,
     WriteOutcomeUnknown,
+    /// Insufficient privilege (e.g. pg_cancel_backend without rights).
+    PermissionDenied,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -241,6 +243,13 @@ impl AdapterError {
 
 impl fmt::Display for AdapterError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.class == AdapterFailureClass::PermissionDenied {
+            return write!(
+                formatter,
+                "permission denied ({:?})",
+                self.engine
+            );
+        }
         write!(
             formatter,
             "{:?} adapter operation failed ({:?})",
@@ -1021,6 +1030,7 @@ fn map_postgres(error: PostgresError) -> AdapterError {
         PostgresError::InvalidLimits => AdapterFailureClass::InvalidRequest,
         PostgresError::CopyLimitExceeded => AdapterFailureClass::InvalidRequest,
         PostgresError::WriteOutcomeUnknown => AdapterFailureClass::WriteOutcomeUnknown,
+        PostgresError::PermissionDenied => AdapterFailureClass::PermissionDenied,
         PostgresError::Page(_) => AdapterFailureClass::Page,
     };
     AdapterError::new(Engine::PostgreSql, class)

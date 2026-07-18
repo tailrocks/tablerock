@@ -3866,7 +3866,7 @@ async fn load_activity(
             return Message::Engine(tablerock_tui::EngineMsg::ActivityFailed {
                 request_token,
                 context_revision,
-                reason: FailureProjection::Label(e.to_string()),
+                reason: FailureProjection::Label(project_activity_load_error(&e.to_string())),
             });
         }
     };
@@ -3888,7 +3888,7 @@ async fn load_activity(
             return Message::Engine(tablerock_tui::EngineMsg::ActivityFailed {
                 request_token,
                 context_revision,
-                reason: FailureProjection::Label(e.to_string()),
+                reason: FailureProjection::Label(project_activity_load_error(&e.to_string())),
             });
         }
     };
@@ -4885,7 +4885,10 @@ async fn signal_backend(
         Ok(Some(page)) => {
             let ack = page
                 .cell(0, 0)
-                .map(|c| String::from_utf8_lossy(c.bytes()) == "t" || String::from_utf8_lossy(c.bytes()) == "true")
+                .map(|c| {
+                    let s = String::from_utf8_lossy(c.bytes());
+                    s == "t" || s == "true"
+                })
                 .unwrap_or(false);
             Message::Engine(tablerock_tui::EngineMsg::BackendSignalDone {
                 request_token,
@@ -4905,8 +4908,40 @@ async fn signal_backend(
         Err(e) => Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
             request_token,
             context_revision,
-            reason: FailureProjection::Label(e.to_string()),
+            reason: FailureProjection::Label(project_activity_permission_error(
+                &kind,
+                &e.to_string(),
+            )),
         }),
+    }
+}
+
+/// Stable, non-secret label for activity cancel/terminate privilege failures.
+fn project_activity_permission_error(kind: &str, raw: &str) -> String {
+    let lower = raw.to_ascii_lowercase();
+    if lower.contains("permission denied")
+        || lower.contains("insufficient_privilege")
+        || lower.contains("42501")
+        || lower.contains("pg_signal_backend")
+    {
+        match kind {
+            "terminate" => "permission denied: cannot terminate backends".into(),
+            _ => "permission denied: cannot cancel backends".into(),
+        }
+    } else {
+        raw.to_owned()
+    }
+}
+
+fn project_activity_load_error(raw: &str) -> String {
+    let lower = raw.to_ascii_lowercase();
+    if lower.contains("permission denied")
+        || lower.contains("insufficient_privilege")
+        || lower.contains("42501")
+    {
+        "permission denied: cannot read pg_stat_activity".into()
+    } else {
+        raw.to_owned()
     }
 }
 

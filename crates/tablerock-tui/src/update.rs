@@ -6101,6 +6101,30 @@ mod tests {
     }
 
     #[test]
+    fn backend_signal_permission_denied_marks_grid() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.workbench_mut().context_revision = 2;
+        model.workbench_mut().open_preview_tab("activity");
+        let out = update(
+            &mut model,
+            Message::Engine(EngineMsg::BackendSignalFailed {
+                request_token: 1,
+                context_revision: 2,
+                reason: FailureProjection::Label(
+                    "permission denied: cannot cancel backends".into(),
+                ),
+            }),
+        );
+        assert!(out.needs_render());
+        assert!(model
+            .workbench()
+            .active_grid()
+            .and_then(|g| g.error_label.as_deref())
+            .is_some_and(|l| l.contains("permission denied") && l.contains("cancel")));
+    }
+
+    #[test]
     fn follow_fk_sends_full_row_and_applies_multi_filters() {
         let mut model = Model::default();
         model.set_screen(Screen::Workbench);

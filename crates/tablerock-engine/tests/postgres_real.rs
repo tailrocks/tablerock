@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use rcgen::ExtendedKeyUsagePurpose;
 use tablerock_core::{
-    BoundedBytes, BoundedText, ByteLimit, CancelDispatch, Engine, PageDelivery, PageIdentity,
-    PageLimits, PageWarning, Truncation, ValueKind,
+    BoundedBytes, BoundedText, ByteLimit, CancelDispatch, Engine, IdParts, PageDelivery,
+    PageIdentity, PageLimits, PageWarning, ResultId, Revision, Truncation, ValueKind,
 };
 use tablerock_engine::{
     AdapterFailureClass, ClickHouseProbeQuery, DriverPageRequest, DriverSession,
@@ -3036,4 +3036,134 @@ async fn ddl_index_and_constraint_ops() {
     )
     .unwrap();
     session.execute_ddl_plan(&drop_index).await.unwrap();
+}
+
+/// Restricted role cannot signal another session's backend (permission denied).
+#[tokio::test]
+async fn activity_signal_permission_denied_for_restricted_role() {
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let admin = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+
+    admin
+        .execute_sql(
+            "DO $$ BEGIN
+               CREATE ROLE tr_activity_limited LOGIN;
+             EXCEPTION WHEN duplicate_object THEN NULL;
+             END $$;
+             GRANT CONNECT ON DATABASE postgres TO tr_activity_limited;",
+        )
+        .await
+        .unwrap();
+
+    // Sleeper connection holds a long backend for the limited role to target.
+    let sleeper = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+    let sleep_task = tokio::spawn(async move {
+        let _ = sleeper.execute_sql("SELECT pg_sleep(30)").await;
+        let _ = sleeper.shutdown().await;
+    });
+
+    // Discover sleeper pid via admin stream_statement.
+    let victim_pid = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let mut stream = admin
+                .stream_statement(
+                    "SELECT pid::text FROM pg_stat_activity \
+                     WHERE pid <> pg_backend_pid() \
+                       AND state = 'active' \
+                       AND wait_event = 'PgSleep' \
+                     LIMIT 1",
+                    &[],
+                    PageLimits::new(1, 2, 64 * 1024, 1024),
+                    1024,
+                )
+                .await
+                .unwrap();
+            let identity = PageIdentity::new(
+                ResultId::from_parts(IdParts::new(1, 9_900).unwrap()).unwrap(),
+                Revision::INITIAL,
+                Engine::PostgreSql,
+            );
+            if let Ok(Some(page)) = stream.next_page(identity, 0).await {
+                if page.envelope().row_count() > 0 {
+                    let text = page
+                        .cell(0, 0)
+                        .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+                        .unwrap_or_default();
+                    if let Ok(pid) = text.parse::<i32>() {
+                        return pid;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("sleeper pid");
+
+    let limited = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("tr_activity_limited"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+
+    let cancel = limited.signal_backend(false, victim_pid).await;
+    assert_eq!(
+        cancel,
+        Err(PostgresError::PermissionDenied),
+        "restricted role must not cancel foreign backends: {cancel:?}"
+    );
+    let terminate = limited.signal_backend(true, victim_pid).await;
+    assert_eq!(
+        terminate,
+        Err(PostgresError::PermissionDenied),
+        "restricted role must not terminate foreign backends: {terminate:?}"
+    );
+
+    // Own-activity read still works without signal rights.
+    let act = limited
+        .stream_statement(
+            "SELECT pid::text FROM pg_catalog.pg_stat_activity LIMIT 8",
+            &[],
+            PageLimits::new(8, 4, 64 * 1024, 4 * 1024),
+            4 * 1024,
+        )
+        .await;
+    assert!(
+        act.is_ok(),
+        "activity read should not require signal rights"
+    );
+
+    let _ = admin.signal_backend(true, victim_pid).await;
+    let _ = sleep_task.await;
+    let _ = limited.shutdown().await;
+    let _ = admin.shutdown().await;
 }

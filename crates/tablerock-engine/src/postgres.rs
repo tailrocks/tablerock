@@ -567,6 +567,8 @@ pub enum PostgresError {
     InvalidLimits,
     CopyLimitExceeded,
     WriteOutcomeUnknown,
+    /// SQLSTATE 42501 / insufficient_privilege (activity cancel/terminate, etc.).
+    PermissionDenied,
     Page(PageValidationError),
 }
 
@@ -583,12 +585,31 @@ impl fmt::Display for PostgresError {
             Self::InvalidLimits => "PostgreSQL stream limits are invalid",
             Self::CopyLimitExceeded => "PostgreSQL COPY limits were exceeded",
             Self::WriteOutcomeUnknown => "PostgreSQL write outcome is unknown",
+            Self::PermissionDenied => "permission denied",
             Self::Page(_) => "PostgreSQL result page failed validation",
         })
     }
 }
 
 impl Error for PostgresError {}
+
+/// Map tokio-postgres errors: privilege failures stay distinct for UI honesty.
+pub(crate) fn map_tokio_postgres_error(error: &tokio_postgres::Error) -> PostgresError {
+    if let Some(db) = error.as_db_error() {
+        if db.code() == &tokio_postgres::error::SqlState::INSUFFICIENT_PRIVILEGE {
+            return PostgresError::PermissionDenied;
+        }
+        // Some builds surface 42501 only in the message; keep fail-closed text match.
+        let msg = db.message().to_ascii_lowercase();
+        if msg.contains("permission denied")
+            || (msg.contains("must be") && msg.contains("superuser"))
+            || msg.contains("pg_signal_backend")
+        {
+            return PostgresError::PermissionDenied;
+        }
+    }
+    PostgresError::Query
+}
 
 pub struct PostgresSession {
     pub(crate) client: tokio_postgres::Client,
@@ -863,7 +884,7 @@ impl PostgresSession {
             .client
             .prepare(sql)
             .await
-            .map_err(|_| PostgresError::Query)?;
+            .map_err(|e| map_tokio_postgres_error(&e))?;
         let columns = decode_columns(statement.columns(), limits)?;
         // Own params so references live through query_raw.
         let owned: Vec<Box<dyn ToSql + Sync + Send>> = parameters
@@ -888,7 +909,7 @@ impl PostgresSession {
             .client
             .query_raw(&statement, refs)
             .await
-            .map_err(|_| PostgresError::Query)?;
+            .map_err(|e| map_tokio_postgres_error(&e))?;
         Ok(PostgresRowStream {
             stream: Box::pin(stream),
             columns,
@@ -911,7 +932,30 @@ impl PostgresSession {
         self.client
             .batch_execute(sql)
             .await
-            .map_err(|_| PostgresError::Query)
+            .map_err(|e| map_tokio_postgres_error(&e))
+    }
+
+    /// `pg_cancel_backend` / `pg_terminate_backend` with privilege classification.
+    ///
+    /// Returns `Ok(true)` when the server acknowledged the signal, `Ok(false)`
+    /// when the function returned false (pid not signalable), and
+    /// `Err(PermissionDenied)` when the role lacks rights.
+    pub async fn signal_backend(
+        &self,
+        terminate: bool,
+        pid: i32,
+    ) -> Result<bool, PostgresError> {
+        let sql = if terminate {
+            "SELECT pg_catalog.pg_terminate_backend($1::int4)"
+        } else {
+            "SELECT pg_catalog.pg_cancel_backend($1::int4)"
+        };
+        let row = self
+            .client
+            .query_one(sql, &[&pid])
+            .await
+            .map_err(|e| map_tokio_postgres_error(&e))?;
+        row.try_get(0).map_err(|_| PostgresError::Protocol)
     }
 
     /// Execute a reviewed DDL plan (identifiers quoted; never free SQL).

@@ -142,7 +142,7 @@ silently discard; ambiguous writes never retry.
   dedicated calendar/JSON tree widgets remain optional polish)
 - ~~Multi-column FK follow polish~~ (closed: evidence 326)
 - ~~indexes/constraints raw DDL in structure~~ (closed: evidence 324)
-- Permission-denied activity signal fixtures
+- ~~Permission-denied activity signal fixtures~~ (closed: evidence 327)
 
 ## STOP conditions
 
