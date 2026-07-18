@@ -8,6 +8,8 @@
 
 ## Status
 
+- **Status**: DONE (evidence 208–210; residual: EngineService event pump,
+  schema picker UI, real-server catalog sidebar fixture — land with 009)
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED

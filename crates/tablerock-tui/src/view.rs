@@ -132,6 +132,10 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             "Remove group?",
             format!("Remove group '{name}'? Members become ungrouped."),
         ),
+        crate::model::ConfirmDialog::CloseDirtyTab { title, .. } => (
+            "Close tab?",
+            format!("Close '{title}' with unsaved changes?"),
+        ),
     };
     let panel = Panel::new(&model.theme)
         .title(title)
@@ -253,6 +257,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let connect = action_label(model, ActionId::Connect, "Connect");
     let disconnect = action_label(model, ActionId::Disconnect, "Disconnect");
     let next_db = action_label(model, ActionId::NextDatabase, "Next DB");
+    let next_tab = action_label(model, ActionId::NextTab, "Next Tab");
+    let pin_tab = action_label(model, ActionId::PinTab, "Pin");
+    let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
     let submit = action_label(model, ActionId::Submit, "Submit");
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
     let quit = action_label(model, ActionId::Quit, "Quit");
@@ -317,6 +324,24 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::NextDatabase,
                         label: next_db.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::NextTab,
+                        label: next_tab.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PinTab,
+                        label: pin_tab.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CloseTab,
+                        label: close_tab.as_str(),
                         enabled: true,
                         style: None,
                     },

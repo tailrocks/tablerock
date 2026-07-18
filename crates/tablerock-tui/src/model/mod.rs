@@ -54,16 +54,20 @@ pub enum ActionId {
     Remove,
     /// Cycle database selector (workbench).
     NextDatabase,
+    NextTab,
+    CloseTab,
+    PinTab,
     Submit,
     Cancel,
     Quit,
 }
 
-/// Pending destructive confirm (remove profile/group).
+/// Pending destructive confirm (remove profile/group/tab).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmDialog {
     RemoveProfile { id_hex: String, name: String },
     RemoveGroup { name: String },
+    CloseDirtyTab { title: String, index: usize },
 }
 
 /// Ephemeral password prompt; Debug redacts buffer. Cleared after submit.

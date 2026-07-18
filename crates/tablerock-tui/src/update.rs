@@ -534,6 +534,11 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         group_name: name,
                     }),
                 },
+                ConfirmDialog::CloseDirtyTab { index, .. } => {
+                    model.workbench_mut().force_close_tab(index);
+                    model.set_action(ActionId::Disconnect);
+                    Update::render()
+                }
             }
         }
         ActionId::Cancel if model.password_prompt().is_some() => {
@@ -642,6 +647,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 facts.status = Some("disconnecting…".into());
                 model.set_session(Some(facts));
             }
+            model.workbench_mut().mark_disconnected();
             Update {
                 render: true,
                 effect: Some(Effect::DisconnectSession {
@@ -659,12 +665,34 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::NextDatabase if model.screen() == Screen::Workbench => {
             switch_workbench_database(model)
         }
+        ActionId::NextTab if model.screen() == Screen::Workbench => {
+            model.workbench_mut().select_next_tab();
+            Update::render()
+        }
+        ActionId::PinTab if model.screen() == Screen::Workbench => {
+            model.workbench_mut().promote_active_tab();
+            Update::render()
+        }
+        ActionId::CloseTab if model.screen() == Screen::Workbench => {
+            use crate::model::workbench::CloseTabOutcome;
+            match model.workbench_mut().close_active_tab() {
+                CloseTabOutcome::NeedsConfirm { title, index } => {
+                    model.set_confirm(Some(ConfirmDialog::CloseDirtyTab { title, index }));
+                    model.set_action(ActionId::Submit);
+                    Update::render()
+                }
+                CloseTabOutcome::Closed | CloseTabOutcome::Empty => Update::render(),
+            }
+        }
         ActionId::Save
         | ActionId::Test
         | ActionId::Connect
         | ActionId::Disconnect
         | ActionId::Remove
         | ActionId::NextDatabase
+        | ActionId::NextTab
+        | ActionId::CloseTab
+        | ActionId::PinTab
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -736,7 +764,14 @@ fn cycle_action(
                 ActionId::Cancel,
                 ActionId::Quit,
             ],
-            Screen::Workbench => &[ActionId::NextDatabase, ActionId::Disconnect, ActionId::Quit],
+            Screen::Workbench => &[
+                ActionId::NextDatabase,
+                ActionId::NextTab,
+                ActionId::PinTab,
+                ActionId::CloseTab,
+                ActionId::Disconnect,
+                ActionId::Quit,
+            ],
             Screen::Connections | Screen::ConnectionPicker => &[
                 ActionId::Open,
                 ActionId::New,
@@ -783,19 +818,7 @@ fn activate_catalog_node(model: &mut Model) -> Update {
         return Update::unchanged();
     };
     if !node.branch {
-        let tab_id = model.workbench().tabs.len() as u64 + 1;
-        model
-            .workbench_mut()
-            .tabs
-            .push(crate::model::workbench::WorkbenchTab {
-                id: tab_id,
-                title: node.label.clone(),
-                dirty: false,
-                running: false,
-                preview: true,
-            });
-        let last = model.workbench().tabs.len() - 1;
-        model.workbench_mut().selected_tab = last;
+        model.workbench_mut().open_preview_tab(node.label.clone());
         return Update::render();
     }
     let was_expanded = node.expanded;

@@ -166,8 +166,154 @@ impl WorkbenchModel {
         self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
     }
 
+    pub fn select_previous_tab(&mut self) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        if self.selected_tab == 0 {
+            self.selected_tab = self.tabs.len() - 1;
+        } else {
+            self.selected_tab -= 1;
+        }
+    }
+
     pub fn bump_context_revision(&mut self) -> u64 {
         self.context_revision = self.context_revision.saturating_add(1);
         self.context_revision
+    }
+
+    /// Open or focus a preview tab for an object title.
+    pub fn open_preview_tab(&mut self, title: impl Into<String>) {
+        let title = title.into();
+        if let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.title == title && tab.preview)
+        {
+            self.selected_tab = index;
+            return;
+        }
+        let id = self.tabs.iter().map(|t| t.id).max().unwrap_or(0) + 1;
+        self.tabs.push(WorkbenchTab {
+            id,
+            title,
+            dirty: false,
+            running: false,
+            preview: true,
+        });
+        self.selected_tab = self.tabs.len() - 1;
+    }
+
+    /// Promote the active preview tab to durable (edit/pin/filter/sort).
+    pub fn promote_active_tab(&mut self) {
+        if let Some(tab) = self.tabs.get_mut(self.selected_tab) {
+            tab.preview = false;
+        }
+    }
+
+    /// Mark active tab dirty (staged changes or unsaved text).
+    pub fn mark_active_dirty(&mut self, dirty: bool) {
+        if let Some(tab) = self.tabs.get_mut(self.selected_tab) {
+            tab.dirty = dirty;
+            if dirty {
+                tab.preview = false;
+            }
+        }
+        self.recompute_pending();
+    }
+
+    pub fn mark_active_running(&mut self, running: bool) {
+        if let Some(tab) = self.tabs.get_mut(self.selected_tab) {
+            tab.running = running;
+        }
+        self.status.operation = if running {
+            "running".into()
+        } else {
+            "idle".into()
+        };
+    }
+
+    /// Close active tab. Returns `NeedsConfirm` when dirty.
+    pub fn close_active_tab(&mut self) -> CloseTabOutcome {
+        if self.tabs.is_empty() {
+            return CloseTabOutcome::Empty;
+        }
+        if self.tabs[self.selected_tab].dirty {
+            return CloseTabOutcome::NeedsConfirm {
+                title: self.tabs[self.selected_tab].title.clone(),
+                index: self.selected_tab,
+            };
+        }
+        self.force_close_tab(self.selected_tab);
+        CloseTabOutcome::Closed
+    }
+
+    pub fn force_close_tab(&mut self, index: usize) {
+        if index >= self.tabs.len() {
+            return;
+        }
+        self.tabs.remove(index);
+        if self.tabs.is_empty() {
+            self.selected_tab = 0;
+        } else if self.selected_tab >= self.tabs.len() {
+            self.selected_tab = self.tabs.len() - 1;
+        }
+        self.recompute_pending();
+    }
+
+    /// Mark every live tab disconnected without dropping content.
+    pub fn mark_disconnected(&mut self) {
+        self.context.health_label = "disconnected".into();
+        for tab in &mut self.tabs {
+            if tab.running {
+                tab.running = false;
+            }
+        }
+        self.status.operation = "disconnected".into();
+    }
+
+    fn recompute_pending(&mut self) {
+        self.status.pending_changes = self.tabs.iter().filter(|t| t.dirty).count() as u32;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CloseTabOutcome {
+    Empty,
+    Closed,
+    NeedsConfirm { title: String, index: usize },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_promotes_and_close_dirty_asks() {
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("users");
+        assert!(wb.active_tab().unwrap().preview);
+        wb.mark_active_dirty(true);
+        assert!(!wb.active_tab().unwrap().preview);
+        assert!(wb.active_tab().unwrap().dirty);
+        assert_eq!(wb.status.pending_changes, 1);
+        assert!(matches!(
+            wb.close_active_tab(),
+            CloseTabOutcome::NeedsConfirm { .. }
+        ));
+        wb.force_close_tab(wb.selected_tab);
+        assert!(wb.tabs.iter().all(|t| t.title != "users"));
+    }
+
+    #[test]
+    fn disconnect_keeps_tabs_inspectable() {
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("orders");
+        wb.mark_active_running(true);
+        wb.mark_disconnected();
+        assert_eq!(wb.context.health_label, "disconnected");
+        assert_eq!(wb.tabs.len(), 2);
+        assert!(!wb.tabs.iter().any(|t| t.running));
+        assert_eq!(wb.status.operation, "disconnected");
     }
 }
