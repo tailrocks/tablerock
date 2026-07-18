@@ -706,6 +706,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let col_all = action_label(model, ActionId::ShowAllColumns, "ColAll");
     let col_inv = action_label(model, ActionId::InvertColumns, "ColInv");
     let col_save = action_label(model, ActionId::SaveColumns, "ColSave");
+    let col_copy_layout = action_label(model, ActionId::CopyColumnLayout, "ColJson");
     let undo_staged = action_label(model, ActionId::UndoStaged, "UndoEdit");
     let discard_staged = action_label(model, ActionId::DiscardStaged, "DiscardEdits");
     let review_mut = action_label(model, ActionId::ReviewMutations, "Review");
@@ -1406,6 +1407,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::SaveColumns,
                         label: col_save.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyColumnLayout,
+                        label: col_copy_layout.as_str(),
                         enabled: true,
                         style: None,
                     },

@@ -293,6 +293,8 @@ pub enum ActionId {
     InvertColumns,
     /// Persist column layout for the current base table.
     SaveColumns,
+    /// Copy current column layout JSON to clipboard.
+    CopyColumnLayout,
     /// Move cursor column left in display order.
     MoveColumnLeft,
     /// Move cursor column right in display order.

@@ -5424,6 +5424,29 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::CopyColumnLayout if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            if grid.columns.is_empty() {
+                return Update::unchanged();
+            }
+            let text = grid.layout_json();
+            if text.is_empty() {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied layout ({} bytes)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::SaveColumns if model.screen() == Screen::Workbench => {
             let profile_id_hex = model.workbench().profile_id_hex.clone();
             let database = model.workbench().context.database.clone();
@@ -5587,6 +5610,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ShowAllColumns
         | ActionId::InvertColumns
         | ActionId::SaveColumns
+        | ActionId::CopyColumnLayout
         | ActionId::MoveColumnLeft
         | ActionId::MoveColumnRight
         | ActionId::MoveColumnFirst
@@ -7326,6 +7350,7 @@ fn cycle_action(
                 ActionId::ShowAllColumns,
                 ActionId::InvertColumns,
                 ActionId::SaveColumns,
+                ActionId::CopyColumnLayout,
                 ActionId::MoveColumnLeft,
                 ActionId::MoveColumnRight,
                 ActionId::MoveColumnFirst,
@@ -9073,6 +9098,36 @@ mod tests {
         match update(&mut model, Message::Activate).effects().next() {
             Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "tr-99-abc"),
             other => panic!("expected query id copy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copy_column_layout_emits_json() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into()];
+            grid.ensure_column_layout();
+            grid.cursor_col = 0;
+            assert!(grid.adjust_cursor_column_width(4));
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyColumnLayout);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("\"name\""), "{text}");
+                assert!(text.contains("id"), "{text}");
+                assert!(text.contains("width") || text.contains("16"), "{text}");
+            }
+            other => panic!("expected layout json copy, got {other:?}"),
         }
     }
 
