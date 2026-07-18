@@ -17,6 +17,7 @@ mod revision;
 mod secret;
 mod service;
 mod sql_analysis;
+mod startup_action;
 mod value;
 
 pub use catalog::{
@@ -88,6 +89,10 @@ pub use service::{
     ServiceLimits, ServicePhase, ShutdownMode, ShutdownOutcome, SubscriptionStart,
 };
 pub use sql_analysis::{SqlDialect, StatementSpan, statement_at, statements};
+pub use startup_action::{
+    MAX_STARTUP_ACTIONS, MAX_STARTUP_STATEMENT_BYTES, StartupAction, StartupActionError,
+    StartupActionOutcome, StartupActionSet, StartupRunReport, StartupSafetyClass,
+};
 pub use value::{
     Availability, BoundedBytes, BoundedBytesError, BoundedText, BoundedTextError, ByteLimit,
     Capability, CapabilityEngineMismatch, CapabilityFact, CapabilitySnapshot, EmptyEngineType,
