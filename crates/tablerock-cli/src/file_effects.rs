@@ -231,6 +231,29 @@ mod tests {
     }
 
     #[test]
+    fn create_fails_closed_when_parent_is_a_file() {
+        // Disk-full is hard to force portably; a file-as-parent is a reliable
+        // fail-closed write path that must not leave tablerock-tmp debris.
+        let dir = scratch_dir();
+        let blocker = dir.join("not-a-dir");
+        fs::write(&blocker, b"x").unwrap();
+        let dest = blocker.join("blocked.csv");
+        let result = AtomicFileWriter::create(dest);
+        assert!(result.is_err(), "file-as-parent must fail create");
+        let temps: Vec<_> = dir
+            .read_dir()
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("tablerock-tmp"))
+            .collect();
+        assert!(
+            temps.is_empty(),
+            "failed create must not leave temp files: {temps:?}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn empty_path_rejected() {
         assert!(matches!(
             validate_export_path(""),
