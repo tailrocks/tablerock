@@ -2093,6 +2093,12 @@ impl DataGridModel {
         n.min(100).max(1)
     }
 
+    /// Rows to jump for HalfPageUp/Down (half of page step, min 1).
+    #[must_use]
+    pub fn half_page_step_rows(&self) -> u64 {
+        (self.page_step_rows() / 2).max(1)
+    }
+
     /// Move cursor by `delta` absolute rows (negative = up). Adjusts viewport.
     pub fn step_cursor_row(&mut self, delta: i64) {
         if delta == 0 {
@@ -3115,8 +3121,12 @@ mod tests {
         let mut g = DataGridModel::default();
         g.row_count = 25;
         assert_eq!(g.page_step_rows(), 25);
+        assert_eq!(g.half_page_step_rows(), 12);
         g.row_count = 200;
         assert_eq!(g.page_step_rows(), 100); // capped
+        assert_eq!(g.half_page_step_rows(), 50);
+        g.row_count = 1;
+        assert_eq!(g.half_page_step_rows(), 1);
         g.cursor_row = 50;
         g.viewport_row = 50;
         g.step_cursor_row(-25);

@@ -3976,6 +3976,25 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyDatabaseIdent if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let name = model.workbench().context.database.clone();
+            if name.is_empty() {
+                return Update::unchanged();
+            }
+            let text = quote_ident_sql(&name);
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied database ident {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTableName if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5203,33 +5222,16 @@ fn activate_selected_action(model: &mut Model) -> Update {
             jump_to_row(model, last)
         }
         ActionId::PageUp if model.screen() == Screen::Workbench => {
-            let Some(grid) = model.workbench().active_grid() else {
-                return Update::unchanged();
-            };
-            let step = grid.page_step_rows();
-            let target = grid.cursor_row.saturating_sub(step);
-            if target == grid.cursor_row {
-                return Update::unchanged();
-            }
-            jump_to_row(model, target)
+            page_jump_rows(model, -1, false)
         }
         ActionId::PageDown if model.screen() == Screen::Workbench => {
-            let Some(grid) = model.workbench().active_grid() else {
-                return Update::unchanged();
-            };
-            let step = grid.page_step_rows();
-            let cur = grid.cursor_row;
-            let target = cur.saturating_add(step);
-            // Cap at known totals when present.
-            let target = match grid.totals {
-                crate::model::grid::GridRowTotal::Exact(n) if n > 0 => target.min(n - 1),
-                crate::model::grid::GridRowTotal::Estimated(n) if n > 0 => target.min(n - 1),
-                _ => target,
-            };
-            if target == cur {
-                return Update::unchanged();
-            }
-            jump_to_row(model, target)
+            page_jump_rows(model, 1, false)
+        }
+        ActionId::HalfPageUp if model.screen() == Screen::Workbench => {
+            page_jump_rows(model, -1, true)
+        }
+        ActionId::HalfPageDown if model.screen() == Screen::Workbench => {
+            page_jump_rows(model, 1, true)
         }
         ActionId::GoToColumn if model.screen() == Screen::Workbench => {
             if model.workbench().active_grid().is_none() {
@@ -6336,6 +6338,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopySessionId
         | ActionId::CopyEngineLabel
         | ActionId::CopyDatabaseName
+        | ActionId::CopyDatabaseIdent
         | ActionId::CopyTableName
         | ActionId::CopySchema
         | ActionId::CopyBareTable
@@ -6409,6 +6412,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::GoToLastRow
         | ActionId::PageUp
         | ActionId::PageDown
+        | ActionId::HalfPageUp
+        | ActionId::HalfPageDown
         | ActionId::GoToColumn
         | ActionId::GoToIdentityColumn
         | ActionId::GoToLastIdentityColumn
@@ -7764,6 +7769,33 @@ fn chrono_today_fallback() -> (i32, u32, u32) {
 }
 
 /// Jump to absolute row; FetchPage when outside resident window.
+/// Jump cursor by full or half page step. `sign` is -1 (up) or +1 (down).
+fn page_jump_rows(model: &mut Model, sign: i8, half: bool) -> Update {
+    let Some(grid) = model.workbench().active_grid() else {
+        return Update::unchanged();
+    };
+    let step = if half {
+        grid.half_page_step_rows()
+    } else {
+        grid.page_step_rows()
+    };
+    let cur = grid.cursor_row;
+    let target = if sign < 0 {
+        cur.saturating_sub(step)
+    } else {
+        let t = cur.saturating_add(step);
+        match grid.totals {
+            crate::model::grid::GridRowTotal::Exact(n) if n > 0 => t.min(n - 1),
+            crate::model::grid::GridRowTotal::Estimated(n) if n > 0 => t.min(n - 1),
+            _ => t,
+        }
+    };
+    if target == cur {
+        return Update::unchanged();
+    }
+    jump_to_row(model, target)
+}
+
 fn jump_to_row(model: &mut Model, target: u64) -> Update {
     let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
         return Update::unchanged();
@@ -8104,6 +8136,7 @@ fn cycle_action(
                 ActionId::CopySessionId,
                 ActionId::CopyEngineLabel,
                 ActionId::CopyDatabaseName,
+                ActionId::CopyDatabaseIdent,
                 ActionId::CopyTableName,
                 ActionId::CopySchema,
                 ActionId::CopyBareTable,
@@ -8180,6 +8213,8 @@ fn cycle_action(
                 ActionId::GoToLastRow,
                 ActionId::PageUp,
                 ActionId::PageDown,
+                ActionId::HalfPageUp,
+                ActionId::HalfPageDown,
                 ActionId::GoToColumn,
                 ActionId::GoToIdentityColumn,
                 ActionId::GoToLastIdentityColumn,
@@ -10049,6 +10084,19 @@ mod tests {
             model.workbench().active_grid().map(|g| g.cursor_row),
             Some(40)
         );
+        // Half page: step 10.
+        model.set_action(ActionId::HalfPageUp);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(
+            model.workbench().active_grid().map(|g| g.cursor_row),
+            Some(30)
+        );
+        model.set_action(ActionId::HalfPageDown);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(
+            model.workbench().active_grid().map(|g| g.cursor_row),
+            Some(40)
+        );
         // At row 0, PageUp no-ops.
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.cursor_row = 0;
@@ -10609,6 +10657,13 @@ mod tests {
                 assert_eq!(text, "analytics");
             }
             other => panic!("expected database name, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyDatabaseIdent);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "\"analytics\"");
+            }
+            other => panic!("expected database ident, got {other:?}"),
         }
     }
 

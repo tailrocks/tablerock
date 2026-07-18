@@ -688,6 +688,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let go_last = action_label(model, ActionId::GoToLastRow, "Last");
     let page_up = action_label(model, ActionId::PageUp, "PgUp");
     let page_down = action_label(model, ActionId::PageDown, "PgDn");
+    let half_up = action_label(model, ActionId::HalfPageUp, "HalfUp");
+    let half_down = action_label(model, ActionId::HalfPageDown, "HalfDn");
     let go_col = action_label(model, ActionId::GoToColumn, "GoCol");
     let go_pk = action_label(model, ActionId::GoToIdentityColumn, "GoPk");
     let go_pk_last = action_label(model, ActionId::GoToLastIdentityColumn, "GoPkLast");
@@ -742,6 +744,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_sess = action_label(model, ActionId::CopySessionId, "CopySid");
     let copy_eng = action_label(model, ActionId::CopyEngineLabel, "CopyEng");
     let copy_db = action_label(model, ActionId::CopyDatabaseName, "CopyDb");
+    let copy_db_q = action_label(model, ActionId::CopyDatabaseIdent, "CopyDbQ");
     let copy_table = action_label(model, ActionId::CopyTableName, "CopyTbl");
     let copy_schema = action_label(model, ActionId::CopySchema, "CopySch");
     let copy_bare = action_label(model, ActionId::CopyBareTable, "CopyTblN");
@@ -1334,6 +1337,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                         style: None,
                     },
                     Action {
+                        id: ActionId::HalfPageUp,
+                        label: half_up.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::HalfPageDown,
+                        label: half_down.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
                         id: ActionId::GoToColumn,
                         label: go_col.as_str(),
                         enabled: true,
@@ -1654,6 +1669,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyDatabaseName,
                         label: copy_db.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyDatabaseIdent,
+                        label: copy_db_q.as_str(),
                         enabled: true,
                         style: None,
                     },

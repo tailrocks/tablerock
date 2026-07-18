@@ -178,6 +178,8 @@ pub enum ActionId {
     CopyEngineLabel,
     /// Copy active workbench database name.
     CopyDatabaseName,
+    /// Copy active database name as a SQL-quoted identifier.
+    CopyDatabaseIdent,
     /// Copy base schema.table identity if known.
     CopyTableName,
     /// Copy base schema only if known.
@@ -321,6 +323,10 @@ pub enum ActionId {
     PageUp,
     /// Move cursor down by one page of resident rows (fetch if needed).
     PageDown,
+    /// Move cursor up by half a page of resident rows (fetch if needed).
+    HalfPageUp,
+    /// Move cursor down by half a page of resident rows (fetch if needed).
+    HalfPageDown,
     /// Jump to column by name (exact or unique prefix).
     GoToColumn,
     /// Jump cursor to the first identity (pk) column.
