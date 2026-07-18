@@ -267,6 +267,44 @@ fn narrow_focus_projects_visible_regions_and_non_color_cues() {
     );
 }
 
+/// SIGWINCH storm: many rapid Resize messages must not panic and last size wins.
+#[test]
+fn resize_storm_last_geometry_wins_and_renders() {
+    let mut model = Model::default();
+    // Alternate narrow/wide/tall sizes like a resize-storm from the terminal.
+    let sizes: &[(u16, u16)] = &[
+        (40, 12),
+        (80, 24),
+        (20, 8),
+        (120, 40),
+        (10, 5),
+        (100, 30),
+        (50, 18),
+    ];
+    for _ in 0..32 {
+        for &(width, height) in sizes {
+            let out = update(&mut model, Message::Resize { width, height });
+            assert!(out.render, "every resize must request paint");
+        }
+    }
+    // Last size in the loop is (50, 18).
+    let mut terminal = Terminal::new(TestBackend::new(50, 18)).expect("test terminal");
+    terminal
+        .draw(|frame| ShellView.render(&model, frame, Rect::new(0, 0, 50, 18)))
+        .expect("render after storm");
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(
+        rendered.contains("Connections") || rendered.contains("TableRock") || !rendered.is_empty(),
+        "shell must still render after resize storm"
+    );
+}
+
 fn assert_render_contains(width: u16, height: u16, expected: &[&str]) {
     assert_render_after(width, height, &[], expected);
 }

@@ -14,8 +14,9 @@ Date: 2026-07-18
 
 ## Residual (explicit)
 
-- Full failure-injection matrix (disk-full, SIGWINCH storms) as scheduled CI
+- Full failure-injection matrix as scheduled CI
   - partial: export write fail-closed (evidence 280)
+  - partial: SIGWINCH/resize storm unit (evidence 285)
 - Published performance budget numbers on fixed-spec runners
 - Complete ledger three-state spreadsheet export
 
