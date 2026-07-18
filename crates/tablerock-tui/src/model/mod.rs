@@ -160,6 +160,8 @@ pub enum ActionId {
     CopyStatus,
     /// Copy server query id when present (e.g. ClickHouse query_id).
     CopyQueryId,
+    /// Copy server progress summary when present (e.g. X-ClickHouse-Summary).
+    CopyServerProgress,
     /// Copy base schema.table identity if known.
     CopyTableName,
     /// Copy base schema only if known.
