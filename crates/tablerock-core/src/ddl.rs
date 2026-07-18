@@ -127,6 +127,22 @@ impl DdlPlan {
         {
             return Err(DdlBuildError::MissingType);
         }
+        if matches!(
+            kind,
+            DdlKind::CreateIndex
+                | DdlKind::DropIndex
+                | DdlKind::AddConstraint
+                | DdlKind::DropConstraint
+        ) && object_name.as_ref().map(|n| n.trim().is_empty()).unwrap_or(true)
+        {
+            return Err(DdlBuildError::EmptyIdentifier);
+        }
+        if matches!(kind, DdlKind::CreateIndex | DdlKind::AddConstraint)
+            && type_text.as_ref().map(|t| t.trim().is_empty()).unwrap_or(true)
+        {
+            // CreateIndex: type_text = column list; AddConstraint: type_text = clause body.
+            return Err(DdlBuildError::MissingType);
+        }
         match &target {
             DdlTarget::PostgreSqlRelation { schema, relation } => {
                 if schema.trim().is_empty() || relation.trim().is_empty() {
@@ -268,6 +284,53 @@ mod tests {
         assert!(prev.contains("add_column"));
         assert!(prev.contains("users"));
         assert!(!prev.to_ascii_lowercase().contains("execute"));
+    }
+
+    #[test]
+    fn create_index_requires_name_and_columns() {
+        assert!(matches!(
+            DdlPlan::new(
+                DdlKind::CreateIndex,
+                Engine::PostgreSql,
+                scope(),
+                Revision::INITIAL,
+                DdlTarget::PostgreSqlRelation {
+                    schema: "public".into(),
+                    relation: "t".into(),
+                },
+                None,
+                Some("c".into()),
+            ),
+            Err(DdlBuildError::EmptyIdentifier)
+        ));
+        assert!(matches!(
+            DdlPlan::new(
+                DdlKind::CreateIndex,
+                Engine::PostgreSql,
+                scope(),
+                Revision::INITIAL,
+                DdlTarget::PostgreSqlRelation {
+                    schema: "public".into(),
+                    relation: "t".into(),
+                },
+                Some("i".into()),
+                None,
+            ),
+            Err(DdlBuildError::MissingType)
+        ));
+        assert!(DdlPlan::new(
+            DdlKind::CreateIndex,
+            Engine::PostgreSql,
+            scope(),
+            Revision::INITIAL,
+            DdlTarget::PostgreSqlRelation {
+                schema: "public".into(),
+                relation: "t".into(),
+            },
+            Some("i".into()),
+            Some("c".into()),
+        )
+        .is_ok());
     }
 
     #[test]

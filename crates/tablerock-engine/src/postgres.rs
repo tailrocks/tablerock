@@ -975,6 +975,89 @@ impl PostgresSession {
                     quote_ident(relation).map_err(|_| PostgresError::Query)?,
                 )
             }
+            (
+                DdlKind::CreateIndex,
+                DdlTarget::PostgreSqlRelation { schema, relation },
+            ) => {
+                let index = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
+                let columns = plan.type_text.as_deref().ok_or(PostgresError::Query)?;
+                // Columns: comma-separated simple idents only (no expressions).
+                if !columns.chars().all(|c| {
+                    c.is_ascii_alphanumeric() || c == '_' || c == ',' || c == ' ' || c == '"'
+                }) {
+                    return Err(PostgresError::Query);
+                }
+                let col_parts: Result<Vec<_>, _> = columns
+                    .split(',')
+                    .map(|c| c.trim())
+                    .filter(|c| !c.is_empty())
+                    .map(|c| quote_ident(c).map_err(|_| PostgresError::Query))
+                    .collect();
+                let col_sql = col_parts?.join(", ");
+                if col_sql.is_empty() {
+                    return Err(PostgresError::Query);
+                }
+                format!(
+                    "CREATE INDEX {} ON {}.{} ({})",
+                    quote_ident(index).map_err(|_| PostgresError::Query)?,
+                    quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                    quote_ident(relation).map_err(|_| PostgresError::Query)?,
+                    col_sql
+                )
+            }
+            (
+                DdlKind::DropIndex,
+                DdlTarget::PostgreSqlRelation { schema, .. },
+            ) => {
+                let index = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
+                // Index names are schema-qualified when provided as object_name only;
+                // drop schema.index for explicit ownership.
+                format!(
+                    "DROP INDEX {}.{}",
+                    quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                    quote_ident(index).map_err(|_| PostgresError::Query)?,
+                )
+            }
+            (
+                DdlKind::AddConstraint,
+                DdlTarget::PostgreSqlRelation { schema, relation },
+            ) => {
+                let name = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
+                let body = plan.type_text.as_deref().ok_or(PostgresError::Query)?;
+                // Allow UNIQUE (col) / PRIMARY KEY (col) / CHECK (col > 0) with tight charset.
+                let upper = body.trim().to_ascii_uppercase();
+                if !(upper.starts_with("UNIQUE")
+                    || upper.starts_with("PRIMARY KEY")
+                    || upper.starts_with("CHECK"))
+                {
+                    return Err(PostgresError::Query);
+                }
+                if !body.chars().all(|c| {
+                    c.is_ascii_alphanumeric()
+                        || " _(),.><=!\"'+-*/".contains(c)
+                }) {
+                    return Err(PostgresError::Query);
+                }
+                format!(
+                    "ALTER TABLE {}.{} ADD CONSTRAINT {} {}",
+                    quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                    quote_ident(relation).map_err(|_| PostgresError::Query)?,
+                    quote_ident(name).map_err(|_| PostgresError::Query)?,
+                    body.trim()
+                )
+            }
+            (
+                DdlKind::DropConstraint,
+                DdlTarget::PostgreSqlRelation { schema, relation },
+            ) => {
+                let name = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
+                format!(
+                    "ALTER TABLE {}.{} DROP CONSTRAINT {}",
+                    quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                    quote_ident(relation).map_err(|_| PostgresError::Query)?,
+                    quote_ident(name).map_err(|_| PostgresError::Query)?,
+                )
+            }
             _ => return Err(PostgresError::Query),
         };
         self.execute_sql(&sql).await

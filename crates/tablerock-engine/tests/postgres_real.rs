@@ -2694,3 +2694,111 @@ async fn ddl_add_column_and_list_roles() {
     let roles = session.list_roles(32).await.unwrap();
     assert!(roles.iter().any(|r| r == "postgres"));
 }
+
+#[tokio::test]
+async fn ddl_index_and_constraint_ops() {
+    use tablerock_core::{
+        ContextId, DdlKind, DdlPlan, DdlTarget, Engine, IdParts, OperationScope, ProfileId,
+        Revision, SessionId,
+    };
+
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+
+    session
+        .execute_sql("CREATE TABLE ddl_idx (id int PRIMARY KEY, code text);")
+        .await
+        .unwrap();
+    let scope = OperationScope::new(
+        ProfileId::from_parts(IdParts::new(1, 1).unwrap()).unwrap(),
+        SessionId::from_parts(IdParts::new(1, 2).unwrap()).unwrap(),
+        ContextId::from_parts(IdParts::new(1, 3).unwrap()).unwrap(),
+    );
+
+    let create_index = DdlPlan::new(
+        DdlKind::CreateIndex,
+        Engine::PostgreSql,
+        scope,
+        Revision::INITIAL,
+        DdlTarget::PostgreSqlRelation {
+            schema: "public".into(),
+            relation: "ddl_idx".into(),
+        },
+        Some("ddl_idx_code_idx".into()),
+        Some("code".into()),
+    )
+    .unwrap();
+    session.execute_ddl_plan(&create_index).await.unwrap();
+
+    let add_unique = DdlPlan::new(
+        DdlKind::AddConstraint,
+        Engine::PostgreSql,
+        scope,
+        Revision::INITIAL,
+        DdlTarget::PostgreSqlRelation {
+            schema: "public".into(),
+            relation: "ddl_idx".into(),
+        },
+        Some("ddl_idx_code_uq".into()),
+        Some("UNIQUE (code)".into()),
+    )
+    .unwrap();
+    session.execute_ddl_plan(&add_unique).await.unwrap();
+
+    // Prove constraint exists by rejecting duplicate codes.
+    session
+        .execute_sql("INSERT INTO ddl_idx (id, code) VALUES (1, 'a');")
+        .await
+        .unwrap();
+    assert!(session
+        .execute_sql("INSERT INTO ddl_idx (id, code) VALUES (2, 'a');")
+        .await
+        .is_err());
+
+    let drop_constraint = DdlPlan::new(
+        DdlKind::DropConstraint,
+        Engine::PostgreSql,
+        scope,
+        Revision::INITIAL,
+        DdlTarget::PostgreSqlRelation {
+            schema: "public".into(),
+            relation: "ddl_idx".into(),
+        },
+        Some("ddl_idx_code_uq".into()),
+        None,
+    )
+    .unwrap();
+    session.execute_ddl_plan(&drop_constraint).await.unwrap();
+
+    let drop_index = DdlPlan::new(
+        DdlKind::DropIndex,
+        Engine::PostgreSql,
+        scope,
+        Revision::INITIAL,
+        DdlTarget::PostgreSqlRelation {
+            schema: "public".into(),
+            relation: "ddl_idx".into(),
+        },
+        Some("ddl_idx_code_idx".into()),
+        None,
+    )
+    .unwrap();
+    session.execute_ddl_plan(&drop_index).await.unwrap();
+}

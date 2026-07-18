@@ -114,6 +114,7 @@ host them, keep those suites local-only and record the gap — same pattern as
 - [x] CH/Redis startup executors (evidence 273)
 - [x] Startup TUI lines + connect report; SSH agent preference persist (evidence 274)
 - [x] pg_dump/pg_restore process supervision + cancel (evidence 275; real client matrix residual)
+- [x] DDL index/constraint execute (evidence 276; TUI review residual)
 - [x] Vim mode keymap layer unit suite; off by default
 - [x] Relationship graph contract + self-cycle detection
 - [x] Plan index DONE with residual SSH/full dump matrix
@@ -121,7 +122,7 @@ host them, keep those suites local-only and record the gap — same pattern as
 ## Residual
 
 - Full pg_dump/pg_restore real-server matrix when CI has client binaries (process cancel landed, evidence 275)
-- DDL review UI + index/constraint ops
+- DDL TUI review/authorize UI (index/constraint execute landed, evidence 276)
 - Role membership/grant inspection depth
 - Startup Write/Dangerous review UI (executor skip path already enforced)
 
