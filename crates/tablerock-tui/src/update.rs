@@ -3411,6 +3411,22 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::FitColumn if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.fit_cursor_column() {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::FitAllColumns if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.fit_all_visible_columns() {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::UndoStaged if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if grid.drafts.undo() {
@@ -4011,6 +4027,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::MoveColumnRight
         | ActionId::NarrowColumn
         | ActionId::WidenColumn
+        | ActionId::FitColumn
+        | ActionId::FitAllColumns
         | ActionId::UndoStaged
         | ActionId::DiscardStaged
         | ActionId::ReviewMutations
@@ -5219,6 +5237,8 @@ fn cycle_action(
                 ActionId::MoveColumnRight,
                 ActionId::NarrowColumn,
                 ActionId::WidenColumn,
+                ActionId::FitColumn,
+                ActionId::FitAllColumns,
                 ActionId::UndoStaged,
                 ActionId::DiscardStaged,
                 ActionId::ReviewMutations,

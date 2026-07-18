@@ -886,6 +886,67 @@ impl DataGridModel {
         true
     }
 
+    /// Fit cursor column width to resident content + header (bounds 4..=64).
+    pub fn fit_cursor_column(&mut self) -> bool {
+        self.ensure_column_layout();
+        let Some(name) = self.columns.get(self.cursor_col).cloned() else {
+            return false;
+        };
+        let fitted = self.measure_column_width(&name);
+        let Some(entry) = self.column_layout.iter_mut().find(|c| c.name == name) else {
+            return false;
+        };
+        if entry.width == fitted {
+            return false;
+        }
+        entry.width = fitted;
+        true
+    }
+
+    /// Fit every visible column from resident content.
+    pub fn fit_all_visible_columns(&mut self) -> bool {
+        self.ensure_column_layout();
+        let names: Vec<String> = self
+            .column_layout
+            .iter()
+            .filter(|c| c.visible)
+            .map(|c| c.name.clone())
+            .collect();
+        if names.is_empty() {
+            return false;
+        }
+        let mut changed = false;
+        for name in names {
+            let fitted = self.measure_column_width(&name);
+            if let Some(entry) = self.column_layout.iter_mut().find(|c| c.name == name) {
+                if entry.width != fitted {
+                    entry.width = fitted;
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+
+    /// Measure display width for a column from header + resident cells.
+    fn measure_column_width(&self, name: &str) -> u16 {
+        let mut max_w = name.chars().count().max(1);
+        let Some(phys) = self.physical_column_index(name) else {
+            return 12;
+        };
+        for local in 0..self.row_count as usize {
+            let abs = self.start_row.saturating_add(local as u64);
+            let display = self.cell_at(abs, phys).display();
+            // Cap per-cell contribution so one huge blob does not force max width alone
+            // beyond the global 64 clamp.
+            let w = display.chars().count().min(64);
+            if w > max_w {
+                max_w = w;
+            }
+        }
+        u16::try_from(max_w).unwrap_or(64).clamp(4, 64)
+    }
+
     /// Layout width for a column name (default 12).
     #[must_use]
     pub fn column_width(&self, name: &str) -> u16 {
@@ -1340,6 +1401,58 @@ mod tests {
         let json = g.layout_json();
         assert!(json.contains("\"width\":4"));
         assert!(json.contains("\"name\":\"id\""));
+    }
+
+    #[test]
+    fn fit_column_uses_resident_content_and_header() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into()];
+        g.start_row = 0;
+        g.row_count = 2;
+        g.cells = vec![
+            ProjectedCell {
+                text: "1".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "abcdefghijklmnop".into(), // 16 chars
+                distinction: CellDistinction::Text,
+                byte_len: 16,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "99".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 2,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "xy".into(),
+                distinction: CellDistinction::Text,
+                byte_len: 2,
+                original_byte_len: None,
+            },
+        ];
+        g.cursor_col = 1; // name
+        g.ensure_column_layout();
+        assert_eq!(g.column_width("name"), 12);
+        assert!(g.fit_cursor_column());
+        assert_eq!(g.column_width("name"), 16);
+        // Second fit is no-op.
+        assert!(!g.fit_cursor_column());
+        g.cursor_col = 0;
+        assert!(g.fit_cursor_column()); // header "id" len 2 → clamp 4
+        assert_eq!(g.column_width("id"), 4);
+        // Both already fitted → no-op.
+        assert!(!g.fit_all_visible_columns());
+        // Widen then fit-all restores.
+        assert!(g.adjust_cursor_column_width(10));
+        assert_eq!(g.column_width("id"), 14);
+        assert!(g.fit_all_visible_columns());
+        assert_eq!(g.column_width("id"), 4);
+        assert_eq!(g.column_width("name"), 16);
     }
 
     #[test]

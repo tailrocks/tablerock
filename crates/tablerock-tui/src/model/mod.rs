@@ -128,6 +128,10 @@ pub enum ActionId {
     NarrowColumn,
     /// Widen cursor column width by 2 (max 64).
     WidenColumn,
+    /// Fit cursor column width to resident content.
+    FitColumn,
+    /// Fit all visible columns to resident content.
+    FitAllColumns,
     /// Undo last staged mutation draft action.
     UndoStaged,
     /// Discard all staged mutation drafts on the active tab.

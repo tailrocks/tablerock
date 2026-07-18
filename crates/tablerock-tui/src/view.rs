@@ -588,6 +588,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
     let col_narrow = action_label(model, ActionId::NarrowColumn, "Col-");
     let col_widen = action_label(model, ActionId::WidenColumn, "Col+");
+    let col_fit = action_label(model, ActionId::FitColumn, "ColFit");
+    let col_fit_all = action_label(model, ActionId::FitAllColumns, "ColFitA");
     let col_toggle = action_label(model, ActionId::ToggleColumn, "ColVis");
     let col_reset = action_label(model, ActionId::ResetColumns, "ColRst");
     let col_save = action_label(model, ActionId::SaveColumns, "ColSave");
@@ -857,6 +859,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::WidenColumn,
                         label: col_widen.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FitColumn,
+                        label: col_fit.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FitAllColumns,
+                        label: col_fit_all.as_str(),
                         enabled: true,
                         style: None,
                     },
