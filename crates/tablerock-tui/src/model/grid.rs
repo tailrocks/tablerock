@@ -3006,6 +3006,7 @@ mod tests {
         g.filters.clear();
         g.add_filter_chip("solo", "eq", Some("1".into()));
         assert!(!g.reverse_filters());
+        g.filters.clear();
         g.add_filter_chip("a", "eq", Some("1".into()));
         g.add_filter_chip("b", "eq", Some("2".into()));
         g.add_filter_chip("c", "eq", Some("3".into()));
