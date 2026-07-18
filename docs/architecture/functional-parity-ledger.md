@@ -80,7 +80,7 @@ architecture decisions.
 | Query/command tabs | Core | Independent text, cursor, context, results, errors, history, and running operation | Phase 2 command-scope/operation evidence in the [core group](../evidence/README.md#phase-2--core-contracts-and-services); execution text, multi-tab behavior, release-profile budgets, and remaining server races remain required |
 | Result tabs | Parity | One result per statement/operation, pinning, completion summaries, failure and partial-result states | Phase 2 safe-diagnostic taxonomy in the [core group](../evidence/README.md#phase-2--core-contracts-and-services); multi-statement and real-driver mapping fixtures remain required |
 | Responsive layout | Core | Wide split view, medium constrained view, narrow single-region navigation, explicit minimum-size screen | Render fixtures with Unicode and extreme labels |
-| Quick switcher | Parity | Fuzzy switch across visible objects, profiles, tabs, and saved queries using stable IDs | Ranking and stale-index tests |
+| Quick switcher | Parity | Fuzzy switch across visible objects, profiles, tabs, and saved queries using stable IDs | Tab switch (evidence 291); tabs + profiles + queries breadth (evidence 299); ranking and stale-index tests |
 | Favorites and saved queries | Parity | Table/object favorites and named query files with explicit scope | Persistence, rename, and missing-target tests |
 | Session restoration | Core | Restore intent and text, never result payloads or pending writes by default | Crash/relaunch and schema-migration tests |
 | Multi-window | Native | Independent native windows over shared Rust sessions with explicit ownership | macOS restoration and multi-window UI tests |
