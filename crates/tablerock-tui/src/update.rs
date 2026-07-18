@@ -3909,6 +3909,34 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyColumnCounts if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            if grid.columns.is_empty() {
+                return Update::unchanged();
+            }
+            // column_counts_summary needs ensure_column_layout (mut); clone via mut path.
+            let text = model
+                .workbench_mut()
+                .active_grid_mut()
+                .map(|g| g.column_counts_summary())
+                .unwrap_or_default();
+            if text.is_empty() {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied column counts ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyStatus if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -7115,6 +7143,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyStatus
         | ActionId::CopyGridWindow
         | ActionId::CopyQuickFilter
+        | ActionId::CopyColumnCounts
         | ActionId::CopyQueryId
         | ActionId::CopyServerProgress
         | ActionId::CopyResultToken
@@ -8978,6 +9007,7 @@ fn cycle_action(
                 ActionId::CopyStatus,
                 ActionId::CopyGridWindow,
                 ActionId::CopyQuickFilter,
+                ActionId::CopyColumnCounts,
                 ActionId::CopyQueryId,
                 ActionId::CopyServerProgress,
                 ActionId::CopyResultToken,
@@ -10895,6 +10925,20 @@ mod tests {
         match update(&mut model, Message::Activate).effects().next() {
             Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "needle"),
             other => panic!("expected quick filter, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["a".into(), "b".into(), "c".into()];
+            grid.ensure_column_layout();
+            assert!(grid.toggle_column_visible("b"));
+        }
+        model.set_action(ActionId::CopyColumnCounts);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("visible=2"), "{text}");
+                assert!(text.contains("hidden=1"), "{text}");
+                assert!(text.contains("total=3"), "{text}");
+            }
+            other => panic!("expected column counts, got {other:?}"),
         }
     }
 

@@ -1126,6 +1126,16 @@ impl DataGridModel {
         )
     }
 
+    /// Visible / hidden / total column counts for clipboard.
+    #[must_use]
+    pub fn column_counts_summary(&mut self) -> String {
+        self.ensure_column_layout();
+        let total = self.columns.len();
+        let visible = self.visible_columns().len();
+        let hidden = total.saturating_sub(visible);
+        format!("columns visible={visible} hidden={hidden} total={total}")
+    }
+
     /// SQL WHERE fragment from typed filter chips + raw WHERE (presentation aid).
     ///
     /// Values are single-quoted with `'` doubled. Null operators emit IS NULL /
@@ -3013,6 +3023,17 @@ mod tests {
         let empty = g.window_summary();
         assert!(empty.contains("end=200"), "{empty}");
         assert!(empty.contains("resident=0"), "{empty}");
+    }
+
+    #[test]
+    fn column_counts_summary_after_hide() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+        g.ensure_column_layout();
+        assert!(g.toggle_column_visible("a"));
+        assert!(g.toggle_column_visible("d"));
+        let s = g.column_counts_summary();
+        assert_eq!(s, "columns visible=2 hidden=2 total=4");
     }
 
     #[test]
