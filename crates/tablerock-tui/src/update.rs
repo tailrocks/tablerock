@@ -3382,7 +3382,18 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::CopyCellHex if model.screen() == Screen::Workbench => {
             copy_cursor_cell(model, true)
         }
-        ActionId::CopyRow if model.screen() == Screen::Workbench => copy_cursor_row(model),
+        ActionId::CopyRow if model.screen() == Screen::Workbench => {
+            copy_cursor_row(model, crate::model::copy_format::CopyFormat::Tsv)
+        }
+        ActionId::CopyRowCsv if model.screen() == Screen::Workbench => {
+            copy_cursor_row(model, crate::model::copy_format::CopyFormat::Csv)
+        }
+        ActionId::CopyRowJson if model.screen() == Screen::Workbench => {
+            copy_cursor_row(model, crate::model::copy_format::CopyFormat::Json)
+        }
+        ActionId::CopyRowMarkdown if model.screen() == Screen::Workbench => {
+            copy_cursor_row(model, crate::model::copy_format::CopyFormat::Markdown)
+        }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -4421,6 +4432,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyCell
         | ActionId::CopyCellHex
         | ActionId::CopyRow
+        | ActionId::CopyRowCsv
+        | ActionId::CopyRowJson
+        | ActionId::CopyRowMarkdown
         | ActionId::CycleSort
         | ActionId::PushSort
         | ActionId::PopSort
@@ -5781,12 +5795,15 @@ fn copy_cursor_cell(model: &mut Model, hex: bool) -> Update {
     }
 }
 
-fn copy_cursor_row(model: &mut Model) -> Update {
-    use crate::model::copy_format::{CopyFormat, CopyScope, format_copy};
+fn copy_cursor_row(
+    model: &mut Model,
+    format: crate::model::copy_format::CopyFormat,
+) -> Update {
+    use crate::model::copy_format::{CopyScope, format_copy};
     let Some(grid) = model.workbench().active_grid() else {
         return Update::unchanged();
     };
-    let text = match format_copy(grid, CopyScope::Row, CopyFormat::Tsv) {
+    let text = match format_copy(grid, CopyScope::Row, format) {
         Ok(t) => t,
         Err(err) => {
             if let Some(g) = model.workbench_mut().active_grid_mut() {
@@ -5795,8 +5812,16 @@ fn copy_cursor_row(model: &mut Model) -> Update {
             return Update::render();
         }
     };
+    let fmt = match format {
+        crate::model::copy_format::CopyFormat::Tsv => "tsv",
+        crate::model::copy_format::CopyFormat::Csv => "csv",
+        crate::model::copy_format::CopyFormat::Json => "json",
+        crate::model::copy_format::CopyFormat::Markdown => "md",
+        crate::model::copy_format::CopyFormat::SqlInsert => "sql-insert",
+        crate::model::copy_format::CopyFormat::SqlUpdate => "sql-update",
+    };
     if let Some(g) = model.workbench_mut().active_grid_mut() {
-        g.error_label = Some(format!("copied row ({} bytes)", text.len()));
+        g.error_label = Some(format!("copied row {fmt} ({} bytes)", text.len()));
     }
     let token = model.mint_request_token();
     Update {
@@ -5900,6 +5925,9 @@ fn cycle_action(
                 ActionId::CopyCell,
                 ActionId::CopyCellHex,
                 ActionId::CopyRow,
+                ActionId::CopyRowCsv,
+                ActionId::CopyRowJson,
+                ActionId::CopyRowMarkdown,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,

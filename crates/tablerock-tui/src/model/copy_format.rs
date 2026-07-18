@@ -407,6 +407,20 @@ mod tests {
     }
 
     #[test]
+    fn format_cursor_row_csv_json_markdown() {
+        let mut g = sample_grid();
+        g.cursor_row = 0;
+        let csv = format_copy(&g, CopyScope::Row, CopyFormat::Csv).unwrap();
+        assert!(csv.contains("id") || csv.contains("1"));
+        assert!(csv.contains("a,b") || csv.contains("\"a,b\""));
+        let json = format_copy(&g, CopyScope::Row, CopyFormat::Json).unwrap();
+        assert!(json.contains("\"id\"") || json.contains("1"));
+        let md = format_copy(&g, CopyScope::Row, CopyFormat::Markdown).unwrap();
+        assert!(md.contains("|") || md.contains("id"));
+        assert!(!csv.is_empty() && !json.is_empty() && !md.is_empty());
+    }
+
+    #[test]
     fn sql_insert_requires_identity() {
         let g = sample_grid();
         assert_eq!(

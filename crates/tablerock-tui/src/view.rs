@@ -649,6 +649,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_cell = action_label(model, ActionId::CopyCell, "CopyCell");
     let copy_cell_hex = action_label(model, ActionId::CopyCellHex, "CopyHex");
     let copy_row = action_label(model, ActionId::CopyRow, "CopyRow");
+    let copy_row_csv = action_label(model, ActionId::CopyRowCsv, "RowCsv");
+    let copy_row_json = action_label(model, ActionId::CopyRowJson, "RowJson");
+    let copy_row_md = action_label(model, ActionId::CopyRowMarkdown, "RowMd");
     let toggle_bool = action_label(model, ActionId::ToggleBool, "TogBool");
     let set_null = action_label(model, ActionId::SetNull, "SetNull");
     let set_today = action_label(model, ActionId::SetToday, "Today");
@@ -1121,6 +1124,24 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyRow,
                         label: copy_row.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyRowCsv,
+                        label: copy_row_csv.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyRowJson,
+                        label: copy_row_json.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyRowMarkdown,
+                        label: copy_row_md.as_str(),
                         enabled: true,
                         style: None,
                     },

@@ -112,6 +112,12 @@ pub enum ActionId {
     CopyCellHex,
     /// Copy cursor row (visible columns) as TSV.
     CopyRow,
+    /// Copy cursor row as CSV.
+    CopyRowCsv,
+    /// Copy cursor row as JSON object array.
+    CopyRowJson,
+    /// Copy cursor row as Markdown table.
+    CopyRowMarkdown,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Append cursor column as secondary sort (or cycle its direction in place).
