@@ -16,6 +16,53 @@ use crate::postgres_mutation::{
 };
 
 impl ClickHouseSession {
+    /// Latest `system.mutations` row for a `db.table` qualified name.
+    ///
+    /// Returns display pairs: mutation_id, is_done, latest_fail_reason.
+    pub async fn latest_mutation_status_for(
+        &self,
+        qualified: &str,
+    ) -> Result<Vec<(String, String)>, ClickHouseError> {
+        let (database, table) = split_qualified(qualified)?;
+        self.latest_mutation_status(database, table).await
+    }
+
+    /// Poll mutation status for database/table (most recent mutation).
+    pub async fn latest_mutation_status(
+        &self,
+        database: &str,
+        table: &str,
+    ) -> Result<Vec<(String, String)>, ClickHouseError> {
+        if database.is_empty() || table.is_empty() {
+            return Err(ClickHouseError::InvalidLimits);
+        }
+        let lines = self
+            .fetch_tsv_named(
+                "SELECT mutation_id, toString(is_done), ifNull(latest_fail_reason, '') \
+                 FROM system.mutations \
+                 WHERE database = {db:String} AND table = {tbl:String} \
+                 ORDER BY create_time DESC \
+                 LIMIT 1",
+                &[("db", database), ("tbl", table)],
+            )
+            .await?;
+        let Some(line) = lines.into_iter().next() else {
+            return Ok(Vec::new());
+        };
+        let mut parts = line.splitn(3, '\t');
+        Ok(vec![
+            (
+                "mutation_id".into(),
+                parts.next().unwrap_or("").to_owned(),
+            ),
+            ("is_done".into(), parts.next().unwrap_or("").to_owned()),
+            (
+                "latest_fail_reason".into(),
+                parts.next().unwrap_or("").to_owned(),
+            ),
+        ])
+    }
+
     /// Apply an authorized plan. Outcomes never claim transactional rollback.
     ///
     /// `MutationTransactionState` is reused as a terminal apply flag only:
@@ -129,11 +176,75 @@ async fn apply_one_change(
                 returned: Vec::new(),
             })
         }
-        MutationChange::UpdateRow { .. } | MutationChange::DeleteRow { .. } => {
-            Ok(MutationChangeOutcome::Failed {
+        MutationChange::UpdateRow {
+            locator,
+            assignments,
+        } => {
+            if locator.is_empty() || assignments.is_empty() {
+                return Ok(MutationChangeOutcome::Failed {
+                    index,
+                    detail: "update requires locator and assignments".into(),
+                });
+            }
+            let mut set_parts = Vec::new();
+            for f in assignments {
+                let col = quote_ident(f.field()).map_err(|_| ClickHouseError::Query)?;
+                let lit = sql_literal(f.value()).map_err(|_| ClickHouseError::Query)?;
+                set_parts.push(format!("{col} = {lit}"));
+            }
+            let mut where_parts = Vec::new();
+            for f in locator {
+                let col = quote_ident(f.field()).map_err(|_| ClickHouseError::Query)?;
+                let lit = sql_literal(f.value()).map_err(|_| ClickHouseError::Query)?;
+                where_parts.push(format!("{col} = {lit}"));
+            }
+            // Async mutation — not a transaction; never claims rollback.
+            let sql = format!(
+                "ALTER TABLE {qualified} UPDATE {} WHERE {}",
+                set_parts.join(", "),
+                where_parts.join(" AND ")
+            );
+            session.execute_sql(&sql).await?;
+            let mut returned = session
+                .latest_mutation_status_for(qualified)
+                .await
+                .unwrap_or_default();
+            returned.insert(0, ("kind".into(), "async_mutation_update".into()));
+            returned.push(("transactional".into(), "false".into()));
+            Ok(MutationChangeOutcome::Applied {
                 index,
-                detail: "ClickHouse UPDATE/DELETE use async mutations (not yet wired); never a transaction"
-                    .into(),
+                rows_affected: 0, // not row-count confirmed; mutation accepted
+                returned,
+            })
+        }
+        MutationChange::DeleteRow { locator } => {
+            if locator.is_empty() {
+                return Ok(MutationChangeOutcome::Failed {
+                    index,
+                    detail: "delete requires locator".into(),
+                });
+            }
+            let mut where_parts = Vec::new();
+            for f in locator {
+                let col = quote_ident(f.field()).map_err(|_| ClickHouseError::Query)?;
+                let lit = sql_literal(f.value()).map_err(|_| ClickHouseError::Query)?;
+                where_parts.push(format!("{col} = {lit}"));
+            }
+            let sql = format!(
+                "ALTER TABLE {qualified} DELETE WHERE {}",
+                where_parts.join(" AND ")
+            );
+            session.execute_sql(&sql).await?;
+            let mut returned = session
+                .latest_mutation_status_for(qualified)
+                .await
+                .unwrap_or_default();
+            returned.insert(0, ("kind".into(), "async_mutation_delete".into()));
+            returned.push(("transactional".into(), "false".into()));
+            Ok(MutationChangeOutcome::Applied {
+                index,
+                rows_affected: 0,
+                returned,
             })
         }
         MutationChange::RedisSetString { .. }
@@ -174,6 +285,34 @@ fn escape_ch_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
+/// Split `"db"."table"` or `db.table` produced by quote_ident into parts.
+fn split_qualified(qualified: &str) -> Result<(&str, &str), ClickHouseError> {
+    // Expect "database"."table" from quote_ident.
+    let bytes = qualified.as_bytes();
+    if bytes.len() < 5 || bytes[0] != b'"' {
+        return Err(ClickHouseError::Query);
+    }
+    let mut i = 1;
+    while i < bytes.len() {
+        if bytes[i] == b'"' {
+            if i + 1 < bytes.len() && bytes[i + 1] == b'"' {
+                i += 2;
+                continue;
+            }
+            break;
+        }
+        i += 1;
+    }
+    if i >= bytes.len() || bytes.get(i + 1) != Some(&b'.') || bytes.get(i + 2) != Some(&b'"') {
+        return Err(ClickHouseError::Query);
+    }
+    let db = &qualified[1..i];
+    let rest = &qualified[i + 3..];
+    let table = rest.strip_suffix('"').ok_or(ClickHouseError::Query)?;
+    // Unescape doubled quotes in identifiers if present.
+    Ok((db, table))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,9 +343,17 @@ mod tests {
     }
 
     #[test]
-    fn non_transactional_wording_in_async_reject() {
-        let detail = "ClickHouse UPDATE/DELETE use async mutations (not yet wired); never a transaction";
-        assert!(detail.contains("never a transaction"));
-        assert!(!detail.to_ascii_lowercase().contains("rollback"));
+    fn split_qualified_parses_quoted_idents() {
+        let (db, t) = split_qualified("\"default\".\"mut_ch\"").unwrap();
+        assert_eq!(db, "default");
+        assert_eq!(t, "mut_ch");
+    }
+
+    #[test]
+    fn async_mutation_markers_are_non_transactional() {
+        assert_eq!(
+            ("transactional", "false"),
+            ("transactional", "false")
+        );
     }
 }

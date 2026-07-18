@@ -731,7 +731,7 @@ async fn structure_facts_and_progressive_insert() {
         }
     ));
 
-    // UPDATE is rejected with non-transactional wording (async path later).
+    // Async UPDATE mutation — accepted, non-transactional markers in returned.
     let upd = MutationPlan::new(
         MutationId::from_parts(IdParts::new(1, 12).unwrap()).unwrap(),
         scope,
@@ -750,6 +750,10 @@ async fn structure_facts_and_progressive_insert() {
         MutationPlanLimits::new(8, 16, 4096, 4096, 60_000).unwrap(),
     )
     .unwrap();
+    assert_eq!(
+        upd.execution_model(),
+        tablerock_core::MutationExecutionModel::ClickHouseAsynchronousMutationNonTransactional
+    );
     let auth2 = upd
         .review(
             ReviewTokenId::from_parts(IdParts::new(1, 13).unwrap()).unwrap(),
@@ -761,10 +765,37 @@ async fn structure_facts_and_progressive_insert() {
         .unwrap();
     let out2 = session.apply_authorized_mutation(auth2).await.unwrap();
     match &out2.changes[0] {
-        MutationChangeOutcome::Failed { detail, .. } => {
-            assert!(detail.contains("never a transaction"), "{detail}");
-            assert!(!detail.to_ascii_lowercase().contains("rollback"));
+        MutationChangeOutcome::Applied { returned, .. } => {
+            assert!(
+                returned
+                    .iter()
+                    .any(|(k, v)| k == "transactional" && v == "false"),
+                "{returned:?}"
+            );
+            assert!(
+                returned
+                    .iter()
+                    .any(|(k, v)| k == "kind" && v.contains("async_mutation")),
+                "{returned:?}"
+            );
         }
-        other => panic!("expected Failed for CH update, got {other:?}"),
+        other => panic!("expected Applied async mutation, got {other:?}"),
     }
+    // Poll until done or timeout (mutations are async).
+    let mut done = false;
+    for _ in 0..50 {
+        let status = session
+            .latest_mutation_status("default", "mut_ch")
+            .await
+            .unwrap();
+        if status
+            .iter()
+            .any(|(k, v)| k == "is_done" && (v == "1" || v == "true"))
+        {
+            done = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(done, "mutation should complete in fixture");
 }

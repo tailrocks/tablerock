@@ -534,7 +534,7 @@ impl ClickHouseSession {
     }
 
     /// TabSeparated fetch with optional named parameters (`{name:String}`).
-    async fn fetch_tsv_named(
+    pub(crate) async fn fetch_tsv_named(
         &self,
         sql: &str,
         params: &[(&str, &str)],
