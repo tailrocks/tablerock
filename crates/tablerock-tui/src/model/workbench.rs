@@ -269,6 +269,24 @@ impl WorkbenchModel {
         false
     }
 
+    /// Select the first dirty tab (lowest index). Returns false if none dirty.
+    pub fn select_first_dirty_tab(&mut self) -> bool {
+        let Some(i) = self.tabs.iter().position(|t| t.dirty) else {
+            return false;
+        };
+        self.selected_tab = i;
+        true
+    }
+
+    /// Select the last dirty tab (highest index). Returns false if none dirty.
+    pub fn select_last_dirty_tab(&mut self) -> bool {
+        let Some(i) = self.tabs.iter().rposition(|t| t.dirty) else {
+            return false;
+        };
+        self.selected_tab = i;
+        true
+    }
+
     /// Multi-line inventory of tabs for the inspector panel.
     #[must_use]
     pub fn tabs_panel_text(&self) -> String {
@@ -987,6 +1005,13 @@ mod tests {
         assert_eq!(wb.selected_tab, 2);
         assert!(wb.select_prev_dirty_tab());
         assert_eq!(wb.selected_tab, 0);
+        assert!(wb.select_last_dirty_tab());
+        assert_eq!(wb.selected_tab, 2);
+        assert!(wb.select_first_dirty_tab());
+        assert_eq!(wb.selected_tab, 0);
+        wb.tabs.iter_mut().for_each(|t| t.dirty = false);
+        assert!(!wb.select_first_dirty_tab());
+        assert!(!wb.select_last_dirty_tab());
     }
 
     #[test]
