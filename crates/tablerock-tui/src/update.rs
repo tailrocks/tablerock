@@ -4751,6 +4751,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyInsertLoadedSql if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let text = match crate::model::copy_format::format_insert_loaded_sql(grid) {
+                Ok(t) => t,
+                Err(_) => return Update::unchanged(),
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied INSERT loaded ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyContextSchema if model.screen() == Screen::Workbench => {
             let Some(text) = model
                 .workbench()
@@ -6663,6 +6683,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyInsertSql
         | ActionId::CopyValuesSql
         | ActionId::CopyInsertRowSql
+        | ActionId::CopyInsertLoadedSql
         | ActionId::CopyContextSchema
         | ActionId::CopyPkNames
         | ActionId::CopyPkIdents
@@ -8478,6 +8499,7 @@ fn cycle_action(
                 ActionId::CopyInsertSql,
                 ActionId::CopyValuesSql,
                 ActionId::CopyInsertRowSql,
+                ActionId::CopyInsertLoadedSql,
                 ActionId::CopyContextSchema,
                 ActionId::CopyPkNames,
                 ActionId::CopyPkIdents,
@@ -10695,6 +10717,17 @@ mod tests {
                 );
             }
             other => panic!("expected INSERT row, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyInsertLoadedSql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(
+                    text.contains(r#"INSERT INTO "public"."users""#),
+                    "{text}"
+                );
+                assert!(text.contains("(7, 'ada')"), "{text}");
+            }
+            other => panic!("expected INSERT loaded, got {other:?}"),
         }
         model.workbench_mut().context.schema = Some("analytics".into());
         model.set_action(ActionId::CopyContextSchema);

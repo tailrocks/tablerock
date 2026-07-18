@@ -149,6 +149,67 @@ pub fn format_insert_row_sql(grid: &DataGridModel) -> Result<String, CopyError> 
     Ok(format!("{head} {vals}"))
 }
 
+/// Presentation aid: `INSERT INTO … VALUES (r0), (r1), …` for all resident rows.
+///
+/// Identity-gated. Caps at 500 rows to keep clipboard bounds sane. Does not execute.
+pub fn format_insert_loaded_sql(grid: &DataGridModel) -> Result<String, CopyError> {
+    let head = format_insert_sql(grid)?;
+    let cols = grid.visible_columns();
+    if cols.is_empty() || grid.row_count == 0 {
+        return Err(CopyError::Empty);
+    }
+    let n = (grid.row_count as usize).min(500);
+    let mut tuples = Vec::with_capacity(n);
+    for i in 0..n {
+        let abs = grid.start_row.saturating_add(i as u64);
+        let mut lits = Vec::with_capacity(cols.len());
+        for name in &cols {
+            let Some(phys) = grid.columns.iter().position(|c| c == name) else {
+                return Err(CopyError::Empty);
+            };
+            let cell = grid.cell_at(abs, phys);
+            if matches!(cell.distinction, super::grid::CellDistinction::Pending) {
+                return Err(CopyError::Empty);
+            }
+            lits.push(cell_sql_literal(&cell));
+        }
+        tuples.push(format!("({})", lits.join(", ")));
+    }
+    Ok(format!("{head} {}", tuples.join(",\n")))
+}
+
+fn cell_sql_literal(cell: &ProjectedCell) -> String {
+    use super::grid::CellDistinction;
+    match cell.distinction {
+        CellDistinction::Null => "NULL".into(),
+        CellDistinction::Boolean => {
+            let t = cell.text.trim();
+            if t.eq_ignore_ascii_case("true") || t == "t" || t == "1" {
+                "TRUE".into()
+            } else if t.eq_ignore_ascii_case("false") || t == "f" || t == "0" {
+                "FALSE".into()
+            } else {
+                sql_literal(&cell.text)
+            }
+        }
+        CellDistinction::Number => {
+            let t = cell.text.trim();
+            if t.parse::<f64>().is_ok() && !t.is_empty() {
+                t.to_owned()
+            } else {
+                sql_literal(&cell.text)
+            }
+        }
+        _ => {
+            if cell.text.is_empty() {
+                "''".into()
+            } else {
+                sql_literal(&cell.text)
+            }
+        }
+    }
+}
+
 /// Presentation aid: `(lit1, lit2, …)` for the cursor row (visible columns).
 ///
 /// Fails closed when any visible cell is Pending. Does not execute.
@@ -167,35 +228,7 @@ pub fn format_values_sql(grid: &DataGridModel) -> Result<String, CopyError> {
         if matches!(cell.distinction, CellDistinction::Pending) {
             return Err(CopyError::Empty);
         }
-        let lit = match cell.distinction {
-            CellDistinction::Null => "NULL".into(),
-            CellDistinction::Boolean => {
-                let t = cell.text.trim();
-                if t.eq_ignore_ascii_case("true") || t == "t" || t == "1" {
-                    "TRUE".into()
-                } else if t.eq_ignore_ascii_case("false") || t == "f" || t == "0" {
-                    "FALSE".into()
-                } else {
-                    sql_literal(&cell.text)
-                }
-            }
-            CellDistinction::Number => {
-                let t = cell.text.trim();
-                if t.parse::<f64>().is_ok() && !t.is_empty() {
-                    t.to_owned()
-                } else {
-                    sql_literal(&cell.text)
-                }
-            }
-            _ => {
-                if cell.text.is_empty() {
-                    "''".into()
-                } else {
-                    sql_literal(&cell.text)
-                }
-            }
-        };
-        lits.push(lit);
+        lits.push(cell_sql_literal(&cell));
     }
     Ok(format!("({})", lits.join(", ")))
 }
@@ -669,6 +702,11 @@ mod tests {
         g.base_table = Some("users".into());
         g.cursor_row = 1;
         assert_eq!(format_values_sql(&g).unwrap(), "(NULL, 'x')");
+        g.cursor_row = 0;
+        let loaded = format_insert_loaded_sql(&g).unwrap();
+        assert!(loaded.starts_with(r#"INSERT INTO "public"."users""#), "{loaded}");
+        assert!(loaded.contains("(1, 'a,b')"), "{loaded}");
+        assert!(loaded.contains("(NULL, 'x')"), "{loaded}");
     }
 
     #[test]
