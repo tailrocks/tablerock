@@ -28,6 +28,8 @@ fn ordinary_literals_are_structurally_rejected_for_secret_material() {
         ProfileProperty::Password,
         ProfileProperty::TlsClientPrivateKey,
         ProfileProperty::TlsClientPrivateKeyPassword,
+        ProfileProperty::SshPassword,
+        ProfileProperty::SshPrivateKey,
     ] {
         assert!(matches!(
             ProfilePropertyBinding::literal(property, text("must-not-survive")),
@@ -72,13 +74,43 @@ fn literal_bounds_follow_property_semantics_before_allocation_crossings() {
 
     for valid in ["1", "5432", "65535"] {
         assert!(ProfilePropertyBinding::literal(ProfileProperty::Port, text(valid)).is_ok());
+        assert!(ProfilePropertyBinding::literal(ProfileProperty::SshPort, text(valid)).is_ok());
     }
     for invalid in ["+1", "54x2", "00000"] {
         assert!(matches!(
             ProfilePropertyBinding::literal(ProfileProperty::Port, text(invalid)),
             Err(ProfilePropertyError::InvalidPort)
         ));
+        assert!(matches!(
+            ProfilePropertyBinding::literal(ProfileProperty::SshPort, text(invalid)),
+            Err(ProfilePropertyError::InvalidPort)
+        ));
     }
+}
+
+#[test]
+fn ssh_tunnel_properties_bind_as_optional_literals_and_secrets() {
+    let set = ProfilePropertySet::new(vec![
+        ProfilePropertyBinding::literal(ProfileProperty::Host, text("db.internal")).unwrap(),
+        ProfilePropertyBinding::literal(ProfileProperty::Port, text("5432")).unwrap(),
+        ProfilePropertyBinding::literal(ProfileProperty::SshHost, text("bastion.internal")).unwrap(),
+        ProfilePropertyBinding::literal(ProfileProperty::SshPort, text("22")).unwrap(),
+        ProfilePropertyBinding::literal(ProfileProperty::SshUsername, text("tunnel")).unwrap(),
+        ProfilePropertyBinding::literal(
+            ProfileProperty::SshKnownHostsPath,
+            text("/var/lib/tablerock/known_hosts"),
+        )
+        .unwrap(),
+        ProfilePropertyBinding::secret(ProfileProperty::SshPassword, one_password_source()),
+    ])
+    .unwrap();
+    assert_eq!(
+        set.literal(ProfileProperty::SshHost),
+        Some("bastion.internal")
+    );
+    assert_eq!(set.literal(ProfileProperty::SshPort), Some("22"));
+    assert!(set.binding(ProfileProperty::SshPassword).is_some());
+    assert_eq!(ProfileProperty::ALL.len(), 16);
 }
 
 #[test]

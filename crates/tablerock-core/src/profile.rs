@@ -14,10 +14,18 @@ pub enum ProfileProperty {
     TlsClientCertificate,
     TlsClientPrivateKey,
     TlsClientPrivateKeyPassword,
+    /// SSH bastion host (optional; present ⇒ tunnel requested).
+    SshHost,
+    SshPort,
+    SshUsername,
+    SshPassword,
+    SshPrivateKey,
+    /// Absolute path to OpenSSH known_hosts for fail-closed verification.
+    SshKnownHostsPath,
 }
 
 impl ProfileProperty {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 16] = [
         Self::Host,
         Self::Port,
         Self::DefaultContext,
@@ -28,25 +36,46 @@ impl ProfileProperty {
         Self::TlsClientCertificate,
         Self::TlsClientPrivateKey,
         Self::TlsClientPrivateKeyPassword,
+        Self::SshHost,
+        Self::SshPort,
+        Self::SshUsername,
+        Self::SshPassword,
+        Self::SshPrivateKey,
+        Self::SshKnownHostsPath,
     ];
 
     #[must_use]
     pub const fn permits_literal(self) -> bool {
         !matches!(
             self,
-            Self::Password | Self::TlsClientPrivateKey | Self::TlsClientPrivateKeyPassword
+            Self::Password
+                | Self::TlsClientPrivateKey
+                | Self::TlsClientPrivateKeyPassword
+                | Self::SshPassword
+                | Self::SshPrivateKey
         )
     }
 
     #[must_use]
     pub const fn literal_byte_limit(self) -> u64 {
         match self {
-            Self::Host | Self::TlsServerName => 253,
-            Self::Port => 5,
-            Self::DefaultContext | Self::Username => 128,
+            Self::Host | Self::TlsServerName | Self::SshHost => 253,
+            Self::Port | Self::SshPort => 5,
+            Self::DefaultContext | Self::Username | Self::SshUsername => 128,
             Self::TlsCaCertificate | Self::TlsClientCertificate => 65_536,
-            Self::Password | Self::TlsClientPrivateKey | Self::TlsClientPrivateKeyPassword => 0,
+            Self::SshKnownHostsPath => 4_096,
+            Self::Password
+            | Self::TlsClientPrivateKey
+            | Self::TlsClientPrivateKeyPassword
+            | Self::SshPassword
+            | Self::SshPrivateKey => 0,
         }
+    }
+
+    /// Port-like properties that must be decimal 1..=65535 when literal.
+    #[must_use]
+    pub const fn is_port_like(self) -> bool {
+        matches!(self, Self::Port | Self::SshPort)
     }
 }
 
@@ -85,7 +114,7 @@ impl ProfilePropertyBinding {
                 maximum,
             });
         }
-        if property == ProfileProperty::Port {
+        if property.is_port_like() {
             if !value.as_str().bytes().all(|byte| byte.is_ascii_digit()) {
                 return Err(ProfilePropertyError::InvalidPort);
             }

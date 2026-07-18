@@ -1102,6 +1102,12 @@ const fn decode_property(value: u8) -> Result<ProfileProperty, PersistenceError>
         8 => Ok(ProfileProperty::TlsClientCertificate),
         9 => Ok(ProfileProperty::TlsClientPrivateKey),
         10 => Ok(ProfileProperty::TlsClientPrivateKeyPassword),
+        11 => Ok(ProfileProperty::SshHost),
+        12 => Ok(ProfileProperty::SshPort),
+        13 => Ok(ProfileProperty::SshUsername),
+        14 => Ok(ProfileProperty::SshPassword),
+        15 => Ok(ProfileProperty::SshPrivateKey),
+        16 => Ok(ProfileProperty::SshKnownHostsPath),
         _ => Err(PersistenceError::ProfileDecode),
     }
 }
@@ -1142,6 +1148,12 @@ const fn encode_property(property: ProfileProperty) -> u8 {
         ProfileProperty::TlsClientCertificate => 8,
         ProfileProperty::TlsClientPrivateKey => 9,
         ProfileProperty::TlsClientPrivateKeyPassword => 10,
+        ProfileProperty::SshHost => 11,
+        ProfileProperty::SshPort => 12,
+        ProfileProperty::SshUsername => 13,
+        ProfileProperty::SshPassword => 14,
+        ProfileProperty::SshPrivateKey => 15,
+        ProfileProperty::SshKnownHostsPath => 16,
     }
 }
 
