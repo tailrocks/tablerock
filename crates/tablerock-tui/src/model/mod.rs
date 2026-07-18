@@ -172,6 +172,10 @@ pub enum ActionId {
     CopyResultToken,
     /// Copy cursor absolute row and physical column as `row,col`.
     CopyCursorPosition,
+    /// Copy live session id hex when connected.
+    CopySessionId,
+    /// Copy engine label of the live session.
+    CopyEngineLabel,
     /// Copy base schema.table identity if known.
     CopyTableName,
     /// Copy base schema only if known.

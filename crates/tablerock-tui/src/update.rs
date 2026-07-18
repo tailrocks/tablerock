@@ -3919,6 +3919,46 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopySessionId if model.screen() == Screen::Workbench => {
+            let Some(text) = model
+                .session()
+                .map(|s| s.session_id_hex.clone())
+                .filter(|s| !s.is_empty())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied session id ({})", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopyEngineLabel if model.screen() == Screen::Workbench => {
+            let Some(text) = model
+                .session()
+                .map(|s| s.engine_label.clone())
+                .filter(|s| !s.is_empty())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied engine {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTableName if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -6276,6 +6316,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyServerProgress
         | ActionId::CopyResultToken
         | ActionId::CopyCursorPosition
+        | ActionId::CopySessionId
+        | ActionId::CopyEngineLabel
         | ActionId::CopyTableName
         | ActionId::CopySchema
         | ActionId::CopyBareTable
@@ -8041,6 +8083,8 @@ fn cycle_action(
                 ActionId::CopyServerProgress,
                 ActionId::CopyResultToken,
                 ActionId::CopyCursorPosition,
+                ActionId::CopySessionId,
+                ActionId::CopyEngineLabel,
                 ActionId::CopyTableName,
                 ActionId::CopySchema,
                 ActionId::CopyBareTable,
@@ -10509,6 +10553,35 @@ mod tests {
                 assert_eq!(text, r#""public"."order""s""#);
             }
             other => panic!("expected table ident, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copy_session_id_and_engine_label() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabbccdd11223344aabbccdd11223344".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopySessionId);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "aabbccdd11223344aabbccdd11223344");
+            }
+            other => panic!("expected session id, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyEngineLabel);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "PostgreSQL");
+            }
+            other => panic!("expected engine label, got {other:?}"),
         }
     }
 

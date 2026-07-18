@@ -739,6 +739,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_progress = action_label(model, ActionId::CopyServerProgress, "CopyProg");
     let copy_result_tok = action_label(model, ActionId::CopyResultToken, "CopyTok");
     let copy_cursor_pos = action_label(model, ActionId::CopyCursorPosition, "CopyPos");
+    let copy_sess = action_label(model, ActionId::CopySessionId, "CopySid");
+    let copy_eng = action_label(model, ActionId::CopyEngineLabel, "CopyEng");
     let copy_table = action_label(model, ActionId::CopyTableName, "CopyTbl");
     let copy_schema = action_label(model, ActionId::CopySchema, "CopySch");
     let copy_bare = action_label(model, ActionId::CopyBareTable, "CopyTblN");
@@ -1633,6 +1635,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyCursorPosition,
                         label: copy_cursor_pos.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopySessionId,
+                        label: copy_sess.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyEngineLabel,
+                        label: copy_eng.as_str(),
                         enabled: true,
                         style: None,
                     },
