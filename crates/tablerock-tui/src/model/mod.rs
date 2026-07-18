@@ -433,6 +433,10 @@ pub enum ActionId {
     EditCell,
     /// Cancel open cell edit without staging (no-op if not editing).
     CancelCellEdit,
+    /// Commit open cell edit into staged draft (no-op if not editing).
+    CommitCellEdit,
+    /// Restore edit buffer to original text while still editing.
+    RestoreCellEdit,
     /// Toggle boolean cell buffer while editing (type-specific).
     ToggleBool,
     /// Set cell edit buffer to null while editing.

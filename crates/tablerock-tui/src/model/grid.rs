@@ -1285,6 +1285,20 @@ impl DataGridModel {
         self.cell_edit = None;
     }
 
+    /// Restore the open edit buffer to the original cell text (stay editing).
+    ///
+    /// Returns false when not editing or buffer already matches original.
+    pub fn restore_cell_edit_buffer(&mut self) -> bool {
+        let Some(edit) = self.cell_edit.as_mut() else {
+            return false;
+        };
+        if edit.buffer == edit.original_text {
+            return false;
+        }
+        edit.buffer = edit.original_text.clone();
+        true
+    }
+
     /// Stage delete for the cursor row.
     pub fn stage_delete_cursor_row(&mut self) -> bool {
         if !self.drafts.staging_allowed() {
@@ -3852,6 +3866,46 @@ mod tests {
         assert!(grid.cell_edit.is_none());
         assert_eq!(grid.drafts.pending_count(), 0);
         assert_eq!(grid.cell_display_at(0, 1), "alice");
+    }
+
+    #[test]
+    fn restore_cell_edit_buffer_keeps_session() {
+        use tablerock_core::ProfileSafetyMode;
+
+        let mut grid = DataGridModel::default();
+        grid.columns = vec!["id".into(), "name".into()];
+        grid.row_count = 1;
+        grid.cells = vec![
+            ProjectedCell {
+                text: "1".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "alice".into(),
+                distinction: CellDistinction::Text,
+                byte_len: 5,
+                original_byte_len: None,
+            },
+        ];
+        grid.base_schema = Some("public".into());
+        grid.base_table = Some("users".into());
+        grid.identity_columns = vec!["id".into()];
+        grid.cursor_row = 0;
+        grid.cursor_col = 1;
+        grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+        assert!(grid.begin_cell_edit());
+        if let Some(edit) = grid.cell_edit.as_mut() {
+            edit.buffer = "bob".into();
+        }
+        assert!(grid.restore_cell_edit_buffer());
+        assert_eq!(
+            grid.cell_edit.as_ref().map(|e| e.buffer.as_str()),
+            Some("alice")
+        );
+        assert!(!grid.restore_cell_edit_buffer());
+        assert_eq!(grid.drafts.pending_count(), 0);
     }
 
     #[test]
