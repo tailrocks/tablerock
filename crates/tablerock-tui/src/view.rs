@@ -2314,7 +2314,8 @@ fn render_data_grid(
         let mut texts = Vec::with_capacity(visible.len());
         for name in &visible {
             let col = grid.physical_column_index(name).unwrap_or(0);
-            texts.push(grid.cell_at(abs, col).display());
+            // Staged overlays + draft markers (never color alone).
+            texts.push(grid.cell_display_at(abs, col));
         }
         owned_rows.push(texts);
     }

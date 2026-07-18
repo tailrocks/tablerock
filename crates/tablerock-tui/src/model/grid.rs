@@ -776,6 +776,43 @@ impl DataGridModel {
             .unwrap_or_else(ProjectedCell::pending)
     }
 
+    /// Presentation text for VirtualGrid paint: live edit buffer, staged
+    /// overlays, and draft markers (text+glyph; never color alone).
+    #[must_use]
+    pub fn cell_display_at(&self, abs_row: u64, col: usize) -> String {
+        use super::mutation_draft::DraftMarker;
+
+        let col_name = self.columns.get(col).map(String::as_str).unwrap_or("");
+        if let Some(edit) = self.cell_edit.as_ref() {
+            if edit.abs_row == abs_row && edit.column == col_name {
+                return format!("✎ {}", edit.buffer);
+            }
+        }
+        let row_marker = self.drafts.row_marker(abs_row);
+        if matches!(row_marker, DraftMarker::Deleted) {
+            let base = self.cell_at(abs_row, col).display();
+            return if base.is_empty() {
+                DraftMarker::Deleted.glyph().into()
+            } else {
+                format!("{} {base}", DraftMarker::Deleted.glyph())
+            };
+        }
+        if let Some(staged) = self.drafts.staged_for_cell(abs_row, col_name) {
+            let glyph = DraftMarker::Modified.glyph();
+            return if staged.is_empty() {
+                format!("{glyph} ∅")
+            } else {
+                format!("{glyph} {staged}")
+            };
+        }
+        let base = self.cell_at(abs_row, col).display();
+        if matches!(row_marker, DraftMarker::Modified) {
+            // Row has other staged cells; leave unstaged cells unmarked.
+            return base;
+        }
+        base
+    }
+
     pub fn replace_page(
         &mut self,
         start_row: u64,
@@ -2179,6 +2216,20 @@ mod tests {
         assert!(grid.commit_cell_edit());
         assert_eq!(grid.drafts.pending_count(), 1);
         assert_eq!(grid.drafts.staged_for_cell(0, "name"), Some("bob"));
+        assert!(
+            grid.cell_display_at(0, 1).starts_with('·'),
+            "staged cell needs modified glyph"
+        );
+        assert!(grid.cell_display_at(0, 1).contains("bob"));
+        // Unstaged column on modified row stays original.
+        assert_eq!(grid.cell_display_at(0, 0), "1");
+        assert!(grid.stage_delete_cursor_row());
+        assert!(
+            grid.cell_display_at(0, 0).starts_with('−')
+                || grid.cell_display_at(0, 0).starts_with('-'),
+            "deleted row marker: {}",
+            grid.cell_display_at(0, 0)
+        );
     }
 
     #[test]

@@ -35,3 +35,4 @@ cargo check -p tablerock-tui
 ## Remaining work
 
 - Inline editable inserted-row viewport in VirtualGrid (optional)
+- Resident-row draft paint for updates/deletes — shipped as evidence 373
