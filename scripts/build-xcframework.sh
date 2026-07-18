@@ -42,36 +42,30 @@ if [[ ! -f "$HEADER" ]]; then
 fi
 
 rm -rf "$OUT_DIR"
-mkdir -p "$OUT_DIR/macos-arm64" "$OUT_DIR/macos-x86_64"
+mkdir -p "$OUT_DIR/macos-universal"
 
-# Thin static frameworks (headers + module map + .a) for each arch.
-package_arch() {
-  local arch_dir="$1"
-  local lib="$2"
-  local framework="$arch_dir/$FRAMEWORK_NAME.framework"
-  mkdir -p "$framework/Headers" "$framework/Modules"
-  cp "$lib" "$framework/$FRAMEWORK_NAME"
-  cp "$HEADER" "$framework/Headers/"
-  if [[ -f "$MODULEMAP" ]]; then
-    cp "$MODULEMAP" "$framework/Modules/module.modulemap"
-  else
-    cat >"$framework/Modules/module.modulemap" <<EOF
+# Xcode rejects separate arm64 and x86_64 framework inputs because they are
+# equivalent macOS library definitions. Package one universal macOS framework;
+# the XCFramework may later gain non-macOS platform variants as separate slices.
+FRAMEWORK="$OUT_DIR/macos-universal/$FRAMEWORK_NAME.framework"
+mkdir -p "$FRAMEWORK/Headers" "$FRAMEWORK/Modules"
+lipo -create "$ARM_LIB" "$X86_LIB" -output "$FRAMEWORK/$FRAMEWORK_NAME"
+cp "$HEADER" "$FRAMEWORK/Headers/"
+if [[ -f "$MODULEMAP" ]]; then
+  cp "$MODULEMAP" "$FRAMEWORK/Modules/module.modulemap"
+else
+  cat >"$FRAMEWORK/Modules/module.modulemap" <<EOF
 framework module $FRAMEWORK_NAME {
   umbrella header "$(basename "$HEADER")"
   export *
   module * { export * }
 }
 EOF
-  fi
-}
-
-package_arch "$OUT_DIR/macos-arm64" "$ARM_LIB"
-package_arch "$OUT_DIR/macos-x86_64" "$X86_LIB"
+fi
 
 echo "==> creating XCFramework"
 xcodebuild -create-xcframework \
-  -framework "$OUT_DIR/macos-arm64/$FRAMEWORK_NAME.framework" \
-  -framework "$OUT_DIR/macos-x86_64/$FRAMEWORK_NAME.framework" \
+  -framework "$FRAMEWORK" \
   -output "$XCFRAMEWORK"
 
 echo "==> XCFramework ready: $XCFRAMEWORK"

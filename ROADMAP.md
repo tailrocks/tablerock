@@ -245,13 +245,13 @@ XCFramework packaging, cancellation, ownership, and performance. Failure blocks
 native work and requires an explicit architecture revision; no secondary bridge
 or distribution path is carried in the roadmap.
 
-**Software gate complete (plan 019):** page v1 codec, `tablerock-ffi` facade,
+**Software and XCFramework gates complete (plan 019):** page v1 codec, `tablerock-ffi` facade,
 UniFFI Swift bindings, conformance (stubs + Docker PG/CH/Redis), review/apply
-handles, profile open, universal lipo staticlib, Swift `PageV1` decode, and CLT
-proof harness are on `main`. **Distribution gate operator-blocked:** full Xcode
-(XCFramework) + Developer ID notarize/staple/clean-machine (see
-`docs/evidence/delivery/251-plan-019-operator-stop.md`). Phase 13 waits on that
-distribution proof per plan 020 entry gate.
+handles, profile open, universal XCFramework, Swift `PageV1` decode, and proof
+harness are on `main`. **Distribution gate operator-blocked:** Developer ID
+signing + notarize/staple/clean-machine (see evidence 251 and 406). Phase 13's
+locally workable application exists; release proof still waits on the
+distribution gate.
 
 ## Phase 13 — native vertical slice
 

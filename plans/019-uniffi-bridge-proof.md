@@ -15,9 +15,9 @@
 
 ## Status
 
-- **State**: IN PROGRESS — **software gate complete**; distribution gate
-  **STOP** (no full Xcode / Developer ID on host). Residual: XCFramework
-  packaging + notarize/staple/clean-machine only.
+- **State**: IN PROGRESS — **software + XCFramework gates complete**;
+  distribution gate **STOP** (no Developer ID on host). Residual:
+  sign/notarize/staple/clean-machine only. Full-Xcode packaging evidence: 406.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: HIGH (architecture gate; external toolchain)
@@ -91,7 +91,8 @@
    `x86_64-apple-darwin`, `lipo`/`xcodebuild -create-xcframework`, signing
    of the embedded framework; scripted + documented (script lives in repo,
    e.g. `scripts/build-xcframework.sh` — new top-level dir needs no
-   decision; keep it minimal).
+   decision; keep it minimal). **Complete:** universal macOS framework slice
+   (`arm64` + `x86_64`) packaged by Xcode 26.6; evidence 406.
 4. **Swift proof harness**: a minimal Swift 6 strict-concurrency CLI/XCTest
    target (new `native/` directory) exercising: open/submit/poll/fetch/
    cancel/shutdown against real containers; `@MainActor` handoff pattern;
