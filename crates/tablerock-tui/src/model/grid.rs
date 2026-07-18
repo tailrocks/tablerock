@@ -1337,6 +1337,16 @@ impl DataGridModel {
         true
     }
 
+    /// Rotate sort keys left: secondary becomes primary. Needs ≥2 keys.
+    pub fn rotate_sort_keys(&mut self) -> bool {
+        if self.sort.len() < 2 {
+            return false;
+        }
+        let first = self.sort.remove(0);
+        self.sort.push(first);
+        true
+    }
+
     /// Clear server sort/filter; keep quick filter (page-local).
     pub fn clear_server_controls(&mut self) {
         self.sort.clear();
@@ -2354,6 +2364,13 @@ mod tests {
         assert_eq!(g.sort[0].direction, ColumnSort::Desc);
         assert!(g.invert_primary_sort());
         assert_eq!(g.sort[0].direction, ColumnSort::Asc);
+        assert!(!g.rotate_sort_keys());
+        g.push_sort_column("age");
+        assert_eq!(g.sort[0].column, "name");
+        assert_eq!(g.sort[1].column, "age");
+        assert!(g.rotate_sort_keys());
+        assert_eq!(g.sort[0].column, "age");
+        assert_eq!(g.sort[1].column, "name");
     }
 
     #[test]

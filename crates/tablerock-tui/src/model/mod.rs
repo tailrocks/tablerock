@@ -178,6 +178,8 @@ pub enum ActionId {
     FilterByLocator,
     /// Invert sort direction of primary sort key (no cycle off).
     InvertPrimarySort,
+    /// Promote secondary sort key to primary (rotate left).
+    RotateSort,
     /// Remove the last server filter chip and re-browse.
     RemoveLastFilter,
     /// Remove all server filters for the cursor column and re-browse.
