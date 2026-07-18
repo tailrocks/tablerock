@@ -119,13 +119,13 @@ architecture decisions.
 | Staged changes | Core | Inserts/updates/deletes remain local, visible (per-row/per-cell markers), undoable, reviewable, and discardable until apply | `MutationDraftModel` markers/undo/discard + dirty tab; apply clears on success (evidence 228, 230) |
 | Operation preview | Core | Preview lists the exact parameterized operations; execution uses the typed plan, never reparsed display text | Review lines from typed plan (`mutation_plan_build`); apply rebuilds typed plan from drafts (evidence 229–230) |
 | Conflict handling | Core | PostgreSQL conflicts roll back; ClickHouse and Redis expose their true non-transactional outcomes | PG ≠1-row conflict → ROLLBACK + keep staged; Docker suite (evidence 227, 230) |
-| Foreign-key navigation | Parity | PostgreSQL relationship lookup and navigation with explicit unavailable state elsewhere | FollowForeignKey → filtered browse of referenced table (evidence 231); multi-column FK polish open |
+| Foreign-key navigation | Parity | PostgreSQL relationship lookup and navigation with explicit unavailable state elsewhere | FollowForeignKey → filtered browse (231); multi-column FK follow (evidence 326) |
 
 ## Schema, administration, and data movement
 
 | Capability | Status | TableRock requirement | Acceptance evidence |
 |---|---|---|---|
-| Structure inspection | Core | Columns, keys/indexes, constraints, engine facts, and DDL/raw metadata | ShowStructure column type/null/default in inspector (evidence 231); indexes/constraints/raw DDL open |
+| Structure inspection | Core | Columns, keys/indexes, constraints, engine facts, and DDL/raw metadata | ShowStructure columns (231); indexes/constraints (evidence 324); raw DDL dump still optional polish |
 | Structure editing | Later | Capability-gated reviewed DDL; PostgreSQL first, ClickHouse-specific forms, no Redis fiction | Destructive-operation and rollback/outcome tests |
 | Table operations | Parity | Refresh, rename where valid, truncate/drop, maintenance/optimize, and copied DDL behind typed safety gates | Truncate/drop exact-name gates (232); rename dialog + `ALTER TABLE … RENAME TO` (evidence 340); maintenance/optimize still open |
 | Import | Parity | Streaming CSV/JSON and reviewed SQL where meaningful; mapping, transaction/outcome policy, progress, cancel | Malformed input, formula, encoding, and partial-failure fixtures |
