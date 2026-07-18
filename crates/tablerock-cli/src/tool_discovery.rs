@@ -108,6 +108,31 @@ pub fn pg_dump_argv(
     ]
 }
 
+/// Build pg_restore argv with password via env (never argv).
+#[must_use]
+pub fn pg_restore_argv(
+    tool: &Path,
+    host: &str,
+    port: u16,
+    database: &str,
+    username: &str,
+    file: &Path,
+) -> Vec<String> {
+    vec![
+        tool.display().to_string(),
+        "-h".into(),
+        host.into(),
+        "-p".into(),
+        port.to_string(),
+        "-U".into(),
+        username.into(),
+        "-d".into(),
+        database.into(),
+        "--no-password".into(),
+        file.display().to_string(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -7,6 +7,7 @@ mod import_csv;
 mod stream_export;
 mod ingress;
 mod telemetry;
+mod pg_process;
 mod tool_discovery;
 mod input;
 mod projection;
@@ -22,7 +23,12 @@ pub use stream_export::{
     StreamExportError, StreamExportFormat, StreamExportOutcome, StreamExporter, run_stream_export,
 };
 pub use telemetry::{default_otlp_is_off, enable_otlp_export, init_local_tracing, otlp_enabled};
-pub use tool_discovery::{ToolStatus, argv_contains_secret, discover_tool, pg_dump_argv};
+pub use pg_process::{
+    PgToolRunOutcome, cancel_channel, run_pg_dump, run_pg_restore, validate_dump_path,
+};
+pub use tool_discovery::{
+    ToolStatus, argv_contains_secret, discover_tool, pg_dump_argv, pg_restore_argv,
+};
 
 #[cfg(test)]
 #[path = "../tests/support/mod.rs"]
