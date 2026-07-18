@@ -116,9 +116,9 @@ pub fn update(model: &mut Model, message: Message) -> Update {
         {
             let selected = model.workbench().selected_tab;
             if let Some(tab) = model.workbench_mut().tabs.get_mut(selected)
-                && let Some(sql) = tab.sql.as_mut()
+                && let Some(editor) = tab.editor.as_mut()
             {
-                sql.push_str(text.text());
+                editor.insert(text.text());
                 tab.dirty = true;
                 return Update::render();
             }
@@ -815,8 +815,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
             let session_id_hex = session.session_id_hex.clone();
             let statement = model
                 .workbench()
-                .active_tab()
-                .and_then(|t| t.sql.clone())
+                .active_editor()
+                .and_then(|ed| ed.run_text())
                 .unwrap_or_default();
             if statement.trim().is_empty() {
                 return Update::unchanged();
@@ -1702,6 +1702,53 @@ mod tests {
         let grid = model.workbench().active_grid().unwrap();
         assert_eq!(grid.operation, GridOperationState::Completed);
         assert_eq!(grid.rows_loaded, 2500);
+    }
+
+    #[test]
+    fn run_sql_uses_selection_else_current_statement() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_sql_tab();
+        {
+            let editor = model.workbench_mut().active_editor_mut().unwrap();
+            editor.set_text("SELECT 1; SELECT 2");
+            let spans = editor.spans().to_vec();
+            editor.set_selection(spans[1].start, spans[1].end);
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::RunSql);
+        let run = update(&mut model, Message::Activate);
+        let effect = run.effects().next().expect("ExecuteSql");
+        match effect {
+            Effect::ExecuteSql { statement, .. } => {
+                assert!(
+                    statement.contains("SELECT 2") || statement.trim_start().starts_with("SELECT 2"),
+                    "{statement}"
+                );
+            }
+            other => panic!("expected ExecuteSql, got {other:?}"),
+        }
+        // Clear selection → current statement under cursor (first).
+        {
+            let editor = model.workbench_mut().active_editor_mut().unwrap();
+            editor.clear_selection();
+            editor.set_cursor(0);
+        }
+        model.set_action(ActionId::RunSql);
+        let run2 = update(&mut model, Message::Activate);
+        match run2.effects().next().expect("ExecuteSql") {
+            Effect::ExecuteSql { statement, .. } => {
+                assert!(statement.starts_with("SELECT 1"), "{statement}");
+            }
+            other => panic!("expected ExecuteSql, got {other:?}"),
+        }
     }
 
     #[test]

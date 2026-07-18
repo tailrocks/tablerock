@@ -9,6 +9,7 @@ description = "Owned domain contracts shared by TableRock engines and clients"
 
 [dependencies]
 caseless.workspace = true
+sqlparser.workspace = true
 unicode-normalization.workspace = true
 zeroize.workspace = true
 

@@ -3,6 +3,8 @@
 use super::catalog::CatalogModel;
 use super::grid::DataGridModel;
 use super::inspector::InspectorModel;
+use super::query_editor::QueryEditorModel;
+use tablerock_core::SqlDialect;
 
 /// Context-bar projection for the active session.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -49,7 +51,7 @@ impl ContextBarModel {
     }
 }
 
-/// One workbench tab (grid content for data tabs; SQL later).
+/// One workbench tab (grid content and/or SQL editor).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkbenchTab {
     pub id: u64,
@@ -58,8 +60,8 @@ pub struct WorkbenchTab {
     pub running: bool,
     pub preview: bool,
     pub grid: DataGridModel,
-    /// Optional SQL text for a statement tab.
-    pub sql: Option<String>,
+    /// Multiline SQL editor when this is a statement tab.
+    pub editor: Option<QueryEditorModel>,
 }
 
 /// Status-bar facts for the active tab/session.
@@ -117,7 +119,7 @@ impl Default for WorkbenchModel {
                 running: false,
                 preview: true,
                 grid: DataGridModel::default(),
-                sql: None,
+                editor: None,
             }],
             selected_tab: 0,
             status: WorkbenchStatus {
@@ -210,13 +212,17 @@ impl WorkbenchModel {
             running: false,
             preview: true,
             grid: DataGridModel::default(),
-            sql: None,
+            editor: None,
         });
         self.selected_tab = self.tabs.len() - 1;
     }
 
-    /// Open a SQL statement tab (single-line input until plan 011).
+    /// Open a multiline SQL editor tab (TermRock TextArea in the view).
     pub fn open_sql_tab(&mut self) {
+        let dialect = match self.engine_kind.as_str() {
+            "ClickHouse" => SqlDialect::ClickHouse,
+            _ => SqlDialect::PostgreSql,
+        };
         let id = self.tabs.iter().map(|t| t.id).max().unwrap_or(0) + 1;
         self.tabs.push(WorkbenchTab {
             id,
@@ -225,9 +231,22 @@ impl WorkbenchModel {
             running: false,
             preview: false,
             grid: DataGridModel::default(),
-            sql: Some(String::new()),
+            editor: Some(QueryEditorModel::new(dialect)),
         });
         self.selected_tab = self.tabs.len() - 1;
+    }
+
+    #[must_use]
+    pub fn active_editor(&self) -> Option<&QueryEditorModel> {
+        self.tabs
+            .get(self.selected_tab)
+            .and_then(|t| t.editor.as_ref())
+    }
+
+    pub fn active_editor_mut(&mut self) -> Option<&mut QueryEditorModel> {
+        self.tabs
+            .get_mut(self.selected_tab)
+            .and_then(|t| t.editor.as_mut())
     }
 
     pub fn active_grid_mut(&mut self) -> Option<&mut DataGridModel> {

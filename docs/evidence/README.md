@@ -182,6 +182,7 @@ How to read an evidence document:
 - 215 — [Phase 4 PostgreSQL read-only exit](delivery/215-phase-4-postgresql-readonly-exit.md)
 - 216 — [TermRock TextArea audit + CompletionMenu pin](delivery/216-termrock-textarea-completionmenu.md)
 - 217 — [sqlparser adoption + statement boundaries](delivery/217-sqlparser-statement-boundaries.md)
+- 218 — [QueryEditorModel multiline SQL tab](delivery/218-query-editor-model-multiline.md)
 
 ## TermRock pins
 

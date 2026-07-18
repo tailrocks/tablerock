@@ -10,7 +10,6 @@ mod runtime;
 mod secret_resolution;
 mod service;
 mod session_pool;
-mod sql_analysis;
 mod temporal;
 
 pub use adapter::{
@@ -54,4 +53,5 @@ pub use service::{
 pub use session_pool::{
     MAX_REGISTERED_SESSIONS, SessionRegistry, SessionRegistryError, SessionSlot,
 };
-pub use sql_analysis::{SqlDialect, StatementSpan, statement_at, statements};
+// SQL analysis is pure and lives in core; re-export for engine consumers.
+pub use tablerock_core::{SqlDialect, StatementSpan, statement_at, statements};

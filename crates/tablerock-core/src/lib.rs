@@ -14,6 +14,7 @@ mod result_store;
 mod revision;
 mod secret;
 mod service;
+mod sql_analysis;
 mod value;
 
 pub use catalog::{
@@ -79,6 +80,7 @@ pub use service::{
     CancelRequestOutcome, FanoutOutcome, OperationRetireError, ServiceCoordinator, ServiceError,
     ServiceLimits, ServicePhase, ShutdownMode, ShutdownOutcome, SubscriptionStart,
 };
+pub use sql_analysis::{SqlDialect, StatementSpan, statement_at, statements};
 pub use value::{
     Availability, BoundedBytes, BoundedBytesError, BoundedText, BoundedTextError, ByteLimit,
     Capability, CapabilityEngineMismatch, CapabilityFact, CapabilitySnapshot, EmptyEngineType,

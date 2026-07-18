@@ -9,6 +9,7 @@ description = "TableRock terminal presentation"
 
 [dependencies]
 ratatui-core.workspace = true
+tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
 termrock.workspace = true
 
 [lints]

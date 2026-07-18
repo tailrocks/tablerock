@@ -5,6 +5,7 @@ pub mod editor;
 pub mod grid;
 pub mod inspector;
 pub mod profiles;
+pub mod query_editor;
 pub mod workbench;
 
 use termrock::{

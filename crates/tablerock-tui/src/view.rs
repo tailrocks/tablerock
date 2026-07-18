@@ -11,8 +11,8 @@ use termrock::{
     widgets::{
         Action, ActionBar, ActionBarState, Form, FormField, FormSection, FormState, GridCell,
         GridColumn, GridRow, Panel, PanelEmphasis, StatusBar, StatusBarState, StatusSlot, Tab,
-        Tabs, TabsState, Tree, TreeNode, TreeNodeStatus, TreeState, VirtualGrid, VirtualGridState,
-        render_hint_bar,
+        Tabs, TabsState, TextArea, TextAreaState, Tree, TreeNode, TreeNodeStatus, TreeState,
+        VirtualGrid, VirtualGridState, render_hint_bar,
     },
 };
 
@@ -863,7 +863,7 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _status: Option<&str>) {
-    use ratatui_core::widgets::Widget;
+    use ratatui_core::widgets::{StatefulWidget, Widget};
     let wb = model.workbench();
     let mut y = area.y;
     let max_y = area.y.saturating_add(area.height);
@@ -879,15 +879,14 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
             )
         })
         .unwrap_or_else(|| "tab: —".into());
-    let sql_line = wb
-        .active_tab()
-        .and_then(|t| t.sql.as_ref())
-        .map(|s| format!("sql: {s}"))
+    let editor_status = wb
+        .active_editor()
+        .map(|ed| ed.status_line())
         .unwrap_or_default();
     let header = [
         wb.context.line(),
         tab_line,
-        sql_line,
+        editor_status,
         wb.active_grid()
             .map(|g| g.status_line())
             .unwrap_or_else(|| wb.status.summary()),
@@ -908,12 +907,54 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
         );
         y = y.saturating_add(1);
     }
-    let grid_area = Rect {
+    let body = Rect {
         x: area.x,
         y,
         width: area.width,
         height: max_y.saturating_sub(y),
     };
+    if body.height == 0 {
+        return;
+    }
+
+    // SQL tab: editor above results with remembered split percent.
+    if let Some(editor) = wb.active_editor() {
+        let editor_h = ((u32::from(body.height) * u32::from(editor.split_editor_percent())) / 100)
+            .clamp(2, u32::from(body.height.saturating_sub(2)).max(2))
+            as u16;
+        let editor_area = Rect {
+            x: body.x,
+            y: body.y,
+            width: body.width,
+            height: editor_h.min(body.height),
+        };
+        let results_area = Rect {
+            x: body.x,
+            y: body.y.saturating_add(editor_area.height),
+            width: body.width,
+            height: body.height.saturating_sub(editor_area.height),
+        };
+        let mut ta = TextAreaState::new(editor.text());
+        ta.set_focused(editor.focused() && model.focus() == Some(FocusRegion::Content));
+        // Approximate cursor: place at end when offset matches text length.
+        if editor.cursor() < editor.text().len() {
+            // Leave default end-of-document placement when we cannot map cheaply.
+            let _ = editor.cursor();
+        }
+        frame.render_stateful_widget(
+            &TextArea::new(&model.theme).title("SQL"),
+            editor_area,
+            &mut ta,
+        );
+        if results_area.height > 0 {
+            if let Some(grid) = wb.active_grid() {
+                render_data_grid(model, frame, results_area, grid);
+            }
+        }
+        return;
+    }
+
+    let grid_area = body;
     if grid_area.height > 1 {
         let insp_lines = wb.inspector.lines();
         let insp_h = if insp_lines.is_empty() {

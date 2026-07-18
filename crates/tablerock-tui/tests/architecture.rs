@@ -49,7 +49,9 @@ fn connection_screens_use_termrock_form_and_tree() {
 }
 
 #[test]
-fn tui_manifest_exposes_only_rendering_dependencies() {
+fn tui_manifest_exposes_only_presentation_dependencies() {
+    // rust-core-architecture.md: tablerock-tui → tablerock-core + termrock.
+    // No engine/persistence/async runtime edge from presentation.
     let manifest = include_str!("../Cargo.toml");
     let dependencies = manifest
         .split_once("[dependencies]")
@@ -58,8 +60,30 @@ fn tui_manifest_exposes_only_rendering_dependencies() {
         .split_once("[lints]")
         .expect("lints section")
         .0;
-    assert_eq!(
-        dependencies.trim(),
-        "ratatui-core.workspace = true\ntermrock.workspace = true"
+    let deps = dependencies.trim();
+    assert!(
+        deps.contains("ratatui-core.workspace = true"),
+        "tui must depend on ratatui-core"
     );
+    assert!(
+        deps.contains("termrock.workspace = true"),
+        "tui must depend on termrock"
+    );
+    assert!(
+        deps.contains("tablerock-core"),
+        "tui may depend on pure tablerock-core contracts"
+    );
+    for forbidden in [
+        "tablerock-engine",
+        "tablerock-persistence",
+        "tablerock-cli",
+        "tokio",
+        "sqlx",
+        "rusqlite",
+    ] {
+        assert!(
+            !deps.contains(forbidden),
+            "tui must not depend on {forbidden}"
+        );
+    }
 }

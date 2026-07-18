@@ -5,7 +5,8 @@ Date: 2026-07-18
 ## Checkpoint
 
 Plan 011 step 1. Adopt `sqlparser` `=0.62.0` (Apache-2.0, latest stable at
-adoption) in `tablerock-engine` for dialect-aware statement spans. Never
+adoption) for dialect-aware statement spans. Module lives in
+`tablerock-core` (pure; shared by TUI + engine). Engine re-exports. Never
 naive `split(';')`.
 
 ## Dependency adoption
@@ -37,7 +38,7 @@ naive `split(';')`.
 
 ## Evidence
 
-- `cargo test -p tablerock-engine --lib sql_analysis` (7 tests):
+- `cargo test -p tablerock-core --lib sql_analysis` (7 tests):
   string-embedded `;`, dollar-quoting, incomplete string, comments/emoji,
   `statement_at`, empty, `E''` + line comments.
 

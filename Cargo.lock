@@ -3621,6 +3621,7 @@ name = "tablerock-core"
 version = "0.1.0"
 dependencies = [
  "caseless",
+ "sqlparser",
  "unicode-normalization",
  "zeroize",
 ]
@@ -3636,7 +3637,6 @@ dependencies = [
  "redis",
  "rustls",
  "serde_json",
- "sqlparser",
  "tablerock-core",
  "testcontainers",
  "tokio",
@@ -3661,6 +3661,7 @@ name = "tablerock-tui"
 version = "0.1.0"
 dependencies = [
  "ratatui-core",
+ "tablerock-core",
  "termrock",
 ]
 
