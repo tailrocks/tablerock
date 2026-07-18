@@ -180,6 +180,8 @@ pub enum ActionId {
     CopyBareTable,
     /// Copy schema.table as SQL-quoted identifiers.
     CopyTableIdent,
+    /// Copy SELECT list of visible columns FROM base table (quoted).
+    CopySelectSql,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).
