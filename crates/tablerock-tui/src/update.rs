@@ -5227,6 +5227,9 @@ fn connection_draft_from_editor(
         password: editor.password.clone(),
         password_source: match editor.password_source {
             PasswordSourceChoice::PromptOnConnect => PasswordSourceSpec::PromptOnConnect,
+            PasswordSourceChoice::HostEnvironment => PasswordSourceSpec::HostEnvironment {
+                var: editor.password.clone(),
+            },
             PasswordSourceChoice::DangerousPlaintext => PasswordSourceSpec::DangerousPlaintext,
         },
         tls_mode: match editor.tls_mode {
@@ -5265,6 +5268,9 @@ fn apply_editor_text(model: &mut Model, text: &str) {
         EditorField::PasswordSource => {
             editor.password_source = match editor.password_source {
                 crate::model::editor::PasswordSourceChoice::PromptOnConnect => {
+                    crate::model::editor::PasswordSourceChoice::HostEnvironment
+                }
+                crate::model::editor::PasswordSourceChoice::HostEnvironment => {
                     crate::model::editor::PasswordSourceChoice::DangerousPlaintext
                 }
                 crate::model::editor::PasswordSourceChoice::DangerousPlaintext => {

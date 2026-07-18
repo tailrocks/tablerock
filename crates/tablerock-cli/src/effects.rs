@@ -5724,16 +5724,43 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
     };
     let mut prompt = FailPrompt;
     let mut password = String::new();
+    let mut password_source = PasswordSourceSpec::PromptOnConnect;
     if let Some(binding) = props.binding(ProfileProperty::Password) {
-        match resolve_for_connect(binding, connection.name(), &mut prompt) {
-            Ok(Some(secret)) => {
-                password = String::from_utf8_lossy(secret.as_bytes()).into_owned();
+        if let Some(source) = binding.secret_source() {
+            match source.kind() {
+                SecretSourceKind::HostEnvironment(env) => {
+                    // Keep env *name* in draft; resolve only at connect time.
+                    password = env.as_str().to_owned();
+                    password_source = PasswordSourceSpec::HostEnvironment {
+                        var: env.as_str().to_owned(),
+                    };
+                }
+                SecretSourceKind::PromptOnConnect => {
+                    password_source = PasswordSourceSpec::PromptOnConnect;
+                }
+                SecretSourceKind::DangerousPlaintext(_) => {
+                    match resolve_for_connect(binding, connection.name(), &mut prompt) {
+                        Ok(Some(secret)) => {
+                            password = String::from_utf8_lossy(secret.as_bytes()).into_owned();
+                            password_source = PasswordSourceSpec::DangerousPlaintext;
+                        }
+                        Ok(None) => {}
+                        Err(error) => return Err(error.to_string()),
+                    }
+                }
+                SecretSourceKind::OnePassword(_) | SecretSourceKind::Keychain(_) => {
+                    match resolve_for_connect(binding, connection.name(), &mut prompt) {
+                        Ok(Some(secret)) => {
+                            password = String::from_utf8_lossy(secret.as_bytes()).into_owned();
+                        }
+                        Ok(None) => {}
+                        Err(SecretResolutionError::PromptFailed) => {
+                            return Err("password prompt required".into());
+                        }
+                        Err(error) => return Err(error.to_string()),
+                    }
+                }
             }
-            Ok(None) => {}
-            Err(SecretResolutionError::PromptFailed) => {
-                return Err("password prompt required".into());
-            }
-            Err(error) => return Err(error.to_string()),
         }
     }
     let engine = match connection.engine() {
@@ -5788,9 +5815,12 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
         database: literal(ProfileProperty::DefaultContext).unwrap_or_default(),
         username: literal(ProfileProperty::Username).unwrap_or_default(),
         password,
-        password_source: PasswordSourceSpec::DangerousPlaintext,
         tls_mode,
-        plaintext_acknowledged: true,
+        plaintext_acknowledged: matches!(
+            password_source,
+            PasswordSourceSpec::DangerousPlaintext
+        ),
+        password_source,
         ssh_host: literal(ProfileProperty::SshHost).unwrap_or_default(),
         ssh_port: literal(ProfileProperty::SshPort).unwrap_or_else(|| "22".to_owned()),
         ssh_username: literal(ProfileProperty::SshUsername).unwrap_or_default(),
@@ -5937,6 +5967,21 @@ async fn open_described_session(
         tablerock_core::BoundedText::copy_from_str(value, tablerock_core::ByteLimit::new(128))
             .map_err(|e| e.to_string())
     };
+    // Resolve HostEnvironment passwords only for this attempt; never log.
+    let resolved_password = match &draft.password_source {
+        PasswordSourceSpec::HostEnvironment { var } => {
+            match std::env::var(var.trim()) {
+                Ok(v) if !v.is_empty() => v,
+                _ => {
+                    return Err(format!(
+                        "environment variable '{}' is unset or empty",
+                        var.trim()
+                    ));
+                }
+            }
+        }
+        _ => draft.password.clone(),
+    };
     let pg_tls = match draft.tls_mode {
         TlsModeSpec::Off => PostgresTlsMode::Disabled,
         TlsModeSpec::VerifyCa | TlsModeSpec::VerifyFull => PostgresTlsMode::Required,
@@ -5983,7 +6028,7 @@ async fn open_described_session(
             ))
         }
         EngineKind::ClickHouse => {
-            let _ = &draft.password;
+            let _ = &resolved_password;
             let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
                 text(&host)?,
                 port,
@@ -6016,14 +6061,14 @@ async fn open_described_session(
         }
         EngineKind::Redis => {
             let mut security = RedisConnectionSecurity::new();
-            if !draft.password.is_empty() || !draft.username.is_empty() {
+            if !resolved_password.is_empty() || !draft.username.is_empty() {
                 let username = if draft.username.is_empty() {
                     None
                 } else {
                     Some(draft.username.as_str())
                 };
                 security = security
-                    .with_credentials(RedisCredentials::new(username, draft.password.as_str()));
+                    .with_credentials(RedisCredentials::new(username, resolved_password.as_str()));
             }
             let session = RedisSession::connect(
                 &RedisConnectConfig::new(
@@ -6175,8 +6220,13 @@ fn draft_to_aggregate(draft: &ConnectionDraft) -> Result<ProfileAggregate, Strin
             ));
         }
     }
-    let password_source = match draft.password_source {
+    let password_source = match &draft.password_source {
         PasswordSourceSpec::PromptOnConnect => SecretSourceKind::PromptOnConnect,
+        PasswordSourceSpec::HostEnvironment { var } => {
+            let env = tablerock_core::EnvironmentReference::parse(var.trim())
+                .map_err(|error| error.to_string())?;
+            SecretSourceKind::HostEnvironment(env)
+        }
         PasswordSourceSpec::DangerousPlaintext => {
             if !draft.plaintext_acknowledged {
                 return Err("plaintext password not acknowledged".into());

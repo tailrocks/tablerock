@@ -29,6 +29,8 @@ pub enum EditorField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PasswordSourceChoice {
     PromptOnConnect,
+    /// `password` field holds the environment variable name (not the secret).
+    HostEnvironment,
     DangerousPlaintext,
 }
 
@@ -119,6 +121,9 @@ impl ConnectionFormModel {
             }
             EditorField::PasswordSource => match self.password_source {
                 PasswordSourceChoice::PromptOnConnect => "prompt".into(),
+                PasswordSourceChoice::HostEnvironment => {
+                    format!("env:{}", self.password)
+                }
                 PasswordSourceChoice::DangerousPlaintext => "plaintext".into(),
             },
             EditorField::TlsMode => match self.tls_mode {
@@ -296,6 +301,21 @@ impl ConnectionFormModel {
             self.validation_error = Some("acknowledge plaintext password storage".into());
             return false;
         }
+        if matches!(self.password_source, PasswordSourceChoice::HostEnvironment) {
+            let var = self.password.trim();
+            if var.is_empty() {
+                self.validation_error = Some("env password source needs variable name".into());
+                return false;
+            }
+            let mut chars = var.bytes();
+            let ok_first = chars
+                .next()
+                .is_some_and(|b| b == b'_' || b.is_ascii_alphabetic());
+            if !ok_first || !chars.all(|b| b == b'_' || b.is_ascii_alphanumeric()) {
+                self.validation_error = Some("invalid environment variable name".into());
+                return false;
+            }
+        }
         if !self.ssh_host.trim().is_empty() {
             if self
                 .ssh_port
@@ -381,6 +401,23 @@ mod tests {
             ..ConnectionFormModel::default()
         };
         assert!(editor.validate());
+    }
+
+    #[test]
+    fn host_environment_password_source_validates_var_name() {
+        let mut editor = ConnectionFormModel {
+            name: "demo".into(),
+            host: "db.internal".into(),
+            port: "5432".into(),
+            password_source: PasswordSourceChoice::HostEnvironment,
+            password: "DB_PASSWORD".into(),
+            ..ConnectionFormModel::default()
+        };
+        assert!(editor.validate());
+        editor.password = "bad-name!".into();
+        assert!(!editor.validate());
+        editor.password = String::new();
+        assert!(!editor.validate());
     }
 
     #[test]

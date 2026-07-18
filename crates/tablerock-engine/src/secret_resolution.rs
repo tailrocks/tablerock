@@ -51,6 +51,8 @@ pub enum SecretResolutionError {
     SourceNotYetSupported { kind: SecretSourceKindLabel },
     PromptFailed,
     MissingSource,
+    /// Named environment variable is unset or empty (fail closed).
+    EnvVarMissing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +72,7 @@ impl fmt::Display for SecretResolutionError {
             }
             Self::PromptFailed => "secret prompt failed",
             Self::MissingSource => "property has no secret source to resolve",
+            Self::EnvVarMissing => "environment variable is unset or empty",
         })
     }
 }
@@ -113,12 +116,23 @@ fn resolve_source(
         SecretSourceKind::OnePassword(_) => Err(SecretResolutionError::SourceNotYetSupported {
             kind: SecretSourceKindLabel::OnePassword,
         }),
-        SecretSourceKind::HostEnvironment(_) => Err(SecretResolutionError::SourceNotYetSupported {
-            kind: SecretSourceKindLabel::HostEnvironment,
-        }),
+        SecretSourceKind::HostEnvironment(env) => resolve_host_environment(env.as_str(), field),
         SecretSourceKind::Keychain(_) => Err(SecretResolutionError::SourceNotYetSupported {
             kind: SecretSourceKindLabel::Keychain,
         }),
+    }
+}
+
+/// Read host env at connect time. Never logs the value. Missing/empty fail closed.
+fn resolve_host_environment(
+    name: &str,
+    field: SecretField,
+) -> Result<ResolvedSecret, SecretResolutionError> {
+    match std::env::var(name) {
+        Ok(value) if !value.is_empty() => {
+            Ok(ResolvedSecret::new(value.into_bytes(), field))
+        }
+        Ok(_) | Err(_) => Err(SecretResolutionError::EnvVarMissing),
     }
 }
 
@@ -199,10 +213,34 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_kinds_fail_closed() {
+    fn host_environment_resolves_and_missing_fails() {
         use tablerock_core::EnvironmentReference;
 
-        let env = EnvironmentReference::parse("DB_PASS").unwrap();
+        // Use a host var that is always present (no set_var; unsafe_code forbidden).
+        let var = if std::env::var_os("PATH").is_some() {
+            "PATH"
+        } else if std::env::var_os("HOME").is_some() {
+            "HOME"
+        } else {
+            // Extremely constrained host: skip positive path; still test missing.
+            let missing =
+                EnvironmentReference::parse("TABLEROCK_TEST_SECRET_MISSING_XYZ").unwrap();
+            let binding_missing = ProfilePropertyBinding::secret(
+                ProfileProperty::Password,
+                SecretSource::new(SecretSourceKind::HostEnvironment(missing)),
+            );
+            let mut prompt = CountingPrompt {
+                calls: 0,
+                value: Vec::new(),
+            };
+            assert!(matches!(
+                resolve_for_connect(&binding_missing, &name(), &mut prompt),
+                Err(SecretResolutionError::EnvVarMissing)
+            ));
+            return;
+        };
+        let expected = std::env::var(var).expect("chosen host env present");
+        let env = EnvironmentReference::parse(var).unwrap();
         let binding = ProfilePropertyBinding::secret(
             ProfileProperty::Password,
             SecretSource::new(SecretSourceKind::HostEnvironment(env)),
@@ -211,9 +249,48 @@ mod tests {
             calls: 0,
             value: Vec::new(),
         };
+        let resolved = resolve_for_connect(&binding, &name(), &mut prompt)
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved.as_bytes(), expected.as_bytes());
+        assert_eq!(prompt.calls, 0);
+        let debug = format!("{resolved:?}");
+        // Debug must not dump secret material as a free string field.
+        assert!(debug.contains("byte_len"));
+        assert!(!debug.contains(&format!("bytes: {expected:?}")));
+
+        let missing = EnvironmentReference::parse("TABLEROCK_TEST_SECRET_MISSING_XYZ").unwrap();
+        let binding_missing = ProfilePropertyBinding::secret(
+            ProfileProperty::Password,
+            SecretSource::new(SecretSourceKind::HostEnvironment(missing)),
+        );
+        assert!(matches!(
+            resolve_for_connect(&binding_missing, &name(), &mut prompt),
+            Err(SecretResolutionError::EnvVarMissing)
+        ));
+    }
+
+    #[test]
+    fn keychain_still_unsupported() {
+        use tablerock_core::{BoundedBytes, ByteLimit, KeychainReference};
+
+        let key = KeychainReference::new(
+            BoundedBytes::copy_from_slice(b"service/account", ByteLimit::new(64)).unwrap(),
+        )
+        .unwrap();
+        let binding = ProfilePropertyBinding::secret(
+            ProfileProperty::Password,
+            SecretSource::new(SecretSourceKind::Keychain(key)),
+        );
+        let mut prompt = CountingPrompt {
+            calls: 0,
+            value: Vec::new(),
+        };
         assert!(matches!(
             resolve_for_connect(&binding, &name(), &mut prompt),
-            Err(SecretResolutionError::SourceNotYetSupported { .. })
+            Err(SecretResolutionError::SourceNotYetSupported {
+                kind: SecretSourceKindLabel::Keychain
+            })
         ));
     }
 

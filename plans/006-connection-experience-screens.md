@@ -9,8 +9,8 @@
 
 ## Status
 
-- **Status**: DONE (evidence 200–206, 331 group rename, 332 reconnect loop;
-  residual: 1Password/Keychain/env deferred by product)
+- **Status**: DONE (evidence 200–206, 331–334 reconnect, 336 host-env secrets;
+  residual: 1Password/Keychain deferred by product/tooling)
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MED

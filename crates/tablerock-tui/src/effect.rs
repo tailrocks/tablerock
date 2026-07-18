@@ -31,6 +31,9 @@ pub struct ProfileRef {
 pub enum PasswordSourceSpec {
     PromptOnConnect,
     DangerousPlaintext,
+    /// Password taken from host environment variable at connect time.
+    /// `var` is the variable name only — never the resolved value.
+    HostEnvironment { var: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
