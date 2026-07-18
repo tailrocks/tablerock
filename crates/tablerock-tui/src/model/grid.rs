@@ -1484,6 +1484,16 @@ impl DataGridModel {
         true
     }
 
+    /// Move the oldest filter chip to the end (AND last). Needs ≥2 chips.
+    pub fn demote_first_filter(&mut self) -> bool {
+        if self.filters.len() < 2 {
+            return false;
+        }
+        let first = self.filters.remove(0);
+        self.filters.push(first);
+        true
+    }
+
     /// Remove all server filters for a column name (keeps sort/raw_where).
     pub fn remove_filters_for_column(&mut self, column: &str) -> usize {
         let before = self.filters.len();
@@ -3025,6 +3035,25 @@ mod tests {
         g.filters.clear();
         g.add_filter_chip("solo", "eq", Some("1".into()));
         assert!(!g.promote_last_filter());
+        g.filters.clear();
+        g.add_filter_chip("a", "eq", Some("1".into()));
+        g.add_filter_chip("b", "eq", Some("2".into()));
+        g.add_filter_chip("c", "eq", Some("3".into()));
+        assert!(g.demote_first_filter());
+        assert_eq!(
+            g.filters
+                .iter()
+                .map(|f| f.column.as_str())
+                .collect::<Vec<_>>(),
+            vec!["b", "c", "a"]
+        );
+        assert!(g.demote_first_filter());
+        assert_eq!(g.filters[0].column, "c");
+        assert_eq!(g.filters[1].column, "a");
+        assert_eq!(g.filters[2].column, "b");
+        g.filters.clear();
+        g.add_filter_chip("solo", "eq", Some("1".into()));
+        assert!(!g.demote_first_filter());
     }
 
     #[test]

@@ -218,6 +218,8 @@ pub enum ActionId {
     ReverseFilters,
     /// Promote newest filter chip to front and re-browse.
     PromoteLastFilter,
+    /// Demote oldest filter chip to end and re-browse.
+    DemoteFirstFilter,
     /// Remove all server filters for the cursor column and re-browse.
     RemoveColumnFilters,
     /// Add LIKE filter for cursor column using cell text with % wildcards.
