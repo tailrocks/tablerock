@@ -919,15 +919,23 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
+            let mut body = columns.join("\n");
+            body.push_str(
+                "\n--- quick actions ---\n\
+                 AddCol / DropCol / AddIdx / DropIdx / AddCon / DropCon\n\
+                 (action bar → same review dialog as grid DDL)",
+            );
             model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
                 open: true,
                 title: format!("{schema}.{table} structure"),
                 kind_label: "structure".into(),
-                text: columns.join("\n"),
+                text: body,
                 hex: String::new(),
                 byte_len: columns.iter().map(|c| c.len() as u64).sum(),
                 original_byte_len: None,
                 stale: false,
+                structure_schema: Some(schema),
+                structure_table: Some(table),
             };
             Update::render()
         }
@@ -1014,6 +1022,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 byte_len: lines.iter().map(|l| l.len() as u64).sum(),
                 original_byte_len: None,
                 stale: false,
+                structure_schema: None,
+                structure_table: None,
             };
             Update::render()
         }
@@ -1050,6 +1060,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 byte_len: lines.iter().map(|l| l.len() as u64).sum(),
                 original_byte_len: None,
                 stale: false,
+                structure_schema: None,
+                structure_table: None,
             };
             Update::render()
         }
@@ -1144,6 +1156,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 byte_len: keys.iter().map(|k| k.len() as u64).sum(),
                 original_byte_len: None,
                 stale: false,
+                structure_schema: None,
+                structure_table: None,
             };
             Update::render()
         }
@@ -1182,6 +1196,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 byte_len: lines.iter().map(|l| l.len() as u64).sum(),
                 original_byte_len: None,
                 stale: false,
+                structure_schema: None,
+                structure_table: None,
             };
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_completed();
@@ -1222,6 +1238,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 byte_len: lines.iter().map(|l| l.len() as u64).sum(),
                 original_byte_len: None,
                 stale: false,
+                structure_schema: None,
+                structure_table: None,
             };
             Update::render()
         }
@@ -2279,122 +2297,36 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
-        ActionId::DdlAddColumn if model.screen() == Screen::Workbench => {
-            let Some(grid) = model.workbench().active_grid() else {
-                return Update::unchanged();
-            };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
-            else {
-                return Update::unchanged();
-            };
-            model.set_confirm(Some(ConfirmDialog::DdlReview {
-                kind: "add_column".into(),
-                schema: schema.clone(),
-                table: table.clone(),
-                preview: format!("ADD COLUMN on {schema}.{table} (paste: col_name type)"),
-                confirm_buffer: String::new(),
-            }));
-            model.set_action(ActionId::Submit);
-            Update::render()
-        }
-        ActionId::DdlCreateIndex if model.screen() == Screen::Workbench => {
-            let Some(grid) = model.workbench().active_grid() else {
-                return Update::unchanged();
-            };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
-            else {
-                return Update::unchanged();
-            };
-            model.set_confirm(Some(ConfirmDialog::DdlReview {
-                kind: "create_index".into(),
-                schema: schema.clone(),
-                table: table.clone(),
-                preview: format!("CREATE INDEX on {schema}.{table} (paste: index_name column)"),
-                confirm_buffer: String::new(),
-            }));
-            model.set_action(ActionId::Submit);
-            Update::render()
-        }
-        ActionId::DdlDropColumn if model.screen() == Screen::Workbench => {
-            let Some(grid) = model.workbench().active_grid() else {
-                return Update::unchanged();
-            };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
-            else {
-                return Update::unchanged();
-            };
-            model.set_confirm(Some(ConfirmDialog::DdlReview {
-                kind: "drop_column".into(),
-                schema: schema.clone(),
-                table: table.clone(),
-                preview: format!("DROP COLUMN on {schema}.{table} (paste: column_name)"),
-                confirm_buffer: String::new(),
-            }));
-            model.set_action(ActionId::Submit);
-            Update::render()
-        }
-        ActionId::DdlDropIndex if model.screen() == Screen::Workbench => {
-            let Some(grid) = model.workbench().active_grid() else {
-                return Update::unchanged();
-            };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
-            else {
-                return Update::unchanged();
-            };
-            model.set_confirm(Some(ConfirmDialog::DdlReview {
-                kind: "drop_index".into(),
-                schema: schema.clone(),
-                table: table.clone(),
-                preview: format!("DROP INDEX on {schema}.{table} (paste: index_name)"),
-                confirm_buffer: String::new(),
-            }));
-            model.set_action(ActionId::Submit);
-            Update::render()
-        }
-        ActionId::DdlAddConstraint if model.screen() == Screen::Workbench => {
-            let Some(grid) = model.workbench().active_grid() else {
-                return Update::unchanged();
-            };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
-            else {
-                return Update::unchanged();
-            };
-            model.set_confirm(Some(ConfirmDialog::DdlReview {
-                kind: "add_constraint".into(),
-                schema: schema.clone(),
-                table: table.clone(),
-                preview: format!(
-                    "ADD CONSTRAINT on {schema}.{table} (paste: name UNIQUE (col))"
-                ),
-                confirm_buffer: String::new(),
-            }));
-            model.set_action(ActionId::Submit);
-            Update::render()
-        }
-        ActionId::DdlDropConstraint if model.screen() == Screen::Workbench => {
-            let Some(grid) = model.workbench().active_grid() else {
-                return Update::unchanged();
-            };
-            let (Some(schema), Some(table)) =
-                (grid.base_schema.clone(), grid.base_table.clone())
-            else {
-                return Update::unchanged();
-            };
-            model.set_confirm(Some(ConfirmDialog::DdlReview {
-                kind: "drop_constraint".into(),
-                schema: schema.clone(),
-                table: table.clone(),
-                preview: format!("DROP CONSTRAINT on {schema}.{table} (paste: name)"),
-                confirm_buffer: String::new(),
-            }));
-            model.set_action(ActionId::Submit);
-            Update::render()
-        }
+        ActionId::DdlAddColumn if model.screen() == Screen::Workbench => open_ddl_review(
+            model,
+            "add_column",
+            "ADD COLUMN on {schema}.{table} (paste: col_name type)",
+        ),
+        ActionId::DdlCreateIndex if model.screen() == Screen::Workbench => open_ddl_review(
+            model,
+            "create_index",
+            "CREATE INDEX on {schema}.{table} (paste: index_name column)",
+        ),
+        ActionId::DdlDropColumn if model.screen() == Screen::Workbench => open_ddl_review(
+            model,
+            "drop_column",
+            "DROP COLUMN on {schema}.{table} (paste: column_name)",
+        ),
+        ActionId::DdlDropIndex if model.screen() == Screen::Workbench => open_ddl_review(
+            model,
+            "drop_index",
+            "DROP INDEX on {schema}.{table} (paste: index_name)",
+        ),
+        ActionId::DdlAddConstraint if model.screen() == Screen::Workbench => open_ddl_review(
+            model,
+            "add_constraint",
+            "ADD CONSTRAINT on {schema}.{table} (paste: name UNIQUE (col))",
+        ),
+        ActionId::DdlDropConstraint if model.screen() == Screen::Workbench => open_ddl_review(
+            model,
+            "drop_constraint",
+            "DROP CONSTRAINT on {schema}.{table} (paste: name)",
+        ),
         ActionId::ShowActivity if model.screen() == Screen::Workbench => {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
@@ -2747,14 +2679,8 @@ fn show_structure(model: &mut Model) -> Update {
         return Update::unchanged();
     };
     let context_revision = model.workbench().context_revision;
-    let (schema, table) = {
-        let Some(grid) = model.workbench().active_grid() else {
-            return Update::unchanged();
-        };
-        match (grid.base_schema.clone(), grid.base_table.clone()) {
-            (Some(s), Some(t)) => (s, t),
-            _ => return Update::unchanged(),
-        }
+    let Some((schema, table)) = relation_ddl_target(model) else {
+        return Update::unchanged();
     };
     let token = model.mint_request_token();
     Update {
@@ -2767,6 +2693,42 @@ fn show_structure(model: &mut Model) -> Update {
             table,
         }),
     }
+}
+
+/// Resolve schema/table for DDL: grid base first, then structure inspector target.
+fn relation_ddl_target(model: &Model) -> Option<(String, String)> {
+    if let Some(grid) = model.workbench().active_grid() {
+        if let (Some(schema), Some(table)) =
+            (grid.base_schema.clone(), grid.base_table.clone())
+        {
+            return Some((schema, table));
+        }
+    }
+    let insp = &model.workbench().inspector;
+    if insp.has_structure_target() {
+        return Some((
+            insp.structure_schema.clone()?,
+            insp.structure_table.clone()?,
+        ));
+    }
+    None
+}
+
+fn open_ddl_review(model: &mut Model, kind: &str, preview_fmt: &str) -> Update {
+    let Some((schema, table)) = relation_ddl_target(model) else {
+        return Update::unchanged();
+    };
+    model.set_confirm(Some(ConfirmDialog::DdlReview {
+        kind: kind.into(),
+        schema: schema.clone(),
+        table: table.clone(),
+        preview: preview_fmt
+            .replace("{schema}", &schema)
+            .replace("{table}", &table),
+        confirm_buffer: String::new(),
+    }));
+    model.set_action(ActionId::Submit);
+    Update::render()
 }
 
 fn collect_mutation_specs(
@@ -4629,6 +4591,44 @@ mod tests {
                 type_text,
                 ..
             }) if kind == "drop_column" && object_name == "email" && type_text.is_empty()
+        ));
+    }
+
+    #[test]
+    fn structure_panel_target_enables_ddl_without_grid_base() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        // No grid base table — only structure inspector target.
+        model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+            open: true,
+            title: "public.orders structure".into(),
+            kind_label: "structure".into(),
+            text: "id int\n--- quick actions ---".into(),
+            hex: String::new(),
+            byte_len: 0,
+            original_byte_len: None,
+            stale: false,
+            structure_schema: Some("public".into()),
+            structure_table: Some("orders".into()),
+        };
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::DdlAddColumn);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::DdlReview {
+                kind,
+                schema,
+                table,
+                ..
+            }) if kind == "add_column" && schema == "public" && table == "orders"
         ));
     }
 

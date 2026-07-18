@@ -13,6 +13,9 @@ pub struct InspectorModel {
     pub byte_len: u64,
     pub original_byte_len: Option<u64>,
     pub stale: bool,
+    /// When structure is open, DDL quick actions target this relation.
+    pub structure_schema: Option<String>,
+    pub structure_table: Option<String>,
 }
 
 impl InspectorModel {
@@ -41,7 +44,18 @@ impl InspectorModel {
             byte_len: cell.byte_len,
             original_byte_len: cell.original_byte_len,
             stale,
+            structure_schema: None,
+            structure_table: None,
         }
+    }
+
+    /// True when this inspector holds a relation structure target for DDL.
+    #[must_use]
+    pub fn has_structure_target(&self) -> bool {
+        self.open
+            && self.kind_label == "structure"
+            && self.structure_schema.is_some()
+            && self.structure_table.is_some()
     }
 
     #[must_use]
