@@ -683,6 +683,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let pg_restore = action_label(model, ActionId::PgRestore, "PgRestore");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
+    let close_insp = action_label(model, ActionId::CloseInspector, "CloseInsp");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
     let submit = action_label(model, ActionId::Submit, "Submit");
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
@@ -1375,6 +1376,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::Inspect,
                         label: inspect.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CloseInspector,
+                        label: close_insp.as_str(),
                         enabled: true,
                         style: None,
                     },

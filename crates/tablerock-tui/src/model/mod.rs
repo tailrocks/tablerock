@@ -80,6 +80,8 @@ pub enum ActionId {
     RunScript,
     CancelQuery,
     Inspect,
+    /// Close the inspector panel if open.
+    CloseInspector,
     /// Open or commit SQL completion for the active editor.
     Complete,
     /// Open/refresh query history panel.

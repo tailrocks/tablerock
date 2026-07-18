@@ -484,6 +484,8 @@ impl WorkbenchModel {
     }
 
     /// Open inspector for the cursor cell of the active grid.
+    ///
+    /// Toggles closed when the inspector is already open on the same cursor title.
     pub fn inspect_cursor(&mut self) {
         let Some(grid) = self.active_grid() else {
             self.inspector = InspectorModel::default();
@@ -496,7 +498,16 @@ impl WorkbenchModel {
             .cloned()
             .unwrap_or_else(|| format!("col{}", grid.cursor_col));
         let title = format!("r{} · {col_name}", grid.cursor_row);
+        if self.inspector.open && self.inspector.title == title {
+            self.inspector = InspectorModel::default();
+            return;
+        }
         self.inspector = InspectorModel::from_cell(title, &cell, false);
+    }
+
+    /// Force-close the inspector panel.
+    pub fn close_inspector(&mut self) {
+        self.inspector = InspectorModel::default();
     }
 
     /// Promote the active preview tab to durable (edit/pin/filter/sort).
@@ -785,5 +796,32 @@ mod tests {
             wb.active_grid().unwrap().operation,
             GridOperationState::Completed
         );
+    }
+
+    #[test]
+    fn inspect_cursor_toggles_closed_on_same_cell() {
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("t");
+        if let Some(grid) = wb.active_grid_mut() {
+            grid.columns = vec!["id".into()];
+            grid.row_count = 1;
+            grid.cells = vec![crate::model::grid::ProjectedCell {
+                text: "1".into(),
+                distinction: crate::model::grid::CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            }];
+            grid.cursor_row = 0;
+            grid.cursor_col = 0;
+        }
+        wb.inspect_cursor();
+        assert!(wb.inspector.open);
+        assert!(wb.inspector.title.contains("id"));
+        wb.inspect_cursor();
+        assert!(!wb.inspector.open);
+        wb.inspect_cursor();
+        assert!(wb.inspector.open);
+        wb.close_inspector();
+        assert!(!wb.inspector.open);
     }
 }

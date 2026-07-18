@@ -3151,6 +3151,13 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.workbench_mut().inspect_cursor();
             Update::render()
         }
+        ActionId::CloseInspector if model.screen() == Screen::Workbench => {
+            if !model.workbench().inspector.open {
+                return Update::unchanged();
+            }
+            model.workbench_mut().close_inspector();
+            Update::render()
+        }
         ActionId::Complete if model.screen() == Screen::Workbench => {
             if model.workbench().completion.is_some() {
                 let _ = model.workbench_mut().commit_completion(None);
@@ -4255,6 +4262,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::RunScript
         | ActionId::CancelQuery
         | ActionId::Inspect
+        | ActionId::CloseInspector
         | ActionId::Complete
         | ActionId::History
         | ActionId::RestoreHistory
@@ -5724,6 +5732,7 @@ fn cycle_action(
                 ActionId::PgRestore,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
+                ActionId::CloseInspector,
                 ActionId::CloseTab,
                 ActionId::Disconnect,
                 ActionId::SessionHealth,
