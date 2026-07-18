@@ -233,6 +233,12 @@ impl WorkbenchModel {
         }
     }
 
+    /// Wrap-around previous/next for tests and callers.
+    #[must_use]
+    pub fn selected_tab_index(&self) -> usize {
+        self.selected_tab
+    }
+
     pub fn bump_context_revision(&mut self) -> u64 {
         self.context_revision = self.context_revision.saturating_add(1);
         self.context_revision
@@ -714,6 +720,24 @@ mod tests {
         ));
         wb.force_close_tab(wb.selected_tab);
         assert!(wb.tabs.iter().all(|t| t.title != "users"));
+    }
+
+    #[test]
+    fn next_and_previous_tab_wrap() {
+        let mut wb = WorkbenchModel::default();
+        let base = wb.tabs.len();
+        wb.open_preview_tab("a");
+        wb.open_preview_tab("b");
+        wb.open_preview_tab("c");
+        assert_eq!(wb.tabs.len(), base + 3);
+        let last = wb.tabs.len() - 1;
+        assert_eq!(wb.selected_tab_index(), last);
+        wb.select_next_tab();
+        assert_eq!(wb.selected_tab_index(), 0);
+        wb.select_previous_tab();
+        assert_eq!(wb.selected_tab_index(), last);
+        wb.select_previous_tab();
+        assert_eq!(wb.selected_tab_index(), last - 1);
     }
 
     #[test]

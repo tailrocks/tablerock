@@ -3255,6 +3255,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.workbench_mut().select_next_tab();
             Update::render()
         }
+        ActionId::PrevTab if model.screen() == Screen::Workbench => {
+            model.workbench_mut().select_previous_tab();
+            Update::render()
+        }
         ActionId::PinTab if model.screen() == Screen::Workbench => {
             model.workbench_mut().promote_active_tab();
             Update::render()
@@ -4827,6 +4831,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::SessionHealth
         | ActionId::NextDatabase
         | ActionId::NextTab
+        | ActionId::PrevTab
         | ActionId::CloseTab
         | ActionId::PinTab
         | ActionId::NewSql
@@ -6462,6 +6467,7 @@ fn cycle_action(
             Screen::Workbench => &[
                 ActionId::NextDatabase,
                 ActionId::NextTab,
+                ActionId::PrevTab,
                 ActionId::QuickSwitch,
                 ActionId::PinTab,
                 ActionId::NewSql,

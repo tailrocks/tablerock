@@ -613,6 +613,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let disconnect = action_label(model, ActionId::Disconnect, "Disconnect");
     let next_db = action_label(model, ActionId::NextDatabase, "Next DB");
     let next_tab = action_label(model, ActionId::NextTab, "Next Tab");
+    let prev_tab = action_label(model, ActionId::PrevTab, "Prev Tab");
     let quick = action_label(model, ActionId::QuickSwitch, "Switch");
     let pin_tab = action_label(model, ActionId::PinTab, "Pin");
     let new_sql = action_label(model, ActionId::NewSql, "SQL");
@@ -832,6 +833,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::NextDatabase,
                         label: next_db.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PrevTab,
+                        label: prev_tab.as_str(),
                         enabled: true,
                         style: None,
                     },

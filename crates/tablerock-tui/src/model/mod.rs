@@ -72,6 +72,8 @@ pub enum ActionId {
     /// Cycle database selector (workbench).
     NextDatabase,
     NextTab,
+    /// Select previous workbench tab (wrap).
+    PrevTab,
     CloseTab,
     PinTab,
     NewSql,
