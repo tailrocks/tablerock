@@ -3827,6 +3827,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyResultToken if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            if grid.result_token == 0 {
+                return Update::unchanged();
+            }
+            let text = grid.result_token.to_string();
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied result token {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTableName if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5604,6 +5624,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyStatus
         | ActionId::CopyQueryId
         | ActionId::CopyServerProgress
+        | ActionId::CopyResultToken
         | ActionId::CopyTableName
         | ActionId::CopySchema
         | ActionId::CopyBareTable
@@ -7346,6 +7367,7 @@ fn cycle_action(
                 ActionId::CopyStatus,
                 ActionId::CopyQueryId,
                 ActionId::CopyServerProgress,
+                ActionId::CopyResultToken,
                 ActionId::CopyTableName,
                 ActionId::CopySchema,
                 ActionId::CopyBareTable,
@@ -9230,6 +9252,31 @@ mod tests {
                 assert!(text.contains("width") || text.contains("16"), "{text}");
             }
             other => panic!("expected layout json copy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copy_result_token_emits_when_nonzero() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyResultToken);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.result_token = 42;
+        }
+        model.set_action(ActionId::CopyResultToken);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "42"),
+            other => panic!("expected result token copy, got {other:?}"),
         }
     }
 
