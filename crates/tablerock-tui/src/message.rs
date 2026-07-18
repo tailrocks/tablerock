@@ -78,6 +78,15 @@ pub enum EngineMsg {
         request_token: u64,
         reason: FailureProjection,
     },
+    TestOk {
+        request_token: u64,
+        identity: String,
+        elapsed_millis: u64,
+    },
+    TestFailed {
+        request_token: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

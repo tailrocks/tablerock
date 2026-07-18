@@ -83,6 +83,16 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::TestConnection {
+                request_token,
+                draft,
+            } => {
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = test_connection(request_token, draft).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
         }
     }
 }
@@ -118,6 +128,131 @@ async fn load_profile_list(
         Err(_) => Message::Profiles(ProfilesMsg::ListFailed {
             request_token,
             reason: FailureProjection::Label("task-failed".into()),
+        }),
+    }
+}
+
+async fn test_connection(request_token: RequestToken, draft: ConnectionDraft) -> Message {
+    use tablerock_engine::{
+        ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
+        DriverSession, PostgresConnectConfig, PostgresSession, PostgresTlsMode, RedisConnectConfig,
+        RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession, RedisTlsMode,
+    };
+    let host = draft.host.clone();
+    let port: u16 = match draft.port.parse() {
+        Ok(port) => port,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::TestFailed {
+                request_token,
+                reason: FailureProjection::Label("invalid port".into()),
+            });
+        }
+    };
+    let text = |value: &str| {
+        tablerock_core::BoundedText::copy_from_str(value, tablerock_core::ByteLimit::new(128))
+            .map_err(|e| e.to_string())
+    };
+    let pg_tls = match draft.tls_mode {
+        TlsModeSpec::Off => PostgresTlsMode::Disabled,
+        TlsModeSpec::VerifyCa | TlsModeSpec::VerifyFull => PostgresTlsMode::Required,
+    };
+    let ch_tls = match draft.tls_mode {
+        TlsModeSpec::Off => ClickHouseTlsMode::Disable,
+        TlsModeSpec::VerifyCa | TlsModeSpec::VerifyFull => ClickHouseTlsMode::Require,
+    };
+    let redis_tls = match draft.tls_mode {
+        TlsModeSpec::Off => RedisTlsMode::Disable,
+        TlsModeSpec::VerifyCa | TlsModeSpec::VerifyFull => RedisTlsMode::Require,
+    };
+    let result = async {
+        match draft.engine {
+            EngineKind::PostgreSql => {
+                // Password is not yet on PostgresConnectConfig; trust/peer fixtures work
+                // without it. Wire authenticated connect when engine grows a secret bag.
+                let session = PostgresSession::connect(&PostgresConnectConfig::new(
+                    text(&host)?,
+                    port,
+                    text(if draft.database.is_empty() {
+                        "postgres"
+                    } else {
+                        &draft.database
+                    })?,
+                    text(if draft.username.is_empty() {
+                        "postgres"
+                    } else {
+                        &draft.username
+                    })?,
+                    pg_tls,
+                ))
+                .await
+                .map_err(|e| e.to_string())?;
+                let described = session.describe().await.map_err(|e| e.to_string())?;
+                let _ = session.shutdown().await;
+                Ok((described.identity().to_owned(), described.elapsed_millis()))
+            }
+            EngineKind::ClickHouse => {
+                // ClickHouse connect is lazy; describe_server performs the round-trip.
+                // Password wiring waits on connect config secret bag (engine gap).
+                let _ = &draft.password;
+                let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
+                    text(&host)?,
+                    port,
+                    text(if draft.database.is_empty() {
+                        "default"
+                    } else {
+                        &draft.database
+                    })?,
+                    text(if draft.username.is_empty() {
+                        "default"
+                    } else {
+                        &draft.username
+                    })?,
+                    ch_tls,
+                    ClickHouseCompression::None,
+                ));
+                let described = session.describe().await.map_err(|e| e.to_string())?;
+                let _ = Box::new(session).shutdown().await;
+                Ok((described.identity().to_owned(), described.elapsed_millis()))
+            }
+            EngineKind::Redis => {
+                let mut security = RedisConnectionSecurity::new();
+                if !draft.password.is_empty() || !draft.username.is_empty() {
+                    let username = if draft.username.is_empty() {
+                        None
+                    } else {
+                        Some(draft.username.as_str())
+                    };
+                    security = security
+                        .with_credentials(RedisCredentials::new(username, draft.password.as_str()));
+                }
+                let session = RedisSession::connect(
+                    &RedisConnectConfig::new(
+                        text(&host)?,
+                        port,
+                        draft.database.parse().unwrap_or(0),
+                        RedisProtocol::Resp3,
+                        redis_tls,
+                    ),
+                    security,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                let described = session.describe().await.map_err(|e| e.to_string())?;
+                let _ = Box::new(session).shutdown().await;
+                Ok((described.identity().to_owned(), described.elapsed_millis()))
+            }
+        }
+    }
+    .await;
+    match result {
+        Ok((identity, elapsed_millis)) => Message::Engine(tablerock_tui::EngineMsg::TestOk {
+            request_token,
+            identity,
+            elapsed_millis,
+        }),
+        Err(label) => Message::Engine(tablerock_tui::EngineMsg::TestFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
         }),
     }
 }

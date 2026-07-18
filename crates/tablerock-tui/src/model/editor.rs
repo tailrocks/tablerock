@@ -12,6 +12,7 @@ pub enum EditorField {
     Port,
     Database,
     Username,
+    Password,
     PasswordSource,
     TlsMode,
 }
@@ -45,6 +46,7 @@ pub struct ConnectionFormModel {
     pub focused: EditorField,
     pub plaintext_acknowledged: bool,
     pub validation_error: Option<String>,
+    pub test_status: Option<String>,
 }
 
 impl Default for ConnectionFormModel {
@@ -64,6 +66,7 @@ impl Default for ConnectionFormModel {
             focused: EditorField::Name,
             plaintext_acknowledged: false,
             validation_error: None,
+            test_status: None,
         }
     }
 }
@@ -80,6 +83,13 @@ impl ConnectionFormModel {
             EditorField::Port => self.port.clone(),
             EditorField::Database => self.database.clone(),
             EditorField::Username => self.username.clone(),
+            EditorField::Password => {
+                if self.password.is_empty() {
+                    String::new()
+                } else {
+                    "••••".into()
+                }
+            }
             EditorField::PasswordSource => match self.password_source {
                 PasswordSourceChoice::PromptOnConnect => "prompt".into(),
                 PasswordSourceChoice::DangerousPlaintext => "plaintext".into(),
@@ -121,7 +131,8 @@ impl ConnectionFormModel {
             EditorField::Host => EditorField::Port,
             EditorField::Port => EditorField::Database,
             EditorField::Database => EditorField::Username,
-            EditorField::Username => EditorField::PasswordSource,
+            EditorField::Username => EditorField::Password,
+            EditorField::Password => EditorField::PasswordSource,
             EditorField::PasswordSource => EditorField::TlsMode,
             EditorField::TlsMode => EditorField::Engine,
         };

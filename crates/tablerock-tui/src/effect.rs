@@ -72,4 +72,9 @@ pub enum Effect {
         request_token: RequestToken,
         draft: ConnectionDraft,
     },
+    /// Connect, describe server, disconnect — do not persist or register.
+    TestConnection {
+        request_token: RequestToken,
+        draft: ConnectionDraft,
+    },
 }

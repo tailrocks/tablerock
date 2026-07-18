@@ -45,6 +45,7 @@ pub enum ActionId {
     Open,
     New,
     Save,
+    Test,
     Cancel,
     Quit,
 }

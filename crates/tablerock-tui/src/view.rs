@@ -184,6 +184,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let open = action_label(model, ActionId::Open, "Open");
     let new = action_label(model, ActionId::New, "New");
     let save = action_label(model, ActionId::Save, "Save");
+    let test = action_label(model, ActionId::Test, "Test");
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
     let quit = action_label(model, ActionId::Quit, "Quit");
     let actions: Vec<Action<'_, ActionId>> = match model.screen() {
@@ -191,6 +192,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
             Action {
                 id: ActionId::Save,
                 label: save.as_str(),
+                enabled: true,
+                style: None,
+            },
+            Action {
+                id: ActionId::Test,
+                label: test.as_str(),
                 enabled: true,
                 style: None,
             },
@@ -385,6 +392,7 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
                 EditorField::Port,
                 EditorField::Database,
                 EditorField::Username,
+                EditorField::Password,
                 EditorField::PasswordSource,
                 EditorField::TlsMode,
             ] {
@@ -413,6 +421,24 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
                 && y < max_y
             {
                 let clipped: String = format!("! {error}").chars().take(width as usize).collect();
+                ratatui_core::text::Line::from(clipped).render(
+                    Rect {
+                        x,
+                        y,
+                        width,
+                        height: 1,
+                    },
+                    frame.buffer_mut(),
+                );
+                y = y.saturating_add(1);
+            }
+            if let Some(status) = &model.editor().test_status
+                && y < max_y
+            {
+                let clipped: String = format!("test: {status}")
+                    .chars()
+                    .take(width as usize)
+                    .collect();
                 ratatui_core::text::Line::from(clipped).render(
                     Rect {
                         x,

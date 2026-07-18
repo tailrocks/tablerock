@@ -194,8 +194,22 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::HealthOk { .. } | EngineMsg::HealthFailed { .. }) => {
-            // Health UI lands with plan 006; accept for token plumbing only.
             Update::unchanged()
+        }
+        Message::Engine(EngineMsg::TestOk {
+            identity,
+            elapsed_millis,
+            ..
+        }) => {
+            model.editor_mut().test_status = Some(format!("ok: {identity} ({elapsed_millis} ms)"));
+            Update::render()
+        }
+        Message::Engine(EngineMsg::TestFailed { reason, .. }) => {
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            model.editor_mut().test_status = Some(format!("failed: {label}"));
+            Update::render()
         }
         Message::FocusNext => {
             if model.move_focus(false) {
@@ -277,19 +291,38 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::Test if model.screen() == Screen::Editor => {
+            if !model.editor_mut().validate() {
+                return Update::render();
+            }
+            let token = model.mint_request_token();
+            model.editor_mut().test_status = Some("testing…".into());
+            Update {
+                render: true,
+                effect: Some(Effect::TestConnection {
+                    request_token: token,
+                    draft: connection_draft_from_editor(model.editor()),
+                }),
+            }
+        }
         ActionId::Cancel if model.screen() == Screen::Editor => {
             model.set_screen(Screen::Connections);
             model.set_action(ActionId::Open);
             Update::render()
         }
         ActionId::Quit => Update::with_effect(Effect::Exit),
-        ActionId::Save | ActionId::Cancel => Update::unchanged(),
+        ActionId::Save | ActionId::Test | ActionId::Cancel => Update::unchanged(),
     }
 }
 
 fn cycle_action(screen: Screen, current: ActionId, reverse: bool) -> ActionId {
     let actions: &[ActionId] = match screen {
-        Screen::Editor => &[ActionId::Save, ActionId::Cancel, ActionId::Quit],
+        Screen::Editor => &[
+            ActionId::Save,
+            ActionId::Test,
+            ActionId::Cancel,
+            ActionId::Quit,
+        ],
         Screen::Connections | Screen::ConnectionPicker => {
             &[ActionId::Open, ActionId::New, ActionId::Quit]
         }
@@ -342,6 +375,7 @@ fn apply_editor_text(model: &mut Model, text: &str) {
         EditorField::Port => editor.port.push_str(text),
         EditorField::Database => editor.database.push_str(text),
         EditorField::Username => editor.username.push_str(text),
+        EditorField::Password => editor.password.push_str(text),
         EditorField::PasswordSource => {
             editor.password_source = match editor.password_source {
                 crate::model::editor::PasswordSourceChoice::PromptOnConnect => {
@@ -467,6 +501,58 @@ mod tests {
         assert_eq!(
             model.profiles().status_line(),
             "Profiles: error (unavailable)"
+        );
+    }
+
+    #[test]
+    fn test_action_emits_effect_and_records_outcome() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Editor);
+        model.set_action(ActionId::Test);
+        model.editor_mut().name = "local".into();
+        model.editor_mut().host = "127.0.0.1".into();
+        model.editor_mut().port = "5432".into();
+        // Focus Actions so Activate would work; call action path via ActionId match.
+        for _ in 0..4 {
+            let _ = update(&mut model, Message::FocusNext);
+        }
+        // selected action may have moved; set Test again after focus moves to Actions
+        model.set_action(ActionId::Test);
+        let result = update(&mut model, Message::Activate);
+        assert!(matches!(
+            result.effects().next(),
+            Some(Effect::TestConnection {
+                request_token: 1,
+                ..
+            })
+        ));
+        assert_eq!(model.editor().test_status.as_deref(), Some("testing…"));
+
+        let ok = update(
+            &mut model,
+            Message::Engine(EngineMsg::TestOk {
+                request_token: 1,
+                identity: "PostgreSQL 17".into(),
+                elapsed_millis: 12,
+            }),
+        );
+        assert!(ok.needs_render());
+        assert_eq!(
+            model.editor().test_status.as_deref(),
+            Some("ok: PostgreSQL 17 (12 ms)")
+        );
+
+        let fail = update(
+            &mut model,
+            Message::Engine(EngineMsg::TestFailed {
+                request_token: 1,
+                reason: FailureProjection::Label("connect".into()),
+            }),
+        );
+        assert!(fail.needs_render());
+        assert_eq!(
+            model.editor().test_status.as_deref(),
+            Some("failed: connect")
         );
     }
 }
