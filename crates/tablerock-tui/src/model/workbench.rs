@@ -126,6 +126,8 @@ pub struct WorkbenchModel {
     pub redis_stage_target: Option<(String, String, String)>,
     /// Staged Redis collection mutation specs (review/apply handle path).
     pub redis_staged: Vec<crate::effect::MutationChangeSpec>,
+    /// Next collection skip for RMore (hash/set/zset pagination).
+    pub redis_collection_skip: Option<u64>,
 }
 
 impl Default for WorkbenchModel {
@@ -175,6 +177,7 @@ impl Default for WorkbenchModel {
             result_sections: ResultSectionsModel::default(),
             redis_stage_target: None,
             redis_staged: Vec::new(),
+            redis_collection_skip: None,
         }
     }
 }

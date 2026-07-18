@@ -428,6 +428,8 @@ pub enum EngineMsg {
         key: String,
         kind_label: String,
         lines: Vec<String>,
+        /// When set, more collection entries exist; open again with this skip.
+        next_collection_skip: Option<u64>,
     },
     RedisKeyViewFailed {
         request_token: u64,

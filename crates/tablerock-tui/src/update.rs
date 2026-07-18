@@ -930,6 +930,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                                     session_id_hex,
                                     context_revision,
                                     key,
+                                    collection_skip: 0,
                                 }),
                             };
                         }
@@ -1391,6 +1392,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             key,
             kind_label,
             lines,
+            next_collection_skip,
             ..
         }) => {
             if model.workbench().context_revision != context_revision {
@@ -1408,6 +1410,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             model.workbench_mut().redis_stage_target =
                 Some((logical_db.clone(), key.clone(), kind_label.clone()));
+            model.workbench_mut().redis_collection_skip = next_collection_skip;
             model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
                 open: true,
                 title: format!("redis:{key}"),
@@ -2912,6 +2915,32 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::StageRedisRemove if model.screen() == Screen::Workbench => {
             open_redis_stage_confirm(model, false)
         }
+        ActionId::RedisCollectionMore if model.screen() == Screen::Workbench => {
+            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+                return Update::unchanged();
+            };
+            let Some(skip) = model.workbench().redis_collection_skip else {
+                if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                    grid.error_label = Some("no more collection pages".into());
+                }
+                return Update::render();
+            };
+            let Some((_, key, _)) = model.workbench().redis_stage_target.clone() else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            let context_revision = model.workbench().context_revision;
+            Update {
+                render: true,
+                effect: Some(Effect::OpenRedisKey {
+                    request_token: token,
+                    session_id_hex,
+                    context_revision,
+                    key,
+                    collection_skip: skip,
+                }),
+            }
+        }
         ActionId::Cancel
             if model.screen() == Screen::Workbench
                 && model
@@ -3356,6 +3385,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::RedisInfo
         | ActionId::StageRedisAdd
         | ActionId::StageRedisRemove
+        | ActionId::RedisCollectionMore
         | ActionId::ExportCsv
         | ActionId::ExportJson
         | ActionId::ExportTsv
@@ -4324,6 +4354,7 @@ fn cycle_action(
                 ActionId::RedisInfo,
                 ActionId::StageRedisAdd,
                 ActionId::StageRedisRemove,
+                ActionId::RedisCollectionMore,
                 ActionId::ExportCsv,
                 ActionId::ExportJson,
                 ActionId::ExportTsv,
@@ -4407,6 +4438,7 @@ fn activate_catalog_node(model: &mut Model) -> Update {
                     session_id_hex,
                     context_revision,
                     key: node.label.clone(),
+                    collection_skip: 0,
                 }),
             };
         }
@@ -4896,6 +4928,46 @@ mod tests {
     }
 
     #[test]
+    fn redis_collection_more_uses_stored_skip() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "0000000000000001000000000000000e".into(),
+            identity: "redis".into(),
+            temporary: true,
+            engine_label: "Redis".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().engine_kind = "Redis".into();
+        model.workbench_mut().redis_stage_target =
+            Some(("0".into(), "bigset".into(), "set".into()));
+        model.workbench_mut().redis_collection_skip = Some(32);
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::RedisCollectionMore);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::OpenRedisKey {
+                key,
+                collection_skip,
+                ..
+            }) => {
+                assert_eq!(&*key, "bigset");
+                assert_eq!(*collection_skip, 32);
+            }
+            other => panic!("expected OpenRedisKey with skip, got {other:?}"),
+        }
+        // No skip → fail closed label.
+        model.workbench_mut().redis_collection_skip = None;
+        model.set_action(ActionId::RedisCollectionMore);
+        let _ = update(&mut model, Message::Activate);
+        assert!(model
+            .workbench()
+            .active_grid()
+            .and_then(|g| g.error_label.as_deref())
+            .is_some_and(|l| l.contains("no more")));
+    }
+
+    #[test]
     fn stage_redis_hash_add_then_review_emits_collection_specs() {
         let mut model = Model::default();
         model.set_screen(Screen::Workbench);
@@ -4917,7 +4989,8 @@ mod tests {
                 context_revision: rev,
                 key: "myhash".into(),
                 kind_label: "hash".into(),
-                lines: vec!["type: Hash".into(), "HSCAN first page: 0 entries".into()],
+                lines: vec!["type: Hash".into(), "HSCAN page skip=0 take=0 (end)".into()],
+                next_collection_skip: None,
             }),
         );
         assert_eq!(

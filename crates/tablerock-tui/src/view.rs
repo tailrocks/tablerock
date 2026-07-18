@@ -545,6 +545,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let redis_info = action_label(model, ActionId::RedisInfo, "RedisInfo");
     let redis_add = action_label(model, ActionId::StageRedisAdd, "RAdd");
     let redis_rm = action_label(model, ActionId::StageRedisRemove, "RRem");
+    let redis_more = action_label(model, ActionId::RedisCollectionMore, "RMore");
     let export_csv = action_label(model, ActionId::ExportCsv, "ExpCsv");
     let export_json = action_label(model, ActionId::ExportJson, "ExpJson");
     let export_tsv = action_label(model, ActionId::ExportTsv, "ExpTsv");
@@ -907,6 +908,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::StageRedisRemove,
                         label: redis_rm.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RedisCollectionMore,
+                        label: redis_more.as_str(),
                         enabled: true,
                         style: None,
                     },

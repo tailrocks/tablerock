@@ -173,6 +173,8 @@ pub enum ActionId {
     StageRedisAdd,
     /// Stage a Redis collection remove (HDEL/SREM/ZREM) for the open key view.
     StageRedisRemove,
+    /// Load next page of hash/set/zset collection entries for the open key.
+    RedisCollectionMore,
     /// Export loaded result as CSV (path via paste/status; default export.csv).
     ExportCsv,
     ExportJson,

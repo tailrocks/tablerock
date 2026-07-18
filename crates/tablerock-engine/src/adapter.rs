@@ -364,11 +364,15 @@ pub trait DriverSession: Send + Sync {
     }
 
     /// Redis-only: load a type-specific key view as display lines.
+    ///
+    /// `collection_skip` skips entries for hash/set/zset pages (0 = first page).
+    /// Returns `next_skip` when more collection entries remain.
     fn redis_key_view_lines<'a>(
         &'a self,
         key: &'a [u8],
-    ) -> DriverFuture<'a, Result<(String, Vec<String>), AdapterError>> {
-        let _ = key;
+        collection_skip: u64,
+    ) -> DriverFuture<'a, Result<(String, Vec<String>, Option<u64>), AdapterError>> {
+        let _ = (key, collection_skip);
         Box::pin(async {
             Err(AdapterError::new(
                 self.engine(),
@@ -834,7 +838,8 @@ impl DriverSession for RedisSession {
     fn redis_key_view_lines<'a>(
         &'a self,
         key: &'a [u8],
-    ) -> DriverFuture<'a, Result<(String, Vec<String>), AdapterError>> {
+        collection_skip: u64,
+    ) -> DriverFuture<'a, Result<(String, Vec<String>, Option<u64>), AdapterError>> {
         Box::pin(async move {
             use tablerock_core::{BoundedBytes, ByteLimit, RedisKeyKind};
             let key = BoundedBytes::copy_from_slice(key, ByteLimit::new(key.len() as u64 + 1))
@@ -860,6 +865,7 @@ impl DriverSession for RedisSession {
                 RedisKeyKind::Stream => "stream",
                 RedisKeyKind::Unknown => "unknown",
             };
+            let mut next_skip = None;
             match kind {
                 RedisKeyKind::String => {
                     if let Ok(Some(v)) = self.read_binary(&key, 4 * 1024).await {
@@ -901,100 +907,19 @@ impl DriverSession for RedisSession {
                     }
                 }
                 RedisKeyKind::Hash | RedisKeyKind::Set | RedisKeyKind::SortedSet => {
-                    use tablerock_core::{
-                        IdParts, PageDelivery, PageIdentity, PageLimits, ResultId, Revision,
-                    };
-                    use crate::{RedisCollectionScanKind, RedisCollectionScanOptions};
-                    let scan_kind = match kind {
-                        RedisKeyKind::Hash => RedisCollectionScanKind::Hash,
-                        RedisKeyKind::Set => RedisCollectionScanKind::Set,
-                        RedisKeyKind::SortedSet => RedisCollectionScanKind::SortedSet,
-                        _ => unreachable!(),
-                    };
-                    let cmd = match scan_kind {
-                        RedisCollectionScanKind::Hash => "HSCAN",
-                        RedisCollectionScanKind::Set => "SSCAN",
-                        RedisCollectionScanKind::SortedSet => "ZSCAN",
-                    };
-                    let options = RedisCollectionScanOptions::new(
-                        PageLimits::new(32, 2, 64 * 1024, 256),
-                        256,
-                        16,
-                        64,
-                        64 * 1024,
-                        16,
-                    );
-                    match self.scan_collection(key.clone(), scan_kind, options) {
-                        Ok(mut stream) => {
-                            let identity = PageIdentity::new(
-                                ResultId::from_parts(IdParts::new(1, 9_100).unwrap())
-                                    .unwrap(),
-                                Revision::INITIAL,
-                                Engine::Redis,
-                            );
-                            match stream.next_page(identity, 0).await {
-                                Ok(Some(page)) => {
-                                    let rows = page.envelope().row_count();
-                                    lines.push(format!(
-                                        "{cmd} first page: {rows} entr{}",
-                                        if rows == 1 { "y" } else { "ies" }
-                                    ));
-                                    for row in 0..rows {
-                                        let a = page
-                                            .cell(row, 0)
-                                            .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
-                                            .unwrap_or_default();
-                                        match scan_kind {
-                                            RedisCollectionScanKind::Set => {
-                                                lines.push(format!("  {a}"));
-                                            }
-                                            RedisCollectionScanKind::Hash
-                                            | RedisCollectionScanKind::SortedSet => {
-                                                let b = page
-                                                    .cell(row, 1)
-                                                    .map(|c| {
-                                                        if c.kind()
-                                                            == tablerock_core::ValueKind::Float64
-                                                        {
-                                                            // zset score stored as f64 bits in cell.
-                                                            let mut buf = [0u8; 8];
-                                                            let bytes = c.bytes();
-                                                            let n = bytes.len().min(8);
-                                                            buf[8 - n..]
-                                                                .copy_from_slice(&bytes[..n]);
-                                                            f64::from_bits(u64::from_be_bytes(buf))
-                                                                .to_string()
-                                                        } else {
-                                                            String::from_utf8_lossy(c.bytes())
-                                                                .into_owned()
-                                                        }
-                                                    })
-                                                    .unwrap_or_default();
-                                                lines.push(format!("  {a} = {b}"));
-                                            }
-                                        }
-                                    }
-                                    if page.envelope().delivery() == PageDelivery::Partial {
-                                        lines.push("  … more (bounded page; re-open for next)"
-                                            .into());
-                                    }
-                                }
-                                Ok(None) => lines.push(format!("{cmd}: empty")),
-                                Err(error) => {
-                                    lines.push(format!("{cmd} failed: {}", map_redis(error)));
-                                }
-                            }
+                    match redis_collection_page_lines(self, &key, kind, collection_skip).await {
+                        Ok((page_lines, next)) => {
+                            lines.extend(page_lines);
+                            next_skip = next;
                         }
-                        Err(error) => {
-                            lines.push(format!("{cmd} unavailable: {}", map_redis(error)));
-                        }
+                        Err(error) => lines.push(format!("collection scan failed: {error}")),
                     }
                 }
                 RedisKeyKind::Unknown => {
                     lines.push("key missing or type unknown".into());
                 }
             }
-            Ok((kind_label.into(), lines))
+            Ok((kind_label.into(), lines, next_skip))
         })
     }
 
@@ -1079,6 +1004,128 @@ fn map_clickhouse(error: ClickHouseError) -> AdapterError {
         ClickHouseError::Page(_) => AdapterFailureClass::Page,
     };
     AdapterError::new(Engine::ClickHouse, class)
+}
+
+/// Bounded collection page with skip/take. Rescans from 0 and skips entries
+/// so next-page does not require holding stream state across effects.
+async fn redis_collection_page_lines(
+    session: &RedisSession,
+    key: &tablerock_core::BoundedBytes,
+    kind: tablerock_core::RedisKeyKind,
+    skip: u64,
+) -> Result<(Vec<String>, Option<u64>), AdapterError> {
+    use tablerock_core::{
+        IdParts, PageIdentity, PageLimits, ResultId, Revision, ValueKind,
+    };
+    use crate::{RedisCollectionScanKind, RedisCollectionScanOptions};
+
+    const TAKE: u32 = 32;
+    let scan_kind = match kind {
+        tablerock_core::RedisKeyKind::Hash => RedisCollectionScanKind::Hash,
+        tablerock_core::RedisKeyKind::Set => RedisCollectionScanKind::Set,
+        tablerock_core::RedisKeyKind::SortedSet => RedisCollectionScanKind::SortedSet,
+        _ => {
+            return Err(AdapterError::new(
+                Engine::Redis,
+                AdapterFailureClass::InvalidRequest,
+            ));
+        }
+    };
+    let cmd = match scan_kind {
+        RedisCollectionScanKind::Hash => "HSCAN",
+        RedisCollectionScanKind::Set => "SSCAN",
+        RedisCollectionScanKind::SortedSet => "ZSCAN",
+    };
+    // Larger round budget so skip+take can rescan from the start.
+    let options = RedisCollectionScanOptions::new(
+        PageLimits::new(TAKE, 2, 64 * 1024, 256),
+        256,
+        32,
+        128,
+        128 * 1024,
+        256,
+    );
+    let mut stream = session
+        .scan_collection(key.clone(), scan_kind, options)
+        .map_err(map_redis)?;
+    let mut lines = Vec::new();
+    let mut skipped = 0_u64;
+    let mut taken = 0_u32;
+    let mut start_row = 0_u64;
+    let mut has_more = false;
+    let mut page_no = 0_u32;
+    loop {
+        let identity = PageIdentity::new(
+            ResultId::from_parts(IdParts::new(1, 9_100 + u64::from(page_no)).unwrap()).unwrap(),
+            Revision::INITIAL,
+            Engine::Redis,
+        );
+        page_no = page_no.saturating_add(1);
+        match stream.next_page(identity, start_row).await {
+            Ok(Some(page)) => {
+                let rows = page.envelope().row_count();
+                for row in 0..rows {
+                    if skipped < skip {
+                        skipped += 1;
+                        continue;
+                    }
+                    if taken >= TAKE {
+                        has_more = true;
+                        break;
+                    }
+                    let a = page
+                        .cell(row, 0)
+                        .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+                        .unwrap_or_default();
+                    match scan_kind {
+                        RedisCollectionScanKind::Set => lines.push(format!("  {a}")),
+                        RedisCollectionScanKind::Hash | RedisCollectionScanKind::SortedSet => {
+                            let b = page
+                                .cell(row, 1)
+                                .map(|c| {
+                                    if c.kind() == ValueKind::Float64 {
+                                        let mut buf = [0u8; 8];
+                                        let bytes = c.bytes();
+                                        let n = bytes.len().min(8);
+                                        buf[8 - n..].copy_from_slice(&bytes[..n]);
+                                        f64::from_bits(u64::from_be_bytes(buf)).to_string()
+                                    } else {
+                                        String::from_utf8_lossy(c.bytes()).into_owned()
+                                    }
+                                })
+                                .unwrap_or_default();
+                            lines.push(format!("  {a} = {b}"));
+                        }
+                    }
+                    taken += 1;
+                }
+                start_row = start_row.saturating_add(u64::from(rows));
+                if has_more {
+                    break;
+                }
+                // Continue until stream complete when still filling skip/take.
+            }
+            Ok(None) => break,
+            Err(error) => return Err(map_redis(error)),
+        }
+    }
+    let mut header = vec![format!(
+        "{cmd} page skip={skip} take={taken}{}",
+        if has_more { " (more)" } else { " (end)" }
+    )];
+    if lines.is_empty() && skip == 0 {
+        header.push(format!("{cmd}: empty"));
+    }
+    header.extend(lines);
+    if has_more {
+        header.push("  … more (RMore for next page)".into());
+    }
+    let next = if has_more {
+        Some(skip.saturating_add(u64::from(taken)))
+    } else {
+        None
+    };
+    Ok((header, next))
 }
 
 fn map_redis(error: RedisError) -> AdapterError {

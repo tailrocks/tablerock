@@ -601,6 +601,7 @@ impl EffectExecutor {
                 session_id_hex,
                 context_revision,
                 key,
+                collection_skip,
             } => {
                 let sessions = Arc::clone(&self.sessions);
                 let ingress = self.ingress.clone();
@@ -611,6 +612,7 @@ impl EffectExecutor {
                         session_id_hex,
                         context_revision,
                         key,
+                        collection_skip,
                     )
                     .await;
                     let _ = ingress.try_send_event(message);
@@ -4297,6 +4299,7 @@ async fn open_redis_key(
     session_id_hex: String,
     context_revision: u64,
     key: String,
+    collection_skip: u64,
 ) -> Message {
     let session_id = match session_id_hex.parse::<SessionId>() {
         Ok(id) => id,
@@ -4319,14 +4322,20 @@ async fn open_redis_key(
             reason: FailureProjection::Label("session not registered".into()),
         });
     };
-    match session.redis_key_view_lines(key.as_bytes()).await {
-        Ok((kind_label, lines)) => Message::Engine(tablerock_tui::EngineMsg::RedisKeyViewLoaded {
-            request_token,
-            context_revision,
-            key,
-            kind_label,
-            lines,
-        }),
+    match session
+        .redis_key_view_lines(key.as_bytes(), collection_skip)
+        .await
+    {
+        Ok((kind_label, lines, next_collection_skip)) => {
+            Message::Engine(tablerock_tui::EngineMsg::RedisKeyViewLoaded {
+                request_token,
+                context_revision,
+                key,
+                kind_label,
+                lines,
+                next_collection_skip,
+            })
+        }
         Err(e) => Message::Engine(tablerock_tui::EngineMsg::RedisKeyViewFailed {
             request_token,
             context_revision,

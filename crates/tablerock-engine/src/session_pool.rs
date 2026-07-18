@@ -247,11 +247,14 @@ impl DriverSession for SessionSlot {
     fn redis_key_view_lines<'a>(
         &'a self,
         key: &'a [u8],
-    ) -> DriverFuture<'a, Result<(String, Vec<String>), AdapterError>> {
+        collection_skip: u64,
+    ) -> DriverFuture<'a, Result<(String, Vec<String>, Option<u64>), AdapterError>> {
         Box::pin(async move {
             let guard = self.state.read().await;
             match &*guard {
-                SessionState::Open(session) => session.redis_key_view_lines(key).await,
+                SessionState::Open(session) => {
+                    session.redis_key_view_lines(key, collection_skip).await
+                }
                 SessionState::Closed => Err(AdapterError::new(
                     self.engine,
                     AdapterFailureClass::Connection,

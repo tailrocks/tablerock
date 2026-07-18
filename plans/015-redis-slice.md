@@ -122,7 +122,7 @@ extended; CI updated.
 - ~~Multi-type collection mutations (HSET/HDEL/SADD/SREM/ZADD/ZREM) on apply path~~
   (closed: evidence 312–314; key-view RAdd/RRem stage + review wired)
 - ~~MATCH pattern filter on ScanRedisKeys~~ (closed: evidence 311)
-- Collection next-page affordance beyond first-page preview
+- ~~Collection next-page affordance beyond first-page preview~~ (closed: evidence 315)
 
 ## STOP conditions
 

@@ -347,6 +347,8 @@ pub enum Effect {
         context_revision: u64,
         /// Key bytes as lossy UTF-8 or hex prefix (engine receives UTF-8 bytes).
         key: String,
+        /// Collection entry skip for hash/set/zset next-page (0 = first page).
+        collection_skip: u64,
     },
     /// Load bounded INFO snapshot into the inspector.
     LoadRedisInfo {

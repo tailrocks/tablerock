@@ -1655,8 +1655,8 @@ async fn verify_version(tag: &str) {
         );
 
         // OpenRedisKey path: collection first page via HSCAN/SSCAN/ZSCAN.
-        let (hash_label, hash_lines) = driver
-            .redis_key_view_lines(b"scan-hash")
+        let (hash_label, hash_lines, hash_next) = driver
+            .redis_key_view_lines(b"scan-hash", 0)
             .await
             .unwrap();
         assert_eq!(hash_label, "hash");
@@ -1668,7 +1668,8 @@ async fn verify_version(tag: &str) {
             hash_lines.iter().any(|l| l.contains("field") || l.contains('=')),
             "{hash_lines:?}"
         );
-        let (set_label, set_lines) = driver.redis_key_view_lines(b"scan-set").await.unwrap();
+        let _ = hash_next; // small fixture may end on first page
+        let (set_label, set_lines, _) = driver.redis_key_view_lines(b"scan-set", 0).await.unwrap();
         assert_eq!(set_label, "set");
         assert!(set_lines.iter().any(|l| l.contains("SSCAN")), "{set_lines:?}");
 
@@ -2822,6 +2823,50 @@ async fn seed(port: u16) {
 }
 
 #[tokio::test]
+async fn collection_page_skip_returns_next_for_large_set() {
+    let container = GenericImage::new("redis", "8.8.0")
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let session = RedisSession::connect(
+        &RedisConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            0,
+            RedisProtocol::Resp3,
+            RedisTlsMode::Disable,
+        ),
+        RedisConnectionSecurity::new(),
+    )
+    .await
+    .unwrap();
+    let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+    let mut c = client.get_multiplexed_async_connection().await.unwrap();
+    let key = b"tablerock-page-set";
+    for i in 0..80u32 {
+        let _: i64 = redis::cmd("SADD")
+            .arg(key)
+            .arg(format!("m{i}"))
+            .query_async(&mut c)
+            .await
+            .unwrap();
+    }
+    let driver: &dyn DriverSession = &session;
+    let (label, lines0, next0) = driver.redis_key_view_lines(key, 0).await.unwrap();
+    assert_eq!(label, "set");
+    assert!(lines0.iter().any(|l| l.contains("SSCAN")), "{lines0:?}");
+    let next = next0.expect("large set should have more after first page");
+    assert!(next > 0);
+    let (_, lines1, next1) = driver.redis_key_view_lines(key, next).await.unwrap();
+    assert!(lines1.iter().any(|l| l.contains(&format!("skip={next}"))), "{lines1:?}");
+    // Pages should not be identical (different members after skip).
+    assert_ne!(lines0, lines1);
+    let _ = next1;
+}
+
 async fn applies_multi_type_collection_mutations_non_transactionally() {
     use tablerock_engine::MutationChangeOutcome;
 
