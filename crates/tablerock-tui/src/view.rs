@@ -751,6 +751,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_env = action_label(model, ActionId::CopyEnvironment, "CopyEnv");
     let copy_safe = action_label(model, ActionId::CopySafetyLabel, "CopySafe");
     let copy_health = action_label(model, ActionId::CopyHealthLabel, "CopyHlth");
+    let copy_sid_ident = action_label(model, ActionId::CopySessionIdentity, "CopyIdent");
+    let copy_sess_st = action_label(model, ActionId::CopySessionStatus, "CopySessSt");
+    let copy_wb_st = action_label(model, ActionId::CopyWorkbenchStatus, "CopyWbSt");
     let copy_table = action_label(model, ActionId::CopyTableName, "CopyTbl");
     let copy_schema = action_label(model, ActionId::CopySchema, "CopySch");
     let copy_bare = action_label(model, ActionId::CopyBareTable, "CopyTblN");
@@ -1717,6 +1720,24 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyHealthLabel,
                         label: copy_health.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopySessionIdentity,
+                        label: copy_sid_ident.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopySessionStatus,
+                        label: copy_sess_st.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyWorkbenchStatus,
+                        label: copy_wb_st.as_str(),
                         enabled: true,
                         style: None,
                     },

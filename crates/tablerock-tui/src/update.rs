@@ -4106,6 +4106,63 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopySessionIdentity if model.screen() == Screen::Workbench => {
+            let Some(text) = model
+                .session()
+                .map(|s| s.identity.clone())
+                .filter(|s| !s.is_empty())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied session identity {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopySessionStatus if model.screen() == Screen::Workbench => {
+            let Some(text) = model
+                .session()
+                .and_then(|s| s.status.clone())
+                .filter(|s| !s.is_empty())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied session status ({})", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopyWorkbenchStatus if model.screen() == Screen::Workbench => {
+            let text = model.workbench().status.summary();
+            if text.trim().is_empty() {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied workbench status ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTableName if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -6456,6 +6513,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyEnvironment
         | ActionId::CopySafetyLabel
         | ActionId::CopyHealthLabel
+        | ActionId::CopySessionIdentity
+        | ActionId::CopySessionStatus
+        | ActionId::CopyWorkbenchStatus
         | ActionId::CopyTableName
         | ActionId::CopySchema
         | ActionId::CopyBareTable
@@ -8260,6 +8320,9 @@ fn cycle_action(
                 ActionId::CopyEnvironment,
                 ActionId::CopySafetyLabel,
                 ActionId::CopyHealthLabel,
+                ActionId::CopySessionIdentity,
+                ActionId::CopySessionStatus,
+                ActionId::CopyWorkbenchStatus,
                 ActionId::CopyTableName,
                 ActionId::CopySchema,
                 ActionId::CopyBareTable,
@@ -10837,6 +10900,30 @@ mod tests {
                 assert_eq!(text, "healthy");
             }
             other => panic!("expected health label, got {other:?}"),
+        }
+        model.set_action(ActionId::CopySessionIdentity);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "pg");
+            }
+            other => panic!("expected session identity, got {other:?}"),
+        }
+        model.set_action(ActionId::CopySessionStatus);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "connected");
+            }
+            other => panic!("expected session status, got {other:?}"),
+        }
+        model.workbench_mut().status.operation = "browsing".into();
+        model.workbench_mut().status.rows = 42;
+        model.set_action(ActionId::CopyWorkbenchStatus);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("browsing"), "{text}");
+                assert!(text.contains("42 rows"), "{text}");
+            }
+            other => panic!("expected workbench status, got {other:?}"),
         }
     }
 

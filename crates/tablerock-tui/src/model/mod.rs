@@ -192,6 +192,12 @@ pub enum ActionId {
     CopySafetyLabel,
     /// Copy health label from context bar.
     CopyHealthLabel,
+    /// Copy live session identity string when connected.
+    CopySessionIdentity,
+    /// Copy live session status text when set.
+    CopySessionStatus,
+    /// Copy workbench status summary line.
+    CopyWorkbenchStatus,
     /// Copy base schema.table identity if known.
     CopyTableName,
     /// Copy base schema only if known.
