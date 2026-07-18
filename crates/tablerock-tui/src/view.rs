@@ -684,6 +684,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let go_first = action_label(model, ActionId::GoToFirstRow, "First");
     let go_last = action_label(model, ActionId::GoToLastRow, "Last");
     let go_col = action_label(model, ActionId::GoToColumn, "GoCol");
+    let go_pk = action_label(model, ActionId::GoToIdentityColumn, "GoPk");
     let home_cur = action_label(model, ActionId::HomeCursor, "Home");
     let end_cur = action_label(model, ActionId::EndCursor, "End");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
@@ -1271,6 +1272,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::GoToColumn,
                         label: go_col.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::GoToIdentityColumn,
+                        label: go_pk.as_str(),
                         enabled: true,
                         style: None,
                     },

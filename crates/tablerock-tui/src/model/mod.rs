@@ -263,6 +263,8 @@ pub enum ActionId {
     GoToLastRow,
     /// Jump to column by name (exact or unique prefix).
     GoToColumn,
+    /// Jump cursor to the first identity (pk) column.
+    GoToIdentityColumn,
     /// Move cursor to top-left of resident page (no fetch).
     HomeCursor,
     /// Move cursor to bottom-right of resident page (no fetch).

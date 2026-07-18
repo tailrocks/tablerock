@@ -1732,6 +1732,27 @@ impl DataGridModel {
         self.viewport_col = col;
     }
 
+    /// Jump cursor to the first identity (pk) column in physical order.
+    ///
+    /// Returns false when identity is unknown or no identity column is present.
+    pub fn go_to_first_identity_column(&mut self) -> bool {
+        if self.identity_columns.is_empty() || self.columns.is_empty() {
+            return false;
+        }
+        for name in &self.identity_columns {
+            if let Some(idx) = self.columns.iter().position(|c| c == name) {
+                if self.cursor_col == idx {
+                    self.reveal_cursor_column();
+                    return false; // already there
+                }
+                self.cursor_col = idx;
+                self.reveal_cursor_column();
+                return true;
+            }
+        }
+        false
+    }
+
     /// Move cursor to the first resident cell (no server I/O).
     pub fn home_cursor(&mut self) {
         self.cursor_row = self.start_row;
@@ -2464,6 +2485,21 @@ mod tests {
         assert!(vis.contains(&"tenant_id".to_owned()));
         assert!(!vis.contains(&"name".to_owned()));
         assert!(!g.solo_identity_columns()); // already
+    }
+
+    #[test]
+    fn go_to_first_identity_column_jumps() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["name".into(), "tenant_id".into(), "id".into()];
+        g.cursor_col = 0;
+        assert!(!g.go_to_first_identity_column());
+        g.identity_columns = vec!["tenant_id".into(), "id".into()];
+        assert!(g.go_to_first_identity_column());
+        assert_eq!(g.cursor_col, 1); // tenant_id first in identity list
+        assert!(!g.go_to_first_identity_column());
+        g.cursor_col = 2;
+        assert!(g.go_to_first_identity_column());
+        assert_eq!(g.cursor_col, 1);
     }
 
     #[test]

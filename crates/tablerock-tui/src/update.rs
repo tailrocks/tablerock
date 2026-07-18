@@ -4454,6 +4454,17 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::GoToIdentityColumn if model.screen() == Screen::Workbench => {
+            let jumped = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.go_to_first_identity_column());
+            if jumped {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
         ActionId::HomeCursor if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if grid.columns.is_empty() {
@@ -5527,6 +5538,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::GoToFirstRow
         | ActionId::GoToLastRow
         | ActionId::GoToColumn
+        | ActionId::GoToIdentityColumn
         | ActionId::HomeCursor
         | ActionId::EndCursor
         | ActionId::RefreshTable
@@ -7263,6 +7275,7 @@ fn cycle_action(
                 ActionId::GoToFirstRow,
                 ActionId::GoToLastRow,
                 ActionId::GoToColumn,
+                ActionId::GoToIdentityColumn,
                 ActionId::HomeCursor,
                 ActionId::EndCursor,
                 ActionId::RefreshTable,
