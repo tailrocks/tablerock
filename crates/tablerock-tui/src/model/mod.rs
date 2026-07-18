@@ -186,6 +186,10 @@ pub enum ActionId {
     CopySelectWhereSql,
     /// Copy SELECT count(*) FROM base table (quoted).
     CopyCountSql,
+    /// Copy SELECT count(*) FROM base table WHERE cursor locator.
+    CopyCountWhereSql,
+    /// Copy SELECT DISTINCT cursor column FROM base table.
+    CopyDistinctSql,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).

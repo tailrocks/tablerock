@@ -4116,6 +4116,74 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyCountWhereSql if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) = (grid.base_schema.as_ref(), grid.base_table.as_ref())
+            else {
+                return Update::unchanged();
+            };
+            if schema.is_empty() || table.is_empty() {
+                return Update::unchanged();
+            }
+            let Some(where_sql) = grid.cursor_where_sql() else {
+                return Update::unchanged();
+            };
+            let text = format!(
+                "SELECT count(*)\nFROM {}.{}\n{where_sql}",
+                quote_ident_sql(schema),
+                quote_ident_sql(table)
+            );
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some("copied count(*) … WHERE locator".into());
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopyDistinctSql if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) = (grid.base_schema.as_ref(), grid.base_table.as_ref())
+            else {
+                return Update::unchanged();
+            };
+            if schema.is_empty() || table.is_empty() {
+                return Update::unchanged();
+            }
+            let Some(col) = grid.columns.get(grid.cursor_col).cloned() else {
+                return Update::unchanged();
+            };
+            if col.is_empty() {
+                return Update::unchanged();
+            }
+            let text = format!(
+                "SELECT DISTINCT {}\nFROM {}.{}",
+                quote_ident_sql(&col),
+                quote_ident_sql(schema),
+                quote_ident_sql(table)
+            );
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied DISTINCT {col}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyPkNames if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5875,6 +5943,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopySelectSql
         | ActionId::CopySelectWhereSql
         | ActionId::CopyCountSql
+        | ActionId::CopyCountWhereSql
+        | ActionId::CopyDistinctSql
         | ActionId::CopyPkNames
         | ActionId::CopyPkIdents
         | ActionId::CopyLocator
@@ -7627,6 +7697,8 @@ fn cycle_action(
                 ActionId::CopySelectSql,
                 ActionId::CopySelectWhereSql,
                 ActionId::CopyCountSql,
+                ActionId::CopyCountWhereSql,
+                ActionId::CopyDistinctSql,
                 ActionId::CopyPkNames,
                 ActionId::CopyPkIdents,
                 ActionId::CopyLocator,
@@ -9513,6 +9585,63 @@ mod tests {
                 assert!(text.contains("width") || text.contains("16"), "{text}");
             }
             other => panic!("expected layout json copy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copy_count_where_and_distinct_sql() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "status".into()];
+            grid.row_count = 1;
+            grid.cells = vec![
+                crate::model::grid::ProjectedCell {
+                    text: "1".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                },
+                crate::model::grid::ProjectedCell {
+                    text: "open".into(),
+                    distinction: crate::model::grid::CellDistinction::Text,
+                    byte_len: 4,
+                    original_byte_len: None,
+                },
+            ];
+            grid.identity_columns = vec!["id".into()];
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("orders".into());
+            grid.cursor_row = 0;
+            grid.cursor_col = 1; // status for DISTINCT
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyCountWhereSql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("SELECT count(*)"), "{text}");
+                assert!(text.contains("FROM \"public\".\"orders\""), "{text}");
+                assert!(text.contains("WHERE \"id\" = '1'"), "{text}");
+            }
+            other => panic!("expected count where, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyDistinctSql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(
+                    text,
+                    "SELECT DISTINCT \"status\"\nFROM \"public\".\"orders\""
+                );
+            }
+            other => panic!("expected distinct, got {other:?}"),
         }
     }
 
