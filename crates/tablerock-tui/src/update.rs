@@ -640,6 +640,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 grid.mark_completed();
                 if let Some(summary) = notice_summary {
                     // Surface bounded NOTICE text in status (not SQL/values).
+                    grid.push_notice(summary.clone());
                     grid.error_label = Some(format!("notice: {summary}"));
                 }
             }
@@ -3966,6 +3967,42 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::ShowNotices if model.screen() == Screen::Workbench => {
+            let text = model
+                .workbench()
+                .active_grid()
+                .map(|g| g.notices_panel_text())
+                .unwrap_or_else(|| "no active grid".into());
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: "server notices".into(),
+                kind_label: "notices".into(),
+                text,
+                hex: String::new(),
+                byte_len: 0,
+                original_byte_len: None,
+                stale: false,
+                structure_schema: None,
+                structure_table: None,
+            };
+            Update::render()
+        }
+        ActionId::ClearNotices if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.notice_history.is_empty() {
+                    return Update::unchanged();
+                }
+                grid.clear_notices();
+                // Refresh open notices panel if present.
+                if model.workbench().inspector.kind_label == "notices"
+                    && model.workbench().inspector.open
+                {
+                    model.workbench_mut().inspector.text = "no notices this tab".into();
+                }
+                return Update::render();
+            }
+            Update::unchanged()
+        }
         ActionId::ApplyMutations if model.screen() == Screen::Workbench => {
             apply_staged_mutations(model)
         }
@@ -4438,6 +4475,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DeleteRow
         | ActionId::InsertRow
         | ActionId::DuplicateRow
+        | ActionId::ShowNotices
+        | ActionId::ClearNotices
         | ActionId::ApplyMutations
         | ActionId::FollowForeignKey
         | ActionId::ShowStructure
@@ -5918,6 +5957,8 @@ fn cycle_action(
                 ActionId::DeleteRow,
                 ActionId::InsertRow,
                 ActionId::DuplicateRow,
+                ActionId::ShowNotices,
+                ActionId::ClearNotices,
                 ActionId::ApplyMutations,
                 ActionId::FollowForeignKey,
                 ActionId::ShowStructure,
@@ -7403,6 +7444,7 @@ mod tests {
             grid.error_label.as_deref(),
             Some("notice: NOTICE: table-rock-notice")
         );
+        assert_eq!(grid.notice_history.as_slice(), ["NOTICE: table-rock-notice"]);
     }
 
     #[test]

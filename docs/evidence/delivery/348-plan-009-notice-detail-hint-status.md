@@ -24,4 +24,4 @@ cargo check -p tablerock-engine -p tablerock-cli
 
 ## Remaining work
 
-- Inspector notice history (optional)
+- Inspector notice history — shipped as evidence 372

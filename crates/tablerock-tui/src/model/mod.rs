@@ -217,6 +217,10 @@ pub enum ActionId {
     InsertRow,
     /// Stage an insert prefilled from the cursor row values.
     DuplicateRow,
+    /// Open inspector with bounded NOTICE history for the active grid tab.
+    ShowNotices,
+    /// Clear NOTICE history for the active grid tab.
+    ClearNotices,
     /// Apply reviewed/staged mutations (typed plan rebuild from drafts).
     ApplyMutations,
     /// Follow FK from cursor column → filtered browse of referenced table.

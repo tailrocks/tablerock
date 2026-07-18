@@ -709,7 +709,12 @@ pub struct DataGridModel {
     pub drafts: MutationDraftModel,
     /// Active inline cell edit (None when not editing).
     pub cell_edit: Option<CellEditSession>,
+    /// Bounded ring of redacted server NOTICE/status lines for this tab.
+    pub notice_history: Vec<String>,
 }
+
+/// Cap for per-tab notice history (oldest dropped first).
+pub const MAX_NOTICE_HISTORY: usize = 16;
 
 impl Default for DataGridModel {
     fn default() -> Self {
@@ -744,6 +749,7 @@ impl Default for DataGridModel {
             },
             drafts: MutationDraftModel::new(),
             cell_edit: None,
+            notice_history: Vec::new(),
         }
     }
 }
@@ -1080,6 +1086,40 @@ impl DataGridModel {
             abs_row: self.cursor_row,
             locator,
         })
+    }
+
+    /// Append a redacted notice/status line; drops oldest beyond [`MAX_NOTICE_HISTORY`].
+    pub fn push_notice(&mut self, summary: impl Into<String>) {
+        let summary = summary.into();
+        if summary.is_empty() {
+            return;
+        }
+        self.notice_history.push(summary);
+        while self.notice_history.len() > MAX_NOTICE_HISTORY {
+            self.notice_history.remove(0);
+        }
+    }
+
+    /// Clear notice history for this tab.
+    pub fn clear_notices(&mut self) {
+        self.notice_history.clear();
+    }
+
+    /// Multi-line text for the notices inspector panel (newest last).
+    #[must_use]
+    pub fn notices_panel_text(&self) -> String {
+        if self.notice_history.is_empty() {
+            return "no notices this tab".into();
+        }
+        let mut lines = Vec::with_capacity(self.notice_history.len() + 1);
+        lines.push(format!(
+            "{} notice(s) (newest last, cap {MAX_NOTICE_HISTORY})",
+            self.notice_history.len()
+        ));
+        for (i, n) in self.notice_history.iter().enumerate() {
+            lines.push(format!("{}. {n}", i + 1));
+        }
+        lines.join("\n")
     }
 
     /// Stage a blank insert (all columns empty → NULL at plan build).
@@ -2041,6 +2081,26 @@ mod tests {
         assert!(!grid.editability.is_editable());
         assert!(grid.drafts.is_empty());
         assert!(grid.status_line().contains("read-only"));
+    }
+
+    #[test]
+    fn notice_history_ring_and_panel_text() {
+        let mut g = DataGridModel::default();
+        assert_eq!(g.notices_panel_text(), "no notices this tab");
+        g.push_notice("NOTICE: first");
+        g.push_notice("");
+        assert_eq!(g.notice_history.len(), 1);
+        for i in 0..20 {
+            g.push_notice(format!("NOTICE: n{i}"));
+        }
+        assert_eq!(g.notice_history.len(), MAX_NOTICE_HISTORY);
+        assert!(!g.notice_history.iter().any(|n| n == "NOTICE: first"));
+        assert!(g.notice_history.last().unwrap().contains("n19"));
+        let panel = g.notices_panel_text();
+        assert!(panel.contains("16 notice(s)"), "{panel}");
+        assert!(panel.contains("1. "), "{panel}");
+        g.clear_notices();
+        assert!(g.notice_history.is_empty());
     }
 
     #[test]

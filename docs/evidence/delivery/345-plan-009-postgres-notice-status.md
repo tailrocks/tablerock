@@ -28,5 +28,5 @@ cargo check -p tablerock-engine -p tablerock-cli -p tablerock-tui
 
 ## Remaining work
 
-- Inspector notice history queue (optional)
+- Inspector notice history queue — shipped as evidence 372
 - Association of notices to multi-statement ordinals
