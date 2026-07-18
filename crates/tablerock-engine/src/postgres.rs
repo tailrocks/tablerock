@@ -1310,6 +1310,91 @@ impl PostgresSession {
             .collect())
     }
 
+    /// Index facts: (name, is_unique, is_primary, indexdef).
+    pub async fn relation_indexes(
+        &self,
+        schema: &str,
+        table: &str,
+    ) -> Result<Vec<(String, bool, bool, String)>, PostgresError> {
+        if schema.is_empty() || table.is_empty() {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let rows = self
+            .client
+            .query(
+                "SELECT \
+                    i.relname::text AS index_name, \
+                    ix.indisunique, \
+                    ix.indisprimary, \
+                    pg_catalog.pg_get_indexdef(ix.indexrelid) AS indexdef \
+                 FROM pg_catalog.pg_index ix \
+                 JOIN pg_catalog.pg_class t ON t.oid = ix.indrelid \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace \
+                 JOIN pg_catalog.pg_class i ON i.oid = ix.indexrelid \
+                 WHERE n.nspname = $1 \
+                   AND t.relname = $2 \
+                 ORDER BY ix.indisprimary DESC, i.relname \
+                 LIMIT 128",
+                &[&schema, &table],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                let name: String = row.get(0);
+                let unique: bool = row.get(1);
+                let primary: bool = row.get(2);
+                let def: String = row.get(3);
+                (name, unique, primary, def)
+            })
+            .collect())
+    }
+
+    /// Non-FK constraint facts: (name, contype label, definition).
+    ///
+    /// Includes primary key, unique, check, and exclude. Foreign keys stay on
+    /// [`Self::relation_foreign_keys`].
+    pub async fn relation_constraints(
+        &self,
+        schema: &str,
+        table: &str,
+    ) -> Result<Vec<(String, String, String)>, PostgresError> {
+        if schema.is_empty() || table.is_empty() {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let rows = self
+            .client
+            .query(
+                "SELECT \
+                    con.conname::text, \
+                    CASE con.contype \
+                      WHEN 'p' THEN 'PRIMARY KEY' \
+                      WHEN 'u' THEN 'UNIQUE' \
+                      WHEN 'c' THEN 'CHECK' \
+                      WHEN 'x' THEN 'EXCLUDE' \
+                      WHEN 'f' THEN 'FOREIGN KEY' \
+                      ELSE con.contype::text \
+                    END, \
+                    pg_catalog.pg_get_constraintdef(con.oid, true) \
+                 FROM pg_catalog.pg_constraint con \
+                 JOIN pg_catalog.pg_class c ON c.oid = con.conrelid \
+                 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+                 WHERE n.nspname = $1 \
+                   AND c.relname = $2 \
+                   AND con.contype IN ('p', 'u', 'c', 'x', 'f') \
+                 ORDER BY con.contype, con.conname \
+                 LIMIT 128",
+                &[&schema, &table],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.get(0), row.get(1), row.get(2)))
+            .collect())
+    }
+
     /// Column structure facts: (name, type, not_null, default_expr).
     pub async fn relation_column_facts(
         &self,

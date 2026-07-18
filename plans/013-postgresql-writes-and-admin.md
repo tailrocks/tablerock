@@ -138,7 +138,8 @@ silently discard; ambiguous writes never retry.
 - ~~Ambiguity-inject Docker fixture for mutation apply → `Unknown`~~
   (closed: evidence 323; deferred trigger + server stop; no auto-retry)
 - Full ValueKind editor widgets (bool/temporal/JSON/bytes) beyond kind gates
-- Multi-column FK follow polish; indexes/constraints raw DDL in structure
+- Multi-column FK follow polish
+- ~~indexes/constraints raw DDL in structure~~ (closed: evidence 324)
 - Permission-denied activity signal fixtures
 
 ## STOP conditions

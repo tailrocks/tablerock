@@ -2608,8 +2608,10 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
             "CREATE TABLE mut_orders (
                 id int PRIMARY KEY,
                 user_id int REFERENCES mut_users(id),
-                total int NOT NULL DEFAULT 0
-             );",
+                total int NOT NULL DEFAULT 0,
+                CONSTRAINT mut_orders_total_pos CHECK (total >= 0)
+             );
+             CREATE INDEX mut_orders_user_idx ON mut_orders (user_id);",
         )
         .await
         .unwrap();
@@ -2628,6 +2630,41 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
                 && fs == "public"
                 && ft == "mut_users"
                 && fc == "id")
+    );
+    let indexes = session
+        .relation_indexes("public", "mut_orders")
+        .await
+        .unwrap();
+    assert!(
+        indexes
+            .iter()
+            .any(|(n, _u, primary, def)| *primary
+                || (n == "mut_orders_user_idx" && def.contains("user_id"))),
+        "expected PK or user_id index: {indexes:?}"
+    );
+    assert!(
+        indexes
+            .iter()
+            .any(|(n, _, _, def)| n == "mut_orders_user_idx" && def.to_ascii_lowercase().contains("user_id")),
+        "secondary index missing: {indexes:?}"
+    );
+    let constraints = session
+        .relation_constraints("public", "mut_orders")
+        .await
+        .unwrap();
+    assert!(
+        constraints
+            .iter()
+            .any(|(n, kind, def)| kind == "CHECK"
+                && n == "mut_orders_total_pos"
+                && def.to_ascii_lowercase().contains("total")),
+        "CHECK constraint missing: {constraints:?}"
+    );
+    assert!(
+        constraints
+            .iter()
+            .any(|(_, kind, _)| kind == "PRIMARY KEY" || kind == "FOREIGN KEY"),
+        "expected PK/FK constraint defs: {constraints:?}"
     );
 
     // Session still usable.

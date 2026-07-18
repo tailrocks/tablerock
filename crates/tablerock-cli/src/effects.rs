@@ -3154,6 +3154,7 @@ async fn load_relation_structure(
         }
     };
     let mut columns = Vec::new();
+    columns.push("-- columns --".into());
     for row in 0..page.envelope().row_count() {
         let name = page
             .cell(row, 0)
@@ -3177,6 +3178,63 @@ async fn load_relation_structure(
             columns.push(format!("{name} {ty} {nulls} DEFAULT {default}"));
         }
     }
+
+    // Indexes (PRIMARY/UNIQUE/INDEX + pg_get_indexdef).
+    append_structure_section(
+        &session,
+        &mut columns,
+        "-- indexes --",
+        "SELECT \
+            CASE WHEN ix.indisprimary THEN 'PRIMARY' \
+                 WHEN ix.indisunique THEN 'UNIQUE' \
+                 ELSE 'INDEX' END, \
+            i.relname::text, \
+            pg_catalog.pg_get_indexdef(ix.indexrelid) \
+         FROM pg_catalog.pg_index ix \
+         JOIN pg_catalog.pg_class t ON t.oid = ix.indrelid \
+         JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace \
+         JOIN pg_catalog.pg_class i ON i.oid = ix.indexrelid \
+         WHERE n.nspname = $1 AND t.relname = $2 \
+         ORDER BY ix.indisprimary DESC, i.relname LIMIT 128",
+        &schema,
+        &table,
+        |cells| match cells.as_slice() {
+            [kind, name, def] => format!("{kind} {name}: {def}"),
+            _ => cells.join(" "),
+        },
+    )
+    .await;
+
+    // Constraints (PK/UNIQUE/CHECK/EXCLUDE/FK definitions).
+    append_structure_section(
+        &session,
+        &mut columns,
+        "-- constraints --",
+        "SELECT \
+            CASE con.contype \
+              WHEN 'p' THEN 'PRIMARY KEY' \
+              WHEN 'u' THEN 'UNIQUE' \
+              WHEN 'c' THEN 'CHECK' \
+              WHEN 'x' THEN 'EXCLUDE' \
+              WHEN 'f' THEN 'FOREIGN KEY' \
+              ELSE con.contype::text END, \
+            con.conname::text, \
+            pg_catalog.pg_get_constraintdef(con.oid, true) \
+         FROM pg_catalog.pg_constraint con \
+         JOIN pg_catalog.pg_class c ON c.oid = con.conrelid \
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+         WHERE n.nspname = $1 AND c.relname = $2 \
+           AND con.contype IN ('p', 'u', 'c', 'x', 'f') \
+         ORDER BY con.contype, con.conname LIMIT 128",
+        &schema,
+        &table,
+        |cells| match cells.as_slice() {
+            [kind, name, def] => format!("{kind} {name}: {def}"),
+            _ => cells.join(" "),
+        },
+    )
+    .await;
+
     Message::Engine(tablerock_tui::EngineMsg::RelationStructure {
         request_token,
         context_revision,
@@ -3184,6 +3242,72 @@ async fn load_relation_structure(
         table,
         columns,
     })
+}
+
+/// Run a bound structure-section SQL and append formatted lines (or `(none)`).
+async fn append_structure_section<F>(
+    session: &std::sync::Arc<dyn tablerock_engine::DriverSession>,
+    out: &mut Vec<String>,
+    header: &str,
+    sql: &str,
+    schema: &str,
+    table: &str,
+    format_row: F,
+) where
+    F: Fn(Vec<String>) -> String,
+{
+    use tablerock_core::{
+        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
+    };
+    use tablerock_engine::{DriverPageRequest, FilterValue};
+
+    out.push(header.into());
+    let Ok(statement) = StatementText::new(sql) else {
+        out.push("(unavailable)".into());
+        return;
+    };
+    let limits = PageLimits::new(128, 8, 256 * 1024, 8 * 1024);
+    let Ok(mut stream) = session
+        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+            statement,
+            parameters: vec![
+                FilterValue::Text(schema.to_owned()),
+                FilterValue::Text(table.to_owned()),
+            ],
+            limits,
+            max_cell_bytes: 8 * 1024,
+        })
+        .await
+    else {
+        out.push("(unavailable)".into());
+        return;
+    };
+    let identity = PageIdentity::new(
+        ResultId::from_parts(IdParts::new(1, 9_004).unwrap()).unwrap(),
+        Revision::INITIAL,
+        CoreEngine::PostgreSql,
+    );
+    let Ok(Some(page)) = stream.next_page(identity, 0).await else {
+        out.push("(none)".into());
+        return;
+    };
+    let rows = page.envelope().row_count();
+    if rows == 0 {
+        out.push("(none)".into());
+        return;
+    }
+    let cols = page.envelope().column_count();
+    for row in 0..rows {
+        let mut cells = Vec::with_capacity(cols as usize);
+        for col in 0..cols {
+            let text = page
+                .cell(row, col)
+                .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+                .unwrap_or_default();
+            cells.push(text);
+        }
+        out.push(format_row(cells));
+    }
 }
 
 async fn execute_table_op(
