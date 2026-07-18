@@ -233,6 +233,8 @@ pub enum ActionId {
     EditInsert,
     /// Open inspector listing all staged drafts for the active grid.
     ShowStaged,
+    /// Copy staged draft inventory text to clipboard.
+    CopyStaged,
     /// Open inspector with bounded NOTICE history for the active grid tab.
     ShowNotices,
     /// Clear NOTICE history for the active grid tab.

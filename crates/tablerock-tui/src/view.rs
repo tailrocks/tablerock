@@ -682,6 +682,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let dup_row = action_label(model, ActionId::DuplicateRow, "DupRow");
     let edit_insert = action_label(model, ActionId::EditInsert, "EditIns");
     let show_staged = action_label(model, ActionId::ShowStaged, "Staged");
+    let copy_staged = action_label(model, ActionId::CopyStaged, "CopyStg");
     let show_notices = action_label(model, ActionId::ShowNotices, "Notices");
     let clear_notices = action_label(model, ActionId::ClearNotices, "ClrNtc");
     let copy_notices = action_label(model, ActionId::CopyNotices, "CopyNtc");
@@ -1287,6 +1288,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ShowStaged,
                         label: show_staged.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyStaged,
+                        label: copy_staged.as_str(),
                         enabled: true,
                         style: None,
                     },

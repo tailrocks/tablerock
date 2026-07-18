@@ -4081,6 +4081,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
             };
             Update::render()
         }
+        ActionId::CopyStaged if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            if grid.drafts.is_empty() {
+                return Update::unchanged();
+            }
+            let text = grid.drafts.staged_panel_text();
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied staged ({} bytes)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::ShowNotices if model.screen() == Screen::Workbench => {
             let text = model
                 .workbench()
@@ -4645,6 +4665,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DuplicateRow
         | ActionId::EditInsert
         | ActionId::ShowStaged
+        | ActionId::CopyStaged
         | ActionId::ShowNotices
         | ActionId::ClearNotices
         | ActionId::CopyNotices
@@ -6200,6 +6221,7 @@ fn cycle_action(
                 ActionId::DuplicateRow,
                 ActionId::EditInsert,
                 ActionId::ShowStaged,
+                ActionId::CopyStaged,
                 ActionId::ShowNotices,
                 ActionId::ClearNotices,
                 ActionId::CopyNotices,
