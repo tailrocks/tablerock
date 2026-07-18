@@ -139,6 +139,8 @@ pub enum ActionId {
     ApplyFilter,
     /// Clear server filters/sort and re-browse.
     ClearFilters,
+    /// Paste/edit raw WHERE predicate for browse plan.
+    EditRawWhere,
     /// Re-browse the active base table (keep sort/filters).
     RefreshTable,
     /// Toggle visibility of the cursor column.
@@ -351,6 +353,10 @@ pub enum ConfirmDialog {
         table: String,
         /// Known names for the table (display only).
         known_names: Vec<String>,
+        confirm_buffer: String,
+    },
+    /// Edit raw WHERE fragment for browse plan (paste SQL predicate only).
+    EditRawWhere {
         confirm_buffer: String,
     },
     /// Stage Redis collection mutation: paste field/member/score payload.

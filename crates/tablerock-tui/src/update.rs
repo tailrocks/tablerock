@@ -107,6 +107,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::KillMutation { confirm_buffer, .. }
                     | ConfirmDialog::SaveFilter { confirm_buffer, .. }
                     | ConfirmDialog::ApplyFilter { confirm_buffer, .. }
+                    | ConfirmDialog::EditRawWhere { confirm_buffer, .. }
                     | ConfirmDialog::StageRedis { confirm_buffer, .. }
                     | ConfirmDialog::RedisSubscribe { confirm_buffer, .. }
                     | ConfirmDialog::RenameGroup { confirm_buffer, .. }
@@ -2774,6 +2775,24 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     }
                     rebrowse_active_table(model)
                 }
+                ConfirmDialog::EditRawWhere { confirm_buffer } => {
+                    let trimmed = confirm_buffer.trim();
+                    // Fail closed: no semicolon / multi-statement; length bound.
+                    if trimmed.contains(';') || trimmed.len() > 1024 {
+                        return Update::render();
+                    }
+                    // Empty clears raw WHERE.
+                    let next = if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_owned())
+                    };
+                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                        grid.raw_where = next;
+                    }
+                    model.set_confirm(None);
+                    rebrowse_active_table(model)
+                }
                 ConfirmDialog::StageRedis {
                     op,
                     logical_db,
@@ -3439,6 +3458,20 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 grid.clear_server_controls();
             }
             rebrowse_active_table(model)
+        }
+        ActionId::EditRawWhere if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            if grid.base_table.is_none() {
+                return Update::unchanged();
+            }
+            let existing = grid.raw_where.clone().unwrap_or_default();
+            model.set_confirm(Some(ConfirmDialog::EditRawWhere {
+                confirm_buffer: existing,
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
         }
         ActionId::RefreshTable if model.screen() == Screen::Workbench => {
             rebrowse_active_table(model)
@@ -4137,6 +4170,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::SaveFilter
         | ActionId::ApplyFilter
         | ActionId::ClearFilters
+        | ActionId::EditRawWhere
         | ActionId::RefreshTable
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
@@ -5462,6 +5496,7 @@ fn cycle_action(
                 ActionId::SaveFilter,
                 ActionId::ApplyFilter,
                 ActionId::ClearFilters,
+                ActionId::EditRawWhere,
                 ActionId::RefreshTable,
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
@@ -6969,6 +7004,63 @@ mod tests {
             grid.error_label.as_deref(),
             Some("notice: NOTICE: table-rock-notice")
         );
+    }
+
+    #[test]
+    fn edit_raw_where_dialog_sets_and_clears() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("users");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::EditRawWhere);
+        let open = update(&mut model, Message::Activate);
+        assert!(open.effects().next().is_none());
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::EditRawWhere { .. })
+        ));
+        if let Some(ConfirmDialog::EditRawWhere { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = "status = 'open'".into();
+        }
+        model.set_action(ActionId::Submit);
+        let set = update(&mut model, Message::Activate);
+        match set.effects().next() {
+            Some(Effect::BrowseTable { raw_where, .. }) => {
+                assert_eq!(raw_where.as_deref(), Some("status = 'open'"));
+            }
+            other => panic!("expected BrowseTable with raw_where, got {other:?}"),
+        }
+        // Semicolon rejected (dialog stays open, no effect).
+        model.set_action(ActionId::EditRawWhere);
+        let _ = update(&mut model, Message::Activate);
+        if let Some(ConfirmDialog::EditRawWhere { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = "a; DROP TABLE t".into();
+        }
+        model.set_action(ActionId::Submit);
+        let bad = update(&mut model, Message::Activate);
+        assert!(bad.effects().next().is_none());
+        assert!(model.confirm().is_some());
+        // Empty clears.
+        if let Some(ConfirmDialog::EditRawWhere { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = String::new();
+        }
+        model.set_action(ActionId::Submit);
+        let cleared = update(&mut model, Message::Activate);
+        match cleared.effects().next() {
+            Some(Effect::BrowseTable { raw_where, .. }) => assert!(raw_where.is_none()),
+            other => panic!("expected clear raw_where, got {other:?}"),
+        }
     }
 
     #[test]

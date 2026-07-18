@@ -270,6 +270,12 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 ),
             )
         }
+        crate::model::ConfirmDialog::EditRawWhere { confirm_buffer } => (
+            "Edit raw WHERE?",
+            format!(
+                "Paste predicate only (no semicolon). Empty clears. [{confirm_buffer}]"
+            ),
+        ),
         crate::model::ConfirmDialog::StageRedis {
             op,
             logical_db,
@@ -595,6 +601,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let filt_le = action_label(model, ActionId::FilterLe, "Le");
     let filt_gt = action_label(model, ActionId::FilterGt, "Gt");
     let filt_ge = action_label(model, ActionId::FilterGe, "Ge");
+    let raw_where = action_label(model, ActionId::EditRawWhere, "RawWhere");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
@@ -918,6 +925,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::FilterGe,
                         label: filt_ge.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::EditRawWhere,
+                        label: raw_where.as_str(),
                         enabled: true,
                         style: None,
                     },
