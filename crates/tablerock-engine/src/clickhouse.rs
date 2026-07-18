@@ -379,6 +379,41 @@ impl ClickHouseSession {
         )))
     }
 
+    /// Raw EXPLAIN text for a statement (operator-supplied; not reparsed for write).
+    pub async fn explain_raw(&self, statement: &str) -> Result<String, ClickHouseError> {
+        if statement.trim().is_empty() {
+            return Err(ClickHouseError::InvalidLimits);
+        }
+        // Prefix EXPLAIN; statement is not concatenated with untrusted idents —
+        // full statement body is user SQL already gated by MayWrite elsewhere.
+        let sql = format!("EXPLAIN {}", statement.trim());
+        let lines = self.fetch_tsv_named(&sql, &[]).await?;
+        Ok(lines.join("\n"))
+    }
+
+    /// Structured EXPLAIN AST-ish lines with unknown-node fallback.
+    ///
+    /// Uses `EXPLAIN AST` when available; falls back to raw EXPLAIN text.
+    pub async fn explain_structured(
+        &self,
+        statement: &str,
+    ) -> Result<Vec<String>, ClickHouseError> {
+        if statement.trim().is_empty() {
+            return Err(ClickHouseError::InvalidLimits);
+        }
+        let sql = format!("EXPLAIN AST {}", statement.trim());
+        match self.fetch_tsv_named(&sql, &[]).await {
+            Ok(lines) if !lines.is_empty() => Ok(lines),
+            _ => {
+                let raw = self.explain_raw(statement).await?;
+                Ok(vec![
+                    "unknown-node: EXPLAIN AST unavailable; raw plan:".into(),
+                    raw,
+                ])
+            }
+        }
+    }
+
     /// Column facts: (name, type, default_kind, is_in_primary_key as "0"/"1").
     pub async fn relation_column_facts(
         &self,

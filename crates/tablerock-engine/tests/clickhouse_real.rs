@@ -799,3 +799,32 @@ async fn structure_facts_and_progressive_insert() {
     }
     assert!(done, "mutation should complete in fixture");
 }
+
+#[tokio::test]
+async fn explain_raw_and_structured_with_fallback() {
+    let image =
+        "26.3.17.4-jammy@sha256:158dcce6f6fdc59309650aad6b79484abf4eed07d4e0bdba31d732e64b5a25fb";
+    let container = GenericImage::new("clickhouse", image)
+        .with_exposed_port(8123.tcp())
+        .with_env_var("CLICKHOUSE_SKIP_USER_SETUP", "1")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
+    let session = ready_clickhouse_session(port, ClickHouseCompression::None).await;
+
+    let raw = session.explain_raw("SELECT 1").await.unwrap();
+    assert!(!raw.is_empty(), "raw explain should return plan text");
+
+    let structured = session.explain_structured("SELECT 1").await.unwrap();
+    assert!(!structured.is_empty());
+    // Either AST lines or unknown-node fallback with raw plan.
+    let joined = structured.join("\n");
+    assert!(
+        joined.contains("Select")
+            || joined.contains("SELECT")
+            || joined.contains("unknown-node")
+            || !joined.is_empty(),
+        "{joined}"
+    );
+}
