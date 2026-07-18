@@ -29,9 +29,12 @@ const MAX_QUERY_ID_BYTES: usize = 256;
 /// TLS mode for ClickHouse HTTP(S).
 ///
 /// `RequireSystemRoots` uses the crate's rustls native-roots connector
-/// (workspace feature `rustls-tls-native-roots`). Custom CA / mTLS need a
-/// custom `HttpClient` (clickhouse-rs `with_http_client`); that path is
-/// recorded as residual until a connector fixture is wired.
+/// (workspace feature `rustls-tls-native-roots`).
+///
+/// Custom CA / mTLS via `Client::with_http_client` is **upstream-blocked** on
+/// clickhouse-rs 0.15.1: `HttpClient` and `RequestBody` are crate-private, so
+/// dependents cannot build a custom connector. Evidence 321. Re-open when
+/// upstream exposes a public TLS-material / HttpClient API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClickHouseTlsMode {
     Disable,

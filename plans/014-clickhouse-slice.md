@@ -103,7 +103,8 @@ extended with the new fixtures; CI list updated.
 
 ## Residual (non-blocking)
 
-- Custom CA / mTLS via `clickhouse::Client::with_http_client` fixture matrix
+- ~~Custom CA / mTLS via `with_http_client`~~ (closed: evidence 321 —
+  upstream-blocked: private `HttpClient` + `RequestBody` on clickhouse-rs 0.15.1)
 - ~~Progress OperationEvent surface into status bar~~ (closed: evidence 320;
   X-ClickHouse-Summary → server_progress; query_id was 308)
 - ~~Partial-page + late error single-operation fixture~~ (closed: clickhouse_real)
