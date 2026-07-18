@@ -1475,6 +1475,21 @@ impl DataGridModel {
         self.ensure_column_layout();
     }
 
+    /// Reset every layout width to the default (12); keep order and visibility.
+    ///
+    /// Returns false when nothing changed (already all default widths).
+    pub fn reset_column_widths(&mut self) -> bool {
+        self.ensure_column_layout();
+        let mut changed = false;
+        for entry in &mut self.column_layout {
+            if entry.width != 12 {
+                entry.width = 12;
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Hide all columns except the cursor column. Returns true if layout changed.
     pub fn solo_cursor_column(&mut self) -> bool {
         if self.columns.is_empty() {
@@ -2314,6 +2329,33 @@ mod tests {
         assert!(!g.show_all_columns());
         g.reset_column_layout();
         assert_eq!(g.visible_columns().len(), 3);
+    }
+
+    #[test]
+    fn reset_column_widths_keeps_order_and_visibility() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into(), "age".into()];
+        g.cursor_col = 1;
+        assert!(g.solo_cursor_column());
+        assert!(g.adjust_cursor_column_width(20));
+        assert_eq!(g.column_width("name"), 32); // 12+20
+        assert!(g.reset_column_widths());
+        assert_eq!(g.column_width("name"), 12);
+        assert_eq!(g.visible_columns(), vec!["name".to_owned()]);
+        assert!(!g.reset_column_widths());
+        // Order preserved after prior move.
+        g.show_all_columns();
+        g.cursor_col = 0;
+        assert!(g.move_cursor_column(1));
+        assert!(g.adjust_cursor_column_width(4));
+        assert!(g.reset_column_widths());
+        assert_eq!(
+            g.column_layout
+                .iter()
+                .map(|c| (c.name.as_str(), c.width, c.visible))
+                .collect::<Vec<_>>(),
+            vec![("name", 12, true), ("id", 12, true), ("age", 12, true)]
+        );
     }
 
     #[test]

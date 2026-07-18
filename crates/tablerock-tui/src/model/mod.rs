@@ -241,6 +241,8 @@ pub enum ActionId {
     ToggleColumn,
     /// Reset column layout to defaults.
     ResetColumns,
+    /// Reset column widths to default; keep order and visibility.
+    ResetColumnWidths,
     /// Hide all columns except the cursor column.
     SoloColumn,
     /// Show all columns; keep widths/order (unlike ResetColumns).
