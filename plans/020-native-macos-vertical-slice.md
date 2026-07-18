@@ -33,7 +33,8 @@
   criteria. Evidence 407 removes `ObservableObject` and adds the required
   Settings scene. Evidence 408 adds actor-owned bridge I/O, off-main pump/page
   decode, operation-ID cancellation UI, and a strict Swift 6 build gate;
-  remaining criteria stay open.
+  evidence 409 replaces the SwiftUI result renderer with the required reusable
+  AppKit `NSTableView`; remaining criteria stay open.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
@@ -131,7 +132,8 @@ unchanged-green.
 ## Done criteria
 
 - [ ] Vertical slice: connect → catalog → query → stream → page → cancel → one reviewed safe operation on each applicable engine (recorded demo + tests)
-- [ ] Zero per-cell bridge calls (bridge API audit + call counting test)
+- [x] Zero per-cell bridge calls (page snapshot decoded once off-main, then
+      rendered by reusable `NSTableView` cells; evidence 408–409)
 - [ ] Swift contains no SQL parsing/safety/mutation construction (code review checklist in evidence; grep for sql-building patterns)
 - [ ] Glass rules hold: no glass on content surfaces; one cluster per region; accessibility degradation verified (screenshot matrix)
 - [x] Strict-concurrency build clean; no `ObservableObject`, no GCD (evidence

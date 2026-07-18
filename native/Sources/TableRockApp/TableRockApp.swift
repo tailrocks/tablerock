@@ -11,6 +11,7 @@
 
 import SwiftUI
 import Observation
+import AppKit
 import TableRockBridge
 
 private struct NativeOperationProjection: Sendable {
@@ -495,33 +496,111 @@ struct NativeSettingsView: View {
     }
 }
 
-struct CatalogGrid: View {
+struct CatalogGrid: NSViewRepresentable {
     let table: PageV1Table
 
-    var body: some View {
-        ScrollView([.horizontal, .vertical]) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 16) {
-                    ForEach(table.columns.indices, id: \.self) { i in
-                        Text(table.columns[i]).bold()
-                            .frame(minWidth: 60, alignment: .leading)
-                    }
+    func makeCoordinator() -> Coordinator { Coordinator(table) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let grid = NSTableView()
+        grid.delegate = context.coordinator
+        grid.dataSource = context.coordinator
+        grid.usesAlternatingRowBackgroundColors = true
+        grid.allowsColumnReordering = true
+        grid.allowsColumnResizing = true
+        grid.allowsMultipleSelection = true
+        grid.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+        grid.rowSizeStyle = .small
+        grid.setAccessibilityLabel("Query results")
+        context.coordinator.installColumns(on: grid)
+
+        let scroll = NSScrollView()
+        scroll.documentView = grid
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.borderType = .bezelBorder
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let grid = scroll.documentView as? NSTableView else { return }
+        let selectedRows = grid.selectedRowIndexes
+        context.coordinator.snapshot = table
+        context.coordinator.installColumns(on: grid)
+        grid.reloadData()
+        let validSelection = selectedRows.filter { $0 < table.rows.count }
+        grid.selectRowIndexes(IndexSet(validSelection), byExtendingSelection: false)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+        var snapshot: PageV1Table
+
+        init(_ snapshot: PageV1Table) {
+            self.snapshot = snapshot
+        }
+
+        func numberOfRows(in tableView: NSTableView) -> Int { snapshot.rows.count }
+
+        func installColumns(on tableView: NSTableView) {
+            let expected = snapshot.columns.indices.map {
+                NSUserInterfaceItemIdentifier("result-column-\($0)")
+            }
+            if tableView.tableColumns.map(\.identifier) == expected {
+                for (column, title) in zip(tableView.tableColumns, snapshot.columns) {
+                    column.title = title
                 }
-                .padding(6)
-                Divider()
-                ForEach(table.rows.indices, id: \.self) { r in
-                    HStack(spacing: 16) {
-                        ForEach(table.rows[r].indices, id: \.self) { c in
-                            Text(table.rows[r][c])
-                                .frame(minWidth: 60, alignment: .leading)
-                        }
-                    }
-                    .padding(6)
-                }
+                return
+            }
+            for column in tableView.tableColumns { tableView.removeTableColumn(column) }
+            for (index, title) in snapshot.columns.enumerated() {
+                let column = NSTableColumn(
+                    identifier: NSUserInterfaceItemIdentifier("result-column-\(index)"))
+                column.title = title
+                column.minWidth = 60
+                column.width = 140
+                column.resizingMask = [.autoresizingMask, .userResizingMask]
+                tableView.addTableColumn(column)
             }
         }
-        .background(.quaternary.opacity(0.3))
-        .cornerRadius(6)
+
+        func tableView(
+            _ tableView: NSTableView,
+            viewFor tableColumn: NSTableColumn?,
+            row: Int
+        ) -> NSView? {
+            guard let tableColumn,
+                  let column = tableView.tableColumns.firstIndex(of: tableColumn),
+                  snapshot.rows.indices.contains(row),
+                  snapshot.rows[row].indices.contains(column)
+            else { return nil }
+            let identifier = NSUserInterfaceItemIdentifier("result-cell")
+            let cell: NSTableCellView
+            if let reused = tableView.makeView(withIdentifier: identifier, owner: nil)
+                as? NSTableCellView
+            {
+                cell = reused
+            } else {
+                cell = NSTableCellView()
+                cell.identifier = identifier
+                let label = NSTextField(labelWithString: "")
+                label.lineBreakMode = .byTruncatingTail
+                label.translatesAutoresizingMaskIntoConstraints = false
+                cell.textField = label
+                cell.addSubview(label)
+                NSLayoutConstraint.activate([
+                    label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+                    label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+                    label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                ])
+            }
+            let value = snapshot.rows[row][column]
+            cell.textField?.stringValue = value
+            cell.setAccessibilityLabel("\(snapshot.columns[column]), row \(row + 1)")
+            cell.setAccessibilityValue(value)
+            return cell
+        }
     }
 }
 
