@@ -213,6 +213,10 @@ pub enum ActionId {
     CompactJson,
     /// Stage delete of the cursor row.
     DeleteRow,
+    /// Stage a blank insert row (all columns empty/NULL).
+    InsertRow,
+    /// Stage an insert prefilled from the cursor row values.
+    DuplicateRow,
     /// Apply reviewed/staged mutations (typed plan rebuild from drafts).
     ApplyMutations,
     /// Follow FK from cursor column → filtered browse of referenced table.

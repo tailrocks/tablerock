@@ -1082,6 +1082,49 @@ impl DataGridModel {
         })
     }
 
+    /// Stage a blank insert (all columns empty → NULL at plan build).
+    ///
+    /// Generated/default columns stay empty so the server invents them on apply.
+    pub fn stage_insert_blank(&mut self) -> Option<u64> {
+        if !self.drafts.staging_allowed() || self.columns.is_empty() {
+            return None;
+        }
+        let values: Vec<(String, String)> = self
+            .columns
+            .iter()
+            .map(|c| (c.clone(), String::new()))
+            .collect();
+        self.drafts.stage_insert(values)
+    }
+
+    /// Stage an insert prefilled from the cursor row's presentation text.
+    ///
+    /// Useful as "duplicate as insert". Identity/generated columns keep the
+    /// copied values; the operator may conflict on apply and must re-review.
+    pub fn stage_insert_from_cursor(&mut self) -> Option<u64> {
+        if !self.drafts.staging_allowed() || self.columns.is_empty() {
+            return None;
+        }
+        let values: Vec<(String, String)> = self
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                let cell = self.cell_at(self.cursor_row, i);
+                let text = if matches!(
+                    cell.distinction,
+                    CellDistinction::Null | CellDistinction::Pending
+                ) {
+                    String::new()
+                } else {
+                    cell.text.clone()
+                };
+                (name.clone(), text)
+            })
+            .collect();
+        self.drafts.stage_insert(values)
+    }
+
     /// Cycle sort on `column` as primary (removes prior keys for that column).
     pub fn cycle_sort_column(&mut self, column: &str) {
         let existing = self.sort.iter().position(|k| k.column == column);
@@ -1998,6 +2041,48 @@ mod tests {
         assert!(!grid.editability.is_editable());
         assert!(grid.drafts.is_empty());
         assert!(grid.status_line().contains("read-only"));
+    }
+
+    #[test]
+    fn stage_insert_blank_and_from_cursor() {
+        use tablerock_core::ProfileSafetyMode;
+
+        let mut grid = DataGridModel::default();
+        grid.columns = vec!["id".into(), "name".into()];
+        grid.row_count = 1;
+        grid.cells = vec![
+            ProjectedCell {
+                text: "7".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "alice".into(),
+                distinction: CellDistinction::Text,
+                byte_len: 5,
+                original_byte_len: None,
+            },
+        ];
+        grid.base_schema = Some("public".into());
+        grid.base_table = Some("users".into());
+        grid.identity_columns = vec!["id".into()];
+        grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+        let blank = grid.stage_insert_blank().expect("blank");
+        assert_eq!(blank, 0);
+        assert_eq!(grid.drafts.inserts.len(), 1);
+        assert_eq!(grid.drafts.inserts[0].values[0], ("id".into(), String::new()));
+        assert_eq!(grid.drafts.inserts[0].values[1], ("name".into(), String::new()));
+        let dup = grid.stage_insert_from_cursor().expect("dup");
+        assert_eq!(dup, 1);
+        assert_eq!(grid.drafts.inserts[1].values[0].1, "7");
+        assert_eq!(grid.drafts.inserts[1].values[1].1, "alice");
+        assert!(grid.status_line().contains("staged 2"));
+        assert!(grid.status_line().contains("2↑"));
+        // Read-only blocks.
+        grid.recompute_editability(ProfileSafetyMode::ReadOnly, false);
+        assert!(grid.stage_insert_blank().is_none());
+        assert!(grid.stage_insert_from_cursor().is_none());
     }
 
     #[test]

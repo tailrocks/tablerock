@@ -663,6 +663,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let fmt_json = action_label(model, ActionId::FormatJson, "FmtJson");
     let compact_json = action_label(model, ActionId::CompactJson, "CmpJson");
     let delete_row = action_label(model, ActionId::DeleteRow, "DelRow");
+    let insert_row = action_label(model, ActionId::InsertRow, "InsRow");
+    let dup_row = action_label(model, ActionId::DuplicateRow, "DupRow");
     let apply_mut = action_label(model, ActionId::ApplyMutations, "Apply");
     let follow_fk = action_label(model, ActionId::FollowForeignKey, "FollowFK");
     let structure = action_label(model, ActionId::ShowStructure, "Structure");
@@ -1201,6 +1203,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::DeleteRow,
                         label: delete_row.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::InsertRow,
+                        label: insert_row.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DuplicateRow,
+                        label: dup_row.as_str(),
                         enabled: true,
                         style: None,
                     },

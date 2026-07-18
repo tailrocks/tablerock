@@ -3948,6 +3948,24 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::InsertRow if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.stage_insert_blank().is_some() {
+                    model.workbench_mut().mark_active_dirty(true);
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::DuplicateRow if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.stage_insert_from_cursor().is_some() {
+                    model.workbench_mut().mark_active_dirty(true);
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::ApplyMutations if model.screen() == Screen::Workbench => {
             apply_staged_mutations(model)
         }
@@ -4418,6 +4436,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::FormatJson
         | ActionId::CompactJson
         | ActionId::DeleteRow
+        | ActionId::InsertRow
+        | ActionId::DuplicateRow
         | ActionId::ApplyMutations
         | ActionId::FollowForeignKey
         | ActionId::ShowStructure
@@ -5896,6 +5916,8 @@ fn cycle_action(
                 ActionId::FormatJson,
                 ActionId::CompactJson,
                 ActionId::DeleteRow,
+                ActionId::InsertRow,
+                ActionId::DuplicateRow,
                 ActionId::ApplyMutations,
                 ActionId::FollowForeignKey,
                 ActionId::ShowStructure,
