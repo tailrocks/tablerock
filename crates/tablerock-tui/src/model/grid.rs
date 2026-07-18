@@ -919,7 +919,17 @@ impl DataGridModel {
         };
         let staged = self.drafts.status_suffix();
         let edit = if self.editability.is_editable() {
-            String::new()
+            if self.identity_columns.is_empty() {
+                String::new()
+            } else {
+                let keys = self.identity_columns.iter().take(4).cloned().collect::<Vec<_>>();
+                let more = if self.identity_columns.len() > 4 {
+                    format!("+{}", self.identity_columns.len() - 4)
+                } else {
+                    String::new()
+                };
+                format!(" · pk {}{more}", keys.join(","))
+            }
         } else if let Some(reason) = self.editability.reason() {
             format!(" · read-only ({})", reason.label())
         } else {
@@ -2103,6 +2113,11 @@ mod tests {
         grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
         assert!(grid.editability.is_editable());
         assert!(grid.drafts.staging_allowed());
+        assert!(
+            grid.status_line().contains("pk id"),
+            "{}",
+            grid.status_line()
+        );
         assert!(grid.drafts.stage_cell_edit(StagedCellEdit {
             abs_row: 0,
             column: "name".into(),
