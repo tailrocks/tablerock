@@ -4226,6 +4226,25 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopySortBar if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(text) = grid.sort_chip_bar() else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied sort bar ({} bytes)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::EditQuickFilter if model.screen() == Screen::Workbench => {
             if model.workbench().active_grid().is_none() {
                 return Update::unchanged();
@@ -5355,6 +5374,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::EditRawWhere
         | ActionId::ClearRawWhere
         | ActionId::CopyFilterBar
+        | ActionId::CopySortBar
         | ActionId::EditQuickFilter
         | ActionId::ClearQuickFilter
         | ActionId::GoToRow
@@ -7067,6 +7087,7 @@ fn cycle_action(
                 ActionId::EditRawWhere,
                 ActionId::ClearRawWhere,
                 ActionId::CopyFilterBar,
+                ActionId::CopySortBar,
                 ActionId::EditQuickFilter,
                 ActionId::ClearQuickFilter,
                 ActionId::GoToRow,
@@ -8672,6 +8693,40 @@ mod tests {
             grid.base_table = None;
         }
         model.set_action(ActionId::CopyTableName);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+    }
+
+    #[test]
+    fn copy_sort_bar_only_emits_sort_chips() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.push_sort_column("name");
+            grid.push_sort_column("age");
+            grid.add_filter_chip("status", "eq", Some("open".into()));
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopySortBar);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("sort:"), "{text}");
+                assert!(text.contains("[name"), "{text}");
+                assert!(!text.contains("status"), "{text}");
+            }
+            other => panic!("expected sort bar copy, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.clear_sort();
+        }
+        model.set_action(ActionId::CopySortBar);
         assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 

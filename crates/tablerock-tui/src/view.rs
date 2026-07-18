@@ -660,6 +660,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let raw_where = action_label(model, ActionId::EditRawWhere, "RawWhere");
     let clear_raw = action_label(model, ActionId::ClearRawWhere, "ClrRaw");
     let copy_filt_bar = action_label(model, ActionId::CopyFilterBar, "CopyBar");
+    let copy_sort_bar = action_label(model, ActionId::CopySortBar, "CopySort");
     let clear_sort = action_label(model, ActionId::ClearSort, "ClrSort");
     let cycle_sort = action_label(model, ActionId::CycleSort, "Sort");
     let push_sort = action_label(model, ActionId::PushSort, "Sort+");
@@ -1113,6 +1114,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyFilterBar,
                         label: copy_filt_bar.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopySortBar,
+                        label: copy_sort_bar.as_str(),
                         enabled: true,
                         style: None,
                     },

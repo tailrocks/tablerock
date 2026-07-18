@@ -227,6 +227,8 @@ pub enum ActionId {
     ClearRawWhere,
     /// Copy filter + sort chip bar text to clipboard.
     CopyFilterBar,
+    /// Copy sort chip bar only to clipboard.
+    CopySortBar,
     /// Edit page-local quick filter (no server I/O).
     EditQuickFilter,
     /// Clear page-local quick filter (no server I/O).
