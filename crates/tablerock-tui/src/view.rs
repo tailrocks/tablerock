@@ -741,6 +741,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_bare = action_label(model, ActionId::CopyBareTable, "CopyTblN");
     let copy_tbl_ident = action_label(model, ActionId::CopyTableIdent, "CopyTblQ");
     let copy_pk = action_label(model, ActionId::CopyPkNames, "CopyPk");
+    let copy_pk_q = action_label(model, ActionId::CopyPkIdents, "CopyPkQ");
     let copy_loc = action_label(model, ActionId::CopyLocator, "CopyLoc");
     let copy_where = action_label(model, ActionId::CopyWhere, "CopyWhere");
     let toggle_bool = action_label(model, ActionId::ToggleBool, "TogBool");
@@ -1627,6 +1628,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyPkNames,
                         label: copy_pk.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyPkIdents,
+                        label: copy_pk_q.as_str(),
                         enabled: true,
                         style: None,
                     },

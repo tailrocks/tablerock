@@ -180,6 +180,8 @@ pub enum ActionId {
     CopyTableIdent,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
+    /// Copy identity column names as SQL-quoted idents (comma-separated).
+    CopyPkIdents,
     /// Copy locator values for the cursor row (pk=value pairs).
     CopyLocator,
     /// Copy SQL WHERE clause from cursor row locator.

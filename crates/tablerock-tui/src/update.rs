@@ -4003,6 +4003,33 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyPkIdents if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            if grid.identity_columns.is_empty() {
+                return Update::unchanged();
+            }
+            let text = grid
+                .identity_columns
+                .iter()
+                .map(|c| quote_ident_sql(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label =
+                    Some(format!("copied {} pk ident(s)", g.identity_columns.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyLocator if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5711,6 +5738,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyBareTable
         | ActionId::CopyTableIdent
         | ActionId::CopyPkNames
+        | ActionId::CopyPkIdents
         | ActionId::CopyLocator
         | ActionId::CopyWhere
         | ActionId::CycleSort
@@ -7458,6 +7486,7 @@ fn cycle_action(
                 ActionId::CopyBareTable,
                 ActionId::CopyTableIdent,
                 ActionId::CopyPkNames,
+                ActionId::CopyPkIdents,
                 ActionId::CopyLocator,
                 ActionId::CopyWhere,
                 ActionId::CopyMarkdown,
@@ -9343,6 +9372,36 @@ mod tests {
             }
             other => panic!("expected layout json copy, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn copy_pk_idents_comma_quoted() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.identity_columns = vec!["tenant_id".into(), r#"id"x"#.into()];
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyPkIdents);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, r#""tenant_id", "id""x""#);
+            }
+            other => panic!("expected pk idents, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.identity_columns.clear();
+        }
+        model.set_action(ActionId::CopyPkIdents);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
     #[test]
