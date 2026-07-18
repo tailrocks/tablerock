@@ -65,6 +65,18 @@ impl DriverSession for HoldSession {
         Box::pin(async { CancelDispatch::Unsupported })
     }
 
+    fn health<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::SessionHealth, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::SessionHealth::new(
+                Engine::PostgreSql,
+                true,
+                0,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move {
             self.0.store(true, Ordering::SeqCst);
@@ -89,6 +101,18 @@ impl DriverSession for PanicSession {
         Box::pin(async { CancelDispatch::Unsupported })
     }
 
+    fn health<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::SessionHealth, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::SessionHealth::new(
+                Engine::PostgreSql,
+                true,
+                0,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async { Ok(()) })
     }
@@ -111,6 +135,18 @@ impl DriverSession for PageSession {
 
     fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
         Box::pin(async { CancelDispatch::Unsupported })
+    }
+
+    fn health<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::SessionHealth, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::SessionHealth::new(
+                Engine::PostgreSql,
+                true,
+                0,
+            ))
+        })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
@@ -307,8 +343,7 @@ async fn core_rejection_retains_session_without_shutdown() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let mut core = configured_core(1);
     core.submit(operation(1), command(100)).unwrap();
-    let mut service =
-        EngineService::new(core, DriverRuntime::new(1, 2).unwrap(), 8).unwrap();
+    let mut service = EngineService::new(core, DriverRuntime::new(1, 2).unwrap(), 8).unwrap();
     let error = service
         .submit(
             operation(2),

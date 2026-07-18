@@ -1911,3 +1911,177 @@ async fn verify_typed_values(tag: &str) {
     drop(parameters);
     session.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn persistent_session_runs_statement_cancel_health_and_reuses_connection() {
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+    let session_id =
+        tablerock_core::SessionId::from_parts(tablerock_core::IdParts::new(0, 900).unwrap())
+            .unwrap();
+    let mut service = support::service(4, 4);
+    let handle = service
+        .register_session(session_id, Box::new(session))
+        .unwrap();
+
+    // Statement 1: typed rows.
+    let op1 = support::operation(901);
+    service
+        .submit(
+            op1,
+            support::command(901),
+            Arc::clone(&handle),
+            DriverPageRequest::PostgreSqlStatement {
+                statement: tablerock_core::StatementText::new(
+                    "SELECT 1::int4 AS n UNION ALL SELECT 2::int4 ORDER BY 1",
+                )
+                .unwrap(),
+                limits: PageLimits::new(10, 8, 4096, 256),
+                max_cell_bytes: 64,
+            },
+            support::identity(Engine::PostgreSql, 901),
+        )
+        .await
+        .unwrap();
+    let mut rows = 0_u32;
+    loop {
+        match service.next_update(op1).await.unwrap().unwrap() {
+            EngineServiceUpdate::Started => {}
+            EngineServiceUpdate::Page(page) => rows += page.envelope().row_count(),
+            EngineServiceUpdate::Terminal(tablerock_core::OperationOutcome::Completed) => break,
+            other => panic!("unexpected first statement event: {other:?}"),
+        }
+    }
+    assert_eq!(rows, 2);
+
+    // Statement 2: reuses the same registered session.
+    let op2 = support::operation(902);
+    service
+        .submit(
+            op2,
+            support::command(902),
+            Arc::clone(&handle),
+            DriverPageRequest::PostgreSqlStatement {
+                statement: tablerock_core::StatementText::new("SELECT 'reuse'::text AS label")
+                    .unwrap(),
+                limits: PageLimits::new(10, 8, 4096, 256),
+                max_cell_bytes: 64,
+            },
+            support::identity(Engine::PostgreSql, 902),
+        )
+        .await
+        .unwrap();
+    loop {
+        match service.next_update(op2).await.unwrap().unwrap() {
+            EngineServiceUpdate::Started | EngineServiceUpdate::Page(_) => {}
+            EngineServiceUpdate::Terminal(tablerock_core::OperationOutcome::Completed) => break,
+            other => panic!("unexpected second statement event: {other:?}"),
+        }
+    }
+
+    // Cancel a long statement expressed as caller SQL.
+    let op3 = support::operation(903);
+    service
+        .submit(
+            op3,
+            support::command(903),
+            Arc::clone(&handle),
+            DriverPageRequest::PostgreSqlStatement {
+                statement: tablerock_core::StatementText::new(
+                    "SELECT g FROM generate_series(1, 1000000) AS g, pg_sleep(0.05)",
+                )
+                .unwrap(),
+                limits: PageLimits::new(1, 2, 128, 128),
+                max_cell_bytes: 32,
+            },
+            support::identity(Engine::PostgreSql, 903),
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        service.next_update(op3).await.unwrap().unwrap(),
+        EngineServiceUpdate::Started
+    ));
+    let _ = service.next_update(op3).await.unwrap(); // may be page or still starting
+    service.cancel(op3).unwrap();
+    loop {
+        match service.next_update(op3).await.unwrap().unwrap() {
+            EngineServiceUpdate::Page(_)
+            | EngineServiceUpdate::CancelDispatched(_)
+            | EngineServiceUpdate::Started => {}
+            EngineServiceUpdate::Terminal(outcome) => {
+                assert!(
+                    matches!(
+                        outcome,
+                        tablerock_core::OperationOutcome::ServerConfirmedCancelled
+                            | tablerock_core::OperationOutcome::CompletedBeforeCancel
+                            | tablerock_core::OperationOutcome::Completed
+                    ),
+                    "cancel terminal was {outcome:?}"
+                );
+                break;
+            }
+        }
+    }
+
+    // Health after cancel.
+    let health = handle.health().await.unwrap();
+    assert!(health.server_reachable());
+    assert_eq!(health.engine(), Engine::PostgreSql);
+
+    // Syntax error surfaces as query failure; session remains usable.
+    let op4 = support::operation(904);
+    service
+        .submit(
+            op4,
+            support::command(904),
+            Arc::clone(&handle),
+            DriverPageRequest::PostgreSqlStatement {
+                statement: tablerock_core::StatementText::new("SELEC this_is_not_valid").unwrap(),
+                limits: PageLimits::new(10, 8, 4096, 256),
+                max_cell_bytes: 64,
+            },
+            support::identity(Engine::PostgreSql, 904),
+        )
+        .await
+        .unwrap();
+    loop {
+        match service.next_update(op4).await.unwrap().unwrap() {
+            EngineServiceUpdate::Started => {}
+            EngineServiceUpdate::Terminal(tablerock_core::OperationOutcome::Failed) => break,
+            other => panic!("expected failed syntax event, got {other:?}"),
+        }
+    }
+    let health = handle.health().await.unwrap();
+    assert!(health.server_reachable());
+
+    // Empty statement rejected pre-I/O path (InvalidLimits -> Query/Invalid).
+    let empty = handle
+        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+            statement: tablerock_core::StatementText::new("").unwrap(),
+            limits: PageLimits::new(10, 8, 4096, 256),
+            max_cell_bytes: 64,
+        })
+        .await;
+    assert!(empty.is_err());
+
+    drop(handle);
+    service.disconnect(session_id).await.unwrap();
+}

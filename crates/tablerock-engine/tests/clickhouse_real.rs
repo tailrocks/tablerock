@@ -449,3 +449,123 @@ fn assert_structured(
     assert_eq!(cell.bytes(), expected.as_bytes());
     assert_eq!(cell.truncation(), truncation);
 }
+
+#[tokio::test]
+async fn persistent_session_runs_statement_health_and_reuses_connection() {
+    let image =
+        "26.3.17.4-jammy@sha256:158dcce6f6fdc59309650aad6b79484abf4eed07d4e0bdba31d732e64b5a25fb";
+    let container = GenericImage::new("clickhouse", image)
+        .with_exposed_port(8123.tcp())
+        .with_env_var("CLICKHOUSE_SKIP_USER_SETUP", "1")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
+    // Wait until HTTP queries answer; container start alone is not enough.
+    let session = ready_clickhouse_session(port, ClickHouseCompression::None).await;
+    let session_id =
+        tablerock_core::SessionId::from_parts(tablerock_core::IdParts::new(0, 910).unwrap())
+            .unwrap();
+    let mut service = support::service(4, 4);
+    let handle = service
+        .register_session(session_id, Box::new(session))
+        .unwrap();
+
+    let op1 = support::operation(911);
+    service
+        .submit(
+            op1,
+            support::command(911),
+            Arc::clone(&handle),
+            DriverPageRequest::ClickHouseStatement {
+                statement: tablerock_core::StatementText::new(
+                    "SELECT number AS id FROM numbers(3)",
+                )
+                .unwrap(),
+                query_id: text(&format!("tablerock-stmt-1-{port}")),
+                limits: PageLimits::new(10, 8, 4096, 256),
+                max_cell_bytes: 64,
+            },
+            support::identity(Engine::ClickHouse, 911),
+        )
+        .await
+        .unwrap();
+    let mut rows = 0_u32;
+    loop {
+        match service.next_update(op1).await.unwrap().unwrap() {
+            EngineServiceUpdate::Started => {}
+            EngineServiceUpdate::Page(page) => rows += page.envelope().row_count(),
+            EngineServiceUpdate::Terminal(tablerock_core::OperationOutcome::Completed) => break,
+            other => panic!("unexpected first CH statement event: {other:?}"),
+        }
+    }
+    assert_eq!(rows, 3);
+
+    let op2 = support::operation(912);
+    service
+        .submit(
+            op2,
+            support::command(912),
+            Arc::clone(&handle),
+            DriverPageRequest::ClickHouseStatement {
+                statement: tablerock_core::StatementText::new("SELECT toUInt8(42) AS answer")
+                    .unwrap(),
+                query_id: text(&format!("tablerock-stmt-2-{port}")),
+                limits: PageLimits::new(10, 8, 4096, 256),
+                max_cell_bytes: 64,
+            },
+            support::identity(Engine::ClickHouse, 912),
+        )
+        .await
+        .unwrap();
+    loop {
+        match service.next_update(op2).await.unwrap().unwrap() {
+            EngineServiceUpdate::Started | EngineServiceUpdate::Page(_) => {}
+            EngineServiceUpdate::Terminal(tablerock_core::OperationOutcome::Completed) => break,
+            other => panic!("unexpected second CH statement event: {other:?}"),
+        }
+    }
+
+    let health = handle.health().await.unwrap();
+    assert!(health.server_reachable());
+    assert_eq!(health.engine(), Engine::ClickHouse);
+
+    let bad = handle
+        .start_page_stream(DriverPageRequest::ClickHouseStatement {
+            statement: tablerock_core::StatementText::new("SELEC not_valid").unwrap(),
+            query_id: text(&format!("tablerock-stmt-bad-{port}")),
+            limits: PageLimits::new(10, 8, 4096, 256),
+            max_cell_bytes: 64,
+        })
+        .await;
+    assert!(bad.is_err());
+    let health = handle.health().await.unwrap();
+    assert!(health.server_reachable());
+
+    drop(handle);
+    service.disconnect(session_id).await.unwrap();
+}
+
+async fn ready_clickhouse_session(
+    port: u16,
+    compression: ClickHouseCompression,
+) -> ClickHouseSession {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
+            text("127.0.0.1"),
+            port,
+            text("default"),
+            text("default"),
+            ClickHouseTlsMode::Disable,
+            compression,
+        ));
+        match session.health_check().await {
+            Ok(()) => return session,
+            Err(_) if tokio::time::Instant::now() < deadline => {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            Err(error) => panic!("ClickHouse never became ready: {error:?}"),
+        }
+    }
+}

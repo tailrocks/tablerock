@@ -107,8 +107,10 @@ Done so far:
 - Performance: current-line 10,000-row streaming, first-page, throughput,
   page-residency, and process-RSS budgets.
 
-Still open: the remaining driver matrix, product file effects, UI/UniFFI
-integration, and everything in Phase 3 onward.
+Still open: catalog listing, product file effects, UI/UniFFI integration, and
+everything in Phase 3 onward. Engine sessions are now reusable across
+operations with operator-supplied SQL (PG/CH) and per-engine health checks;
+see evidence 193–195.
 
 ## Phase 3 — connection experience
 

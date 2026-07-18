@@ -1202,6 +1202,15 @@ impl RedisSession {
         })
     }
 
+    pub async fn health_check(&self) -> Result<(), RedisError> {
+        let mut connection = self.connection.clone();
+        redis::cmd("PING")
+            .query_async::<String>(&mut connection)
+            .await
+            .map(|_| ())
+            .map_err(|_| RedisError::Connection)
+    }
+
     pub async fn dispatch_cancel(&self) -> Result<RedisCancelDispatch, RedisError> {
         if let Some(operation) = self.subscription.active() {
             operation.cancel_requested.store(true, Ordering::Release);

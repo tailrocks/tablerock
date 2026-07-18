@@ -7,8 +7,8 @@ use tablerock_core::{
     CancelDispatch, Engine, IdParts, OperationId, PageIdentity, ResultId, Revision, SessionId,
 };
 use tablerock_engine::{
-    AdapterError, DriverFuture, DriverPageRequest, DriverPageStream, DriverSession, SessionRegistry,
-    SessionRegistryError,
+    AdapterError, DriverFuture, DriverPageRequest, DriverPageStream, DriverSession,
+    SessionRegistry, SessionRegistryError,
 };
 
 struct CountingSession {
@@ -42,6 +42,18 @@ impl DriverSession for CountingSession {
 
     fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
         Box::pin(async { CancelDispatch::Unsupported })
+    }
+
+    fn health<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::SessionHealth, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::SessionHealth::new(
+                Engine::PostgreSql,
+                true,
+                0,
+            ))
+        })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {

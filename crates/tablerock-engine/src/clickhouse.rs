@@ -245,6 +245,44 @@ impl ClickHouseSession {
         limits: PageLimits,
         max_cell_bytes: u64,
     ) -> Result<ClickHouseRowStream, ClickHouseError> {
+        let mut request = self
+            .client
+            .query(query.sql())
+            .with_setting("query_id", query_id.as_str());
+        if query == ClickHouseProbeQuery::CancellationStream {
+            request = request.with_setting("max_block_size", "1");
+        }
+        self.stream_rowbinary(request, query_id, limits, max_cell_bytes)
+            .await
+    }
+
+    /// Streams an operator-supplied statement through RowBinaryWithNamesAndTypes.
+    /// Statement text is not retained on the session after the request is built.
+    pub async fn stream_statement(
+        &self,
+        sql: &str,
+        query_id: &BoundedText,
+        limits: PageLimits,
+        max_cell_bytes: u64,
+    ) -> Result<ClickHouseRowStream, ClickHouseError> {
+        if sql.is_empty() {
+            return Err(ClickHouseError::InvalidLimits);
+        }
+        let request = self
+            .client
+            .query(sql)
+            .with_setting("query_id", query_id.as_str());
+        self.stream_rowbinary(request, query_id, limits, max_cell_bytes)
+            .await
+    }
+
+    async fn stream_rowbinary(
+        &self,
+        request: clickhouse::query::Query,
+        query_id: &BoundedText,
+        limits: PageLimits,
+        max_cell_bytes: u64,
+    ) -> Result<ClickHouseRowStream, ClickHouseError> {
         if limits.max_rows() == 0
             || limits.max_columns() == 0
             || limits.max_arena_bytes() == 0
@@ -257,13 +295,6 @@ impl ClickHouseSession {
         }
         if !self.active.register(query_id.clone()) {
             return Err(ClickHouseError::SessionBusy);
-        }
-        let mut request = self
-            .client
-            .query(query.sql())
-            .with_setting("query_id", query_id.as_str());
-        if query == ClickHouseProbeQuery::CancellationStream {
-            request = request.with_setting("max_block_size", "1");
         }
         let cursor = request
             .fetch_bytes("RowBinaryWithNamesAndTypes")
@@ -289,6 +320,18 @@ impl ClickHouseSession {
             }
             Ok(stream) => Ok(stream),
         }
+    }
+
+    pub async fn health_check(&self) -> Result<(), ClickHouseError> {
+        let cursor = self
+            .client
+            .query("SELECT 1")
+            .fetch_bytes("RowBinary")
+            .map_err(|_| ClickHouseError::Query)?;
+        let mut reader = ChunkReader::new(cursor);
+        let mut buf = [0_u8; 1];
+        reader.read_exact(&mut buf).await?;
+        Ok(())
     }
 
     pub async fn dispatch_cancel(&self) -> Result<bool, ClickHouseError> {

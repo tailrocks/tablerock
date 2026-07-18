@@ -1,8 +1,8 @@
-use std::{error::Error, fmt, future::Future, pin::Pin};
+use std::{error::Error, fmt, future::Future, pin::Pin, time::Instant};
 
 use tablerock_core::{
     BoundedBytes, BoundedText, CancelDispatch, Engine, OperationId, PageIdentity, PageLimits,
-    ResultPage,
+    ResultPage, StatementText,
 };
 
 use crate::{
@@ -14,14 +14,61 @@ use crate::{
 
 pub type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Cheap connectivity fact from `DriverSession::health`. No version strings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionHealth {
+    engine: Engine,
+    server_reachable: bool,
+    elapsed_millis: u64,
+}
+
+impl SessionHealth {
+    #[must_use]
+    pub const fn new(engine: Engine, server_reachable: bool, elapsed_millis: u64) -> Self {
+        Self {
+            engine,
+            server_reachable,
+            elapsed_millis,
+        }
+    }
+
+    #[must_use]
+    pub const fn engine(self) -> Engine {
+        self.engine
+    }
+
+    #[must_use]
+    pub const fn server_reachable(self) -> bool {
+        self.server_reachable
+    }
+
+    #[must_use]
+    pub const fn elapsed_millis(self) -> u64 {
+        self.elapsed_millis
+    }
+}
+
 pub enum DriverPageRequest {
     PostgreSqlProbe {
         query: PostgresProbeQuery,
         limits: PageLimits,
         max_cell_bytes: u64,
     },
+    /// Operator-supplied PostgreSQL statement. Text is never logged by Debug.
+    PostgreSqlStatement {
+        statement: StatementText,
+        limits: PageLimits,
+        max_cell_bytes: u64,
+    },
     ClickHouseProbe {
         query: ClickHouseProbeQuery,
+        query_id: BoundedText,
+        limits: PageLimits,
+        max_cell_bytes: u64,
+    },
+    /// Operator-supplied ClickHouse statement. Text is never logged by Debug.
+    ClickHouseStatement {
+        statement: StatementText,
         query_id: BoundedText,
         limits: PageLimits,
         max_cell_bytes: u64,
@@ -53,8 +100,8 @@ impl DriverPageRequest {
     #[must_use]
     pub const fn engine(&self) -> Engine {
         match self {
-            Self::PostgreSqlProbe { .. } => Engine::PostgreSql,
-            Self::ClickHouseProbe { .. } => Engine::ClickHouse,
+            Self::PostgreSqlProbe { .. } | Self::PostgreSqlStatement { .. } => Engine::PostgreSql,
+            Self::ClickHouseProbe { .. } | Self::ClickHouseStatement { .. } => Engine::ClickHouse,
             Self::RedisKeyScan { .. }
             | Self::RedisCollectionScan { .. }
             | Self::RedisBlockingPop { .. }
@@ -76,6 +123,14 @@ impl fmt::Debug for DriverPageRequest {
                 .field("probe", query)
                 .field("limits", limits)
                 .field("max_cell_bytes", max_cell_bytes),
+            Self::PostgreSqlStatement {
+                statement,
+                limits,
+                max_cell_bytes,
+            } => debug
+                .field("statement_bytes", &statement.len())
+                .field("limits", limits)
+                .field("max_cell_bytes", max_cell_bytes),
             Self::ClickHouseProbe {
                 query,
                 query_id,
@@ -83,6 +138,16 @@ impl fmt::Debug for DriverPageRequest {
                 max_cell_bytes,
             } => debug
                 .field("probe", query)
+                .field("query_id_bytes", &query_id.len())
+                .field("limits", limits)
+                .field("max_cell_bytes", max_cell_bytes),
+            Self::ClickHouseStatement {
+                statement,
+                query_id,
+                limits,
+                max_cell_bytes,
+            } => debug
+                .field("statement_bytes", &statement.len())
                 .field("query_id_bytes", &query_id.len())
                 .field("limits", limits)
                 .field("max_cell_bytes", max_cell_bytes),
@@ -192,7 +257,29 @@ pub trait DriverSession: Send + Sync {
 
     fn cancel<'a>(&'a self, operation_id: OperationId) -> DriverFuture<'a, CancelDispatch>;
 
+    /// Cheap round-trip proving the session can still reach the server.
+    fn health<'a>(&'a self) -> DriverFuture<'a, Result<SessionHealth, AdapterError>>;
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>>;
+}
+
+pub(crate) fn measure_health<'a, F, Fut>(
+    engine: Engine,
+    work: F,
+) -> DriverFuture<'a, Result<SessionHealth, AdapterError>>
+where
+    F: FnOnce() -> Fut + Send + 'a,
+    Fut: Future<Output = Result<(), AdapterError>> + Send + 'a,
+{
+    Box::pin(async move {
+        let started = Instant::now();
+        work().await?;
+        Ok(SessionHealth::new(
+            engine,
+            true,
+            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        ))
+    })
 }
 
 impl DriverPageStream for PostgresRowStream {
@@ -289,21 +376,30 @@ impl DriverSession for PostgresSession {
         request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
         Box::pin(async move {
-            let DriverPageRequest::PostgreSqlProbe {
-                query,
-                limits,
-                max_cell_bytes,
-            } = request
-            else {
-                return Err(AdapterError::new(
+            match request {
+                DriverPageRequest::PostgreSqlProbe {
+                    query,
+                    limits,
+                    max_cell_bytes,
+                } => self
+                    .stream_probe(query, limits, max_cell_bytes)
+                    .await
+                    .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
+                    .map_err(map_postgres),
+                DriverPageRequest::PostgreSqlStatement {
+                    statement,
+                    limits,
+                    max_cell_bytes,
+                } => self
+                    .stream_statement(statement.as_str(), limits, max_cell_bytes)
+                    .await
+                    .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
+                    .map_err(map_postgres),
+                _ => Err(AdapterError::new(
                     Engine::PostgreSql,
                     AdapterFailureClass::EngineMismatch,
-                ));
-            };
-            self.stream_probe(query, limits, max_cell_bytes)
-                .await
-                .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
-                .map_err(map_postgres)
+                )),
+            }
         })
     }
 
@@ -313,6 +409,12 @@ impl DriverSession for PostgresSession {
                 Ok(()) => CancelDispatch::RequestSent,
                 Err(_) => CancelDispatch::TransportFailed,
             }
+        })
+    }
+
+    fn health<'a>(&'a self) -> DriverFuture<'a, Result<SessionHealth, AdapterError>> {
+        measure_health(Engine::PostgreSql, || async {
+            self.health_check().await.map_err(map_postgres)
         })
     }
 
@@ -330,25 +432,33 @@ impl DriverSession for ClickHouseSession {
         &'a self,
         request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
-        let DriverPageRequest::ClickHouseProbe {
-            query,
-            query_id,
-            limits,
-            max_cell_bytes,
-        } = request
-        else {
-            return Box::pin(async {
-                Err(AdapterError::new(
+        Box::pin(async move {
+            match request {
+                DriverPageRequest::ClickHouseProbe {
+                    query,
+                    query_id,
+                    limits,
+                    max_cell_bytes,
+                } => self
+                    .stream_probe(query, &query_id, limits, max_cell_bytes)
+                    .await
+                    .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
+                    .map_err(map_clickhouse),
+                DriverPageRequest::ClickHouseStatement {
+                    statement,
+                    query_id,
+                    limits,
+                    max_cell_bytes,
+                } => self
+                    .stream_statement(statement.as_str(), &query_id, limits, max_cell_bytes)
+                    .await
+                    .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
+                    .map_err(map_clickhouse),
+                _ => Err(AdapterError::new(
                     Engine::ClickHouse,
                     AdapterFailureClass::EngineMismatch,
-                ))
-            });
-        };
-        Box::pin(async move {
-            self.stream_probe(query, &query_id, limits, max_cell_bytes)
-                .await
-                .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
-                .map_err(map_clickhouse)
+                )),
+            }
         })
     }
 
@@ -359,6 +469,12 @@ impl DriverSession for ClickHouseSession {
                 Ok(false) => CancelDispatch::ServerRejected,
                 Err(_) => CancelDispatch::TransportFailed,
             }
+        })
+    }
+
+    fn health<'a>(&'a self) -> DriverFuture<'a, Result<SessionHealth, AdapterError>> {
+        measure_health(Engine::ClickHouse, || async {
+            self.health_check().await.map_err(map_clickhouse)
         })
     }
 
@@ -431,6 +547,12 @@ impl DriverSession for RedisSession {
                 Ok(crate::RedisCancelDispatch::ServerRejected) => CancelDispatch::ServerRejected,
                 Err(_) => CancelDispatch::TransportFailed,
             }
+        })
+    }
+
+    fn health<'a>(&'a self) -> DriverFuture<'a, Result<SessionHealth, AdapterError>> {
+        measure_health(Engine::Redis, || async {
+            self.health_check().await.map_err(map_redis)
         })
     }
 

@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
-    DriverSession,
+    DriverSession, SessionHealth,
 };
 
 /// Upper bound for concurrent registered sessions (ServiceLimits scale).
@@ -98,6 +98,19 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn health<'a>(&'a self) -> DriverFuture<'a, Result<SessionHealth, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => session.health().await,
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move { self.shutdown_exclusive().await })
     }
@@ -158,10 +171,7 @@ impl SessionRegistry {
     }
 
     /// Remove and shut down the session when no operation still holds a borrow.
-    pub async fn disconnect(
-        &mut self,
-        session_id: SessionId,
-    ) -> Result<(), SessionRegistryError> {
+    pub async fn disconnect(&mut self, session_id: SessionId) -> Result<(), SessionRegistryError> {
         let Some(slot) = self.sessions.remove(&session_id) else {
             return Err(SessionRegistryError::UnknownSession);
         };

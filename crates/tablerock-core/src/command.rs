@@ -251,8 +251,12 @@ pub enum CommandIntent {
     FetchPage(PageRequest),
     /// Operator-supplied statement. Treated as a potential write until a later
     /// phase classifies statements by engine-specific parse facts.
-    Execute { statement: StatementText },
-    Cancel { operation_id: OperationId },
+    Execute {
+        statement: StatementText,
+    },
+    Cancel {
+        operation_id: OperationId,
+    },
     Shutdown,
 }
 

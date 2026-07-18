@@ -836,6 +836,50 @@ impl PostgresSession {
         })
     }
 
+    /// Streams an operator-supplied statement through the same decoder path as probes.
+    /// Statement text is never retained on this type after prepare begins.
+    pub async fn stream_statement(
+        &self,
+        sql: &str,
+        limits: PageLimits,
+        max_cell_bytes: u64,
+    ) -> Result<PostgresRowStream, PostgresError> {
+        if sql.is_empty()
+            || limits.max_rows() == 0
+            || limits.max_columns() == 0
+            || limits.max_arena_bytes() == 0
+            || max_cell_bytes == 0
+        {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let statement = self
+            .client
+            .prepare(sql)
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        let columns = decode_columns(statement.columns(), limits)?;
+        let stream = self
+            .client
+            .query_raw(&statement, Vec::<&(dyn ToSql + Sync)>::new())
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        Ok(PostgresRowStream {
+            stream: Box::pin(stream),
+            columns,
+            limits,
+            max_cell_bytes,
+            complete: false,
+        })
+    }
+
+    pub async fn health_check(&self) -> Result<(), PostgresError> {
+        self.client
+            .simple_query("SELECT 1")
+            .await
+            .map(|_| ())
+            .map_err(|_| PostgresError::Connection)
+    }
+
     pub async fn prepare_composite_probe(&self) -> Result<(), PostgresError> {
         self.client
             .batch_execute(

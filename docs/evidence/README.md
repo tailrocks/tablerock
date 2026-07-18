@@ -63,6 +63,7 @@ How to read an evidence document:
 - 175 — [Phase 2 temporal value contract](phase-2/core/175-phase-2-temporal-value-contract.md)
 - 193 — [Phase 2 Execute intent and StatementText](phase-2/core/193-phase-2-execute-intent.md)
 - 194 — [Phase 2 session registry and Arc runtime borrow](phase-2/core/194-phase-2-session-registry.md)
+- 195 — [Phase 2 arbitrary statements and session health](phase-2/core/195-phase-2-arbitrary-statements-and-health.md)
 
 ## Phase 2 — profiles
 

@@ -15,9 +15,7 @@ use crate::{
 
 #[derive(Debug)]
 pub enum EngineServiceError {
-    CoreSubmission {
-        error: ServiceError,
-    },
+    CoreSubmission { error: ServiceError },
     Core(ServiceError),
     Spawn(DriverSpawnError),
     Runtime(DriverRuntimeError),
@@ -110,10 +108,7 @@ impl EngineService {
         self.sessions.session(session_id)
     }
 
-    pub async fn disconnect(
-        &mut self,
-        session_id: SessionId,
-    ) -> Result<(), EngineServiceError> {
+    pub async fn disconnect(&mut self, session_id: SessionId) -> Result<(), EngineServiceError> {
         match self.sessions.disconnect(session_id).await {
             Ok(()) => Ok(()),
             Err(SessionRegistryError::SessionBusy) => Err(EngineServiceError::SessionBusy),

@@ -78,6 +78,18 @@ impl DriverSession for StartingSession {
         })
     }
 
+    fn health<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::SessionHealth, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::SessionHealth::new(
+                Engine::PostgreSql,
+                true,
+                0,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move {
             self.shutdown.store(true, Ordering::SeqCst);
@@ -111,6 +123,18 @@ impl DriverSession for ControlledSession {
             self.released.store(true, Ordering::SeqCst);
             self.release.notify_one();
             CancelDispatch::RequestSent
+        })
+    }
+
+    fn health<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::SessionHealth, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::SessionHealth::new(
+                Engine::PostgreSql,
+                true,
+                0,
+            ))
         })
     }
 

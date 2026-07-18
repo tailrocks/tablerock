@@ -18,7 +18,7 @@ plan).
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 001 | CI verification baseline (build/test/lint workflow) | P1 | S | — | DONE |
-| 002 | Engine persistent sessions + arbitrary-statement execution | P1 | L | 001 | IN PROGRESS |
+| 002 | Engine persistent sessions + arbitrary-statement execution | P1 | L | 001 | DONE |
 | 003 | Catalog listing service (PG/CH/Redis) | P1 | M | 002 | TODO |
 | 004 | Profile domain gaps + secret resolution (env tag, groups, search, prompt/plaintext) | P1 | M | 001 | TODO |
 | 005 | TUI effect executor + engine bridge + submodel architecture | P1 | L | 002, 004 | TODO |

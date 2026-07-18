@@ -11,7 +11,7 @@ mod temporal;
 
 pub use adapter::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
-    DriverSession,
+    DriverSession, SessionHealth,
 };
 pub use clickhouse::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseError, ClickHouseProbeQuery,
