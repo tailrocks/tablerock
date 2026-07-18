@@ -3722,6 +3722,27 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyPkNames if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            if grid.identity_columns.is_empty() {
+                return Update::unchanged();
+            }
+            let text = grid.identity_columns.join("\t");
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label =
+                    Some(format!("copied {} pk name(s)", g.identity_columns.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -5034,6 +5055,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyColumn
         | ActionId::CopyStatus
         | ActionId::CopyTableName
+        | ActionId::CopyPkNames
         | ActionId::CycleSort
         | ActionId::PushSort
         | ActionId::PopSort
@@ -6677,6 +6699,7 @@ fn cycle_action(
                 ActionId::CopyColumn,
                 ActionId::CopyStatus,
                 ActionId::CopyTableName,
+                ActionId::CopyPkNames,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,
@@ -8242,6 +8265,37 @@ mod tests {
             Some("notice: NOTICE: table-rock-notice")
         );
         assert_eq!(grid.notice_history.as_slice(), ["NOTICE: table-rock-notice"]);
+    }
+
+    #[test]
+    fn copy_pk_names_emits_tsv() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.identity_columns = vec!["tenant_id".into(), "id".into()];
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyPkNames);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "tenant_id\tid");
+            }
+            other => panic!("expected CopyToClipboard, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.identity_columns.clear();
+        }
+        model.set_action(ActionId::CopyPkNames);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
     #[test]

@@ -150,6 +150,8 @@ pub enum ActionId {
     CopyStatus,
     /// Copy base schema.table identity if known.
     CopyTableName,
+    /// Copy identity (pk) column names tab-separated.
+    CopyPkNames,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Append cursor column as secondary sort (or cycle its direction in place).
