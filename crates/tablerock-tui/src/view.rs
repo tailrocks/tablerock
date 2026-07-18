@@ -265,6 +265,12 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 confirm_buffer
             ),
         ),
+        crate::model::ConfirmDialog::FindReplace { confirm_buffer } => (
+            "Find/replace?",
+            format!(
+                "Paste find=>replace[=>all][=>i] then Submit [{confirm_buffer}]"
+            ),
+        ),
     };
     let panel = Panel::new(&model.theme)
         .title(title)
@@ -393,6 +399,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let new_sql = action_label(model, ActionId::NewSql, "SQL");
     let run_sql = action_label(model, ActionId::RunSql, "Run");
     let explain = action_label(model, ActionId::Explain, "Explain");
+    let find_rep = action_label(model, ActionId::FindReplace, "FindRep");
     let complete = action_label(model, ActionId::Complete, "Complete");
     let history = action_label(model, ActionId::History, "History");
     let restore_hist = action_label(model, ActionId::RestoreHistory, "Restore");
@@ -540,6 +547,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::Explain,
                         label: explain.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FindReplace,
+                        label: find_rep.as_str(),
                         enabled: true,
                         style: None,
                     },

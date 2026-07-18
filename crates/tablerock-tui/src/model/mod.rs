@@ -178,6 +178,8 @@ pub enum ActionId {
     Explain,
     /// Fuzzy switch across open tabs (stable titles).
     QuickSwitch,
+    /// Find/replace in the active SQL editor (literal; optional case-insensitive).
+    FindReplace,
     Submit,
     Cancel,
     Quit,
@@ -255,6 +257,11 @@ pub enum ConfirmDialog {
         names: Vec<String>,
         /// Original statement text (with `:name`); rewritten on submit.
         statement: String,
+        confirm_buffer: String,
+    },
+    /// Find/replace: paste `find=>replace` or `find=>replace=>all` / `=>i` for
+    /// case-insensitive; Submit applies.
+    FindReplace {
         confirm_buffer: String,
     },
 }

@@ -196,6 +196,77 @@ impl QueryEditorModel {
         statement_at(&self.text, self.dialect, self.cursor).map(StatementSpanView::from)
     }
 
+    /// Find next occurrence of `needle` at or after cursor (literal, case-sensitive
+    /// unless `case_insensitive`). Returns start byte index or None.
+    #[must_use]
+    pub fn find_next(&self, needle: &str, case_insensitive: bool) -> Option<usize> {
+        if needle.is_empty() {
+            return None;
+        }
+        let from = self.cursor.min(self.text.len());
+        let hay = &self.text[from..];
+        let rel = if case_insensitive {
+            hay.to_ascii_lowercase()
+                .find(&needle.to_ascii_lowercase())
+        } else {
+            hay.find(needle)
+        }?;
+        Some(from + rel)
+    }
+
+    /// Replace the first match at/after cursor; moves cursor after replacement.
+    /// Returns true when a replacement occurred.
+    pub fn replace_next(
+        &mut self,
+        needle: &str,
+        replacement: &str,
+        case_insensitive: bool,
+    ) -> bool {
+        let Some(start) = self.find_next(needle, case_insensitive) else {
+            return false;
+        };
+        let end = start + needle.len();
+        if end > self.text.len() {
+            return false;
+        }
+        // Case-insensitive match may differ in length of actual slice — use found length.
+        let actual_end = if case_insensitive {
+            // Re-find exact byte length of match in original by comparing lowered.
+            let hay = &self.text[start..];
+            let n = needle.len().min(hay.len());
+            start + n
+        } else {
+            end
+        };
+        self.text.replace_range(start..actual_end, replacement);
+        self.cursor = start + replacement.len();
+        self.selection = None;
+        self.bump_revision();
+        self.recompute_spans();
+        true
+    }
+
+    /// Replace all occurrences (left-to-right, non-overlapping). Returns count.
+    pub fn replace_all(
+        &mut self,
+        needle: &str,
+        replacement: &str,
+        case_insensitive: bool,
+    ) -> usize {
+        if needle.is_empty() {
+            return 0;
+        }
+        let mut count = 0usize;
+        self.cursor = 0;
+        while self.replace_next(needle, replacement, case_insensitive) {
+            count += 1;
+            if count > 10_000 {
+                break; // safety bound
+            }
+        }
+        count
+    }
+
     /// Text Run should execute: selection if non-empty, else current statement.
     #[must_use]
     pub fn run_text(&self) -> Option<String> {
@@ -325,6 +396,22 @@ mod tests {
         assert!(!ed.spans().is_empty());
         assert!(ed.current_statement_span().is_some_and(|s| !s.complete));
         let _ = ed.run_text();
+    }
+
+    #[test]
+    fn find_and_replace_literal() {
+        let mut ed = QueryEditorModel::new(SqlDialect::PostgreSql);
+        ed.set_text("SELECT foo FROM foo");
+        ed.set_cursor(0);
+        assert_eq!(ed.find_next("foo", false), Some(7));
+        assert!(ed.replace_next("foo", "bar", false));
+        assert_eq!(ed.text(), "SELECT bar FROM foo");
+        assert!(ed.replace_next("foo", "bar", false));
+        assert_eq!(ed.text(), "SELECT bar FROM bar");
+        ed.set_text("Aa Bb aa");
+        ed.set_cursor(0);
+        assert_eq!(ed.replace_all("aa", "X", true), 2);
+        assert_eq!(ed.text(), "X Bb X");
     }
 
     #[test]

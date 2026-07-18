@@ -16,7 +16,7 @@ Connection,Cloud-provider proxy/identity,Excluded,excluded,product boundary,
 Workbench,Lazy catalog,Core,implemented,PG/CH/Redis subtree + filter,plans 003 007
 Workbench,Object tabs,Core,implemented,preview/pin/independent state,plan 007
 Workbench,Query/command tabs,Core,implemented,editor + run + history,plan 011
-Workbench,Result tabs,Parity,gap,multi-statement result tabs partial,
+Workbench,Result tabs,Parity,implemented,multi-statement selection script sections,evidence 292
 Workbench,Responsive layout,Core,implemented,wide/medium/narrow shells,plan 007
 Workbench,Quick switcher,Parity,implemented,tab title/index quick switch dialog,evidence 291
 Workbench,Favorites and saved queries,Parity,implemented,named queries persistence,plan 011
@@ -26,8 +26,8 @@ Editor,Multiline editing,Core,implemented,TermRock TextArea,plans 010-011
 Editor,Syntax projection,Core,implemented,statement spans core,plan 011
 Editor,Statement selection,Core,implemented,statement_at,plan 011
 Editor,Revisioned completion,Core,implemented,CompletionMenu,plans 010-011
-Editor,Query parameters,Parity,gap,blocks full Parity,
-Editor,Find/replace,Parity,gap,deferred by plan 011 residual,
+Editor,Query parameters,Parity,implemented,named :param rewrite + bind dialog + Null,evidence 292
+Editor,Find/replace,Parity,implemented,literal find/replace + all/ci flags,evidence 293
 Editor,Formatting,Parity,gap,deferred by plan 011 residual,
 Editor,Query limits,Core,implemented,PageLimits + result store,plans 002 009
 Editor,Explain,Parity,implemented,EXPLAIN wrap action PG/CH; Redis unsupported,evidence 290

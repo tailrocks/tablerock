@@ -105,7 +105,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::PgTool { confirm_buffer, .. }
                     | ConfirmDialog::ImportUrl { confirm_buffer, .. }
                     | ConfirmDialog::QuickSwitch { confirm_buffer, .. }
-                    | ConfirmDialog::BindParams { confirm_buffer, .. } => {
+                    | ConfirmDialog::BindParams { confirm_buffer, .. }
+                    | ConfirmDialog::FindReplace { confirm_buffer, .. } => {
                         *confirm_buffer = text.text().to_owned();
                     }
                     _ => {}
@@ -1828,6 +1829,40 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     }
                     Update::render()
                 }
+                ConfirmDialog::FindReplace { confirm_buffer } => {
+                    let raw = confirm_buffer.trim();
+                    if raw.is_empty() {
+                        return Update::render();
+                    }
+                    // Formats: find=>replace | find=>replace=>all | find=>replace=>i | find=>replace=>all=>i
+                    let parts: Vec<&str> = raw.split("=>").map(str::trim).collect();
+                    if parts.len() < 2 || parts[0].is_empty() {
+                        return Update::render();
+                    }
+                    let needle = parts[0];
+                    let replacement = parts[1];
+                    let flags = parts.get(2..).unwrap_or(&[]);
+                    let all = flags.iter().any(|f| f.eq_ignore_ascii_case("all"));
+                    let case_i = flags.iter().any(|f| {
+                        f.eq_ignore_ascii_case("i") || f.eq_ignore_ascii_case("ci")
+                    });
+                    let Some(ed) = model.workbench_mut().active_editor_mut() else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let n = if all {
+                        ed.replace_all(needle, replacement, case_i)
+                    } else if ed.replace_next(needle, replacement, case_i) {
+                        1
+                    } else {
+                        0
+                    };
+                    model.set_confirm(None);
+                    if let Some(g) = model.workbench_mut().active_grid_mut() {
+                        g.error_label = Some(format!("replace: {n} occurrence(s)"));
+                    }
+                    Update::render()
+                }
                 ConfirmDialog::BindParams {
                     names,
                     statement,
@@ -2618,6 +2653,16 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::FindReplace if model.screen() == Screen::Workbench => {
+            if model.workbench().active_editor().is_none() {
+                return Update::unchanged();
+            }
+            model.set_confirm(Some(ConfirmDialog::FindReplace {
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::PgDump if model.screen() == Screen::Workbench => {
             if !model
                 .session()
@@ -2768,6 +2813,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ImportUrl
         | ActionId::Explain
         | ActionId::QuickSwitch
+        | ActionId::FindReplace
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -3467,6 +3513,7 @@ fn cycle_action(
                 ActionId::NewSql,
                 ActionId::RunSql,
                 ActionId::Explain,
+                ActionId::FindReplace,
                 ActionId::Complete,
                 ActionId::History,
                 ActionId::RestoreHistory,
@@ -5048,6 +5095,38 @@ mod tests {
                 ..
             }) if kind == "drop_column" && object_name == "email" && type_text.is_empty()
         ));
+    }
+
+    #[test]
+    fn find_replace_action_rewrites_editor_text() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().open_sql_tab();
+        model
+            .workbench_mut()
+            .active_editor_mut()
+            .unwrap()
+            .set_text("SELECT foo FROM t");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::FindReplace);
+        let _ = update(&mut model, Message::Activate);
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("foo=>bar=>all".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(
+            model.workbench().active_editor().unwrap().text(),
+            "SELECT bar FROM t"
+        );
     }
 
     #[test]

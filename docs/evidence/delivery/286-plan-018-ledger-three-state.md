@@ -17,17 +17,15 @@ Machine-readable export:
 
 | three_state | count |
 |-------------|-------|
-| implemented | 53 |
+| implemented | 54 |
 | excluded | 7 |
-| gap | 7 |
+| gap | 6 |
 
 ### Gap rows (block claims as noted)
 
 | Capability | Sequencing | Blocks |
 |------------|------------|--------|
-| Find/replace | Parity | Parity claim |
 | Formatting | Parity | Parity claim |
-| Explain | Parity | Parity claim |
 | Type-specific editors | Parity | Parity claim |
 | External URL open | Later | Later only |
 | Multi-window | Native | Native (plan 019–021) |
