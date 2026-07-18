@@ -123,9 +123,10 @@ pub enum Effect {
         request_token: RequestToken,
         filter: ProfileListFilterSpec,
     },
+    /// Probe registered session health (cheap server round-trip).
     CheckSessionHealth {
         request_token: RequestToken,
-        profile: ProfileRef,
+        session_id_hex: String,
     },
     SaveConnection {
         request_token: RequestToken,

@@ -313,8 +313,36 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             });
             Update::render()
         }
-        Message::Engine(EngineMsg::HealthOk { .. } | EngineMsg::HealthFailed { .. }) => {
-            Update::unchanged()
+        Message::Engine(EngineMsg::HealthOk { .. }) => {
+            if let Some(mut session) = model.session().cloned() {
+                session.status = Some("healthy".into());
+                model.set_session(Some(session));
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::HealthFailed { reason, .. }) => {
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(mut session) = model.session().cloned() {
+                session.status = Some(format!("unhealthy: {label}"));
+                model.set_session(Some(session));
+            }
+            // BoundedAutomatic: start reconnect attempt 0 from last draft.
+            if crate::model::saved_filter::should_auto_reconnect(&model.reconnect_preference) {
+                if let Some(draft) = model.last_connect_draft.clone() {
+                    let token = model.mint_request_token();
+                    return Update {
+                        render: true,
+                        effect: Some(Effect::ReconnectSession {
+                            request_token: token,
+                            draft,
+                            attempt: 0,
+                        }),
+                    };
+                }
+            }
+            Update::render()
         }
         Message::Engine(EngineMsg::TestOk {
             identity,
@@ -2722,8 +2750,12 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 Screen::Workbench | Screen::Editor | Screen::Connections
             ) =>
         {
-            // Bounded reconnect from current editor draft (attempt 0 immediate).
-            let draft = connection_draft_from_editor(model.editor());
+            // Bounded reconnect from last connect draft or current editor.
+            let draft = model
+                .last_connect_draft
+                .clone()
+                .unwrap_or_else(|| connection_draft_from_editor(model.editor()));
+            model.last_connect_draft = Some(draft.clone());
             let token = model.mint_request_token();
             if let Some(mut session) = model.session().cloned() {
                 session.status = Some("reconnecting attempt 0".into());
@@ -2735,6 +2767,19 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     request_token: token,
                     draft,
                     attempt: 0,
+                }),
+            }
+        }
+        ActionId::SessionHealth if model.screen() == Screen::Workbench => {
+            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            Update {
+                render: true,
+                effect: Some(Effect::CheckSessionHealth {
+                    request_token: token,
+                    session_id_hex,
                 }),
             }
         }
@@ -2829,11 +2874,13 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             let token = model.mint_request_token();
             model.editor_mut().test_status = Some("connecting…".into());
+            let draft = connection_draft_from_editor(model.editor());
+            model.last_connect_draft = Some(draft.clone());
             Update {
                 render: true,
                 effect: Some(Effect::ConnectSession {
                     request_token: token,
-                    draft: connection_draft_from_editor(model.editor()),
+                    draft,
                     // Editor Connect is temporary until list-row Open saves first.
                     temporary: true,
                 }),
@@ -3666,6 +3713,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::Remove
         | ActionId::RenameGroup
         | ActionId::Reconnect
+        | ActionId::SessionHealth
         | ActionId::NextDatabase
         | ActionId::NextTab
         | ActionId::CloseTab
@@ -4888,6 +4936,8 @@ fn cycle_action(
                 ActionId::Inspect,
                 ActionId::CloseTab,
                 ActionId::Disconnect,
+                ActionId::SessionHealth,
+                ActionId::Reconnect,
                 ActionId::Quit,
             ],
             Screen::Connections | Screen::ConnectionPicker => &[
@@ -6364,6 +6414,63 @@ mod tests {
             }
             other => panic!("expected cleared BrowseTable, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn health_failed_auto_reconnects_when_preference_allows() {
+        use crate::effect::{ConnectionDraft, EngineKind, PasswordSourceSpec, TlsModeSpec};
+        let mut model = Model::default();
+        model.reconnect_preference = "BoundedAutomatic".into();
+        model.last_connect_draft = Some(ConnectionDraft {
+            engine: EngineKind::PostgreSql,
+            name: "t".into(),
+            group: String::new(),
+            environment: String::new(),
+            host: "127.0.0.1".into(),
+            port: "5432".into(),
+            database: "postgres".into(),
+            username: "postgres".into(),
+            password: String::new(),
+            password_source: PasswordSourceSpec::PromptOnConnect,
+            tls_mode: TlsModeSpec::Off,
+            plaintext_acknowledged: false,
+            ssh_host: String::new(),
+            ssh_port: String::new(),
+            ssh_username: String::new(),
+            ssh_password: String::new(),
+            ssh_private_key: String::new(),
+            ssh_known_hosts_path: String::new(),
+            ssh_use_agent: false,
+            startup_actions: tablerock_core::StartupActionSet::empty(),
+        });
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000088".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        let out = update(
+            &mut model,
+            Message::Engine(EngineMsg::HealthFailed {
+                request_token: 1,
+                reason: FailureProjection::Label("connection".into()),
+            }),
+        );
+        match out.effects().next() {
+            Some(Effect::ReconnectSession { attempt, .. }) => assert_eq!(*attempt, 0),
+            other => panic!("expected auto ReconnectSession, got {other:?}"),
+        }
+        // Manual preference: no auto reconnect.
+        model.reconnect_preference = "Manual".into();
+        let manual = update(
+            &mut model,
+            Message::Engine(EngineMsg::HealthFailed {
+                request_token: 2,
+                reason: FailureProjection::Label("connection".into()),
+            }),
+        );
+        assert!(manual.effects().next().is_none());
     }
 
     #[test]

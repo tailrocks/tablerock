@@ -31,4 +31,5 @@ cargo check -p tablerock-cli
 
 ## Remaining work
 
-- Auto-start reconnect from health failure when preference is BoundedAutomatic
+- ~~Auto-start reconnect from health failure when preference is BoundedAutomatic~~
+  (closed: evidence 333)

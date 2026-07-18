@@ -149,6 +149,8 @@ pub enum ActionId {
     RenameGroup,
     /// Bounded automatic reconnect using current editor draft.
     Reconnect,
+    /// Probe live session health (may auto-reconnect when preference allows).
+    SessionHealth,
     /// Redis Pub/Sub: subscribe to a channel (isolated connection).
     RedisSubscribe,
     /// Redis Pub/Sub: pattern subscribe (PSUBSCRIBE).
@@ -450,6 +452,10 @@ pub struct Model {
     password_prompt: Option<PasswordPrompt>,
     confirm: Option<ConfirmDialog>,
     bootstrapped: bool,
+    /// Last connect draft for reconnect (no secrets logged; may hold ephemeral password).
+    pub(crate) last_connect_draft: Option<crate::effect::ConnectionDraft>,
+    /// Reconnect preference label: "Manual" | "BoundedAutomatic".
+    pub(crate) reconnect_preference: String,
 }
 
 impl Default for Model {
@@ -474,6 +480,8 @@ impl Default for Model {
             password_prompt: None,
             confirm: None,
             bootstrapped: false,
+            last_connect_draft: None,
+            reconnect_preference: "Manual".into(),
         }
     }
 }

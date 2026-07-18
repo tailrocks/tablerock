@@ -90,16 +90,16 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
-            Effect::CheckSessionHealth { request_token, .. } => {
+            Effect::CheckSessionHealth {
+                request_token,
+                session_id_hex,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
-                    // Engine connect path lands with plan 006; report explicit gap.
-                    let _ = ingress.try_send_event(Message::Engine(
-                        tablerock_tui::EngineMsg::HealthFailed {
-                            request_token,
-                            reason: FailureProjection::Label("not-wired".into()),
-                        },
-                    ));
+                    let message =
+                        check_session_health(sessions, request_token, session_id_hex).await;
+                    let _ = ingress.try_send_event(message);
                 });
             }
             Effect::SaveConnection {
@@ -5542,6 +5542,39 @@ async fn connect_profile(
         Some(profile_id_hex),
     )
     .await
+}
+
+async fn check_session_health(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+) -> Message {
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::HealthFailed {
+                request_token,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::HealthFailed {
+            request_token,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    match session.health().await {
+        Ok(_) => Message::Engine(tablerock_tui::EngineMsg::HealthOk { request_token }),
+        Err(e) => Message::Engine(tablerock_tui::EngineMsg::HealthFailed {
+            request_token,
+            reason: FailureProjection::Label(e.to_string()),
+        }),
+    }
 }
 
 async fn reconnect_session(
