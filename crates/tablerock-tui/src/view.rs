@@ -166,6 +166,18 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             "Terminate backend?",
             format!("Paste pid digits to pg_terminate_backend [{confirm_buffer}]"),
         ),
+        crate::model::ConfirmDialog::DdlReview {
+            kind,
+            schema,
+            table,
+            preview,
+            confirm_buffer,
+        } => (
+            "Review DDL?",
+            format!(
+                "{preview}. Type object details for {kind} on {schema}.{table} [{confirm_buffer}]"
+            ),
+        ),
         crate::model::ConfirmDialog::RenameTable {
             schema,
             table,
@@ -320,6 +332,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let truncate = action_label(model, ActionId::TruncateTable, "Truncate");
     let drop_t = action_label(model, ActionId::DropTable, "Drop");
     let rename_t = action_label(model, ActionId::RenameTable, "Rename");
+    let ddl_add = action_label(model, ActionId::DdlAddColumn, "AddCol");
+    let ddl_idx = action_label(model, ActionId::DdlCreateIndex, "AddIdx");
     let activity = action_label(model, ActionId::ShowActivity, "Activity");
     let cancel_be = action_label(model, ActionId::CancelBackend, "CancelBE");
     let term_be = action_label(model, ActionId::TerminateBackend, "TermBE");
@@ -535,6 +549,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RenameTable,
                         label: rename_t.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DdlAddColumn,
+                        label: ddl_add.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::DdlCreateIndex,
+                        label: ddl_idx.as_str(),
                         enabled: true,
                         style: None,
                     },

@@ -228,6 +228,19 @@ pub enum Effect {
         /// New name for rename (empty otherwise).
         new_table: String,
     },
+    /// Reviewed DDL plan execute (typed kind + identifiers — no free SQL).
+    ExecuteDdlPlan {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// "add_column" | "create_index" | "drop_column" | ...
+        kind: String,
+        schema: String,
+        table: String,
+        object_name: String,
+        /// Type / column list / constraint body when required by kind.
+        type_text: String,
+    },
     /// Snapshot activity for the inspector (permission-aware cancel later).
     LoadActivity {
         request_token: RequestToken,

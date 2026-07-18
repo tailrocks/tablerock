@@ -140,6 +140,10 @@ pub enum ActionId {
     TerminateBackend,
     /// Rename active base table (gated: paste new name).
     RenameTable,
+    /// Review ADD COLUMN: confirm_buffer = "column_name type".
+    DdlAddColumn,
+    /// Review CREATE INDEX: confirm_buffer = "index_name column".
+    DdlCreateIndex,
     /// SCAN Redis keys in the connected logical DB.
     ScanRedisKeys,
     /// Load Redis INFO overview into the inspector.
@@ -190,6 +194,17 @@ pub enum ConfirmDialog {
     RenameTable {
         schema: String,
         table: String,
+        confirm_buffer: String,
+    },
+    /// Typed DDL review: preview shows plan label; buffer supplies object+type text.
+    ///
+    /// - add_column: buffer `"col type"`
+    /// - create_index: buffer `"index_name column"`
+    DdlReview {
+        kind: String,
+        schema: String,
+        table: String,
+        preview: String,
         confirm_buffer: String,
     },
 }

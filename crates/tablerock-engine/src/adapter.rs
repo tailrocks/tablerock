@@ -288,6 +288,20 @@ pub trait DriverSession: Send + Sync {
         })
     }
 
+    /// Execute a reviewed typed DDL plan (identifiers quoted at the engine).
+    fn execute_ddl_plan<'a>(
+        &'a self,
+        plan: tablerock_core::DdlPlan,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        let _ = plan;
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
     /// Redis-only: load a type-specific key view as display lines.
     fn redis_key_view_lines<'a>(
         &'a self,
@@ -490,6 +504,17 @@ impl DriverSession for PostgresSession {
     ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
         Box::pin(async move {
             PostgresSession::apply_authorized_mutation(self, authorized)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
+    fn execute_ddl_plan<'a>(
+        &'a self,
+        plan: tablerock_core::DdlPlan,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::execute_ddl_plan(self, &plan)
                 .await
                 .map_err(map_postgres)
         })

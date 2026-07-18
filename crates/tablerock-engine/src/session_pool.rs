@@ -166,6 +166,22 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn execute_ddl_plan<'a>(
+        &'a self,
+        plan: tablerock_core::DdlPlan,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => session.execute_ddl_plan(plan).await,
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn redis_key_view_lines<'a>(
         &'a self,
         key: &'a [u8],

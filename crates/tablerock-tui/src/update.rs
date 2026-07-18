@@ -97,6 +97,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 match confirm {
                     ConfirmDialog::TruncateTable { confirm_buffer, .. }
                     | ConfirmDialog::DropTable { confirm_buffer, .. }
+                    | ConfirmDialog::DdlReview { confirm_buffer, .. }
                     | ConfirmDialog::RenameTable { confirm_buffer, .. }
                     | ConfirmDialog::CancelBackend { confirm_buffer, .. }
                     | ConfirmDialog::TerminateBackend { confirm_buffer, .. } => {
@@ -1515,6 +1516,54 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         }),
                     }
                 }
+                ConfirmDialog::DdlReview {
+                    kind,
+                    schema,
+                    table,
+                    confirm_buffer,
+                    ..
+                } => {
+                    let parts: Vec<&str> = confirm_buffer.split_whitespace().collect();
+                    let (object_name, type_text) = match kind.as_str() {
+                        "add_column" if parts.len() >= 2 => {
+                            (parts[0].to_owned(), parts[1..].join(" "))
+                        }
+                        "create_index" if parts.len() >= 2 => {
+                            (parts[0].to_owned(), parts[1..].join(" "))
+                        }
+                        "drop_column" | "drop_index" | "drop_constraint"
+                            if parts.len() == 1 =>
+                        {
+                            (parts[0].to_owned(), String::new())
+                        }
+                        _ => return Update::render(),
+                    };
+                    if object_name.is_empty() {
+                        return Update::render();
+                    }
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let token = model.mint_request_token();
+                    let context_revision = model.workbench().context_revision;
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::ExecuteDdlPlan {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            kind,
+                            schema,
+                            table,
+                            object_name,
+                            type_text,
+                        }),
+                    }
+                }
                 ConfirmDialog::RenameTable {
                     schema,
                     table,
@@ -2144,6 +2193,44 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::DdlAddColumn if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::DdlReview {
+                kind: "add_column".into(),
+                schema: schema.clone(),
+                table: table.clone(),
+                preview: format!("ADD COLUMN on {schema}.{table} (paste: col_name type)"),
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::DdlCreateIndex if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::DdlReview {
+                kind: "create_index".into(),
+                schema: schema.clone(),
+                table: table.clone(),
+                preview: format!("CREATE INDEX on {schema}.{table} (paste: index_name column)"),
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::ShowActivity if model.screen() == Screen::Workbench => {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
@@ -2312,6 +2399,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ShowStructure
         | ActionId::TruncateTable
         | ActionId::DropTable
+        | ActionId::DdlAddColumn
+        | ActionId::DdlCreateIndex
         | ActionId::RenameTable
         | ActionId::ShowActivity
         | ActionId::CancelBackend
@@ -2802,6 +2891,8 @@ fn cycle_action(
                 ActionId::ShowStructure,
                 ActionId::TruncateTable,
                 ActionId::DropTable,
+                ActionId::DdlAddColumn,
+                ActionId::DdlCreateIndex,
                 ActionId::RenameTable,
                 ActionId::ShowActivity,
                 ActionId::CancelBackend,
@@ -4213,6 +4304,57 @@ mod tests {
                 new_table,
                 ..
             }) if op == "truncate" && table == "users" && new_table.is_empty()
+        ));
+        assert!(model.confirm().is_none());
+    }
+
+    #[test]
+    fn ddl_add_column_review_emits_execute_ddl_plan() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::DdlAddColumn);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::DdlReview { kind, table, .. })
+                if kind == "add_column" && table == "users"
+        ));
+        // Incomplete buffer: no effect.
+        model.set_action(ActionId::Submit);
+        let incomplete = update(&mut model, Message::Activate);
+        assert!(incomplete.effects().next().is_none());
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("note text".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let ok = update(&mut model, Message::Activate);
+        assert!(matches!(
+            ok.effects().next(),
+            Some(Effect::ExecuteDdlPlan {
+                kind,
+                object_name,
+                type_text,
+                schema,
+                table,
+                ..
+            }) if kind == "add_column"
+                && object_name == "note"
+                && type_text == "text"
+                && schema == "public"
+                && table == "users"
         ));
         assert!(model.confirm().is_none());
     }

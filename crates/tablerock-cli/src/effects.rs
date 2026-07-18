@@ -393,6 +393,34 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::ExecuteDdlPlan {
+                request_token,
+                session_id_hex,
+                context_revision,
+                kind,
+                schema,
+                table,
+                object_name,
+                type_text,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = execute_ddl_plan_effect(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        kind,
+                        schema,
+                        table,
+                        object_name,
+                        type_text,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::LoadActivity {
                 request_token,
                 session_id_hex,
@@ -2722,6 +2750,120 @@ async fn execute_table_op(
             request_token,
             context_revision,
             reason: FailureProjection::Label(e.to_string()),
+        }),
+    }
+}
+
+async fn execute_ddl_plan_effect(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    kind: String,
+    schema: String,
+    table: String,
+    object_name: String,
+    type_text: String,
+) -> Message {
+    use tablerock_core::{
+        ContextId, DdlKind, DdlPlan, DdlTarget, Engine as CoreEngine, IdParts, OperationScope,
+        ProfileId, Revision, SessionId as CoreSessionId,
+    };
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    if session.engine() != CoreEngine::PostgreSql {
+        return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("DDL review only for PostgreSQL".into()),
+        });
+    }
+    let ddl_kind = match kind.as_str() {
+        "add_column" => DdlKind::AddColumn,
+        "drop_column" => DdlKind::DropColumn,
+        "create_index" => DdlKind::CreateIndex,
+        "drop_index" => DdlKind::DropIndex,
+        "add_constraint" => DdlKind::AddConstraint,
+        "drop_constraint" => DdlKind::DropConstraint,
+        "vacuum" => DdlKind::Vacuum,
+        "analyze" => DdlKind::Analyze,
+        other => {
+            return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(format!("unknown DDL kind: {other}")),
+            });
+        }
+    };
+    let scope = OperationScope::new(
+        ProfileId::from_parts(IdParts::new(1, 1).unwrap()).unwrap(),
+        CoreSessionId::from_parts(IdParts::new(1, 2).unwrap()).unwrap(),
+        ContextId::from_parts(IdParts::new(1, 3).unwrap()).unwrap(),
+    );
+    let type_opt = if type_text.trim().is_empty() {
+        None
+    } else {
+        Some(type_text)
+    };
+    let object_opt = if object_name.trim().is_empty() {
+        None
+    } else {
+        Some(object_name)
+    };
+    let plan = match DdlPlan::new(
+        ddl_kind,
+        CoreEngine::PostgreSql,
+        scope,
+        Revision::INITIAL,
+        DdlTarget::PostgreSqlRelation {
+            schema: schema.clone(),
+            relation: table.clone(),
+        },
+        object_opt,
+        type_opt,
+    ) {
+        Ok(plan) => plan,
+        Err(error) => {
+            return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(error.to_string()),
+            });
+        }
+    };
+    let preview = plan.preview_label();
+    match session.execute_ddl_plan(plan).await {
+        Ok(()) => Message::Engine(tablerock_tui::EngineMsg::TableOpDone {
+            request_token,
+            context_revision,
+            op: preview,
+            schema,
+            table,
+        }),
+        Err(error) => Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(error.to_string()),
         }),
     }
 }
