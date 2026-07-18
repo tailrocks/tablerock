@@ -112,7 +112,7 @@ Standard suites + Docker engine suites; new import/export tests live in
 
 ## Residual (non-blocking)
 
-- ClickHouse import apply batch (PG path landed)
+- ~~ClickHouse import apply batch~~ (closed: import_apply_real CH progressive)
 - ~~Streaming re-query export with cancel mid-stream~~ (closed: stream_export)
 - Persistence actor API for filter presets
 - Multi-statement UI wiring into QueryEditorModel run path

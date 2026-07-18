@@ -21,7 +21,17 @@ cargo test -p tablerock-cli --test import_apply_real
 
 CI: real-servers job runs `import_apply_real`.
 
+## ClickHouse progressive insert (same suite)
+
+`applies_csv_insert_rows_on_clickhouse_progressive` creates MergeTree table
+and applies two CSV rows (including formula-like text) via the same
+`apply_csv_inserts` path.
+
+```bash
+cargo test -p tablerock-cli --test import_apply_real
+# 2 passed
+```
+
 ## Residual
 
-- ClickHouse import apply
 - TUI Effect wiring for operator-facing import
