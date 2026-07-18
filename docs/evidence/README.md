@@ -381,6 +381,7 @@ How to read an evidence document:
 - 414 — [Plan 020 appearance fixtures and accessibility gate](delivery/414-plan-020-appearance-accessibility.md)
 - 505 — [Plan 020 native grid Instruments evidence](delivery/505-plan-020-native-grid-instruments.md)
 - 506 — [Plan 020 live vertical-slice conformance](delivery/506-plan-020-live-vertical-conformance.md)
+- 507 — [Plan 020 native page-decode Instruments evidence](delivery/507-plan-020-native-page-decode-instruments.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

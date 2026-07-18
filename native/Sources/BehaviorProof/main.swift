@@ -81,12 +81,14 @@ if cancelMode {
 try bridge.pump(operationId: opId)
 
 var decoded: PageV1Table?
+var encodedPage: Data?
 var cursor: UInt64 = 0
 for _ in 0..<64 {
     let batch = try bridge.nextEvents(cursor: cursor, maximum: 64)
     if batch.events.isEmpty { break }
     for event in batch.events {
         if event.kind == "page", let page = event.pageBytes {
+            encodedPage = page
             decoded = try PageV1.decodeTable(page)
         }
         if event.kind == "terminal" { break }
@@ -94,6 +96,28 @@ for _ in 0..<64 {
     cursor = batch.nextCursor
 }
 _ = try bridge.shutdown(cancelActive: false, deadlineMs: 0)
+
+if let rawIterations = ProcessInfo.processInfo.environment["TABLEROCK_DECODE_BENCH"],
+   let requestedIterations = Int(rawIterations), requestedIterations > 0
+{
+    guard let page = encodedPage, let table = decoded else {
+        FileHandle.standardError.write("FAIL: decode benchmark has no page\n".data(using: .utf8)!)
+        exit(1)
+    }
+    let iterations = min(requestedIterations, 100_000)
+    let started = ContinuousClock.now
+    for _ in 0..<iterations {
+        _ = try PageV1.decodeTable(page)
+    }
+    let elapsed = ContinuousClock.now - started
+    let seconds = Double(elapsed.components.seconds)
+        + Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000
+    let meanMicroseconds = seconds * 1_000_000 / Double(iterations)
+    print(
+        "PERF_PAGE_DECODE bytes=\(page.count) rows=\(table.rows.count) columns=\(table.columns.count) iterations=\(iterations) total_seconds=\(String(format: "%.6f", seconds)) mean_microseconds=\(String(format: "%.3f", meanMicroseconds))"
+    )
+    exit(0)
+}
 
 // Edit/review flow test (if requested).
 if ProcessInfo.processInfo.environment["TABLEROCK_REVIEW"] != nil {
