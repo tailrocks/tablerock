@@ -1610,6 +1610,7 @@ impl RedisSession {
         max_cell_bytes: u64,
         scan_count: u32,
         max_scan_rounds: u32,
+        match_pattern: Option<BoundedBytes>,
     ) -> Result<RedisKeyStream, RedisError> {
         if limits.max_rows() == 0
             || limits.max_columns() == 0
@@ -1620,6 +1621,15 @@ impl RedisSession {
         {
             return Err(RedisError::InvalidLimits);
         }
+        // Empty / "*" → no MATCH clause (full namespace SCAN with COUNT).
+        let match_pattern = match_pattern.and_then(|p| {
+            let bytes = p.as_slice();
+            if bytes.is_empty() || bytes == b"*" {
+                None
+            } else {
+                Some(p)
+            }
+        });
         Ok(RedisKeyStream {
             connection: self.connection.clone(),
             cursor: 0,
@@ -1631,6 +1641,7 @@ impl RedisSession {
             max_cell_bytes,
             scan_count,
             remaining_rounds: max_scan_rounds,
+            match_pattern,
         })
     }
 
@@ -2646,6 +2657,8 @@ pub struct RedisKeyStream {
     max_cell_bytes: u64,
     scan_count: u32,
     remaining_rounds: u32,
+    /// When set, SCAN uses MATCH (never KEYS).
+    match_pattern: Option<BoundedBytes>,
 }
 
 impl RedisKeyStream {
@@ -2677,13 +2690,16 @@ impl RedisKeyStream {
                 }
                 break;
             }
-            let (cursor, keys): (u64, Vec<Vec<u8>>) = redis::cmd("SCAN")
-                .arg(self.cursor)
-                .arg("COUNT")
-                .arg(self.scan_count)
-                .query_async(&mut self.connection)
-                .await
-                .map_err(map_command_error)?;
+            let (cursor, keys): (u64, Vec<Vec<u8>>) = {
+                let mut cmd = redis::cmd("SCAN");
+                cmd.arg(self.cursor).arg("COUNT").arg(self.scan_count);
+                if let Some(pattern) = self.match_pattern.as_ref() {
+                    cmd.arg("MATCH").arg(pattern.as_slice());
+                }
+                cmd.query_async(&mut self.connection)
+                    .await
+                    .map_err(map_command_error)?
+            };
             self.started = true;
             self.cursor = cursor;
             self.remaining_rounds -= 1;

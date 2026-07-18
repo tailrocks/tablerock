@@ -128,6 +128,7 @@ async fn overlaps_postgres_clickhouse_and_redis_through_one_service() {
                 max_cell_bytes: 128,
                 scan_count: 2,
                 max_scan_rounds: 128,
+                match_pattern: None,
             },
             support::identity(Engine::Redis, 103),
         )

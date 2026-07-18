@@ -197,6 +197,7 @@ How to read an evidence document:
 - 308 — [ClickHouse ExecuteSql + query_id status](delivery/308-plan-014-ch-execute-sql-query-id.md)
 - 309 — [Disconnect mid-stream marks live ops](delivery/309-plan-018-disconnect-mid-stream.md)
 - 310 — [Multi-named filter presets](delivery/310-plan-016-named-filter-presets.md)
+- 311 — [Redis SCAN MATCH + collection first-page views](delivery/311-plan-015-redis-scan-match-collections.md)
 
 ## TermRock pins
 

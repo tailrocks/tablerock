@@ -1421,7 +1421,7 @@ async fn verify_keyspace_mutation(
     tag: &str,
 ) {
     let mut stream = session
-        .scan_keys(PageLimits::new(8, 1, 4_096, 64), 128, 8, 4_096)
+        .scan_keys(PageLimits::new(8, 1, 4_096, 64), 128, 8, 4_096, None)
         .unwrap();
     let first = stream.next_page(identity(), 0).await.unwrap().unwrap();
     assert_eq!(first.envelope().delivery(), PageDelivery::Partial);
@@ -1599,6 +1599,7 @@ async fn verify_version(tag: &str) {
                 max_cell_bytes: 128,
                 scan_count: 2,
                 max_scan_rounds: 128,
+                match_pattern: None,
             })
             .await
             .unwrap();
@@ -1624,8 +1625,55 @@ async fn verify_version(tag: &str) {
             "Redis {tag} {protocol:?}"
         );
 
+        // SCAN MATCH: only scan-* keys (never KEYS).
+        let match_pat = BoundedBytes::copy_from_slice(b"scan-*", ByteLimit::new(16)).unwrap();
+        let mut matched = session
+            .scan_keys(
+                PageLimits::new(16, 1, 4_096, 64),
+                128,
+                16,
+                128,
+                Some(match_pat),
+            )
+            .unwrap();
+        let mut matched_keys = BTreeSet::new();
+        let mut mstart = 0_u64;
+        while let Some(page) = matched.next_page(identity(), mstart).await.unwrap() {
+            for row in 0..page.envelope().row_count() {
+                matched_keys.insert(page.cell(row, 0).unwrap().bytes().to_vec());
+            }
+            mstart += u64::from(page.envelope().row_count());
+        }
+        assert_eq!(
+            matched_keys,
+            BTreeSet::from([
+                b"scan-hash".to_vec(),
+                b"scan-set".to_vec(),
+                b"scan-zset".to_vec(),
+            ]),
+            "MATCH scan-* Redis {tag} {protocol:?}"
+        );
+
+        // OpenRedisKey path: collection first page via HSCAN/SSCAN/ZSCAN.
+        let (hash_label, hash_lines) = driver
+            .redis_key_view_lines(b"scan-hash")
+            .await
+            .unwrap();
+        assert_eq!(hash_label, "hash");
+        assert!(
+            hash_lines.iter().any(|l| l.contains("HSCAN")),
+            "{hash_lines:?}"
+        );
+        assert!(
+            hash_lines.iter().any(|l| l.contains("field") || l.contains('=')),
+            "{hash_lines:?}"
+        );
+        let (set_label, set_lines) = driver.redis_key_view_lines(b"scan-set").await.unwrap();
+        assert_eq!(set_label, "set");
+        assert!(set_lines.iter().any(|l| l.contains("SSCAN")), "{set_lines:?}");
+
         let mut bounded = session
-            .scan_keys(PageLimits::new(8, 1, 4, 64), 2, 8, 128)
+            .scan_keys(PageLimits::new(8, 1, 4, 64), 2, 8, 128, None)
             .unwrap();
         let page = bounded.next_page(identity(), 0).await.unwrap().unwrap();
         assert!(
@@ -1645,7 +1693,7 @@ async fn verify_version(tag: &str) {
         .await
         .unwrap();
         let mut isolated_scan = isolated
-            .scan_keys(PageLimits::new(8, 1, 128, 64), 128, 8, 128)
+            .scan_keys(PageLimits::new(8, 1, 128, 64), 128, 8, 128, None)
             .unwrap();
         let page = isolated_scan
             .next_page(identity(), 0)
@@ -1670,6 +1718,7 @@ async fn verify_version(tag: &str) {
                     max_cell_bytes: 128,
                     scan_count: 2,
                     max_scan_rounds: 128,
+                    match_pattern: None,
                 },
                 identity(),
             )

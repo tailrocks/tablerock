@@ -116,6 +116,7 @@ async fn current_servers_meet_initial_streaming_budgets() {
             max_cell_bytes: 64,
             scan_count: 500,
             max_scan_rounds: 1_000,
+            match_pattern: None,
         },
         identity(Engine::Redis, 203),
         ROWS,

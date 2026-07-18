@@ -920,6 +920,7 @@ impl TableRockBridge {
                             max_cell_bytes,
                             scan_count: 16,
                             max_scan_rounds: 128,
+                            match_pattern: None,
                         },
                     };
                     (CommandIntent::Execute { statement: text }, request)

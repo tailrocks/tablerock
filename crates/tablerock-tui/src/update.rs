@@ -3020,6 +3020,13 @@ fn activate_selected_action(model: &mut Model) -> Update {
             {
                 return Update::unchanged();
             }
+            // Catalog tree filter becomes SCAN MATCH (empty → all keys).
+            let pattern = match &model.workbench().catalog {
+                CatalogModel::Loaded { filter, .. } if !filter.trim().is_empty() => {
+                    filter.trim().to_owned()
+                }
+                _ => "*".into(),
+            };
             let token = model.mint_request_token();
             let context_revision = model.workbench().context_revision;
             Update {
@@ -3028,7 +3035,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     request_token: token,
                     session_id_hex,
                     context_revision,
-                    pattern: "*".into(),
+                    pattern,
                     count: 100,
                 }),
             }
@@ -4763,6 +4770,42 @@ mod tests {
                 ..
             }) if profile_id_hex == "aa"
         ));
+    }
+
+    #[test]
+    fn scan_redis_keys_uses_catalog_filter_as_match_pattern() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "0000000000000001000000000000000c".into(),
+            identity: "redis".into(),
+            temporary: true,
+            engine_label: "Redis".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().engine_kind = "Redis".into();
+        model.workbench_mut().catalog = CatalogModel::Loaded {
+            request_token: 1,
+            context_revision: 1,
+            nodes: Vec::new(),
+            selected_id: None,
+            filter: "user:*".into(),
+            truncated: false,
+        };
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::ScanRedisKeys);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::ScanRedisKeys {
+                pattern,
+                count,
+                ..
+            }) => {
+                assert_eq!(&*pattern, "user:*");
+                assert_eq!(*count, 100);
+            }
+            other => panic!("expected ScanRedisKeys with MATCH pattern, got {other:?}"),
+        }
     }
 
     #[test]

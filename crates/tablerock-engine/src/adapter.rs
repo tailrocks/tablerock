@@ -81,6 +81,8 @@ pub enum DriverPageRequest {
         max_cell_bytes: u64,
         scan_count: u32,
         max_scan_rounds: u32,
+        /// Optional SCAN MATCH pattern; None or empty means all keys (COUNT only).
+        match_pattern: Option<BoundedBytes>,
     },
     RedisCollectionScan {
         key: BoundedBytes,
@@ -161,11 +163,16 @@ impl fmt::Debug for DriverPageRequest {
                 max_cell_bytes,
                 scan_count,
                 max_scan_rounds,
+                match_pattern,
             } => debug
                 .field("limits", limits)
                 .field("max_cell_bytes", max_cell_bytes)
                 .field("scan_count", scan_count)
-                .field("max_scan_rounds", max_scan_rounds),
+                .field("max_scan_rounds", max_scan_rounds)
+                .field(
+                    "match_pattern_bytes",
+                    &match_pattern.as_ref().map(|p| p.len()),
+                ),
             Self::RedisCollectionScan { key, kind, options } => debug
                 .field("key_bytes", &key.len())
                 .field("kind", kind)
@@ -741,8 +748,15 @@ impl DriverSession for RedisSession {
                     max_cell_bytes,
                     scan_count,
                     max_scan_rounds,
+                    match_pattern,
                 } => self
-                    .scan_keys(limits, max_cell_bytes, scan_count, max_scan_rounds)
+                    .scan_keys(
+                        limits,
+                        max_cell_bytes,
+                        scan_count,
+                        max_scan_rounds,
+                        match_pattern,
+                    )
                     .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
                     .map_err(map_redis),
                 DriverPageRequest::RedisCollectionScan { key, kind, options } => self
@@ -887,7 +901,94 @@ impl DriverSession for RedisSession {
                     }
                 }
                 RedisKeyKind::Hash | RedisKeyKind::Set | RedisKeyKind::SortedSet => {
-                    lines.push("collection: open via HSCAN/SSCAN/ZSCAN (scan_collection)".into());
+                    use tablerock_core::{
+                        IdParts, PageDelivery, PageIdentity, PageLimits, ResultId, Revision,
+                    };
+                    use crate::{RedisCollectionScanKind, RedisCollectionScanOptions};
+                    let scan_kind = match kind {
+                        RedisKeyKind::Hash => RedisCollectionScanKind::Hash,
+                        RedisKeyKind::Set => RedisCollectionScanKind::Set,
+                        RedisKeyKind::SortedSet => RedisCollectionScanKind::SortedSet,
+                        _ => unreachable!(),
+                    };
+                    let cmd = match scan_kind {
+                        RedisCollectionScanKind::Hash => "HSCAN",
+                        RedisCollectionScanKind::Set => "SSCAN",
+                        RedisCollectionScanKind::SortedSet => "ZSCAN",
+                    };
+                    let options = RedisCollectionScanOptions::new(
+                        PageLimits::new(32, 2, 64 * 1024, 256),
+                        256,
+                        16,
+                        64,
+                        64 * 1024,
+                        16,
+                    );
+                    match self.scan_collection(key.clone(), scan_kind, options) {
+                        Ok(mut stream) => {
+                            let identity = PageIdentity::new(
+                                ResultId::from_parts(IdParts::new(1, 9_100).unwrap())
+                                    .unwrap(),
+                                Revision::INITIAL,
+                                Engine::Redis,
+                            );
+                            match stream.next_page(identity, 0).await {
+                                Ok(Some(page)) => {
+                                    let rows = page.envelope().row_count();
+                                    lines.push(format!(
+                                        "{cmd} first page: {rows} entr{}",
+                                        if rows == 1 { "y" } else { "ies" }
+                                    ));
+                                    for row in 0..rows {
+                                        let a = page
+                                            .cell(row, 0)
+                                            .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+                                            .unwrap_or_default();
+                                        match scan_kind {
+                                            RedisCollectionScanKind::Set => {
+                                                lines.push(format!("  {a}"));
+                                            }
+                                            RedisCollectionScanKind::Hash
+                                            | RedisCollectionScanKind::SortedSet => {
+                                                let b = page
+                                                    .cell(row, 1)
+                                                    .map(|c| {
+                                                        if c.kind()
+                                                            == tablerock_core::ValueKind::Float64
+                                                        {
+                                                            // zset score stored as f64 bits in cell.
+                                                            let mut buf = [0u8; 8];
+                                                            let bytes = c.bytes();
+                                                            let n = bytes.len().min(8);
+                                                            buf[8 - n..]
+                                                                .copy_from_slice(&bytes[..n]);
+                                                            f64::from_bits(u64::from_be_bytes(buf))
+                                                                .to_string()
+                                                        } else {
+                                                            String::from_utf8_lossy(c.bytes())
+                                                                .into_owned()
+                                                        }
+                                                    })
+                                                    .unwrap_or_default();
+                                                lines.push(format!("  {a} = {b}"));
+                                            }
+                                        }
+                                    }
+                                    if page.envelope().delivery() == PageDelivery::Partial {
+                                        lines.push("  … more (bounded page; re-open for next)"
+                                            .into());
+                                    }
+                                }
+                                Ok(None) => lines.push(format!("{cmd}: empty")),
+                                Err(error) => {
+                                    lines.push(format!("{cmd} failed: {}", map_redis(error)));
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            lines.push(format!("{cmd} unavailable: {}", map_redis(error)));
+                        }
+                    }
                 }
                 RedisKeyKind::Unknown => {
                     lines.push("key missing or type unknown".into());

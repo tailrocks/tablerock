@@ -117,10 +117,11 @@ extended; CI updated.
 
 ## Residual (non-blocking)
 
-- HSCAN/SSCAN/ZSCAN page wiring for hash/set/zset grids in OpenRedisKey
+- ~~HSCAN/SSCAN/ZSCAN first-page wiring in OpenRedisKey~~ (closed: evidence 311)
 - Full command editor tab + pipeline outcomes UI
 - Multi-type staged hash/list/set/zset edits beyond SET/DEL/TTL
-- MATCH pattern filter on ScanRedisKeys
+- ~~MATCH pattern filter on ScanRedisKeys~~ (closed: evidence 311)
+- Collection next-page affordance beyond first-page preview
 
 ## STOP conditions
 

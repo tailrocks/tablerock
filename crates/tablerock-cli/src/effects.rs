@@ -3600,7 +3600,36 @@ async fn scan_redis_keys(
             reason: FailureProjection::Label("SCAN keys only for Redis".into()),
         });
     }
-    let _ = pattern; // pattern applied in a later MATCH filter; first page is full SCAN
+    // SCAN MATCH pattern: empty/"*" → no MATCH; otherwise bound bytes (never KEYS).
+    let match_pattern = {
+        let trimmed = pattern.trim();
+        if trimmed.is_empty() || trimmed == "*" {
+            None
+        } else if trimmed.len() > 256 {
+            return Message::Engine(tablerock_tui::EngineMsg::RedisKeysFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("SCAN MATCH pattern exceeds 256 bytes".into()),
+            });
+        } else {
+            use tablerock_core::{BoundedBytes, ByteLimit};
+            Some(
+                BoundedBytes::copy_from_slice(trimmed.as_bytes(), ByteLimit::new(256))
+                    .map_err(|_| "invalid MATCH pattern".to_owned()),
+            )
+        }
+    };
+    let match_pattern = match match_pattern {
+        None => None,
+        Some(Ok(p)) => Some(p),
+        Some(Err(label)) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RedisKeysFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(label),
+            });
+        }
+    };
     let limits = PageLimits::new(count.max(1), 1, 256 * 1024, 4 * 1024);
     let mut stream = match session
         .start_page_stream(DriverPageRequest::RedisKeyScan {
@@ -3608,6 +3637,7 @@ async fn scan_redis_keys(
             max_cell_bytes: 4 * 1024,
             scan_count: count.max(1),
             max_scan_rounds: 8,
+            match_pattern,
         })
         .await
     {
