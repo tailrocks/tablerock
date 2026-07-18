@@ -395,7 +395,10 @@ mod tests {
         );
         let two = vec![node("a", 0, false, false), node("b", 0, false, false)];
         assert_eq!(loaded(two.clone(), "", false).status_line(), "Catalog: 2");
-        assert_eq!(loaded(two.clone(), "a", false).status_line(), "Catalog: 1/2 filter");
+        assert_eq!(
+            loaded(two.clone(), "a", false).status_line(),
+            "Catalog: 1/2 filter"
+        );
         assert_eq!(loaded(two, "", true).status_line(), "Catalog: 2 trunc");
     }
 

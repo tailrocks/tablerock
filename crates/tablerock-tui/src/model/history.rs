@@ -135,7 +135,11 @@ mod tests {
 
     #[test]
     fn selection_wraps_and_status_tracks_position() {
-        let mut m = open(vec![row(1, "select 1"), row(2, "select 2"), row(3, "select 3")]);
+        let mut m = open(vec![
+            row(1, "select 1"),
+            row(2, "select 2"),
+            row(3, "select 3"),
+        ]);
         assert_eq!(m.selected_entry().unwrap().history_id, 1);
         assert_eq!(m.status_line(), "History: 1/3");
 
