@@ -282,6 +282,10 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 "Filter resident rows only (no server I/O). Empty clears. [{confirm_buffer}]"
             ),
         ),
+        crate::model::ConfirmDialog::GoToRow { confirm_buffer } => (
+            "Go to row?",
+            format!("Paste absolute 0-based row index [{confirm_buffer}]"),
+        ),
         crate::model::ConfirmDialog::StageRedis {
             op,
             logical_db,
@@ -611,6 +615,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let clear_sort = action_label(model, ActionId::ClearSort, "ClrSort");
     let cycle_sort = action_label(model, ActionId::CycleSort, "Sort");
     let quick_filt = action_label(model, ActionId::EditQuickFilter, "PgFilt");
+    let go_row = action_label(model, ActionId::GoToRow, "GoRow");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
@@ -960,6 +965,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::EditQuickFilter,
                         label: quick_filt.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::GoToRow,
+                        label: go_row.as_str(),
                         enabled: true,
                         style: None,
                     },

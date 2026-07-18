@@ -145,6 +145,8 @@ pub enum ActionId {
     EditRawWhere,
     /// Edit page-local quick filter (no server I/O).
     EditQuickFilter,
+    /// Jump cursor to absolute row number (paste digit).
+    GoToRow,
     /// Re-browse the active base table (keep sort/filters).
     RefreshTable,
     /// Toggle visibility of the cursor column.
@@ -369,6 +371,10 @@ pub enum ConfirmDialog {
     },
     /// Edit page-local quick filter (resident rows only; no server I/O).
     EditQuickFilter {
+        confirm_buffer: String,
+    },
+    /// Jump to absolute row: confirm_buffer is decimal row index.
+    GoToRow {
         confirm_buffer: String,
     },
     /// Stage Redis collection mutation: paste field/member/score payload.

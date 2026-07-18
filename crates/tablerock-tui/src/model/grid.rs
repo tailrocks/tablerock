@@ -1427,6 +1427,27 @@ impl DataGridModel {
         out
     }
 
+    /// Jump cursor and viewport to absolute row (clamped to known totals when Exact).
+    ///
+    /// Returns the target row after clamp, or `None` if empty grid / invalid.
+    pub fn go_to_row(&mut self, target: u64) -> Option<u64> {
+        if self.columns.is_empty() {
+            return None;
+        }
+        let max = match self.totals {
+            GridRowTotal::Exact(n) if n > 0 => n.saturating_sub(1),
+            GridRowTotal::Estimated(n) if n > 0 => n.saturating_sub(1),
+            _ => {
+                // Unknown totals: allow jump within resident or unbounded up to 1e9-1.
+                u64::MAX / 4
+            }
+        };
+        let row = target.min(max);
+        self.cursor_row = row;
+        self.viewport_row = row;
+        Some(row)
+    }
+
     /// True when abs_row is inside the resident window (no fetch needed).
     #[must_use]
     pub fn is_resident(&self, abs_row: u64) -> bool {

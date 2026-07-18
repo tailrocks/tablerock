@@ -109,6 +109,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::ApplyFilter { confirm_buffer, .. }
                     | ConfirmDialog::EditRawWhere { confirm_buffer, .. }
                     | ConfirmDialog::EditQuickFilter { confirm_buffer, .. }
+                    | ConfirmDialog::GoToRow { confirm_buffer, .. }
                     | ConfirmDialog::StageRedis { confirm_buffer, .. }
                     | ConfirmDialog::RedisSubscribe { confirm_buffer, .. }
                     | ConfirmDialog::RenameGroup { confirm_buffer, .. }
@@ -2822,6 +2823,48 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     model.set_confirm(None);
                     Update::render()
                 }
+                ConfirmDialog::GoToRow { confirm_buffer } => {
+                    let trimmed = confirm_buffer.trim();
+                    let Ok(target) = trimmed.parse::<u64>() else {
+                        return Update::render();
+                    };
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let context_revision = model.workbench().context_revision;
+                    let fetch = {
+                        let Some(grid) = model.workbench_mut().active_grid_mut() else {
+                            model.set_confirm(None);
+                            return Update::unchanged();
+                        };
+                        let Some(row) = grid.go_to_row(target) else {
+                            return Update::render();
+                        };
+                        if !grid.needs_fetch(row) || grid.result_token == 0 {
+                            None
+                        } else {
+                            Some((grid.next_fetch_start(), grid.result_token))
+                        }
+                    };
+                    model.set_confirm(None);
+                    let Some((start_row, result_token)) = fetch else {
+                        return Update::render();
+                    };
+                    let token = model.mint_request_token();
+                    Update {
+                        render: true,
+                        effect: Some(Effect::FetchPage {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            result_token,
+                            start_row,
+                        }),
+                    }
+                }
                 ConfirmDialog::StageRedis {
                     op,
                     logical_db,
@@ -3523,6 +3566,21 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 .unwrap_or_default();
             model.set_confirm(Some(ConfirmDialog::EditQuickFilter {
                 confirm_buffer: existing,
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::GoToRow if model.screen() == Screen::Workbench => {
+            if model.workbench().active_grid().is_none() {
+                return Update::unchanged();
+            }
+            let hint = model
+                .workbench()
+                .active_grid()
+                .map(|g| g.cursor_row.to_string())
+                .unwrap_or_default();
+            model.set_confirm(Some(ConfirmDialog::GoToRow {
+                confirm_buffer: hint,
             }));
             model.set_action(ActionId::Submit);
             Update::render()
@@ -4247,6 +4305,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ClearFilters
         | ActionId::EditRawWhere
         | ActionId::EditQuickFilter
+        | ActionId::GoToRow
         | ActionId::RefreshTable
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
@@ -5577,6 +5636,7 @@ fn cycle_action(
                 ActionId::ClearFilters,
                 ActionId::EditRawWhere,
                 ActionId::EditQuickFilter,
+                ActionId::GoToRow,
                 ActionId::RefreshTable,
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
@@ -7086,6 +7146,66 @@ mod tests {
             grid.error_label.as_deref(),
             Some("notice: NOTICE: table-rock-notice")
         );
+    }
+
+    #[test]
+    fn go_to_row_resident_no_fetch_and_outside_emits_fetch() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into()];
+            grid.row_count = 10;
+            grid.start_row = 0;
+            grid.cells = (0..10)
+                .map(|i| crate::model::grid::ProjectedCell {
+                    text: i.to_string(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                })
+                .collect();
+            grid.totals = crate::model::grid::GridRowTotal::Exact(1000);
+            grid.result_token = 7;
+            grid.operation = GridOperationState::Streaming;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::GoToRow);
+        let _ = update(&mut model, Message::Activate);
+        if let Some(ConfirmDialog::GoToRow { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = "5".into();
+        }
+        model.set_action(ActionId::Submit);
+        let local = update(&mut model, Message::Activate);
+        assert!(local.effects().next().is_none());
+        assert_eq!(model.workbench().active_grid().unwrap().cursor_row, 5);
+        // Outside resident → FetchPage
+        model.set_action(ActionId::GoToRow);
+        let _ = update(&mut model, Message::Activate);
+        if let Some(ConfirmDialog::GoToRow { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = "500".into();
+        }
+        model.set_action(ActionId::Submit);
+        let far = update(&mut model, Message::Activate);
+        match far.effects().next() {
+            Some(Effect::FetchPage {
+                start_row,
+                result_token,
+                ..
+            }) => {
+                assert_eq!(*result_token, 7);
+                assert!(*start_row >= 10);
+            }
+            other => panic!("expected FetchPage, got {other:?}"),
+        }
+        assert_eq!(model.workbench().active_grid().unwrap().cursor_row, 500);
     }
 
     #[test]
