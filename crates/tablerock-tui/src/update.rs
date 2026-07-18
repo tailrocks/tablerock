@@ -4087,6 +4087,35 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyCountSql if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) = (grid.base_schema.as_ref(), grid.base_table.as_ref())
+            else {
+                return Update::unchanged();
+            };
+            if schema.is_empty() || table.is_empty() {
+                return Update::unchanged();
+            }
+            let text = format!(
+                "SELECT count(*)\nFROM {}.{}",
+                quote_ident_sql(schema),
+                quote_ident_sql(table)
+            );
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some("copied SELECT count(*)".into());
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyPkNames if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5845,6 +5874,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyTableIdent
         | ActionId::CopySelectSql
         | ActionId::CopySelectWhereSql
+        | ActionId::CopyCountSql
         | ActionId::CopyPkNames
         | ActionId::CopyPkIdents
         | ActionId::CopyLocator
@@ -7596,6 +7626,7 @@ fn cycle_action(
                 ActionId::CopyTableIdent,
                 ActionId::CopySelectSql,
                 ActionId::CopySelectWhereSql,
+                ActionId::CopyCountSql,
                 ActionId::CopyPkNames,
                 ActionId::CopyPkIdents,
                 ActionId::CopyLocator,
@@ -9483,6 +9514,37 @@ mod tests {
             }
             other => panic!("expected layout json copy, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn copy_count_sql_from_base_table() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyCountSql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "SELECT count(*)\nFROM \"public\".\"users\"");
+            }
+            other => panic!("expected count sql, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_table = None;
+        }
+        model.set_action(ActionId::CopyCountSql);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
     #[test]

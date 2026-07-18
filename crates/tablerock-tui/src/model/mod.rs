@@ -184,6 +184,8 @@ pub enum ActionId {
     CopySelectSql,
     /// Copy SELECT … FROM base table WHERE cursor locator (presentation aid).
     CopySelectWhereSql,
+    /// Copy SELECT count(*) FROM base table (quoted).
+    CopyCountSql,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).

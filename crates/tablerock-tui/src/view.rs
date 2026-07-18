@@ -743,6 +743,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_tbl_ident = action_label(model, ActionId::CopyTableIdent, "CopyTblQ");
     let copy_select = action_label(model, ActionId::CopySelectSql, "CopySel");
     let copy_sel_where = action_label(model, ActionId::CopySelectWhereSql, "CopySelW");
+    let copy_count = action_label(model, ActionId::CopyCountSql, "CopyCnt");
     let copy_pk = action_label(model, ActionId::CopyPkNames, "CopyPk");
     let copy_pk_q = action_label(model, ActionId::CopyPkIdents, "CopyPkQ");
     let copy_loc = action_label(model, ActionId::CopyLocator, "CopyLoc");
@@ -1643,6 +1644,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopySelectWhereSql,
                         label: copy_sel_where.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyCountSql,
+                        label: copy_count.as_str(),
                         enabled: true,
                         style: None,
                     },
