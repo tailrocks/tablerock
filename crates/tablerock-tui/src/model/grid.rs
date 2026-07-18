@@ -1514,6 +1514,19 @@ impl DataGridModel {
             .collect()
     }
 
+    /// Hidden column names in display order (empty when layout is default/all visible).
+    #[must_use]
+    pub fn hidden_columns(&self) -> Vec<String> {
+        if self.column_layout.is_empty() {
+            return Vec::new();
+        }
+        self.column_layout
+            .iter()
+            .filter(|c| !c.visible)
+            .map(|c| c.name.clone())
+            .collect()
+    }
+
     /// Ensure layout entries exist for all columns (default width 12, visible).
     pub fn ensure_column_layout(&mut self) {
         if self.column_layout.is_empty() {

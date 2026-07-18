@@ -152,6 +152,8 @@ pub enum ActionId {
     CopyPick,
     /// Copy visible column names (tab-separated) to clipboard.
     CopyColumnNames,
+    /// Copy hidden column names (tab-separated) to clipboard.
+    CopyHiddenColumnNames,
     /// Copy the cursor column name to clipboard.
     CopyColumnName,
     /// Copy cursor column values for all resident rows (one per line).

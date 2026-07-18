@@ -3693,6 +3693,27 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyHiddenColumnNames if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let names = grid.hidden_columns();
+            if names.is_empty() {
+                return Update::unchanged();
+            }
+            let text = names.join("\t");
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied {} hidden columns", names.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyColumnName if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5577,6 +5598,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyRowSqlUpdate
         | ActionId::CopyPick
         | ActionId::CopyColumnNames
+        | ActionId::CopyHiddenColumnNames
         | ActionId::CopyColumnName
         | ActionId::CopyColumn
         | ActionId::CopyStatus
@@ -7318,6 +7340,7 @@ fn cycle_action(
                 ActionId::CopyRowSqlUpdate,
                 ActionId::CopyPick,
                 ActionId::CopyColumnNames,
+                ActionId::CopyHiddenColumnNames,
                 ActionId::CopyColumnName,
                 ActionId::CopyColumn,
                 ActionId::CopyStatus,
@@ -9146,6 +9169,38 @@ mod tests {
             Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "tr-99-abc"),
             other => panic!("expected query id copy, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn copy_hidden_column_names_emits_tsv() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into(), "age".into()];
+            grid.cursor_col = 0;
+            assert!(grid.solo_cursor_column());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyHiddenColumnNames);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "name\tage");
+            }
+            other => panic!("expected hidden names, got {other:?}"),
+        }
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            assert!(grid.show_all_columns());
+        }
+        model.set_action(ActionId::CopyHiddenColumnNames);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
     #[test]

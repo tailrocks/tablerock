@@ -726,6 +726,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_row_upd = action_label(model, ActionId::CopyRowSqlUpdate, "RowUpd");
     let copy_pick = action_label(model, ActionId::CopyPick, "CopyPick");
     let copy_cols = action_label(model, ActionId::CopyColumnNames, "CopyCols");
+    let copy_hidden_cols = action_label(model, ActionId::CopyHiddenColumnNames, "CopyHid");
     let copy_col_name = action_label(model, ActionId::CopyColumnName, "CopyColN");
     let copy_col = action_label(model, ActionId::CopyColumn, "CopyCol");
     let copy_status = action_label(model, ActionId::CopyStatus, "CopyStat");
@@ -1531,6 +1532,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyColumnNames,
                         label: copy_cols.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyHiddenColumnNames,
+                        label: copy_hidden_cols.as_str(),
                         enabled: true,
                         style: None,
                     },
