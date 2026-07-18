@@ -250,6 +250,9 @@ extension PageV1 {
                 // append_value: BoundedText::as_bytes).
                 case 5, 6, 7, 8:
                     row.append(String(data: slice, encoding: .utf8) ?? "<text>")
+                case 9:
+                    // Binary — often UTF-8 (e.g., Redis keys); fall back to hex.
+                    row.append(String(data: slice, encoding: .utf8) ?? "0x" + slice.map { String(format: "%02x", $0) }.joined())
                 default: row.append("<kind \(kinds[i])>")
                 }
             }

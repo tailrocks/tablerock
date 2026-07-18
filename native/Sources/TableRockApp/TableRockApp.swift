@@ -220,14 +220,20 @@ final class BridgeModel: ObservableObject {
             catalogSQL = "SELECT schemaname AS schema, tablename AS table FROM pg_tables ORDER BY 1, 2"
         case "clickhouse":
             catalogSQL = "SELECT database AS schema, name AS table FROM system.tables ORDER BY 1, 2"
+        case "redis":
+            // Redis execute performs a key scan (DriverPageRequest::RedisKeyScan).
+            catalogSQL = ""
         default:
-            catalogSummary = "catalog: no table listing for \(connectedEngine) (use a SCAN/key query)"
+            catalogSummary = "catalog: no listing for \(connectedEngine)"
             return
         }
         do {
-            if let table = try fetchPage(intent: "execute", statement: catalogSQL) {
+            let stmt = catalogSQL.isEmpty ? nil : catalogSQL
+            if let table = try fetchPage(intent: "execute", statement: stmt) {
                 catalogTable = table
-                catalogSummary = "tables · \(table.rows.count)"
+                catalogSummary = connectedEngine == "redis"
+                    ? "keys · \(table.rows.count)"
+                    : "tables · \(table.rows.count)"
             } else {
                 catalogSummary = "catalog: no result page"
             }
