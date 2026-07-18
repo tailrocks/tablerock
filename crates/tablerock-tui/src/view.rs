@@ -584,6 +584,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let apply_mut = action_label(model, ActionId::ApplyMutations, "Apply");
     let follow_fk = action_label(model, ActionId::FollowForeignKey, "FollowFK");
     let structure = action_label(model, ActionId::ShowStructure, "Structure");
+    let copy_ddl = action_label(model, ActionId::CopyStructureDdl, "CopyDdl");
     let truncate = action_label(model, ActionId::TruncateTable, "Truncate");
     let drop_t = action_label(model, ActionId::DropTable, "Drop");
     let vacuum_t = action_label(model, ActionId::VacuumTable, "Vacuum");
@@ -870,6 +871,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ShowStructure,
                         label: structure.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyStructureDdl,
+                        label: copy_ddl.as_str(),
                         enabled: true,
                         style: None,
                     },

@@ -3457,6 +3457,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
             follow_foreign_key(model)
         }
         ActionId::ShowStructure if model.screen() == Screen::Workbench => show_structure(model),
+        ActionId::CopyStructureDdl if model.screen() == Screen::Workbench => {
+            copy_structure_ddl(model)
+        }
         ActionId::TruncateTable if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -3862,6 +3865,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ApplyMutations
         | ActionId::FollowForeignKey
         | ActionId::ShowStructure
+        | ActionId::CopyStructureDdl
         | ActionId::TruncateTable
         | ActionId::DropTable
         | ActionId::VacuumTable
@@ -4564,6 +4568,53 @@ fn show_structure(model: &mut Model) -> Update {
     }
 }
 
+/// Reconstruct CREATE TABLE from open structure inspector and copy via OSC 52.
+fn copy_structure_ddl(model: &mut Model) -> Update {
+    use crate::model::structure_ddl::compose_create_table_ddl;
+
+    let insp = &model.workbench().inspector;
+    if !insp.open || insp.kind_label != "structure" {
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.error_label = Some("CopyDdl needs Structure panel open".into());
+        }
+        return Update::render();
+    }
+    let (Some(schema), Some(table)) = (
+        insp.structure_schema.clone(),
+        insp.structure_table.clone(),
+    ) else {
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.error_label = Some("CopyDdl: no structure target".into());
+        }
+        return Update::render();
+    };
+    match compose_create_table_ddl(&schema, &table, &insp.text) {
+        Ok(ddl) => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.error_label = Some(format!(
+                    "copied CREATE TABLE {}.{} ({} bytes)",
+                    schema,
+                    table,
+                    ddl.len()
+                ));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: model.mint_request_token(),
+                    text: ddl,
+                }),
+            }
+        }
+        Err(reason) => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.error_label = Some(format!("CopyDdl: {reason}"));
+            }
+            Update::render()
+        }
+    }
+}
+
 /// Resolve schema/table for DDL: grid base first, then structure inspector target.
 /// Selected tree node is a group branch (`g:name`).
 fn selected_connection_group(model: &Model) -> Option<String> {
@@ -5013,6 +5064,7 @@ fn cycle_action(
                 ActionId::ApplyMutations,
                 ActionId::FollowForeignKey,
                 ActionId::ShowStructure,
+                ActionId::CopyStructureDdl,
                 ActionId::TruncateTable,
                 ActionId::DropTable,
                 ActionId::VacuumTable,
@@ -7539,6 +7591,49 @@ mod tests {
                 && schema == "public"
         ));
         assert!(model.confirm().is_none());
+    }
+
+    #[test]
+    fn copy_structure_ddl_emits_clipboard_effect() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "01".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+            open: true,
+            title: "public.users structure".into(),
+            kind_label: "structure".into(),
+            text: "\
+-- columns --
+id integer NOT NULL
+name text NULL
+-- constraints --
+PRIMARY KEY users_pkey: PRIMARY KEY (id)
+"
+            .into(),
+            hex: String::new(),
+            byte_len: 64,
+            original_byte_len: None,
+            stale: false,
+            structure_schema: Some("public".into()),
+            structure_table: Some("users".into()),
+        };
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyStructureDdl);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("CREATE TABLE \"public\".\"users\""));
+                assert!(text.contains("id integer NOT NULL"));
+                assert!(text.contains("CONSTRAINT \"users_pkey\""));
+            }
+            other => panic!("expected CopyToClipboard, got {other:?}"),
+        }
     }
 
     #[test]

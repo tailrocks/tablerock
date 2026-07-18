@@ -7,6 +7,7 @@ pub mod editor;
 pub mod grid;
 pub mod history;
 pub mod inspector;
+pub mod structure_ddl;
 pub mod mutation_draft;
 pub mod mutation_plan_build;
 pub mod redis_command;
@@ -139,6 +140,8 @@ pub enum ActionId {
     FollowForeignKey,
     /// Load structure facts (columns/types) into the inspector.
     ShowStructure,
+    /// Copy CREATE TABLE DDL reconstructed from structure inspector (OSC 52).
+    CopyStructureDdl,
     /// Request truncate of the active base table (gated confirm).
     TruncateTable,
     /// Request drop of the active base table (gated confirm).
