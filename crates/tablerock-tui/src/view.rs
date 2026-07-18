@@ -686,6 +686,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let go_last = action_label(model, ActionId::GoToLastRow, "Last");
     let go_col = action_label(model, ActionId::GoToColumn, "GoCol");
     let go_pk = action_label(model, ActionId::GoToIdentityColumn, "GoPk");
+    let go_pk_last = action_label(model, ActionId::GoToLastIdentityColumn, "GoPkLast");
     let home_cur = action_label(model, ActionId::HomeCursor, "Home");
     let end_cur = action_label(model, ActionId::EndCursor, "End");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
@@ -703,6 +704,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let col_eq_w = action_label(model, ActionId::EqualizeColumnWidths, "ColEqW");
     let col_solo = action_label(model, ActionId::SoloColumn, "ColSolo");
     let col_solo_pk = action_label(model, ActionId::SoloIdentityColumns, "ColPk");
+    let col_hide_empty = action_label(model, ActionId::HideEmptyColumns, "ColHideE");
     let col_all = action_label(model, ActionId::ShowAllColumns, "ColAll");
     let col_inv = action_label(model, ActionId::InvertColumns, "ColInv");
     let col_save = action_label(model, ActionId::SaveColumns, "ColSave");
@@ -1291,6 +1293,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                         style: None,
                     },
                     Action {
+                        id: ActionId::GoToLastIdentityColumn,
+                        label: go_pk_last.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
                         id: ActionId::HomeCursor,
                         label: home_cur.as_str(),
                         enabled: true,
@@ -1389,6 +1397,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::SoloIdentityColumns,
                         label: col_solo_pk.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::HideEmptyColumns,
+                        label: col_hide_empty.as_str(),
                         enabled: true,
                         style: None,
                     },

@@ -1619,6 +1619,53 @@ impl DataGridModel {
         changed
     }
 
+    /// Hide columns whose every resident cell is Null or empty text.
+    ///
+    /// Page-local only (no I/O). Keeps at least one column visible. Returns
+    /// true if any column was hidden.
+    pub fn hide_empty_resident_columns(&mut self) -> bool {
+        if self.columns.is_empty() || self.row_count == 0 {
+            return false;
+        }
+        self.ensure_column_layout();
+        let mut empty_names = Vec::new();
+        for (ci, name) in self.columns.iter().enumerate() {
+            let mut all_empty = true;
+            for local in 0..self.row_count {
+                let abs = self.start_row.saturating_add(u64::from(local));
+                let cell = self.cell_at(abs, ci);
+                let empty = matches!(
+                    cell.distinction,
+                    CellDistinction::Null | CellDistinction::Empty | CellDistinction::Pending
+                ) || cell.text.is_empty();
+                if !empty {
+                    all_empty = false;
+                    break;
+                }
+            }
+            if all_empty {
+                empty_names.push(name.clone());
+            }
+        }
+        if empty_names.is_empty() {
+            return false;
+        }
+        let mut changed = false;
+        for entry in &mut self.column_layout {
+            if empty_names.iter().any(|n| n == &entry.name) && entry.visible {
+                entry.visible = false;
+                changed = true;
+            }
+        }
+        if !self.column_layout.iter().any(|c| c.visible) {
+            // Fail closed: restore first layout entry.
+            if let Some(first) = self.column_layout.first_mut() {
+                first.visible = true;
+            }
+        }
+        changed
+    }
+
     /// Show every column; keep widths and order. Returns true if any were hidden.
     pub fn show_all_columns(&mut self) -> bool {
         if self.columns.is_empty() {
@@ -1753,6 +1800,25 @@ impl DataGridModel {
                 if self.cursor_col == idx {
                     self.reveal_cursor_column();
                     return false; // already there
+                }
+                self.cursor_col = idx;
+                self.reveal_cursor_column();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Jump cursor to the last identity (pk) column in identity-list order.
+    pub fn go_to_last_identity_column(&mut self) -> bool {
+        if self.identity_columns.is_empty() || self.columns.is_empty() {
+            return false;
+        }
+        for name in self.identity_columns.iter().rev() {
+            if let Some(idx) = self.columns.iter().position(|c| c == name) {
+                if self.cursor_col == idx {
+                    self.reveal_cursor_column();
+                    return false;
                 }
                 self.cursor_col = idx;
                 self.reveal_cursor_column();
@@ -2509,6 +2575,59 @@ mod tests {
         g.cursor_col = 2;
         assert!(g.go_to_first_identity_column());
         assert_eq!(g.cursor_col, 1);
+        assert!(g.go_to_last_identity_column());
+        assert_eq!(g.cursor_col, 2); // id last in identity list
+        assert!(!g.go_to_last_identity_column());
+    }
+
+    #[test]
+    fn hide_empty_resident_columns_keeps_one() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "note".into(), "flag".into()];
+        g.row_count = 2;
+        g.start_row = 0;
+        g.cells = vec![
+            ProjectedCell {
+                text: "1".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: String::new(),
+                distinction: CellDistinction::Null,
+                byte_len: 0,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: String::new(),
+                distinction: CellDistinction::Empty,
+                byte_len: 0,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "2".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: String::new(),
+                distinction: CellDistinction::Null,
+                byte_len: 0,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: String::new(),
+                distinction: CellDistinction::Empty,
+                byte_len: 0,
+                original_byte_len: None,
+            },
+        ];
+        assert!(g.hide_empty_resident_columns());
+        let vis = g.visible_columns();
+        assert_eq!(vis, vec!["id".to_owned()]);
+        assert!(!g.hide_empty_resident_columns());
     }
 
     #[test]

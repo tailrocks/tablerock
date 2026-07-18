@@ -4499,6 +4499,17 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 Update::unchanged()
             }
         }
+        ActionId::GoToLastIdentityColumn if model.screen() == Screen::Workbench => {
+            let jumped = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.go_to_last_identity_column());
+            if jumped {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
         ActionId::HomeCursor if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if grid.columns.is_empty() {
@@ -4574,6 +4585,14 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::SoloIdentityColumns if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if grid.solo_identity_columns() {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::HideEmptyColumns if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.hide_empty_resident_columns() {
                     return Update::render();
                 }
             }
@@ -5598,6 +5617,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::GoToLastRow
         | ActionId::GoToColumn
         | ActionId::GoToIdentityColumn
+        | ActionId::GoToLastIdentityColumn
         | ActionId::HomeCursor
         | ActionId::EndCursor
         | ActionId::RefreshTable
@@ -5607,6 +5627,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::EqualizeColumnWidths
         | ActionId::SoloColumn
         | ActionId::SoloIdentityColumns
+        | ActionId::HideEmptyColumns
         | ActionId::ShowAllColumns
         | ActionId::InvertColumns
         | ActionId::SaveColumns
@@ -7338,6 +7359,7 @@ fn cycle_action(
                 ActionId::GoToLastRow,
                 ActionId::GoToColumn,
                 ActionId::GoToIdentityColumn,
+                ActionId::GoToLastIdentityColumn,
                 ActionId::HomeCursor,
                 ActionId::EndCursor,
                 ActionId::RefreshTable,
@@ -7347,6 +7369,7 @@ fn cycle_action(
                 ActionId::EqualizeColumnWidths,
                 ActionId::SoloColumn,
                 ActionId::SoloIdentityColumns,
+                ActionId::HideEmptyColumns,
                 ActionId::ShowAllColumns,
                 ActionId::InvertColumns,
                 ActionId::SaveColumns,

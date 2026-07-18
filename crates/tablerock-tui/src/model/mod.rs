@@ -269,6 +269,8 @@ pub enum ActionId {
     GoToColumn,
     /// Jump cursor to the first identity (pk) column.
     GoToIdentityColumn,
+    /// Jump cursor to the last identity (pk) column.
+    GoToLastIdentityColumn,
     /// Move cursor to top-left of resident page (no fetch).
     HomeCursor,
     /// Move cursor to bottom-right of resident page (no fetch).
@@ -287,6 +289,8 @@ pub enum ActionId {
     SoloColumn,
     /// Hide all columns except identity (pk) columns.
     SoloIdentityColumns,
+    /// Hide columns empty across the resident page (page-local).
+    HideEmptyColumns,
     /// Show all columns; keep widths/order (unlike ResetColumns).
     ShowAllColumns,
     /// Invert column visibility (at least one remains visible).
