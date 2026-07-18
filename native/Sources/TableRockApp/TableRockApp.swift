@@ -40,6 +40,13 @@ final class BridgeModel: ObservableObject {
     @Published var queryText: String = "SELECT 1;"
     @Published var reviewOutcome: String?
     @Published var reviewError: String?
+    // Direct-connect form (no saved profile required).
+    @Published var formEngine: String = "postgresql"
+    @Published var formHost: String = "127.0.0.1"
+    @Published var formPort: String = "5432"
+    @Published var formDatabase: String = "postgres"
+    @Published var formUser: String = "postgres"
+    @Published var formPassword: String = ""
     var bridge: TableRockBridge?
     var sessionData: Data?
 
@@ -80,6 +87,36 @@ final class BridgeModel: ObservableObject {
         } catch {
             bridgeError = "List profiles failed: \(error)"
             status = "error"
+        }
+    }
+
+    /// Connect directly from form params (temporary session, no saved profile).
+    func connectByParams() {
+        guard let bridge,
+              let port = UInt16(formPort),
+              !formHost.isEmpty
+        else {
+            connectError = "Invalid host or port"
+            return
+        }
+        sessionHex = nil
+        sessionData = nil
+        connectError = nil
+        catalogSummary = nil
+        catalogTable = nil
+        do {
+            let session = try bridge.open(params: OpenParams(
+                engine: formEngine,
+                host: formHost,
+                port: port,
+                database: formDatabase,
+                user: formUser,
+                password: formPassword
+            ))
+            sessionData = session
+            sessionHex = session.map { String(format: "%02x", $0) }.joined()
+        } catch {
+            connectError = "Connect failed: \(error)"
         }
     }
 
@@ -222,6 +259,34 @@ struct ContentView: View {
                         .foregroundStyle(.red)
                         .font(.callout)
                         .textSelection(.enabled)
+                }
+                // Direct-connect form (no saved profile required).
+                GroupBox("New connection") {
+                    Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                        GridRow {
+                            Text("Engine")
+                            Picker("", selection: $model.formEngine) {
+                                Text("PostgreSQL").tag("postgresql")
+                                Text("ClickHouse").tag("clickhouse")
+                                Text("Redis").tag("redis")
+                            }
+                            .labelsHidden()
+                        }
+                        GridRow { Text("Host"); TextField("127.0.0.1", text: $model.formHost) }
+                        GridRow { Text("Port"); TextField("5432", text: $model.formPort) }
+                        GridRow { Text("Database"); TextField("postgres", text: $model.formDatabase) }
+                        GridRow { Text("User"); TextField("postgres", text: $model.formUser) }
+                        GridRow {
+                            Text("Password")
+                            SecureField("", text: $model.formPassword)
+                        }
+                    }
+                    HStack {
+                        Button("Connect") { model.connectByParams() }
+                            .buttonStyle(.borderedProminent)
+                        Spacer()
+                    }
+                    .padding(.top, 4)
                 }
                 if let name = model.connectingName {
                     Text("Connecting to \(name)…").foregroundStyle(.secondary)
