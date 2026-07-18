@@ -754,6 +754,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_sel_page = action_label(model, ActionId::CopySelectPageSql, "CopySelP");
     let copy_exists = action_label(model, ActionId::CopyExistsSql, "CopyExists");
     let copy_del = action_label(model, ActionId::CopyDeleteWhereSql, "CopyDelW");
+    let copy_upd = action_label(model, ActionId::CopyUpdateWhereSql, "CopyUpdW");
     let copy_pk = action_label(model, ActionId::CopyPkNames, "CopyPk");
     let copy_pk_q = action_label(model, ActionId::CopyPkIdents, "CopyPkQ");
     let copy_loc = action_label(model, ActionId::CopyLocator, "CopyLoc");
@@ -1720,6 +1721,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyDeleteWhereSql,
                         label: copy_del.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyUpdateWhereSql,
+                        label: copy_upd.as_str(),
                         enabled: true,
                         style: None,
                     },

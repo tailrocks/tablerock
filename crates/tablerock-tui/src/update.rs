@@ -4447,6 +4447,54 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyUpdateWhereSql if model.screen() == Screen::Workbench => {
+            use crate::model::copy_format::format_cursor_cell_sql;
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) = (grid.base_schema.as_ref(), grid.base_table.as_ref())
+            else {
+                return Update::unchanged();
+            };
+            if schema.is_empty() || table.is_empty() {
+                return Update::unchanged();
+            }
+            let Some(where_sql) = grid.cursor_where_sql() else {
+                return Update::unchanged();
+            };
+            let Some(col) = grid.columns.get(grid.cursor_col).cloned() else {
+                return Update::unchanged();
+            };
+            if col.is_empty() {
+                return Update::unchanged();
+            }
+            // Fail closed if cursor is on an identity column (would update the key).
+            if grid.identity_columns.iter().any(|c| c == &col) {
+                return Update::unchanged();
+            }
+            let Ok(lit) = format_cursor_cell_sql(grid) else {
+                return Update::unchanged();
+            };
+            let text = format!(
+                "UPDATE {}.{}\nSET {} = {}\n{where_sql}",
+                quote_ident_sql(schema),
+                quote_ident_sql(table),
+                quote_ident_sql(&col),
+                lit
+            );
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some("copied UPDATE … WHERE (not executed)".into());
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyPkNames if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -6216,6 +6264,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopySelectPageSql
         | ActionId::CopyExistsSql
         | ActionId::CopyDeleteWhereSql
+        | ActionId::CopyUpdateWhereSql
         | ActionId::CopyPkNames
         | ActionId::CopyPkIdents
         | ActionId::CopyLocator
@@ -7978,6 +8027,7 @@ fn cycle_action(
                 ActionId::CopySelectPageSql,
                 ActionId::CopyExistsSql,
                 ActionId::CopyDeleteWhereSql,
+                ActionId::CopyUpdateWhereSql,
                 ActionId::CopyPkNames,
                 ActionId::CopyPkIdents,
                 ActionId::CopyLocator,
@@ -9865,6 +9915,60 @@ mod tests {
             }
             other => panic!("expected layout json copy, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn copy_update_where_sql_sets_cursor_cell() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into()];
+            grid.row_count = 1;
+            grid.cells = vec![
+                crate::model::grid::ProjectedCell {
+                    text: "7".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 1,
+                    original_byte_len: None,
+                },
+                crate::model::grid::ProjectedCell {
+                    text: "alice".into(),
+                    distinction: crate::model::grid::CellDistinction::Text,
+                    byte_len: 5,
+                    original_byte_len: None,
+                },
+            ];
+            grid.identity_columns = vec!["id".into()];
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.cursor_row = 0;
+            grid.cursor_col = 1; // name
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyUpdateWhereSql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(
+                    text,
+                    "UPDATE \"public\".\"users\"\nSET \"name\" = 'alice'\nWHERE \"id\" = '7'"
+                );
+            }
+            other => panic!("expected UPDATE WHERE, got {other:?}"),
+        }
+        // Fail closed when cursor is on identity column.
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.cursor_col = 0;
+        }
+        model.set_action(ActionId::CopyUpdateWhereSql);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
     #[test]

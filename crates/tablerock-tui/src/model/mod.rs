@@ -206,6 +206,8 @@ pub enum ActionId {
     CopyExistsSql,
     /// Copy DELETE FROM table WHERE locator (presentation aid only).
     CopyDeleteWhereSql,
+    /// Copy UPDATE SET cursor-col = value WHERE locator (presentation aid).
+    CopyUpdateWhereSql,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).
