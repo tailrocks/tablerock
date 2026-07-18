@@ -30,8 +30,20 @@ on Command Line Tools alone.
    profile → sign, `notarytool submit --wait`, `stapler staple`
 3. Clean-machine Gatekeeper transcript
 
-## Non-blocked residual (can land without certs)
+## Software proof completed without certs (as of `c93b010`+)
 
-- Cross-adapter conformance suite (in-process vs bridge, three engines)
-- Real-container Swift harness against Docker Postgres/CH/Redis
-- Address UniFFI-generated `@unchecked Sendable` review
+| Area | Evidence |
+|------|----------|
+| Page codec + Swift PageV1 decode | 249, PageV1.swift |
+| Facade + panic containment | 249, 250 |
+| Conformance stubs + review tokens | 252, 254 |
+| Real Docker open/probe/fetch ×3 engines | 253 |
+| Universal lipo staticlib | 252 |
+| Apply-by-handle + disconnect | 254 |
+| Nest-safe Tokio `block_on` | runtime.rs |
+
+## Non-blocked residual (optional polish)
+
+- Persistence-backed `open(profile_id)` (OpenParams path is live today)
+- Instruments leak pass (needs Xcode Instruments)
+- UniFFI `@unchecked Sendable` Swift wrapper for plan 020
