@@ -603,6 +603,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let set_now = action_label(model, ActionId::SetNow, "Now");
     let inc_num = action_label(model, ActionId::IncNumber, "Num+");
     let dec_num = action_label(model, ActionId::DecNumber, "Num-");
+    let fmt_json = action_label(model, ActionId::FormatJson, "FmtJson");
+    let compact_json = action_label(model, ActionId::CompactJson, "CmpJson");
     let delete_row = action_label(model, ActionId::DeleteRow, "DelRow");
     let apply_mut = action_label(model, ActionId::ApplyMutations, "Apply");
     let follow_fk = action_label(model, ActionId::FollowForeignKey, "FollowFK");
@@ -949,6 +951,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::DecNumber,
                         label: dec_num.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FormatJson,
+                        label: fmt_json.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CompactJson,
+                        label: compact_json.as_str(),
                         enabled: true,
                         style: None,
                     },

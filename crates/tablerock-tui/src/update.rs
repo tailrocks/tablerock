@@ -3592,6 +3592,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::FormatJson if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.format_structured() {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
+        ActionId::CompactJson if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if let Some(edit) = grid.cell_edit.as_mut() {
+                    if edit.compact_structured() {
+                        return Update::render();
+                    }
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::DeleteRow if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if grid.stage_delete_cursor_row() {
@@ -4039,6 +4059,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::SetNow
         | ActionId::IncNumber
         | ActionId::DecNumber
+        | ActionId::FormatJson
+        | ActionId::CompactJson
         | ActionId::DeleteRow
         | ActionId::ApplyMutations
         | ActionId::FollowForeignKey
@@ -5249,6 +5271,8 @@ fn cycle_action(
                 ActionId::SetNow,
                 ActionId::IncNumber,
                 ActionId::DecNumber,
+                ActionId::FormatJson,
+                ActionId::CompactJson,
                 ActionId::DeleteRow,
                 ActionId::ApplyMutations,
                 ActionId::FollowForeignKey,

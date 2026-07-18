@@ -56,6 +56,32 @@ impl CellEditSession {
         true
     }
 
+    /// Pretty-indent structured/JSON buffer (best-effort; fail closed on non-JSON).
+    pub fn format_structured(&mut self) -> bool {
+        if self.kind != CellDistinction::Structured {
+            return false;
+        }
+        let pretty = pretty_json_like(self.buffer.trim());
+        if pretty == self.buffer {
+            return false;
+        }
+        self.buffer = pretty;
+        true
+    }
+
+    /// Compact structured buffer to a single line (best-effort).
+    pub fn compact_structured(&mut self) -> bool {
+        if self.kind != CellDistinction::Structured {
+            return false;
+        }
+        let compact = compact_json_like(self.buffer.trim());
+        if compact == self.buffer {
+            return false;
+        }
+        self.buffer = compact;
+        true
+    }
+
     /// Step integer/float buffer by `delta` for Number cells (presentation only).
     pub fn step_number(&mut self, delta: i64) -> bool {
         if self.kind != CellDistinction::Number || delta == 0 {
@@ -116,6 +142,111 @@ fn local_now_iso() -> String {
     let mm = (tod % 3600) / 60;
     let ss = tod % 60;
     format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z")
+}
+
+/// Best-effort JSON-like pretty print (objects/arrays only). Non-JSON returns input.
+fn pretty_json_like(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if !(trimmed.starts_with('{') || trimmed.starts_with('[')) {
+        return raw.to_owned();
+    }
+    let mut out = String::with_capacity(trimmed.len() + 32);
+    let mut depth: i32 = 0;
+    let mut in_str = false;
+    let mut escape = false;
+    let bytes = trimmed.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if out.len() > 16 * 1024 {
+            out.push_str("\n…");
+            break;
+        }
+        let b = bytes[i];
+        if in_str {
+            out.push(b as char);
+            if escape {
+                escape = false;
+            } else if b == b'\\' {
+                escape = true;
+            } else if b == b'"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'"' => {
+                in_str = true;
+                out.push('"');
+            }
+            b'{' | b'[' => {
+                out.push(b as char);
+                depth += 1;
+                out.push('\n');
+                for _ in 0..depth {
+                    out.push_str("  ");
+                }
+            }
+            b'}' | b']' => {
+                depth = depth.saturating_sub(1);
+                out.push('\n');
+                for _ in 0..depth {
+                    out.push_str("  ");
+                }
+                out.push(b as char);
+            }
+            b',' => {
+                out.push(',');
+                out.push('\n');
+                for _ in 0..depth {
+                    out.push_str("  ");
+                }
+                if bytes.get(i + 1) == Some(&b' ') {
+                    i += 1;
+                }
+            }
+            b':' => {
+                out.push(':');
+                out.push(' ');
+                if bytes.get(i + 1) == Some(&b' ') {
+                    i += 1;
+                }
+            }
+            b' ' | b'\n' | b'\t' | b'\r' => {}
+            _ => out.push(b as char),
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Collapse JSON-like whitespace outside strings.
+fn compact_json_like(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut in_str = false;
+    let mut escape = false;
+    for b in raw.bytes() {
+        if in_str {
+            out.push(b as char);
+            if escape {
+                escape = false;
+            } else if b == b'\\' {
+                escape = true;
+            } else if b == b'"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => {
+                in_str = true;
+                out.push('"');
+            }
+            b' ' | b'\n' | b'\t' | b'\r' => {}
+            _ => out.push(b as char),
+        }
+    }
+    out
 }
 
 /// Howard Hinnant civil-from-days (proleptic Gregorian).
@@ -1712,6 +1843,38 @@ mod tests {
             kind: CellDistinction::Text,
         };
         assert!(!text.step_number(1));
+    }
+
+    #[test]
+    fn structured_format_and_compact() {
+        let mut session = CellEditSession {
+            abs_row: 0,
+            column: "payload".into(),
+            original_text: r#"{"a":1,"b":true}"#.into(),
+            buffer: r#"{"a":1,"b":true}"#.into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Structured,
+        };
+        assert!(session.format_structured());
+        assert!(session.buffer.contains('\n'));
+        assert!(session.buffer.contains("\"a\""));
+        assert!(session.compact_structured());
+        assert!(!session.buffer.contains('\n'));
+        assert_eq!(session.buffer, r#"{"a":1,"b":true}"#);
+        // Invalid: no change.
+        session.buffer = "not-json".into();
+        assert!(!session.format_structured());
+        assert_eq!(session.buffer, "not-json");
+        let mut text = CellEditSession {
+            abs_row: 0,
+            column: "t".into(),
+            original_text: String::new(),
+            buffer: r#"{"x":1}"#.into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Text,
+        };
+        assert!(!text.format_structured());
+        assert!(!text.compact_structured());
     }
 
     #[test]

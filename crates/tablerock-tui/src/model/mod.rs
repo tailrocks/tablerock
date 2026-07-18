@@ -152,6 +152,10 @@ pub enum ActionId {
     IncNumber,
     /// Step number cell buffer by -1 while editing.
     DecNumber,
+    /// Pretty-format structured/JSON cell buffer while editing.
+    FormatJson,
+    /// Compact structured/JSON cell buffer to one line while editing.
+    CompactJson,
     /// Stage delete of the cursor row.
     DeleteRow,
     /// Apply reviewed/staged mutations (typed plan rebuild from drafts).
