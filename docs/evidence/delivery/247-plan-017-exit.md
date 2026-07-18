@@ -9,7 +9,7 @@ Date: 2026-07-18
 | Relationship graph | landed | core RelationshipGraph tests |
 | Vim mode layer | landed | vim_mode unit suite |
 | Tool discovery pg_dump argv | landed | tool_discovery tests |
-| SSH russh | residual | — |
+| SSH russh adapter + bastion proof | landed | 260-plan-017-russh-ssh-tunnel (known-hosts/profile residual) |
 
 ## Verification
 

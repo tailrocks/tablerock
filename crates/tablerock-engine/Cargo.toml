@@ -19,6 +19,7 @@ tokio.workspace = true
 tokio-postgres.workspace = true
 tokio-postgres-rustls.workspace = true
 zeroize.workspace = true
+russh.workspace = true
 
 [dev-dependencies]
 rcgen = { version = "=0.14.8", features = ["zeroize"] }
