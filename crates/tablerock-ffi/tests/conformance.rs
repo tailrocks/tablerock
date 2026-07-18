@@ -438,6 +438,7 @@ fn open_params_redaction_and_oversized_page_decode() {
         database: "d".into(),
         user: "u".into(),
         password: "do-not-leak-me".into(),
+        tls_mode: "off".into(),
     };
     let debug = format!("{params:?}");
     assert!(!debug.contains("do-not-leak-me"));
@@ -588,9 +589,41 @@ fn open_profile_requires_persistence_and_loads_literals() {
             .unwrap()
             .is_empty()
     );
+    let mut edited = bridge
+        .get_profile_draft(profile_id.to_bytes().to_vec())
+        .unwrap();
+    assert_eq!(edited.revision, 0);
+    assert_eq!(edited.password_source, "prompt");
+    assert!(!edited.has_stored_password);
+    edited.name = "bridge-edited".into();
+    assert_eq!(
+        bridge.save_profile(edited.clone()).unwrap(),
+        profile_id.to_bytes()
+    );
+    let replacement = bridge
+        .get_profile_draft(profile_id.to_bytes().to_vec())
+        .unwrap();
+    assert_eq!(replacement.revision, 1);
+    assert_eq!(replacement.name, "bridge-edited");
+
+    edited.id_bytes = None;
+    edited.revision = 0;
+    edited.name = "bridge-copy".into();
+    let copy_id = bridge.save_profile(edited).unwrap();
+    assert_ne!(copy_id, profile_id.to_bytes());
+    assert_eq!(bridge.list_profiles().unwrap().len(), 2);
+    bridge.delete_profile(copy_id, 0).unwrap();
+    assert_eq!(bridge.list_profiles().unwrap().len(), 1);
+    let prompt = bridge
+        .open_profile(profile_id.to_bytes().to_vec(), None)
+        .unwrap_err();
+    assert!(matches!(
+        prompt,
+        BridgeError::Rejected { ref code, .. } if code == "profile-password"
+    ));
     // Port 1 is unreachable — proves load+connect path without a live server.
     let err = bridge
-        .open_profile(profile_id.to_bytes().to_vec(), None)
+        .open_profile(profile_id.to_bytes().to_vec(), Some("unused".into()))
         .unwrap_err();
     assert!(matches!(
         err,

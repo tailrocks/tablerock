@@ -45,18 +45,24 @@ fn as_array16(bytes: &[u8]) -> Result<[u8; 16], IdDecodeError> {
 
 /// Sequential opaque ID factory for bridge-owned handles.
 pub(crate) struct IdFactory {
+    high: u64,
     next_low: u64,
 }
 
 impl IdFactory {
-    pub(crate) const fn new() -> Self {
-        Self { next_low: 1 }
+    pub(crate) fn new() -> Self {
+        let high = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos() as u64)
+            .unwrap_or(1)
+            .max(1);
+        Self { high, next_low: 1 }
     }
 
     pub(crate) fn parts(&mut self) -> IdParts {
         let low = self.next_low;
         self.next_low = self.next_low.saturating_add(1);
-        IdParts::new(0, low).expect("low counter starts at 1")
+        IdParts::new(self.high, low).expect("factory high is nonzero")
     }
 
     pub(crate) fn profile(&mut self) -> ProfileId {

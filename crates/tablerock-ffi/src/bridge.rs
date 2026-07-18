@@ -9,19 +9,25 @@ use std::{
 use tablerock_core::{
     BoundedText, ByteLimit, CatalogChildrenState, CatalogNode, CatalogNodeId, CatalogNodeKind,
     ClickHouseObjectKind, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
-    CommandScope, Engine, EnvironmentTag, FieldValue, MutationChange, MutationPlan,
-    MutationPlanLimits, MutationReviewRegistry, MutationTarget, OperationId, OperationOutcome,
-    OperationScope, OwnedValue, PageIdentity, PageKey, PageRequest, PostgreSqlObjectKind,
-    ProfileEndpointPart, ProfileId, ProfileListFilter, ProfileListRequest, ProfileProperty,
-    ProfileSafetyMode, ProfileSearchTerm, RedisKeyKind, ResultStore, ResultStoreLimits, Revision,
-    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText,
+    CommandScope, DangerousPlaintext, Engine, EnvironmentReference, EnvironmentTag, FieldValue,
+    MutationChange, MutationPlan, MutationPlanLimits, MutationReviewRegistry, MutationTarget,
+    OnePasswordReference, OperationId, OperationOutcome, OperationScope, OwnedValue, PageIdentity,
+    PageKey, PageRequest, PlaintextAcknowledgement, PostgreSqlObjectKind, ProfileAggregate,
+    ProfileConnectionSnapshot, ProfileDurability, ProfileEndpointPart, ProfileGroupName, ProfileId,
+    ProfileIdentity, ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName,
+    ProfileOrganization, ProfilePolicy, ProfilePreferences, ProfileProperty,
+    ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileSearchTerm, ProfileTag,
+    ReconnectPreference, RedisKeyKind, ResultStore, ResultStoreLimits, Revision, SecretSource,
+    SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText,
+    TlsPolicy,
 };
 use tablerock_engine::{
     CatalogRequest, ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery,
     ClickHouseSession, ClickHouseTlsMode, DriverPageRequest, DriverRuntime, DriverSession,
     EngineService, EngineServiceUpdate, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
     PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol,
-    RedisSession, RedisTlsMode,
+    RedisSession, RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError,
+    resolve_for_connect,
 };
 use tablerock_persistence::PersistenceActor;
 
@@ -52,6 +58,8 @@ pub struct OpenParams {
     pub database: String,
     pub user: String,
     pub password: String,
+    /// `off`, `verify_ca`, or `verify_full`.
+    pub tls_mode: String,
 }
 
 impl std::fmt::Debug for OpenParams {
@@ -64,6 +72,7 @@ impl std::fmt::Debug for OpenParams {
             .field("database", &self.database)
             .field("user", &self.user)
             .field("password", &"<redacted>")
+            .field("tls_mode", &self.tls_mode)
             .finish()
     }
 }
@@ -129,6 +138,13 @@ pub struct ApplyOutcome {
     pub failed_count: u32,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeConnectionTestReport {
+    pub identity: String,
+    pub tls_outcome: String,
+    pub elapsed_millis: u64,
+}
+
 /// One Rust-owned catalog node. Swift renders these facts and returns only opaque ids.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeCatalogNode {
@@ -175,6 +191,7 @@ struct BridgeInner {
 pub struct BridgeProfileItem {
     /// 16-byte ProfileId (same form `open_profile` accepts).
     pub id_bytes: Vec<u8>,
+    pub revision: u64,
     pub name: String,
     pub engine: String,
     pub group: Option<String>,
@@ -186,6 +203,29 @@ pub struct BridgeProfileItem {
     pub environment: Option<String>,
     pub production_warning: bool,
     pub dangerous_plaintext: bool,
+}
+
+/// Editable saved-profile projection. Secret references are IDs only; resolved
+/// values never cross the bridge. Existing plaintext is represented by
+/// `has_stored_password`, not returned.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeProfileDraft {
+    pub id_bytes: Option<Vec<u8>>,
+    pub revision: u64,
+    pub engine: String,
+    pub name: String,
+    pub group: String,
+    pub environment: String,
+    pub host: String,
+    pub port: String,
+    pub database: String,
+    pub username: String,
+    pub password_source: String,
+    pub password_value: String,
+    pub has_stored_password: bool,
+    pub plaintext_acknowledged: bool,
+    pub tls_mode: String,
+    pub safety_mode: String,
 }
 
 /// Process-scoped UniFFI facade. One instance owns the multi-thread runtime.
@@ -243,6 +283,37 @@ impl TableRockBridge {
         search: Option<String>,
     ) -> Result<Vec<BridgeProfileItem>, BridgeError> {
         catch_entry(|| self.list_profiles_inner(search))
+    }
+
+    /// Loads one editable profile without resolving or returning credentials.
+    pub fn get_profile_draft(
+        &self,
+        profile_id: Vec<u8>,
+    ) -> Result<BridgeProfileDraft, BridgeError> {
+        catch_entry(|| self.get_profile_draft_inner(profile_id))
+    }
+
+    /// Creates or revision-checked replaces one saved profile.
+    pub fn save_profile(&self, draft: BridgeProfileDraft) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| self.save_profile_inner(draft))
+    }
+
+    /// Revision-checked removal; active sessions remain alive.
+    pub fn delete_profile(
+        &self,
+        profile_id: Vec<u8>,
+        expected_revision: u64,
+    ) -> Result<(), BridgeError> {
+        catch_entry(|| self.delete_profile_inner(profile_id, expected_revision))
+    }
+
+    /// Connects, describes, and disconnects without changing persistence.
+    pub fn test_profile(
+        &self,
+        profile_id: Vec<u8>,
+        password_override: Option<String>,
+    ) -> Result<BridgeConnectionTestReport, BridgeError> {
+        catch_entry(|| self.test_profile_inner(profile_id, password_override))
     }
 
     /// Load one typed catalog level. `parent_node_id` is an opaque id previously
@@ -706,7 +777,29 @@ impl TableRockBridge {
                 .map_err(|_| BridgeError::rejected("profile-port", "invalid port"))?;
             let database = literal(ProfileProperty::DefaultContext).unwrap_or_default();
             let user = literal(ProfileProperty::Username).unwrap_or_default();
-            let password = password_override.unwrap_or_default();
+            struct OverridePrompt(Option<String>);
+            impl SecretPromptPort for OverridePrompt {
+                fn request(
+                    &mut self,
+                    _field: tablerock_core::SecretField,
+                    _profile: &ProfileName,
+                ) -> Result<ResolvedSecret, SecretResolutionError> {
+                    self.0
+                        .take()
+                        .map(|value| ResolvedSecret::from_prompt(value.into_bytes(), _field))
+                        .transpose()?
+                        .ok_or(SecretResolutionError::PromptFailed)
+                }
+            }
+            let password = if let Some(binding) = props.binding(ProfileProperty::Password) {
+                let mut prompt = OverridePrompt(password_override);
+                resolve_for_connect(binding, connection.name(), &mut prompt)
+                    .map_err(|error| BridgeError::rejected("profile-password", error.to_string()))?
+                    .map(|secret| String::from_utf8_lossy(secret.as_bytes()).into_owned())
+                    .unwrap_or_default()
+            } else {
+                password_override.unwrap_or_default()
+            };
             let engine = match connection.engine() {
                 Engine::PostgreSql => "postgresql",
                 Engine::ClickHouse => "clickhouse",
@@ -719,9 +812,137 @@ impl TableRockBridge {
                 database,
                 user,
                 password,
+                tls_mode: match connection.tls_policy() {
+                    TlsPolicy::Disabled => "off",
+                    TlsPolicy::VerifySystemRoots => "verify_ca",
+                    TlsPolicy::VerifyCustomCa => "verify_full",
+                    TlsPolicy::DangerousAcceptInvalidCertificate(_) => "off",
+                }
+                .into(),
             }
         };
         self.open_inner(params)
+    }
+
+    fn get_profile_draft_inner(
+        &self,
+        profile_id_bytes: Vec<u8>,
+    ) -> Result<BridgeProfileDraft, BridgeError> {
+        let id = decode_profile_id(&profile_id_bytes)?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let actor = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        let aggregate = actor
+            .get_profile(id)
+            .map_err(|error| BridgeError::rejected("profile-read", error.to_string()))?
+            .ok_or_else(|| BridgeError::rejected("profile-not-found", "profile not found"))?;
+        profile_to_bridge_draft(&aggregate)
+    }
+
+    fn test_profile_inner(
+        &self,
+        profile_id: Vec<u8>,
+        password_override: Option<String>,
+    ) -> Result<BridgeConnectionTestReport, BridgeError> {
+        let draft = self.get_profile_draft_inner(profile_id.clone())?;
+        let session_bytes = self.open_profile_inner(profile_id, password_override)?;
+        let session_id = session_from_bytes(&session_bytes)
+            .map_err(|_| BridgeError::rejected("session-id", "invalid opened session id"))?;
+        let driver = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            guard
+                .as_ref()
+                .and_then(|inner| inner.service.session(session_id))
+                .ok_or(BridgeError::UnknownSession)?
+        };
+        let described = self.runtime.block_on(driver.describe())?;
+        let disconnect = self.disconnect_inner(session_bytes);
+        let described =
+            described.map_err(|error| BridgeError::rejected("profile-test", error.to_string()))?;
+        disconnect?;
+        Ok(BridgeConnectionTestReport {
+            identity: described.identity().to_owned(),
+            tls_outcome: if draft.tls_mode == "off" {
+                "disabled"
+            } else {
+                "verified"
+            }
+            .to_owned(),
+            elapsed_millis: described.elapsed_millis(),
+        })
+    }
+
+    fn save_profile_inner(&self, draft: BridgeProfileDraft) -> Result<Vec<u8>, BridgeError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        let actor = inner
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        let existing = draft
+            .id_bytes
+            .as_deref()
+            .map(decode_profile_id)
+            .transpose()?
+            .map(|id| {
+                actor
+                    .get_profile(id)
+                    .map_err(|error| BridgeError::rejected("profile-read", error.to_string()))?
+                    .ok_or_else(|| BridgeError::rejected("profile-not-found", "profile not found"))
+            })
+            .transpose()?;
+        let id = existing
+            .as_ref()
+            .map(|profile| profile.connection().id())
+            .unwrap_or_else(|| inner.ids.profile());
+        let aggregate = bridge_draft_to_profile(&draft, id, existing.as_ref())?;
+        if existing.is_some() {
+            actor
+                .replace_profile(
+                    Revision::from_wire_u64(draft.revision),
+                    aggregate.persistable().expect("saved profile"),
+                )
+                .map_err(|error| BridgeError::rejected("profile-save", error.to_string()))?;
+        } else {
+            actor
+                .create_profile(aggregate.persistable().expect("saved profile"))
+                .map_err(|error| BridgeError::rejected("profile-save", error.to_string()))?;
+        }
+        Ok(id.to_bytes().to_vec())
+    }
+
+    fn delete_profile_inner(
+        &self,
+        profile_id_bytes: Vec<u8>,
+        expected_revision: u64,
+    ) -> Result<(), BridgeError> {
+        let id = decode_profile_id(&profile_id_bytes)?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let actor = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        actor
+            .delete_profile(id, Revision::from_wire_u64(expected_revision))
+            .map_err(|error| BridgeError::rejected("profile-delete", error.to_string()))
     }
 
     fn list_profiles_inner(
@@ -759,6 +980,7 @@ impl TableRockBridge {
             .iter()
             .map(|item| BridgeProfileItem {
                 id_bytes: item.id().to_bytes().to_vec(),
+                revision: item.revision().get(),
                 name: item.name().as_str().to_owned(),
                 engine: engine_label(item.engine()).to_owned(),
                 group: item.group().map(|g| g.as_str().to_owned()),
@@ -1008,6 +1230,11 @@ impl TableRockBridge {
         } else {
             Some(password.as_str())
         };
+        let tls_required = match params.tls_mode.as_str() {
+            "" | "off" => false,
+            "verify_ca" | "verify_full" => true,
+            _ => return Err(BridgeError::rejected("tls-mode", "unknown TLS mode")),
+        };
 
         let session: Box<dyn DriverSession> = self.runtime.block_on(async {
             match engine {
@@ -1018,7 +1245,11 @@ impl TableRockBridge {
                             port,
                             database,
                             user,
-                            PostgresTlsMode::Disabled,
+                            if tls_required {
+                                PostgresTlsMode::Required
+                            } else {
+                                PostgresTlsMode::Disabled
+                            },
                         ),
                         password_opt,
                     )
@@ -1033,7 +1264,11 @@ impl TableRockBridge {
                             port,
                             database,
                             user,
-                            ClickHouseTlsMode::Disable,
+                            if tls_required {
+                                ClickHouseTlsMode::Require
+                            } else {
+                                ClickHouseTlsMode::Disable
+                            },
                             ClickHouseCompression::Lz4,
                         ),
                         password_opt,
@@ -1058,7 +1293,11 @@ impl TableRockBridge {
                             port,
                             db,
                             RedisProtocol::Resp3,
-                            RedisTlsMode::Disable,
+                            if tls_required {
+                                RedisTlsMode::Require
+                            } else {
+                                RedisTlsMode::Disable
+                            },
                         ),
                         security,
                     )
@@ -1484,6 +1723,260 @@ fn environment_label(environment: &EnvironmentTag) -> String {
         EnvironmentTag::Testing => "Testing".into(),
         EnvironmentTag::Custom(_) => environment.custom_label().unwrap_or("Custom").to_owned(),
     }
+}
+
+fn decode_profile_id(bytes: &[u8]) -> Result<ProfileId, BridgeError> {
+    let bytes = <[u8; 16]>::try_from(bytes)
+        .map_err(|_| BridgeError::rejected("profile-id", "profile id must be 16 bytes"))?;
+    ProfileId::from_bytes(bytes)
+        .map_err(|_| BridgeError::rejected("profile-id", "invalid profile id"))
+}
+
+fn profile_to_bridge_draft(profile: &ProfileAggregate) -> Result<BridgeProfileDraft, BridgeError> {
+    let connection = profile.connection();
+    let literal = |property| {
+        connection
+            .properties()
+            .binding(property)
+            .and_then(ProfilePropertyBinding::literal_value)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let (password_source, password_value, has_stored_password) = connection
+        .properties()
+        .binding(ProfileProperty::Password)
+        .and_then(ProfilePropertyBinding::secret_source)
+        .map(|source| match source.kind() {
+            SecretSourceKind::PromptOnConnect => ("prompt", String::new(), false),
+            SecretSourceKind::HostEnvironment(reference) => {
+                ("environment", reference.as_str().to_owned(), false)
+            }
+            SecretSourceKind::OnePassword(reference) => {
+                ("onepassword", reference.to_compact_wire(), false)
+            }
+            SecretSourceKind::DangerousPlaintext(_) => ("dangerous_plaintext", String::new(), true),
+            SecretSourceKind::Keychain(_) => ("keychain", String::new(), true),
+        })
+        .unwrap_or(("prompt", String::new(), false));
+    let tls_mode = match connection.tls_policy() {
+        TlsPolicy::Disabled => "off",
+        TlsPolicy::VerifySystemRoots => "verify_ca",
+        TlsPolicy::VerifyCustomCa => "verify_full",
+        TlsPolicy::DangerousAcceptInvalidCertificate(_) => "dangerous",
+    };
+    Ok(BridgeProfileDraft {
+        id_bytes: Some(connection.id().to_bytes().to_vec()),
+        revision: connection.revision().get(),
+        engine: engine_label(connection.engine()).to_owned(),
+        name: connection.name().as_str().to_owned(),
+        group: profile
+            .organization()
+            .group()
+            .map(ProfileGroupName::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        environment: profile
+            .organization()
+            .environment()
+            .map(environment_label)
+            .unwrap_or_default(),
+        host: literal(ProfileProperty::Host),
+        port: literal(ProfileProperty::Port),
+        database: literal(ProfileProperty::DefaultContext),
+        username: literal(ProfileProperty::Username),
+        password_source: password_source.to_owned(),
+        password_value,
+        has_stored_password,
+        plaintext_acknowledged: has_stored_password,
+        tls_mode: tls_mode.to_owned(),
+        safety_mode: match connection.safety_mode() {
+            ProfileSafetyMode::ReadOnly => "read_only",
+            ProfileSafetyMode::ConfirmWrites => "confirm_writes",
+        }
+        .to_owned(),
+    })
+}
+
+fn bridge_draft_to_profile(
+    draft: &BridgeProfileDraft,
+    id: ProfileId,
+    existing: Option<&ProfileAggregate>,
+) -> Result<ProfileAggregate, BridgeError> {
+    let rejected = |code: &'static str, error: String| BridgeError::rejected(code, error);
+    let text = |value: &str, maximum| {
+        BoundedText::copy_from_str(value, ByteLimit::new(maximum))
+            .map_err(|error| rejected("profile-field", error.to_string()))
+    };
+    let engine = match draft.engine.as_str() {
+        "postgresql" => Engine::PostgreSql,
+        "clickhouse" => Engine::ClickHouse,
+        "redis" => Engine::Redis,
+        _ => return Err(BridgeError::rejected("profile-engine", "unknown engine")),
+    };
+    let revision = if existing.is_some() {
+        Revision::from_wire_u64(draft.revision)
+            .checked_next()
+            .map_err(|error| rejected("profile-revision", error.to_string()))?
+    } else {
+        Revision::INITIAL
+    };
+    let mut bindings = vec![
+        ProfilePropertyBinding::literal(ProfileProperty::Host, text(draft.host.trim(), 128)?)
+            .map_err(|error| rejected("profile-host", error.to_string()))?,
+        ProfilePropertyBinding::literal(ProfileProperty::Port, text(draft.port.trim(), 16)?)
+            .map_err(|error| rejected("profile-port", error.to_string()))?,
+    ];
+    for (property, value) in [
+        (ProfileProperty::DefaultContext, draft.database.trim()),
+        (ProfileProperty::Username, draft.username.trim()),
+    ] {
+        if !value.is_empty() {
+            bindings.push(
+                ProfilePropertyBinding::literal(property, text(value, 128)?)
+                    .map_err(|error| rejected("profile-field", error.to_string()))?,
+            );
+        }
+    }
+    let password_kind = match draft.password_source.as_str() {
+        "prompt" => SecretSourceKind::PromptOnConnect,
+        "environment" => SecretSourceKind::HostEnvironment(
+            EnvironmentReference::parse(draft.password_value.trim())
+                .map_err(|error| rejected("profile-password", error.to_string()))?,
+        ),
+        "onepassword" => SecretSourceKind::OnePassword(
+            OnePasswordReference::from_compact_wire(draft.password_value.trim())
+                .map_err(|error| rejected("profile-password", error.to_string()))?,
+        ),
+        "dangerous_plaintext" => {
+            if !draft.plaintext_acknowledged {
+                return Err(BridgeError::rejected(
+                    "profile-password",
+                    "plaintext password acknowledgement required",
+                ));
+            }
+            if draft.password_value.is_empty() {
+                return Err(BridgeError::rejected(
+                    "profile-password",
+                    "re-enter the stored plaintext password before saving",
+                ));
+            }
+            SecretSourceKind::DangerousPlaintext(
+                DangerousPlaintext::new(
+                    draft.password_value.as_bytes().to_vec(),
+                    PlaintextAcknowledgement::LocalTestingOnly,
+                )
+                .map_err(|error| rejected("profile-password", error.to_string()))?,
+            )
+        }
+        "keychain" => {
+            return Err(BridgeError::rejected(
+                "profile-password",
+                "Keychain editing is not available yet",
+            ));
+        }
+        _ => {
+            return Err(BridgeError::rejected(
+                "profile-password",
+                "unknown password source",
+            ));
+        }
+    };
+    bindings.push(ProfilePropertyBinding::secret(
+        ProfileProperty::Password,
+        SecretSource::new(password_kind),
+    ));
+    let properties = ProfilePropertySet::new(bindings)
+        .map_err(|error| rejected("profile-properties", error.to_string()))?;
+    let tls = match draft.tls_mode.as_str() {
+        "off" => TlsPolicy::Disabled,
+        "verify_ca" => TlsPolicy::VerifySystemRoots,
+        "verify_full" => TlsPolicy::VerifyCustomCa,
+        _ => return Err(BridgeError::rejected("profile-tls", "unknown TLS mode")),
+    };
+    let safety = match draft.safety_mode.as_str() {
+        "read_only" => ProfileSafetyMode::ReadOnly,
+        "confirm_writes" => ProfileSafetyMode::ConfirmWrites,
+        _ => {
+            return Err(BridgeError::rejected(
+                "profile-safety",
+                "unknown safety mode",
+            ));
+        }
+    };
+    let connection = ProfileConnectionSnapshot::new(
+        ProfileIdentity::new(
+            id,
+            revision,
+            engine,
+            ProfileName::new(text(draft.name.trim(), ProfileName::MAX_BYTES)?)
+                .map_err(|error| rejected("profile-name", error.to_string()))?,
+        ),
+        properties,
+        ProfilePolicy::new(
+            tls,
+            safety,
+            existing
+                .map(|profile| profile.connection().limits())
+                .unwrap_or(ProfileLimits::new(10_000, 30_000, 5_000, 16 * 1024 * 1024).unwrap()),
+        ),
+    )
+    .map_err(|error| rejected("profile", error.to_string()))?;
+    let group = if draft.group.trim().is_empty() {
+        None
+    } else {
+        Some(
+            ProfileGroupName::new(text(draft.group.trim(), ProfileGroupName::MAX_BYTES)?)
+                .map_err(|error| rejected("profile-group", error.to_string()))?,
+        )
+    };
+    let environment = parse_bridge_environment(&draft.environment)?;
+    let old_organization = existing.map(ProfileAggregate::organization);
+    let organization = ProfileOrganization::new(
+        group,
+        old_organization
+            .map(|organization| organization.tags().to_vec())
+            .unwrap_or_default(),
+        old_organization.is_some_and(ProfileOrganization::favorite),
+        old_organization
+            .map(ProfileOrganization::order)
+            .unwrap_or(0),
+        environment,
+    )
+    .map_err(|error| rejected("profile-organization", error.to_string()))?;
+    ProfileAggregate::new(
+        connection,
+        ProfileDurability::Saved,
+        organization,
+        existing.map(ProfileAggregate::preferences).unwrap_or(
+            ProfilePreferences::new(ReconnectPreference::BoundedAutomatic, true, 250).unwrap(),
+        ),
+    )
+    .map(|profile| match existing {
+        Some(old) => profile.with_startup_actions(old.startup_actions().clone()),
+        None => profile,
+    })
+    .map_err(|error| rejected("profile", error.to_string()))
+}
+
+fn parse_bridge_environment(raw: &str) -> Result<Option<EnvironmentTag>, BridgeError> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(match raw.to_ascii_lowercase().as_str() {
+        "production" | "prod" => EnvironmentTag::Production,
+        "staging" => EnvironmentTag::Staging,
+        "development" | "dev" => EnvironmentTag::Development,
+        "testing" | "test" => EnvironmentTag::Testing,
+        label => EnvironmentTag::Custom(
+            ProfileTag::new(
+                BoundedText::copy_from_str(label, ByteLimit::new(ProfileTag::MAX_BYTES)).map_err(
+                    |error| BridgeError::rejected("profile-environment", error.to_string()),
+                )?,
+            )
+            .map_err(|error| BridgeError::rejected("profile-environment", error.to_string()))?,
+        ),
+    }))
 }
 
 #[derive(Clone, Copy)]

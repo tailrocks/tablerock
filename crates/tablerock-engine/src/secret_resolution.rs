@@ -22,8 +22,21 @@ pub struct ResolvedSecret {
 }
 
 impl ResolvedSecret {
+    pub const MAX_PROMPT_BYTES: usize = 256 * 1024;
+
     fn new(bytes: Vec<u8>, field: SecretField) -> Self {
         Self { bytes, field }
+    }
+
+    /// Build a bounded attempt-scoped value supplied by a UI prompt port.
+    pub fn from_prompt(bytes: Vec<u8>, field: SecretField) -> Result<Self, SecretResolutionError> {
+        if bytes.is_empty() {
+            return Err(SecretResolutionError::PromptFailed);
+        }
+        if bytes.len() > Self::MAX_PROMPT_BYTES {
+            return Err(SecretResolutionError::PromptOutputTooLarge);
+        }
+        Ok(Self::new(bytes, field))
     }
 
     #[must_use]
@@ -59,6 +72,7 @@ pub enum SecretResolutionError {
         kind: SecretSourceKindLabel,
     },
     PromptFailed,
+    PromptOutputTooLarge,
     MissingSource,
     /// Named environment variable is unset or empty (fail closed).
     EnvVarMissing,
@@ -90,6 +104,7 @@ impl fmt::Display for SecretResolutionError {
                 "secret source is not supported in this delivery stage"
             }
             Self::PromptFailed => "secret prompt failed",
+            Self::PromptOutputTooLarge => "secret prompt value exceeded size limit",
             Self::MissingSource => "property has no secret source to resolve",
             Self::EnvVarMissing => "environment variable is unset or empty",
             Self::OnePasswordCliMissing => "1Password CLI (op) not found on PATH",
@@ -554,5 +569,24 @@ mod tests {
         );
         assert_eq!(prompt.calls, 0);
         assert_eq!(op.calls, 0);
+    }
+
+    #[test]
+    fn external_prompt_values_are_nonempty_and_bounded() {
+        assert!(matches!(
+            ResolvedSecret::from_prompt(Vec::new(), SecretField::DangerousPlaintext),
+            Err(SecretResolutionError::PromptFailed)
+        ));
+        assert!(matches!(
+            ResolvedSecret::from_prompt(
+                vec![b'x'; ResolvedSecret::MAX_PROMPT_BYTES + 1],
+                SecretField::DangerousPlaintext
+            ),
+            Err(SecretResolutionError::PromptOutputTooLarge)
+        ));
+        let secret =
+            ResolvedSecret::from_prompt(b"bounded".to_vec(), SecretField::DangerousPlaintext)
+                .unwrap();
+        assert_eq!(secret.as_bytes(), b"bounded");
     }
 }

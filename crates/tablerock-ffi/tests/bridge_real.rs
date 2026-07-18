@@ -21,6 +21,7 @@ fn open_params(engine: &str, port: u16, database: &str, user: &str) -> OpenParam
         database: database.into(),
         user: user.into(),
         password: String::new(),
+        tls_mode: "off".into(),
     }
 }
 

@@ -178,6 +178,7 @@ fn open_params_debug_redacts_password() {
         database: "db".into(),
         user: "u".into(),
         password: "super-secret".into(),
+        tls_mode: "off".into(),
     };
     let debug = format!("{params:?}");
     assert!(!debug.contains("super-secret"));
@@ -212,6 +213,7 @@ fn open_rejects_unreachable_endpoint() {
             database: "postgres".into(),
             user: "postgres".into(),
             password: String::new(),
+            tls_mode: "off".into(),
         })
         .unwrap_err();
     match err {

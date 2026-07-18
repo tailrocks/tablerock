@@ -158,10 +158,23 @@ private actor BridgeClient {
     func searchProfiles(_ search: String?) throws -> [BridgeProfileItem] {
         try bridge.searchProfiles(search: search)
     }
+    func profileDraft(id: Data) throws -> BridgeProfileDraft {
+        try bridge.getProfileDraft(profileId: id)
+    }
+    func saveProfile(_ draft: BridgeProfileDraft) throws -> Data {
+        try bridge.saveProfile(draft: draft)
+    }
+    func deleteProfile(id: Data, revision: UInt64) throws {
+        try bridge.deleteProfile(profileId: id, expectedRevision: revision)
+    }
+    func testProfile(id: Data) throws -> BridgeConnectionTestReport {
+        try bridge.testProfile(profileId: id, passwordOverride: nil)
+    }
     func open(params: OpenParams) throws -> Data { try bridge.open(params: params) }
     func openProfile(id: Data) throws -> Data {
         try bridge.openProfile(profileId: id, passwordOverride: nil)
     }
+    func disconnect(session: Data) throws { try bridge.disconnect(sessionId: session) }
     func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [BridgeCatalogNode] {
         try bridge.refreshCatalog(sessionId: session, parentNodeId: parentNodeId)
     }
@@ -229,6 +242,8 @@ struct TableRockApp: App {
             if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_ACCESSIBILITY_AUDIT"] == "1" {
                 NativeAccessibilityFixtureView()
                     .frame(minWidth: 760, minHeight: 520)
+            } else if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_PROFILE_EDITOR"] == "1" {
+                NativeProfileEditorFixtureView()
             } else if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"] != nil {
                 PerformanceFixtureView(table: model.resultTable)
                     .frame(minWidth: 760, minHeight: 520)
@@ -247,6 +262,59 @@ struct TableRockApp: App {
             NativeSettingsView()
         }
     }
+}
+
+private struct NativeProfileEditorFixtureView: View {
+    private let draft = BridgeProfileDraft(
+        idBytes: Data(repeating: 7, count: 16), revision: 3,
+        engine: "postgresql", name: "Production analytics", group: "Production",
+        environment: "production", host: "db.example.internal", port: "5432",
+        database: "analytics", username: "operator", passwordSource: "prompt",
+        passwordValue: "", hasStoredPassword: false, plaintextAcknowledged: false,
+        tlsMode: "verify_full", safetyMode: "read_only"
+    )
+
+    var body: some View {
+        ProfileEditorSheet(initialDraft: draft) { _ in true }
+            .frame(minWidth: 520, minHeight: 620)
+            .task {
+                try? await Task.sleep(for: .milliseconds(500))
+                runNativeProfileEditorAudit()
+            }
+    }
+}
+
+@MainActor
+private func runNativeProfileEditorAudit() {
+    guard let window = NSApplication.shared.windows.first(where: { $0.isVisible }),
+          let root = window.contentView
+    else {
+        writePerformanceMetric("PROFILE_EDITOR_PROOF_FAILED no visible window")
+        return
+    }
+    func descendants(of view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+    let views = descendants(of: root)
+    let textFields = views.compactMap { $0 as? NSTextField }
+    let buttons = views.compactMap { $0 as? NSButton }
+    let titles = Set(buttons.map(\.title))
+    guard window.title == "Edit Connection",
+          textFields.count >= 6,
+          titles.contains("PostgreSQL"),
+          titles.contains("Production"),
+          titles.contains("Prompt on connect"),
+          titles.contains("Read only"),
+          titles.contains("Verify full")
+    else {
+        writePerformanceMetric(
+            "PROFILE_EDITOR_PROOF_FAILED title=\(window.title) fields=\(textFields.count) buttons=\(titles.sorted())"
+        )
+        return
+    }
+    writePerformanceMetric(
+        "PROFILE_EDITOR_PROOF_PASSED title=Edit_Connection fields=\(textFields.count) pickers=engine_environment_password_safety_tls"
+    )
 }
 
 private struct NativeAccessibilityFixtureView: View {
@@ -398,6 +466,12 @@ struct ProfileSection: Identifiable {
     let profiles: [BridgeProfileItem]
 }
 
+extension BridgeProfileDraft: @retroactive Identifiable {
+    public var id: String {
+        idBytes?.base64EncodedString() ?? "new-profile"
+    }
+}
+
 private func catalogNodeKey(_ id: Data) -> String {
     "node:" + id.map { String(format: "%02x", $0) }.joined()
 }
@@ -430,6 +504,10 @@ final class BridgeModel {
     private(set) var profilesLoading = false
     private(set) var profilesError: String?
     private var profileSearchGeneration: UInt64 = 0
+    var editorDraft: BridgeProfileDraft?
+    var profileActionError: String?
+    var profileActionOutcome: String?
+    var pendingRemoval: BridgeProfileItem?
     var profileSections: [ProfileSection] {
         var order: [String] = []
         var grouped: [String: [BridgeProfileItem]] = [:]
@@ -480,15 +558,19 @@ final class BridgeModel {
     private var activeOperationId: Data?
     var sessionData: Data?
 
-    private static let persistenceDirectory: URL = {
-        let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("tablerock-native", isDirectory: true)
-        try? FileManager.default.createDirectory(
+    private static func persistencePath() throws -> String {
+        let base = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appendingPathComponent("TableRock", isDirectory: true)
+        try FileManager.default.createDirectory(
             at: base,
             withIntermediateDirectories: true
         )
-        return base
-    }()
+        return base.appendingPathComponent("profiles.db").path
+    }
 
     init() {
         installPerformanceFixtureIfRequested()
@@ -496,8 +578,7 @@ final class BridgeModel {
 
     func initialize() async {
         do {
-            client = try BridgeClient(persistencePath: Self.persistenceDirectory
-                .appendingPathComponent("profiles.db").path)
+            client = try BridgeClient(persistencePath: Self.persistencePath())
             await refreshProfiles()
         } catch {
             bridgeError = "Bridge init failed: \(error)"
@@ -551,6 +632,71 @@ final class BridgeModel {
         if generation == profileSearchGeneration { profilesLoading = false }
     }
 
+    func createProfile() {
+        editorDraft = BridgeProfileDraft(
+            idBytes: nil, revision: 0, engine: "postgresql", name: "",
+            group: "", environment: "", host: "127.0.0.1", port: "5432",
+            database: "postgres", username: "postgres", passwordSource: "prompt",
+            passwordValue: "", hasStoredPassword: false,
+            plaintextAcknowledged: false, tlsMode: "verify_full",
+            safetyMode: "confirm_writes"
+        )
+    }
+
+    func editProfile(_ item: BridgeProfileItem) async {
+        guard let client else { return }
+        profileActionError = nil
+        do { editorDraft = try await client.profileDraft(id: item.idBytes) }
+        catch { profileActionError = "Load connection failed: \(error)" }
+    }
+
+    func duplicateProfile(_ item: BridgeProfileItem) async {
+        await editProfile(item)
+        guard var copy = editorDraft else { return }
+        copy.idBytes = nil
+        copy.revision = 0
+        copy.name += " Copy"
+        if copy.hasStoredPassword { copy.passwordValue = "" }
+        editorDraft = copy
+    }
+
+    func saveProfile(_ draft: BridgeProfileDraft) async -> Bool {
+        guard let client else { return false }
+        profileActionError = nil
+        do {
+            _ = try await client.saveProfile(draft)
+            editorDraft = nil
+            profileActionOutcome = draft.idBytes == nil ? "Connection created" : "Connection saved"
+            await refreshProfiles()
+            return true
+        } catch {
+            profileActionError = "Save connection failed: \(error)"
+            return false
+        }
+    }
+
+    func testProfile(_ item: BridgeProfileItem) async {
+        guard let client else { return }
+        profileActionError = nil
+        profileActionOutcome = "Testing \(item.name)…"
+        do {
+            let report = try await client.testProfile(id: item.idBytes)
+            profileActionOutcome =
+                "\(report.identity) · TLS \(report.tlsOutcome) · \(report.elapsedMillis) ms"
+        } catch { profileActionError = "Connection test failed: \(error)" }
+    }
+
+    func removePendingProfile() async {
+        guard let client, let item = pendingRemoval else { return }
+        pendingRemoval = nil
+        profileActionError = nil
+        do {
+            try await client.deleteProfile(id: item.idBytes, revision: item.revision)
+            profileActionOutcome = "Connection removed: \(item.name)"
+            await refreshProfiles()
+        } catch { profileActionError = "Remove connection failed: \(error)" }
+    }
+
     /// Connect directly from form params (temporary session, no saved profile).
     func connectByParams() async {
         guard let client,
@@ -574,7 +720,8 @@ final class BridgeModel {
                 port: port,
                 database: formDatabase,
                 user: formUser,
-                password: formPassword
+                password: formPassword,
+                tlsMode: "off"
             ))
             connectedEngine = formEngine
             sessionData = session
@@ -744,14 +891,40 @@ struct ContentView: View {
                     ForEach(model.profileSections) { section in
                         Section(section.title) {
                             ForEach(section.profiles, id: \.idBytes) { profile in
-                                Button { Task { await model.connect(profile) } } label: {
-                                    ProfileRow(
-                                        profile: profile,
-                                        connectionState: model.connectingName == profile.name
-                                            ? "Connecting" : "Disconnected"
-                                    )
+                                HStack(spacing: 4) {
+                                    Button { Task { await model.connect(profile) } } label: {
+                                        ProfileRow(
+                                            profile: profile,
+                                            connectionState: model.connectingName == profile.name
+                                                ? "Connecting" : "Disconnected"
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    Menu {
+                                        Button("Connect") { Task { await model.connect(profile) } }
+                                        Button("Edit…") { Task { await model.editProfile(profile) } }
+                                        Button("Duplicate…") { Task { await model.duplicateProfile(profile) } }
+                                        Button("Test") { Task { await model.testProfile(profile) } }
+                                        Divider()
+                                        Button("Remove…", role: .destructive) {
+                                            model.pendingRemoval = profile
+                                        }
+                                    } label: {
+                                        Image(systemName: "ellipsis.circle")
+                                    }
+                                    .menuStyle(.borderlessButton)
+                                    .accessibilityLabel("Actions for \(profile.name)")
                                 }
-                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button("Connect") { Task { await model.connect(profile) } }
+                                    Button("Edit…") { Task { await model.editProfile(profile) } }
+                                    Button("Duplicate…") { Task { await model.duplicateProfile(profile) } }
+                                    Button("Test") { Task { await model.testProfile(profile) } }
+                                    Divider()
+                                    Button("Remove…", role: .destructive) {
+                                        model.pendingRemoval = profile
+                                    }
+                                }
                             }
                         }
                     }
@@ -761,6 +934,16 @@ struct ContentView: View {
                     try? await Task.sleep(for: .milliseconds(150))
                     guard !Task.isCancelled else { return }
                     await model.refreshProfiles()
+                }
+                .safeAreaInset(edge: .bottom) {
+                    HStack {
+                        Button { model.createProfile() } label: {
+                            Label("New connection", systemImage: "plus")
+                        }
+                        Spacer()
+                    }
+                    .padding(8)
+                    .background(.bar)
                 }
                 .overlay {
                     if model.profilesLoading {
@@ -838,6 +1021,9 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("TableRock").font(.largeTitle).bold()
                 Text(model.status).foregroundStyle(.secondary)
+                if let outcome = model.profileActionOutcome {
+                    Text(outcome).foregroundStyle(.secondary).font(.callout)
+                }
                 if let bridgeError = model.bridgeError {
                     Text(bridgeError)
                         .foregroundStyle(.red)
@@ -940,6 +1126,33 @@ struct ContentView: View {
             }
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .sheet(item: $model.editorDraft) { draft in
+            ProfileEditorSheet(initialDraft: draft) { saved in
+                await model.saveProfile(saved)
+            }
+        }
+        .confirmationDialog(
+            "Remove connection?",
+            isPresented: Binding(
+                get: { model.pendingRemoval != nil },
+                set: { if !$0 { model.pendingRemoval = nil } }
+            ),
+            presenting: model.pendingRemoval
+        ) { _ in
+            Button("Remove", role: .destructive) { Task { await model.removePendingProfile() } }
+            Button("Cancel", role: .cancel) { model.pendingRemoval = nil }
+        } message: { item in
+            Text("\(item.name) will be removed. Active sessions remain open.")
+        }
+        .alert(
+            "Connection action failed",
+            isPresented: Binding(
+                get: { model.profileActionError != nil },
+                set: { if !$0 { model.profileActionError = nil } }
+            )
+        ) { Button("OK") { model.profileActionError = nil } } message: {
+            Text(model.profileActionError ?? "Unknown failure")
         }
         .task { await model.initialize() }
         .focusedValue(\.workbenchActions, WorkbenchActions(
@@ -1422,6 +1635,114 @@ struct SqlTextEditor: NSViewRepresentable {
             guard let editor = notification.object as? NSTextView else { return }
             text.wrappedValue = editor.string
         }
+    }
+}
+
+struct ProfileEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: BridgeProfileDraft
+    @State private var saving = false
+    let onSave: (BridgeProfileDraft) async -> Bool
+
+    init(
+        initialDraft: BridgeProfileDraft,
+        onSave: @escaping (BridgeProfileDraft) async -> Bool
+    ) {
+        _draft = State(initialValue: initialDraft)
+        self.onSave = onSave
+    }
+
+    private var canSave: Bool {
+        !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !draft.host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && UInt16(draft.port) != nil
+            && (draft.passwordSource != "dangerous_plaintext"
+                || (!draft.passwordValue.isEmpty && draft.plaintextAcknowledged))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("General") {
+                    Picker("Engine", selection: $draft.engine) {
+                        Text("PostgreSQL").tag("postgresql")
+                        Text("ClickHouse").tag("clickhouse")
+                        Text("Redis").tag("redis")
+                    }
+                    TextField("Name", text: $draft.name)
+                    TextField("Group", text: $draft.group)
+                    Picker("Environment", selection: $draft.environment) {
+                        Text("None").tag("")
+                        Text("Production").tag("production")
+                        Text("Staging").tag("staging")
+                        Text("Development").tag("development")
+                        Text("Testing").tag("testing")
+                    }
+                    Picker("Safety", selection: $draft.safetyMode) {
+                        Text("Read only").tag("read_only")
+                        Text("Confirm writes").tag("confirm_writes")
+                    }
+                }
+                Section("Connection") {
+                    TextField("Host", text: $draft.host)
+                    TextField("Port", text: $draft.port)
+                    TextField(
+                        draft.engine == "redis" ? "Logical database" : "Default database",
+                        text: $draft.database
+                    )
+                    TextField("Username", text: $draft.username)
+                }
+                Section("Credentials") {
+                    Picker("Password storage", selection: $draft.passwordSource) {
+                        Text("Prompt on connect").tag("prompt")
+                        Text("Save locally (dangerous)").tag("dangerous_plaintext")
+                        Text("Environment variable").tag("environment")
+                        Text("1Password reference").tag("onepassword")
+                    }
+                    if draft.passwordSource == "dangerous_plaintext" {
+                        SecureField(
+                            draft.hasStoredPassword ? "Re-enter stored password" : "Password",
+                            text: $draft.passwordValue
+                        )
+                        Toggle(
+                            "I understand this stores the password as plaintext locally",
+                            isOn: $draft.plaintextAcknowledged
+                        )
+                        .foregroundStyle(.orange)
+                    } else if draft.passwordSource == "environment" {
+                        TextField("Environment variable name", text: $draft.passwordValue)
+                    } else if draft.passwordSource == "onepassword" {
+                        TextField("account vault item [section] field", text: $draft.passwordValue)
+                    }
+                }
+                Section("TLS") {
+                    Picker("Mode", selection: $draft.tlsMode) {
+                        Text("Off").tag("off")
+                        Text("Verify CA").tag("verify_ca")
+                        Text("Verify full").tag("verify_full")
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle(draft.idBytes == nil ? "New Connection" : "Edit Connection")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saving = true
+                        Task {
+                            if await onSave(draft) { dismiss() }
+                            saving = false
+                        }
+                    }
+                    .disabled(!canSave || saving)
+                }
+            }
+        }
+        .frame(minWidth: 520, minHeight: 620)
+        .interactiveDismissDisabled(saving)
     }
 }
 

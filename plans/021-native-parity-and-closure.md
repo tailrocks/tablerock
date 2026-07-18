@@ -10,7 +10,7 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-19): Plan 020/Phase 13 exit verified; native connection grouping/search and complete target projection landed (evidence 512); actions/editor/group management remain**
+- **IN PROGRESS (2026-07-19): native connection grouping/search (evidence 512) plus revision-safe create/edit/duplicate/remove, full first-form fields, secret-source safety, durable store, and typed Test report (evidence 513); group management and remaining screens continue**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

@@ -630,6 +630,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func configurePersistence(path: String) throws 
     
     /**
+     * Revision-checked removal; active sessions remain alive.
+     */
+    func deleteProfile(profileId: Data, expectedRevision: UInt64) throws 
+    
+    /**
      * Drops the Tokio runtime after service shutdown. Idempotent.
      */
     func destroyRuntime() throws 
@@ -648,6 +653,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Fetches a resident page as version-1 encoded bytes.
      */
     func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) throws  -> Data
+    
+    /**
+     * Loads one editable profile without resolving or returning credentials.
+     */
+    func getProfileDraft(profileId: Data) throws  -> BridgeProfileDraft
     
     /**
      * Lists saved profiles (all engines) for the native connection screen.
@@ -693,6 +703,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func revokeReviewToken(tokenId: Data) throws  -> Bool
     
     /**
+     * Creates or revision-checked replaces one saved profile.
+     */
+    func saveProfile(draft: BridgeProfileDraft) throws  -> Data
+    
+    /**
      * Rust-owned normalized profile search across name, endpoint, database, and group.
      */
     func searchProfiles(search: String?) throws  -> [BridgeProfileItem]
@@ -714,6 +729,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Submits a command and returns a 16-byte operation id.
      */
     func submit(spec: SubmitSpec) throws  -> Data
+    
+    /**
+     * Connects, describes, and disconnects without changing persistence.
+     */
+    func testProfile(profileId: Data, passwordOverride: String?) throws  -> BridgeConnectionTestReport
     
 }
 /**
@@ -841,6 +861,19 @@ open func configurePersistence(path: String)throws   {try rustCallWithError(FfiC
 }
     
     /**
+     * Revision-checked removal; active sessions remain alive.
+     */
+open func deleteProfile(profileId: Data, expectedRevision: UInt64)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_delete_profile(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(profileId),
+        FfiConverterUInt64.lower(expectedRevision),uniffiCallStatus
+    )
+}
+}
+    
+    /**
      * Drops the Tokio runtime after service shutdown. Idempotent.
      */
 open func destroyRuntime()throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
@@ -885,6 +918,19 @@ open func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64)throws  -
         FfiConverterData.lower(resultId),
         FfiConverterUInt64.lower(startRow),
         FfiConverterUInt64.lower(revision),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Loads one editable profile without resolving or returning credentials.
+     */
+open func getProfileDraft(profileId: Data)throws  -> BridgeProfileDraft  {
+    return try  FfiConverterTypeBridgeProfileDraft_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_get_profile_draft(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(profileId),uniffiCallStatus
     )
 })
 }
@@ -996,6 +1042,19 @@ open func revokeReviewToken(tokenId: Data)throws  -> Bool  {
 }
     
     /**
+     * Creates or revision-checked replaces one saved profile.
+     */
+open func saveProfile(draft: BridgeProfileDraft)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_save_profile(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeBridgeProfileDraft_lower(draft),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Rust-owned normalized profile search across name, endpoint, database, and group.
      */
 open func searchProfiles(search: String?)throws  -> [BridgeProfileItem]  {
@@ -1048,6 +1107,20 @@ open func submit(spec: SubmitSpec)throws  -> Data  {
     uniffi_tablerock_ffi_fn_method_tablerockbridge_submit(
             self.uniffiCloneHandle(),
         FfiConverterTypeSubmitSpec_lower(spec),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Connects, describes, and disconnects without changing persistence.
+     */
+open func testProfile(profileId: Data, passwordOverride: String?)throws  -> BridgeConnectionTestReport  {
+    return try  FfiConverterTypeBridgeConnectionTestReport_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_test_profile(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(profileId),
+        FfiConverterOptionString.lower(passwordOverride),uniffiCallStatus
     )
 })
 }
@@ -1246,6 +1319,64 @@ public func FfiConverterTypeBridgeCatalogNode_lower(_ value: BridgeCatalogNode) 
 }
 
 
+public struct BridgeConnectionTestReport: Equatable, Hashable {
+    public var identity: String
+    public var tlsOutcome: String
+    public var elapsedMillis: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(identity: String, tlsOutcome: String, elapsedMillis: UInt64) {
+        self.identity = identity
+        self.tlsOutcome = tlsOutcome
+        self.elapsedMillis = elapsedMillis
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BridgeConnectionTestReport: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeConnectionTestReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeConnectionTestReport {
+        return
+            try BridgeConnectionTestReport(
+                identity: FfiConverterString.read(from: &buf), 
+                tlsOutcome: FfiConverterString.read(from: &buf), 
+                elapsedMillis: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeConnectionTestReport, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.identity, into: &buf)
+        FfiConverterString.write(value.tlsOutcome, into: &buf)
+        FfiConverterUInt64.write(value.elapsedMillis, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeConnectionTestReport_lift(_ buf: RustBuffer) throws -> BridgeConnectionTestReport {
+    return try FfiConverterTypeBridgeConnectionTestReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeConnectionTestReport_lower(_ value: BridgeConnectionTestReport) -> RustBuffer {
+    return FfiConverterTypeBridgeConnectionTestReport.lower(value)
+}
+
+
 public struct BridgeEventBatch: Equatable, Hashable {
     public var nextCursor: UInt64
     public var events: [BridgeEventRecord]
@@ -1391,6 +1522,121 @@ public func FfiConverterTypeBridgeEventRecord_lower(_ value: BridgeEventRecord) 
 
 
 /**
+ * Editable saved-profile projection. Secret references are IDs only; resolved
+ * values never cross the bridge. Existing plaintext is represented by
+ * `has_stored_password`, not returned.
+ */
+public struct BridgeProfileDraft: Equatable, Hashable {
+    public var idBytes: Data?
+    public var revision: UInt64
+    public var engine: String
+    public var name: String
+    public var group: String
+    public var environment: String
+    public var host: String
+    public var port: String
+    public var database: String
+    public var username: String
+    public var passwordSource: String
+    public var passwordValue: String
+    public var hasStoredPassword: Bool
+    public var plaintextAcknowledged: Bool
+    public var tlsMode: String
+    public var safetyMode: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(idBytes: Data?, revision: UInt64, engine: String, name: String, group: String, environment: String, host: String, port: String, database: String, username: String, passwordSource: String, passwordValue: String, hasStoredPassword: Bool, plaintextAcknowledged: Bool, tlsMode: String, safetyMode: String) {
+        self.idBytes = idBytes
+        self.revision = revision
+        self.engine = engine
+        self.name = name
+        self.group = group
+        self.environment = environment
+        self.host = host
+        self.port = port
+        self.database = database
+        self.username = username
+        self.passwordSource = passwordSource
+        self.passwordValue = passwordValue
+        self.hasStoredPassword = hasStoredPassword
+        self.plaintextAcknowledged = plaintextAcknowledged
+        self.tlsMode = tlsMode
+        self.safetyMode = safetyMode
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BridgeProfileDraft: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeProfileDraft: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeProfileDraft {
+        return
+            try BridgeProfileDraft(
+                idBytes: FfiConverterOptionData.read(from: &buf), 
+                revision: FfiConverterUInt64.read(from: &buf), 
+                engine: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                group: FfiConverterString.read(from: &buf), 
+                environment: FfiConverterString.read(from: &buf), 
+                host: FfiConverterString.read(from: &buf), 
+                port: FfiConverterString.read(from: &buf), 
+                database: FfiConverterString.read(from: &buf), 
+                username: FfiConverterString.read(from: &buf), 
+                passwordSource: FfiConverterString.read(from: &buf), 
+                passwordValue: FfiConverterString.read(from: &buf), 
+                hasStoredPassword: FfiConverterBool.read(from: &buf), 
+                plaintextAcknowledged: FfiConverterBool.read(from: &buf), 
+                tlsMode: FfiConverterString.read(from: &buf), 
+                safetyMode: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeProfileDraft, into buf: inout [UInt8]) {
+        FfiConverterOptionData.write(value.idBytes, into: &buf)
+        FfiConverterUInt64.write(value.revision, into: &buf)
+        FfiConverterString.write(value.engine, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.group, into: &buf)
+        FfiConverterString.write(value.environment, into: &buf)
+        FfiConverterString.write(value.host, into: &buf)
+        FfiConverterString.write(value.port, into: &buf)
+        FfiConverterString.write(value.database, into: &buf)
+        FfiConverterString.write(value.username, into: &buf)
+        FfiConverterString.write(value.passwordSource, into: &buf)
+        FfiConverterString.write(value.passwordValue, into: &buf)
+        FfiConverterBool.write(value.hasStoredPassword, into: &buf)
+        FfiConverterBool.write(value.plaintextAcknowledged, into: &buf)
+        FfiConverterString.write(value.tlsMode, into: &buf)
+        FfiConverterString.write(value.safetyMode, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeProfileDraft_lift(_ buf: RustBuffer) throws -> BridgeProfileDraft {
+    return try FfiConverterTypeBridgeProfileDraft.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeProfileDraft_lower(_ value: BridgeProfileDraft) -> RustBuffer {
+    return FfiConverterTypeBridgeProfileDraft.lower(value)
+}
+
+
+/**
  * One saved profile row for the native connection screen.
  */
 public struct BridgeProfileItem: Equatable, Hashable {
@@ -1398,6 +1644,7 @@ public struct BridgeProfileItem: Equatable, Hashable {
      * 16-byte ProfileId (same form `open_profile` accepts).
      */
     public var idBytes: Data
+    public var revision: UInt64
     public var name: String
     public var engine: String
     public var group: String?
@@ -1415,8 +1662,9 @@ public struct BridgeProfileItem: Equatable, Hashable {
     public init(
         /**
          * 16-byte ProfileId (same form `open_profile` accepts).
-         */idBytes: Data, name: String, engine: String, group: String?, favorite: Bool, host: String?, port: String?, context: String?, safetyMode: String, environment: String?, productionWarning: Bool, dangerousPlaintext: Bool) {
+         */idBytes: Data, revision: UInt64, name: String, engine: String, group: String?, favorite: Bool, host: String?, port: String?, context: String?, safetyMode: String, environment: String?, productionWarning: Bool, dangerousPlaintext: Bool) {
         self.idBytes = idBytes
+        self.revision = revision
         self.name = name
         self.engine = engine
         self.group = group
@@ -1447,6 +1695,7 @@ public struct FfiConverterTypeBridgeProfileItem: FfiConverterRustBuffer {
         return
             try BridgeProfileItem(
                 idBytes: FfiConverterData.read(from: &buf), 
+                revision: FfiConverterUInt64.read(from: &buf), 
                 name: FfiConverterString.read(from: &buf), 
                 engine: FfiConverterString.read(from: &buf), 
                 group: FfiConverterOptionString.read(from: &buf), 
@@ -1463,6 +1712,7 @@ public struct FfiConverterTypeBridgeProfileItem: FfiConverterRustBuffer {
 
     public static func write(_ value: BridgeProfileItem, into buf: inout [UInt8]) {
         FfiConverterData.write(value.idBytes, into: &buf)
+        FfiConverterUInt64.write(value.revision, into: &buf)
         FfiConverterString.write(value.name, into: &buf)
         FfiConverterString.write(value.engine, into: &buf)
         FfiConverterOptionString.write(value.group, into: &buf)
@@ -1562,19 +1812,27 @@ public struct OpenParams: Equatable, Hashable {
     public var database: String
     public var user: String
     public var password: String
+    /**
+     * `off`, `verify_ca`, or `verify_full`.
+     */
+    public var tlsMode: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
          * `postgresql`, `clickhouse`, or `redis`.
-         */engine: String, host: String, port: UInt16, database: String, user: String, password: String) {
+         */engine: String, host: String, port: UInt16, database: String, user: String, password: String, 
+        /**
+         * `off`, `verify_ca`, or `verify_full`.
+         */tlsMode: String) {
         self.engine = engine
         self.host = host
         self.port = port
         self.database = database
         self.user = user
         self.password = password
+        self.tlsMode = tlsMode
     }
 
     
@@ -1598,7 +1856,8 @@ public struct FfiConverterTypeOpenParams: FfiConverterRustBuffer {
                 port: FfiConverterUInt16.read(from: &buf), 
                 database: FfiConverterString.read(from: &buf), 
                 user: FfiConverterString.read(from: &buf), 
-                password: FfiConverterString.read(from: &buf)
+                password: FfiConverterString.read(from: &buf), 
+                tlsMode: FfiConverterString.read(from: &buf)
         )
     }
 
@@ -1609,6 +1868,7 @@ public struct FfiConverterTypeOpenParams: FfiConverterRustBuffer {
         FfiConverterString.write(value.database, into: &buf)
         FfiConverterString.write(value.user, into: &buf)
         FfiConverterString.write(value.password, into: &buf)
+        FfiConverterString.write(value.tlsMode, into: &buf)
     }
 }
 
@@ -2157,6 +2417,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_configure_persistence() != 51889) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_delete_profile() != 49889) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_destroy_runtime() != 55977) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2167,6 +2430,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_fetch_page() != 31970) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_get_profile_draft() != 6880) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_profiles() != 34048) {
@@ -2193,6 +2459,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_review_token() != 712) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_save_profile() != 18250) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_search_profiles() != 41691) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2203,6 +2472,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit() != 59509) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_test_profile() != 43186) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_constructor_tablerockbridge_create() != 41111) {
