@@ -134,6 +134,8 @@ pub enum ActionId {
     DropTable,
     /// Snapshot pg_stat_activity into the inspector.
     ShowActivity,
+    /// Snapshot roles + effective membership into the inspector.
+    ShowRoles,
     /// Cancel a backend by pid (gated confirm).
     CancelBackend,
     /// Terminate a backend by pid (gated confirm).

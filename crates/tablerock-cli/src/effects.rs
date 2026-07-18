@@ -435,6 +435,28 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::LoadRoles {
+                request_token,
+                session_id_hex,
+                context_revision,
+                schema,
+                table,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = load_roles(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        schema,
+                        table,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::SignalBackend {
                 request_token,
                 session_id_hex,
@@ -2861,6 +2883,59 @@ async fn execute_ddl_plan_effect(
             table,
         }),
         Err(error) => Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(error.to_string()),
+        }),
+    }
+}
+
+async fn load_roles(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    schema: Option<String>,
+    table: Option<String>,
+) -> Message {
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::RolesFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::RolesFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    if session.engine() != tablerock_core::Engine::PostgreSql {
+        return Message::Engine(tablerock_tui::EngineMsg::RolesFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("roles inspector is PostgreSQL-only".into()),
+        });
+    }
+    match session
+        .role_inspector_lines(schema.as_deref(), table.as_deref())
+        .await
+    {
+        Ok(lines) => Message::Engine(tablerock_tui::EngineMsg::RolesSnapshot {
+            request_token,
+            context_revision,
+            lines,
+        }),
+        Err(error) => Message::Engine(tablerock_tui::EngineMsg::RolesFailed {
             request_token,
             context_revision,
             reason: FailureProjection::Label(error.to_string()),

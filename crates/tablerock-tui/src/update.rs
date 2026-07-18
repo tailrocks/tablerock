@@ -1019,6 +1019,42 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::RolesSnapshot {
+            context_revision,
+            lines,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: "roles".into(),
+                kind_label: "roles".into(),
+                text: lines.join("\n"),
+                hex: String::new(),
+                byte_len: lines.iter().map(|l| l.len() as u64).sum(),
+                original_byte_len: None,
+                stale: false,
+            };
+            Update::render()
+        }
+        Message::Engine(EngineMsg::RolesFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::BackendSignalDone {
             context_revision,
             kind,
@@ -2323,6 +2359,28 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::ShowRoles if model.screen() == Screen::Workbench => {
+            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+                return Update::unchanged();
+            };
+            let (schema, table) = model
+                .workbench()
+                .active_grid()
+                .map(|g| (g.base_schema.clone(), g.base_table.clone()))
+                .unwrap_or((None, None));
+            let token = model.mint_request_token();
+            let context_revision = model.workbench().context_revision;
+            Update {
+                render: true,
+                effect: Some(Effect::LoadRoles {
+                    request_token: token,
+                    session_id_hex,
+                    context_revision,
+                    schema,
+                    table,
+                }),
+            }
+        }
         ActionId::ScanRedisKeys if model.screen() == Screen::Workbench => {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
@@ -2484,6 +2542,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DdlDropConstraint
         | ActionId::RenameTable
         | ActionId::ShowActivity
+        | ActionId::ShowRoles
         | ActionId::CancelBackend
         | ActionId::TerminateBackend
         | ActionId::ScanRedisKeys
@@ -2980,6 +3039,7 @@ fn cycle_action(
                 ActionId::DdlDropConstraint,
                 ActionId::RenameTable,
                 ActionId::ShowActivity,
+                ActionId::ShowRoles,
                 ActionId::CancelBackend,
                 ActionId::TerminateBackend,
                 ActionId::ScanRedisKeys,
@@ -4518,6 +4578,52 @@ mod tests {
                 ..
             }) if kind == "drop_column" && object_name == "email" && type_text.is_empty()
         ));
+    }
+
+    #[test]
+    fn show_roles_emits_load_roles_with_base_table() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::ShowRoles);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::LoadRoles {
+                session_id_hex,
+                schema: Some(schema),
+                table: Some(table),
+                ..
+            }) if session_id_hex == "aabb" && schema == "public" && table == "users"
+        ));
+        let context_revision = model.workbench().context_revision;
+        let snap = update(
+            &mut model,
+            Message::Engine(EngineMsg::RolesSnapshot {
+                request_token: 1,
+                context_revision,
+                lines: vec![
+                    "member: alice".into(),
+                    "effective: alice, parent".into(),
+                    "self-cycle: no".into(),
+                ],
+            }),
+        );
+        assert!(snap.render);
+        assert!(model.workbench().inspector.open);
+        assert_eq!(model.workbench().inspector.title, "roles");
+        assert!(model.workbench().inspector.text.contains("effective:"));
     }
 
     #[test]

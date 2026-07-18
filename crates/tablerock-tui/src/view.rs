@@ -339,6 +339,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let ddl_add_c = action_label(model, ActionId::DdlAddConstraint, "AddCon");
     let ddl_drop_c = action_label(model, ActionId::DdlDropConstraint, "DropCon");
     let activity = action_label(model, ActionId::ShowActivity, "Activity");
+    let roles = action_label(model, ActionId::ShowRoles, "Roles");
     let cancel_be = action_label(model, ActionId::CancelBackend, "CancelBE");
     let term_be = action_label(model, ActionId::TerminateBackend, "TermBE");
     let scan_redis = action_label(model, ActionId::ScanRedisKeys, "ScanKeys");
@@ -595,6 +596,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ShowActivity,
                         label: activity.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ShowRoles,
+                        label: roles.as_str(),
                         enabled: true,
                         style: None,
                     },

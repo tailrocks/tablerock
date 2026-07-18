@@ -23,7 +23,7 @@ serde_json = { version = "=1.0.150", default-features = false, features = ["arbi
 sha2 = { version = "=0.11.0", default-features = false }
 sqlparser = { version = "=0.62.0", default-features = false, features = ["std"] }
 termrock = { version = "=0.11.0", git = "https://github.com/tailrocks/termrock.git", rev = "dd8bed132903dbe3a8113d72940f23928716f498", features = ["crossterm", "serde"] }
-tokio = { version = "=1.52.4", features = ["macros", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "=1.52.4", features = ["macros", "process", "rt", "rt-multi-thread", "signal", "sync", "time"] }
 uniffi = { version = "=0.32.0", default-features = false }
 russh = { version = "=0.62.2", default-features = false, features = ["ring"] }
 tokio-postgres = "=0.7.18"

@@ -1125,6 +1125,71 @@ impl PostgresSession {
         Ok((roles, cycles, self_cycle))
     }
 
+    /// Presentation lines for the roles inspector (list + effective + grants).
+    pub async fn role_inspector_lines(
+        &self,
+        schema: Option<&str>,
+        table: Option<&str>,
+    ) -> Result<Vec<String>, PostgresError> {
+        let member: String = self
+            .client
+            .query_one("SELECT current_user::text", &[])
+            .await
+            .map_err(|_| PostgresError::Query)?
+            .get(0);
+        let roles = self.list_roles(64).await?;
+        let memberships = self.list_role_memberships(128).await?;
+        let (effective, _cycle_edges, self_cycle) =
+            self.effective_roles_for(&member, 128, 32).await?;
+
+        let mut lines = Vec::new();
+        lines.push(format!("member: {member}"));
+        lines.push(format!(
+            "effective: {}",
+            if effective.is_empty() {
+                "(self only)".into()
+            } else {
+                effective.join(", ")
+            }
+        ));
+        lines.push(format!(
+            "self-cycle: {}",
+            if self_cycle { "yes" } else { "no" }
+        ));
+        lines.push(format!("--- roles ({}) ---", roles.len()));
+        for r in &roles {
+            lines.push(r.clone());
+        }
+        lines.push(format!("--- memberships ({}) ---", memberships.len()));
+        for (role, m) in &memberships {
+            lines.push(format!("{role} <- {m}"));
+        }
+        if let (Some(schema), Some(table)) = (schema, table) {
+            if !schema.is_empty() && !table.is_empty() {
+                match self.list_table_privileges(schema, table, 64).await {
+                    Ok(privs) => {
+                        lines.push(format!(
+                            "--- table privileges {schema}.{table} ({}) ---",
+                            privs.len()
+                        ));
+                        for p in privs {
+                            lines.push(format!(
+                                "{} {} grantable={}",
+                                p.grantee, p.privilege, p.is_grantable
+                            ));
+                        }
+                    }
+                    Err(_) => {
+                        lines.push(format!(
+                            "--- table privileges {schema}.{table}: unavailable ---"
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(lines)
+    }
+
     /// Table-level privileges for a relation (`information_schema.table_privileges`).
     pub async fn list_table_privileges(
         &self,

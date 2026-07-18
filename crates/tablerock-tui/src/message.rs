@@ -334,6 +334,17 @@ pub enum EngineMsg {
         context_revision: u64,
         reason: FailureProjection,
     },
+    /// Role list + effective membership lines for the inspector.
+    RolesSnapshot {
+        request_token: u64,
+        context_revision: u64,
+        lines: Vec<String>,
+    },
+    RolesFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
     BackendSignalDone {
         request_token: u64,
         context_revision: u64,

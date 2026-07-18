@@ -182,6 +182,25 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn role_inspector_lines<'a>(
+        &'a self,
+        schema: Option<&'a str>,
+        table: Option<&'a str>,
+    ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => {
+                    session.role_inspector_lines(schema, table).await
+                }
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn redis_key_view_lines<'a>(
         &'a self,
         key: &'a [u8],

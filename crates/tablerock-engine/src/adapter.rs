@@ -302,6 +302,24 @@ pub trait DriverSession: Send + Sync {
         })
     }
 
+    /// PostgreSQL-only: role list + effective membership + optional table grants.
+    ///
+    /// Lines are presentation-ready for the inspector panel. Non-PG engines
+    /// return [`AdapterFailureClass::EngineMismatch`].
+    fn role_inspector_lines<'a>(
+        &'a self,
+        schema: Option<&'a str>,
+        table: Option<&'a str>,
+    ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
+        let _ = (schema, table);
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
     /// Redis-only: load a type-specific key view as display lines.
     fn redis_key_view_lines<'a>(
         &'a self,
@@ -515,6 +533,18 @@ impl DriverSession for PostgresSession {
     ) -> DriverFuture<'a, Result<(), AdapterError>> {
         Box::pin(async move {
             PostgresSession::execute_ddl_plan(self, &plan)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
+    fn role_inspector_lines<'a>(
+        &'a self,
+        schema: Option<&'a str>,
+        table: Option<&'a str>,
+    ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::role_inspector_lines(self, schema, table)
                 .await
                 .map_err(map_postgres)
         })

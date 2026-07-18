@@ -247,6 +247,15 @@ pub enum Effect {
         session_id_hex: String,
         context_revision: u64,
     },
+    /// Load role list + effective membership (+ optional table grants) into inspector.
+    LoadRoles {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// Optional relation for table privilege projection.
+        schema: Option<String>,
+        table: Option<String>,
+    },
     /// pg_cancel_backend / pg_terminate_backend after pid confirm.
     SignalBackend {
         request_token: RequestToken,
