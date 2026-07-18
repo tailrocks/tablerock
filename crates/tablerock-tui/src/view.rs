@@ -800,6 +800,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_ins_row = action_label(model, ActionId::CopyInsertRowSql, "CopyInsR");
     let copy_ins_load = action_label(model, ActionId::CopyInsertLoadedSql, "CopyInsL");
     let copy_ctx_sch = action_label(model, ActionId::CopyContextSchema, "CopyCtxSch");
+    let copy_ctx_sch_q = action_label(model, ActionId::CopyContextSchemaIdent, "CopyCtxSchQ");
     let copy_pk = action_label(model, ActionId::CopyPkNames, "CopyPk");
     let copy_pk_q = action_label(model, ActionId::CopyPkIdents, "CopyPkQ");
     let copy_loc = action_label(model, ActionId::CopyLocator, "CopyLoc");
@@ -2053,6 +2054,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyContextSchema,
                         label: copy_ctx_sch.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyContextSchemaIdent,
+                        label: copy_ctx_sch_q.as_str(),
                         enabled: true,
                         style: None,
                     },

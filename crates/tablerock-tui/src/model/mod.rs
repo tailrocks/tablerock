@@ -248,6 +248,8 @@ pub enum ActionId {
     CopyInsertLoadedSql,
     /// Copy context-bar schema label when set (not base-table schema).
     CopyContextSchema,
+    /// Copy context-bar schema as a SQL-quoted identifier.
+    CopyContextSchemaIdent,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).

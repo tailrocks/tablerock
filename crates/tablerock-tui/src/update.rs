@@ -4835,6 +4835,30 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyContextSchemaIdent if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(schema) = model
+                .workbench()
+                .context
+                .schema
+                .clone()
+                .filter(|s| !s.is_empty())
+            else {
+                return Update::unchanged();
+            };
+            let text = quote_ident_sql(&schema);
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied context schema ident {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyUpdateWhereSql if model.screen() == Screen::Workbench => {
             use crate::model::copy_format::format_cursor_cell_sql;
             use crate::model::structure_ddl::quote_ident_sql;
@@ -7030,6 +7054,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyInsertRowSql
         | ActionId::CopyInsertLoadedSql
         | ActionId::CopyContextSchema
+        | ActionId::CopyContextSchemaIdent
         | ActionId::CopyPkNames
         | ActionId::CopyPkIdents
         | ActionId::CopyLocator
@@ -8886,6 +8911,7 @@ fn cycle_action(
                 ActionId::CopyInsertRowSql,
                 ActionId::CopyInsertLoadedSql,
                 ActionId::CopyContextSchema,
+                ActionId::CopyContextSchemaIdent,
                 ActionId::CopyPkNames,
                 ActionId::CopyPkIdents,
                 ActionId::CopyLocator,
@@ -11465,6 +11491,13 @@ mod tests {
                 assert_eq!(text, "analytics");
             }
             other => panic!("expected context schema, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyContextSchemaIdent);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "\"analytics\"");
+            }
+            other => panic!("expected context schema ident, got {other:?}"),
         }
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.base_table = None;
