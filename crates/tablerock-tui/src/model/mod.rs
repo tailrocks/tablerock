@@ -316,6 +316,10 @@ pub enum ActionId {
     FilterIStartsWith,
     /// ILIKE suffix filter (case-insensitive ends with).
     FilterIEndsWith,
+    /// NOT LIKE prefix filter (does not start with).
+    FilterNotStartsWith,
+    /// NOT LIKE suffix filter (does not end with).
+    FilterNotEndsWith,
     /// Add inequality filter (ne) for cursor column using cell text.
     FilterNe,
     /// Comparison filters on cursor column (value from cell).
