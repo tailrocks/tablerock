@@ -638,6 +638,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let push_sort = action_label(model, ActionId::PushSort, "Sort+");
     let pop_sort = action_label(model, ActionId::PopSort, "Sort-");
     let quick_filt = action_label(model, ActionId::EditQuickFilter, "PgFilt");
+    let clear_quick = action_label(model, ActionId::ClearQuickFilter, "ClrPgF");
     let go_row = action_label(model, ActionId::GoToRow, "GoRow");
     let go_first = action_label(model, ActionId::GoToFirstRow, "First");
     let go_last = action_label(model, ActionId::GoToLastRow, "Last");
@@ -1021,6 +1022,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::EditQuickFilter,
                         label: quick_filt.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ClearQuickFilter,
+                        label: clear_quick.as_str(),
                         enabled: true,
                         style: None,
                     },

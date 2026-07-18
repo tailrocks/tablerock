@@ -3681,6 +3681,23 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::ClearQuickFilter if model.screen() == Screen::Workbench => {
+            let cleared = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| {
+                    if g.quick_filter.is_empty() {
+                        false
+                    } else {
+                        g.quick_filter.clear();
+                        true
+                    }
+                });
+            if !cleared {
+                return Update::unchanged();
+            }
+            Update::render()
+        }
         ActionId::GoToRow if model.screen() == Screen::Workbench => {
             if model.workbench().active_grid().is_none() {
                 return Update::unchanged();
@@ -4572,6 +4589,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ClearFilters
         | ActionId::EditRawWhere
         | ActionId::EditQuickFilter
+        | ActionId::ClearQuickFilter
         | ActionId::GoToRow
         | ActionId::GoToFirstRow
         | ActionId::GoToLastRow
@@ -6125,6 +6143,7 @@ fn cycle_action(
                 ActionId::ClearFilters,
                 ActionId::EditRawWhere,
                 ActionId::EditQuickFilter,
+                ActionId::ClearQuickFilter,
                 ActionId::GoToRow,
                 ActionId::GoToFirstRow,
                 ActionId::GoToLastRow,
@@ -7759,6 +7778,17 @@ mod tests {
             .filter_chip_bar()
             .unwrap()
             .contains("[page:needle]"));
+        model.set_action(ActionId::ClearQuickFilter);
+        let cleared = update(&mut model, Message::Activate);
+        assert!(cleared.effects().next().is_none());
+        assert!(model
+            .workbench()
+            .active_grid()
+            .unwrap()
+            .quick_filter
+            .is_empty());
+        // Second clear is no-op.
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
     #[test]

@@ -161,6 +161,8 @@ pub enum ActionId {
     EditRawWhere,
     /// Edit page-local quick filter (no server I/O).
     EditQuickFilter,
+    /// Clear page-local quick filter (no server I/O).
+    ClearQuickFilter,
     /// Jump cursor to absolute row number (paste digit).
     GoToRow,
     /// Jump to first row (0).
