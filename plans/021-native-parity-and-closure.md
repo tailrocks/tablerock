@@ -10,7 +10,7 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-19): native connection list/editor/actions (evidence 512–513), persistent groups (514), ordering/favorites (515), active-session/deletion retention (516), live health (517), and shared bounded reconnect (518) landed; remaining screens continue**
+- **IN PROGRESS (2026-07-19): native connection workflows (evidence 512–518) and bounded searchable native Query History with terminal recording (519) landed; durable retention preference, saved/files, and remaining screens continue**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

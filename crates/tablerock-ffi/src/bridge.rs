@@ -29,7 +29,9 @@ use tablerock_engine::{
     RedisCredentials, RedisProtocol, RedisSession, RedisTlsMode, ResolvedSecret, SecretPromptPort,
     SecretResolutionError, resolve_for_connect,
 };
-use tablerock_persistence::{PersistenceActor, ProfileOrderUpdate};
+use tablerock_persistence::{
+    HistoryAppend, HistoryOutcomeClass, HistoryRetention, PersistenceActor, ProfileOrderUpdate,
+};
 
 use crate::{
     error::{BridgeError, catch_entry},
@@ -167,6 +169,17 @@ pub struct BridgeReconnectAttempt {
     pub session_id: Option<Vec<u8>>,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeHistoryItem {
+    pub history_id: i64,
+    pub engine: String,
+    pub database_name: String,
+    pub schema_name: Option<String>,
+    pub statement_text: Option<String>,
+    pub outcome: String,
+    pub created_at: String,
+}
+
 /// One Rust-owned catalog node. Swift renders these facts and returns only opaque ids.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeCatalogNode {
@@ -196,6 +209,8 @@ struct BridgeInner {
     sessions: BTreeMap<SessionId, RegisteredSession>,
     /// Operation -> result identity used when admitting streamed pages.
     operation_results: BTreeMap<OperationId, PageIdentity>,
+    operation_history: BTreeMap<OperationId, HistoryAppend>,
+    history_retention: HistoryRetention,
     ids: IdFactory,
     events: VecDeque<BridgeEventRecord>,
     /// Absolute sequence of the next event to append (also next_cursor when caught up).
@@ -355,6 +370,20 @@ impl TableRockBridge {
 
     pub fn list_profile_groups(&self) -> Result<Vec<BridgeProfileGroup>, BridgeError> {
         catch_entry(|| self.list_profile_groups_inner())
+    }
+
+    /// Lists newest local query-history entries with optional SQL-text search.
+    pub fn list_history(
+        &self,
+        search: Option<String>,
+        limit: u32,
+    ) -> Result<Vec<BridgeHistoryItem>, BridgeError> {
+        catch_entry(|| self.list_history_inner(search, limit))
+    }
+
+    /// Sets process history retention for subsequent operations.
+    pub fn set_history_retention(&self, retention: String) -> Result<(), BridgeError> {
+        catch_entry(|| self.set_history_retention_inner(retention))
     }
 
     pub fn create_profile_group(&self, name: String) -> Result<(), BridgeError> {
@@ -990,7 +1019,44 @@ impl TableRockBridge {
                 }
                 other => BridgeError::rejected("disconnect", other.to_string()),
             })?;
-        inner.sessions.remove(&session_id);
+        let registered = inner
+            .sessions
+            .remove(&session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        inner
+            .catalog_nodes
+            .retain(|(cached_session, _), _| *cached_session != session_id);
+        let scope = OperationScope::new(
+            registered.profile_id,
+            registered.session_id,
+            registered.context_id,
+        );
+        inner
+            .service
+            .core_mut()
+            .remove_scope(CommandScope::Context(scope))
+            .map_err(|error| BridgeError::rejected("context-scope-cleanup", error.to_string()))?;
+        inner
+            .service
+            .core_mut()
+            .remove_scope(CommandScope::Session {
+                profile_id: registered.profile_id,
+                session_id: registered.session_id,
+            })
+            .map_err(|error| BridgeError::rejected("session-scope-cleanup", error.to_string()))?;
+        if !inner
+            .sessions
+            .values()
+            .any(|session| session.profile_id == registered.profile_id)
+        {
+            inner
+                .service
+                .core_mut()
+                .remove_scope(CommandScope::Profile(registered.profile_id))
+                .map_err(|error| {
+                    BridgeError::rejected("profile-scope-cleanup", error.to_string())
+                })?;
+        }
         Ok(())
     }
 
@@ -1302,6 +1368,78 @@ impl TableRockBridge {
                     .collect()
             })
             .map_err(|error| BridgeError::rejected("profile-groups", error.to_string()))
+    }
+
+    fn list_history_inner(
+        &self,
+        search: Option<String>,
+        limit: u32,
+    ) -> Result<Vec<BridgeHistoryItem>, BridgeError> {
+        if limit == 0 || limit > 500 {
+            return Err(BridgeError::rejected(
+                "history-limit",
+                "history limit must be between 1 and 500",
+            ));
+        }
+        let search = search
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        if search.as_ref().is_some_and(|value| value.len() > 256) {
+            return Err(BridgeError::rejected(
+                "history-search",
+                "history search exceeds 256 bytes",
+            ));
+        }
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let actor = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        actor
+            .list_history(search, limit)
+            .map(|entries| {
+                entries
+                    .into_iter()
+                    .map(|entry| BridgeHistoryItem {
+                        history_id: entry.history_id,
+                        engine: engine_label(entry.engine).into(),
+                        database_name: entry.database_name,
+                        schema_name: entry.schema_name,
+                        statement_text: entry.statement_text,
+                        outcome: entry.outcome.as_str().into(),
+                        created_at: entry.created_at,
+                    })
+                    .collect()
+            })
+            .map_err(|error| BridgeError::rejected("history-list", error.to_string()))
+    }
+
+    fn set_history_retention_inner(&self, retention: String) -> Result<(), BridgeError> {
+        let retention = match retention.as_str() {
+            "full" => HistoryRetention::Full,
+            "metadata_only" => HistoryRetention::MetadataOnly,
+            "private" => HistoryRetention::Private,
+            _ => {
+                return Err(BridgeError::rejected(
+                    "history-retention",
+                    "unknown history retention",
+                ));
+            }
+        };
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        guard
+            .as_mut()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .history_retention = retention;
+        Ok(())
     }
 
     fn create_profile_group_inner(&self, name: String) -> Result<(), BridgeError> {
@@ -1774,11 +1912,19 @@ impl TableRockBridge {
         let session_id = inner.ids.session();
         let context_id = inner.ids.context();
 
-        inner
+        let profile_scope = CommandScope::Profile(profile_id);
+        if inner
             .service
             .core_mut()
-            .register_scope(CommandScope::Profile(profile_id), Revision::INITIAL)
-            .map_err(|error| BridgeError::rejected("register-profile", error.to_string()))?;
+            .scope_revision(profile_scope)
+            .is_none()
+        {
+            inner
+                .service
+                .core_mut()
+                .register_scope(profile_scope, Revision::INITIAL)
+                .map_err(|error| BridgeError::rejected("register-profile", error.to_string()))?;
+        }
         inner
             .service
             .core_mut()
@@ -1887,6 +2033,33 @@ impl TableRockBridge {
                 return Ok(op_bytes);
             }
 
+            let pending_history = (intent_name == "execute").then(|| {
+                let database_name = inner
+                    .persistence
+                    .as_ref()
+                    .and_then(|actor| actor.get_profile(registered.profile_id).ok().flatten())
+                    .and_then(|profile| {
+                        profile
+                            .connection()
+                            .properties()
+                            .literal(ProfileProperty::DefaultContext)
+                            .map(str::to_owned)
+                    })
+                    .unwrap_or_else(|| match engine {
+                        Engine::PostgreSql => "postgres".into(),
+                        Engine::ClickHouse => "default".into(),
+                        Engine::Redis => "0".into(),
+                    });
+                HistoryAppend {
+                    engine,
+                    database_name,
+                    schema_name: None,
+                    statement_text: spec.statement.clone().unwrap_or_else(|| "select 1".into()),
+                    outcome: HistoryOutcomeClass::Unknown,
+                    retention: inner.history_retention,
+                }
+            });
+
             let (intent, request) = match intent_name.as_str() {
                 "probe" | "execute" => {
                     let statement = spec.statement.clone().unwrap_or_else(|| "select 1".into());
@@ -1965,6 +2138,9 @@ impl TableRockBridge {
                 .session(session_id)
                 .ok_or(BridgeError::UnknownSession)?;
             inner.operation_results.insert(operation_id, page_identity);
+            if let Some(history) = pending_history {
+                inner.operation_history.insert(operation_id, history);
+            }
             (operation_id, command, request, page_identity, driver)
         };
 
@@ -2029,6 +2205,10 @@ impl TableRockBridge {
             let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
             let terminal = inner.apply_update(operation_id, update)?;
             if terminal {
+                inner
+                    .service
+                    .retire(operation_id)
+                    .map_err(|error| BridgeError::rejected("retire", error.to_string()))?;
                 break;
             }
         }
@@ -2594,6 +2774,8 @@ impl BridgeInner {
             reviews,
             sessions: BTreeMap::new(),
             operation_results: BTreeMap::new(),
+            operation_history: BTreeMap::new(),
+            history_retention: HistoryRetention::Full,
             ids: IdFactory::new(),
             events: VecDeque::new(),
             next_sequence: 0,
@@ -2671,6 +2853,26 @@ impl BridgeInner {
             }
             EngineServiceUpdate::Terminal(outcome) => {
                 self.operation_results.remove(&operation_id);
+                let history_failed =
+                    self.operation_history
+                        .remove(&operation_id)
+                        .is_some_and(|mut history| {
+                            history.outcome = history_outcome(outcome);
+                            self.persistence
+                                .as_ref()
+                                .is_some_and(|actor| actor.append_history(history).is_err())
+                        });
+                if history_failed {
+                    self.push_event(BridgeEventRecord {
+                        sequence: 0,
+                        operation_id: op_bytes.clone(),
+                        kind: "history_failed".into(),
+                        outcome: None,
+                        rows: None,
+                        bytes: None,
+                        page_bytes: None,
+                    });
+                }
                 self.push_event(BridgeEventRecord {
                     sequence: 0,
                     operation_id: op_bytes,
@@ -2683,6 +2885,20 @@ impl BridgeInner {
                 Ok(true)
             }
         }
+    }
+}
+
+const fn history_outcome(outcome: OperationOutcome) -> HistoryOutcomeClass {
+    match outcome {
+        OperationOutcome::Completed | OperationOutcome::CompletedBeforeCancel => {
+            HistoryOutcomeClass::Completed
+        }
+        OperationOutcome::ClientStopped | OperationOutcome::ServerConfirmedCancelled => {
+            HistoryOutcomeClass::Cancelled
+        }
+        OperationOutcome::Failed => HistoryOutcomeClass::Failed,
+        OperationOutcome::Disconnected => HistoryOutcomeClass::Disconnected,
+        OperationOutcome::Unknown => HistoryOutcomeClass::Unknown,
     }
 }
 

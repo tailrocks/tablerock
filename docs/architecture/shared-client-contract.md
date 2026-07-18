@@ -92,6 +92,9 @@ The in-process `EngineService` binds this coordinator to engine-owned driver
 tasks. Runtime start, immutable page, cancellation-dispatch, and terminal facts
 become legal core transitions; joined task exit must match terminal delivery.
 Immediate cancellation cannot regress from `CancelRequested` to `Running`.
+Terminal bridge pumping records the final safe outcome, then retires the core
+operation before releasing session scope. History append failure is a separate
+visible event and never rewrites a successful database outcome.
 Sessions are registry-owned: operations borrow `Arc` handles and never shut the
 connection down at terminal; rejected core submission drops only the borrow.
 Explicit `disconnect` shuts a session down once no operation still holds it.

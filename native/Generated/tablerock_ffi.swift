@@ -513,6 +513,22 @@ fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
+    typealias FfiType = Int64
+    typealias SwiftType = Int64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int64, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -668,6 +684,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      */
     func getProfileDraft(profileId: Data) throws  -> BridgeProfileDraft
     
+    /**
+     * Lists newest local query-history entries with optional SQL-text search.
+     */
+    func listHistory(search: String?, limit: UInt32) throws  -> [BridgeHistoryItem]
+    
     func listProfileGroups() throws  -> [BridgeProfileGroup]
     
     /**
@@ -736,6 +757,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Rust-owned normalized profile search across name, endpoint, database, and group.
      */
     func searchProfiles(search: String?) throws  -> [BridgeProfileItem]
+    
+    /**
+     * Sets process history retention for subsequent operations.
+     */
+    func setHistoryRetention(retention: String) throws 
     
     func setProfileFavorite(profileId: Data, expectedRevision: UInt64, favorite: Bool) throws 
     
@@ -996,6 +1022,20 @@ open func getProfileDraft(profileId: Data)throws  -> BridgeProfileDraft  {
 })
 }
     
+    /**
+     * Lists newest local query-history entries with optional SQL-text search.
+     */
+open func listHistory(search: String?, limit: UInt32)throws  -> [BridgeHistoryItem]  {
+    return try  FfiConverterSequenceTypeBridgeHistoryItem.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_list_history(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(search),
+        FfiConverterUInt32.lower(limit),uniffiCallStatus
+    )
+})
+}
+    
 open func listProfileGroups()throws  -> [BridgeProfileGroup]  {
     return try  FfiConverterSequenceTypeBridgeProfileGroup.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
         uniffiCallStatus in
@@ -1185,6 +1225,18 @@ open func searchProfiles(search: String?)throws  -> [BridgeProfileItem]  {
         FfiConverterOptionString.lower(search),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * Sets process history retention for subsequent operations.
+     */
+open func setHistoryRetention(retention: String)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_set_history_retention(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(retention),uniffiCallStatus
+    )
+}
 }
     
 open func setProfileFavorite(profileId: Data, expectedRevision: UInt64, favorite: Bool)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
@@ -1659,6 +1711,80 @@ public func FfiConverterTypeBridgeEventRecord_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeBridgeEventRecord_lower(_ value: BridgeEventRecord) -> RustBuffer {
     return FfiConverterTypeBridgeEventRecord.lower(value)
+}
+
+
+public struct BridgeHistoryItem: Equatable, Hashable {
+    public var historyId: Int64
+    public var engine: String
+    public var databaseName: String
+    public var schemaName: String?
+    public var statementText: String?
+    public var outcome: String
+    public var createdAt: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(historyId: Int64, engine: String, databaseName: String, schemaName: String?, statementText: String?, outcome: String, createdAt: String) {
+        self.historyId = historyId
+        self.engine = engine
+        self.databaseName = databaseName
+        self.schemaName = schemaName
+        self.statementText = statementText
+        self.outcome = outcome
+        self.createdAt = createdAt
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BridgeHistoryItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeHistoryItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeHistoryItem {
+        return
+            try BridgeHistoryItem(
+                historyId: FfiConverterInt64.read(from: &buf), 
+                engine: FfiConverterString.read(from: &buf), 
+                databaseName: FfiConverterString.read(from: &buf), 
+                schemaName: FfiConverterOptionString.read(from: &buf), 
+                statementText: FfiConverterOptionString.read(from: &buf), 
+                outcome: FfiConverterString.read(from: &buf), 
+                createdAt: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeHistoryItem, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.historyId, into: &buf)
+        FfiConverterString.write(value.engine, into: &buf)
+        FfiConverterString.write(value.databaseName, into: &buf)
+        FfiConverterOptionString.write(value.schemaName, into: &buf)
+        FfiConverterOptionString.write(value.statementText, into: &buf)
+        FfiConverterString.write(value.outcome, into: &buf)
+        FfiConverterString.write(value.createdAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeHistoryItem_lift(_ buf: RustBuffer) throws -> BridgeHistoryItem {
+    return try FfiConverterTypeBridgeHistoryItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeHistoryItem_lower(_ value: BridgeHistoryItem) -> RustBuffer {
+    return FfiConverterTypeBridgeHistoryItem.lower(value)
 }
 
 
@@ -2808,6 +2934,31 @@ fileprivate struct FfiConverterSequenceTypeBridgeEventRecord: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeHistoryItem: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeHistoryItem]
+
+    public static func write(_ value: [BridgeHistoryItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeHistoryItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeHistoryItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeHistoryItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeHistoryItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeProfileGroup: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeProfileGroup]
 
@@ -2934,6 +3085,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_get_profile_draft() != 6880) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_history() != 19762) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_profile_groups() != 47421) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2977,6 +3131,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_search_profiles() != 41691) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_set_history_retention() != 27817) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_set_profile_favorite() != 9636) {

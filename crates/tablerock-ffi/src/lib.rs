@@ -16,8 +16,8 @@ mod runtime;
 
 pub use bridge::{
     ApplyOutcome, BridgeConnectionTestReport, BridgeEventBatch, BridgeEventRecord,
-    BridgeProfileDraft, BridgeProfileGroup, BridgeProfileItem, BridgeProfileOrderItem,
-    BridgeReconnectAttempt, BridgeReconnectPlan, BridgeSessionHealth, CancelOutcome, OpenParams,
-    ShutdownOutcome, SubmitSpec, TableRockBridge,
+    BridgeHistoryItem, BridgeProfileDraft, BridgeProfileGroup, BridgeProfileItem,
+    BridgeProfileOrderItem, BridgeReconnectAttempt, BridgeReconnectPlan, BridgeSessionHealth,
+    CancelOutcome, OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
 };
 pub use error::BridgeError;

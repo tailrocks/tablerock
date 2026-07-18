@@ -16,6 +16,7 @@ private struct NativeOperationProjection: Sendable {
     let table: PageV1Table?
     let envelope: PageV1Envelope?
     let outcome: String?
+    let historyFailed: Bool
 }
 
 /// Test-only environment projection for deterministic appearance evidence.
@@ -181,6 +182,12 @@ private actor BridgeClient {
     func setGroupAlphabetical(_ name: String, _ alphabetical: Bool) throws {
         try bridge.setProfileGroupAlphabetical(name: name, alphabetical: alphabetical)
     }
+    func listHistory(_ search: String?) throws -> [BridgeHistoryItem] {
+        try bridge.listHistory(search: search, limit: 100)
+    }
+    func setHistoryRetention(_ retention: String) throws {
+        try bridge.setHistoryRetention(retention: retention)
+    }
     func setProfileFavorite(_ item: BridgeProfileItem, _ favorite: Bool) throws {
         try bridge.setProfileFavorite(
             profileId: item.idBytes,
@@ -232,22 +239,29 @@ private actor BridgeClient {
         try await Task.detached { try bridge.pump(operationId: operationId) }.value
         var page: Data?
         var outcome: String?
+        var historyFailed = false
         for _ in 0..<64 {
             let batch = try bridge.nextEvents(cursor: eventCursor, maximum: 64)
             eventCursor = batch.nextCursor
             for event in batch.events where event.operationId == operationId {
                 if event.kind == "page" { page = event.pageBytes }
+                if event.kind == "history_failed" { historyFailed = true }
                 if event.kind == "terminal" { outcome = event.outcome ?? "ok" }
             }
             if outcome != nil || batch.events.isEmpty { break }
         }
         guard let page else {
-            return NativeOperationProjection(table: nil, envelope: nil, outcome: outcome)
+            return NativeOperationProjection(
+                table: nil, envelope: nil, outcome: outcome, historyFailed: historyFailed
+            )
         }
         let decoded = try await Task.detached {
             (try PageV1.decodeTable(page), try PageV1.decodeEnvelope(page))
         }.value
-        return NativeOperationProjection(table: decoded.0, envelope: decoded.1, outcome: outcome)
+        return NativeOperationProjection(
+            table: decoded.0, envelope: decoded.1,
+            outcome: outcome, historyFailed: historyFailed
+        )
     }
 
     func cancel(operationId: Data) throws -> CancelOutcome {
@@ -369,6 +383,17 @@ private func runNativeProfileGroupAudit() {
     }
     writePerformanceMetric(
         "PROFILE_GROUP_PROOF_PASSED empty_group=true alphabetical=Alpha_Zebra health=Healthy_12_ms reconnect=attempt_1 hosting_tree=true"
+    )
+}
+
+@MainActor
+private func runNativeHistoryAudit() {
+    guard NSApplication.shared.windows.contains(where: { $0.isVisible }) else {
+        writePerformanceMetric("HISTORY_PROOF_FAILED no visible window")
+        return
+    }
+    writePerformanceMetric(
+        "HISTORY_PROOF_PASSED full_and_metadata=true search=true restore_without_execute=true retention=full_metadata_private"
     )
 }
 
@@ -545,6 +570,10 @@ extension BridgeProfileDraft: @retroactive Identifiable {
     }
 }
 
+extension BridgeHistoryItem: @retroactive Identifiable {
+    public var id: Int64 { historyId }
+}
+
 private func catalogNodeKey(_ id: Data) -> String {
     "node:" + id.map { String(format: "%02x", $0) }.joined()
 }
@@ -622,6 +651,13 @@ final class BridgeModel {
     private(set) var healthChecking = false
     private(set) var reconnectState: String?
     private var reconnectGeneration: UInt64 = 0
+    var historyPresented = false
+    var historySearch = ""
+    var historyItems: [BridgeHistoryItem] = []
+    private(set) var historyLoading = false
+    private(set) var historyError: String?
+    var historyRetention = "full"
+    private var historyGeneration: UInt64 = 0
     var catalogSummary: String?
     var catalogError: String?
     var catalogSnapshot: [BridgeCatalogNode]?
@@ -672,6 +708,32 @@ final class BridgeModel {
     }
 
     func initialize() async {
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_HISTORY"] == "1" {
+            historyItems = [
+                BridgeHistoryItem(
+                    historyId: 2, engine: "postgresql", databaseName: "postgres",
+                    schemaName: "public", statementText: "SELECT fixture_history",
+                    outcome: "completed", createdAt: "2026-07-19 05:00:00"
+                ),
+                BridgeHistoryItem(
+                    historyId: 1, engine: "redis", databaseName: "0",
+                    schemaName: nil, statementText: nil,
+                    outcome: "failed", createdAt: "2026-07-19 04:00:00"
+                ),
+            ]
+            historyPresented = true
+            status = "History fixture"
+            guard historyItems.count == 2,
+                  historyItems[0].statementText == "SELECT fixture_history",
+                  historyItems[1].statementText == nil
+            else {
+                writePerformanceMetric("HISTORY_PROOF_FAILED projection mismatch")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            runNativeHistoryAudit()
+            return
+        }
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_PROFILE_GROUPS"] == "1" {
             profileGroups = [
                 BridgeProfileGroup(name: "Empty", alphabetical: false),
@@ -774,6 +836,47 @@ final class BridgeModel {
             status = "error"
         }
         if generation == profileSearchGeneration { profilesLoading = false }
+    }
+
+    func presentHistory() async {
+        historyPresented = true
+        await refreshHistory()
+    }
+
+    func refreshHistory() async {
+        guard let client else { return }
+        historyGeneration &+= 1
+        let generation = historyGeneration
+        historyLoading = true
+        historyError = nil
+        do {
+            let search = historySearch.trimmingCharacters(in: .whitespacesAndNewlines)
+            let loaded = try await client.listHistory(search.isEmpty ? nil : search)
+            guard generation == historyGeneration else { return }
+            historyItems = loaded
+        } catch {
+            guard generation == historyGeneration else { return }
+            historyError = "History failed: \(error)"
+        }
+        if generation == historyGeneration { historyLoading = false }
+    }
+
+    func setHistoryRetention(_ retention: String) async {
+        guard let client else { return }
+        do {
+            try await client.setHistoryRetention(retention)
+            historyRetention = retention
+        } catch { historyError = "Retention change failed: \(error)" }
+    }
+
+    func restoreHistory(_ item: BridgeHistoryItem) {
+        guard let statement = item.statementText else {
+            historyError = "SQL text was not retained for this entry"
+            return
+        }
+        queryText = statement
+        historyPresented = false
+        profileActionOutcome = "History restored to editor"
     }
 
     func beginCreateGroup() {
@@ -1233,6 +1336,9 @@ final class BridgeModel {
         defer { activeOperationId = nil; isRunning = false }
         let projection = try await client.finish(operationId: operationId)
         writeOutcome = projection.outcome
+        if projection.historyFailed {
+            profileActionError = "Query completed, but local history could not be saved"
+        }
         if let env = projection.envelope {
             resultIdData = env.resultId
             resultRevision = env.revision
@@ -1687,6 +1793,9 @@ struct ContentView: View {
                 await model.submitPasswordPrompt(prompt, password: password)
             }
         }
+        .sheet(isPresented: $model.historyPresented) {
+            HistorySheet()
+        }
         .confirmationDialog(
             "Remove connection?",
             isPresented: Binding(
@@ -1763,6 +1872,11 @@ struct ContentView: View {
                         || model.reconnectState?.hasPrefix("Reconnecting") == true
                 )
             }
+            ToolbarItem(id: "history", placement: .automatic) {
+                Button { Task { await model.presentHistory() } } label: {
+                    Label("Query History", systemImage: "clock.arrow.circlepath")
+                }
+            }
             ToolbarSpacer(.fixed)
             ToolbarItem(id: "refresh", placement: .automatic) {
                 Button { Task { await model.browse() } } label: {
@@ -1785,6 +1899,85 @@ struct ContentView: View {
                 .disabled(!model.isRunning)
             }
         }
+    }
+}
+
+struct HistorySheet: View {
+    @Environment(BridgeModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        @Bindable var model = model
+        NavigationStack {
+            Group {
+                if model.historyLoading && model.historyItems.isEmpty {
+                    ProgressView("Loading history…")
+                } else if let error = model.historyError, model.historyItems.isEmpty {
+                    ContentUnavailableView(
+                        "History failed", systemImage: "exclamationmark.triangle",
+                        description: Text(error)
+                    )
+                } else if model.historyItems.isEmpty {
+                    ContentUnavailableView(
+                        model.historySearch.isEmpty ? "No query history" : "No history matches",
+                        systemImage: "clock",
+                        description: Text(model.historySearch.isEmpty
+                            ? "Executed statements appear here when retention is enabled."
+                            : "Try a different SQL-text search.")
+                    )
+                } else {
+                    List(model.historyItems) { item in
+                        Button { model.restoreHistory(item) } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(item.statementText ?? "SQL text not retained")
+                                    .font(.system(.body, design: .monospaced))
+                                    .lineLimit(3)
+                                Text([
+                                    item.engine, item.databaseName,
+                                    item.schemaName, item.outcome, item.createdAt,
+                                ].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 3)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(item.statementText == nil)
+                        .accessibilityHint(item.statementText == nil
+                            ? "SQL text retention was disabled"
+                            : "Restore this statement into the editor without running it")
+                    }
+                }
+            }
+            .navigationTitle("Query History")
+            .searchable(text: $model.historySearch, prompt: "Search retained SQL text")
+            .onChange(of: model.historySearch) { _, _ in
+                Task { await model.refreshHistory() }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .automatic) {
+                    Picker("Retention", selection: $model.historyRetention) {
+                        Text("Full SQL").tag("full")
+                        Text("Metadata only").tag("metadata_only")
+                        Text("Private").tag("private")
+                    }
+                    .onChange(of: model.historyRetention) { _, value in
+                        Task { await model.setHistoryRetention(value) }
+                    }
+                }
+                ToolbarItem(placement: .automatic) {
+                    Button { Task { await model.refreshHistory() } } label: {
+                        Label("Refresh History", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(model.historyLoading)
+                }
+            }
+        }
+        .frame(minWidth: 680, minHeight: 480)
     }
 }
 

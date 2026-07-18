@@ -249,6 +249,25 @@ fn probe(bridge: &TableRockBridge, session_id: Vec<u8>, result_id: ResultId) -> 
         .unwrap()
 }
 
+fn execute(
+    bridge: &TableRockBridge,
+    session_id: Vec<u8>,
+    result_id: ResultId,
+    statement: &str,
+) -> Vec<u8> {
+    bridge
+        .submit(SubmitSpec {
+            intent: "execute".into(),
+            session_id,
+            statement: Some(statement.into()),
+            result_id: Some(result_id.to_bytes().to_vec()),
+            start_row: None,
+            row_count: Some(100),
+            expected_revision: 0,
+        })
+        .unwrap()
+}
+
 #[test]
 fn bridge_page_bytes_match_in_process_encode_all_engines() {
     for (engine, low) in [
@@ -596,7 +615,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
     assert_eq!(listed[0].port.as_deref(), Some("1"));
     assert_eq!(listed[0].context.as_deref(), Some("postgres"));
     assert!(!listed[0].connected);
-    let (_, reconnect_page) = sample_page(Engine::PostgreSql, 141, &[1]);
+    let (history_result_id, reconnect_page) = sample_page(Engine::PostgreSql, 141, &[1]);
     let reconnect_source = bridge
         .open_driver_session_for_profile(
             profile_id,
@@ -654,6 +673,74 @@ fn open_profile_requires_persistence_and_loads_literals() {
             .unwrap()
             .connected
     );
+    let history_operation = execute(
+        &bridge,
+        reconnect_source.clone(),
+        history_result_id,
+        "SELECT history_full",
+    );
+    bridge.pump(history_operation).unwrap();
+    let history = bridge
+        .list_history(Some("history_full".into()), 10)
+        .unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].engine, "postgresql");
+    assert_eq!(history[0].database_name, "postgres");
+    assert_eq!(
+        history[0].statement_text.as_deref(),
+        Some("SELECT history_full")
+    );
+    assert_eq!(history[0].outcome, "completed");
+
+    bridge
+        .set_history_retention("metadata_only".into())
+        .unwrap();
+    let (metadata_result_id, metadata_page) = sample_page(Engine::PostgreSql, 143, &[2]);
+    let metadata_session = bridge
+        .open_driver_session_for_profile(
+            profile_id,
+            Engine::PostgreSql,
+            Box::new(FixedPageSession {
+                engine: Engine::PostgreSql,
+                page: metadata_page,
+                health_failure: None,
+            }),
+        )
+        .unwrap();
+    let metadata_operation = execute(
+        &bridge,
+        metadata_session.clone(),
+        metadata_result_id,
+        "SELECT history_metadata",
+    );
+    bridge.pump(metadata_operation).unwrap();
+    bridge.disconnect(metadata_session).unwrap();
+    let history = bridge.list_history(None, 10).unwrap();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].statement_text, None);
+
+    bridge.set_history_retention("private".into()).unwrap();
+    let (private_result_id, private_page) = sample_page(Engine::PostgreSql, 144, &[3]);
+    let private_session = bridge
+        .open_driver_session_for_profile(
+            profile_id,
+            Engine::PostgreSql,
+            Box::new(FixedPageSession {
+                engine: Engine::PostgreSql,
+                page: private_page,
+                health_failure: None,
+            }),
+        )
+        .unwrap();
+    let private_operation = execute(
+        &bridge,
+        private_session.clone(),
+        private_result_id,
+        "SELECT history_private",
+    );
+    bridge.pump(private_operation).unwrap();
+    bridge.disconnect(private_session).unwrap();
+    assert_eq!(bridge.list_history(None, 10).unwrap().len(), 2);
     bridge.disconnect(reconnect_source).unwrap();
     assert_eq!(
         bridge
