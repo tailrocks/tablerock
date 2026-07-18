@@ -202,6 +202,10 @@ pub enum ActionId {
     CopyLimitOffsetSql,
     /// Copy SELECT…[WHERE][ORDER BY] LIMIT/OFFSET for resident window.
     CopySelectPageSql,
+    /// Copy SELECT EXISTS (SELECT 1 FROM table WHERE locator).
+    CopyExistsSql,
+    /// Copy DELETE FROM table WHERE locator (presentation aid only).
+    CopyDeleteWhereSql,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).
