@@ -240,22 +240,26 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         crate::model::ConfirmDialog::OpenExternalUrl {
             summary,
             confirm_buffer,
+            matched_profile_id_hex,
             url,
         } => {
             if summary.is_empty() {
                 (
                     "Open external URL?",
                     format!(
-                        "Paste connection URL then Submit; then paste OPEN to connect temporary [{confirm_buffer}]"
+                        "Paste connection URL then Submit; then paste OPEN to connect [{confirm_buffer}]"
                     ),
                 )
             } else {
                 let _ = url; // never display raw URL (may embed credentials)
+                let title = if matched_profile_id_hex.is_some() {
+                    "Confirm open matched profile?"
+                } else {
+                    "Confirm temporary connect?"
+                };
                 (
-                    "Confirm temporary connect?",
-                    format!(
-                        "{summary}. Paste OPEN to connect temporary (never saves) [{confirm_buffer}]"
-                    ),
+                    title,
+                    format!("{summary}. Paste OPEN to proceed [{confirm_buffer}]"),
                 )
             }
         }

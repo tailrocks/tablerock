@@ -1801,19 +1801,29 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }
                 ConfirmDialog::OpenExternalUrl {
                     url,
+                    matched_profile_id_hex,
                     confirm_buffer,
                     ..
                 } => {
                     // Two-phase: empty buffer receives URL paste; OPEN confirms connect.
                     let trimmed = confirm_buffer.trim();
                     if trimmed.eq_ignore_ascii_case("OPEN") || trimmed.eq_ignore_ascii_case("YES") {
-                        let parse_src = if url.trim().is_empty() {
-                            // Fallback: operator pasted URL then OPEN in same buffer incorrectly.
+                        if url.trim().is_empty() {
                             return Update::render();
-                        } else {
-                            url.as_str()
-                        };
-                        match tablerock_core::parse_connection_url(parse_src) {
+                        }
+                        // Prefer matched saved profile when present.
+                        if let Some(profile_id_hex) = matched_profile_id_hex {
+                            model.set_confirm(None);
+                            let token = model.mint_request_token();
+                            return Update {
+                                render: true,
+                                effect: Some(Effect::ConnectProfile {
+                                    request_token: token,
+                                    profile_id_hex,
+                                }),
+                            };
+                        }
+                        match tablerock_core::parse_connection_url(&url) {
                             Ok(draft) => {
                                 model.reset_editor();
                                 model.editor_mut().apply_connection_url(&draft);
@@ -1843,7 +1853,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         // First paste: parse URL into summary, keep for OPEN confirm.
                         match tablerock_core::parse_connection_url(trimmed) {
                             Ok(draft) => {
-                                let summary = draft.safety_summary();
+                                let mut summary = draft.safety_summary();
                                 if let Some(secret) = draft.password.as_deref() {
                                     if !secret.is_empty() && summary.contains(secret) {
                                         model.set_confirm(None);
@@ -1852,9 +1862,39 @@ fn activate_selected_action(model: &mut Model) -> Update {
                                         return Update::render();
                                     }
                                 }
+                                let engine_label = match draft.engine {
+                                    tablerock_core::Engine::PostgreSql => "PostgreSQL",
+                                    tablerock_core::Engine::ClickHouse => "ClickHouse",
+                                    tablerock_core::Engine::Redis => "Redis",
+                                };
+                                let matched = match model.profiles() {
+                                    crate::model::profiles::ProfileListState::Loaded {
+                                        rows,
+                                        ..
+                                    } => rows.iter().find(|r| {
+                                        r.matches_url_target(
+                                            engine_label,
+                                            &draft.host,
+                                            draft.port,
+                                            &draft.database,
+                                        )
+                                    }),
+                                    _ => None,
+                                };
+                                let matched_profile_id_hex =
+                                    matched.map(|r| r.id_hex.clone());
+                                if let Some(row) = matched {
+                                    summary.push_str(&format!(
+                                        " · matched saved profile '{}'",
+                                        row.name
+                                    ));
+                                } else {
+                                    summary.push_str(" · temporary session (no saved match)");
+                                }
                                 model.set_confirm(Some(ConfirmDialog::OpenExternalUrl {
                                     url: trimmed.to_owned(),
                                     summary,
+                                    matched_profile_id_hex,
                                     confirm_buffer: String::new(),
                                 }));
                                 model.set_action(ActionId::Submit);
@@ -2128,6 +2168,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_confirm(Some(ConfirmDialog::OpenExternalUrl {
                 url: String::new(),
                 summary: String::new(),
+                matched_profile_id_hex: None,
                 confirm_buffer: String::new(),
             }));
             model.set_action(ActionId::Submit);
@@ -5466,11 +5507,18 @@ mod tests {
         model.set_action(ActionId::Submit);
         let _ = update(&mut model, Message::Activate);
         match model.confirm() {
-            Some(ConfirmDialog::OpenExternalUrl { summary, url, .. }) => {
+            Some(ConfirmDialog::OpenExternalUrl {
+                summary,
+                url,
+                matched_profile_id_hex,
+                ..
+            }) => {
                 assert!(summary.contains("PostgreSQL"));
                 assert!(summary.contains("password=present"));
+                assert!(summary.contains("temporary session"));
                 assert!(!summary.contains("s3cret"));
                 assert!(url.contains("s3cret")); // retained for re-parse only
+                assert!(matched_profile_id_hex.is_none());
             }
             other => panic!("expected OpenExternalUrl summary, got {other:?}"),
         }
@@ -5493,6 +5541,66 @@ mod tests {
                 && draft.password == "s3cret"
         ));
         assert!(model.confirm().is_none());
+    }
+
+    #[test]
+    fn open_external_url_matches_saved_profile() {
+        use crate::model::profiles::{
+            LiveConnectionState, ProfileListState, ProfileRowProjection,
+        };
+        let mut model = Model::default();
+        model.set_screen(Screen::Connections);
+        model.set_profiles(ProfileListState::Loaded {
+            request_token: 1,
+            rows: vec![ProfileRowProjection {
+                id_hex: "aabbccdd".into(),
+                name: "prod-app".into(),
+                engine_label: "PostgreSQL".into(),
+                group: None,
+                favorite: false,
+                target_summary: "db.example:5432/app".into(),
+                environment: Some("production".into()),
+                production_warning: true,
+                safety_label: "Confirm writes".into(),
+                plaintext_secret_warning: false,
+                live_state: LiveConnectionState::Disconnected,
+            }],
+            selected_id: None,
+            search: String::new(),
+            collapsed: Vec::new(),
+        });
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::OpenExternalUrl);
+        let _ = update(&mut model, Message::Activate);
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded(
+                "postgres://alice@db.example:5432/app".into(),
+            )),
+        );
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::OpenExternalUrl {
+                matched_profile_id_hex: Some(id),
+                summary,
+                ..
+            }) if id == "aabbccdd" && summary.contains("prod-app")
+        ));
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("OPEN".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::ConnectProfile {
+                profile_id_hex,
+                ..
+            }) if profile_id_hex == "aabbccdd"
+        ));
     }
 
     #[test]

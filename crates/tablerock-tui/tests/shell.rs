@@ -267,6 +267,38 @@ fn narrow_focus_projects_visible_regions_and_non_color_cues() {
     );
 }
 
+/// First-paint budget: cold model + resize + draw under 50 ms (local unit bound).
+#[test]
+fn first_paint_budget_under_50ms() {
+    use std::time::Instant;
+    let started = Instant::now();
+    let mut model = Model::default();
+    let _ = update(
+        &mut model,
+        Message::Resize {
+            width: 100,
+            height: 30,
+        },
+    );
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("test terminal");
+    terminal
+        .draw(|frame| ShellView.render(&model, frame, Rect::new(0, 0, 100, 30)))
+        .expect("first paint");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed.as_millis() < 50,
+        "first paint took {elapsed:?} (budget 50 ms)"
+    );
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(!rendered.trim().is_empty(), "first paint must draw content");
+}
+
 /// SIGWINCH storm: many rapid Resize messages must not panic and last size wins.
 #[test]
 fn resize_storm_last_geometry_wins_and_renders() {

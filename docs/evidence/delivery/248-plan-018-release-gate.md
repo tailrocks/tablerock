@@ -20,7 +20,8 @@ Date: 2026-07-18
   - partial: readonly-parent / mid-write fail-closed (evidence 287)
 - Performance budgets
   - partial: local-rig release cold-start + binary size (evidence 288)
-  - residual: fixed-spec CI runners + full TUI first-paint / first-row
+  - partial: unit first-paint &lt; 50 ms (evidence 297)
+  - residual: fixed-spec CI runners + first-row query latency
 - Ledger three-state export: landed CSV + counts (evidence 286)
 
 ## Parity claim status

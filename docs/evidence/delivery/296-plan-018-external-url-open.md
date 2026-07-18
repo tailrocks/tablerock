@@ -23,8 +23,10 @@ Date: 2026-07-18
 ### TUI
 - `ActionId::OpenExternalUrl`
 - Two-phase dialog: paste URL → review summary → paste `OPEN`/`YES`
-- On confirm: temporary `ConnectSession` (never saves profile)
-- Units: happy path temporary connect; hostile scheme closes dialog with error
+- On confirm: temporary `ConnectSession` (never saves profile) **or**
+  `ConnectProfile` when engine+host:port/db matches a loaded list row
+  (evidence 297)
+- Units: happy path temporary connect; hostile scheme; matched profile
 
 ## Commands
 

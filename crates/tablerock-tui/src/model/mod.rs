@@ -256,13 +256,16 @@ pub enum ConfirmDialog {
     ImportUrl {
         confirm_buffer: String,
     },
-    /// External URL open: paste URL, then paste OPEN to confirm temporary connect.
+    /// External URL open: paste URL, then paste OPEN to confirm connect.
     ///
     /// `summary` is redacted (no password text). `url` retained only for re-parse.
+    /// When `matched_profile_id_hex` is set, OPEN uses saved profile (not temporary).
     OpenExternalUrl {
         /// Raw URL (not shown in status by default; used on confirm).
         url: String,
         summary: String,
+        /// Saved profile id when engine+host:port/db matches a list row.
+        matched_profile_id_hex: Option<String>,
         confirm_buffer: String,
     },
     /// Quick switch: paste filter or 1-based index, Submit selects matching tab.

@@ -41,6 +41,23 @@ impl LiveConnectionState {
 }
 
 impl ProfileRowProjection {
+    /// Match a URL draft to a saved profile by engine + `host:port/database`.
+    #[must_use]
+    pub fn matches_url_target(
+        &self,
+        engine_label: &str,
+        host: &str,
+        port: u16,
+        database: &str,
+    ) -> bool {
+        if !self.engine_label.eq_ignore_ascii_case(engine_label) {
+            return false;
+        }
+        let want = format!("{host}:{port}/{database}");
+        self.target_summary == want
+            || self.target_summary.eq_ignore_ascii_case(&want)
+    }
+
     #[must_use]
     pub fn list_line(&self) -> String {
         let env = self
