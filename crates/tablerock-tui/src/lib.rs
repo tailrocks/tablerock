@@ -10,11 +10,12 @@ pub mod update;
 pub mod view;
 
 pub use effect::{
-    ConnectionDraft, Effect, EngineKind, PasswordSourceSpec, ProfileListFilterSpec, ProfileRef,
-    RequestToken, TlsModeSpec,
+    CatalogLevelSpec, ConnectionDraft, Effect, EngineKind, PasswordSourceSpec,
+    ProfileListFilterSpec, ProfileRef, RequestToken, TlsModeSpec,
 };
 pub use keymap::{ShellKeyAction, default_keymap};
 pub use message::{EngineMsg, MAX_PASTE_BYTES, Message, PasteText, ProfilesMsg};
+pub use model::catalog::{CatalogModel, CatalogNodeProjection, CatalogNodeStatus};
 pub use model::{
     ActionId, FocusRegion, LayoutMode, Model, PasswordPrompt, Screen, ScrollDirection,
     SessionFacts, ShellTarget,

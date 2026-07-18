@@ -1,5 +1,7 @@
 //! Workbench shell submodel (TableRock-local; TermRock widgets render it).
 
+use super::catalog::CatalogModel;
+
 /// Context-bar projection for the active session.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ContextBarModel {
@@ -84,8 +86,9 @@ pub struct WorkbenchModel {
     pub selected_tab: usize,
     pub status: WorkbenchStatus,
     pub context_revision: u64,
-    pub catalog_filter: String,
-    pub catalog_status: String,
+    pub catalog: CatalogModel,
+    /// Engine kind string for catalog root request mapping.
+    pub engine_kind: String,
 }
 
 impl Default for WorkbenchModel {
@@ -117,8 +120,8 @@ impl Default for WorkbenchModel {
                 pending_changes: 0,
             },
             context_revision: 1,
-            catalog_filter: String::new(),
-            catalog_status: "Catalog: —".into(),
+            catalog: CatalogModel::Idle,
+            engine_kind: "PostgreSQL".into(),
         }
     }
 }
@@ -131,17 +134,24 @@ impl WorkbenchModel {
         temporary: bool,
         identity: impl Into<String>,
     ) -> Self {
+        let engine_label = engine_label.into();
         let mut model = Self::default();
         model.context.connection_name = connection_name.into();
-        model.context.engine_label = engine_label.into();
+        model.context.engine_label = engine_label.clone();
+        model.engine_kind = engine_label;
         model.context.health_label = "connected".into();
         model.status.operation = if temporary {
             format!("temporary · {}", identity.into())
         } else {
             format!("connected · {}", identity.into())
         };
-        model.catalog_status = "Catalog: loading…".into();
+        model.catalog = CatalogModel::Idle;
         model
+    }
+
+    #[must_use]
+    pub fn catalog_status_line(&self) -> String {
+        self.catalog.status_line()
     }
 
     #[must_use]
@@ -154,5 +164,10 @@ impl WorkbenchModel {
             return;
         }
         self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
+    }
+
+    pub fn bump_context_revision(&mut self) -> u64 {
+        self.context_revision = self.context_revision.saturating_add(1);
+        self.context_revision
     }
 }

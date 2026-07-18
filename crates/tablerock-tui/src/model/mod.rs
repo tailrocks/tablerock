@@ -1,5 +1,6 @@
 //! Root-owned terminal presentation state.
 
+pub mod catalog;
 pub mod editor;
 pub mod profiles;
 pub mod workbench;
@@ -51,6 +52,8 @@ pub enum ActionId {
     Connect,
     Disconnect,
     Remove,
+    /// Cycle database selector (workbench).
+    NextDatabase,
     Submit,
     Cancel,
     Quit,

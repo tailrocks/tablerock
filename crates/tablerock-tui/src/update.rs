@@ -6,6 +6,7 @@ use crate::{
     message::{EngineMsg, ProfilesMsg},
     model::{
         ConfirmDialog, PasswordPrompt, SessionFacts,
+        catalog::{CatalogModel, CatalogNodeStatus},
         profiles::{FailureProjection, ProfileListState},
         workbench::WorkbenchModel,
     },
@@ -99,6 +100,13 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 && model.focus() == Some(FocusRegion::Content) =>
         {
             model.profiles_mut().push_search(text.text());
+            Update::render()
+        }
+        Message::Paste(text)
+            if model.screen() == Screen::Workbench
+                && model.focus() == Some(FocusRegion::Catalog) =>
+        {
+            model.workbench_mut().catalog.push_filter(text.text());
             Update::render()
         }
         Message::Paste(_) => Update::unchanged(),
@@ -281,14 +289,81 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 engine_label: engine_label.clone(),
                 status: Some("connected".into()),
             }));
-            model.set_workbench(WorkbenchModel::from_session(
+            let mut workbench = WorkbenchModel::from_session(
                 if temporary { "temporary" } else { "profile" },
-                engine_label,
+                engine_label.clone(),
                 temporary,
                 identity,
-            ));
+            );
+            let token = model.mint_request_token();
+            let context_revision = workbench.context_revision;
+            workbench.catalog = CatalogModel::Loading {
+                request_token: token,
+                context_revision,
+            };
+            model.set_workbench(workbench);
             model.set_screen(Screen::Workbench);
             model.set_action(ActionId::Disconnect);
+            Update {
+                render: true,
+                effect: Some(Effect::LoadCatalog {
+                    request_token: token,
+                    session_id_hex,
+                    context_revision,
+                    engine_label,
+                    level: crate::effect::CatalogLevelSpec::Root,
+                    parent_id: None,
+                }),
+            }
+        }
+        Message::Engine(EngineMsg::CatalogLoaded {
+            request_token,
+            context_revision,
+            parent_id,
+            nodes,
+            truncated,
+        }) => {
+            let catalog = &model.workbench().catalog;
+            if !catalog.accepts(request_token, context_revision) {
+                return Update::unchanged();
+            }
+            // Promote Loading → Loaded on first root completion.
+            if matches!(catalog, CatalogModel::Loading { .. }) && parent_id.is_none() {
+                model.workbench_mut().catalog = CatalogModel::Loaded {
+                    request_token,
+                    context_revision,
+                    nodes: Vec::new(),
+                    selected_id: None,
+                    filter: String::new(),
+                    truncated: false,
+                };
+            }
+            if matches!(model.workbench().catalog, CatalogModel::Loaded { .. }) {
+                model.workbench_mut().catalog.merge_children(
+                    parent_id.as_deref(),
+                    nodes,
+                    truncated,
+                );
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::CatalogFailed {
+            request_token,
+            context_revision,
+            reason,
+        }) => {
+            let catalog = &model.workbench().catalog;
+            if !catalog.accepts(request_token, context_revision) {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            model.workbench_mut().catalog = CatalogModel::Failed {
+                request_token,
+                context_revision,
+                reason: label,
+            };
             Update::render()
         }
         Message::Engine(EngineMsg::ConnectFailed { reason, .. }) => {
@@ -390,6 +465,12 @@ pub fn update(model: &mut Model, message: Message) -> Update {
         {
             model.profiles_mut().select_next();
             Update::render()
+        }
+        Message::Activate
+            if model.screen() == Screen::Workbench
+                && model.focus() == Some(FocusRegion::Catalog) =>
+        {
+            activate_catalog_node(model)
         }
         Message::Activate if model.screen() == Screen::Editor => {
             model.editor_mut().focus_next();
@@ -575,13 +656,64 @@ fn activate_selected_action(model: &mut Model) -> Update {
             Update::render()
         }
         ActionId::Quit => Update::with_effect(Effect::Exit),
+        ActionId::NextDatabase if model.screen() == Screen::Workbench => {
+            switch_workbench_database(model)
+        }
         ActionId::Save
         | ActionId::Test
         | ActionId::Connect
         | ActionId::Disconnect
         | ActionId::Remove
+        | ActionId::NextDatabase
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
+    }
+}
+
+fn switch_workbench_database(model: &mut Model) -> Update {
+    let Some(session) = model.session() else {
+        return Update::unchanged();
+    };
+    let session_id_hex = session.session_id_hex.clone();
+    let engine_label = model.workbench().engine_kind.clone();
+    // Cycle known databases from catalog roots when available.
+    let next_db = match &model.workbench().catalog {
+        CatalogModel::Loaded { nodes, .. } => {
+            let dbs: Vec<_> = nodes
+                .iter()
+                .filter(|n| n.depth == 0 && (n.kind_label == "database" || n.kind_label == "db"))
+                .map(|n| n.label.clone())
+                .collect();
+            if dbs.is_empty() {
+                None
+            } else {
+                let current = model.workbench().context.database.clone();
+                let idx = dbs.iter().position(|d| d == &current).unwrap_or(0);
+                Some(dbs[(idx + 1) % dbs.len()].clone())
+            }
+        }
+        _ => None,
+    };
+    let Some(database) = next_db else {
+        return Update::unchanged();
+    };
+    model.workbench_mut().context.database = database;
+    let revision = model.workbench_mut().bump_context_revision();
+    let token = model.mint_request_token();
+    model.workbench_mut().catalog = CatalogModel::Loading {
+        request_token: token,
+        context_revision: revision,
+    };
+    Update {
+        render: true,
+        effect: Some(Effect::LoadCatalog {
+            request_token: token,
+            session_id_hex,
+            context_revision: revision,
+            engine_label,
+            level: crate::effect::CatalogLevelSpec::Root,
+            parent_id: None,
+        }),
     }
 }
 
@@ -604,7 +736,7 @@ fn cycle_action(
                 ActionId::Cancel,
                 ActionId::Quit,
             ],
-            Screen::Workbench => &[ActionId::Disconnect, ActionId::Quit],
+            Screen::Workbench => &[ActionId::NextDatabase, ActionId::Disconnect, ActionId::Quit],
             Screen::Connections | Screen::ConnectionPicker => &[
                 ActionId::Open,
                 ActionId::New,
@@ -618,6 +750,118 @@ fn cycle_action(
         actions[(idx + actions.len() - 1) % actions.len()]
     } else {
         actions[(idx + 1) % actions.len()]
+    }
+}
+
+fn activate_catalog_node(model: &mut Model) -> Update {
+    let Some(session) = model.session() else {
+        return Update::unchanged();
+    };
+    let session_id_hex = session.session_id_hex.clone();
+    let engine_label = model.workbench().engine_kind.clone();
+    let context_revision = model.workbench().context_revision;
+    let selected = match &model.workbench().catalog {
+        CatalogModel::Loaded {
+            selected_id: Some(id),
+            nodes,
+            ..
+        } => nodes.iter().find(|n| n.id == *id).cloned(),
+        CatalogModel::Loaded {
+            selected_id: None,
+            nodes,
+            ..
+        } if !nodes.is_empty() => {
+            let first = nodes[0].clone();
+            if let CatalogModel::Loaded { selected_id, .. } = &mut model.workbench_mut().catalog {
+                *selected_id = Some(first.id.clone());
+            }
+            Some(first)
+        }
+        _ => None,
+    };
+    let Some(node) = selected else {
+        return Update::unchanged();
+    };
+    if !node.branch {
+        let tab_id = model.workbench().tabs.len() as u64 + 1;
+        model
+            .workbench_mut()
+            .tabs
+            .push(crate::model::workbench::WorkbenchTab {
+                id: tab_id,
+                title: node.label.clone(),
+                dirty: false,
+                running: false,
+                preview: true,
+            });
+        let last = model.workbench().tabs.len() - 1;
+        model.workbench_mut().selected_tab = last;
+        return Update::render();
+    }
+    let was_expanded = node.expanded;
+    model.workbench_mut().catalog.toggle_expand(&node.id);
+    if was_expanded {
+        return Update::render();
+    }
+    let has_children = match &model.workbench().catalog {
+        CatalogModel::Loaded { nodes, .. } => {
+            let prefix = format!("{}/", node.id);
+            nodes.iter().any(|n| n.id.starts_with(&prefix))
+        }
+        _ => false,
+    };
+    if has_children {
+        return Update::render();
+    }
+    model
+        .workbench_mut()
+        .catalog
+        .set_node_status(&node.id, CatalogNodeStatus::Loading);
+    let level = catalog_level_for_expand(&engine_label, &node);
+    let token = model.mint_request_token();
+    if let CatalogModel::Loaded {
+        request_token,
+        context_revision: rev,
+        ..
+    } = &mut model.workbench_mut().catalog
+    {
+        *request_token = token;
+        *rev = context_revision;
+    }
+    Update {
+        render: true,
+        effect: Some(Effect::LoadCatalog {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            engine_label,
+            level,
+            parent_id: Some(node.id),
+        }),
+    }
+}
+
+fn catalog_level_for_expand(
+    engine_label: &str,
+    node: &crate::model::catalog::CatalogNodeProjection,
+) -> crate::effect::CatalogLevelSpec {
+    use crate::effect::CatalogLevelSpec;
+    match engine_label {
+        "PostgreSQL" if node.kind_label == "database" => CatalogLevelSpec::Schemas {
+            database: node.label.clone(),
+        },
+        "PostgreSQL" if node.kind_label == "schema" => {
+            // id form: {database}/{schema}
+            let database = node.id.split('/').next().unwrap_or("postgres").to_owned();
+            CatalogLevelSpec::Relations {
+                database,
+                schema: node.label.clone(),
+            }
+        }
+        "ClickHouse" if node.kind_label == "database" => CatalogLevelSpec::Objects {
+            database: node.label.clone(),
+        },
+        _ => CatalogLevelSpec::Root,
     }
 }
 
@@ -943,7 +1187,7 @@ mod tests {
     fn connect_opens_workbench_and_disconnect_returns() {
         let mut model = Model::default();
         model.set_screen(Screen::Editor);
-        let _ = update(
+        let result = update(
             &mut model,
             Message::Engine(EngineMsg::ConnectOk {
                 request_token: 1,
@@ -957,6 +1201,18 @@ mod tests {
         assert!(model.session().is_some());
         assert!(model.workbench().context.line().contains("PostgreSQL"));
         assert_eq!(model.selected_action(), ActionId::Disconnect);
+        assert!(matches!(
+            result.effects().next(),
+            Some(Effect::LoadCatalog {
+                engine_label,
+                level: crate::effect::CatalogLevelSpec::Root,
+                ..
+            }) if engine_label == "PostgreSQL"
+        ));
+        assert!(matches!(
+            model.workbench().catalog,
+            CatalogModel::Loading { .. }
+        ));
 
         let _ = update(
             &mut model,
@@ -967,5 +1223,135 @@ mod tests {
         );
         assert_eq!(model.screen(), Screen::Connections);
         assert!(model.session().is_none());
+    }
+
+    #[test]
+    fn catalog_loaded_merges_roots_and_rejects_stale_revision() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.workbench_mut().context_revision = 2;
+        model.workbench_mut().catalog = CatalogModel::Loading {
+            request_token: 5,
+            context_revision: 2,
+        };
+        let stale = update(
+            &mut model,
+            Message::Engine(EngineMsg::CatalogLoaded {
+                request_token: 5,
+                context_revision: 1,
+                parent_id: None,
+                nodes: vec![],
+                truncated: false,
+            }),
+        );
+        assert!(!stale.needs_render());
+        assert!(matches!(
+            model.workbench().catalog,
+            CatalogModel::Loading { .. }
+        ));
+
+        let ok = update(
+            &mut model,
+            Message::Engine(EngineMsg::CatalogLoaded {
+                request_token: 5,
+                context_revision: 2,
+                parent_id: None,
+                nodes: vec![crate::model::catalog::CatalogNodeProjection {
+                    id: "postgres".into(),
+                    label: "postgres".into(),
+                    kind_label: "database".into(),
+                    depth: 0,
+                    branch: true,
+                    expanded: false,
+                    status: CatalogNodeStatus::Ready,
+                }],
+                truncated: false,
+            }),
+        );
+        assert!(ok.needs_render());
+        match &model.workbench().catalog {
+            CatalogModel::Loaded { nodes, .. } => {
+                assert_eq!(nodes.len(), 1);
+                assert_eq!(nodes[0].label, "postgres");
+            }
+            other => panic!("expected loaded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn database_switch_bumps_revision_and_reloads_catalog() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().context_revision = 3;
+        model.workbench_mut().context.database = "postgres".into();
+        model.workbench_mut().engine_kind = "PostgreSQL".into();
+        model.workbench_mut().catalog = CatalogModel::Loaded {
+            request_token: 1,
+            context_revision: 3,
+            nodes: vec![
+                crate::model::catalog::CatalogNodeProjection {
+                    id: "postgres".into(),
+                    label: "postgres".into(),
+                    kind_label: "database".into(),
+                    depth: 0,
+                    branch: true,
+                    expanded: false,
+                    status: CatalogNodeStatus::Ready,
+                },
+                crate::model::catalog::CatalogNodeProjection {
+                    id: "app".into(),
+                    label: "app".into(),
+                    kind_label: "database".into(),
+                    depth: 0,
+                    branch: true,
+                    expanded: false,
+                    status: CatalogNodeStatus::Ready,
+                },
+            ],
+            selected_id: None,
+            filter: String::new(),
+            truncated: false,
+        };
+        model.set_action(ActionId::NextDatabase);
+        for _ in 0..4 {
+            let _ = update(&mut model, Message::FocusNext);
+        }
+        model.set_action(ActionId::NextDatabase);
+        let result = update(&mut model, Message::Activate);
+        assert_eq!(model.workbench().context.database, "app");
+        assert_eq!(model.workbench().context_revision, 4);
+        assert!(matches!(
+            result.effects().next(),
+            Some(Effect::LoadCatalog {
+                context_revision: 4,
+                ..
+            })
+        ));
+        // Stale catalog completion for rev 3 is ignored.
+        let stale = update(
+            &mut model,
+            Message::Engine(EngineMsg::CatalogLoaded {
+                request_token: 1,
+                context_revision: 3,
+                parent_id: None,
+                nodes: vec![],
+                truncated: false,
+            }),
+        );
+        assert!(!stale.needs_render());
+        assert!(matches!(
+            model.workbench().catalog,
+            CatalogModel::Loading {
+                context_revision: 4,
+                ..
+            }
+        ));
     }
 }

@@ -127,6 +127,18 @@ pub enum EngineMsg {
         request_token: u64,
         reason: FailureProjection,
     },
+    CatalogLoaded {
+        request_token: u64,
+        context_revision: u64,
+        parent_id: Option<String>,
+        nodes: Vec<crate::model::catalog::CatalogNodeProjection>,
+        truncated: bool,
+    },
+    CatalogFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

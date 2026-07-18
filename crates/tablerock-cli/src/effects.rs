@@ -10,11 +10,12 @@ use tablerock_core::{
     ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag,
     ReconnectPreference, Revision, SecretSource, SecretSourceKind, SessionId, TlsPolicy,
 };
-use tablerock_engine::{DriverSession, SessionRegistry};
+use tablerock_engine::{CatalogRequest, DriverSession, SessionRegistry};
 use tablerock_persistence::PersistenceActor;
 use tablerock_tui::{
-    ConnectionDraft, Effect, EngineKind, FailureProjection, Message, PasswordSourceSpec,
-    ProfilesMsg, RequestToken, TlsModeSpec,
+    CatalogLevelSpec, CatalogNodeProjection, CatalogNodeStatus, ConnectionDraft, Effect,
+    EngineKind, FailureProjection, Message, PasswordSourceSpec, ProfilesMsg, RequestToken,
+    TlsModeSpec,
 };
 use tokio::sync::Mutex;
 
@@ -190,6 +191,30 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::LoadCatalog {
+                request_token,
+                session_id_hex,
+                context_revision,
+                engine_label,
+                level,
+                parent_id,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = load_catalog(
+                        sessions,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        engine_label,
+                        level,
+                        parent_id,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
         }
     }
 }
@@ -323,6 +348,174 @@ fn mint_session_id() -> Result<SessionId, String> {
     let low = NEXT_SESSION_LOW.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     SessionId::from_parts(IdParts::new(1, low).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())
+}
+
+async fn load_catalog(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    engine_label: String,
+    level: CatalogLevelSpec,
+    parent_id: Option<String>,
+) -> Message {
+    use tablerock_core::{BoundedText, ByteLimit, PageLimits};
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::CatalogFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::CatalogFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    let text = |value: &str| {
+        BoundedText::copy_from_str(value, ByteLimit::new(128)).map_err(|e| e.to_string())
+    };
+    let limits = PageLimits::new(256, 1, 64 * 1024, 256);
+    let request = match (&engine_label[..], &level) {
+        ("PostgreSQL", CatalogLevelSpec::Root) => CatalogRequest::PostgreSqlDatabases { limits },
+        ("PostgreSQL", CatalogLevelSpec::Schemas { database }) => match text(database) {
+            Ok(database) => CatalogRequest::PostgreSqlSchemas { database, limits },
+            Err(label) => {
+                return Message::Engine(tablerock_tui::EngineMsg::CatalogFailed {
+                    request_token,
+                    context_revision,
+                    reason: FailureProjection::Label(label),
+                });
+            }
+        },
+        ("PostgreSQL", CatalogLevelSpec::Relations { database, schema }) => {
+            match (text(database), text(schema)) {
+                (Ok(database), Ok(schema)) => CatalogRequest::PostgreSqlRelations {
+                    database,
+                    schema,
+                    limits,
+                },
+                (Err(label), _) | (_, Err(label)) => {
+                    return Message::Engine(tablerock_tui::EngineMsg::CatalogFailed {
+                        request_token,
+                        context_revision,
+                        reason: FailureProjection::Label(label),
+                    });
+                }
+            }
+        }
+        ("ClickHouse", CatalogLevelSpec::Root) => CatalogRequest::ClickHouseDatabases { limits },
+        ("ClickHouse", CatalogLevelSpec::Objects { database }) => match text(database) {
+            Ok(database) => CatalogRequest::ClickHouseObjects { database, limits },
+            Err(label) => {
+                return Message::Engine(tablerock_tui::EngineMsg::CatalogFailed {
+                    request_token,
+                    context_revision,
+                    reason: FailureProjection::Label(label),
+                });
+            }
+        },
+        ("Redis", CatalogLevelSpec::Root) => CatalogRequest::RedisLogicalDatabases { limits },
+        _ => {
+            return Message::Engine(tablerock_tui::EngineMsg::CatalogFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("catalog level unsupported".into()),
+            });
+        }
+    };
+    match session.catalog(request).await {
+        Ok(subtree) => {
+            let truncated = !subtree.complete()
+                || matches!(
+                    subtree.exactness(),
+                    tablerock_engine::CatalogExactness::Truncated
+                );
+            let parent_prefix = parent_id.as_deref().unwrap_or("");
+            let parent_depth = if parent_id.is_some() {
+                parent_prefix.matches('/').count() as u16 + 1
+            } else {
+                0
+            };
+            let nodes: Vec<CatalogNodeProjection> = subtree
+                .nodes()
+                .iter()
+                .map(|seed| {
+                    let kind_label = catalog_kind_label(seed.kind());
+                    let name = seed.name().to_owned();
+                    let id = if parent_prefix.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{parent_prefix}/{name}")
+                    };
+                    let branch = !matches!(
+                        seed.children(),
+                        tablerock_core::CatalogChildrenState::NotApplicable
+                    ) && !matches!(
+                        seed.kind(),
+                        tablerock_core::CatalogNodeKind::PostgreSqlObject(_)
+                            | tablerock_core::CatalogNodeKind::ClickHouseObject(_)
+                            | tablerock_core::CatalogNodeKind::RedisKey(_)
+                    );
+                    CatalogNodeProjection {
+                        id,
+                        label: name,
+                        kind_label: kind_label.into(),
+                        depth: parent_depth,
+                        branch,
+                        expanded: false,
+                        status: CatalogNodeStatus::Ready,
+                    }
+                })
+                .collect();
+            Message::Engine(tablerock_tui::EngineMsg::CatalogLoaded {
+                request_token,
+                context_revision,
+                parent_id,
+                nodes,
+                truncated,
+            })
+        }
+        Err(error) => Message::Engine(tablerock_tui::EngineMsg::CatalogFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(error.to_string()),
+        }),
+    }
+}
+
+fn catalog_kind_label(kind: tablerock_core::CatalogNodeKind) -> &'static str {
+    use tablerock_core::{
+        CatalogNodeKind, ClickHouseObjectKind, PostgreSqlObjectKind, RedisKeyKind,
+    };
+    match kind {
+        CatalogNodeKind::PostgreSqlDatabase | CatalogNodeKind::ClickHouseDatabase => "database",
+        CatalogNodeKind::PostgreSqlSchema => "schema",
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::Table) => "table",
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::View) => "view",
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::MaterializedView) => "matview",
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::ForeignTable) => "ftable",
+        CatalogNodeKind::PostgreSqlObject(PostgreSqlObjectKind::Sequence) => "sequence",
+        CatalogNodeKind::PostgreSqlObject(_) => "object",
+        CatalogNodeKind::PostgreSqlColumn | CatalogNodeKind::ClickHouseColumn => "column",
+        CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Table) => "table",
+        CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::View) => "view",
+        CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Dictionary) => "dict",
+        CatalogNodeKind::ClickHouseObject(_) => "object",
+        CatalogNodeKind::RedisLogicalDatabase => "db",
+        CatalogNodeKind::RedisNamespace => "ns",
+        CatalogNodeKind::RedisKey(RedisKeyKind::String) => "string",
+        CatalogNodeKind::RedisKey(_) => "key",
+    }
 }
 
 async fn delete_profile(

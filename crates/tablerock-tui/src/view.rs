@@ -252,6 +252,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let test = action_label(model, ActionId::Test, "Test");
     let connect = action_label(model, ActionId::Connect, "Connect");
     let disconnect = action_label(model, ActionId::Disconnect, "Disconnect");
+    let next_db = action_label(model, ActionId::NextDatabase, "Next DB");
     let submit = action_label(model, ActionId::Submit, "Submit");
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
     let quit = action_label(model, ActionId::Quit, "Quit");
@@ -313,6 +314,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     },
                 ],
                 crate::Screen::Workbench => vec![
+                    Action {
+                        id: ActionId::NextDatabase,
+                        label: next_db.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
                     Action {
                         id: ActionId::Disconnect,
                         label: disconnect.as_str(),
@@ -440,7 +447,7 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
             Some(model.profiles().status_line())
         }
     } else if title == "Catalog" && model.screen() == crate::Screen::Workbench {
-        Some(model.workbench().catalog_status.clone())
+        Some(model.workbench().catalog_status_line())
     } else {
         None
     };
@@ -462,6 +469,11 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
         height: area.height.saturating_sub(2),
     };
     let is_workspace = title == "Workspace" || title.ends_with("Workspace");
+    let is_catalog = title == "Catalog" || title.ends_with("Catalog");
+    if is_catalog && model.screen() == Screen::Workbench {
+        render_workbench_catalog(model, frame, inner, body.as_deref());
+        return;
+    }
     if !is_workspace {
         if let Some(status) = body.as_ref() {
             use ratatui_core::widgets::Widget;
@@ -476,6 +488,79 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
         Screen::Editor => render_connection_form(model, frame, inner),
         Screen::Workbench => render_workbench_facts(model, frame, inner, body.as_deref()),
     }
+}
+
+fn render_workbench_catalog(
+    model: &Model,
+    frame: &mut Frame<'_>,
+    area: Rect,
+    status: Option<&str>,
+) {
+    use ratatui_core::widgets::Widget;
+    let mut content = area;
+    if let Some(status) = status {
+        Line::from(status).render(
+            Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: 1,
+            },
+            frame.buffer_mut(),
+        );
+        content.y = content.y.saturating_add(1);
+        content.height = content.height.saturating_sub(1);
+    }
+    let filter = match &model.workbench().catalog {
+        crate::model::catalog::CatalogModel::Loaded { filter, .. } => filter.clone(),
+        _ => String::new(),
+    };
+    if !filter.is_empty() && content.height > 0 {
+        Line::from(format!("filter: {filter}")).render(
+            Rect {
+                x: content.x,
+                y: content.y,
+                width: content.width,
+                height: 1,
+            },
+            frame.buffer_mut(),
+        );
+        content.y = content.y.saturating_add(1);
+        content.height = content.height.saturating_sub(1);
+    }
+    let visible = model.workbench().catalog.visible_nodes();
+    if visible.is_empty() {
+        return;
+    }
+    let labels: Vec<String> = visible.iter().map(|n| n.tree_label()).collect();
+    let ids: Vec<String> = visible.iter().map(|n| n.id.clone()).collect();
+    let depths: Vec<u16> = visible.iter().map(|n| n.depth).collect();
+    let expanded: Vec<bool> = visible.iter().map(|n| n.expanded).collect();
+    let branches: Vec<bool> = visible.iter().map(|n| n.branch).collect();
+    let selected_key = match &model.workbench().catalog {
+        crate::model::catalog::CatalogModel::Loaded { selected_id, .. } => selected_id.clone(),
+        _ => None,
+    };
+    let tree_nodes: Vec<TreeNode<'_, String>> = ids
+        .iter()
+        .zip(labels.iter())
+        .zip(depths.iter())
+        .zip(expanded.iter())
+        .zip(branches.iter())
+        .map(|((((id, label), depth), exp), branch)| TreeNode {
+            id: id.clone(),
+            label: Line::from(label.as_str()),
+            trailing: None,
+            depth: *depth,
+            branch: *branch,
+            expanded: *exp,
+            enabled: true,
+            status: TreeNodeStatus::Ready,
+        })
+        .collect();
+    let mut state = TreeState::new(selected_key);
+    state.set_focused(model.focus() == Some(FocusRegion::Catalog));
+    frame.render_stateful_widget(&Tree::new(&tree_nodes, &model.theme), content, &mut state);
 }
 
 fn render_connection_tree(model: &Model, frame: &mut Frame<'_>, area: Rect, status: Option<&str>) {
@@ -730,7 +815,7 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
     let max_y = area.y.saturating_add(area.height);
     let lines = [
         wb.context.line(),
-        wb.catalog_status.clone(),
+        wb.catalog_status_line(),
         wb.tabs
             .get(wb.selected_tab)
             .map(|tab| {

@@ -40,6 +40,15 @@ pub enum TlsModeSpec {
     VerifyFull,
 }
 
+/// Catalog level request (executor maps to engine CatalogRequest).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CatalogLevelSpec {
+    Root,
+    Schemas { database: String },
+    Relations { database: String, schema: String },
+    Objects { database: String },
+}
+
 /// First-version connection editor payload for create/save.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectionDraft {
@@ -116,4 +125,33 @@ pub enum Effect {
         request_token: RequestToken,
         group_name: String,
     },
+    /// Load one catalog level from a registered session.
+    LoadCatalog {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// Engine label: PostgreSQL / ClickHouse / Redis.
+        engine_label: String,
+        level: CatalogLevelSpec,
+        /// Parent presentation id for merge (None = roots).
+        parent_id: Option<String>,
+    },
+}
+
+/// Helper: build a root LoadCatalog effect for the current workbench session.
+#[must_use]
+pub fn load_root_catalog_effect(
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    engine_label: String,
+) -> Effect {
+    Effect::LoadCatalog {
+        request_token,
+        session_id_hex,
+        context_revision,
+        engine_label,
+        level: CatalogLevelSpec::Root,
+        parent_id: None,
+    }
 }
