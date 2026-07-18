@@ -5986,7 +5986,8 @@ async fn open_described_session(
             .map_err(|e| e.to_string())
     };
     // Resolve reference password sources only for this attempt; never log.
-    let resolved_password = match &draft.password_source {
+    // Zeroize on drop so attempt-scoped material does not linger on the heap.
+    let resolved_password = zeroize::Zeroizing::new(match &draft.password_source {
         PasswordSourceSpec::HostEnvironment { var } => {
             match std::env::var(var.trim()) {
                 Ok(v) if !v.is_empty() => v,
@@ -6073,7 +6074,7 @@ async fn open_described_session(
             }
         }
         _ => draft.password.clone(),
-    };
+    });
     let pg_tls = match draft.tls_mode {
         TlsModeSpec::Off => PostgresTlsMode::Disabled,
         TlsModeSpec::VerifyCa | TlsModeSpec::VerifyFull => PostgresTlsMode::Required,
@@ -6198,6 +6199,7 @@ async fn open_described_session(
             ))
         }
     }
+    // resolved_password: Zeroizing — heap material scrubbed on drop (all paths).
 }
 
 async fn save_connection(
