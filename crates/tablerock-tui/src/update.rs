@@ -3337,6 +3337,17 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 CloseTabOutcome::Closed | CloseTabOutcome::Empty => Update::render(),
             }
         }
+        ActionId::CloseAllTabs if model.screen() == Screen::Workbench => {
+            use crate::model::workbench::CloseTabOutcome;
+            match model.workbench_mut().close_all_tabs() {
+                CloseTabOutcome::NeedsConfirm { title, index } => {
+                    model.set_confirm(Some(ConfirmDialog::CloseDirtyTab { title, index }));
+                    model.set_action(ActionId::Submit);
+                    Update::render()
+                }
+                CloseTabOutcome::Closed | CloseTabOutcome::Empty => Update::render(),
+            }
+        }
         ActionId::RenameTab if model.screen() == Screen::Workbench => {
             let Some(tab) = model.workbench().active_tab() else {
                 return Update::unchanged();
@@ -5333,6 +5344,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CloseOtherTabs
         | ActionId::CloseTabsToRight
         | ActionId::CloseTabsToLeft
+        | ActionId::CloseAllTabs
         | ActionId::RenameTab
         | ActionId::MoveTabLeft
         | ActionId::MoveTabRight
@@ -7050,6 +7062,7 @@ fn cycle_action(
                 ActionId::CloseOtherTabs,
                 ActionId::CloseTabsToRight,
                 ActionId::CloseTabsToLeft,
+                ActionId::CloseAllTabs,
                 ActionId::RenameTab,
                 ActionId::MoveTabLeft,
                 ActionId::MoveTabRight,

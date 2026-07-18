@@ -792,6 +792,23 @@ impl WorkbenchModel {
         CloseTabOutcome::Closed
     }
 
+    /// Close every tab. Fails closed if any tab is dirty.
+    pub fn close_all_tabs(&mut self) -> CloseTabOutcome {
+        if self.tabs.is_empty() {
+            return CloseTabOutcome::Empty;
+        }
+        if let Some((index, tab)) = self.tabs.iter().enumerate().find(|(_, t)| t.dirty) {
+            return CloseTabOutcome::NeedsConfirm {
+                title: format!("dirty: {}", tab.title),
+                index,
+            };
+        }
+        self.tabs.clear();
+        self.selected_tab = 0;
+        self.recompute_pending();
+        CloseTabOutcome::Closed
+    }
+
     /// Mark every live tab/operation disconnected without dropping content.
     ///
     /// Completed/failed grids stay inspectable with their prior terminal state;
@@ -1043,6 +1060,25 @@ mod tests {
         assert_eq!(wb.tabs[0].title, "b");
         assert!(!wb.tabs.iter().any(|t| t.title == "a"));
         assert!(matches!(wb.close_tabs_to_left(), CloseTabOutcome::Empty));
+    }
+
+    #[test]
+    fn close_all_tabs_clears_strip_and_fails_on_dirty() {
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("a");
+        wb.open_preview_tab("b");
+        assert!(wb.tabs.len() >= 2);
+        assert!(matches!(wb.close_all_tabs(), CloseTabOutcome::Closed));
+        assert!(wb.tabs.is_empty());
+        assert_eq!(wb.selected_tab, 0);
+        assert!(matches!(wb.close_all_tabs(), CloseTabOutcome::Empty));
+        wb.open_preview_tab("dirty");
+        wb.mark_active_dirty(true);
+        assert!(matches!(
+            wb.close_all_tabs(),
+            CloseTabOutcome::NeedsConfirm { .. }
+        ));
+        assert_eq!(wb.tabs.len(), 1);
     }
 
     #[test]
