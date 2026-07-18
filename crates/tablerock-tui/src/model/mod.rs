@@ -148,6 +148,8 @@ pub enum ActionId {
     CopyColumn,
     /// Copy active grid status line to clipboard.
     CopyStatus,
+    /// Copy base schema.table identity if known.
+    CopyTableName,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Append cursor column as secondary sort (or cycle its direction in place).

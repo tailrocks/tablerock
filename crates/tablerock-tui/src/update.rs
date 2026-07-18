@@ -3698,6 +3698,30 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyTableName if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) = (grid.base_schema.as_ref(), grid.base_table.as_ref())
+            else {
+                return Update::unchanged();
+            };
+            if schema.is_empty() || table.is_empty() {
+                return Update::unchanged();
+            }
+            let text = format!("{schema}.{table}");
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -5009,6 +5033,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyColumnNames
         | ActionId::CopyColumn
         | ActionId::CopyStatus
+        | ActionId::CopyTableName
         | ActionId::CycleSort
         | ActionId::PushSort
         | ActionId::PopSort
@@ -6651,6 +6676,7 @@ fn cycle_action(
                 ActionId::CopyColumnNames,
                 ActionId::CopyColumn,
                 ActionId::CopyStatus,
+                ActionId::CopyTableName,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,
@@ -8216,6 +8242,37 @@ mod tests {
             Some("notice: NOTICE: table-rock-notice")
         );
         assert_eq!(grid.notice_history.as_slice(), ["NOTICE: table-rock-notice"]);
+    }
+
+    #[test]
+    fn copy_table_name_emits_qualified() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("orders".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyTableName);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "public.orders"),
+            other => panic!("expected CopyToClipboard, got {other:?}"),
+        }
+        // No identity → no-op.
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_table = None;
+        }
+        model.set_action(ActionId::CopyTableName);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 
     #[test]
