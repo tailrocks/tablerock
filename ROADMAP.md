@@ -202,24 +202,26 @@ handling, restoration, cache/eviction, and cross-engine support documentation.
 
 ## Phase 10 — scoped parity expansion
 
-**Partial (plan 017):** typed DDL plans + PG execute, roles list, relationship
-graph contract, Vim keymap layer, pg_dump discovery/argv hygiene. Residual:
-russh SSH bastion, full dump/restore process matrix, DDL UI depth.
+**Mostly complete (plan 017, evidence 260–284):** SSH russh bastion matrix
+(password/pubkey/encrypted/agent, known_hosts fail-closed, multi-engine
+forward), keepalive defaults, pg_dump/pg_restore supervision + Docker matrix,
+reviewed DDL + TUI, roles/effective membership + inspector, startup actions
+(ReadOnly auto + Write/Danger review), Vim keymap layer, relationship graph
+contract. Residual polish: CI client packages for non-skip dump runs.
 
-Close planned later rows from the parity ledger: reviewed structure editing,
-PostgreSQL backup/restore, relationship exploration, role/privilege inspection,
-startup actions, optional Vim behavior, and engine-specific administration.
-SSH uses one Rust `russh` tunnel adapter below the database clients. Cloud
-provider proxy/identity workflows remain explicitly excluded from this program.
-Features that do not apply to an engine render an explicit unsupported
-capability.
+Cloud-provider proxy/identity remains excluded. Features that do not apply to
+an engine render an explicit unsupported capability.
 
 ## Phase 11 — TUI parity release gate
 
-Pass reducer, widget, full-screen, PTY, real-server, failure-injection,
-security, accessibility, Unicode, performance, memory, clean-room, license, and
-support-matrix gates. Every in-scope parity-ledger row is implemented,
-explicitly excluded, or visibly blocks the parity claim.
+**Mostly complete (plan 018, evidence 248–303):** redaction, non-color cues,
+OTLP-off, export fail-closed, resize storm, ledger three-state CSV, local and
+ubuntu CI first-row budgets, URL import/external open, explain tree, named
+params, multi-statement script selection, find/replace, format SQL. Residual:
+multi-OS fixed-spec matrix publish; true ENOSPC volume-image CI.
+
+Every in-scope parity-ledger row is implemented, explicitly excluded, or
+visibly blocks (Native multi-window waits on Phase 12 packaging).
 
 ## Phase 12 — prove the selected native architecture
 

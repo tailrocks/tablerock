@@ -249,6 +249,22 @@ impl Handler for ClientHandler {
     }
 }
 
+/// Default client keepalive: 30s interval, close after 3 unanswered.
+///
+/// Product tunnels sit idle while operators edit SQL; without keepalives NAT
+/// and bastion idle timeouts drop the control channel silently.
+pub const SSH_KEEPALIVE_INTERVAL_SECS: u64 = 30;
+pub const SSH_KEEPALIVE_MAX: usize = 3;
+
+/// Build the russh client config used for all TableRock bastion sessions.
+#[must_use]
+pub fn ssh_client_config() -> client::Config {
+    let mut conf = client::Config::default();
+    conf.keepalive_interval = Some(std::time::Duration::from_secs(SSH_KEEPALIVE_INTERVAL_SECS));
+    conf.keepalive_max = SSH_KEEPALIVE_MAX;
+    conf
+}
+
 /// Open SSH session with password auth (host-key policy enforced).
 pub async fn connect_session(
     config: &SshTunnelConfig,
@@ -264,7 +280,7 @@ pub async fn connect_session(
 pub async fn connect_session_capture_host_key(
     config: &SshTunnelConfig,
 ) -> Result<(Handle<ClientHandler>, PublicKey), SshTunnelError> {
-    let conf = Arc::new(client::Config::default());
+    let conf = Arc::new(ssh_client_config());
     let presented = Arc::new(std::sync::Mutex::new(None::<PublicKey>));
     let handler = ClientHandler {
         policy: config.host_key_policy.clone(),
@@ -592,6 +608,19 @@ C/h2ADG+GuOY1seMXSQeOkWcDlPhdQ0QU8eeA=
         let changed = keys::check_known_hosts_path("127.0.0.1", 2222, &other, &path);
         assert!(changed.is_err() || matches!(changed, Ok(false)));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn client_config_enables_keepalive() {
+        let conf = ssh_client_config();
+        assert_eq!(
+            conf.keepalive_interval,
+            Some(std::time::Duration::from_secs(SSH_KEEPALIVE_INTERVAL_SECS))
+        );
+        assert_eq!(conf.keepalive_max, SSH_KEEPALIVE_MAX);
+        // Default russh leaves keepalive off; we deliberately override.
+        let def = russh::client::Config::default();
+        assert!(def.keepalive_interval.is_none());
     }
 
     #[test]
