@@ -1337,6 +1337,21 @@ impl DataGridModel {
         true
     }
 
+    /// Flip every sort key Asc↔Desc. Returns false if no sort.
+    pub fn invert_all_sorts(&mut self) -> bool {
+        if self.sort.is_empty() {
+            return false;
+        }
+        for key in &mut self.sort {
+            key.direction = match key.direction {
+                ColumnSort::Asc => ColumnSort::Desc,
+                ColumnSort::Desc => ColumnSort::Asc,
+                ColumnSort::None => ColumnSort::Asc,
+            };
+        }
+        true
+    }
+
     /// Rotate sort keys left: secondary becomes primary. Needs ≥2 keys.
     pub fn rotate_sort_keys(&mut self) -> bool {
         if self.sort.len() < 2 {
@@ -2432,6 +2447,22 @@ mod tests {
         assert_eq!(g.sort[0].direction, ColumnSort::Desc);
         assert_eq!(g.sort[1].column, "name");
         assert_eq!(g.sort[2].column, "id");
+    }
+
+    #[test]
+    fn invert_all_sorts_flips_every_key() {
+        let mut g = DataGridModel::default();
+        assert!(!g.invert_all_sorts());
+        g.push_sort_column("name"); // Asc
+        g.push_sort_column("age"); // Asc
+        g.push_sort_column("age"); // -> Desc secondary
+        assert_eq!(g.sort[0].direction, ColumnSort::Asc);
+        assert_eq!(g.sort[1].direction, ColumnSort::Desc);
+        assert!(g.invert_all_sorts());
+        assert_eq!(g.sort[0].direction, ColumnSort::Desc);
+        assert_eq!(g.sort[1].direction, ColumnSort::Asc);
+        assert_eq!(g.sort[0].column, "name");
+        assert_eq!(g.sort[1].column, "age");
     }
 
     #[test]

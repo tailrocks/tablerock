@@ -184,6 +184,8 @@ pub enum ActionId {
     KeepPrimarySort,
     /// Promote cursor column to primary sort without cycling direction.
     PromoteSort,
+    /// Invert direction of every sort key (Asc↔Desc).
+    InvertAllSort,
     /// Remove the last server filter chip and re-browse.
     RemoveLastFilter,
     /// Remove all server filters for the cursor column and re-browse.
