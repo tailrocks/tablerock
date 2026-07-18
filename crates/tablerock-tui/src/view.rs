@@ -661,6 +661,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let col_reset = action_label(model, ActionId::ResetColumns, "ColRst");
     let col_solo = action_label(model, ActionId::SoloColumn, "ColSolo");
     let col_all = action_label(model, ActionId::ShowAllColumns, "ColAll");
+    let col_inv = action_label(model, ActionId::InvertColumns, "ColInv");
     let col_save = action_label(model, ActionId::SaveColumns, "ColSave");
     let undo_staged = action_label(model, ActionId::UndoStaged, "UndoEdit");
     let discard_staged = action_label(model, ActionId::DiscardStaged, "DiscardEdits");
@@ -1141,6 +1142,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ShowAllColumns,
                         label: col_all.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::InvertColumns,
+                        label: col_inv.as_str(),
                         enabled: true,
                         style: None,
                     },

@@ -1436,6 +1436,25 @@ impl DataGridModel {
         changed
     }
 
+    /// Invert visibility of every column. Guarantees at least one stays visible
+    /// (if invert would hide all, leaves the first layout entry visible).
+    pub fn invert_column_visibility(&mut self) -> bool {
+        if self.columns.is_empty() {
+            return false;
+        }
+        self.ensure_column_layout();
+        if self.column_layout.is_empty() {
+            return false;
+        }
+        for entry in &mut self.column_layout {
+            entry.visible = !entry.visible;
+        }
+        if !self.column_layout.iter().any(|c| c.visible) {
+            self.column_layout[0].visible = true;
+        }
+        true
+    }
+
     /// Toggle visibility of a named column (at least one remains visible).
     pub fn toggle_column_visible(&mut self, column: &str) -> bool {
         self.ensure_column_layout();
@@ -2048,12 +2067,19 @@ mod tests {
         assert_eq!(g.visible_columns(), vec!["name".to_owned()]);
         // Already solo → no-op.
         assert!(!g.solo_cursor_column());
-        // Widen solo column then ShowAll keeps width.
+        // Invert: name hidden, id+age shown.
+        assert!(g.invert_column_visibility());
+        let vis = g.visible_columns();
+        assert!(vis.contains(&"id".to_owned()));
+        assert!(vis.contains(&"age".to_owned()));
+        assert!(!vis.contains(&"name".to_owned()));
+        // Widen then ShowAll keeps width.
+        g.cursor_col = 0;
         assert!(g.adjust_cursor_column_width(8));
-        let solo_w = g.column_width("name");
+        let w = g.column_width("id");
         assert!(g.show_all_columns());
         assert_eq!(g.visible_columns().len(), 3);
-        assert_eq!(g.column_width("name"), solo_w);
+        assert_eq!(g.column_width("id"), w);
         assert!(!g.show_all_columns());
         g.reset_column_layout();
         assert_eq!(g.visible_columns().len(), 3);

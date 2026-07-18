@@ -187,6 +187,8 @@ pub enum ActionId {
     SoloColumn,
     /// Show all columns; keep widths/order (unlike ResetColumns).
     ShowAllColumns,
+    /// Invert column visibility (at least one remains visible).
+    InvertColumns,
     /// Persist column layout for the current base table.
     SaveColumns,
     /// Move cursor column left in display order.
