@@ -1456,6 +1456,15 @@ impl DataGridModel {
         true
     }
 
+    /// Reverse server filter chip order (AND order). Needs ≥2 chips.
+    pub fn reverse_filters(&mut self) -> bool {
+        if self.filters.len() < 2 {
+            return false;
+        }
+        self.filters.reverse();
+        true
+    }
+
     /// Remove all server filters for a column name (keeps sort/raw_where).
     pub fn remove_filters_for_column(&mut self, column: &str) -> usize {
         let before = self.filters.len();
@@ -2744,6 +2753,22 @@ mod tests {
         assert_eq!(g.filters[0].column, "z");
         assert!(g.remove_first_filter());
         assert!(!g.remove_first_filter());
+        g.add_filter_chip("a", "eq", Some("1".into()));
+        g.add_filter_chip("b", "eq", Some("2".into()));
+        g.add_filter_chip("c", "eq", Some("3".into()));
+        assert!(g.reverse_filters());
+        assert_eq!(
+            g.filters
+                .iter()
+                .map(|f| f.column.as_str())
+                .collect::<Vec<_>>(),
+            vec!["c", "b", "a"]
+        );
+        assert!(g.reverse_filters());
+        assert_eq!(g.filters[0].column, "a");
+        g.filters.clear();
+        g.add_filter_chip("solo", "eq", Some("1".into()));
+        assert!(!g.reverse_filters());
     }
 
     #[test]

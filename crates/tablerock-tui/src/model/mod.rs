@@ -210,6 +210,8 @@ pub enum ActionId {
     RemoveLastFilter,
     /// Remove the oldest server filter chip and re-browse.
     RemoveFirstFilter,
+    /// Reverse server filter chip order and re-browse.
+    ReverseFilters,
     /// Remove all server filters for the cursor column and re-browse.
     RemoveColumnFilters,
     /// Add LIKE filter for cursor column using cell text with % wildcards.
