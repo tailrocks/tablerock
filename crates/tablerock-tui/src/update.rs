@@ -2828,42 +2828,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     let Ok(target) = trimmed.parse::<u64>() else {
                         return Update::render();
                     };
-                    let Some(session_id_hex) =
-                        model.session().map(|s| s.session_id_hex.clone())
-                    else {
-                        model.set_confirm(None);
-                        return Update::unchanged();
-                    };
-                    let context_revision = model.workbench().context_revision;
-                    let fetch = {
-                        let Some(grid) = model.workbench_mut().active_grid_mut() else {
-                            model.set_confirm(None);
-                            return Update::unchanged();
-                        };
-                        let Some(row) = grid.go_to_row(target) else {
-                            return Update::render();
-                        };
-                        if !grid.needs_fetch(row) || grid.result_token == 0 {
-                            None
-                        } else {
-                            Some((grid.next_fetch_start(), grid.result_token))
-                        }
-                    };
                     model.set_confirm(None);
-                    let Some((start_row, result_token)) = fetch else {
-                        return Update::render();
-                    };
-                    let token = model.mint_request_token();
-                    Update {
-                        render: true,
-                        effect: Some(Effect::FetchPage {
-                            request_token: token,
-                            session_id_hex,
-                            context_revision,
-                            result_token,
-                            start_row,
-                        }),
-                    }
+                    jump_to_row(model, target)
                 }
                 ConfirmDialog::StageRedis {
                     op,
@@ -3584,6 +3550,26 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }));
             model.set_action(ActionId::Submit);
             Update::render()
+        }
+        ActionId::GoToFirstRow if model.screen() == Screen::Workbench => {
+            jump_to_row(model, 0)
+        }
+        ActionId::GoToLastRow if model.screen() == Screen::Workbench => {
+            let last = model.workbench().active_grid().and_then(|g| match g.totals {
+                crate::model::grid::GridRowTotal::Exact(n) if n > 0 => Some(n - 1),
+                crate::model::grid::GridRowTotal::Estimated(n) if n > 0 => Some(n - 1),
+                _ => {
+                    // Fall back to end of resident window.
+                    Some(
+                        g.start_row
+                            .saturating_add(u64::from(g.row_count.saturating_sub(1))),
+                    )
+                }
+            });
+            let Some(last) = last else {
+                return Update::unchanged();
+            };
+            jump_to_row(model, last)
         }
         ActionId::RefreshTable if model.screen() == Screen::Workbench => {
             rebrowse_active_table(model)
@@ -4306,6 +4292,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::EditRawWhere
         | ActionId::EditQuickFilter
         | ActionId::GoToRow
+        | ActionId::GoToFirstRow
+        | ActionId::GoToLastRow
         | ActionId::RefreshTable
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
@@ -5363,6 +5351,41 @@ fn add_value_filter(model: &mut Model, operator: &str, wrap_like: bool) -> Updat
     rebrowse_active_table(model)
 }
 
+/// Jump to absolute row; FetchPage when outside resident window.
+fn jump_to_row(model: &mut Model, target: u64) -> Update {
+    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+        return Update::unchanged();
+    };
+    let context_revision = model.workbench().context_revision;
+    let fetch = {
+        let Some(grid) = model.workbench_mut().active_grid_mut() else {
+            return Update::unchanged();
+        };
+        let Some(row) = grid.go_to_row(target) else {
+            return Update::unchanged();
+        };
+        if !grid.needs_fetch(row) || grid.result_token == 0 {
+            None
+        } else {
+            Some((grid.next_fetch_start(), grid.result_token))
+        }
+    };
+    let Some((start_row, result_token)) = fetch else {
+        return Update::render();
+    };
+    let token = model.mint_request_token();
+    Update {
+        render: true,
+        effect: Some(Effect::FetchPage {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            result_token,
+            start_row,
+        }),
+    }
+}
+
 fn rebrowse_active_table(model: &mut Model) -> Update {
     let identity = model.workbench().active_grid().and_then(|g| {
         Some((g.base_schema.clone()?, g.base_table.clone()?))
@@ -5637,6 +5660,8 @@ fn cycle_action(
                 ActionId::EditRawWhere,
                 ActionId::EditQuickFilter,
                 ActionId::GoToRow,
+                ActionId::GoToFirstRow,
+                ActionId::GoToLastRow,
                 ActionId::RefreshTable,
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
@@ -7206,6 +7231,18 @@ mod tests {
             other => panic!("expected FetchPage, got {other:?}"),
         }
         assert_eq!(model.workbench().active_grid().unwrap().cursor_row, 500);
+        // First / Last shortcuts
+        model.set_action(ActionId::GoToFirstRow);
+        let first = update(&mut model, Message::Activate);
+        assert!(first.effects().next().is_none());
+        assert_eq!(model.workbench().active_grid().unwrap().cursor_row, 0);
+        model.set_action(ActionId::GoToLastRow);
+        let last = update(&mut model, Message::Activate);
+        match last.effects().next() {
+            Some(Effect::FetchPage { .. }) => {}
+            other => panic!("expected FetchPage for last row, got {other:?}"),
+        }
+        assert_eq!(model.workbench().active_grid().unwrap().cursor_row, 999);
     }
 
     #[test]

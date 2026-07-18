@@ -147,6 +147,10 @@ pub enum ActionId {
     EditQuickFilter,
     /// Jump cursor to absolute row number (paste digit).
     GoToRow,
+    /// Jump to first row (0).
+    GoToFirstRow,
+    /// Jump to last known row (Exact/Estimated totals).
+    GoToLastRow,
     /// Re-browse the active base table (keep sort/filters).
     RefreshTable,
     /// Toggle visibility of the cursor column.

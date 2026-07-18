@@ -616,6 +616,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let cycle_sort = action_label(model, ActionId::CycleSort, "Sort");
     let quick_filt = action_label(model, ActionId::EditQuickFilter, "PgFilt");
     let go_row = action_label(model, ActionId::GoToRow, "GoRow");
+    let go_first = action_label(model, ActionId::GoToFirstRow, "First");
+    let go_last = action_label(model, ActionId::GoToLastRow, "Last");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
@@ -971,6 +973,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::GoToRow,
                         label: go_row.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::GoToFirstRow,
+                        label: go_first.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::GoToLastRow,
+                        label: go_last.as_str(),
                         enabled: true,
                         style: None,
                     },
