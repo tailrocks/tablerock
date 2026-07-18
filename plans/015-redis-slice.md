@@ -120,7 +120,8 @@ extended; CI updated.
 - ~~HSCAN/SSCAN/ZSCAN first-page wiring in OpenRedisKey~~ (closed: evidence 311)
 - ~~Command editor Run → sequential pipeline outcomes UI~~ (closed: evidence 316;
   no MULTI/EXEC; blocking denied per-line; later lines still run)
-- Official command-metadata completion table (license/provenance residual)
+- ~~Official command-metadata completion table~~ (closed: evidence 317;
+  curated open-command names, not redis-doc dump; wired into CompletionMenu)
 - ~~Multi-type collection mutations (HSET/HDEL/SADD/SREM/ZADD/ZREM) on apply path~~
   (closed: evidence 312–314; key-view RAdd/RRem stage + review wired)
 - ~~MATCH pattern filter on ScanRedisKeys~~ (closed: evidence 311)

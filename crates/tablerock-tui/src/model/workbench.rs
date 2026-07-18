@@ -298,6 +298,8 @@ impl WorkbenchModel {
     }
 
     /// Open or refresh completion from the active editor + catalog.
+    ///
+    /// Redis uses the curated command table (not SQL keywords/catalog).
     pub fn open_completion(&mut self) {
         let Some(editor) = self.active_editor() else {
             self.completion = None;
@@ -305,8 +307,15 @@ impl WorkbenchModel {
         };
         // Clone facts for pure build without dual borrow.
         let editor = editor.clone();
-        let catalog = self.catalog.clone();
         let context_revision = self.context_revision;
+        if self.engine_kind.eq_ignore_ascii_case("Redis") {
+            self.completion = Some(super::completion::build_redis_session(
+                &editor,
+                context_revision,
+            ));
+            return;
+        }
+        let catalog = self.catalog.clone();
         self.completion = Some(super::completion::build_session(
             &editor,
             &catalog,
@@ -434,7 +443,12 @@ impl WorkbenchModel {
         let Some(id) = id else {
             return false;
         };
-        let catalog_rev = super::completion::catalog_revision(&self.catalog);
+        // Redis sessions pin catalog_revision = 0 (no schema catalog axis).
+        let catalog_rev = if self.engine_kind.eq_ignore_ascii_case("Redis") {
+            0
+        } else {
+            super::completion::catalog_revision(&self.catalog)
+        };
         let context_revision = self.context_revision;
         let Some(editor) = self.active_editor_mut() else {
             self.completion = None;
@@ -654,6 +668,31 @@ mod tests {
         ));
         wb.force_close_tab(wb.selected_tab);
         assert!(wb.tabs.iter().all(|t| t.title != "users"));
+    }
+
+    #[test]
+    fn redis_open_completion_uses_command_table() {
+        let mut wb = WorkbenchModel::default();
+        wb.engine_kind = "Redis".into();
+        wb.open_sql_tab();
+        {
+            let ed = wb.active_editor_mut().unwrap();
+            ed.set_text("SET");
+            ed.set_cursor(3);
+        }
+        wb.open_completion();
+        let session = wb.completion.as_ref().expect("session");
+        assert!(
+            session
+                .candidates
+                .iter()
+                .any(|c| c.label == "SET" && c.id.starts_with("redis:")),
+            "{:?}",
+            session.candidates
+        );
+        assert!(!session.candidates.iter().any(|c| c.label == "SELECT"));
+        assert!(wb.commit_completion(Some("redis:SET")));
+        assert!(wb.active_editor().unwrap().text().starts_with("SET"));
     }
 
     #[test]

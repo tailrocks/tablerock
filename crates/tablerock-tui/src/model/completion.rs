@@ -124,6 +124,38 @@ pub fn build_session(
     }
 }
 
+/// Redis command editor completion from the curated command table.
+///
+/// Provenance: Redis open-command family names (classification + completion),
+/// not a vendored redis-doc JSON dump. Catalog axis is unused (revision 0).
+#[must_use]
+pub fn build_redis_session(editor: &QueryEditorModel, context_revision: u64) -> CompletionSession {
+    use super::redis_command::{classify_command, complete_prefix};
+    let (prefix, replace_start, replace_end) = token_under_cursor(editor.text(), editor.cursor());
+    let hits = complete_prefix(&prefix, 64);
+    let candidates: Vec<CompletionCandidateView> = hits
+        .into_iter()
+        .map(|name| {
+            let safety = classify_command(name);
+            CompletionCandidateView {
+                id: format!("redis:{name}"),
+                label: name.to_owned(),
+                kind: format!("command/{}", safety.label()),
+                replace_start,
+                replace_end,
+            }
+        })
+        .collect();
+    let selected_id = candidates.first().map(|c| c.id.clone());
+    CompletionSession {
+        text_revision: editor.revision(),
+        context_revision,
+        catalog_revision: 0,
+        candidates,
+        selected_id,
+    }
+}
+
 fn is_completable_object(node: &CatalogNodeProjection) -> bool {
     matches!(
         node.kind_label.as_str(),
@@ -182,8 +214,8 @@ pub fn commit_candidate(
     // Replace range by selecting it then inserting.
     editor.set_selection(start, end);
     editor.insert(&candidate.label);
-    // Ensure a trailing space after keywords for continuous typing.
-    if candidate.kind == "keyword" {
+    // Trailing space after keywords / Redis commands for continuous typing.
+    if candidate.kind == "keyword" || candidate.kind.starts_with("command/") {
         editor.insert(" ");
     }
     Ok(())
@@ -283,6 +315,43 @@ mod tests {
             .expect("SELECT");
         commit_candidate(&mut ed, &session, &id, 1, 0).unwrap();
         assert!(ed.text().starts_with("SELECT"), "{}", ed.text());
+    }
+
+    #[test]
+    fn redis_session_uses_command_table_not_sql_keywords() {
+        let ed = editor_with("HGE", 3);
+        let session = build_redis_session(&ed, 4);
+        assert_eq!(session.catalog_revision, 0);
+        assert_eq!(session.context_revision, 4);
+        assert!(
+            session
+                .candidates
+                .iter()
+                .any(|c| c.label == "HGET" && c.kind.contains("read-only")),
+            "{:?}",
+            session.candidates
+        );
+        assert!(!session.candidates.iter().any(|c| c.label == "SELECT"));
+        // Prefix that matches SQL but not Redis should not invent SQL.
+        let ed2 = editor_with("SEL", 3);
+        let session2 = build_redis_session(&ed2, 1);
+        assert!(
+            session2.candidates.is_empty() || !session2.candidates.iter().any(|c| c.label == "SELECT")
+        );
+    }
+
+    #[test]
+    fn redis_commit_inserts_command_and_space() {
+        let mut ed = editor_with("HG", 2);
+        let session = build_redis_session(&ed, 1);
+        let id = session
+            .candidates
+            .iter()
+            .find(|c| c.label == "HGET")
+            .map(|c| c.id.clone())
+            .expect("HGET");
+        commit_candidate(&mut ed, &session, &id, 1, 0).unwrap();
+        assert_eq!(ed.text(), "HGET ");
     }
 
     #[test]

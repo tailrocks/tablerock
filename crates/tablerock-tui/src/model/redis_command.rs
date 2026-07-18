@@ -117,13 +117,20 @@ const READ_ONLY: &[&str] = &[
     "ECHO", "TIME", "CLIENT", "CONFIG", "MEMORY", "OBJECT", "DUMP", "KEYS", // KEYS classified read-only but UI must never issue it for browse
 ];
 
-/// Curated completion table (read + write families).
+/// Curated completion table (read + write + blocking families).
+///
+/// Provenance decision: Redis open-command *names* only, hand-curated for the
+/// first program. Not a redis-doc dump or third-party JSON (license gate).
+/// Expand here as product coverage grows; classification lists remain authority
+/// for safety.
 const ALL_COMMANDS: &[&str] = &[
-    "GET", "SET", "DEL", "EXISTS", "TYPE", "TTL", "PTTL", "EXPIRE", "PEXPIRE", "PERSIST",
-    "HGET", "HSET", "HDEL", "HGETALL", "HSCAN", "LRANGE", "LPUSH", "RPUSH", "LPOP", "RPOP",
-    "SADD", "SREM", "SMEMBERS", "SSCAN", "ZADD", "ZREM", "ZRANGE", "ZSCAN", "XADD", "XRANGE",
-    "XLEN", "SCAN", "INFO", "PING", "ECHO", "DBSIZE", "RENAME", "COPY", "DUMP", "RESTORE",
-    "INCR", "DECR", "APPEND", "GETRANGE", "SETRANGE", "MGET", "MSET",
+    "APPEND", "BLPOP", "BRPOP", "COPY", "DBSIZE", "DECR", "DEL", "DUMP", "ECHO", "EXISTS",
+    "EXPIRE", "GET", "GETRANGE", "HDEL", "HGET", "HGETALL", "HLEN", "HMGET", "HSCAN", "HSET",
+    "INCR", "INFO", "KEYS", "LINDEX", "LLEN", "LPOP", "LPUSH", "LRANGE", "MGET", "MSET",
+    "PERSIST", "PEXPIRE", "PING", "PTTL", "RENAME", "RESTORE", "RPOP", "RPUSH", "SADD", "SCAN",
+    "SCARD", "SET", "SETRANGE", "SISMEMBER", "SMEMBERS", "SREM", "SSCAN", "STRLEN", "TTL",
+    "TYPE", "XADD", "XLEN", "XRANGE", "XREAD", "ZADD", "ZCARD", "ZRANGE", "ZREM", "ZSCAN",
+    "ZSCORE",
 ];
 
 #[cfg(test)]
