@@ -14,6 +14,7 @@ futures-util.workspace = true
 redis.workspace = true
 rustls.workspace = true
 serde_json.workspace = true
+sqlparser.workspace = true
 tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
 tokio.workspace = true
 tokio-postgres.workspace = true

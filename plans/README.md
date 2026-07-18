@@ -27,7 +27,7 @@ plan).
 | 008 | TermRock T2: `VirtualGrid` (upstream) | P1 | M | — (parallel) | DONE |
 | 009 | PostgreSQL read-only vertical slice (Phase 4 exit) | P1 | L | 002, 003, 007, 008 | DONE |
 | 010 | TermRock T3: `TextArea` audit + `CompletionMenu` (upstream) | P1 | M | 008 (workflow precedent) | DONE |
-| 011 | SQL editor workbench: parser, completion, history, files (Phase 5 core) | P1 | L | 009, 010 | TODO |
+| 011 | SQL editor workbench: parser, completion, history, files (Phase 5 core) | P1 | L | 009, 010 | IN PROGRESS |
 | 012 | Grid controls: server sort, filter bar, columns, copy formats | P1 | L | 009 | TODO |
 | 013 | PostgreSQL writes: staged edits, review, apply, admin (Phase 6) | P1 | L | 011, 012 | TODO |
 | 014 | ClickHouse complete slice (Phase 7) | P2 | L | 011, 012 | TODO |

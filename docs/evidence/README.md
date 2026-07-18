@@ -181,6 +181,7 @@ How to read an evidence document:
 - 214 — [FetchPage + ResultStore multi-page pump](delivery/214-fetchpage-resultstore-multipage.md)
 - 215 — [Phase 4 PostgreSQL read-only exit](delivery/215-phase-4-postgresql-readonly-exit.md)
 - 216 — [TermRock TextArea audit + CompletionMenu pin](delivery/216-termrock-textarea-completionmenu.md)
+- 217 — [sqlparser adoption + statement boundaries](delivery/217-sqlparser-statement-boundaries.md)
 
 ## TermRock pins
 
