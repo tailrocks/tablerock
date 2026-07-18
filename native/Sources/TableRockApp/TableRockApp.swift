@@ -10,49 +10,54 @@
 // Checkpoint 2: connection list — lists saved profiles over the bridge.
 
 import SwiftUI
+import Observation
 import TableRockBridge
 
 @main
 struct TableRockApp: App {
-    @StateObject private var model = BridgeModel()
+    @State private var model = BridgeModel()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(model)
+                .environment(model)
                 .frame(minWidth: 760, minHeight: 520)
+        }
+        Settings {
+            NativeSettingsView()
         }
     }
 }
 
 /// Owns the live TableRockBridge + the profile list for the window's lifetime.
 @MainActor
-final class BridgeModel: ObservableObject {
-    @Published var status: String = "starting…"
-    @Published var bridgeError: String?
-    @Published var profiles: [BridgeProfileItem] = []
-    @Published var sessionHex: String?
-    @Published var connectError: String?
-    @Published var connectingName: String?
-    @Published var catalogSummary: String?
-    @Published var catalogError: String?
-    @Published var catalogTable: PageV1Table?
-    @Published var writeOutcome: String?
+@Observable
+final class BridgeModel {
+    var status: String = "starting…"
+    var bridgeError: String?
+    var profiles: [BridgeProfileItem] = []
+    var sessionHex: String?
+    var connectError: String?
+    var connectingName: String?
+    var catalogSummary: String?
+    var catalogError: String?
+    var catalogTable: PageV1Table?
+    var writeOutcome: String?
     // Pagination state for the current result (fetch_page).
     var resultIdData: Data?
     var resultRevision: UInt64 = 0
     var nextStartRow: UInt64?
     var connectedEngine: String = ""
-    @Published var queryText: String = "SELECT 1;"
-    @Published var reviewOutcome: String?
-    @Published var reviewError: String?
+    var queryText: String = "SELECT 1;"
+    var reviewOutcome: String?
+    var reviewError: String?
     // Direct-connect form (no saved profile required).
-    @Published var formEngine: String = "postgresql"
-    @Published var formHost: String = "127.0.0.1"
-    @Published var formPort: String = "5432"
-    @Published var formDatabase: String = "postgres"
-    @Published var formUser: String = "postgres"
-    @Published var formPassword: String = ""
+    var formEngine: String = "postgresql"
+    var formHost: String = "127.0.0.1"
+    var formPort: String = "5432"
+    var formDatabase: String = "postgres"
+    var formUser: String = "postgres"
+    var formPassword: String = ""
     var bridge: TableRockBridge?
     var sessionData: Data?
 
@@ -290,9 +295,10 @@ final class BridgeModel: ObservableObject {
 }
 
 struct ContentView: View {
-    @EnvironmentObject private var model: BridgeModel
+    @Environment(BridgeModel.self) private var model
 
     var body: some View {
+        @Bindable var model = model
         NavigationSplitView {
             // Connection list (left sidebar).
             List(model.profiles, id: \.name) { profile in
@@ -409,6 +415,18 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .task { model.initialize() }
+    }
+}
+
+struct NativeSettingsView: View {
+    var body: some View {
+        Form {
+            LabeledContent("Storage", value: "Local only")
+            LabeledContent("Telemetry", value: "Off by default")
+        }
+        .formStyle(.grouped)
+        .padding()
+        .frame(width: 420)
     }
 }
 

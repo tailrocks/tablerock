@@ -10,7 +10,8 @@
 
 ## Status
 
-- **Checkpoints 1–7 DONE (2026-07-18) + behaviorally verified (2026-07-19)**
+- **Checkpoints 1–7 prototype complete (2026-07-18) + behaviorally verified
+  (2026-07-19); plan remains IN PROGRESS**
   — full workbench delivered via Command Line Tools only (no full Xcode, no
   Developer ID, no CLT license acceptance). The build uses direct `swiftc`
   (`scripts/build-native-app.sh`), not SwiftPM: swiftc links the cargo release
@@ -27,7 +28,10 @@
   the plan-019 distribution gate gates the *notarized XCFramework release*
   (full Xcode + Developer ID — operator); a *workable local app* does not
   require it, and the direct-swiftc build avoids the CLT license that SwiftPM
-  requires.
+  requires. The prototype does not yet satisfy the plan's AppKit controls,
+  off-main actor polling, accessibility, appearance, or Instruments done
+  criteria. Evidence 407 removes `ObservableObject` and adds the required
+  Settings scene; remaining criteria stay open.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
