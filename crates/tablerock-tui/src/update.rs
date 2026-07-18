@@ -3715,7 +3715,10 @@ fn run_script_entire_buffer(model: &mut Model) -> Update {
     run_sql_script(model, session_id_hex)
 }
 
-/// Redis command editor: tokenize lines, deny blocking, run sequential pipeline.
+/// Redis command editor: tokenize lines, deny mixed blocking, run sequential pipeline.
+///
+/// A **single** BLPOP/BRPOP with a key uses the disposable-connection path
+/// (engine `blocking_pop`). Mixed pipelines still deny blocking lines.
 fn run_redis_pipeline(model: &mut Model, session_id_hex: String) -> Update {
     use crate::model::redis_command::{RedisCommandSafety, parse_command_line};
     let Some(ed) = model.workbench().active_editor() else {
@@ -3725,6 +3728,7 @@ fn run_redis_pipeline(model: &mut Model, session_id_hex: String) -> Update {
         .run_text()
         .unwrap_or_else(|| ed.text().to_owned());
     let mut commands: Vec<(String, Vec<String>)> = Vec::new();
+    let mut isolated_blocking: Option<(String, String)> = None;
     for raw in text.lines() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -3734,18 +3738,65 @@ fn run_redis_pipeline(model: &mut Model, session_id_hex: String) -> Update {
         match parsed.safety {
             RedisCommandSafety::Empty => continue,
             RedisCommandSafety::BlockingDenied => {
+                // Isolated path only for lone BLPOP/BRPOP + first key.
+                if matches!(parsed.name.as_str(), "BLPOP" | "BRPOP")
+                    && !parsed.args.is_empty()
+                    && commands.is_empty()
+                    && isolated_blocking.is_none()
+                {
+                    isolated_blocking = Some((parsed.name, parsed.args[0].clone()));
+                    continue;
+                }
                 if let Some(grid) = model.workbench_mut().active_grid_mut() {
                     grid.mark_failed(format!(
-                        "blocking command denied: {}",
+                        "blocking command denied on shared pipeline: {}",
                         parsed.name
                     ));
                 }
                 return Update::render();
             }
             RedisCommandSafety::ReadOnly | RedisCommandSafety::MayWrite => {
+                if isolated_blocking.is_some() {
+                    // Blocking + later non-blocking → deny (no mixed isolated).
+                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                        grid.mark_failed(
+                            "blocking BLPOP/BRPOP must be alone for isolated connection",
+                        );
+                    }
+                    return Update::render();
+                }
                 commands.push((parsed.name, parsed.args));
             }
         }
+    }
+    if let Some((_name, key)) = isolated_blocking {
+        if !commands.is_empty() {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(
+                    "blocking BLPOP/BRPOP must be alone for isolated connection",
+                );
+            }
+            return Update::render();
+        }
+        let token = model.mint_request_token();
+        let context_revision = model.workbench().context_revision;
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.operation = GridOperationState::Running;
+            grid.error_label = None;
+        }
+        let selected = model.workbench().selected_tab;
+        if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+            tab.running = true;
+        }
+        return Update {
+            render: true,
+            effect: Some(Effect::RedisBlockingPop {
+                request_token: token,
+                session_id_hex,
+                context_revision,
+                key,
+            }),
+        };
     }
     if commands.is_empty() {
         return Update::unchanged();
@@ -5144,9 +5195,20 @@ mod tests {
             }
             other => panic!("expected ExecuteRedisPipeline, got {other:?}"),
         }
-        // Blocking denied before effect.
+        // Lone BLPOP → disposable-connection effect (not shared-session deny).
         if let Some(ed) = model.workbench_mut().active_editor_mut() {
             ed.set_text("BLPOP q 0\n");
+            ed.set_cursor(ed.text().len());
+        }
+        model.set_action(ActionId::RunSql);
+        let isolated = update(&mut model, Message::Activate);
+        match isolated.effects().next() {
+            Some(Effect::RedisBlockingPop { key, .. }) => assert_eq!(&*key, "q"),
+            other => panic!("expected RedisBlockingPop, got {other:?}"),
+        }
+        // Mixed pipeline with blocking still denied.
+        if let Some(ed) = model.workbench_mut().active_editor_mut() {
+            ed.set_text("GET k\nBLPOP q 0\n");
             ed.set_cursor(ed.text().len());
         }
         model.set_action(ActionId::RunSql);

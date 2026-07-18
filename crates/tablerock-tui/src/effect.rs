@@ -358,6 +358,14 @@ pub enum Effect {
         /// Pre-tokenized commands: (name, args as UTF-8 strings).
         commands: Vec<(String, Vec<String>)>,
     },
+    /// Isolated BLPOP on a disposable connection (not the shared session multiplex).
+    RedisBlockingPop {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// Key to BLPOP (first key only for this residual).
+        key: String,
+    },
     /// Load bounded INFO snapshot into the inspector.
     LoadRedisInfo {
         request_token: RequestToken,

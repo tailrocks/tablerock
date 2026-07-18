@@ -122,6 +122,7 @@ extended; CI updated.
   no MULTI/EXEC; blocking denied per-line; later lines still run)
 - ~~Official command-metadata completion table~~ (closed: evidence 317;
   curated open-command names, not redis-doc dump; wired into CompletionMenu)
+- ~~Disposable-connection BLPOP/BRPOP from command editor~~ (closed: evidence 322)
 - ~~Multi-type collection mutations (HSET/HDEL/SADD/SREM/ZADD/ZREM) on apply path~~
   (closed: evidence 312–314; key-view RAdd/RRem stage + review wired)
 - ~~MATCH pattern filter on ScanRedisKeys~~ (closed: evidence 311)

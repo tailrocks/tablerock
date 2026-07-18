@@ -182,8 +182,8 @@ tokenizer/classifier, sequential SET/DEL/HSET/HDEL/SADD/SREM/ZADD/ZREM
 apply, KEYS ban, SCAN MATCH + HSCAN/SSCAN/ZSCAN first-page key views,
 key-view stage RAdd/RRem → review/apply, RMore collection pages, command
 editor sequential pipeline with per-command ok/err, curated command
-completion (evidence 311–317). Residual polish: disposable-connection
-blocking isolation; Pub/Sub UI post-parity.
+completion, isolated BLPOP/BRPOP disposable connection (evidence 311–317,
+322). Residual polish: Pub/Sub UI post-parity.
 
 Deliver logical database isolation, SCAN navigation, namespaces, byte-safe
 keys/values, type views, TTL, bounded server overview, command

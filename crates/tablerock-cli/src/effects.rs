@@ -638,6 +638,29 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::RedisBlockingPop {
+                request_token,
+                session_id_hex,
+                context_revision,
+                key,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let results = Arc::clone(&self.results);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = execute_redis_blocking_pop(
+                        sessions,
+                        results,
+                        ingress.clone(),
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        key,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::LoadRedisInfo {
                 request_token,
                 session_id_hex,
@@ -4372,6 +4395,132 @@ async fn open_redis_key(
             context_revision,
             reason: FailureProjection::Label(e.to_string()),
         }),
+    }
+}
+
+async fn execute_redis_blocking_pop(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    results: Arc<Mutex<ResultStore>>,
+    _ingress: RootMessageSender,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    key: String,
+) -> Message {
+    use tablerock_core::{
+        BoundedBytes, ByteLimit, Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId,
+        Revision,
+    };
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid session id".into()),
+            });
+        }
+    };
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+        });
+    };
+    if session.engine() != CoreEngine::Redis {
+        return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("blocking pop is Redis-only".into()),
+        });
+    }
+    let key_bytes = match BoundedBytes::copy_from_slice(key.as_bytes(), ByteLimit::new(512)) {
+        Ok(b) => b,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("key too long for BLPOP".into()),
+            });
+        }
+    };
+    let limits = PageLimits::new(1, 8, 64 * 1024, 16 * 1024);
+    let request = DriverPageRequest::RedisBlockingPop {
+        key: key_bytes,
+        limits,
+        max_cell_bytes: 16 * 1024,
+    };
+    let mut stream = match session.start_page_stream(request).await {
+        Ok(s) => s,
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    let low = request_token.max(1);
+    let result_id =
+        ResultId::from_parts(IdParts::new(1, low).expect("id parts")).expect("result id");
+    let identity = PageIdentity::new(result_id, Revision::INITIAL, CoreEngine::Redis);
+    {
+        let mut store = results.lock().await;
+        let _ = store.open_result(identity);
+    }
+    match stream.next_page(identity, 0).await {
+        Ok(Some(page)) => {
+            {
+                let mut store = results.lock().await;
+                let _ = store.admit(page.clone());
+            }
+            project_page_message(
+                request_token,
+                context_revision,
+                page,
+                true,
+                None,
+                None,
+                Some(format!("BLPOP isolated · key {key}")),
+            )
+        }
+        Ok(None) => Message::Engine(tablerock_tui::EngineMsg::GridPage {
+            request_token,
+            context_revision,
+            start_row: 0,
+            columns: Vec::new(),
+            cells: Vec::new(),
+            row_count: 0,
+            totals_exact: Some(0),
+            totals_estimated: None,
+            bytes: 0,
+            truncated: false,
+            complete: true,
+            identity_columns: None,
+            server_query_id: None,
+            server_progress: Some(format!("BLPOP isolated · key {key} · empty")),
+        }),
+        Err(e) => {
+            let label = e.to_string();
+            if label.contains("cancel") {
+                Message::Engine(tablerock_tui::EngineMsg::GridCancelled {
+                    request_token,
+                    label: "server confirmed cancelled".into(),
+                })
+            } else {
+                Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                    request_token,
+                    context_revision,
+                    reason: FailureProjection::Label(label),
+                })
+            }
+        }
     }
 }
 
