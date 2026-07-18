@@ -1912,35 +1912,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     }
                 }
                 ConfirmDialog::QuickSwitch { confirm_buffer } => {
-                    let needle = confirm_buffer.trim();
-                    let tabs = &model.workbench().tabs;
-                    if tabs.is_empty() {
-                        model.set_confirm(None);
-                        return Update::render();
-                    }
-                    let selected = if needle.is_empty() {
-                        Some(model.workbench().selected_tab)
-                    } else if let Ok(n) = needle.parse::<usize>() {
-                        // 1-based index.
-                        if n >= 1 && n <= tabs.len() {
-                            Some(n - 1)
-                        } else {
-                            None
-                        }
-                    } else {
-                        let lower = needle.to_ascii_lowercase();
-                        tabs.iter().position(|t| {
-                            t.title.to_ascii_lowercase().contains(&lower)
-                                || t.id.to_string() == needle
-                        })
-                    };
-                    model.set_confirm(None);
-                    if let Some(idx) = selected {
-                        model.workbench_mut().selected_tab = idx;
-                    } else if let Some(g) = model.workbench_mut().active_grid_mut() {
-                        g.mark_failed(format!("no tab matches '{needle}'"));
-                    }
-                    Update::render()
+                    apply_quick_switch(model, confirm_buffer.trim())
                 }
                 ConfirmDialog::FindReplace { confirm_buffer } => {
                     let raw = confirm_buffer.trim();
@@ -2793,7 +2765,12 @@ fn activate_selected_action(model: &mut Model) -> Update {
         }
         ActionId::ImportCsv if model.screen() == Screen::Workbench => import_csv_apply(model),
         ActionId::Explain if model.screen() == Screen::Workbench => explain_active_sql(model),
-        ActionId::QuickSwitch if model.screen() == Screen::Workbench => {
+        ActionId::QuickSwitch
+            if matches!(
+                model.screen(),
+                Screen::Workbench | Screen::Connections | Screen::ConnectionPicker
+            ) =>
+        {
             model.set_confirm(Some(ConfirmDialog::QuickSwitch {
                 confirm_buffer: String::new(),
             }));
@@ -2976,6 +2953,143 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::FormatSql
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
+    }
+}
+
+/// Ranked quick-switch hit (lower score = better).
+#[derive(Debug, Clone)]
+enum QuickHit {
+    Tab { index: usize },
+    Profile { id_hex: String },
+    SavedQuery { query_id: i64, name: String },
+}
+
+fn rank_label(needle: &str, label: &str) -> Option<u32> {
+    if needle.is_empty() {
+        return Some(100);
+    }
+    let n = needle.to_ascii_lowercase();
+    let l = label.to_ascii_lowercase();
+    if l == n {
+        Some(0)
+    } else if l.starts_with(&n) {
+        Some(1)
+    } else if l.contains(&n) {
+        Some(2 + (l.find(&n).unwrap_or(0) as u32).min(50))
+    } else {
+        None
+    }
+}
+
+fn apply_quick_switch(model: &mut Model, needle: &str) -> Update {
+    use crate::model::profiles::ProfileListState;
+    use crate::model::saved_query::SavedQueryPanel;
+
+    // Collect ranked candidates by screen.
+    let mut hits: Vec<(u32, QuickHit)> = Vec::new();
+
+    match model.screen() {
+        Screen::Workbench => {
+            for (i, tab) in model.workbench().tabs.iter().enumerate() {
+                let label = format!("t:{i}:{}", tab.title);
+                if let Some(score) = rank_label(needle, &tab.title)
+                    .or_else(|| rank_label(needle, &label))
+                    .or_else(|| {
+                        if needle.parse::<usize>().ok() == Some(i + 1) {
+                            Some(0)
+                        } else {
+                            None
+                        }
+                    })
+                {
+                    hits.push((score, QuickHit::Tab { index: i }));
+                }
+            }
+            if let SavedQueryPanel::Open { entries, .. } = &model.workbench().saved_queries {
+                for q in entries {
+                    let label = format!("q:{}", q.name);
+                    if let Some(score) = rank_label(needle, &q.name)
+                        .or_else(|| rank_label(needle, &label))
+                        .or_else(|| rank_label(needle, &q.statement_preview))
+                    {
+                        hits.push((
+                            score.saturating_add(10), // prefer tabs slightly
+                            QuickHit::SavedQuery {
+                                query_id: q.query_id,
+                                name: q.name.clone(),
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+        Screen::Connections | Screen::ConnectionPicker => {
+            if let ProfileListState::Loaded { rows, .. } = model.profiles() {
+                for row in rows {
+                    let labels = [
+                        row.name.as_str(),
+                        row.target_summary.as_str(),
+                        row.engine_label.as_str(),
+                    ];
+                    let mut best = None;
+                    for lab in labels {
+                        if let Some(s) = rank_label(needle, lab) {
+                            best = Some(best.map_or(s, |b: u32| b.min(s)));
+                        }
+                    }
+                    if let Some(score) = best {
+                        hits.push((
+                            score,
+                            QuickHit::Profile {
+                                id_hex: row.id_hex.clone(),
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+        Screen::Editor => {}
+    }
+
+    hits.sort_by_key(|(score, _)| *score);
+    model.set_confirm(None);
+
+    let Some((_, hit)) = hits.into_iter().next() else {
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.mark_failed(format!("no switch match for '{needle}'"));
+        } else if matches!(
+            model.screen(),
+            Screen::Connections | Screen::ConnectionPicker
+        ) {
+            // Surface via profiles failure-style status without dropping list.
+            if let ProfileListState::Loaded { .. } = model.profiles() {
+                // keep loaded; no-op failure surface via editor if present
+            }
+        }
+        return Update::render();
+    };
+
+    match hit {
+        QuickHit::Tab { index } => {
+            model.workbench_mut().selected_tab = index;
+            Update::render()
+        }
+        QuickHit::Profile { id_hex } => {
+            if let ProfileListState::Loaded { selected_id, .. } = model.profiles_mut() {
+                *selected_id = Some(id_hex);
+            }
+            Update::render()
+        }
+        QuickHit::SavedQuery { query_id, name: _ } => {
+            let token = model.mint_request_token();
+            Update {
+                render: true,
+                effect: Some(Effect::LoadNamedQuery {
+                    request_token: token,
+                    query_id,
+                }),
+            }
+        }
     }
 }
 
@@ -3741,6 +3855,7 @@ fn cycle_action(
                 ActionId::New,
                 ActionId::ImportUrl,
                 ActionId::OpenExternalUrl,
+                ActionId::QuickSwitch,
                 ActionId::Remove,
                 ActionId::Quit,
             ],
@@ -5424,6 +5539,105 @@ mod tests {
         let _ = update(&mut model, Message::Activate);
         assert_eq!(model.workbench().selected_tab, 1);
         assert_eq!(model.workbench().tabs[1].title, "report.sql");
+    }
+
+    #[test]
+    fn quick_switch_ranks_profiles_on_connections() {
+        use crate::model::profiles::{
+            LiveConnectionState, ProfileListState, ProfileRowProjection,
+        };
+        let mut model = Model::default();
+        model.set_screen(Screen::Connections);
+        model.set_profiles(ProfileListState::Loaded {
+            request_token: 1,
+            rows: vec![
+                ProfileRowProjection {
+                    id_hex: "1111".into(),
+                    name: "staging".into(),
+                    engine_label: "PostgreSQL".into(),
+                    group: None,
+                    favorite: false,
+                    target_summary: "s.example:5432/app".into(),
+                    environment: None,
+                    production_warning: false,
+                    safety_label: "Confirm writes".into(),
+                    plaintext_secret_warning: false,
+                    live_state: LiveConnectionState::Disconnected,
+                },
+                ProfileRowProjection {
+                    id_hex: "2222".into(),
+                    name: "prod-app".into(),
+                    engine_label: "PostgreSQL".into(),
+                    group: None,
+                    favorite: true,
+                    target_summary: "p.example:5432/app".into(),
+                    environment: Some("production".into()),
+                    production_warning: true,
+                    safety_label: "Confirm writes".into(),
+                    plaintext_secret_warning: false,
+                    live_state: LiveConnectionState::Disconnected,
+                },
+            ],
+            selected_id: Some("1111".into()),
+            search: String::new(),
+            collapsed: Vec::new(),
+        });
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::QuickSwitch);
+        let _ = update(&mut model, Message::Activate);
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("prod".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.profiles(),
+            ProfileListState::Loaded {
+                selected_id: Some(id),
+                ..
+            } if id == "2222"
+        ));
+    }
+
+    #[test]
+    fn quick_switch_loads_saved_query_by_name() {
+        use crate::model::saved_query::{SavedQueryPanel, SavedQueryRow};
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().saved_queries = SavedQueryPanel::Open {
+            request_token: 1,
+            entries: vec![SavedQueryRow {
+                query_id: 42,
+                name: "weekly-report".into(),
+                engine_label: "PostgreSQL".into(),
+                statement_preview: "select 1".into(),
+            }],
+            selected: 0,
+        };
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::QuickSwitch);
+        let _ = update(&mut model, Message::Activate);
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("weekly".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::LoadNamedQuery {
+                query_id: 42,
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -264,18 +264,39 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             }
         }
         crate::model::ConfirmDialog::QuickSwitch { confirm_buffer } => {
-            let tabs = &model.workbench().tabs;
-            let preview: Vec<String> = tabs
-                .iter()
-                .enumerate()
-                .take(8)
-                .map(|(i, t)| format!("{}:{}", i + 1, t.title))
-                .collect();
+            use crate::model::profiles::ProfileListState;
+            use crate::model::saved_query::SavedQueryPanel;
+            let mut preview = Vec::new();
+            match model.screen() {
+                crate::model::Screen::Workbench => {
+                    for (i, t) in model.workbench().tabs.iter().enumerate().take(6) {
+                        preview.push(format!("t{}:{}", i + 1, t.title));
+                    }
+                    if let SavedQueryPanel::Open { entries, .. } = &model.workbench().saved_queries {
+                        for q in entries.iter().take(4) {
+                            preview.push(format!("q:{}", q.name));
+                        }
+                    }
+                }
+                crate::model::Screen::Connections
+                | crate::model::Screen::ConnectionPicker => {
+                    if let ProfileListState::Loaded { rows, .. } = model.profiles() {
+                        for r in rows.iter().take(8) {
+                            preview.push(format!("p:{}", r.name));
+                        }
+                    }
+                }
+                _ => {}
+            }
             (
-                "Switch tab?",
+                "Quick switch?",
                 format!(
-                    "Tabs: {}. Paste 1-based index or title substring [{confirm_buffer}]",
-                    preview.join(" ")
+                    "{}. Paste index/name substring [{confirm_buffer}]",
+                    if preview.is_empty() {
+                        "no candidates".into()
+                    } else {
+                        preview.join(" ")
+                    }
                 ),
             )
         }
@@ -415,6 +436,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let new = action_label(model, ActionId::New, "New");
     let import_url = action_label(model, ActionId::ImportUrl, "URL");
     let open_ext = action_label(model, ActionId::OpenExternalUrl, "OpenURL");
+    let quick_conn = action_label(model, ActionId::QuickSwitch, "Switch");
     let save = action_label(model, ActionId::Save, "Save");
     let test = action_label(model, ActionId::Test, "Test");
     let connect = action_label(model, ActionId::Connect, "Connect");
@@ -891,6 +913,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::OpenExternalUrl,
                         label: open_ext.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::QuickSwitch,
+                        label: quick_conn.as_str(),
                         enabled: true,
                         style: None,
                     },

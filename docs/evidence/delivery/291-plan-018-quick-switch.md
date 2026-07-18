@@ -18,4 +18,4 @@ cargo test -p tablerock-tui quick_switch
 
 ## Residual
 
-- Profile/saved-query ranking still open for full switcher breadth
+- Profile/saved-query ranking: closed in evidence 299
