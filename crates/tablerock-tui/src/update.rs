@@ -4308,6 +4308,76 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyLimitOffsetSql if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(text) = grid.limit_offset_sql() else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopySelectPageSql if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) = (grid.base_schema.as_ref(), grid.base_table.as_ref())
+            else {
+                return Update::unchanged();
+            };
+            if schema.is_empty() || table.is_empty() {
+                return Update::unchanged();
+            }
+            let cols = grid.visible_columns();
+            if cols.is_empty() {
+                return Update::unchanged();
+            }
+            let Some(limit) = grid.limit_offset_sql() else {
+                return Update::unchanged();
+            };
+            let col_list = cols
+                .iter()
+                .map(|c| quote_ident_sql(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut text = format!(
+                "SELECT {col_list}\nFROM {}.{}",
+                quote_ident_sql(schema),
+                quote_ident_sql(table)
+            );
+            if let Some(where_sql) = grid.filters_where_sql() {
+                text.push('\n');
+                text.push_str(&where_sql);
+            }
+            if let Some(order) = grid.order_by_sql() {
+                text.push('\n');
+                text.push_str(&order);
+            }
+            text.push('\n');
+            text.push_str(&limit);
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some("copied SELECT page scaffold".into());
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyPkNames if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -6073,6 +6143,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopySelectOrderSql
         | ActionId::CopyFilterWhereSql
         | ActionId::CopySelectFilterSql
+        | ActionId::CopyLimitOffsetSql
+        | ActionId::CopySelectPageSql
         | ActionId::CopyPkNames
         | ActionId::CopyPkIdents
         | ActionId::CopyLocator
@@ -7831,6 +7903,8 @@ fn cycle_action(
                 ActionId::CopySelectOrderSql,
                 ActionId::CopyFilterWhereSql,
                 ActionId::CopySelectFilterSql,
+                ActionId::CopyLimitOffsetSql,
+                ActionId::CopySelectPageSql,
                 ActionId::CopyPkNames,
                 ActionId::CopyPkIdents,
                 ActionId::CopyLocator,
@@ -9717,6 +9791,49 @@ mod tests {
                 assert!(text.contains("width") || text.contains("16"), "{text}");
             }
             other => panic!("expected layout json copy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copy_limit_offset_and_select_page_sql() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into()];
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.row_count = 25;
+            grid.start_row = 50;
+            grid.add_filter_chip("active", "eq", Some("t".into()));
+            grid.push_sort_column("id");
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyLimitOffsetSql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "LIMIT 25\nOFFSET 50");
+            }
+            other => panic!("expected LIMIT/OFFSET, got {other:?}"),
+        }
+        model.set_action(ActionId::CopySelectPageSql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("SELECT \"id\""), "{text}");
+                assert!(text.contains("FROM \"public\".\"users\""), "{text}");
+                assert!(text.contains("WHERE \"active\" = 't'"), "{text}");
+                assert!(text.contains("ORDER BY \"id\" ASC"), "{text}");
+                assert!(text.contains("LIMIT 25"), "{text}");
+                assert!(text.contains("OFFSET 50"), "{text}");
+            }
+            other => panic!("expected SELECT page, got {other:?}"),
         }
     }
 

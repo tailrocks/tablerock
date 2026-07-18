@@ -1036,6 +1036,21 @@ impl DataGridModel {
         Some(format!("WHERE {}", parts.join(" AND ")))
     }
 
+    /// SQL LIMIT/OFFSET fragment for the resident page window.
+    ///
+    /// Uses `row_count` as LIMIT and `start_row` as OFFSET. No-op when empty.
+    #[must_use]
+    pub fn limit_offset_sql(&self) -> Option<String> {
+        if self.row_count == 0 {
+            return None;
+        }
+        if self.start_row == 0 {
+            Some(format!("LIMIT {}", self.row_count))
+        } else {
+            Some(format!("LIMIT {}\nOFFSET {}", self.row_count, self.start_row))
+        }
+    }
+
     /// SQL ORDER BY fragment from sort keys (quoted idents; presentation aid).
     ///
     /// Empty when no sort. Directions use ASC/DESC; ColumnSort::None skipped.
@@ -3075,6 +3090,20 @@ mod tests {
         assert_eq!(sql, "ORDER BY \"name\" ASC, \"age\" DESC");
         g.sort.clear();
         assert!(g.order_by_sql().is_none());
+    }
+
+    #[test]
+    fn limit_offset_sql_from_resident_window() {
+        let mut g = DataGridModel::default();
+        assert!(g.limit_offset_sql().is_none());
+        g.row_count = 50;
+        g.start_row = 0;
+        assert_eq!(g.limit_offset_sql().as_deref(), Some("LIMIT 50"));
+        g.start_row = 100;
+        assert_eq!(
+            g.limit_offset_sql().as_deref(),
+            Some("LIMIT 50\nOFFSET 100")
+        );
     }
 
     #[test]

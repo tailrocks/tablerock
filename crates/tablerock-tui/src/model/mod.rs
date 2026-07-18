@@ -198,6 +198,10 @@ pub enum ActionId {
     CopyFilterWhereSql,
     /// Copy SELECT visible cols FROM base WHERE filter chips [ORDER BY].
     CopySelectFilterSql,
+    /// Copy LIMIT/OFFSET for the resident page window.
+    CopyLimitOffsetSql,
+    /// Copy SELECT…[WHERE][ORDER BY] LIMIT/OFFSET for resident window.
+    CopySelectPageSql,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).

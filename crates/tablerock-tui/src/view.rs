@@ -750,6 +750,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_sel_ord = action_label(model, ActionId::CopySelectOrderSql, "CopySelO");
     let copy_filt_where = action_label(model, ActionId::CopyFilterWhereSql, "CopyFWhere");
     let copy_sel_filt = action_label(model, ActionId::CopySelectFilterSql, "CopySelF");
+    let copy_limit = action_label(model, ActionId::CopyLimitOffsetSql, "CopyLim");
+    let copy_sel_page = action_label(model, ActionId::CopySelectPageSql, "CopySelP");
     let copy_pk = action_label(model, ActionId::CopyPkNames, "CopyPk");
     let copy_pk_q = action_label(model, ActionId::CopyPkIdents, "CopyPkQ");
     let copy_loc = action_label(model, ActionId::CopyLocator, "CopyLoc");
@@ -1692,6 +1694,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopySelectFilterSql,
                         label: copy_sel_filt.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyLimitOffsetSql,
+                        label: copy_limit.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopySelectPageSql,
+                        label: copy_sel_page.as_str(),
                         enabled: true,
                         style: None,
                     },
