@@ -1,5 +1,6 @@
 //! Local-only persistence owned by one serialized worker thread.
 
+mod history_store;
 mod profile_store;
 mod recovery;
 
@@ -16,6 +17,9 @@ use std::{
     time::Duration,
 };
 
+pub use history_store::{
+    DEFAULT_HISTORY_LIMIT, HistoryAppend, HistoryEntry, HistoryOutcomeClass, HistoryRetention,
+};
 use profile_store::EncodedProfile;
 pub use recovery::{
     BACKUP_FORMAT_VERSION, BackupManifest, MAX_BACKUP_BYTES, create_backup, read_backup_manifest,
@@ -42,6 +46,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
         include_str!("../migrations/0006-profile-group-list-index.sql"),
     ),
     (7, include_str!("../migrations/0007-environment-tag.sql")),
+    (8, include_str!("../migrations/0008-query-history.sql")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,6 +179,42 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
+    /// Append a query-history entry (honors retention; never stores result rows).
+    pub fn append_history(
+        &self,
+        request: HistoryAppend,
+    ) -> Result<Option<i64>, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::AppendHistory(request, DEFAULT_HISTORY_LIMIT, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    /// List/search history (newest first). Search only matches stored statement text.
+    pub fn list_history(
+        &self,
+        search: Option<String>,
+        limit: u32,
+    ) -> Result<Vec<HistoryEntry>, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::ListHistory(search, limit, sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn history_count(&self) -> Result<u64, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::HistoryCount(sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
     pub fn shutdown(mut self) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::Shutdown(sender))?;
@@ -239,6 +280,17 @@ enum Command {
     ),
     DeleteGroup(String, mpsc::SyncSender<Result<u32, PersistenceError>>),
     ListGroups(mpsc::SyncSender<Result<Vec<String>, PersistenceError>>),
+    AppendHistory(
+        HistoryAppend,
+        u32,
+        mpsc::SyncSender<Result<Option<i64>, PersistenceError>>,
+    ),
+    ListHistory(
+        Option<String>,
+        u32,
+        mpsc::SyncSender<Result<Vec<HistoryEntry>, PersistenceError>>,
+    ),
+    HistoryCount(mpsc::SyncSender<Result<u64, PersistenceError>>),
     Shutdown(mpsc::SyncSender<Result<(), PersistenceError>>),
 }
 
@@ -355,6 +407,36 @@ fn worker_main(
                     )
                     .await
                     .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::AppendHistory(request, max_rows, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        history_store::append(&connection, &request, max_rows),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::ListHistory(search, limit, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        history_store::list(&connection, search.as_deref(), limit),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::HistoryCount(reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(OPERATION_TIMEOUT, history_store::count(&connection))
+                        .await
+                        .map_err(|_| PersistenceError::Timeout)?
                 });
                 let _ = reply.send(result);
             }
