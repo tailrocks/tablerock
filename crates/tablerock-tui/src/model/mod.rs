@@ -114,6 +114,14 @@ pub enum ActionId {
     CycleSort,
     /// Add an equality filter for the cursor column using the cursor cell text.
     AddFilter,
+    /// Add IS NULL filter for the cursor column.
+    FilterIsNull,
+    /// Add IS NOT NULL filter for the cursor column.
+    FilterIsNotNull,
+    /// Remove the last server filter chip and re-browse.
+    RemoveLastFilter,
+    /// Remove all server filters for the cursor column and re-browse.
+    RemoveColumnFilters,
     /// Persist current grid filters as the named "default" preset for base table.
     SaveFilter,
     /// Apply the named "default" filter preset for the active base table.

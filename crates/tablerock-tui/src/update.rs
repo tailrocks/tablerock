@@ -3315,6 +3315,60 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::FilterIsNull if model.screen() == Screen::Workbench => {
+            let Some(col) = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.columns.get(g.cursor_col).cloned())
+            else {
+                return Update::unchanged();
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.add_filter_chip(col, "isnull", None);
+            }
+            rebrowse_active_table(model)
+        }
+        ActionId::FilterIsNotNull if model.screen() == Screen::Workbench => {
+            let Some(col) = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.columns.get(g.cursor_col).cloned())
+            else {
+                return Update::unchanged();
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.add_filter_chip(col, "isnotnull", None);
+            }
+            rebrowse_active_table(model)
+        }
+        ActionId::RemoveLastFilter if model.screen() == Screen::Workbench => {
+            let removed = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.remove_last_filter());
+            if !removed {
+                return Update::unchanged();
+            }
+            rebrowse_active_table(model)
+        }
+        ActionId::RemoveColumnFilters if model.screen() == Screen::Workbench => {
+            let Some(col) = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.columns.get(g.cursor_col).cloned())
+            else {
+                return Update::unchanged();
+            };
+            let removed = model
+                .workbench_mut()
+                .active_grid_mut()
+                .map(|g| g.remove_filters_for_column(&col))
+                .unwrap_or(0);
+            if removed == 0 {
+                return Update::unchanged();
+            }
+            rebrowse_active_table(model)
+        }
         ActionId::SaveFilter if model.screen() == Screen::Workbench => {
             if model.workbench().profile_id_hex.is_none() {
                 return Update::unchanged();
@@ -4048,6 +4102,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyRow
         | ActionId::CycleSort
         | ActionId::AddFilter
+        | ActionId::FilterIsNull
+        | ActionId::FilterIsNotNull
+        | ActionId::RemoveLastFilter
+        | ActionId::RemoveColumnFilters
         | ActionId::SaveFilter
         | ActionId::ApplyFilter
         | ActionId::ClearFilters
@@ -5326,6 +5384,10 @@ fn cycle_action(
                 ActionId::CopySqlUpdate,
                 ActionId::CycleSort,
                 ActionId::AddFilter,
+                ActionId::FilterIsNull,
+                ActionId::FilterIsNotNull,
+                ActionId::RemoveLastFilter,
+                ActionId::RemoveColumnFilters,
                 ActionId::SaveFilter,
                 ActionId::ApplyFilter,
                 ActionId::ClearFilters,
@@ -6836,6 +6898,64 @@ mod tests {
             grid.error_label.as_deref(),
             Some("notice: NOTICE: table-rock-notice")
         );
+    }
+
+    #[test]
+    fn filter_null_and_remove_last_chip() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("users");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.columns = vec!["id".into(), "email".into()];
+            grid.cursor_col = 1;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::FilterIsNull);
+        let null_out = update(&mut model, Message::Activate);
+        match null_out.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters.len(), 1);
+                assert_eq!(filters[0].0, "email");
+                assert_eq!(filters[0].1, "isnull");
+                assert!(filters[0].2.is_none());
+            }
+            other => panic!("expected isnull BrowseTable, got {other:?}"),
+        }
+        model.set_action(ActionId::FilterIsNotNull);
+        let nn = update(&mut model, Message::Activate);
+        match nn.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters.len(), 2);
+                assert_eq!(filters[1].1, "isnotnull");
+            }
+            other => panic!("expected isnotnull, got {other:?}"),
+        }
+        model.set_action(ActionId::RemoveLastFilter);
+        let popped = update(&mut model, Message::Activate);
+        match popped.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters.len(), 1);
+                assert_eq!(filters[0].1, "isnull");
+            }
+            other => panic!("expected pop filter, got {other:?}"),
+        }
+        model.set_action(ActionId::RemoveColumnFilters);
+        let cleared_col = update(&mut model, Message::Activate);
+        match cleared_col.effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert!(filters.is_empty());
+            }
+            other => panic!("expected clear column filters, got {other:?}"),
+        }
     }
 
     #[test]

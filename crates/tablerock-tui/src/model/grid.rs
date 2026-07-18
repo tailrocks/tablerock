@@ -909,6 +909,18 @@ impl DataGridModel {
         self.raw_where = None;
     }
 
+    /// Remove the most recently added server filter chip. Returns true if one was removed.
+    pub fn remove_last_filter(&mut self) -> bool {
+        self.filters.pop().is_some()
+    }
+
+    /// Remove all server filters for a column name (keeps sort/raw_where).
+    pub fn remove_filters_for_column(&mut self, column: &str) -> usize {
+        let before = self.filters.len();
+        self.filters.retain(|f| f.column != column);
+        before.saturating_sub(self.filters.len())
+    }
+
     /// Visible column names in display order.
     #[must_use]
     pub fn visible_columns(&self) -> Vec<String> {
@@ -1627,6 +1639,22 @@ mod tests {
         assert_eq!(hits, vec![0]);
         assert!(g.status_line().contains("page-local [alp]"));
         assert!(g.status_line().contains("sort"));
+    }
+
+    #[test]
+    fn remove_last_and_column_filters() {
+        let mut g = DataGridModel::default();
+        g.add_filter_chip("a", "eq", Some("1".into()));
+        g.add_filter_chip("b", "isnull", None);
+        g.add_filter_chip("a", "isnotnull", None);
+        assert!(g.remove_last_filter());
+        assert_eq!(g.filters.len(), 2);
+        assert_eq!(g.remove_filters_for_column("a"), 1);
+        assert_eq!(g.filters.len(), 1);
+        assert_eq!(g.filters[0].column, "b");
+        assert!(g.remove_last_filter());
+        assert!(g.filters.is_empty());
+        assert!(!g.remove_last_filter());
     }
 
     #[test]

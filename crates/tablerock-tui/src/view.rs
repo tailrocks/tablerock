@@ -584,6 +584,10 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let save_intent = action_label(model, ActionId::SaveIntent, "SaveIntent");
     let save_filter = action_label(model, ActionId::SaveFilter, "SaveFilt");
     let apply_filter = action_label(model, ActionId::ApplyFilter, "LoadFilt");
+    let filt_null = action_label(model, ActionId::FilterIsNull, "IsNull");
+    let filt_nn = action_label(model, ActionId::FilterIsNotNull, "NotNull");
+    let filt_pop = action_label(model, ActionId::RemoveLastFilter, "PopFilt");
+    let filt_col = action_label(model, ActionId::RemoveColumnFilters, "ClrColF");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
@@ -841,6 +845,30 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ApplyFilter,
                         label: apply_filter.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterIsNull,
+                        label: filt_null.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterIsNotNull,
+                        label: filt_nn.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RemoveLastFilter,
+                        label: filt_pop.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RemoveColumnFilters,
+                        label: filt_col.as_str(),
                         enabled: true,
                         style: None,
                     },
