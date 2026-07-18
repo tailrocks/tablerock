@@ -20,6 +20,7 @@ let statement = ProcessInfo.processInfo.environment["TABLEROCK_QUERY"] ?? "SELEC
 let database = ProcessInfo.processInfo.environment["TABLEROCK_DB"] ?? "db"
 let user = ProcessInfo.processInfo.environment["TABLEROCK_USER"] ?? "u"
 let password = ProcessInfo.processInfo.environment["TABLEROCK_PASSWORD"] ?? "secret"
+let catalogMode = ProcessInfo.processInfo.environment["TABLEROCK_CATALOG"] != nil
 
 let session = try bridge.open(params: OpenParams(
     engine: engine,
@@ -34,10 +35,12 @@ print("opened \(engine) session against \(host):\(port)")
 let spec = SubmitSpec(
     intent: "execute",
     sessionId: session,
-    statement: statement,
+    statement: catalogMode
+        ? "SELECT schemaname AS schema, tablename AS table FROM pg_tables ORDER BY 1, 2"
+        : statement,
     resultId: nil,
     startRow: nil,
-    rowCount: 10,
+    rowCount: 500,
     expectedRevision: 0
 )
 let opId = try bridge.submit(spec: spec)

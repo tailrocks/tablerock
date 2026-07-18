@@ -224,10 +224,13 @@ extension PageV1 {
 
         var rows: [[String]] = []
         let cols = Int(columnCount)
-        for r in 0..<Int(rowCount) {
+        let nRows = Int(rowCount)
+        for r in 0..<nRows {
             var row: [String] = []
             for c in 0..<cols {
-                let i = r * cols + c
+                // Columnar layout: column c's values are contiguous, so cell
+                // (r, c) is at c * rowCount + r (not row-major r * cols + c).
+                let i = c * nRows + r
                 let isNull = (bitmap[i / 8] & (1 << (i % 8))) != 0
                 if isNull {
                     row.append("∅")

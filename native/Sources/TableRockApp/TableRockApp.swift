@@ -41,6 +41,7 @@ final class BridgeModel: ObservableObject {
     var resultIdData: Data?
     var resultRevision: UInt64 = 0
     var nextStartRow: UInt64?
+    var connectedEngine: String = ""
     @Published var queryText: String = "SELECT 1;"
     @Published var reviewOutcome: String?
     @Published var reviewError: String?
@@ -117,6 +118,7 @@ final class BridgeModel: ObservableObject {
                 user: formUser,
                 password: formPassword
             ))
+            connectedEngine = formEngine
             sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
         } catch {
@@ -135,6 +137,7 @@ final class BridgeModel: ObservableObject {
         catalogError = nil
         do {
             let session = try bridge.openProfile(profileId: item.idBytes, passwordOverride: nil)
+            connectedEngine = item.engine
             sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
         } catch {
@@ -208,12 +211,25 @@ final class BridgeModel: ObservableObject {
         catalogSummary = nil
         catalogError = nil
         catalogTable = nil
+        // The bridge supports execute/probe/fetch_page (not a refresh_catalog
+        // intent), so the catalog browse runs an engine-appropriate listing
+        // query through execute.
+        let catalogSQL: String
+        switch connectedEngine {
+        case "postgresql":
+            catalogSQL = "SELECT schemaname AS schema, tablename AS table FROM pg_tables ORDER BY 1, 2"
+        case "clickhouse":
+            catalogSQL = "SELECT database AS schema, name AS table FROM system.tables ORDER BY 1, 2"
+        default:
+            catalogSummary = "catalog: no table listing for \(connectedEngine) (use a SCAN/key query)"
+            return
+        }
         do {
-            if let table = try fetchPage(intent: "refresh_catalog", statement: nil) {
+            if let table = try fetchPage(intent: "execute", statement: catalogSQL) {
                 catalogTable = table
-                catalogSummary = "catalog · \(table.columns.count) columns · \(table.rows.count) rows"
+                catalogSummary = "tables · \(table.rows.count)"
             } else {
-                catalogSummary = "catalog: no page"
+                catalogSummary = "catalog: no result page"
             }
         } catch {
             catalogError = "Browse failed: \(error)"
