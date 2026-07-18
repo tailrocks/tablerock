@@ -146,4 +146,34 @@ mod tests {
         assert_eq!(op_for_kind("zset", true), Some("zadd"));
         assert_eq!(op_for_kind("string", true), None);
     }
+
+    #[test]
+    fn parse_remaining_ops_and_edge_rejections() {
+        // Success paths for the remaining ops.
+        assert!(matches!(
+            parse_stage_buffer("hdel", "f"),
+            Some(MutationChangeSpec::RedisHashDelete { field }) if field == "f"
+        ));
+        assert!(matches!(
+            parse_stage_buffer("sadd", "m"),
+            Some(MutationChangeSpec::RedisSetAdd { member }) if member == "m"
+        ));
+        assert!(matches!(
+            parse_stage_buffer("srem", "m"),
+            Some(MutationChangeSpec::RedisSetRemove { member }) if member == "m"
+        ));
+        assert!(matches!(
+            parse_stage_buffer("zrem", "m"),
+            Some(MutationChangeSpec::RedisZSetRemove { member }) if member == "m"
+        ));
+
+        // zadd whitespace form rejects more than two tokens.
+        assert!(parse_stage_buffer("zadd", "1.0 m extra").is_none());
+        // hset rejects an oversized value (>64 KiB).
+        let oversized = format!("f={}", "v".repeat(65_537));
+        assert!(parse_stage_buffer("hset", &oversized).is_none());
+        // Unknown op and blank buffer are rejected.
+        assert!(parse_stage_buffer("flushall", "*").is_none());
+        assert!(parse_stage_buffer("hset", "   ").is_none());
+    }
 }
