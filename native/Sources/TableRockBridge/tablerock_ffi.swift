@@ -625,6 +625,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func cancel(operationId: Data) throws  -> CancelOutcome
     
     /**
+     * Attach a local-only persistence file for profile-backed open (idempotent replace).
+     */
+    func configurePersistence(path: String) throws 
+    
+    /**
      * Drops the Tokio runtime after service shutdown. Idempotent.
      */
     func destroyRuntime() throws 
@@ -653,6 +658,12 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Opens a session from connection parameters and returns a 16-byte session id.
      */
     func `open`(params: OpenParams) throws  -> Data
+    
+    /**
+     * Open by saved profile id (16 bytes). Literal host/port required; password may be
+     * supplied as an override when the stored source is not inline-resolvable.
+     */
+    func openProfile(profileId: Data, passwordOverride: String?) throws  -> Data
     
     /**
      * Test-only: panics inside catch_unwind so callers observe ContainedPanic.
@@ -793,6 +804,18 @@ open func cancel(operationId: Data)throws  -> CancelOutcome  {
 }
     
     /**
+     * Attach a local-only persistence file for profile-backed open (idempotent replace).
+     */
+open func configurePersistence(path: String)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_configure_persistence(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+}
+}
+    
+    /**
      * Drops the Tokio runtime after service shutdown. Idempotent.
      */
 open func destroyRuntime()throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
@@ -864,6 +887,21 @@ open func `open`(params: OpenParams)throws  -> Data  {
     uniffi_tablerock_ffi_fn_method_tablerockbridge_open(
             self.uniffiCloneHandle(),
         FfiConverterTypeOpenParams_lower(params),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Open by saved profile id (16 bytes). Literal host/port required; password may be
+     * supplied as an override when the stored source is not inline-resolvable.
+     */
+open func openProfile(profileId: Data, passwordOverride: String?)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_open_profile(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(profileId),
+        FfiConverterOptionString.lower(passwordOverride),uniffiCallStatus
     )
 })
 }
@@ -1803,6 +1841,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel() != 18861) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_configure_persistence() != 51889) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_destroy_runtime() != 55977) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1819,6 +1860,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_open() != 15944) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_open_profile() != 61180) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_panic_probe() != 16474) {

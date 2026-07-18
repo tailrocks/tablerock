@@ -9,9 +9,11 @@ use tablerock_core::{
     BoundedText, ByteLimit, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
     CommandScope, Engine, FieldValue, MutationChange, MutationPlan, MutationPlanLimits,
     MutationReviewRegistry, MutationTarget, OperationId, OperationOutcome, OperationScope,
-    OwnedValue, PageIdentity, PageKey, PageRequest, ResultStore, ResultStoreLimits, Revision,
-    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText,
+    OwnedValue, PageIdentity, PageKey, PageRequest, ProfileId, ProfileProperty, ResultStore,
+    ResultStoreLimits, Revision, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
+    StatementText,
 };
+use tablerock_persistence::PersistenceActor;
 use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession,
     ClickHouseTlsMode, DriverPageRequest, DriverRuntime, DriverSession, EngineService,
@@ -146,6 +148,8 @@ struct BridgeInner {
     /// Lowest sequence still retained in `events`.
     first_sequence: u64,
     accepting: bool,
+    /// Optional local-only profile store (never logs secrets).
+    persistence: Option<PersistenceActor>,
 }
 
 /// Process-scoped UniFFI facade. One instance owns the multi-thread runtime.
@@ -174,6 +178,21 @@ impl TableRockBridge {
     /// Opens a session from connection parameters and returns a 16-byte session id.
     pub fn open(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| self.open_inner(params))
+    }
+
+    /// Attach a local-only persistence file for profile-backed open (idempotent replace).
+    pub fn configure_persistence(&self, path: String) -> Result<(), BridgeError> {
+        catch_entry(|| self.configure_persistence_inner(path))
+    }
+
+    /// Open by saved profile id (16 bytes). Literal host/port required; password may be
+    /// supplied as an override when the stored source is not inline-resolvable.
+    pub fn open_profile(
+        &self,
+        profile_id: Vec<u8>,
+        password_override: Option<String>,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| self.open_profile_inner(profile_id, password_override))
     }
 
     /// Submits a command and returns a 16-byte operation id.
@@ -530,6 +549,81 @@ impl TableRockBridge {
             })?;
         inner.sessions.remove(&session_id);
         Ok(())
+    }
+
+    fn configure_persistence_inner(&self, path: String) -> Result<(), BridgeError> {
+        self.ensure_runtime_inner()?;
+        let actor = PersistenceActor::open(&path)
+            .map_err(|error| BridgeError::rejected("persistence-open", error.to_string()))?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        if let Some(previous) = inner.persistence.take() {
+            let _ = previous.shutdown();
+        }
+        inner.persistence = Some(actor);
+        Ok(())
+    }
+
+    fn open_profile_inner(
+        &self,
+        profile_id_bytes: Vec<u8>,
+        password_override: Option<String>,
+    ) -> Result<Vec<u8>, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let profile_id = ProfileId::from_bytes(
+            <[u8; 16]>::try_from(profile_id_bytes.as_slice())
+                .map_err(|_| BridgeError::rejected("bad-profile-id", "profile id must be 16 bytes"))?,
+        )
+        .map_err(|error| BridgeError::rejected("bad-profile-id", error.to_string()))?;
+        let params = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let actor = inner
+                .persistence
+                .as_ref()
+                .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+            let aggregate = actor
+                .get_profile(profile_id)
+                .map_err(|error| BridgeError::rejected("profile-load", error.to_string()))?
+                .ok_or_else(|| BridgeError::rejected("profile-missing", "profile not found"))?;
+            let connection = aggregate.connection();
+            let props = connection.properties();
+            let literal = |property: ProfileProperty| -> Option<String> {
+                props.literal(property).map(str::to_owned)
+            };
+            let host = literal(ProfileProperty::Host).ok_or_else(|| {
+                BridgeError::rejected("profile-host", "host literal required for bridge open")
+            })?;
+            let port = literal(ProfileProperty::Port)
+                .ok_or_else(|| {
+                    BridgeError::rejected("profile-port", "port literal required for bridge open")
+                })?
+                .parse::<u16>()
+                .map_err(|_| BridgeError::rejected("profile-port", "invalid port"))?;
+            let database = literal(ProfileProperty::DefaultContext).unwrap_or_default();
+            let user = literal(ProfileProperty::Username).unwrap_or_default();
+            let password = password_override.unwrap_or_default();
+            let engine = match connection.engine() {
+                Engine::PostgreSql => "postgresql",
+                Engine::ClickHouse => "clickhouse",
+                Engine::Redis => "redis",
+            };
+            OpenParams {
+                engine: engine.into(),
+                host,
+                port,
+                database,
+                user,
+                password,
+            }
+        };
+        self.open_inner(params)
     }
 
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
@@ -1033,6 +1127,7 @@ impl BridgeInner {
             next_sequence: 0,
             first_sequence: 0,
             accepting: true,
+            persistence: None,
         })
     }
 

@@ -13,7 +13,7 @@ use std::sync::{
 use tablerock_core::{
     BoundedText, ByteLimit, CancelDispatch, ColumnMetadata, Engine, EngineType, IdParts,
     OperationId, OwnedValue, PageDelivery, PageFacts, PageIdentity, PageLimits, PageWarnings,
-    ResultId, ResultPage, Revision, RowTotal,
+    ProfileId, ResultId, ResultPage, Revision, RowTotal,
 };
 use tablerock_engine::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
@@ -401,6 +401,114 @@ fn uniffi_surface_has_no_per_cell_export() {
     bridge.ensure_runtime().unwrap();
     // Only coarse methods: if this compiles, fetch_page returns Vec<u8>.
     let _ = bridge.fetch_page(vec![0; 16], 0, 0);
+}
+
+#[test]
+fn open_profile_requires_persistence_and_loads_literals() {
+    use std::fs;
+    use tablerock_core::{
+        ProfileAggregate, ProfileConnectionSnapshot, ProfileDurability, ProfileGroupName,
+        ProfileIdentity, ProfileLimits, ProfileName, ProfileOrganization, ProfilePolicy,
+        ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
+        ProfileSafetyMode, ProfileTag, ReconnectPreference, TlsPolicy,
+    };
+    use tablerock_persistence::PersistenceActor;
+
+    let path = std::env::temp_dir().join(format!(
+        "tablerock-bridge-profile-{}-{}.db",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = fs::remove_file(&path);
+    let actor = PersistenceActor::open(&path).unwrap();
+    let profile_id = ProfileId::from_parts(IdParts::new(1, 42).unwrap()).unwrap();
+    let properties = ProfilePropertySet::new(vec![
+        ProfilePropertyBinding::literal(
+            ProfileProperty::Host,
+            BoundedText::copy_from_str("127.0.0.1", ByteLimit::new(16)).unwrap(),
+        )
+        .unwrap(),
+        ProfilePropertyBinding::literal(
+            ProfileProperty::Port,
+            BoundedText::copy_from_str("1", ByteLimit::new(8)).unwrap(),
+        )
+        .unwrap(),
+        ProfilePropertyBinding::literal(
+            ProfileProperty::DefaultContext,
+            BoundedText::copy_from_str("postgres", ByteLimit::new(16)).unwrap(),
+        )
+        .unwrap(),
+        ProfilePropertyBinding::literal(
+            ProfileProperty::Username,
+            BoundedText::copy_from_str("postgres", ByteLimit::new(16)).unwrap(),
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+    let connection = ProfileConnectionSnapshot::new(
+        ProfileIdentity::new(
+            profile_id,
+            Revision::INITIAL,
+            Engine::PostgreSql,
+            ProfileName::new(BoundedText::copy_from_str("bridge-test", ByteLimit::new(32)).unwrap())
+                .unwrap(),
+        ),
+        properties,
+        ProfilePolicy::new(
+            TlsPolicy::Disabled,
+            ProfileSafetyMode::ConfirmWrites,
+            ProfileLimits::new(10_000, 30_000, 5_000, 16 * 1024 * 1024).unwrap(),
+        ),
+    )
+    .unwrap();
+    let aggregate = ProfileAggregate::new(
+        connection,
+        ProfileDurability::Saved,
+        ProfileOrganization::new(
+            Some(
+                ProfileGroupName::new(BoundedText::copy_from_str("g", ByteLimit::new(8)).unwrap())
+                    .unwrap(),
+            ),
+            vec![ProfileTag::new(BoundedText::copy_from_str("t", ByteLimit::new(8)).unwrap()).unwrap()],
+            true,
+            0,
+            None,
+        )
+        .unwrap(),
+        ProfilePreferences::new(ReconnectPreference::Manual, true, 250).unwrap(),
+    )
+    .unwrap();
+    actor
+        .create_profile(aggregate.persistable().unwrap())
+        .unwrap();
+    actor.shutdown().unwrap();
+
+    let bridge = TableRockBridge::new_for_test();
+    let missing = bridge
+        .open_profile(profile_id.to_bytes().to_vec(), None)
+        .unwrap_err();
+    assert!(matches!(
+        missing,
+        BridgeError::Rejected { ref code, .. } if code == "persistence"
+    ));
+
+    bridge
+        .configure_persistence(path.to_string_lossy().into_owned())
+        .unwrap();
+    // Port 1 is unreachable — proves load+connect path without a live server.
+    let err = bridge
+        .open_profile(profile_id.to_bytes().to_vec(), None)
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        BridgeError::Rejected { ref code, .. } if code == "connect"
+    ));
+    let _ = fs::remove_file(&path);
+    let _ = fs::remove_file(format!("{}-wal", path.display()));
+    let _ = fs::remove_file(format!("{}-shm", path.display()));
 }
 
 #[test]
