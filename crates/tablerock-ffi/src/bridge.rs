@@ -316,6 +316,26 @@ impl TableRockBridge {
         catch_entry(|| self.test_profile_inner(profile_id, password_override))
     }
 
+    pub fn list_profile_groups(&self) -> Result<Vec<String>, BridgeError> {
+        catch_entry(|| self.list_profile_groups_inner())
+    }
+
+    pub fn create_profile_group(&self, name: String) -> Result<(), BridgeError> {
+        catch_entry(|| self.create_profile_group_inner(name))
+    }
+
+    pub fn rename_profile_group(
+        &self,
+        old_name: String,
+        new_name: String,
+    ) -> Result<u32, BridgeError> {
+        catch_entry(|| self.rename_profile_group_inner(old_name, new_name))
+    }
+
+    pub fn delete_profile_group(&self, name: String) -> Result<u32, BridgeError> {
+        catch_entry(|| self.delete_profile_group_inner(name))
+    }
+
     /// Load one typed catalog level. `parent_node_id` is an opaque id previously
     /// returned by this method; Swift never chooses engine requests or names.
     pub fn refresh_catalog(
@@ -1004,6 +1024,78 @@ impl TableRockBridge {
                 dangerous_plaintext: item.sources().has_dangerous_plaintext(),
             })
             .collect())
+    }
+
+    fn list_profile_groups_inner(&self) -> Result<Vec<String>, BridgeError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let actor = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        actor
+            .list_groups()
+            .map_err(|error| BridgeError::rejected("profile-groups", error.to_string()))
+    }
+
+    fn create_profile_group_inner(&self, name: String) -> Result<(), BridgeError> {
+        let name = validate_bridge_group_name(&name)?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let actor = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        actor
+            .create_group(&name)
+            .map_err(|error| BridgeError::rejected("profile-group-create", error.to_string()))
+    }
+
+    fn rename_profile_group_inner(
+        &self,
+        old_name: String,
+        new_name: String,
+    ) -> Result<u32, BridgeError> {
+        let old_name = validate_bridge_group_name(&old_name)?;
+        let new_name = validate_bridge_group_name(&new_name)?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let actor = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        actor
+            .rename_group(&old_name, &new_name)
+            .map_err(|error| BridgeError::rejected("profile-group-rename", error.to_string()))
+    }
+
+    fn delete_profile_group_inner(&self, name: String) -> Result<u32, BridgeError> {
+        let name = validate_bridge_group_name(&name)?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let actor = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        actor
+            .delete_group(&name)
+            .map_err(|error| BridgeError::rejected("profile-group-delete", error.to_string()))
     }
 
     fn refresh_catalog_inner(
@@ -1977,6 +2069,15 @@ fn parse_bridge_environment(raw: &str) -> Result<Option<EnvironmentTag>, BridgeE
             .map_err(|error| BridgeError::rejected("profile-environment", error.to_string()))?,
         ),
     }))
+}
+
+fn validate_bridge_group_name(raw: &str) -> Result<String, BridgeError> {
+    let name = raw.trim();
+    let bounded = BoundedText::copy_from_str(name, ByteLimit::new(ProfileGroupName::MAX_BYTES))
+        .map_err(|error| BridgeError::rejected("profile-group", error.to_string()))?;
+    ProfileGroupName::new(bounded)
+        .map_err(|error| BridgeError::rejected("profile-group", error.to_string()))?;
+    Ok(name.to_owned())
 }
 
 #[derive(Clone, Copy)]

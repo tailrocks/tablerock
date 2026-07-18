@@ -614,6 +614,16 @@ fn open_profile_requires_persistence_and_loads_literals() {
     assert_eq!(bridge.list_profiles().unwrap().len(), 2);
     bridge.delete_profile(copy_id, 0).unwrap();
     assert_eq!(bridge.list_profiles().unwrap().len(), 1);
+    bridge.create_profile_group("Empty".into()).unwrap();
+    assert_eq!(bridge.list_profile_groups().unwrap(), ["Empty", "g"]);
+    assert_eq!(
+        bridge
+            .rename_profile_group("Empty".into(), "Renamed".into())
+            .unwrap(),
+        0
+    );
+    assert_eq!(bridge.list_profile_groups().unwrap(), ["Renamed", "g"]);
+    assert_eq!(bridge.delete_profile_group("Renamed".into()).unwrap(), 0);
     let prompt = bridge
         .open_profile(profile_id.to_bytes().to_vec(), None)
         .unwrap_err();

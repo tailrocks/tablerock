@@ -75,6 +75,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
         13,
         include_str!("../migrations/0013-saved-filter-library.sql"),
     ),
+    (14, include_str!("../migrations/0014-profile-groups.sql")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +187,14 @@ impl PersistenceActor {
             &self.sender,
             Command::RenameGroup(old_name.to_owned(), new_name.to_owned(), sender),
         )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn create_group(&self, name: &str) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::CreateGroup(name.to_owned(), sender))?;
         receiver
             .recv_timeout(CALLER_TIMEOUT)
             .map_err(map_receive_error)?
@@ -448,6 +457,7 @@ enum Command {
         ProfileListRequest,
         mpsc::SyncSender<Result<ProfileListPage, PersistenceError>>,
     ),
+    CreateGroup(String, mpsc::SyncSender<Result<(), PersistenceError>>),
     RenameGroup(
         String,
         String,
@@ -614,6 +624,17 @@ fn worker_main(
                     tokio::time::timeout(
                         OPERATION_TIMEOUT,
                         profile_store::rename_group(&mut connection, &old_name, &new_name),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::CreateGroup(name, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        profile_store::create_group(&mut connection, &name),
                     )
                     .await
                     .map_err(|_| PersistenceError::Timeout)?

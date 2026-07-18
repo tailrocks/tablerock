@@ -170,6 +170,14 @@ private actor BridgeClient {
     func testProfile(id: Data) throws -> BridgeConnectionTestReport {
         try bridge.testProfile(profileId: id, passwordOverride: nil)
     }
+    func listProfileGroups() throws -> [String] { try bridge.listProfileGroups() }
+    func createProfileGroup(_ name: String) throws { try bridge.createProfileGroup(name: name) }
+    func renameProfileGroup(_ oldName: String, _ newName: String) throws -> UInt32 {
+        try bridge.renameProfileGroup(oldName: oldName, newName: newName)
+    }
+    func deleteProfileGroup(_ name: String) throws -> UInt32 {
+        try bridge.deleteProfileGroup(name: name)
+    }
     func open(params: OpenParams) throws -> Data { try bridge.open(params: params) }
     func openProfile(id: Data) throws -> Data {
         try bridge.openProfile(profileId: id, passwordOverride: nil)
@@ -314,6 +322,19 @@ private func runNativeProfileEditorAudit() {
     }
     writePerformanceMetric(
         "PROFILE_EDITOR_PROOF_PASSED title=Edit_Connection fields=\(textFields.count) pickers=engine_environment_password_safety_tls"
+    )
+}
+
+@MainActor
+private func runNativeProfileGroupAudit() {
+    guard let root = NSApplication.shared.windows.first(where: { $0.isVisible })?.contentView,
+          !root.subviews.isEmpty
+    else {
+        writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED no visible window")
+        return
+    }
+    writePerformanceMetric(
+        "PROFILE_GROUP_PROOF_PASSED empty_groups=2 hosting_tree=true"
     )
 }
 
@@ -466,6 +487,13 @@ struct ProfileSection: Identifiable {
     let profiles: [BridgeProfileItem]
 }
 
+struct ProfileGroupDialog: Identifiable {
+    let id = UUID()
+    let oldName: String?
+    var name: String
+    var title: String { oldName == nil ? "New Group" : "Rename Group" }
+}
+
 extension BridgeProfileDraft: @retroactive Identifiable {
     public var id: String {
         idBytes?.base64EncodedString() ?? "new-profile"
@@ -500,6 +528,8 @@ final class BridgeModel {
     var status: String = "starting…"
     var bridgeError: String?
     var profiles: [BridgeProfileItem] = []
+    var profileGroups: [String] = []
+    var collapsedProfileGroups: Set<String> = []
     var profileSearch = ""
     private(set) var profilesLoading = false
     private(set) var profilesError: String?
@@ -508,14 +538,18 @@ final class BridgeModel {
     var profileActionError: String?
     var profileActionOutcome: String?
     var pendingRemoval: BridgeProfileItem?
+    var groupDialog: ProfileGroupDialog?
+    var pendingGroupRemoval: String?
     var profileSections: [ProfileSection] {
-        var order: [String] = []
+        var order = profileGroups
         var grouped: [String: [BridgeProfileItem]] = [:]
         for profile in profiles {
             let group = profile.group ?? ""
-            if grouped[group] == nil { order.append(group) }
+            if !group.isEmpty && !order.contains(group) { order.append(group) }
             grouped[group, default: []].append(profile)
         }
+        if grouped[""] != nil { order.append("") }
+        if !profileSearch.isEmpty { order.removeAll { grouped[$0]?.isEmpty != false } }
         return order.map { group in
             ProfileSection(
                 id: group.isEmpty ? "ungrouped" : group,
@@ -577,6 +611,19 @@ final class BridgeModel {
     }
 
     func initialize() async {
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_PROFILE_GROUPS"] == "1" {
+            profileGroups = ["Empty", "Production"]
+            status = "Profile group fixture"
+            guard profileSections.map(\.title) == ["Empty", "Production"],
+                  profileSections.allSatisfy({ $0.profiles.isEmpty })
+            else {
+                writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED group projection mismatch")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            runNativeProfileGroupAudit()
+            return
+        }
         do {
             client = try BridgeClient(persistencePath: Self.persistencePath())
             await refreshProfiles()
@@ -619,8 +666,10 @@ final class BridgeModel {
         do {
             let search = profileSearch.trimmingCharacters(in: .whitespacesAndNewlines)
             let loaded = try await client.searchProfiles(search.isEmpty ? nil : search)
+            let loadedGroups = try await client.listProfileGroups()
             guard generation == profileSearchGeneration else { return }
             profiles = loaded
+            profileGroups = loadedGroups
             status = profiles.isEmpty
                 ? "Bridge ready · no saved profiles"
                 : "Bridge ready · \(profiles.count) profile\(profiles.count == 1 ? "" : "s")"
@@ -630,6 +679,47 @@ final class BridgeModel {
             status = "error"
         }
         if generation == profileSearchGeneration { profilesLoading = false }
+    }
+
+    func beginCreateGroup() {
+        groupDialog = ProfileGroupDialog(oldName: nil, name: "")
+    }
+
+    func beginRenameGroup(_ name: String) {
+        groupDialog = ProfileGroupDialog(oldName: name, name: name)
+    }
+
+    func saveGroup(_ dialog: ProfileGroupDialog) async -> Bool {
+        guard let client else { return false }
+        profileActionError = nil
+        do {
+            if let oldName = dialog.oldName {
+                let moved = try await client.renameProfileGroup(oldName, dialog.name)
+                collapsedProfileGroups.remove(oldName)
+                profileActionOutcome = "Group renamed · \(moved) connection(s) moved"
+            } else {
+                try await client.createProfileGroup(dialog.name)
+                profileActionOutcome = "Group created"
+            }
+            groupDialog = nil
+            await refreshProfiles()
+            return true
+        } catch {
+            profileActionError = "Group change failed: \(error)"
+            return false
+        }
+    }
+
+    func removePendingGroup() async {
+        guard let client, let name = pendingGroupRemoval else { return }
+        pendingGroupRemoval = nil
+        profileActionError = nil
+        do {
+            let moved = try await client.deleteProfileGroup(name)
+            collapsedProfileGroups.remove(name)
+            profileActionOutcome = "Group removed · \(moved) connection(s) moved to Ungrouped"
+            await refreshProfiles()
+        } catch { profileActionError = "Remove group failed: \(error)" }
     }
 
     func createProfile() {
@@ -889,8 +979,9 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 List {
                     ForEach(model.profileSections) { section in
-                        Section(section.title) {
-                            ForEach(section.profiles, id: \.idBytes) { profile in
+                        Section {
+                            if !model.collapsedProfileGroups.contains(section.id) {
+                                ForEach(section.profiles, id: \.idBytes) { profile in
                                 HStack(spacing: 4) {
                                     Button { Task { await model.connect(profile) } } label: {
                                         ProfileRow(
@@ -925,6 +1016,37 @@ struct ContentView: View {
                                         model.pendingRemoval = profile
                                     }
                                 }
+                                }
+                            }
+                        } header: {
+                            HStack {
+                                Button {
+                                    if model.collapsedProfileGroups.contains(section.id) {
+                                        model.collapsedProfileGroups.remove(section.id)
+                                    } else {
+                                        model.collapsedProfileGroups.insert(section.id)
+                                    }
+                                } label: {
+                                    Label(
+                                        "\(section.title) (\(section.profiles.count))",
+                                        systemImage: model.collapsedProfileGroups.contains(section.id)
+                                            ? "chevron.right" : "chevron.down"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                Spacer()
+                                if section.id != "ungrouped" {
+                                    Menu {
+                                        Button("Rename Group…") {
+                                            model.beginRenameGroup(section.title)
+                                        }
+                                        Button("Remove Group…", role: .destructive) {
+                                            model.pendingGroupRemoval = section.title
+                                        }
+                                    } label: { Image(systemName: "ellipsis") }
+                                    .menuStyle(.borderlessButton)
+                                    .accessibilityLabel("Actions for group \(section.title)")
+                                }
                             }
                         }
                     }
@@ -940,6 +1062,9 @@ struct ContentView: View {
                         Button { model.createProfile() } label: {
                             Label("New connection", systemImage: "plus")
                         }
+                        Button { model.beginCreateGroup() } label: {
+                            Label("New group", systemImage: "folder.badge.plus")
+                        }
                         Spacer()
                     }
                     .padding(8)
@@ -954,7 +1079,8 @@ struct ContentView: View {
                             systemImage: "exclamationmark.triangle",
                             description: Text(profilesError)
                         )
-                    } else if model.profiles.isEmpty && model.sessionHex == nil {
+                    } else if model.profiles.isEmpty && model.sessionHex == nil
+                        && (!model.profileSearch.isEmpty || model.profileGroups.isEmpty) {
                         ContentUnavailableView(
                             model.profileSearch.isEmpty ? "No connections" : "No matches",
                             systemImage: model.profileSearch.isEmpty ? "tray" : "magnifyingglass",
@@ -1132,6 +1258,11 @@ struct ContentView: View {
                 await model.saveProfile(saved)
             }
         }
+        .sheet(item: $model.groupDialog) { dialog in
+            ProfileGroupEditorSheet(initialDialog: dialog) { saved in
+                await model.saveGroup(saved)
+            }
+        }
         .confirmationDialog(
             "Remove connection?",
             isPresented: Binding(
@@ -1144,6 +1275,21 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) { model.pendingRemoval = nil }
         } message: { item in
             Text("\(item.name) will be removed. Active sessions remain open.")
+        }
+        .confirmationDialog(
+            "Remove group?",
+            isPresented: Binding(
+                get: { model.pendingGroupRemoval != nil },
+                set: { if !$0 { model.pendingGroupRemoval = nil } }
+            ),
+            presenting: model.pendingGroupRemoval
+        ) { _ in
+            Button("Remove Group", role: .destructive) {
+                Task { await model.removePendingGroup() }
+            }
+            Button("Cancel", role: .cancel) { model.pendingGroupRemoval = nil }
+        } message: { name in
+            Text("Connections in \(name) move to Ungrouped. No connection is deleted.")
         }
         .alert(
             "Connection action failed",
@@ -1635,6 +1781,46 @@ struct SqlTextEditor: NSViewRepresentable {
             guard let editor = notification.object as? NSTextView else { return }
             text.wrappedValue = editor.string
         }
+    }
+}
+
+struct ProfileGroupEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var dialog: ProfileGroupDialog
+    @State private var saving = false
+    let onSave: (ProfileGroupDialog) async -> Bool
+
+    init(
+        initialDialog: ProfileGroupDialog,
+        onSave: @escaping (ProfileGroupDialog) async -> Bool
+    ) {
+        _dialog = State(initialValue: initialDialog)
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(dialog.title).font(.title2).bold()
+            TextField("Group name", text: $dialog.name)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") {
+                    saving = true
+                    Task {
+                        if await onSave(dialog) { dismiss() }
+                        saving = false
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(dialog.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || saving)
+            }
+        }
+        .padding(24)
+        .frame(width: 380)
+        .interactiveDismissDisabled(saving)
     }
 }
 

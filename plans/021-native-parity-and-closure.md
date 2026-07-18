@@ -10,7 +10,7 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-19): native connection grouping/search (evidence 512) plus revision-safe create/edit/duplicate/remove, full first-form fields, secret-source safety, durable store, and typed Test report (evidence 513); group management and remaining screens continue**
+- **IN PROGRESS (2026-07-19): native connection list/editor/actions (evidence 512–513) and persistent empty groups with collapsible create/rename/delete UI (evidence 514) landed; ordering controls and remaining screens continue**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

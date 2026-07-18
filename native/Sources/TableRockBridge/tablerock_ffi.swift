@@ -629,10 +629,14 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      */
     func configurePersistence(path: String) throws 
     
+    func createProfileGroup(name: String) throws 
+    
     /**
      * Revision-checked removal; active sessions remain alive.
      */
     func deleteProfile(profileId: Data, expectedRevision: UInt64) throws 
+    
+    func deleteProfileGroup(name: String) throws  -> UInt32
     
     /**
      * Drops the Tokio runtime after service shutdown. Idempotent.
@@ -658,6 +662,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Loads one editable profile without resolving or returning credentials.
      */
     func getProfileDraft(profileId: Data) throws  -> BridgeProfileDraft
+    
+    func listProfileGroups() throws  -> [String]
     
     /**
      * Lists saved profiles (all engines) for the native connection screen.
@@ -696,6 +702,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * returned by this method; Swift never chooses engine requests or names.
      */
     func refreshCatalog(sessionId: Data, parentNodeId: Data?) throws  -> [BridgeCatalogNode]
+    
+    func renameProfileGroup(oldName: String, newName: String) throws  -> UInt32
     
     /**
      * Drop a review token without authorizing (operator discard).
@@ -860,6 +868,15 @@ open func configurePersistence(path: String)throws   {try rustCallWithError(FfiC
 }
 }
     
+open func createProfileGroup(name: String)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_create_profile_group(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+}
+}
+    
     /**
      * Revision-checked removal; active sessions remain alive.
      */
@@ -871,6 +888,16 @@ open func deleteProfile(profileId: Data, expectedRevision: UInt64)throws   {try 
         FfiConverterUInt64.lower(expectedRevision),uniffiCallStatus
     )
 }
+}
+    
+open func deleteProfileGroup(name: String)throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_delete_profile_group(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+})
 }
     
     /**
@@ -931,6 +958,15 @@ open func getProfileDraft(profileId: Data)throws  -> BridgeProfileDraft  {
     uniffi_tablerock_ffi_fn_method_tablerockbridge_get_profile_draft(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(profileId),uniffiCallStatus
+    )
+})
+}
+    
+open func listProfileGroups()throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_list_profile_groups(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -1024,6 +1060,17 @@ open func refreshCatalog(sessionId: Data, parentNodeId: Data?)throws  -> [Bridge
             self.uniffiCloneHandle(),
         FfiConverterData.lower(sessionId),
         FfiConverterOptionData.lower(parentNodeId),uniffiCallStatus
+    )
+})
+}
+    
+open func renameProfileGroup(oldName: String, newName: String)throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_rename_profile_group(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(oldName),
+        FfiConverterString.lower(newName),uniffiCallStatus
     )
 })
 }
@@ -2318,6 +2365,31 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]
+
+    public static func write(_ value: [String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterString.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [String]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeCatalogNode: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeCatalogNode]
 
@@ -2417,7 +2489,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_configure_persistence() != 51889) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_create_profile_group() != 43110) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_delete_profile() != 49889) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_delete_profile_group() != 61039) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_destroy_runtime() != 55977) {
@@ -2433,6 +2511,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_get_profile_draft() != 6880) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_profile_groups() != 52593) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_profiles() != 34048) {
@@ -2454,6 +2535,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_refresh_catalog() != 24952) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_rename_profile_group() != 49627) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_review_token() != 712) {

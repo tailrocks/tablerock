@@ -216,6 +216,15 @@ pub(crate) async fn create(
         .transaction()
         .await
         .map_err(|_| PersistenceError::ProfileWrite)?;
+    if let Some(group) = profile.group_name.as_deref() {
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO saved_profile_groups(name) VALUES (?1)",
+                (group,),
+            )
+            .await
+            .map_err(|_| PersistenceError::ProfileWrite)?;
+    }
     transaction
         .execute(
             "INSERT INTO saved_profiles(\
@@ -326,6 +335,15 @@ pub(crate) async fn replace(
         .transaction()
         .await
         .map_err(|_| PersistenceError::ProfileWrite)?;
+    if let Some(group) = profile.group_name.as_deref() {
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO saved_profile_groups(name) VALUES (?1)",
+                (group,),
+            )
+            .await
+            .map_err(|_| PersistenceError::ProfileWrite)?;
+    }
     let changed = transaction
         .execute(
             "UPDATE saved_profiles SET \
@@ -1295,6 +1313,23 @@ const fn encode_property(property: ProfileProperty) -> u8 {
     }
 }
 
+pub(crate) async fn create_group(
+    connection: &mut turso::Connection,
+    name: &str,
+) -> Result<(), PersistenceError> {
+    if name.is_empty() {
+        return Err(PersistenceError::ProfileWrite);
+    }
+    connection
+        .execute(
+            "INSERT INTO saved_profile_groups(name) VALUES (?1)",
+            (name,),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    Ok(())
+}
+
 pub(crate) async fn rename_group(
     connection: &mut turso::Connection,
     old_name: &str,
@@ -1307,6 +1342,17 @@ pub(crate) async fn rename_group(
         .transaction()
         .await
         .map_err(|_| PersistenceError::ProfileWrite)?;
+    let group_changed = transaction
+        .execute(
+            "UPDATE saved_profile_groups SET name = ?1 WHERE name = ?2",
+            (new_name, old_name),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    if group_changed == 0 {
+        return Err(PersistenceError::ProfileWrite);
+    }
+    bump_group_revisions(&transaction, old_name).await?;
     let changed = transaction
         .execute(
             "UPDATE saved_profiles SET group_name = ?1, updated_at = CURRENT_TIMESTAMP \
@@ -1333,6 +1379,7 @@ pub(crate) async fn delete_group(
         .transaction()
         .await
         .map_err(|_| PersistenceError::ProfileWrite)?;
+    bump_group_revisions(&transaction, name).await?;
     let changed = transaction
         .execute(
             "UPDATE saved_profiles SET group_name = NULL, updated_at = CURRENT_TIMESTAMP \
@@ -1341,6 +1388,13 @@ pub(crate) async fn delete_group(
         )
         .await
         .map_err(|_| PersistenceError::ProfileWrite)?;
+    let group_changed = transaction
+        .execute("DELETE FROM saved_profile_groups WHERE name = ?1", (name,))
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    if group_changed == 0 {
+        return Err(PersistenceError::ProfileWrite);
+    }
     transaction
         .commit()
         .await
@@ -1348,15 +1402,51 @@ pub(crate) async fn delete_group(
     Ok(u32::try_from(changed).unwrap_or(u32::MAX))
 }
 
+async fn bump_group_revisions(
+    transaction: &turso::transaction::Transaction<'_>,
+    group_name: &str,
+) -> Result<(), PersistenceError> {
+    let mut rows = transaction
+        .query(
+            "SELECT profile_id, revision FROM saved_profiles WHERE group_name = ?1",
+            (group_name,),
+        )
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?;
+    let mut revisions = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| PersistenceError::ProfileWrite)?
+    {
+        let id = get::<[u8; 16]>(&row, 0)?;
+        let current = u64::from_be_bytes(get::<[u8; 8]>(&row, 1)?);
+        let next = current
+            .checked_add(1)
+            .ok_or(PersistenceError::ProfileInvalidRevision)?;
+        revisions.push((id, next.to_be_bytes()));
+    }
+    drop(rows);
+    for (id, revision) in revisions {
+        let changed = transaction
+            .execute(
+                "UPDATE saved_profiles SET revision = ?1 WHERE profile_id = ?2",
+                (revision.as_slice(), id.as_slice()),
+            )
+            .await
+            .map_err(|_| PersistenceError::ProfileWrite)?;
+        if changed != 1 {
+            return Err(PersistenceError::ProfileWrite);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) async fn list_groups(
     connection: &turso::Connection,
 ) -> Result<Vec<String>, PersistenceError> {
     let mut rows = connection
-        .query(
-            "SELECT DISTINCT group_name FROM saved_profiles \
-             WHERE group_name IS NOT NULL ORDER BY group_name",
-            (),
-        )
+        .query("SELECT name FROM saved_profile_groups ORDER BY name", ())
         .await
         .map_err(|_| PersistenceError::ProfileRead)?;
     let mut groups = Vec::new();
