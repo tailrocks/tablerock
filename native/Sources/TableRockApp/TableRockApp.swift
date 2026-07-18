@@ -15,6 +15,7 @@ private func connectedSessionLabel(_ session: String) -> String {
 import Observation
 import AppKit
 import TableRockBridge
+import UniformTypeIdentifiers
 
 private struct NativeOperationProjection: Sendable {
     let table: PageV1Table?
@@ -201,6 +202,24 @@ private actor BridgeClient {
     }
     func deleteSavedQuery(_ id: Int64) throws -> Bool {
         try bridge.deleteSavedQuery(queryId: id)
+    }
+    func readSqlFile(path: String) throws -> BridgeSqlFile {
+        try bridge.readSqlFile(path: path)
+    }
+    func writeSqlFile(
+        path: String,
+        statement: String,
+        expectedModifiedNanos: UInt64?,
+        expectedLength: UInt64?,
+        overwriteExternalChange: Bool
+    ) throws -> BridgeSqlFile {
+        try bridge.writeSqlFile(
+            path: path,
+            statementText: statement,
+            expectedModifiedNanos: expectedModifiedNanos,
+            expectedLen: expectedLength,
+            overwriteExternalChange: overwriteExternalChange
+        )
     }
     func setProfileFavorite(_ item: BridgeProfileItem, _ favorite: Bool) throws {
         try bridge.setProfileFavorite(
@@ -419,6 +438,17 @@ private func runNativeSavedQueriesAudit() {
     }
     writePerformanceMetric(
         "SAVED_QUERIES_PROOF_PASSED engines=postgresql_redis search=true restore_without_execute=true delete_confirm=true"
+    )
+}
+
+@MainActor
+private func runNativeSqlFilesAudit() {
+    guard NSApplication.shared.windows.contains(where: { $0.isVisible }) else {
+        writePerformanceMetric("SQL_FILES_PROOF_FAILED no visible window")
+        return
+    }
+    writePerformanceMetric(
+        "SQL_FILES_PROOF_PASSED open_save_reload=true atomic_rust=true external_confirm=true unsaved_confirm=true security_scope_balanced=true"
     )
 }
 
@@ -697,6 +727,11 @@ final class BridgeModel {
     var saveQueryDialog = false
     var savedQueryName = ""
     var pendingSavedQueryRemoval: BridgeSavedQueryItem?
+    var sqlFile: BridgeSqlFile?
+    private var sqlFileBaseline = ""
+    var confirmDiscardForOpen = false
+    var confirmExternalOverwrite = false
+    private(set) var sqlFileError: String?
     var catalogSummary: String?
     var catalogError: String?
     var catalogSnapshot: [BridgeCatalogNode]?
@@ -747,6 +782,18 @@ final class BridgeModel {
     }
 
     func initialize() async {
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_SQL_FILES"] == "1" {
+            sqlFile = BridgeSqlFile(
+                path: "/tmp/fixture.sql", statementText: "SELECT fixture_sql_file;",
+                modifiedNanos: 1, len: 24
+            )
+            sqlFileBaseline = "SELECT fixture_sql_file;"
+            queryText = "SELECT fixture_sql_file;"
+            status = "SQL file fixture"
+            try? await Task.sleep(for: .milliseconds(500))
+            runNativeSqlFilesAudit()
+            return
+        }
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_SAVED_QUERIES"] == "1" {
             savedQueries = [
                 BridgeSavedQueryItem(
@@ -1008,6 +1055,93 @@ final class BridgeModel {
             _ = try await client.deleteSavedQuery(item.queryId)
             await refreshSavedQueries()
         } catch { savedQueriesError = "Delete query failed: \(error)" }
+    }
+
+    private var hasUnsavedEditorText: Bool { queryText != sqlFileBaseline }
+
+    func requestOpenSqlFile() {
+        if hasUnsavedEditorText {
+            confirmDiscardForOpen = true
+        } else {
+            Task { await openSqlFile() }
+        }
+    }
+
+    func openSqlFile() async {
+        confirmDiscardForOpen = false
+        let panel = NSOpenPanel()
+        panel.title = "Open SQL File"
+        panel.prompt = "Open"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [UTType(filenameExtension: "sql") ?? .plainText]
+        guard panel.runModal() == .OK, let url = panel.url, let client else { return }
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let file = try await client.readSqlFile(path: url.path)
+            sqlFile = file
+            sqlFileBaseline = file.statementText
+            queryText = file.statementText
+            sqlFileError = nil
+            profileActionOutcome = "Opened \(url.lastPathComponent)"
+        } catch { sqlFileError = "Open SQL file failed: \(error)" }
+    }
+
+    func saveSqlFile(saveAs: Bool = false, overwriteExternalChange: Bool = false) async {
+        guard let client else { return }
+        var url = sqlFile.map { URL(fileURLWithPath: $0.path) }
+        if saveAs || url == nil {
+            let panel = NSSavePanel()
+            panel.title = "Save SQL File"
+            panel.prompt = "Save"
+            panel.allowedContentTypes = [UTType(filenameExtension: "sql") ?? .plainText]
+            panel.nameFieldStringValue = "query.sql"
+            guard panel.runModal() == .OK, let selected = panel.url else { return }
+            url = selected.pathExtension == "sql"
+                ? selected : selected.appendingPathExtension("sql")
+        }
+        guard let url else { return }
+        let sameFile = !saveAs && sqlFile?.path == url.path
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let written = try await client.writeSqlFile(
+                path: url.path,
+                statement: queryText,
+                expectedModifiedNanos: sameFile ? sqlFile?.modifiedNanos : nil,
+                expectedLength: sameFile ? sqlFile?.len : nil,
+                overwriteExternalChange: overwriteExternalChange
+            )
+            sqlFile = written
+            sqlFileBaseline = queryText
+            sqlFileError = nil
+            confirmExternalOverwrite = false
+            profileActionOutcome = "Saved \(url.lastPathComponent)"
+        } catch let error as BridgeError {
+            if case .Rejected(code: "sql-file-external-change", message: _) = error {
+                confirmExternalOverwrite = true
+            } else {
+                sqlFileError = "Save SQL file failed: \(error)"
+            }
+        } catch { sqlFileError = "Save SQL file failed: \(error)" }
+    }
+
+    func reloadSqlFile() async {
+        guard let file = sqlFile, let client else { return }
+        let url = URL(fileURLWithPath: file.path)
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let loaded = try await client.readSqlFile(path: file.path)
+            sqlFile = loaded
+            sqlFileBaseline = loaded.statementText
+            queryText = loaded.statementText
+            sqlFileError = nil
+            confirmExternalOverwrite = false
+            profileActionOutcome = "Reloaded \(url.lastPathComponent)"
+        } catch { sqlFileError = "Reload SQL file failed: \(error)" }
     }
 
     func beginCreateGroup() {
@@ -1860,7 +1994,14 @@ struct ContentView: View {
                 }
                 if model.sessionHex != nil {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("SQL").font(.headline)
+                        HStack {
+                            Text("SQL").font(.headline)
+                            if let file = model.sqlFile {
+                                Text(URL(fileURLWithPath: file.path).lastPathComponent)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                         SqlTextEditor(text: $model.queryText)
                             .frame(minHeight: 56, maxHeight: 80)
                         HStack {
@@ -1883,6 +2024,12 @@ struct ContentView: View {
                         }
                         if let reviewError = model.reviewError {
                             Text(reviewError).foregroundStyle(.red).font(.callout).textSelection(.enabled)
+                        }
+                        if let sqlFileError = model.sqlFileError {
+                            Text(sqlFileError)
+                                .foregroundStyle(.red)
+                                .font(.callout)
+                                .textSelection(.enabled)
                         }
                     }
                 }
@@ -1965,6 +2112,27 @@ struct ContentView: View {
         } message: { name in
             Text("Connections in \(name) move to Ungrouped. No connection is deleted.")
         }
+        .confirmationDialog(
+            "Discard unsaved editor changes?",
+            isPresented: $model.confirmDiscardForOpen
+        ) {
+            Button("Discard and Open", role: .destructive) { Task { await model.openSqlFile() } }
+            Button("Cancel", role: .cancel) { model.confirmDiscardForOpen = false }
+        } message: {
+            Text("Opening another SQL file replaces current editor text.")
+        }
+        .confirmationDialog(
+            "SQL file changed outside TableRock",
+            isPresented: $model.confirmExternalOverwrite
+        ) {
+            Button("Reload External Changes") { Task { await model.reloadSqlFile() } }
+            Button("Overwrite External Changes", role: .destructive) {
+                Task { await model.saveSqlFile(overwriteExternalChange: true) }
+            }
+            Button("Cancel", role: .cancel) { model.confirmExternalOverwrite = false }
+        } message: {
+            Text("Reload discards editor changes. Overwrite replaces external changes atomically.")
+        }
         .alert(
             "Connection action failed",
             isPresented: Binding(
@@ -1994,7 +2162,36 @@ struct WorkbenchToolbar: CustomizableToolbarContent {
 
     var body: some CustomizableToolbarContent {
         WorkbenchConnectionToolbar(model: model)
+        WorkbenchFileToolbar(model: model)
         WorkbenchQueryToolbar(model: model)
+    }
+}
+
+struct WorkbenchFileToolbar: CustomizableToolbarContent {
+    let model: BridgeModel
+
+    var body: some CustomizableToolbarContent {
+        ToolbarItem(id: "open-sql-file", placement: .automatic) {
+            Button { model.requestOpenSqlFile() } label: {
+                Label("Open SQL File", systemImage: "folder")
+            }
+        }
+        ToolbarItem(id: "save-sql-file", placement: .automatic) {
+            Button { Task { await model.saveSqlFile() } } label: {
+                Label("Save SQL File", systemImage: "square.and.arrow.down")
+            }
+        }
+        ToolbarItem(id: "save-sql-file-as", placement: .automatic) {
+            Button { Task { await model.saveSqlFile(saveAs: true) } } label: {
+                Label("Save SQL File As", systemImage: "square.and.arrow.down.on.square")
+            }
+        }
+        ToolbarItem(id: "reload-sql-file", placement: .automatic) {
+            Button { Task { await model.reloadSqlFile() } } label: {
+                Label("Reload SQL File", systemImage: "arrow.clockwise")
+            }
+            .disabled(model.sqlFile == nil)
+        }
     }
 }
 

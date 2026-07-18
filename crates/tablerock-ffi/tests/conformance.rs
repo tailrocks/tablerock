@@ -975,6 +975,50 @@ fn disconnect_rejects_unknown_session() {
 }
 
 #[test]
+fn sql_file_bridge_is_atomic_and_blocks_external_overwrite() {
+    let bridge = TableRockBridge::new_for_test();
+    let path = std::env::temp_dir().join(format!(
+        "tablerock-ffi-sql-{}-{}.sql",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let raw = path.to_string_lossy().into_owned();
+    let first = bridge
+        .write_sql_file(raw.clone(), "SELECT 1;\n".into(), None, None, false)
+        .unwrap();
+    assert_eq!(bridge.read_sql_file(raw.clone()).unwrap(), first);
+
+    std::fs::write(&path, "SELECT 22;\n").unwrap();
+    let error = bridge
+        .write_sql_file(
+            raw.clone(),
+            "SELECT 3;\n".into(),
+            first.modified_nanos,
+            Some(first.len),
+            false,
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        BridgeError::Rejected { ref code, .. } if code == "sql-file-external-change"
+    ));
+    let overwritten = bridge
+        .write_sql_file(
+            raw.clone(),
+            "SELECT 3;\n".into(),
+            first.modified_nanos,
+            Some(first.len),
+            true,
+        )
+        .unwrap();
+    assert_eq!(overwritten.statement_text, "SELECT 3;\n");
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn session_health_projects_authentication_as_terminal_state() {
     let (_, page) = sample_page(Engine::PostgreSql, 84, &[1]);
     let bridge = TableRockBridge::new_for_test();

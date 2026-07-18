@@ -99,7 +99,7 @@ architecture decisions.
 | Query limits | Core | Enforce server-side limits only after parser proof; otherwise bound result consumption below presentation | Clause-order and misleading-limit tests |
 | Explain | Parity | Raw and structured plans; engine-specific modes stay explicit | Versioned plan parsers with unknown-node fallback |
 | Vim mode | Later | Optional, documented modal editing built on a neutral editor contract | Independent keymap and mode-transition suite |
-| SQL files | Parity | Open/save/reload/diff external changes; safe file permissions and unsaved-change policy | Atomic save and external-modification tests |
+| SQL files | Parity | Open/save/reload/diff external changes; safe file permissions and unsaved-change policy | Rust-bounded UTF-8 `.sql` read/write, atomic replacement, metadata conflict detection, native open/save panels, balanced security-scope access, unsaved-open confirmation, and reload/overwrite conflict choice (evidence 522) |
 | Query history | Core | Searchable, bounded, local history with configurable SQL-text retention; disabled/private modes available | Persistence retention/redaction/migration tests; native Rust-owned terminal recording, bounded search, Full/Metadata/Private projection, restore-without-execute, explicit states (evidence 519), plus schema-16 durable retention/relaunch projection (evidence 520) |
 
 ## Grid, values, and changes

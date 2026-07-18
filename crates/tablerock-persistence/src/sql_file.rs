@@ -48,11 +48,8 @@ pub fn write_sql_file_atomic(path: &Path, text: &str) -> Result<SqlFileFacts, Pe
             .map_err(|_| PersistenceError::Query)?;
         file.sync_all().map_err(|_| PersistenceError::Query)?;
     }
-    // On Windows rename may fail if dest exists; remove then rename is still
-    // best-effort atomic for our crash test (temp remains if rename fails).
-    if path.exists() {
-        let _ = fs::remove_file(path);
-    }
+    // Unix rename replaces the destination atomically. Never pre-delete the
+    // destination: a later rename failure must leave the original intact.
     fs::rename(&temp, path).map_err(|_| {
         let _ = fs::remove_file(&temp);
         PersistenceError::Query

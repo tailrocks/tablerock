@@ -734,6 +734,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      */
     func pump(operationId: Data) throws
 
+    func readSqlFile(path: String) throws  -> BridgeSqlFile
+
     /**
      * Opens replacement first, then retires the old saved-profile session.
      */
@@ -797,6 +799,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Connects, describes, and disconnects without changing persistence.
      */
     func testProfile(profileId: Data, passwordOverride: String?) throws  -> BridgeConnectionTestReport
+
+    func writeSqlFile(path: String, statementText: String, expectedModifiedNanos: UInt64?, expectedLen: UInt64?, overwriteExternalChange: Bool) throws  -> BridgeSqlFile
 
 }
 /**
@@ -1176,6 +1180,16 @@ open func pump(operationId: Data)throws   {try rustCallWithError(FfiConverterTyp
 }
 }
 
+open func readSqlFile(path: String)throws  -> BridgeSqlFile  {
+    return try  FfiConverterTypeBridgeSqlFile_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_read_sql_file(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
+
     /**
      * Opens replacement first, then retires the old saved-profile session.
      */
@@ -1364,6 +1378,20 @@ open func testProfile(profileId: Data, passwordOverride: String?)throws  -> Brid
             self.uniffiCloneHandle(),
         FfiConverterData.lower(profileId),
         FfiConverterOptionString.lower(passwordOverride),uniffiCallStatus
+    )
+})
+}
+
+open func writeSqlFile(path: String, statementText: String, expectedModifiedNanos: UInt64?, expectedLen: UInt64?, overwriteExternalChange: Bool)throws  -> BridgeSqlFile  {
+    return try  FfiConverterTypeBridgeSqlFile_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_write_sql_file(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(path),
+        FfiConverterString.lower(statementText),
+        FfiConverterOptionUInt64.lower(expectedModifiedNanos),
+        FfiConverterOptionUInt64.lower(expectedLen),
+        FfiConverterBool.lower(overwriteExternalChange),uniffiCallStatus
     )
 })
 }
@@ -2425,6 +2453,68 @@ public func FfiConverterTypeBridgeSessionHealth_lower(_ value: BridgeSessionHeal
 }
 
 
+public struct BridgeSqlFile: Equatable, Hashable {
+    public var path: String
+    public var statementText: String
+    public var modifiedNanos: UInt64?
+    public var len: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, statementText: String, modifiedNanos: UInt64?, len: UInt64) {
+        self.path = path
+        self.statementText = statementText
+        self.modifiedNanos = modifiedNanos
+        self.len = len
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeSqlFile: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeSqlFile: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeSqlFile {
+        return
+            try BridgeSqlFile(
+                path: FfiConverterString.read(from: &buf),
+                statementText: FfiConverterString.read(from: &buf),
+                modifiedNanos: FfiConverterOptionUInt64.read(from: &buf),
+                len: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeSqlFile, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.statementText, into: &buf)
+        FfiConverterOptionUInt64.write(value.modifiedNanos, into: &buf)
+        FfiConverterUInt64.write(value.len, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeSqlFile_lift(_ buf: RustBuffer) throws -> BridgeSqlFile {
+    return try FfiConverterTypeBridgeSqlFile.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeSqlFile_lower(_ value: BridgeSqlFile) -> RustBuffer {
+    return FfiConverterTypeBridgeSqlFile.lower(value)
+}
+
+
 public struct CancelOutcome: Equatable, Hashable {
     public var core: String
     public var runtime: String?
@@ -3262,6 +3352,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_pump() != 15232) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_read_sql_file() != 29861) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_reconnect_saved_session() != 47584) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3305,6 +3398,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_test_profile() != 43186) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_write_sql_file() != 57002) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_constructor_tablerockbridge_create() != 41111) {

@@ -2,8 +2,9 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, UNIX_EPOCH},
 };
 
 use tablerock_core::{
@@ -31,7 +32,7 @@ use tablerock_engine::{
 };
 use tablerock_persistence::{
     HistoryAppend, HistoryOutcomeClass, HistoryRetention, PersistenceActor, ProfileOrderUpdate,
-    SavedQueryUpsert,
+    SavedQueryUpsert, SqlFileFacts, external_change_detected, read_sql_file, write_sql_file_atomic,
 };
 
 use crate::{
@@ -188,6 +189,14 @@ pub struct BridgeSavedQueryItem {
     pub engine: String,
     pub statement_text: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct BridgeSqlFile {
+    pub path: String,
+    pub statement_text: String,
+    pub modified_nanos: Option<u64>,
+    pub len: u64,
 }
 
 /// One Rust-owned catalog node. Swift renders these facts and returns only opaque ids.
@@ -419,6 +428,29 @@ impl TableRockBridge {
 
     pub fn delete_saved_query(&self, query_id: i64) -> Result<bool, BridgeError> {
         catch_entry(|| self.delete_saved_query_inner(query_id))
+    }
+
+    pub fn read_sql_file(&self, path: String) -> Result<BridgeSqlFile, BridgeError> {
+        catch_entry(|| read_bridge_sql_file(&path))
+    }
+
+    pub fn write_sql_file(
+        &self,
+        path: String,
+        statement_text: String,
+        expected_modified_nanos: Option<u64>,
+        expected_len: Option<u64>,
+        overwrite_external_change: bool,
+    ) -> Result<BridgeSqlFile, BridgeError> {
+        catch_entry(|| {
+            write_bridge_sql_file(
+                &path,
+                &statement_text,
+                expected_modified_nanos,
+                expected_len,
+                overwrite_external_change,
+            )
+        })
     }
 
     pub fn create_profile_group(&self, name: String) -> Result<(), BridgeError> {
@@ -2811,6 +2843,80 @@ fn validate_bridge_group_name(raw: &str) -> Result<String, BridgeError> {
     ProfileGroupName::new(bounded)
         .map_err(|error| BridgeError::rejected("profile-group", error.to_string()))?;
     Ok(name.to_owned())
+}
+
+fn bridge_sql_path(raw: &str) -> Result<PathBuf, BridgeError> {
+    if raw.len() > 4_096 {
+        return Err(BridgeError::rejected(
+            "sql-file-path",
+            "SQL file path exceeds 4096 bytes",
+        ));
+    }
+    let path = Path::new(raw);
+    if !path.is_absolute() || path.extension().and_then(|value| value.to_str()) != Some("sql") {
+        return Err(BridgeError::rejected(
+            "sql-file-path",
+            "SQL file path must be absolute and end in .sql",
+        ));
+    }
+    Ok(path.to_path_buf())
+}
+
+fn bridge_sql_file(text: String, facts: SqlFileFacts) -> BridgeSqlFile {
+    BridgeSqlFile {
+        path: facts.path.to_string_lossy().into_owned(),
+        statement_text: text,
+        modified_nanos: facts
+            .mtime
+            .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+            .and_then(|value| u64::try_from(value.as_nanos()).ok()),
+        len: facts.len,
+    }
+}
+
+fn read_bridge_sql_file(raw_path: &str) -> Result<BridgeSqlFile, BridgeError> {
+    let path = bridge_sql_path(raw_path)?;
+    let (text, facts) = read_sql_file(&path)
+        .map_err(|error| BridgeError::rejected("sql-file-read", error.to_string()))?;
+    if text.len() > 8 * 1_048_576 {
+        return Err(BridgeError::rejected(
+            "sql-file-size",
+            "SQL file exceeds 8 MiB",
+        ));
+    }
+    Ok(bridge_sql_file(text, facts))
+}
+
+fn write_bridge_sql_file(
+    raw_path: &str,
+    statement_text: &str,
+    expected_modified_nanos: Option<u64>,
+    expected_len: Option<u64>,
+    overwrite_external_change: bool,
+) -> Result<BridgeSqlFile, BridgeError> {
+    let path = bridge_sql_path(raw_path)?;
+    if statement_text.len() > 8 * 1_048_576 {
+        return Err(BridgeError::rejected(
+            "sql-file-size",
+            "SQL file exceeds 8 MiB",
+        ));
+    }
+    if let (Some(modified_nanos), Some(len)) = (expected_modified_nanos, expected_len) {
+        let previous = SqlFileFacts {
+            path: path.clone(),
+            mtime: Some(UNIX_EPOCH + Duration::from_nanos(modified_nanos)),
+            len,
+        };
+        if !overwrite_external_change && external_change_detected(&previous) {
+            return Err(BridgeError::rejected(
+                "sql-file-external-change",
+                "SQL file changed outside TableRock",
+            ));
+        }
+    }
+    let facts = write_sql_file_atomic(&path, statement_text)
+        .map_err(|error| BridgeError::rejected("sql-file-write", error.to_string()))?;
+    Ok(bridge_sql_file(statement_text.to_owned(), facts))
 }
 
 #[derive(Clone, Copy)]
