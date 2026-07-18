@@ -374,6 +374,43 @@ fn typed_catalog_uses_opaque_parent_handles_for_all_engines() {
 }
 
 #[test]
+fn catalog_browse_accepts_only_cached_table_like_nodes() {
+    for (engine, low) in [(Engine::PostgreSql, 183_u64), (Engine::ClickHouse, 184)] {
+        let (_result_id, page) = sample_page(engine, low, &[7]);
+        let bridge = TableRockBridge::new_for_test();
+        let session_id = open_fixed(&bridge, engine, page);
+        let roots = bridge.refresh_catalog(session_id.clone(), None).unwrap();
+        let level_one = bridge
+            .refresh_catalog(session_id.clone(), Some(roots[0].id_bytes.clone()))
+            .unwrap();
+        let object = if engine == Engine::PostgreSql {
+            bridge
+                .refresh_catalog(session_id.clone(), Some(level_one[0].id_bytes.clone()))
+                .unwrap()
+                .remove(0)
+        } else {
+            level_one[0].clone()
+        };
+        let operation = bridge
+            .submit_catalog_browse(session_id.clone(), object.id_bytes, 500)
+            .unwrap();
+        bridge.pump(operation.clone()).unwrap();
+        let events = bridge.next_events(0, 64).unwrap().events;
+        assert!(events.iter().any(|event| {
+            event.operation_id == operation && event.kind == "page" && event.rows == Some(1)
+        }));
+        assert!(matches!(
+            bridge.submit_catalog_browse(session_id.clone(), roots[0].id_bytes.clone(), 500),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-kind"
+        ));
+        assert!(matches!(
+            bridge.submit_catalog_browse(session_id, roots[0].id_bytes.clone(), 0),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-bounds"
+        ));
+    }
+}
+
+#[test]
 fn event_ordering_and_future_cursor_and_resync() {
     let (result_id, page) = sample_page(Engine::PostgreSql, 81, &[3]);
     let bridge = TableRockBridge::new_for_test();

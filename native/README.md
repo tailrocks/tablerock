@@ -57,3 +57,10 @@ closes it; running tabs cannot close, and dirty tabs require confirmation.
 Saved-profile workspaces persist selected tab, titles, text, and database
 intent through Rust. Results, operation handles, and pending writes never
 restore. Switching profiles clears volatile tab state before loading intent.
+
+Double-click a PostgreSQL or ClickHouse table-like catalog object to open a
+read-only preview tab. Leaving the preview or choosing Pin makes it durable for
+the current connection. The same object can open more than once with independent
+result/page state. Rust resolves the opaque catalog handle and renders bounded
+identifier-safe browse SQL; Swift never assembles object SQL. Redis object tabs
+remain unavailable until typed key-node catalog projection lands.

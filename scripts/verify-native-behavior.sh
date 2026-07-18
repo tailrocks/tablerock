@@ -39,6 +39,9 @@ run_pg() {
         docker exec "$name" pg_isready -U u >/dev/null 2>&1 && break
         sleep 1; [ "$i" -eq 30 ] && { echo "    PG not ready"; return 1; }
     done
+    docker exec "$name" psql -U u -d db -v ON_ERROR_STOP=1 -c \
+        'CREATE TABLE IF NOT EXISTS public.users (id bigint PRIMARY KEY); INSERT INTO public.users (id) VALUES (1) ON CONFLICT (id) DO NOTHING;' \
+        >/dev/null
     DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
         TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
         TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1 \
@@ -49,9 +52,6 @@ run_pg() {
     DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
         TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
         TABLEROCK_CANCEL=1 "$BUILD/BehaviorProof"
-    docker exec "$name" psql -U u -d db -v ON_ERROR_STOP=1 -c \
-        'CREATE TABLE IF NOT EXISTS public.users (id bigint PRIMARY KEY); INSERT INTO public.users (id) VALUES (1) ON CONFLICT (id) DO NOTHING;' \
-        >/dev/null
     DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
         TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
         TABLEROCK_REVIEW=1 "$BUILD/BehaviorProof"
@@ -66,6 +66,9 @@ run_ch() {
         -e CLICKHOUSE_USER=u -e CLICKHOUSE_PASSWORD=secret -e CLICKHOUSE_DB=db \
         -p 8122:8123 clickhouse/clickhouse-server:25.8 >/dev/null
     sleep 12
+    docker exec "$name" clickhouse-client --user u --password secret --database db \
+        --query 'CREATE TABLE IF NOT EXISTS events (id UInt64) ENGINE = MergeTree ORDER BY id; INSERT INTO events SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM events WHERE id = 1)' \
+        >/dev/null
     DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
         TABLEROCK_ENGINE=clickhouse TABLEROCK_PORT=8122 TABLEROCK_DB=db \
         TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1 \

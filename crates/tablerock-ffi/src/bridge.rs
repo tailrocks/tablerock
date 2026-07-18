@@ -23,12 +23,12 @@ use tablerock_core::{
     StatementText, TlsPolicy, reconnect_decision,
 };
 use tablerock_engine::{
-    AdapterFailureClass, CatalogRequest, ClickHouseCompression, ClickHouseConnectConfig,
-    ClickHouseProbeQuery, ClickHouseSession, ClickHouseTlsMode, DriverPageRequest, DriverRuntime,
-    DriverSession, EngineService, EngineServiceUpdate, PostgresConnectConfig, PostgresProbeQuery,
-    PostgresSession, PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity,
-    RedisCredentials, RedisProtocol, RedisSession, RedisTlsMode, ResolvedSecret, SecretPromptPort,
-    SecretResolutionError, resolve_for_connect,
+    AdapterFailureClass, BrowsePlan, CatalogRequest, ClickHouseCompression,
+    ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession, ClickHouseTlsMode,
+    DriverPageRequest, DriverRuntime, DriverSession, EngineService, EngineServiceUpdate,
+    PostgresConnectConfig, PostgresProbeQuery, PostgresSession, PostgresTlsMode,
+    RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
+    RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError, resolve_for_connect,
 };
 use tablerock_persistence::{
     HistoryAppend, HistoryOutcomeClass, HistoryRetention, PersistenceActor, ProfileOrderUpdate,
@@ -535,6 +535,15 @@ impl TableRockBridge {
         parent_node_id: Option<Vec<u8>>,
     ) -> Result<Vec<BridgeCatalogNode>, BridgeError> {
         catch_entry(|| self.refresh_catalog_inner(session_id, parent_node_id))
+    }
+
+    pub fn submit_catalog_browse(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+        row_count: u32,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| self.submit_catalog_browse_inner(session_id, catalog_node_id, row_count))
     }
 
     /// Stage a probe mutation + register a single-use review token for the
@@ -2066,6 +2075,93 @@ impl TableRockBridge {
         Ok(nodes.iter().map(bridge_catalog_node).collect())
     }
 
+    fn submit_catalog_browse_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        catalog_node_id_bytes: Vec<u8>,
+        row_count: u32,
+    ) -> Result<Vec<u8>, BridgeError> {
+        if !(1..=1_000).contains(&row_count) {
+            return Err(BridgeError::rejected(
+                "catalog-browse-bounds",
+                "catalog browse row count must be 1 to 1000",
+            ));
+        }
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let catalog_node_id = catalog_node_from_bytes(&catalog_node_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let statement = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let node = inner
+                .catalog_nodes
+                .get(&(session_id, catalog_node_id))
+                .ok_or_else(|| {
+                    BridgeError::rejected(
+                        "unknown-catalog-node",
+                        "catalog node is stale or unknown",
+                    )
+                })?;
+            let parent_id = node.parent_id().ok_or_else(|| {
+                BridgeError::rejected("catalog-browse-kind", "catalog object has no parent")
+            })?;
+            let parent = inner
+                .catalog_nodes
+                .get(&(session_id, parent_id))
+                .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+            let supported = matches!(
+                (registered.engine, node.kind()),
+                (
+                    Engine::PostgreSql,
+                    CatalogNodeKind::PostgreSqlObject(
+                        PostgreSqlObjectKind::Table
+                            | PostgreSqlObjectKind::View
+                            | PostgreSqlObjectKind::MaterializedView
+                            | PostgreSqlObjectKind::ForeignTable
+                            | PostgreSqlObjectKind::PartitionedTable
+                            | PostgreSqlObjectKind::Sequence
+                    )
+                ) | (Engine::ClickHouse, CatalogNodeKind::ClickHouseObject(_))
+            );
+            if !supported {
+                return Err(BridgeError::rejected(
+                    "catalog-browse-kind",
+                    "catalog node is not a browsable table-like object",
+                ));
+            }
+            BrowsePlan {
+                schema: parent.name().to_owned(),
+                table: node.name().to_owned(),
+                sort: Vec::new(),
+                filters: Vec::new(),
+                raw_where: None,
+                limit: row_count,
+                offset: 0,
+            }
+            .render_sql()
+            .map_err(|error| BridgeError::rejected("catalog-browse-plan", error.to_string()))?
+            .sql
+        };
+        self.submit_inner(SubmitSpec {
+            intent: "browse_object".into(),
+            session_id: session_id_bytes,
+            statement: Some(statement),
+            result_id: None,
+            start_row: None,
+            row_count: Some(row_count),
+            expected_revision: 0,
+        })
+    }
+
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
         self.open_inner_for_profile(params, None)
     }
@@ -2362,36 +2458,40 @@ impl TableRockBridge {
             });
 
             let (intent, request) = match intent_name.as_str() {
-                "probe" | "execute" => {
+                "probe" | "execute" | "browse_object" => {
                     let statement = spec.statement.clone().unwrap_or_else(|| "select 1".into());
                     let text = StatementText::new(statement)
                         .map_err(|error| BridgeError::rejected("statement", error.to_string()))?;
                     let limits = default_page_limits();
                     let max_cell_bytes = 64 * 1024;
                     let request = match (engine, intent_name.as_str()) {
-                        (Engine::PostgreSql, "execute") => DriverPageRequest::PostgreSqlStatement {
-                            statement: text.clone(),
-                            parameters: Vec::new(),
-                            limits,
-                            max_cell_bytes,
-                        },
+                        (Engine::PostgreSql, "execute" | "browse_object") => {
+                            DriverPageRequest::PostgreSqlStatement {
+                                statement: text.clone(),
+                                parameters: Vec::new(),
+                                limits,
+                                max_cell_bytes,
+                            }
+                        }
                         (Engine::PostgreSql, _) => DriverPageRequest::PostgreSqlProbe {
                             query: PostgresProbeQuery::BoundedSeries,
                             limits,
                             max_cell_bytes,
                         },
-                        (Engine::ClickHouse, "execute") => DriverPageRequest::ClickHouseStatement {
-                            statement: text.clone(),
-                            query_id: BoundedText::copy_from_str(
-                                &format!("bridge-{}", page_identity.result_id()),
-                                ByteLimit::new(128),
-                            )
-                            .map_err(|error| {
-                                BridgeError::rejected("query-id", error.to_string())
-                            })?,
-                            limits,
-                            max_cell_bytes,
-                        },
+                        (Engine::ClickHouse, "execute" | "browse_object") => {
+                            DriverPageRequest::ClickHouseStatement {
+                                statement: text.clone(),
+                                query_id: BoundedText::copy_from_str(
+                                    &format!("bridge-{}", page_identity.result_id()),
+                                    ByteLimit::new(128),
+                                )
+                                .map_err(|error| {
+                                    BridgeError::rejected("query-id", error.to_string())
+                                })?,
+                                limits,
+                                max_cell_bytes,
+                            }
+                        }
                         (Engine::ClickHouse, _) => DriverPageRequest::ClickHouseProbe {
                             query: ClickHouseProbeQuery::TypedValues,
                             query_id: BoundedText::copy_from_str(

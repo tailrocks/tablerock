@@ -17,7 +17,7 @@ trap cleanup EXIT
 
 for pattern in \
   'final class NativeQueryTab' \
-  'queryTabs.count < 64' \
+  'queryTabs.count \+ objectTabs.count < 64' \
   'Cancel the running query before closing its tab' \
   'Close query tab with unsaved changes\?' \
   'func persistSessionIntent\(\) async' \

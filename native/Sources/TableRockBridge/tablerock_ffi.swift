@@ -801,6 +801,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      */
     func submit(spec: SubmitSpec) throws  -> Data
 
+    func submitCatalogBrowse(sessionId: Data, catalogNodeId: Data, rowCount: UInt32) throws  -> Data
+
     /**
      * Connects, describes, and disconnects without changing persistence.
      */
@@ -1399,6 +1401,18 @@ open func submit(spec: SubmitSpec)throws  -> Data  {
     uniffi_tablerock_ffi_fn_method_tablerockbridge_submit(
             self.uniffiCloneHandle(),
         FfiConverterTypeSubmitSpec_lower(spec),uniffiCallStatus
+    )
+})
+}
+
+open func submitCatalogBrowse(sessionId: Data, catalogNodeId: Data, rowCount: UInt32)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_submit_catalog_browse(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(catalogNodeId),
+        FfiConverterUInt32.lower(rowCount),uniffiCallStatus
     )
 })
 }
@@ -3604,6 +3618,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit() != 59509) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_catalog_browse() != 61783) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_test_profile() != 43186) {

@@ -37,20 +37,55 @@ print("opened \(engine) session against \(host):\(port)")
 if catalogMode {
     var level = try bridge.refreshCatalog(sessionId: session, parentNodeId: nil)
     var total = level.count
-    for _ in 0..<2 {
-        guard let parent = level.first(where: { node in node.expandable }) else { break }
+    for depth in 0..<2 {
+        let preferredName = switch (engine, depth) {
+        case ("postgresql", 0): database
+        case ("postgresql", 1): "public"
+        case ("clickhouse", 0): database
+        default: ""
+        }
+        guard let parent = level.first(where: {
+            $0.expandable && (preferredName.isEmpty || $0.name == preferredName)
+        }) ?? level.first(where: { node in node.expandable }) else { break }
         level = try bridge.refreshCatalog(
             sessionId: session,
             parentNodeId: parent.idBytes
         )
         total += level.count
     }
+    var browsedRows: Int?
+    let browsableKinds: Set<String> = [
+        "postgresql_table", "postgresql_view", "postgresql_materialized_view",
+        "postgresql_foreign_table", "postgresql_partitioned_table", "postgresql_sequence",
+        "clickhouse_table", "clickhouse_view", "clickhouse_materialized_view",
+        "clickhouse_dictionary",
+    ]
+    if engine != "redis",
+       let object = level.first(where: { browsableKinds.contains($0.kind) })
+    {
+        let operation = try bridge.submitCatalogBrowse(
+            sessionId: session, catalogNodeId: object.idBytes, rowCount: 500
+        )
+        try bridge.pump(operationId: operation)
+        let batch = try bridge.nextEvents(cursor: 0, maximum: 64)
+        guard let bytes = batch.events.last(where: {
+            $0.operationId == operation && $0.kind == "page"
+        })?.pageBytes else {
+            let observed = batch.events.filter { $0.operationId == operation }
+                .map { "\($0.kind):\($0.outcome ?? "nil")" }.joined(separator: ",")
+            FileHandle.standardError.write(
+                "FAIL: catalog browse returned no page events=\(observed)\n".data(using: .utf8)!
+            )
+            exit(1)
+        }
+        browsedRows = try PageV1.decodeTable(bytes).rows.count
+    }
     _ = try bridge.shutdown(cancelActive: false, deadlineMs: 0)
     guard total > 0 else {
         FileHandle.standardError.write("FAIL: typed catalog returned no nodes\n".data(using: .utf8)!)
         exit(1)
     }
-    print("CATALOG PROOF PASSED: \(engine) typed nodes=\(total)")
+    print("CATALOG PROOF PASSED: \(engine) typed nodes=\(total) browsed_rows=\(browsedRows.map(String.init) ?? "not_applicable")")
     exit(0)
 }
 

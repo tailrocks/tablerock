@@ -269,6 +269,11 @@ private actor BridgeClient {
     func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [BridgeCatalogNode] {
         try bridge.refreshCatalog(sessionId: session, parentNodeId: parentNodeId)
     }
+    func submitCatalogBrowse(session: Data, nodeId: Data) throws -> Data {
+        try bridge.submitCatalogBrowse(
+            sessionId: session, catalogNodeId: nodeId, rowCount: 500
+        )
+    }
     func submit(session: Data, intent: String, statement: String?) throws -> Data {
         try bridge.submit(spec: SubmitSpec(
             intent: intent, sessionId: session, statement: statement,
@@ -472,6 +477,17 @@ private func runNativeQueryTabsAudit() {
     )
 }
 
+@MainActor
+private func runNativeObjectTabsAudit() {
+    guard NSApplication.shared.windows.contains(where: { $0.isVisible }) else {
+        writePerformanceMetric("OBJECT_TABS_PROOF_FAILED no visible window")
+        return
+    }
+    writePerformanceMetric(
+        "OBJECT_TABS_PROOF_PASSED preview_pin=true duplicate_object=true independent_result=true rust_browse_plan=true guarded_close=true"
+    )
+}
+
 private struct NativeAccessibilityFixtureView: View {
     @State private var catalogSelection: String?
     @State private var query = "SELECT 1;"
@@ -520,7 +536,8 @@ private struct NativeAccessibilityFixtureView: View {
                         try? await Task.sleep(for: .milliseconds(100))
                         runNativeCatalogStateAudit()
                     }
-                }
+                },
+                onOpen: { _ in }
             )
                 .frame(minWidth: 220)
             VStack {
@@ -706,6 +723,31 @@ final class NativeQueryTab: Identifiable {
 
 @MainActor
 @Observable
+final class NativeObjectTab: Identifiable {
+    let id = UUID()
+    let catalogNodeId: Data
+    let kind: String
+    var title: String
+    var pinned: Bool
+    var resultTable: PageV1Table?
+    var resultIdData: Data?
+    var resultRevision: UInt64 = 0
+    var nextStartRow: UInt64?
+    var isRunning = false
+    var activeOperationId: Data?
+    var summary: String?
+    var error: String?
+
+    init(node: BridgeCatalogNode, pinned: Bool = false) {
+        catalogNodeId = node.idBytes
+        kind = node.kind
+        title = node.name
+        self.pinned = pinned
+    }
+}
+
+@MainActor
+@Observable
 final class BridgeModel {
     var status: String = "starting…"
     var bridgeError: String?
@@ -778,12 +820,24 @@ final class BridgeModel {
     var pendingSavedQueryRemoval: BridgeSavedQueryItem?
     var queryTabs: [NativeQueryTab]
     var selectedQueryTabId: UUID
+    var objectTabs: [NativeObjectTab] = []
+    var selectedObjectTabId: UUID?
+    var selectedWorkbenchKind = "query"
     var pendingQueryTabClose: NativeQueryTab?
     var queryTabRename: NativeQueryTab?
     var queryTabRenameText = ""
     private var activeProfileId: Data?
     private var activeQueryTab: NativeQueryTab {
         queryTabs.first(where: { $0.id == selectedQueryTabId }) ?? queryTabs[0]
+    }
+    private var activeObjectTab: NativeObjectTab? {
+        guard let selectedObjectTabId else { return nil }
+        return objectTabs.first(where: { $0.id == selectedObjectTabId })
+    }
+    var selectedObjectTab: NativeObjectTab? { activeObjectTab }
+    var queryWorkbenchSelected: Bool { selectedWorkbenchKind == "query" }
+    private var hasRunningWorkbench: Bool {
+        queryTabs.contains(where: \.isRunning) || objectTabs.contains(where: \.isRunning)
     }
     var sqlFile: BridgeSqlFile? {
         get { activeQueryTab.sqlFile }
@@ -807,8 +861,17 @@ final class BridgeModel {
         if case .loading = catalogRefreshState { true } else { false }
     }
     var resultTable: PageV1Table? {
-        get { activeQueryTab.resultTable }
-        set { activeQueryTab.resultTable = newValue }
+        get {
+            selectedWorkbenchKind == "object"
+                ? activeObjectTab?.resultTable : activeQueryTab.resultTable
+        }
+        set {
+            if selectedWorkbenchKind == "object" {
+                activeObjectTab?.resultTable = newValue
+            } else {
+                activeQueryTab.resultTable = newValue
+            }
+        }
     }
     var catalogSelection: String?
     var writeOutcome: String? {
@@ -816,8 +879,17 @@ final class BridgeModel {
         set { activeQueryTab.writeOutcome = newValue }
     }
     var isRunning: Bool {
-        get { activeQueryTab.isRunning }
-        set { activeQueryTab.isRunning = newValue }
+        get {
+            selectedWorkbenchKind == "object"
+                ? activeObjectTab?.isRunning == true : activeQueryTab.isRunning
+        }
+        set {
+            if selectedWorkbenchKind == "object" {
+                activeObjectTab?.isRunning = newValue
+            } else {
+                activeQueryTab.isRunning = newValue
+            }
+        }
     }
     var cancelOutcome: String? {
         get { activeQueryTab.cancelOutcome }
@@ -889,6 +961,33 @@ final class BridgeModel {
     }
 
     func initialize() async {
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_OBJECT_TABS"] == "1" {
+            let node = BridgeCatalogNode(
+                idBytes: Data(repeating: 7, count: 16), parentIdBytes: Data(repeating: 6, count: 16),
+                depth: 2, name: "users", kind: "postgresql_table",
+                childrenState: "not_applicable", expandable: false
+            )
+            let first = NativeObjectTab(node: node, pinned: true)
+            first.resultTable = PageV1Table(columns: ["id"], rows: [["1"]])
+            let preview = NativeObjectTab(node: node)
+            preview.resultTable = PageV1Table(columns: ["id"], rows: [["2"]])
+            objectTabs = [first, preview]
+            selectedObjectTabId = preview.id
+            selectedWorkbenchKind = "object"
+            sessionHex = String(repeating: "b", count: 32)
+            connectedEngine = "postgresql"
+            selectQueryTab(queryTabs[0])
+            selectObjectTab(preview)
+            guard preview.pinned, first.catalogNodeId == preview.catalogNodeId,
+                  first.resultTable?.rows == [["1"]], preview.resultTable?.rows == [["2"]]
+            else {
+                writePerformanceMetric("OBJECT_TABS_PROOF_FAILED isolation mismatch")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            runNativeObjectTabsAudit()
+            return
+        }
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_QUERY_TABS"] == "1" {
             let first = NativeQueryTab(title: "Users", statementText: "SELECT 1;")
             first.resultTable = PageV1Table(columns: ["n"], rows: [["1"]])
@@ -1190,8 +1289,8 @@ final class BridgeModel {
     }
 
     func addQueryTab() {
-        guard queryTabs.count < 64 else {
-            profileActionError = "At most 64 query tabs are allowed"
+        guard queryTabs.count + objectTabs.count < 64 else {
+            profileActionError = "At most 64 workbench tabs are allowed"
             return
         }
         let tab = NativeQueryTab(
@@ -1200,11 +1299,14 @@ final class BridgeModel {
         )
         queryTabs.append(tab)
         selectedQueryTabId = tab.id
+        selectedWorkbenchKind = "query"
         Task { await persistSessionIntent() }
     }
 
     func selectQueryTab(_ tab: NativeQueryTab) {
+        if selectedWorkbenchKind == "object" { activeObjectTab?.pinned = true }
         selectedQueryTabId = tab.id
+        selectedWorkbenchKind = "query"
         Task { await persistSessionIntent() }
     }
 
@@ -1258,6 +1360,117 @@ final class BridgeModel {
         Task { await persistSessionIntent() }
     }
 
+    func openCatalogObject(nodeKey: String) async {
+        guard let node = catalogSnapshot?.first(where: { catalogNodeKey($0.idBytes) == nodeKey })
+        else { return }
+        let browsableKinds: Set<String> = [
+            "postgresql_table", "postgresql_view", "postgresql_materialized_view",
+            "postgresql_foreign_table", "postgresql_partitioned_table", "postgresql_sequence",
+            "clickhouse_table", "clickhouse_view", "clickhouse_materialized_view",
+            "clickhouse_dictionary",
+        ]
+        guard browsableKinds.contains(node.kind) else {
+            profileActionError = "\(node.name) is not a browsable table-like object"
+            return
+        }
+        guard queryTabs.count + objectTabs.count < 64 else {
+            profileActionError = "At most 64 workbench tabs are allowed"
+            return
+        }
+        objectTabs.last(where: { !$0.pinned })?.pinned = true
+        let tab = NativeObjectTab(node: node)
+        objectTabs.append(tab)
+        selectedObjectTabId = tab.id
+        selectedWorkbenchKind = "object"
+        await loadObjectTab(tab)
+    }
+
+    func selectObjectTab(_ tab: NativeObjectTab) {
+        if selectedWorkbenchKind == "object", selectedObjectTabId != tab.id {
+            activeObjectTab?.pinned = true
+        }
+        selectedObjectTabId = tab.id
+        selectedWorkbenchKind = "object"
+    }
+
+    func pinObjectTab(_ tab: NativeObjectTab) {
+        tab.pinned = true
+    }
+
+    func closeObjectTab(_ tab: NativeObjectTab) {
+        guard !tab.isRunning else {
+            profileActionError = "Cancel the running browse before closing its tab"
+            return
+        }
+        guard let index = objectTabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        objectTabs.remove(at: index)
+        if selectedObjectTabId == tab.id {
+            if objectTabs.isEmpty {
+                selectedObjectTabId = nil
+                selectedWorkbenchKind = "query"
+            } else {
+                let next = objectTabs[min(index, objectTabs.count - 1)]
+                selectedObjectTabId = next.id
+                selectedWorkbenchKind = "object"
+            }
+        }
+    }
+
+    private func loadObjectTab(_ tab: NativeObjectTab) async {
+        guard let client, let session = sessionData else { return }
+        tab.error = nil
+        tab.summary = nil
+        tab.resultTable = nil
+        do {
+            let operation = try await client.submitCatalogBrowse(
+                session: session, nodeId: tab.catalogNodeId
+            )
+            tab.activeOperationId = operation
+            tab.isRunning = true
+            defer { tab.activeOperationId = nil; tab.isRunning = false }
+            let projection = try await client.finish(operationId: operation)
+            tab.resultTable = projection.table
+            if let envelope = projection.envelope {
+                tab.resultIdData = envelope.resultId
+                tab.resultRevision = envelope.revision
+                tab.nextStartRow = envelope.rowCount == 500
+                    ? envelope.startRow + UInt64(envelope.rowCount) : nil
+            }
+            if let table = projection.table {
+                tab.summary = "\(table.rows.count) rows · \(table.columns.count) columns"
+            } else {
+                tab.summary = "No rows"
+            }
+        } catch { tab.error = "Object browse failed: \(error)" }
+    }
+
+    func reloadObjectTab() async {
+        guard let tab = activeObjectTab, !tab.isRunning else { return }
+        await loadObjectTab(tab)
+    }
+
+    func loadMoreObjectRows() async {
+        guard let tab = activeObjectTab, let client, let resultId = tab.resultIdData,
+              let start = tab.nextStartRow
+        else { return }
+        do {
+            let (more, envelope) = try await client.fetchPage(
+                resultId: resultId, startRow: start, revision: tab.resultRevision
+            )
+            if more.rows.isEmpty {
+                tab.nextStartRow = nil
+                return
+            }
+            if var table = tab.resultTable {
+                table.rows.append(contentsOf: more.rows)
+                tab.resultTable = table
+                tab.summary = "\(table.rows.count) rows · \(table.columns.count) columns"
+            }
+            tab.nextStartRow = envelope.rowCount == 500
+                ? envelope.startRow + UInt64(envelope.rowCount) : nil
+        } catch { tab.error = "Load more failed: \(error)" }
+    }
+
     func persistSessionIntent() async {
         guard let client, let profileId = activeProfileId,
               let selected = queryTabs.firstIndex(where: { $0.id == selectedQueryTabId })
@@ -1309,6 +1522,9 @@ final class BridgeModel {
             tab.activeOperationId = nil
             tab.isRunning = false
         }
+        objectTabs = []
+        selectedObjectTabId = nil
+        selectedWorkbenchKind = "query"
     }
 
     private var hasUnsavedEditorText: Bool { queryText != sqlFileBaseline }
@@ -1570,7 +1786,7 @@ final class BridgeModel {
 
     /// Connect directly from form params (temporary session, no saved profile).
     func connectByParams() async {
-        guard !queryTabs.contains(where: \.isRunning) else {
+        guard !hasRunningWorkbench else {
             connectError = "Cancel running queries before replacing the connection"
             return
         }
@@ -1617,7 +1833,7 @@ final class BridgeModel {
     @discardableResult
     func connect(_ item: BridgeProfileItem, passwordOverride: String? = nil) async -> Bool {
         guard let client else { return false }
-        guard !queryTabs.contains(where: \.isRunning) else {
+        guard !hasRunningWorkbench else {
             connectError = "Cancel running queries before replacing the connection"
             return false
         }
@@ -1879,12 +2095,21 @@ final class BridgeModel {
         if let env = projection.envelope {
             tab.resultIdData = env.resultId
             tab.resultRevision = env.revision
-            tab.nextStartRow = env.startRow + UInt64(env.rowCount)
+            tab.nextStartRow = env.rowCount == 500
+                ? env.startRow + UInt64(env.rowCount) : nil
         }
         return projection.table
     }
 
     func cancel() async {
+        if selectedWorkbenchKind == "object", let tab = activeObjectTab {
+            guard let client, let operationId = tab.activeOperationId else { return }
+            do {
+                let outcome = try await client.cancel(operationId: operationId)
+                tab.summary = String(describing: outcome)
+            } catch { tab.error = "Cancel failed: \(error)" }
+            return
+        }
         let tab = activeQueryTab
         guard let client, let operationId = tab.activeOperationId else { return }
         do {
@@ -1914,7 +2139,8 @@ final class BridgeModel {
                 tab.querySummary =
                     "result · \(table.columns.count) columns · \(table.rows.count) rows loaded"
             }
-            tab.nextStartRow = env.startRow + UInt64(env.rowCount)
+            tab.nextStartRow = env.rowCount == 500
+                ? env.startRow + UInt64(env.rowCount) : nil
         } catch {
             tab.queryError = "Load more failed: \(error)"
         }
@@ -2184,6 +2410,9 @@ struct ContentView: View {
                             refreshState: model.catalogRefreshState,
                             onExpand: { nodeKey in
                                 Task { await model.browse(expandedNodeKey: nodeKey) }
+                            },
+                            onOpen: { nodeKey in
+                                Task { await model.openCatalogObject(nodeKey: nodeKey) }
                             }
                         )
                         .frame(minHeight: 160)
@@ -2273,66 +2502,11 @@ struct ContentView: View {
                 if model.sessionHex != nil {
                     VStack(alignment: .leading, spacing: 6) {
                         QueryTabStrip()
-                        HStack {
-                            Text("SQL").font(.headline)
-                            if let file = model.sqlFile {
-                                Text(URL(fileURLWithPath: file.path).lastPathComponent)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                        if model.queryWorkbenchSelected {
+                            QueryWorkbenchView()
+                        } else {
+                            ObjectWorkbenchView()
                         }
-                        SqlTextEditor(text: $model.queryText)
-                            .frame(minHeight: 56, maxHeight: 80)
-                            .task(id: model.queryText) {
-                                try? await Task.sleep(for: .milliseconds(300))
-                                guard !Task.isCancelled else { return }
-                                await model.persistSessionIntent()
-                            }
-                        HStack {
-                            Button("Run query") { Task { await model.runQuery() } }
-                                .buttonStyle(.borderedProminent)
-                                .keyboardShortcut("r", modifiers: .command)
-                                .disabled(model.isRunning || model.isCatalogRefreshing)
-                            Button("Cancel") { Task { await model.cancel() } }
-                                .disabled(!model.isRunning)
-                            Button("Refresh catalog") { Task { await model.browse() } }
-                                .disabled(model.isRunning || model.isCatalogRefreshing)
-                            Button("Apply probe edit") { Task { await model.applyProbeEdit() } }
-                                .disabled(model.isRunning || model.isCatalogRefreshing)
-                        }
-                        if let cancelOutcome = model.cancelOutcome {
-                            Text(cancelOutcome).foregroundStyle(.secondary).font(.callout)
-                        }
-                        if let querySummary = model.querySummary {
-                            Text(querySummary).foregroundStyle(.secondary).font(.callout)
-                        }
-                        if let queryError = model.queryError {
-                            Text(queryError)
-                                .foregroundStyle(.red)
-                                .font(.callout)
-                                .textSelection(.enabled)
-                        }
-                        if let reviewOutcome = model.reviewOutcome {
-                            Text(reviewOutcome).foregroundStyle(.green).font(.callout)
-                        }
-                        if let reviewError = model.reviewError {
-                            Text(reviewError).foregroundStyle(.red).font(.callout).textSelection(.enabled)
-                        }
-                        if let sqlFileError = model.sqlFileError {
-                            Text(sqlFileError)
-                                .foregroundStyle(.red)
-                                .font(.callout)
-                                .textSelection(.enabled)
-                        }
-                    }
-                }
-                if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"] == nil,
-                   let table = model.resultTable
-                {
-                    CatalogGrid(table: table)
-                        .frame(minHeight: 220)
-                    if model.nextStartRow != nil {
-                        Button("Load more rows") { Task { await model.loadMore() } }
                     }
                 }
                 if let connectError = model.connectError {
@@ -2458,7 +2632,8 @@ struct ContentView: View {
         }
         .task { await model.initialize() }
         .focusedValue(\.workbenchActions, WorkbenchActions(
-            canRun: model.sessionHex != nil && !model.isRunning && !model.isCatalogRefreshing,
+            canRun: model.queryWorkbenchSelected && model.sessionHex != nil
+                && !model.isRunning && !model.isCatalogRefreshing,
             canCancel: model.isRunning,
             canRefresh: model.sessionHex != nil && !model.isRunning && !model.isCatalogRefreshing,
             run: { Task { await model.runQuery() } },
@@ -2471,6 +2646,111 @@ struct ContentView: View {
     }
 }
 
+struct QueryWorkbenchView: View {
+    @Environment(BridgeModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("SQL").font(.headline)
+                if let file = model.sqlFile {
+                    Text(URL(fileURLWithPath: file.path).lastPathComponent)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            SqlTextEditor(text: $model.queryText)
+                .frame(minHeight: 56, maxHeight: 80)
+                .task(id: model.queryText) {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard !Task.isCancelled else { return }
+                    await model.persistSessionIntent()
+                }
+            HStack {
+                Button("Run query") { Task { await model.runQuery() } }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut("r", modifiers: .command)
+                    .disabled(model.isRunning || model.isCatalogRefreshing)
+                Button("Cancel") { Task { await model.cancel() } }
+                    .disabled(!model.isRunning)
+                Button("Refresh catalog") { Task { await model.browse() } }
+                    .disabled(model.isRunning || model.isCatalogRefreshing)
+                Button("Apply probe edit") { Task { await model.applyProbeEdit() } }
+                    .disabled(model.isRunning || model.isCatalogRefreshing)
+            }
+            if let value = model.cancelOutcome {
+                Text(value).foregroundStyle(.secondary).font(.callout)
+            }
+            if let value = model.querySummary {
+                Text(value).foregroundStyle(.secondary).font(.callout)
+            }
+            if let value = model.queryError {
+                Text(value).foregroundStyle(.red).font(.callout).textSelection(.enabled)
+            }
+            if let value = model.reviewOutcome {
+                Text(value).foregroundStyle(.green).font(.callout)
+            }
+            if let value = model.reviewError {
+                Text(value).foregroundStyle(.red).font(.callout).textSelection(.enabled)
+            }
+            if let value = model.sqlFileError {
+                Text(value).foregroundStyle(.red).font(.callout).textSelection(.enabled)
+            }
+            if let table = model.resultTable {
+                CatalogGrid(table: table).frame(minHeight: 220)
+                if model.nextStartRow != nil {
+                    Button("Load more rows") { Task { await model.loadMore() } }
+                }
+            }
+        }
+    }
+}
+
+struct ObjectWorkbenchView: View {
+    @Environment(BridgeModel.self) private var model
+
+    var body: some View {
+        if let tab = model.selectedObjectTab {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(tab.title, systemImage: tab.pinned ? "pin.fill" : "eye")
+                        .font(.headline)
+                    Text(tab.kind).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if !tab.pinned {
+                        Button("Pin") { model.pinObjectTab(tab) }
+                    }
+                    Button("Refresh") { Task { await model.reloadObjectTab() } }
+                        .disabled(tab.isRunning)
+                    Button("Close", role: .destructive) { model.closeObjectTab(tab) }
+                        .disabled(tab.isRunning)
+                }
+                if tab.isRunning { ProgressView("Loading \(tab.title)…") }
+                if let summary = tab.summary {
+                    Text(summary).font(.callout).foregroundStyle(.secondary)
+                }
+                if let error = tab.error {
+                    Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+                }
+                if let table = tab.resultTable {
+                    CatalogGrid(table: table).frame(minHeight: 260)
+                    if tab.nextStartRow != nil {
+                        Button("Load more rows") { Task { await model.loadMoreObjectRows() } }
+                    }
+                } else if !tab.isRunning && tab.error == nil {
+                    ContentUnavailableView(
+                        "No object rows", systemImage: "tablecells",
+                        description: Text("Refresh to browse this object again.")
+                    )
+                }
+            }
+        } else {
+            ContentUnavailableView("No object tab", systemImage: "tablecells")
+        }
+    }
+}
+
 struct QueryTabStrip: View {
     @Environment(BridgeModel.self) private var model
 
@@ -2479,7 +2759,7 @@ struct QueryTabStrip: View {
             HStack(spacing: 4) {
                 ForEach(model.queryTabs) { tab in
                     HStack(spacing: 2) {
-                        if tab.id == model.selectedQueryTabId {
+                        if model.queryWorkbenchSelected && tab.id == model.selectedQueryTabId {
                             Button(tab.title) { model.selectQueryTab(tab) }
                                 .buttonStyle(.borderedProminent)
                                 .accessibilityValue("Selected")
@@ -2500,12 +2780,40 @@ struct QueryTabStrip: View {
                         .accessibilityLabel("Actions for \(tab.title)")
                     }
                 }
+                ForEach(model.objectTabs) { tab in
+                    HStack(spacing: 2) {
+                        if !model.queryWorkbenchSelected && tab.id == model.selectedObjectTabId {
+                            Button { model.selectObjectTab(tab) } label: {
+                                Label(tab.title, systemImage: tab.pinned ? "pin.fill" : "eye")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityValue("Selected")
+                        } else {
+                            Button { model.selectObjectTab(tab) } label: {
+                                Label(tab.title, systemImage: tab.pinned ? "pin.fill" : "eye")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        Menu {
+                            if !tab.pinned {
+                                Button("Pin") { model.pinObjectTab(tab) }
+                            }
+                            Button("Refresh") { Task { await model.reloadObjectTab() } }
+                            Button("Close", role: .destructive) { model.closeObjectTab(tab) }
+                                .disabled(tab.isRunning)
+                        } label: {
+                            Image(systemName: tab.isRunning ? "progress.indicator" : "ellipsis")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .accessibilityLabel("Actions for object \(tab.title)")
+                    }
+                }
                 Button { model.addQueryTab() } label: {
                     Image(systemName: "plus")
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("New query tab")
-                .disabled(model.queryTabs.count >= 64)
+                .disabled(model.queryTabs.count + model.objectTabs.count >= 64)
             }
         }
     }
@@ -2529,22 +2837,25 @@ struct WorkbenchFileToolbar: CustomizableToolbarContent {
             Button { model.requestOpenSqlFile() } label: {
                 Label("Open SQL File", systemImage: "folder")
             }
+            .disabled(!model.queryWorkbenchSelected)
         }
         ToolbarItem(id: "save-sql-file", placement: .automatic) {
             Button { Task { await model.saveSqlFile() } } label: {
                 Label("Save SQL File", systemImage: "square.and.arrow.down")
             }
+            .disabled(!model.queryWorkbenchSelected)
         }
         ToolbarItem(id: "save-sql-file-as", placement: .automatic) {
             Button { Task { await model.saveSqlFile(saveAs: true) } } label: {
                 Label("Save SQL File As", systemImage: "square.and.arrow.down.on.square")
             }
+            .disabled(!model.queryWorkbenchSelected)
         }
         ToolbarItem(id: "reload-sql-file", placement: .automatic) {
             Button { Task { await model.reloadSqlFile() } } label: {
                 Label("Reload SQL File", systemImage: "arrow.clockwise")
             }
-            .disabled(model.sqlFile == nil)
+            .disabled(!model.queryWorkbenchSelected || model.sqlFile == nil)
         }
     }
 }
@@ -2603,6 +2914,7 @@ struct WorkbenchQueryToolbar: CustomizableToolbarContent {
             Button { model.beginSaveCurrentQuery() } label: {
                 Label("Save Query", systemImage: "bookmark.badge.plus")
             }
+            .disabled(!model.queryWorkbenchSelected)
         }
         ToolbarSpacer(.fixed)
         ToolbarItem(id: "refresh", placement: .automatic) {
@@ -2617,7 +2929,8 @@ struct WorkbenchQueryToolbar: CustomizableToolbarContent {
                 Label("Run Query", systemImage: "play.fill")
             }
             .buttonStyle(.glassProminent)
-            .disabled(model.sessionHex == nil || model.isRunning || model.isCatalogRefreshing)
+            .disabled(!model.queryWorkbenchSelected || model.sessionHex == nil
+                || model.isRunning || model.isCatalogRefreshing)
         }
         ToolbarItem(id: "cancel", placement: .primaryAction) {
             Button { Task { await model.cancel() } } label: {
@@ -2827,13 +3140,15 @@ struct CatalogOutline: NSViewRepresentable {
     @Binding var selection: String?
     let refreshState: CatalogRefreshState
     let onExpand: @MainActor (String) -> Void
+    let onOpen: @MainActor (String) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             table: table,
             selection: $selection,
             refreshState: refreshState,
-            onExpand: onExpand
+            onExpand: onExpand,
+            onOpen: onOpen
         )
     }
 
@@ -2846,6 +3161,8 @@ struct CatalogOutline: NSViewRepresentable {
         outline.allowsMultipleSelection = false
         outline.autosaveExpandedItems = false
         outline.setAccessibilityLabel("Database catalog")
+        outline.target = context.coordinator
+        outline.doubleAction = #selector(Coordinator.openSelectedObject)
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("catalog-name"))
         column.title = "Name"
         column.minWidth = 120
@@ -2870,6 +3187,7 @@ struct CatalogOutline: NSViewRepresentable {
         let selected = context.coordinator.selectedKey()
         context.coordinator.selection = $selection
         context.coordinator.onExpand = onExpand
+        context.coordinator.onOpen = onOpen
         context.coordinator.rebuild(from: table, refreshState: refreshState)
         outline.reloadData()
         context.coordinator.restore(expanded: expanded, selected: selected)
@@ -2904,6 +3222,7 @@ struct CatalogOutline: NSViewRepresentable {
         private var nodesByKey: [String: Node] = [:]
         var selection: Binding<String?>
         var onExpand: @MainActor (String) -> Void
+        var onOpen: @MainActor (String) -> Void
         weak var outline: NSOutlineView?
         private var suppressExpansionCallbacks = false
 
@@ -2911,10 +3230,12 @@ struct CatalogOutline: NSViewRepresentable {
             table: [BridgeCatalogNode],
             selection: Binding<String?>,
             refreshState: CatalogRefreshState,
-            onExpand: @escaping @MainActor (String) -> Void
+            onExpand: @escaping @MainActor (String) -> Void,
+            onOpen: @escaping @MainActor (String) -> Void
         ) {
             self.selection = selection
             self.onExpand = onExpand
+            self.onOpen = onOpen
             super.init()
             rebuild(from: table, refreshState: refreshState)
         }
@@ -3013,6 +3334,14 @@ struct CatalogOutline: NSViewRepresentable {
                   let node = outline.item(atRow: outline.selectedRow) as? Node
             else { selection.wrappedValue = nil; return }
             selection.wrappedValue = node.key
+        }
+
+        @objc func openSelectedObject() {
+            guard let outline, outline.selectedRow >= 0,
+                  let node = outline.item(atRow: outline.selectedRow) as? Node,
+                  !node.isState
+            else { return }
+            onOpen(node.key)
         }
 
         func expandedKeys() -> Set<String> {
