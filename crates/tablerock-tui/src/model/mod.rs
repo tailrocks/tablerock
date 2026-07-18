@@ -174,6 +174,8 @@ pub enum ActionId {
     CopyStatus,
     /// Copy resident window summary (start/end/count/totals).
     CopyGridWindow,
+    /// Copy page-local quick filter text; fail closed when empty.
+    CopyQuickFilter,
     /// Copy server query id when present (e.g. ClickHouse query_id).
     CopyQueryId,
     /// Copy server progress summary when present (e.g. X-ClickHouse-Summary).

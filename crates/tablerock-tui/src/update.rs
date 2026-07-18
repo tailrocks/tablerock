@@ -3888,6 +3888,27 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyQuickFilter if model.screen() == Screen::Workbench => {
+            let Some(text) = model
+                .workbench()
+                .active_grid()
+                .map(|g| g.quick_filter.clone())
+                .filter(|s| !s.is_empty())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied quick filter ({})", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyStatus if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -7093,6 +7114,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyColumn
         | ActionId::CopyStatus
         | ActionId::CopyGridWindow
+        | ActionId::CopyQuickFilter
         | ActionId::CopyQueryId
         | ActionId::CopyServerProgress
         | ActionId::CopyResultToken
@@ -8955,6 +8977,7 @@ fn cycle_action(
                 ActionId::CopyColumn,
                 ActionId::CopyStatus,
                 ActionId::CopyGridWindow,
+                ActionId::CopyQuickFilter,
                 ActionId::CopyQueryId,
                 ActionId::CopyServerProgress,
                 ActionId::CopyResultToken,
@@ -10862,6 +10885,16 @@ mod tests {
                 assert!(text.contains("total 1000"), "{text}");
             }
             other => panic!("expected grid window, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyQuickFilter);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.quick_filter = "needle".into();
+        }
+        model.set_action(ActionId::CopyQuickFilter);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "needle"),
+            other => panic!("expected quick filter, got {other:?}"),
         }
     }
 
