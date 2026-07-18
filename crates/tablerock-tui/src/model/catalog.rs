@@ -361,4 +361,76 @@ mod tests {
             .collect();
         assert_eq!(visible, ["a", "c"]);
     }
+
+    fn loaded(nodes: Vec<CatalogNodeProjection>, filter: &str, truncated: bool) -> CatalogModel {
+        CatalogModel::Loaded {
+            request_token: 1,
+            context_revision: 1,
+            nodes,
+            selected_id: None,
+            filter: filter.into(),
+            truncated,
+        }
+    }
+
+    #[test]
+    fn status_line_reports_state_filter_and_truncation() {
+        assert_eq!(CatalogModel::Idle.status_line(), "Catalog: —");
+        assert_eq!(
+            CatalogModel::Loading {
+                request_token: 1,
+                context_revision: 1
+            }
+            .status_line(),
+            "Catalog: loading…"
+        );
+        assert_eq!(
+            CatalogModel::Failed {
+                request_token: 1,
+                context_revision: 1,
+                reason: "boom".into()
+            }
+            .status_line(),
+            "Catalog: error (boom)"
+        );
+        let two = vec![node("a", 0, false, false), node("b", 0, false, false)];
+        assert_eq!(loaded(two.clone(), "", false).status_line(), "Catalog: 2");
+        assert_eq!(loaded(two.clone(), "a", false).status_line(), "Catalog: 1/2 filter");
+        assert_eq!(loaded(two, "", true).status_line(), "Catalog: 2 trunc");
+    }
+
+    #[test]
+    fn set_node_status_marks_target_and_ignores_unknown_id() {
+        let mut m = loaded(
+            vec![node("a", 0, true, false), node("b", 0, false, false)],
+            "",
+            false,
+        );
+        m.set_node_status("b", CatalogNodeStatus::Stale);
+        assert_eq!(m.visible_nodes()[0].status, CatalogNodeStatus::Ready);
+        assert_eq!(m.visible_nodes()[1].status, CatalogNodeStatus::Stale);
+        m.set_node_status("zzz", CatalogNodeStatus::Failed);
+        assert_eq!(m.visible_nodes()[1].status, CatalogNodeStatus::Stale);
+    }
+
+    #[test]
+    fn merge_children_replaces_roots_and_flags_truncation() {
+        let mut m = loaded(Vec::new(), "", false);
+        m.merge_children(
+            None,
+            vec![node("a", 0, true, false), node("b", 0, false, false)],
+            true,
+        );
+        let visible: Vec<_> = m
+            .visible_nodes()
+            .into_iter()
+            .map(|n| n.id.as_str())
+            .collect();
+        assert_eq!(visible, ["a", "b"]);
+        assert!(
+            m.status_line().contains("trunc"),
+            "truncation must surface in status: {}",
+            m.status_line()
+        );
+    }
 }
