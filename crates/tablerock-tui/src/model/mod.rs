@@ -143,6 +143,10 @@ pub enum ActionId {
     TruncateTable,
     /// Request drop of the active base table (gated confirm).
     DropTable,
+    /// VACUUM active base table (gated: re-type table name).
+    VacuumTable,
+    /// ANALYZE active base table (gated: re-type table name).
+    AnalyzeTable,
     /// Snapshot pg_stat_activity into the inspector.
     ShowActivity,
     /// Rename selected connection group (Connections tree).
@@ -237,6 +241,18 @@ pub enum ConfirmDialog {
     },
     /// Require exact table name re-type for drop (fail closed).
     DropTable {
+        schema: String,
+        table: String,
+        confirm_buffer: String,
+    },
+    /// Require exact table name re-type for VACUUM (fail closed).
+    VacuumTable {
+        schema: String,
+        table: String,
+        confirm_buffer: String,
+    },
+    /// Require exact table name re-type for ANALYZE (fail closed).
+    AnalyzeTable {
         schema: String,
         table: String,
         confirm_buffer: String,

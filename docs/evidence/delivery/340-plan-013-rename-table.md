@@ -26,4 +26,4 @@ cargo test -p tablerock-tui --lib rename_table
 
 ## Remaining work
 
-- Maintenance/optimize ops (VACUUM/ANALYZE gates) if product requires
+- Maintenance/optimize ops — see evidence 341

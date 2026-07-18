@@ -157,8 +157,8 @@ editability, staged drafts, typed review, RETURNING, consume-once registry
 multi-column FK follow, gated truncate/drop/rename, activity +
 cancel/terminate with permission-denied signals, mutation apply Unknown on
 interrupted COMMIT, temporal/structured staging validation, structured JSON
-tree inspector. Residual polish: optional calendar widget; VACUUM/ANALYZE
-gates if product requires.
+tree inspector; VACUUM/ANALYZE gates (341). Residual polish: optional
+calendar widget; copied DDL export.
 
 Deliver proven editability, typed value editors, inserts/updates/deletes
 staged in memory with visible row/cell highlighting, undo/discard, the review

@@ -97,6 +97,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 match confirm {
                     ConfirmDialog::TruncateTable { confirm_buffer, .. }
                     | ConfirmDialog::DropTable { confirm_buffer, .. }
+                    | ConfirmDialog::VacuumTable { confirm_buffer, .. }
+                    | ConfirmDialog::AnalyzeTable { confirm_buffer, .. }
                     | ConfirmDialog::DdlReview { confirm_buffer, .. }
                     | ConfirmDialog::RenameTable { confirm_buffer, .. }
                     | ConfirmDialog::CancelBackend { confirm_buffer, .. }
@@ -2117,6 +2119,66 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         }),
                     }
                 }
+                ConfirmDialog::VacuumTable {
+                    schema,
+                    table,
+                    confirm_buffer,
+                } => {
+                    if confirm_buffer != table {
+                        return Update::render();
+                    }
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let token = model.mint_request_token();
+                    let context_revision = model.workbench().context_revision;
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::ExecuteTableOp {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            op: "vacuum".into(),
+                            schema,
+                            table,
+                            new_table: String::new(),
+                        }),
+                    }
+                }
+                ConfirmDialog::AnalyzeTable {
+                    schema,
+                    table,
+                    confirm_buffer,
+                } => {
+                    if confirm_buffer != table {
+                        return Update::render();
+                    }
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let token = model.mint_request_token();
+                    let context_revision = model.workbench().context_revision;
+                    model.set_confirm(None);
+                    Update {
+                        render: true,
+                        effect: Some(Effect::ExecuteTableOp {
+                            request_token: token,
+                            session_id_hex,
+                            context_revision,
+                            op: "analyze".into(),
+                            schema,
+                            table,
+                            new_table: String::new(),
+                        }),
+                    }
+                }
                 ConfirmDialog::DdlReview {
                     kind,
                     schema,
@@ -3429,6 +3491,40 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::VacuumTable if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::VacuumTable {
+                schema,
+                table,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::AnalyzeTable if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let (Some(schema), Some(table)) =
+                (grid.base_schema.clone(), grid.base_table.clone())
+            else {
+                return Update::unchanged();
+            };
+            model.set_confirm(Some(ConfirmDialog::AnalyzeTable {
+                schema,
+                table,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::RenameTable if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -3768,6 +3864,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ShowStructure
         | ActionId::TruncateTable
         | ActionId::DropTable
+        | ActionId::VacuumTable
+        | ActionId::AnalyzeTable
         | ActionId::DdlAddColumn
         | ActionId::DdlCreateIndex
         | ActionId::DdlDropColumn
@@ -4917,6 +5015,8 @@ fn cycle_action(
                 ActionId::ShowStructure,
                 ActionId::TruncateTable,
                 ActionId::DropTable,
+                ActionId::VacuumTable,
+                ActionId::AnalyzeTable,
                 ActionId::DdlAddColumn,
                 ActionId::DdlCreateIndex,
                 ActionId::DdlDropColumn,
@@ -7439,6 +7539,85 @@ mod tests {
                 && schema == "public"
         ));
         assert!(model.confirm().is_none());
+    }
+
+    #[test]
+    fn vacuum_table_confirm_requires_exact_name() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "01".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::VacuumTable);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::VacuumTable { table, .. }) if table == "users"
+        ));
+        model.set_action(ActionId::Submit);
+        let wrong = update(&mut model, Message::Activate);
+        assert!(wrong.effects().next().is_none());
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("users".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let ok = update(&mut model, Message::Activate);
+        assert!(matches!(
+            ok.effects().next(),
+            Some(Effect::ExecuteTableOp {
+                op,
+                table,
+                new_table,
+                ..
+            }) if op == "vacuum" && table == "users" && new_table.is_empty()
+        ));
+        assert!(model.confirm().is_none());
+    }
+
+    #[test]
+    fn analyze_table_confirm_requires_exact_name() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "01".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("orders".into());
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::AnalyzeTable);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::AnalyzeTable { table, .. }) if table == "orders"
+        ));
+        model.set_action(ActionId::Submit);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("orders".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let ok = update(&mut model, Message::Activate);
+        assert!(matches!(
+            ok.effects().next(),
+            Some(Effect::ExecuteTableOp { op, table, .. }) if op == "analyze" && table == "orders"
+        ));
     }
 
     #[test]

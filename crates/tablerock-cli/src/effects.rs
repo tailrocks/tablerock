@@ -3442,6 +3442,10 @@ async fn execute_table_op(
     let sql = match op.as_str() {
         "truncate" => format!("TRUNCATE TABLE {qs}.{qt}"),
         "drop" => format!("DROP TABLE {qs}.{qt}"),
+        // Maintenance: quote_ident only; VACUUM must not run inside a
+        // transaction (engine page stream uses simple statements, no BEGIN).
+        "vacuum" => format!("VACUUM {qs}.{qt}"),
+        "analyze" => format!("ANALYZE {qs}.{qt}"),
         "rename" => {
             let qn = match quote_ident(&new_table) {
                 Ok(n) => n,
