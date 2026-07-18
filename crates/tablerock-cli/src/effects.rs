@@ -472,6 +472,60 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::RunPgDump {
+                request_token,
+                host,
+                port,
+                database,
+                username,
+                password,
+                path,
+                tool_path,
+            } => {
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = run_pg_tool(
+                        request_token,
+                        "dump",
+                        host,
+                        port,
+                        database,
+                        username,
+                        password,
+                        path,
+                        tool_path,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::RunPgRestore {
+                request_token,
+                host,
+                port,
+                database,
+                username,
+                password,
+                path,
+                tool_path,
+            } => {
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = run_pg_tool(
+                        request_token,
+                        "restore",
+                        host,
+                        port,
+                        database,
+                        username,
+                        password,
+                        path,
+                        tool_path,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::SignalBackend {
                 request_token,
                 session_id_hex,
@@ -2904,6 +2958,110 @@ async fn execute_ddl_plan_effect(
             reason: FailureProjection::Label(error.to_string()),
         }),
     }
+}
+
+async fn run_pg_tool(
+    request_token: RequestToken,
+    kind: &str,
+    host: String,
+    port: u16,
+    database: String,
+    username: String,
+    password: String,
+    path: String,
+    tool_path: String,
+) -> Message {
+    use crate::{
+        PgToolRunOutcome, ToolStatus, cancel_channel, discover_tool, run_pg_dump, run_pg_restore,
+        validate_dump_path,
+    };
+
+    let tool_name = if kind == "restore" {
+        "pg_restore"
+    } else {
+        "pg_dump"
+    };
+    let explicit = if tool_path.trim().is_empty() {
+        None
+    } else {
+        Some(tool_path.as_str())
+    };
+    let status = discover_tool(tool_name, explicit);
+    let tool = match status {
+        ToolStatus::Found { path, .. } => path,
+        ToolStatus::Missing { name } => {
+            return Message::Engine(tablerock_tui::EngineMsg::PgToolDone {
+                request_token,
+                kind: kind.into(),
+                summary: format!("{name} not found on PATH"),
+                ok: false,
+            });
+        }
+        ToolStatus::VersionProbeFailed { path, detail } => {
+            return Message::Engine(tablerock_tui::EngineMsg::PgToolDone {
+                request_token,
+                kind: kind.into(),
+                summary: format!("{}: {detail}", path.display()),
+                ok: false,
+            });
+        }
+    };
+    let file = match validate_dump_path(std::path::Path::new(&path)) {
+        Ok(p) => p,
+        Err(detail) => {
+            return Message::Engine(tablerock_tui::EngineMsg::PgToolDone {
+                request_token,
+                kind: kind.into(),
+                summary: detail,
+                ok: false,
+            });
+        }
+    };
+    let password_opt = if password.is_empty() {
+        None
+    } else {
+        Some(password.as_str())
+    };
+    let (_tx, rx) = cancel_channel();
+    let outcome = if kind == "restore" {
+        run_pg_restore(
+            &tool,
+            &host,
+            port,
+            &database,
+            &username,
+            password_opt,
+            &file,
+            rx,
+        )
+        .await
+    } else {
+        run_pg_dump(
+            &tool,
+            &host,
+            port,
+            &database,
+            &username,
+            password_opt,
+            &file,
+            rx,
+        )
+        .await
+    };
+    let (ok, summary) = match outcome {
+        PgToolRunOutcome::Succeeded { exit_code } => (true, format!("exit {exit_code}")),
+        PgToolRunOutcome::Failed { exit_code, detail } => {
+            (false, format!("exit {exit_code:?}: {detail}"))
+        }
+        PgToolRunOutcome::Cancelled => (false, "cancelled".into()),
+        PgToolRunOutcome::SpawnFailed { detail } => (false, detail),
+    };
+    Message::Engine(tablerock_tui::EngineMsg::PgToolDone {
+        request_token,
+        kind: kind.into(),
+        summary,
+        ok,
+    })
 }
 
 async fn execute_startup_reviewed(

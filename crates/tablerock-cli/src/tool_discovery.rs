@@ -102,6 +102,8 @@ pub fn pg_dump_argv(
         username.into(),
         "-d".into(),
         database.into(),
+        // Custom format so pg_restore can load the archive.
+        "-Fc".into(),
         "-f".into(),
         file.display().to_string(),
         "--no-password".into(),

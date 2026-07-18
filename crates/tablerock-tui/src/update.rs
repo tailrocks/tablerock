@@ -101,7 +101,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::RenameTable { confirm_buffer, .. }
                     | ConfirmDialog::CancelBackend { confirm_buffer, .. }
                     | ConfirmDialog::TerminateBackend { confirm_buffer, .. }
-                    | ConfirmDialog::StartupReview { confirm_buffer, .. } => {
+                    | ConfirmDialog::StartupReview { confirm_buffer, .. }
+                    | ConfirmDialog::PgTool { confirm_buffer, .. } => {
                         *confirm_buffer = text.text().to_owned();
                     }
                     _ => {}
@@ -1088,6 +1089,28 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::PgToolDone {
+            kind,
+            summary,
+            ok,
+            ..
+        }) => {
+            if let Some(mut session) = model.session().cloned() {
+                session.status = Some(format!(
+                    "pg_{kind}: {} ({summary})",
+                    if ok { "ok" } else { "failed" }
+                ));
+                model.set_session(Some(session));
+            }
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if ok {
+                    grid.error_label = Some(format!("pg_{kind}: {summary}"));
+                } else {
+                    grid.mark_failed(format!("pg_{kind}: {summary}"));
+                }
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::BackendSignalDone {
             context_revision,
             kind,
@@ -1666,6 +1689,61 @@ fn activate_selected_action(model: &mut Model) -> Update {
                             context_revision,
                             items,
                         }),
+                    }
+                }
+                ConfirmDialog::PgTool {
+                    kind,
+                    confirm_buffer,
+                } => {
+                    let path = if confirm_buffer.trim().is_empty() {
+                        "tablerock.dump".to_owned()
+                    } else {
+                        confirm_buffer.trim().to_owned()
+                    };
+                    let editor = model.editor();
+                    let host = editor.host.clone();
+                    let port: u16 = editor.port.parse().unwrap_or(5432);
+                    let database = if editor.database.is_empty() {
+                        "postgres".into()
+                    } else {
+                        editor.database.clone()
+                    };
+                    let username = if editor.username.is_empty() {
+                        "postgres".into()
+                    } else {
+                        editor.username.clone()
+                    };
+                    let password = editor.password.clone();
+                    let token = model.mint_request_token();
+                    model.set_confirm(None);
+                    match kind.as_str() {
+                        "dump" => Update {
+                            render: true,
+                            effect: Some(Effect::RunPgDump {
+                                request_token: token,
+                                host,
+                                port,
+                                database,
+                                username,
+                                password,
+                                path,
+                                tool_path: String::new(),
+                            }),
+                        },
+                        "restore" => Update {
+                            render: true,
+                            effect: Some(Effect::RunPgRestore {
+                                request_token: token,
+                                host,
+                                port,
+                                database,
+                                username,
+                                password,
+                                path,
+                                tool_path: String::new(),
+                            }),
+                        },
+                        _ => Update::render(),
                     }
                 }
                 ConfirmDialog::RenameTable {
@@ -2422,6 +2500,36 @@ fn activate_selected_action(model: &mut Model) -> Update {
             export_stream_query(model, "tsv", "export-stream.tsv")
         }
         ActionId::ImportCsv if model.screen() == Screen::Workbench => import_csv_apply(model),
+        ActionId::PgDump if model.screen() == Screen::Workbench => {
+            if !model
+                .session()
+                .map(|s| s.engine_label.eq_ignore_ascii_case("PostgreSQL"))
+                .unwrap_or(false)
+            {
+                return Update::unchanged();
+            }
+            model.set_confirm(Some(ConfirmDialog::PgTool {
+                kind: "dump".into(),
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        ActionId::PgRestore if model.screen() == Screen::Workbench => {
+            if !model
+                .session()
+                .map(|s| s.engine_label.eq_ignore_ascii_case("PostgreSQL"))
+                .unwrap_or(false)
+            {
+                return Update::unchanged();
+            }
+            model.set_confirm(Some(ConfirmDialog::PgTool {
+                kind: "restore".into(),
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::CancelBackend if model.screen() == Screen::Workbench => {
             model.set_confirm(Some(ConfirmDialog::CancelBackend {
                 pid: String::new(),
@@ -2537,6 +2645,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ExportStreamJson
         | ActionId::ExportStreamTsv
         | ActionId::ImportCsv
+        | ActionId::PgDump
+        | ActionId::PgRestore
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -3064,6 +3174,8 @@ fn cycle_action(
                 ActionId::ExportStreamJson,
                 ActionId::ExportStreamTsv,
                 ActionId::ImportCsv,
+                ActionId::PgDump,
+                ActionId::PgRestore,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,
@@ -4591,6 +4703,45 @@ mod tests {
                 type_text,
                 ..
             }) if kind == "drop_column" && object_name == "email" && type_text.is_empty()
+        ));
+    }
+
+    #[test]
+    fn pg_dump_action_opens_confirm_and_emits_run_effect() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.editor_mut().host = "127.0.0.1".into();
+        model.editor_mut().port = "5432".into();
+        model.editor_mut().database = "postgres".into();
+        model.editor_mut().username = "postgres".into();
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::PgDump);
+        let _ = update(&mut model, Message::Activate);
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::PgTool { kind, .. }) if kind == "dump"
+        ));
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("/tmp/t.dump".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::RunPgDump {
+                host,
+                path,
+                database,
+                ..
+            }) if host == "127.0.0.1" && path == "/tmp/t.dump" && database == "postgres"
         ));
     }
 

@@ -266,6 +266,30 @@ pub enum Effect {
         /// (safety, statement) pairs authorized by the confirm dialog.
         items: Vec<(String, String)>,
     },
+    /// Supervised pg_dump (password only via env inside executor — never argv).
+    RunPgDump {
+        request_token: RequestToken,
+        host: String,
+        port: u16,
+        database: String,
+        username: String,
+        /// Ephemeral; zeroed by executor after spawn.
+        password: String,
+        path: String,
+        /// Optional absolute tool path; empty = PATH discovery.
+        tool_path: String,
+    },
+    /// Supervised pg_restore (password only via env inside executor).
+    RunPgRestore {
+        request_token: RequestToken,
+        host: String,
+        port: u16,
+        database: String,
+        username: String,
+        password: String,
+        path: String,
+        tool_path: String,
+    },
     /// pg_cancel_backend / pg_terminate_backend after pid confirm.
     SignalBackend {
         request_token: RequestToken,

@@ -353,6 +353,14 @@ pub enum EngineMsg {
         request_token: u64,
         summary: String,
     },
+    /// pg_dump / pg_restore supervised run finished.
+    PgToolDone {
+        request_token: u64,
+        /// "dump" | "restore"
+        kind: String,
+        summary: String,
+        ok: bool,
+    },
     BackendSignalDone {
         request_token: u64,
         context_revision: u64,

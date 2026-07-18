@@ -218,6 +218,19 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 ),
             )
         }
+        crate::model::ConfirmDialog::PgTool {
+            kind,
+            confirm_buffer,
+        } => (
+            if kind == "restore" {
+                "pg_restore?"
+            } else {
+                "pg_dump?"
+            },
+            format!(
+                "Paste file path (default tablerock.dump) then Submit [{confirm_buffer}]"
+            ),
+        ),
     };
     let panel = Panel::new(&model.theme)
         .title(title)
@@ -379,6 +392,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let export_tsv = action_label(model, ActionId::ExportTsv, "ExpTsv");
     let export_stream = action_label(model, ActionId::ExportStreamCsv, "ExpStream");
     let import_csv = action_label(model, ActionId::ImportCsv, "ImpCsv");
+    let pg_dump = action_label(model, ActionId::PgDump, "PgDump");
+    let pg_restore = action_label(model, ActionId::PgRestore, "PgRestore");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
@@ -686,6 +701,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ImportCsv,
                         label: import_csv.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PgDump,
+                        label: pg_dump.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PgRestore,
+                        label: pg_restore.as_str(),
                         enabled: true,
                         style: None,
                     },

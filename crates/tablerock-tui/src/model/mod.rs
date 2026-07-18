@@ -168,6 +168,10 @@ pub enum ActionId {
     ExportStreamTsv,
     /// Import CSV into active base table via mutation write seam (default import.csv).
     ImportCsv,
+    /// Supervised pg_dump of the active connection endpoint (PostgreSQL only).
+    PgDump,
+    /// Supervised pg_restore into the active connection endpoint (PostgreSQL only).
+    PgRestore,
     Submit,
     Cancel,
     Quit,
@@ -223,6 +227,13 @@ pub enum ConfirmDialog {
     /// (case-sensitive) to authorize execution.
     StartupReview {
         items: Vec<(String, String)>,
+        confirm_buffer: String,
+    },
+    /// pg_dump/pg_restore: paste destination (dump) or source (restore) path;
+    /// empty buffer uses default `tablerock.dump`.
+    PgTool {
+        /// "dump" | "restore"
+        kind: String,
         confirm_buffer: String,
     },
 }
