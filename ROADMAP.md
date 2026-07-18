@@ -192,11 +192,12 @@ post-dispatch cancellation. Automatic browsing never uses `KEYS`.
 
 ## Phase 9 — daily workflows and data movement
 
-**Partial→mostly complete (evidence 245–246, 306–307, 310):** atomic file
+**Partial→mostly complete (evidence 245–246, 306–307, 310, 318):** atomic file
 export, loaded-result CSV/JSON/TSV export, CSV import parse (formula-neutral),
-multi-statement result sections, saved filter JSON library + Turso actor
-persist (schema 13) + named SaveFilt/LoadFilt + connect-path load, manual
-reconnect policy. Residual: fuzzy multi-preset picker polish.
+multi-statement result sections + explicit RunScript full-buffer path, saved
+filter JSON library + Turso actor persist (schema 13) + named SaveFilt/LoadFilt
++ connect-path load, manual reconnect policy. Residual: fuzzy multi-preset
+picker polish.
 
 Complete result tabs, multi-statement outcomes, saved filters/preferences,
 streaming CSV/JSON/SQL import/export where meaningful, cancellation cleanup,

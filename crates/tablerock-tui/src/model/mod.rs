@@ -75,6 +75,8 @@ pub enum ActionId {
     PinTab,
     NewSql,
     RunSql,
+    /// Run entire editor buffer as multi-statement script (ordered sections).
+    RunScript,
     CancelQuery,
     Inspect,
     /// Open or commit SQL completion for the active editor.

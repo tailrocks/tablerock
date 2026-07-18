@@ -2656,6 +2656,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             Update::render()
         }
         ActionId::RunSql if model.screen() == Screen::Workbench => run_sql_or_bind_params(model),
+        ActionId::RunScript if model.screen() == Screen::Workbench => run_script_entire_buffer(model),
         ActionId::CancelQuery if model.screen() == Screen::Workbench => {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
@@ -3419,6 +3420,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::PinTab
         | ActionId::NewSql
         | ActionId::RunSql
+        | ActionId::RunScript
         | ActionId::CancelQuery
         | ActionId::Inspect
         | ActionId::Complete
@@ -3681,6 +3683,29 @@ fn run_sql_or_bind_params(model: &mut Model) -> Update {
         }
         Err(_) => Update::unchanged(),
     }
+}
+
+/// Explicit RunScript: entire editor buffer as ordered multi-statement script.
+/// Redis is redirected to the sequential command pipeline (same as Run).
+fn run_script_entire_buffer(model: &mut Model) -> Update {
+    let Some(session) = model.session() else {
+        return Update::unchanged();
+    };
+    let session_id_hex = session.session_id_hex.clone();
+    if model
+        .workbench()
+        .engine_kind
+        .eq_ignore_ascii_case("Redis")
+    {
+        return run_redis_pipeline(model, session_id_hex);
+    }
+    let Some(ed) = model.workbench_mut().active_editor_mut() else {
+        return Update::unchanged();
+    };
+    // Force full-buffer coverage regardless of cursor/selection.
+    let len = ed.text().len();
+    ed.set_selection(0, len);
+    run_sql_script(model, session_id_hex)
 }
 
 /// Redis command editor: tokenize lines, deny blocking, run sequential pipeline.
@@ -6620,6 +6645,37 @@ mod tests {
             }) if session_id_hex == "aabb" && statements.len() == 2
         ));
         assert_eq!(model.workbench().result_sections.sections.len(), 2);
+    }
+
+    #[test]
+    fn run_script_action_runs_entire_buffer_without_prior_selection() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "ccdd".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().open_sql_tab();
+        let ed = model.workbench_mut().active_editor_mut().unwrap();
+        ed.set_text("SELECT 1;\nSELECT 2;\nSELECT 3;");
+        // Cursor only — no multi-span selection.
+        ed.set_cursor(0);
+        ed.clear_selection();
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::RunScript);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::ExecuteSqlScript {
+                statements,
+                session_id_hex,
+                ..
+            }) if session_id_hex == "ccdd" && statements.len() == 3
+        ));
+        assert_eq!(model.workbench().result_sections.sections.len(), 3);
     }
 
     #[test]

@@ -504,6 +504,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let pin_tab = action_label(model, ActionId::PinTab, "Pin");
     let new_sql = action_label(model, ActionId::NewSql, "SQL");
     let run_sql = action_label(model, ActionId::RunSql, "Run");
+    let run_script = action_label(model, ActionId::RunScript, "Script");
     let explain = action_label(model, ActionId::Explain, "Explain");
     let find_rep = action_label(model, ActionId::FindReplace, "FindRep");
     let format_sql = action_label(model, ActionId::FormatSql, "Format");
@@ -662,6 +663,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RunSql,
                         label: run_sql.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RunScript,
+                        label: run_script.as_str(),
                         enabled: true,
                         style: None,
                     },
