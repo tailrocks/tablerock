@@ -208,6 +208,76 @@ async fn bridge_redis_open_probe_fetch() {
 }
 
 #[tokio::test]
+async fn bridge_postgres_apply_delete_by_review_token() {
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+
+    let outcome = tokio::task::spawn_blocking(move || {
+        let bridge = TableRockBridge::new_for_test();
+        let session = bridge
+            .open(open_params("postgresql", port, "postgres", "postgres"))
+            .expect("open");
+        for sql in [
+            "create table if not exists bridge_apply_probe (id int primary key)",
+            "delete from bridge_apply_probe",
+            "insert into bridge_apply_probe (id) values (7)",
+        ] {
+            let op = bridge
+                .submit(SubmitSpec {
+                    intent: "execute".into(),
+                    session_id: session.clone(),
+                    statement: Some(sql.into()),
+                    result_id: None,
+                    start_row: None,
+                    row_count: Some(16),
+                    expected_revision: 0,
+                })
+                .unwrap_or_else(|e| panic!("submit {sql}: {e}"));
+            bridge.pump(op).unwrap_or_else(|e| panic!("pump {sql}: {e}"));
+        }
+        let now = 1_000_u64;
+        let token = bridge
+            .insert_reviewed_probe(
+                session.clone(),
+                now,
+                now + 30_000,
+                now + 100,
+                Some("bridge_apply_probe".into()),
+                Some(7),
+            )
+            .expect("review token");
+        let applied = bridge
+            .apply_review_token(token.clone(), now + 200, session.clone(), 0)
+            .expect("apply");
+        assert!(
+            applied.applied_count >= 1 || applied.transaction.contains("Committed"),
+            "apply outcome: {applied:?}"
+        );
+        // Handle consumed — second apply must fail.
+        let again = bridge
+            .apply_review_token(token, now + 300, session.clone(), 0)
+            .expect_err("second apply must fail");
+        assert!(
+            matches!(again, tablerock_ffi::BridgeError::Rejected { ref code, .. } if code == "authorize"),
+            "second apply: {again:?}"
+        );
+        bridge.shutdown(false, 5_000).expect("shutdown");
+        applied
+    })
+    .await
+    .unwrap();
+    assert!(outcome.change_count >= 1);
+}
+
+#[tokio::test]
 async fn bridge_three_engines_sequential_open_probe() {
     let postgres = GenericImage::new("postgres", "18.4-alpine")
         .with_exposed_port(5432.tcp())

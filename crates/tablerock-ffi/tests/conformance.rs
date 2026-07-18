@@ -517,7 +517,7 @@ fn apply_review_token_consumes_handle_even_when_apply_fails() {
     let bridge = TableRockBridge::new_for_test();
     let session_id = open_fixed(&bridge, Engine::PostgreSql, page);
     let token = bridge
-        .insert_reviewed_probe(session_id.clone(), 1_000, 2_000, 1_100)
+        .insert_reviewed_probe(session_id.clone(), 1_000, 2_000, 1_100, None, None)
         .unwrap();
 
     // FixedPageSession apply fails closed; token is still consumed first.
@@ -563,7 +563,7 @@ fn review_token_is_consume_once_and_expiry_blocks() {
     let session_id = open_fixed(&bridge, Engine::PostgreSql, page);
 
     let token = bridge
-        .insert_reviewed_probe(session_id.clone(), 1_000, 2_000, 1_100)
+        .insert_reviewed_probe(session_id.clone(), 1_000, 2_000, 1_100, None, None)
         .unwrap();
 
     // Expired authorize consumes the handle (core contract: remove then fail).
@@ -585,7 +585,7 @@ fn review_token_is_consume_once_and_expiry_blocks() {
 
     // Fresh token authorizes once, then is gone.
     let token2 = bridge
-        .insert_reviewed_probe(session_id.clone(), 1_000, 2_000, 1_100)
+        .insert_reviewed_probe(session_id.clone(), 1_000, 2_000, 1_100, None, None)
         .unwrap();
     bridge
         .authorize_review_token(token2.clone(), 1_500, session_id.clone(), 0)

@@ -303,20 +303,32 @@ impl TableRockBridge {
         catch_entry(|| self.open_driver_session_inner(engine, session))
     }
 
-    /// Inserts a minimal reviewed plan for the session (test/conformance only).
+    /// Inserts a minimal reviewed delete plan for the session (test/conformance only).
     ///
     /// Production Swift never builds plans; it receives token ids from Rust after
     /// Stage/Review commands. This seam proves handle consume-once/expiry without
     /// shipping plan bytes over UniFFI.
+    ///
+    /// `relation` is a PostgreSQL relation name in schema `public` (default
+    /// `"users"` when empty). `locator_id` is the integer primary-key locator.
     pub fn insert_reviewed_probe(
         &self,
         session_id: Vec<u8>,
         issued_at_ms: u64,
         expires_at_ms: u64,
         now_ms: u64,
+        relation: Option<String>,
+        locator_id: Option<i64>,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| {
-            self.insert_reviewed_probe_inner(session_id, issued_at_ms, expires_at_ms, now_ms)
+            self.insert_reviewed_probe_inner(
+                session_id,
+                issued_at_ms,
+                expires_at_ms,
+                now_ms,
+                relation.unwrap_or_else(|| "users".into()),
+                locator_id.unwrap_or(1),
+            )
         })
     }
 
@@ -348,6 +360,8 @@ impl TableRockBridge {
         issued_at_ms: u64,
         expires_at_ms: u64,
         now_ms: u64,
+        relation: String,
+        locator_id: i64,
     ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let session_id = session_from_bytes(&session_id_bytes)
@@ -371,20 +385,24 @@ impl TableRockBridge {
         let token_id = inner.ids.review_token();
         let name = BoundedText::copy_from_str("id", ByteLimit::new(8))
             .map_err(|error| BridgeError::rejected("mutation-field", error.to_string()))?;
+        let relation_text = BoundedText::copy_from_str(
+            if relation.is_empty() { "users" } else { &relation },
+            ByteLimit::new(128),
+        )
+        .map_err(|error| BridgeError::rejected("mutation-target", error.to_string()))?;
         let plan = MutationPlan::new(
             mutation_id,
             scope,
             revision,
             MutationTarget::PostgreSqlRelation {
-                database: BoundedText::copy_from_str("app", ByteLimit::new(8))
+                database: BoundedText::copy_from_str("postgres", ByteLimit::new(16))
                     .map_err(|error| BridgeError::rejected("mutation-target", error.to_string()))?,
                 schema: BoundedText::copy_from_str("public", ByteLimit::new(8))
                     .map_err(|error| BridgeError::rejected("mutation-target", error.to_string()))?,
-                relation: BoundedText::copy_from_str("users", ByteLimit::new(8))
-                    .map_err(|error| BridgeError::rejected("mutation-target", error.to_string()))?,
+                relation: relation_text,
             },
             vec![MutationChange::DeleteRow {
-                locator: vec![FieldValue::new(name, OwnedValue::unsigned(1))],
+                locator: vec![FieldValue::new(name, OwnedValue::signed(locator_id))],
             }],
             MutationPlanLimits::new(16, 16, 4096, 4096, 60_000)
                 .map_err(|error| BridgeError::rejected("mutation-limits", error.to_string()))?,

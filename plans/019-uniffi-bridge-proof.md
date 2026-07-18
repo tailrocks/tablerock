@@ -15,8 +15,9 @@
 
 ## Status
 
-- **State**: IN PROGRESS (checkpoints 1–2: facade + generated Swift + proof harness;
-  XCFramework/notarize blocked — no full Xcode / Developer ID on host)
+- **State**: IN PROGRESS — **software gate complete**; distribution gate
+  **STOP** (no full Xcode / Developer ID on host). Residual: XCFramework
+  packaging + notarize/staple/clean-machine only.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: HIGH (architecture gate; external toolchain)
@@ -30,6 +31,7 @@
   - `docs/evidence/delivery/252-plan-019-conformance-and-universal-lib.md`
   - `docs/evidence/delivery/253-plan-019-bridge-real-servers.md`
   - `docs/evidence/delivery/254-plan-019-apply-disconnect.md`
+  - `docs/evidence/delivery/255-plan-019-real-apply-by-handle.md`
 
 ## Fixed constraints (inline — non-negotiable without recorded revision)
 
