@@ -1,10 +1,21 @@
 #[test]
 fn core_contract_has_no_runtime_or_presentation_dependency() {
     let manifest = include_str!("../Cargo.toml");
-    assert!(manifest.contains(
-        "[dependencies]\ncaseless.workspace = true\nunicode-normalization.workspace = true\nzeroize.workspace = true"
-    ));
-    assert_eq!(manifest.matches(".workspace = true").count(), 8);
+    // Core stays a pure contract crate. Its only workspace dependencies are the
+    // pure parsing, normalization, and zeroizing crates below; bump the count
+    // only when a deliberate core-contract decision adds another.
+    for required in [
+        "caseless.workspace = true",
+        "sqlparser.workspace = true",
+        "unicode-normalization.workspace = true",
+        "zeroize.workspace = true",
+    ] {
+        assert!(
+            manifest.contains(required),
+            "core manifest must declare {required:?}"
+        );
+    }
+    assert_eq!(manifest.matches(".workspace = true").count(), 9);
 
     let source = [
         include_str!("../src/lib.rs"),
@@ -18,6 +29,7 @@ fn core_contract_has_no_runtime_or_presentation_dependency() {
         include_str!("../src/profile_list.rs"),
         include_str!("../src/revision.rs"),
         include_str!("../src/secret.rs"),
+        include_str!("../src/sql_analysis.rs"),
         include_str!("../src/value.rs"),
     ]
     .concat();

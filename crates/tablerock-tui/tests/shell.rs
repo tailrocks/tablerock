@@ -1,7 +1,9 @@
 use ratatui_core::{backend::TestBackend, layout::Rect, terminal::Terminal};
 use tablerock_tui::{
     ActionId, Effect, FocusRegion, LayoutMode, Message, Model, PasteText, ProfilesMsg, Screen,
-    ShellTarget, ShellView, model::profiles::{LiveConnectionState, ProfileRowProjection}, update,
+    ShellTarget, ShellView,
+    model::profiles::{LiveConnectionState, ProfileRowProjection},
+    update,
 };
 
 #[test]
@@ -352,7 +354,10 @@ fn render_handles_unicode_and_extreme_profile_labels() {
     let mut model = Model::default();
     let bootstrap = update(
         &mut model,
-        Message::Resize { width: 100, height: 30 },
+        Message::Resize {
+            width: 100,
+            height: 30,
+        },
     );
     let request_token = bootstrap
         .effects()
