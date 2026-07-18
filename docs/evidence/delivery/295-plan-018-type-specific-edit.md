@@ -18,5 +18,6 @@ cargo test -p tablerock-tui boolean_toggle
 
 ## Residual
 
-- Dedicated temporal/JSON/bytes widgets: inspector projections in evidence 300;
-  full tree/calendar widgets still optional polish
+- ~~Temporal/structured commit validation~~ (closed: evidence 325)
+- Dedicated calendar/JSON tree widgets still optional polish (inspector
+  projections: evidence 300)

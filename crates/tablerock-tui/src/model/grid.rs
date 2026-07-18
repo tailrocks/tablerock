@@ -768,14 +768,131 @@ fn staged_value_ok_for_distinction(text: &str, distinction: CellDistinction) -> 
                 || t.parse::<i64>().is_ok()
                 || t.parse::<f64>().is_ok()
         }
+        CellDistinction::Temporal => is_plausible_temporal(t),
+        CellDistinction::Structured => is_plausible_structured(t),
+        // Binary stays free-form hex/escape text at this residual; server validates.
         CellDistinction::Null
         | CellDistinction::Empty
         | CellDistinction::Text
-        | CellDistinction::Temporal
-        | CellDistinction::Structured
         | CellDistinction::Binary
         | CellDistinction::Pending => true,
     }
+}
+
+/// Plausible ISO-ish temporal forms for staging (server remains authority).
+///
+/// Accepts empty/null, date `YYYY-MM-DD`, time `HH:MM[:SS]`, datetime with
+/// optional `T`/` ` separator and optional trailing `Z` / `±HH:MM`.
+fn is_plausible_temporal(t: &str) -> bool {
+    if t.is_empty() || t.eq_ignore_ascii_case("null") {
+        return true;
+    }
+    // Reject control characters / injection-ish noise in staged temporal text.
+    if t.chars().any(|c| c.is_control() || c == ';' || c == '\n') {
+        return false;
+    }
+    let bytes = t.as_bytes();
+    // Date only: YYYY-MM-DD
+    if bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes[0..4].iter().all(u8::is_ascii_digit)
+        && bytes[5..7].iter().all(u8::is_ascii_digit)
+        && bytes[8..10].iter().all(u8::is_ascii_digit)
+    {
+        return true;
+    }
+    // Time only: HH:MM or HH:MM:SS
+    if (bytes.len() == 5 || bytes.len() == 8)
+        && bytes[2] == b':'
+        && bytes[0..2].iter().all(u8::is_ascii_digit)
+        && bytes[3..5].iter().all(u8::is_ascii_digit)
+        && (bytes.len() == 5 || (bytes[5] == b':' && bytes[6..8].iter().all(u8::is_ascii_digit)))
+    {
+        return true;
+    }
+    // Datetime: date + sep + time [+ frac] [+ zone]
+    if bytes.len() >= 16 && bytes[4] == b'-' && bytes[7] == b'-' {
+        let sep = bytes[10];
+        if sep == b'T' || sep == b' ' {
+            let rest = &t[11..];
+            // HH:MM at start of rest
+            let rb = rest.as_bytes();
+            if rb.len() >= 5
+                && rb[2] == b':'
+                && rb[0..2].iter().all(u8::is_ascii_digit)
+                && rb[3..5].iter().all(u8::is_ascii_digit)
+            {
+                // Remainder may include :SS, .frac, Z, ±offset — digits/colon/dot/plus/minus/Z only.
+                return rest.chars().all(|c| {
+                    c.is_ascii_digit()
+                        || matches!(c, ':' | '.' | '+' | '-' | 'Z' | 'z' | ' ')
+                });
+            }
+        }
+    }
+    false
+}
+
+/// Structured cells: null/empty or JSON object/array/string/number/bool/null token.
+fn is_plausible_structured(t: &str) -> bool {
+    if t.is_empty() || t.eq_ignore_ascii_case("null") {
+        return true;
+    }
+    let t = t.trim();
+    // Bare JSON scalars
+    if t.eq_ignore_ascii_case("true") || t.eq_ignore_ascii_case("false") {
+        return true;
+    }
+    if t.parse::<i64>().is_ok() || t.parse::<f64>().is_ok() {
+        return true;
+    }
+    // Quoted string
+    if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
+        return true;
+    }
+    // Object / array: balanced braces/brackets, no bare control chars.
+    let first = t.as_bytes()[0];
+    let last = t.as_bytes()[t.len() - 1];
+    if (first == b'{' && last == b'}') || (first == b'[' && last == b']') {
+        if t.chars().any(|c| c.is_control() && c != '\n' && c != '\t' && c != '\r') {
+            return false;
+        }
+        return braces_balanced(t);
+    }
+    false
+}
+
+fn braces_balanced(t: &str) -> bool {
+    let mut depth = 0_i32;
+    let mut in_str = false;
+    let mut escape = false;
+    for ch in t.chars() {
+        if in_str {
+            if escape {
+                escape = false;
+                continue;
+            }
+            match ch {
+                '\\' => escape = true,
+                '"' => in_str = false,
+                _ => {}
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_str = true,
+            '{' | '[' => depth += 1,
+            '}' | ']' => {
+                depth -= 1;
+                if depth < 0 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth == 0 && !in_str
 }
 
 fn extract_layout_string(json: &str, key: &str) -> Option<String> {
@@ -1159,6 +1276,50 @@ mod tests {
         assert_eq!(grid.next_fetch_start(), 1);
         grid.operation = GridOperationState::Idle;
         assert!(!grid.needs_fetch(1));
+    }
+
+    #[test]
+    fn temporal_and_structured_staging_validation() {
+        assert!(staged_value_ok_for_distinction(
+            "2024-02-29",
+            CellDistinction::Temporal
+        ));
+        assert!(staged_value_ok_for_distinction(
+            "2024-02-29T12:34:56Z",
+            CellDistinction::Temporal
+        ));
+        assert!(staged_value_ok_for_distinction(
+            "12:34:56",
+            CellDistinction::Temporal
+        ));
+        assert!(!staged_value_ok_for_distinction(
+            "not-a-date",
+            CellDistinction::Temporal
+        ));
+        assert!(!staged_value_ok_for_distinction(
+            "2024-02-29;drop",
+            CellDistinction::Temporal
+        ));
+        assert!(staged_value_ok_for_distinction(
+            r#"{"a":1}"#,
+            CellDistinction::Structured
+        ));
+        assert!(staged_value_ok_for_distinction(
+            "[1,2,3]",
+            CellDistinction::Structured
+        ));
+        assert!(staged_value_ok_for_distinction(
+            "null",
+            CellDistinction::Structured
+        ));
+        assert!(!staged_value_ok_for_distinction(
+            "{bad",
+            CellDistinction::Structured
+        ));
+        assert!(!staged_value_ok_for_distinction(
+            "not-json",
+            CellDistinction::Structured
+        ));
     }
 
     #[test]
