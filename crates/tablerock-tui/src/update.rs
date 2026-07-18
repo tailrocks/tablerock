@@ -3271,6 +3271,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::CopySqlUpdate if model.screen() == Screen::Workbench => {
             copy_grid(model, crate::model::copy_format::CopyFormat::SqlUpdate)
         }
+        ActionId::CopyCell if model.screen() == Screen::Workbench => copy_cursor_cell(model, false),
+        ActionId::CopyCellHex if model.screen() == Screen::Workbench => {
+            copy_cursor_cell(model, true)
+        }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -4035,6 +4039,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyMarkdown
         | ActionId::CopySqlInsert
         | ActionId::CopySqlUpdate
+        | ActionId::CopyCell
+        | ActionId::CopyCellHex
         | ActionId::CycleSort
         | ActionId::AddFilter
         | ActionId::SaveFilter
@@ -5155,6 +5161,41 @@ fn copy_grid(model: &mut Model, format: crate::model::copy_format::CopyFormat) -
     }
 }
 
+fn copy_cursor_cell(model: &mut Model, hex: bool) -> Update {
+    use crate::model::copy_format::{format_cursor_cell, format_cursor_cell_hex};
+    let Some(grid) = model.workbench().active_grid() else {
+        return Update::unchanged();
+    };
+    let text = match if hex {
+        format_cursor_cell_hex(grid)
+    } else {
+        format_cursor_cell(grid)
+    } {
+        Ok(t) => t,
+        Err(err) => {
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(err.to_string());
+            }
+            return Update::render();
+        }
+    };
+    if let Some(g) = model.workbench_mut().active_grid_mut() {
+        g.error_label = Some(if hex {
+            format!("copied cell hex ({} bytes)", text.len() / 2)
+        } else {
+            format!("copied cell ({} bytes)", text.len())
+        });
+    }
+    let token = model.mint_request_token();
+    Update {
+        render: true,
+        effect: Some(Effect::CopyToClipboard {
+            request_token: token,
+            text,
+        }),
+    }
+}
+
 fn switch_workbench_database(model: &mut Model) -> Update {
     let Some(session) = model.session() else {
         return Update::unchanged();
@@ -5244,6 +5285,8 @@ fn cycle_action(
                 ActionId::CopyCsv,
                 ActionId::CopyTsv,
                 ActionId::CopyJson,
+                ActionId::CopyCell,
+                ActionId::CopyCellHex,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,

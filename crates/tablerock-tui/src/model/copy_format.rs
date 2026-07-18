@@ -40,6 +40,36 @@ impl std::fmt::Display for CopyError {
     }
 }
 
+/// Copy the cursor cell only (raw presentation text, NULL → empty).
+pub fn format_cursor_cell(grid: &DataGridModel) -> Result<String, CopyError> {
+    if grid.columns.is_empty() {
+        return Err(CopyError::Empty);
+    }
+    let col = grid.cursor_col.min(grid.columns.len().saturating_sub(1));
+    let cell = grid.cell_at(grid.cursor_row, col);
+    if matches!(cell.distinction, super::grid::CellDistinction::Pending) {
+        return Err(CopyError::Empty);
+    }
+    if matches!(cell.distinction, super::grid::CellDistinction::Null) {
+        return Ok(String::new());
+    }
+    Ok(cell.text.clone())
+}
+
+/// Copy cursor cell as lowercase hex of UTF-8 bytes (binary-friendly).
+pub fn format_cursor_cell_hex(grid: &DataGridModel) -> Result<String, CopyError> {
+    let text = format_cursor_cell(grid)?;
+    if text.is_empty() {
+        return Ok(String::new());
+    }
+    Ok(text
+        .as_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(""))
+}
+
 /// Format selection from the grid. Returns UTF-8 text for the clipboard effect.
 pub fn format_copy(
     grid: &DataGridModel,
@@ -345,6 +375,24 @@ mod tests {
         assert!(csv.contains("id,name"));
         assert!(csv.contains("\"a,b\""));
         assert!(csv.contains("NULL"));
+    }
+
+    #[test]
+    fn format_cursor_cell_and_hex() {
+        let mut g = sample_grid();
+        g.cursor_row = 0;
+        g.cursor_col = 1; // "a,b"
+        assert_eq!(format_cursor_cell(&g).unwrap(), "a,b");
+        assert_eq!(format_cursor_cell_hex(&g).unwrap(), "612c62"); // a,b
+        g.cursor_col = 0;
+        g.cursor_row = 1; // null name? row1 col0 is empty null for id? sample: row1 is null, "x"
+        // cells: [1, a,b], [null, x] — row 1 col 0 is null
+        g.cursor_row = 1;
+        g.cursor_col = 0;
+        assert_eq!(format_cursor_cell(&g).unwrap(), "");
+        g.cursor_col = 1;
+        assert_eq!(format_cursor_cell(&g).unwrap(), "x");
+        assert_eq!(format_cursor_cell_hex(&g).unwrap(), "78");
     }
 
     #[test]

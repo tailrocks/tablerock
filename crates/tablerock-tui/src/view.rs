@@ -597,6 +597,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let discard_staged = action_label(model, ActionId::DiscardStaged, "DiscardEdits");
     let review_mut = action_label(model, ActionId::ReviewMutations, "Review");
     let edit_cell = action_label(model, ActionId::EditCell, "Edit");
+    let copy_cell = action_label(model, ActionId::CopyCell, "CopyCell");
+    let copy_cell_hex = action_label(model, ActionId::CopyCellHex, "CopyHex");
     let toggle_bool = action_label(model, ActionId::ToggleBool, "TogBool");
     let set_null = action_label(model, ActionId::SetNull, "SetNull");
     let set_today = action_label(model, ActionId::SetToday, "Today");
@@ -915,6 +917,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::EditCell,
                         label: edit_cell.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyCell,
+                        label: copy_cell.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyCellHex,
+                        label: copy_cell_hex.as_str(),
                         enabled: true,
                         style: None,
                     },
