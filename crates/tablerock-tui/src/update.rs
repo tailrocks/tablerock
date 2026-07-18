@@ -3088,13 +3088,12 @@ fn connection_draft_from_editor(
             TlsModeChoice::VerifyFull => TlsModeSpec::VerifyFull,
         },
         plaintext_acknowledged: editor.plaintext_acknowledged,
-        // SSH editor section residual — empty means direct connect.
-        ssh_host: String::new(),
-        ssh_port: String::new(),
-        ssh_username: String::new(),
-        ssh_password: String::new(),
+        ssh_host: editor.ssh_host.clone(),
+        ssh_port: editor.ssh_port.clone(),
+        ssh_username: editor.ssh_username.clone(),
+        ssh_password: editor.ssh_password.clone(),
         ssh_private_key: String::new(),
-        ssh_known_hosts_path: String::new(),
+        ssh_known_hosts_path: editor.ssh_known_hosts_path.clone(),
     }
 }
 
@@ -3134,6 +3133,11 @@ fn apply_editor_text(model: &mut Model, text: &str) {
                 }
             };
         }
+        EditorField::SshHost => editor.ssh_host.push_str(text),
+        EditorField::SshPort => editor.ssh_port.push_str(text),
+        EditorField::SshUsername => editor.ssh_username.push_str(text),
+        EditorField::SshPassword => editor.ssh_password.push_str(text),
+        EditorField::SshKnownHostsPath => editor.ssh_known_hosts_path.push_str(text),
     }
 }
 

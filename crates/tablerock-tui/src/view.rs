@@ -1016,6 +1016,11 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
     let password = editor.field_value(EditorField::Password);
     let password_source = editor.field_value(EditorField::PasswordSource);
     let tls_mode = editor.field_value(EditorField::TlsMode);
+    let ssh_host = editor.field_value(EditorField::SshHost);
+    let ssh_port = editor.field_value(EditorField::SshPort);
+    let ssh_username = editor.field_value(EditorField::SshUsername);
+    let ssh_password = editor.field_value(EditorField::SshPassword);
+    let ssh_known_hosts = editor.field_value(EditorField::SshKnownHostsPath);
 
     let general = [
         FormField::new(
@@ -1081,6 +1086,33 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         Line::from("TLS mode"),
         Line::from(tls_mode.as_str()),
     )];
+    let ssh = [
+        FormField::new(
+            EditorField::SshHost,
+            Line::from("SSH bastion"),
+            Line::from(ssh_host.as_str()),
+        ),
+        FormField::new(
+            EditorField::SshPort,
+            Line::from("SSH port"),
+            Line::from(ssh_port.as_str()),
+        ),
+        FormField::new(
+            EditorField::SshUsername,
+            Line::from("SSH user"),
+            Line::from(ssh_username.as_str()),
+        ),
+        FormField::new(
+            EditorField::SshPassword,
+            Line::from("SSH password"),
+            Line::from(ssh_password.as_str()),
+        ),
+        FormField::new(
+            EditorField::SshKnownHostsPath,
+            Line::from("known_hosts path"),
+            Line::from(ssh_known_hosts.as_str()),
+        ),
+    ];
     let sections = [
         FormSection {
             title: Line::from("General"),
@@ -1097,6 +1129,10 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
         FormSection {
             title: Line::from("TLS"),
             fields: &tls,
+        },
+        FormSection {
+            title: Line::from("SSH tunnel"),
+            fields: &ssh,
         },
     ];
     let mut state = FormState::new(Some(editor.focused));

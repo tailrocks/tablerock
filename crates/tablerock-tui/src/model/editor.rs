@@ -15,6 +15,11 @@ pub enum EditorField {
     Password,
     PasswordSource,
     TlsMode,
+    SshHost,
+    SshPort,
+    SshUsername,
+    SshPassword,
+    SshKnownHostsPath,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +48,11 @@ pub struct ConnectionFormModel {
     pub password: String,
     pub password_source: PasswordSourceChoice,
     pub tls_mode: TlsModeChoice,
+    pub ssh_host: String,
+    pub ssh_port: String,
+    pub ssh_username: String,
+    pub ssh_password: String,
+    pub ssh_known_hosts_path: String,
     pub focused: EditorField,
     pub plaintext_acknowledged: bool,
     pub validation_error: Option<String>,
@@ -63,6 +73,11 @@ impl Default for ConnectionFormModel {
             password: String::new(),
             password_source: PasswordSourceChoice::PromptOnConnect,
             tls_mode: TlsModeChoice::Off,
+            ssh_host: String::new(),
+            ssh_port: "22".into(),
+            ssh_username: String::new(),
+            ssh_password: String::new(),
+            ssh_known_hosts_path: String::new(),
             focused: EditorField::Name,
             plaintext_acknowledged: false,
             validation_error: None,
@@ -99,6 +114,17 @@ impl ConnectionFormModel {
                 TlsModeChoice::VerifyCa => "verify-ca".into(),
                 TlsModeChoice::VerifyFull => "verify-full".into(),
             },
+            EditorField::SshHost => self.ssh_host.clone(),
+            EditorField::SshPort => self.ssh_port.clone(),
+            EditorField::SshUsername => self.ssh_username.clone(),
+            EditorField::SshPassword => {
+                if self.ssh_password.is_empty() {
+                    String::new()
+                } else {
+                    "••••".into()
+                }
+            }
+            EditorField::SshKnownHostsPath => self.ssh_known_hosts_path.clone(),
         }
     }
 
@@ -134,7 +160,12 @@ impl ConnectionFormModel {
             EditorField::Username => EditorField::Password,
             EditorField::Password => EditorField::PasswordSource,
             EditorField::PasswordSource => EditorField::TlsMode,
-            EditorField::TlsMode => EditorField::Engine,
+            EditorField::TlsMode => EditorField::SshHost,
+            EditorField::SshHost => EditorField::SshPort,
+            EditorField::SshPort => EditorField::SshUsername,
+            EditorField::SshUsername => EditorField::SshPassword,
+            EditorField::SshPassword => EditorField::SshKnownHostsPath,
+            EditorField::SshKnownHostsPath => EditorField::Engine,
         };
     }
 
@@ -159,6 +190,26 @@ impl ConnectionFormModel {
         {
             self.validation_error = Some("acknowledge plaintext password storage".into());
             return false;
+        }
+        if !self.ssh_host.trim().is_empty() {
+            if self
+                .ssh_port
+                .parse::<u16>()
+                .ok()
+                .filter(|p| *p > 0)
+                .is_none()
+            {
+                self.validation_error = Some("SSH port must be 1..=65535".into());
+                return false;
+            }
+            if self.ssh_known_hosts_path.trim().is_empty() {
+                self.validation_error = Some("SSH known_hosts path required".into());
+                return false;
+            }
+            if self.ssh_password.is_empty() {
+                self.validation_error = Some("SSH password required (key path residual)".into());
+                return false;
+            }
         }
         self.validation_error = None;
         true
