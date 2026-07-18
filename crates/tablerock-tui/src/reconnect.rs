@@ -1,16 +1,14 @@
 //! Bounded reconnect backoff policy (no clocks in the reducer; delays apply in executor).
 
-/// Next delay in milliseconds for reconnect attempt `attempt` (0-based).
-/// Returns `None` when the backoff budget is exhausted.
+/// Compatibility projection over the shared core reconnect authority.
 #[must_use]
 pub const fn next_backoff_ms(attempt: u32) -> Option<u64> {
-    match attempt {
-        0 => Some(1_000),
-        1 => Some(2_000),
-        2 => Some(4_000),
-        3 => Some(8_000),
-        4 => Some(16_000),
-        5 => Some(30_000),
+    match tablerock_core::reconnect_decision(
+        tablerock_core::ReconnectPreference::BoundedAutomatic,
+        attempt,
+        false,
+    ) {
+        tablerock_core::ReconnectDecision::RetryAfter { delay_millis } => Some(delay_millis),
         _ => None,
     }
 }
@@ -18,9 +16,7 @@ pub const fn next_backoff_ms(attempt: u32) -> Option<u64> {
 /// Authentication failures must stop reconnect; other classes may retry.
 #[must_use]
 pub fn stop_on_failure_label(label: &str) -> bool {
-    // Redacted labels from adapters; match known authentication markers only.
-    let lower = label.to_ascii_lowercase();
-    lower.contains("auth") || lower.contains("password prompt")
+    tablerock_core::reconnect_stops_for_redacted_label(label)
 }
 
 #[cfg(test)]
@@ -29,9 +25,9 @@ mod tests {
 
     #[test]
     fn backoff_is_bounded_and_capped() {
-        assert_eq!(next_backoff_ms(0), Some(1_000));
-        assert_eq!(next_backoff_ms(5), Some(30_000));
-        assert_eq!(next_backoff_ms(6), None);
+        assert_eq!(next_backoff_ms(0), Some(0));
+        assert_eq!(next_backoff_ms(6), Some(30_000));
+        assert_eq!(next_backoff_ms(7), None);
         let mut total = 0u64;
         let mut attempt = 0;
         while let Some(delay) = next_backoff_ms(attempt) {

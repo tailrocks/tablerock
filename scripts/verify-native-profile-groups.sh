@@ -27,6 +27,11 @@ for pattern in \
   'guard profile.connected else \{ return "Disconnected" \}' \
   'Button\("Disconnect"\)' \
   'Button\("Check Health"\)' \
+  'Button\("Reconnect"\)' \
+  'planReconnect\(' \
+  'reconnectSavedSession\(' \
+  'case "authentication_stopped"' \
+  'case "exhausted"' \
   'case "authentication_stopped": return "Authentication stopped"' \
   'Connections in .* move to Ungrouped. No connection is deleted.'
 do

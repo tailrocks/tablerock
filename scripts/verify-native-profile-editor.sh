@@ -23,6 +23,11 @@ for pattern in \
   'Button\("Duplicate…"\)' \
   'Button\("Test"\)' \
   'Button\("Remove…", role: \.destructive\)' \
+  'SecureField\("Password", text: \$password\)' \
+  'Password stays in memory for this connection attempt and is never saved.' \
+  'case \.connect:' \
+  'case \.test:' \
+  'case \.reconnect:' \
   'I understand this stores the password as plaintext locally'
 do
   rg -q "$pattern" "$SOURCE" || {

@@ -99,6 +99,11 @@ Explicit health probing borrows the same live session and returns only a safe
 structured state, reachability, and elapsed time. Authentication failure is a
 terminal `authentication_stopped` fact so clients never schedule blind retries;
 raw server text never crosses the presentation boundary.
+The shared reconnect decision is manual or bounded automatic. Automatic retry
+starts immediately, then uses capped exponential delays with seven total
+attempts and at most 61 seconds delayed. Replacement opens before old-session
+retirement, so a failed reconnect preserves current work. Authentication never
+enters the retry schedule.
 Graceful service shutdown lets tasks finish; cancel-active shutdown requests
 client stop after core cancellation intent and reports each bounded dispatch.
 Only a joined client-stop task exit becomes `ClientStopped`; it never becomes

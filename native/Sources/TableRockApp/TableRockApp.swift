@@ -167,8 +167,8 @@ private actor BridgeClient {
     func deleteProfile(id: Data, revision: UInt64) throws {
         try bridge.deleteProfile(profileId: id, expectedRevision: revision)
     }
-    func testProfile(id: Data) throws -> BridgeConnectionTestReport {
-        try bridge.testProfile(profileId: id, passwordOverride: nil)
+    func testProfile(id: Data, passwordOverride: String?) throws -> BridgeConnectionTestReport {
+        try bridge.testProfile(profileId: id, passwordOverride: passwordOverride)
     }
     func listProfileGroups() throws -> [BridgeProfileGroup] { try bridge.listProfileGroups() }
     func createProfileGroup(_ name: String) throws { try bridge.createProfileGroup(name: name) }
@@ -197,12 +197,25 @@ private actor BridgeClient {
         )
     }
     func open(params: OpenParams) throws -> Data { try bridge.open(params: params) }
-    func openProfile(id: Data) throws -> Data {
-        try bridge.openProfile(profileId: id, passwordOverride: nil)
+    func openProfile(id: Data, passwordOverride: String?) throws -> Data {
+        try bridge.openProfile(profileId: id, passwordOverride: passwordOverride)
     }
     func disconnect(session: Data) throws { try bridge.disconnect(sessionId: session) }
     func checkHealth(session: Data) throws -> BridgeSessionHealth {
         try bridge.checkSessionHealth(sessionId: session)
+    }
+    func planReconnect(
+        session: Data, attempt: UInt32, authenticationStopped: Bool
+    ) throws -> BridgeReconnectPlan {
+        try bridge.planSessionReconnect(
+            sessionId: session, attempt: attempt,
+            authenticationStopped: authenticationStopped
+        )
+    }
+    func reconnect(session: Data, passwordOverride: String? = nil) throws -> BridgeReconnectAttempt {
+        try bridge.reconnectSavedSession(
+            sessionId: session, passwordOverride: passwordOverride
+        )
     }
     func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [BridgeCatalogNode] {
         try bridge.refreshCatalog(sessionId: session, parentNodeId: parentNodeId)
@@ -355,7 +368,7 @@ private func runNativeProfileGroupAudit() {
         return
     }
     writePerformanceMetric(
-        "PROFILE_GROUP_PROOF_PASSED empty_group=true alphabetical=Alpha_Zebra health=Healthy_12_ms hosting_tree=true"
+        "PROFILE_GROUP_PROOF_PASSED empty_group=true alphabetical=Alpha_Zebra health=Healthy_12_ms reconnect=attempt_1 hosting_tree=true"
     )
 }
 
@@ -516,6 +529,16 @@ struct ProfileGroupDialog: Identifiable {
     var title: String { oldName == nil ? "New Group" : "Rename Group" }
 }
 
+enum ProfilePasswordAction: String {
+    case connect, test, reconnect
+}
+
+struct ProfilePasswordPrompt: Identifiable {
+    let profile: BridgeProfileItem
+    let action: ProfilePasswordAction
+    var id: String { profile.idBytes.base64EncodedString() + ":" + action.rawValue }
+}
+
 extension BridgeProfileDraft: @retroactive Identifiable {
     public var id: String {
         idBytes?.base64EncodedString() ?? "new-profile"
@@ -561,6 +584,7 @@ final class BridgeModel {
     var profileActionOutcome: String?
     var pendingRemoval: BridgeProfileItem?
     var groupDialog: ProfileGroupDialog?
+    var passwordPrompt: ProfilePasswordPrompt?
     var pendingGroupRemoval: String?
     var profileSections: [ProfileSection] {
         var order = profileGroups.map(\.name)
@@ -596,6 +620,8 @@ final class BridgeModel {
     var connectingName: String?
     private(set) var sessionHealth: BridgeSessionHealth?
     private(set) var healthChecking = false
+    private(set) var reconnectState: String?
+    private var reconnectGeneration: UInt64 = 0
     var catalogSummary: String?
     var catalogError: String?
     var catalogSnapshot: [BridgeCatalogNode]?
@@ -683,6 +709,12 @@ final class BridgeModel {
                 writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED group projection mismatch")
                 return
             }
+            reconnectState = "Reconnecting · attempt 1"
+            guard connectionState(connectedFixture) == "Reconnecting · attempt 1" else {
+                writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED reconnect projection mismatch")
+                return
+            }
+            reconnectState = nil
             try? await Task.sleep(for: .milliseconds(500))
             runNativeProfileGroupAudit()
             return
@@ -879,12 +911,25 @@ final class BridgeModel {
         }
     }
 
-    func testProfile(_ item: BridgeProfileItem) async {
+    func testProfile(_ item: BridgeProfileItem, passwordOverride: String? = nil) async {
         guard let client else { return }
+        if passwordOverride == nil {
+            do {
+                if try await client.profileDraft(id: item.idBytes).passwordSource == "prompt" {
+                    passwordPrompt = ProfilePasswordPrompt(profile: item, action: .test)
+                    return
+                }
+            } catch {
+                profileActionError = "Load connection failed: \(error)"
+                return
+            }
+        }
         profileActionError = nil
         profileActionOutcome = "Testing \(item.name)…"
         do {
-            let report = try await client.testProfile(id: item.idBytes)
+            let report = try await client.testProfile(
+                id: item.idBytes, passwordOverride: passwordOverride
+            )
             profileActionOutcome =
                 "\(report.identity) · TLS \(report.tlsOutcome) · \(report.elapsedMillis) ms"
         } catch { profileActionError = "Connection test failed: \(error)" }
@@ -926,6 +971,8 @@ final class BridgeModel {
             sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
             sessionHealth = nil
+            reconnectState = nil
+            reconnectGeneration &+= 1
             if let previousSession { try? await client.disconnect(session: previousSession) }
             catalogSummary = nil
             catalogSnapshot = nil
@@ -938,18 +985,35 @@ final class BridgeModel {
         }
     }
 
-    /// Open a saved profile by id (password override nil — inline source only).
-    func connect(_ item: BridgeProfileItem) async {
-        guard let client else { return }
+    /// Open a saved profile, prompting transiently when its source requires it.
+    @discardableResult
+    func connect(_ item: BridgeProfileItem, passwordOverride: String? = nil) async -> Bool {
+        guard let client else { return false }
+        if passwordOverride == nil {
+            do {
+                let draft = try await client.profileDraft(id: item.idBytes)
+                if draft.passwordSource == "prompt" {
+                    passwordPrompt = ProfilePasswordPrompt(profile: item, action: .connect)
+                    return false
+                }
+            } catch {
+                connectError = "Load connection failed: \(error)"
+                return false
+            }
+        }
         let previousSession = sessionData
         connectingName = item.name
         connectError = nil
         do {
-            let session = try await client.openProfile(id: item.idBytes)
+            let session = try await client.openProfile(
+                id: item.idBytes, passwordOverride: passwordOverride
+            )
             connectedEngine = item.engine
             sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
             sessionHealth = nil
+            reconnectState = nil
+            reconnectGeneration &+= 1
             if let previousSession { try? await client.disconnect(session: previousSession) }
             catalogSummary = nil
             catalogError = nil
@@ -958,10 +1022,14 @@ final class BridgeModel {
             resultTable = nil
             await refreshProfiles()
             await checkActiveHealth()
+            passwordPrompt = nil
+            connectingName = nil
+            return true
         } catch {
             connectError = "Connect failed: \(error)"
+            connectingName = nil
+            return false
         }
-        connectingName = nil
     }
 
     func disconnectActive() async {
@@ -972,6 +1040,8 @@ final class BridgeModel {
             sessionHex = nil
             connectedEngine = ""
             sessionHealth = nil
+            reconnectState = nil
+            reconnectGeneration &+= 1
             catalogSummary = nil
             catalogSnapshot = nil
             catalogRefreshState = .idle
@@ -987,6 +1057,12 @@ final class BridgeModel {
         defer { healthChecking = false }
         do {
             sessionHealth = try await client.checkHealth(session: session)
+            if sessionHealth?.serverReachable == false {
+                await reconnectAutomatically(
+                    sourceSession: session,
+                    authenticationStopped: sessionHealth?.authenticationStopped == true
+                )
+            }
         } catch {
             sessionHealth = BridgeSessionHealth(
                 state: "unhealthy", serverReachable: false,
@@ -996,9 +1072,142 @@ final class BridgeModel {
         }
     }
 
+    func reconnectActive() async {
+        guard let client, let sourceSession = sessionData else { return }
+        if let profile = profiles.first(where: \.connected) {
+            do {
+                if try await client.profileDraft(id: profile.idBytes).passwordSource == "prompt" {
+                    passwordPrompt = ProfilePasswordPrompt(profile: profile, action: .reconnect)
+                    return
+                }
+            } catch {
+                profileActionError = "Load connection failed: \(error)"
+                return
+            }
+        }
+        await reconnectActive(sourceSession: sourceSession, passwordOverride: nil)
+    }
+
+    private func reconnectActive(sourceSession: Data, passwordOverride: String?) async {
+        guard let client else { return }
+        reconnectGeneration &+= 1
+        let generation = reconnectGeneration
+        reconnectState = "Reconnecting"
+        do {
+            let attempt = try await client.reconnect(
+                session: sourceSession, passwordOverride: passwordOverride
+            )
+            guard attempt.state == "connected", let replacement = attempt.sessionId else {
+                reconnectState = attempt.state == "authentication_stopped"
+                    ? "Authentication stopped" : "Reconnect failed"
+                return
+            }
+            guard generation == reconnectGeneration else {
+                try? await client.disconnect(session: replacement)
+                return
+            }
+            sessionData = replacement
+            sessionHex = replacement.map { String(format: "%02x", $0) }.joined()
+            reconnectState = nil
+            sessionHealth = try await client.checkHealth(session: replacement)
+            await refreshProfiles()
+        } catch {
+            guard generation == reconnectGeneration else { return }
+            reconnectState = "Reconnect failed"
+            profileActionError = "Reconnect failed: \(error)"
+        }
+    }
+
+    func submitPasswordPrompt(_ prompt: ProfilePasswordPrompt, password: String) async -> Bool {
+        switch prompt.action {
+        case .connect:
+            return await connect(prompt.profile, passwordOverride: password)
+        case .test:
+            await testProfile(prompt.profile, passwordOverride: password)
+            if profileActionError == nil { passwordPrompt = nil; return true }
+            return false
+        case .reconnect:
+            guard let sourceSession = sessionData else { return false }
+            await reconnectActive(sourceSession: sourceSession, passwordOverride: password)
+            if reconnectState == nil { passwordPrompt = nil; return true }
+            return false
+        }
+    }
+
+    private func reconnectAutomatically(
+        sourceSession: Data,
+        authenticationStopped: Bool
+    ) async {
+        guard let client else { return }
+        reconnectGeneration &+= 1
+        let generation = reconnectGeneration
+        var attempt: UInt32 = 0
+        while generation == reconnectGeneration, sessionData == sourceSession {
+            let plan: BridgeReconnectPlan
+            do {
+                plan = try await client.planReconnect(
+                    session: sourceSession, attempt: attempt,
+                    authenticationStopped: authenticationStopped
+                )
+            } catch {
+                reconnectState = "Reconnect unavailable"
+                return
+            }
+            switch plan.action {
+            case "manual":
+                reconnectState = nil
+                return
+            case "authentication_stopped":
+                reconnectState = "Authentication stopped"
+                return
+            case "exhausted":
+                reconnectState = "Reconnect budget exhausted"
+                return
+            case "retry":
+                let delay = plan.delayMillis ?? 0
+                reconnectState = "Reconnecting · attempt \(attempt + 1)"
+                if delay > 0 {
+                    try? await Task.sleep(for: .milliseconds(Int64(delay)))
+                }
+                guard generation == reconnectGeneration, sessionData == sourceSession else {
+                    return
+                }
+                do {
+                    let reconnectAttempt = try await client.reconnect(session: sourceSession)
+                    if reconnectAttempt.state == "authentication_stopped" {
+                        reconnectState = "Authentication stopped"
+                        return
+                    }
+                    guard reconnectAttempt.state == "connected",
+                          let replacement = reconnectAttempt.sessionId
+                    else {
+                        attempt &+= 1
+                        continue
+                    }
+                    guard generation == reconnectGeneration else {
+                        try? await client.disconnect(session: replacement)
+                        return
+                    }
+                    sessionData = replacement
+                    sessionHex = replacement.map { String(format: "%02x", $0) }.joined()
+                    reconnectState = nil
+                    sessionHealth = try await client.checkHealth(session: replacement)
+                    await refreshProfiles()
+                    return
+                } catch {
+                    attempt &+= 1
+                }
+            default:
+                reconnectState = "Reconnect unavailable"
+                return
+            }
+        }
+    }
+
     func connectionState(_ profile: BridgeProfileItem) -> String {
         if connectingName == profile.name { return "Connecting" }
         guard profile.connected else { return "Disconnected" }
+        if let reconnectState { return reconnectState }
         guard let sessionHealth else { return "Connected" }
         switch sessionHealth.state {
         case "healthy":
@@ -1160,6 +1369,7 @@ struct ContentView: View {
                                         Button("Connect") { Task { await model.connect(profile) } }
                                         if profile.connected {
                                             Button("Check Health") { Task { await model.checkActiveHealth() } }
+                                            Button("Reconnect") { Task { await model.reconnectActive() } }
                                             Button("Disconnect") { Task { await model.disconnectActive() } }
                                         }
                                         Button("Edit…") { Task { await model.editProfile(profile) } }
@@ -1190,6 +1400,7 @@ struct ContentView: View {
                                     Button("Connect") { Task { await model.connect(profile) } }
                                     if profile.connected {
                                         Button("Check Health") { Task { await model.checkActiveHealth() } }
+                                        Button("Reconnect") { Task { await model.reconnectActive() } }
                                         Button("Disconnect") { Task { await model.disconnectActive() } }
                                     }
                                     Button("Edit…") { Task { await model.editProfile(profile) } }
@@ -1471,6 +1682,11 @@ struct ContentView: View {
                 await model.saveGroup(saved)
             }
         }
+        .sheet(item: $model.passwordPrompt) { prompt in
+            ProfilePasswordSheet(profile: prompt.profile) { password in
+                await model.submitPasswordPrompt(prompt, password: password)
+            }
+        }
         .confirmationDialog(
             "Remove connection?",
             isPresented: Binding(
@@ -1537,6 +1753,15 @@ struct ContentView: View {
                     Label("Check Health", systemImage: "heart.text.square")
                 }
                 .disabled(model.sessionHex == nil || model.isRunning || model.healthChecking)
+            }
+            ToolbarItem(id: "reconnect", placement: .automatic) {
+                Button { Task { await model.reconnectActive() } } label: {
+                    Label("Reconnect", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(
+                    model.sessionHex == nil || model.isRunning
+                        || model.reconnectState?.hasPrefix("Reconnecting") == true
+                )
             }
             ToolbarSpacer(.fixed)
             ToolbarItem(id: "refresh", placement: .automatic) {
@@ -2000,6 +2225,47 @@ struct SqlTextEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let editor = notification.object as? NSTextView else { return }
             text.wrappedValue = editor.string
+        }
+    }
+}
+
+struct ProfilePasswordSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let profile: BridgeProfileItem
+    let onConnect: (String) async -> Bool
+    @State private var password = ""
+    @State private var connecting = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Connect to \(profile.name)").font(.title2).bold()
+            Text("Password stays in memory for this connection attempt and is never saved.")
+                .foregroundStyle(.secondary)
+            SecureField("Password", text: $password)
+                .textContentType(.password)
+                .onSubmit { submit() }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .disabled(connecting)
+                Button("Connect") { submit() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(connecting)
+            }
+        }
+        .padding(24)
+        .frame(width: 420)
+        .interactiveDismissDisabled(connecting)
+    }
+
+    private func submit() {
+        guard !connecting else { return }
+        connecting = true
+        let transientPassword = password
+        password = ""
+        Task {
+            if await onConnect(transientPassword) { dismiss() }
+            else { connecting = false }
         }
     }
 }

@@ -69,6 +69,10 @@ password field with one selected storage source. Initial sources, staged:
    in the editor: `account vault item field` or with section.
 5. Later: **macOS Keychain** (native client).
 
+Native Prompt on connect uses a transient secure sheet for Connect, Test, and
+manual Reconnect. Automatic reconnect stops for operator authentication; it
+never retries an empty or previously entered password.
+
 A resolved password exists only during Test/Connect. It never enters
 snapshots, logs, history, telemetry, or FFI events.
 

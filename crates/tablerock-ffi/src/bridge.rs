@@ -17,9 +17,9 @@ use tablerock_core::{
     ProfileIdentity, ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName,
     ProfileOrganization, ProfilePolicy, ProfilePreferences, ProfileProperty,
     ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileSearchTerm, ProfileTag,
-    ReconnectPreference, RedisKeyKind, ResultStore, ResultStoreLimits, Revision, SecretSource,
-    SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText,
-    TlsPolicy,
+    ReconnectDecision, ReconnectPreference, RedisKeyKind, ResultStore, ResultStoreLimits, Revision,
+    SecretSource, SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
+    StatementText, TlsPolicy, reconnect_decision,
 };
 use tablerock_engine::{
     AdapterFailureClass, CatalogRequest, ClickHouseCompression, ClickHouseConnectConfig,
@@ -152,6 +152,19 @@ pub struct BridgeSessionHealth {
     pub server_reachable: bool,
     pub elapsed_millis: Option<u64>,
     pub authentication_stopped: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeReconnectPlan {
+    pub action: String,
+    pub delay_millis: Option<u64>,
+    pub restore_last_context: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeReconnectAttempt {
+    pub state: String,
+    pub session_id: Option<Vec<u8>>,
 }
 
 /// One Rust-owned catalog node. Swift renders these facts and returns only opaque ids.
@@ -518,9 +531,124 @@ impl TableRockBridge {
     ) -> Result<BridgeSessionHealth, BridgeError> {
         catch_entry(|| self.check_session_health_inner(session_id))
     }
+
+    /// Returns the saved profile's shared reconnect decision for one attempt.
+    pub fn plan_session_reconnect(
+        &self,
+        session_id: Vec<u8>,
+        attempt: u32,
+        authentication_stopped: bool,
+    ) -> Result<BridgeReconnectPlan, BridgeError> {
+        catch_entry(|| {
+            self.plan_session_reconnect_inner(session_id, attempt, authentication_stopped)
+        })
+    }
+
+    /// Opens replacement first, then retires the old saved-profile session.
+    pub fn reconnect_saved_session(
+        &self,
+        session_id: Vec<u8>,
+        password_override: Option<String>,
+    ) -> Result<BridgeReconnectAttempt, BridgeError> {
+        catch_entry(|| self.reconnect_saved_session_inner(session_id, password_override))
+    }
 }
 
 impl TableRockBridge {
+    fn plan_session_reconnect_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        attempt: u32,
+        authentication_stopped: bool,
+    ) -> Result<BridgeReconnectPlan, BridgeError> {
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("session-id", "invalid session id"))?;
+        let (preference, restore_last_context) = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let profile_id = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?
+                .profile_id;
+            let actor = inner.persistence.as_ref().ok_or_else(|| {
+                BridgeError::rejected("reconnect-profile", "session has no saved profile")
+            })?;
+            let profile = actor
+                .get_profile(profile_id)
+                .map_err(|error| BridgeError::rejected("reconnect-profile", error.to_string()))?
+                .ok_or_else(|| {
+                    BridgeError::rejected("reconnect-profile", "saved profile no longer exists")
+                })?;
+            (
+                profile.preferences().reconnect(),
+                profile.preferences().restore_last_context(),
+            )
+        };
+        let (action, delay_millis) =
+            match reconnect_decision(preference, attempt, authentication_stopped) {
+                ReconnectDecision::Manual => ("manual", None),
+                ReconnectDecision::StopAuthentication => ("authentication_stopped", None),
+                ReconnectDecision::RetryAfter { delay_millis } => ("retry", Some(delay_millis)),
+                ReconnectDecision::Exhausted => ("exhausted", None),
+            };
+        Ok(BridgeReconnectPlan {
+            action: action.into(),
+            delay_millis,
+            restore_last_context,
+        })
+    }
+
+    fn reconnect_saved_session_inner(
+        &self,
+        old_session_bytes: Vec<u8>,
+        password_override: Option<String>,
+    ) -> Result<BridgeReconnectAttempt, BridgeError> {
+        let old_session = session_from_bytes(&old_session_bytes)
+            .map_err(|_| BridgeError::rejected("session-id", "invalid session id"))?;
+        let profile_id = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            guard
+                .as_ref()
+                .ok_or(BridgeError::RuntimeUnavailable)?
+                .sessions
+                .get(&old_session)
+                .ok_or(BridgeError::UnknownSession)?
+                .profile_id
+        };
+        let new_session =
+            match self.open_profile_inner(profile_id.to_bytes().to_vec(), password_override) {
+                Ok(session) => session,
+                Err(BridgeError::Rejected { code, .. }) if code == "profile-password" => {
+                    return Ok(BridgeReconnectAttempt {
+                        state: "authentication_stopped".into(),
+                        session_id: None,
+                    });
+                }
+                Err(BridgeError::Rejected { code, .. }) if code == "connect" => {
+                    return Ok(BridgeReconnectAttempt {
+                        state: "retryable".into(),
+                        session_id: None,
+                    });
+                }
+                Err(error) => return Err(error),
+            };
+        if let Err(error) = self.disconnect_inner(old_session_bytes) {
+            let _ = self.disconnect_inner(new_session.clone());
+            return Err(error);
+        }
+        Ok(BridgeReconnectAttempt {
+            state: "connected".into(),
+            session_id: Some(new_session),
+        })
+    }
+
     fn check_session_health_inner(
         &self,
         session_id_bytes: Vec<u8>,
@@ -943,7 +1071,12 @@ impl TableRockBridge {
                     .map(|secret| String::from_utf8_lossy(secret.as_bytes()).into_owned())
                     .unwrap_or_default()
             } else {
-                password_override.unwrap_or_default()
+                password_override.ok_or_else(|| {
+                    BridgeError::rejected(
+                        "profile-password",
+                        "prompt-on-connect profile requires a password override",
+                    )
+                })?
             };
             let engine = match connection.engine() {
                 Engine::PostgreSql => "postgresql",

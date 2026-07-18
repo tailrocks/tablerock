@@ -698,9 +698,19 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func panicProbe() throws 
     
     /**
+     * Returns the saved profile's shared reconnect decision for one attempt.
+     */
+    func planSessionReconnect(sessionId: Data, attempt: UInt32, authenticationStopped: Bool) throws  -> BridgeReconnectPlan
+    
+    /**
      * Pumps driver updates for `operation_id` until a terminal fact or no pending work.
      */
     func pump(operationId: Data) throws 
+    
+    /**
+     * Opens replacement first, then retires the old saved-profile session.
+     */
+    func reconnectSavedSession(sessionId: Data, passwordOverride: String?) throws  -> BridgeReconnectAttempt
     
     /**
      * Load one typed catalog level. `parent_node_id` is an opaque id previously
@@ -1062,6 +1072,21 @@ open func panicProbe()throws   {try rustCallWithError(FfiConverterTypeBridgeErro
 }
     
     /**
+     * Returns the saved profile's shared reconnect decision for one attempt.
+     */
+open func planSessionReconnect(sessionId: Data, attempt: UInt32, authenticationStopped: Bool)throws  -> BridgeReconnectPlan  {
+    return try  FfiConverterTypeBridgeReconnectPlan_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_plan_session_reconnect(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterUInt32.lower(attempt),
+        FfiConverterBool.lower(authenticationStopped),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Pumps driver updates for `operation_id` until a terminal fact or no pending work.
      */
 open func pump(operationId: Data)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
@@ -1071,6 +1096,20 @@ open func pump(operationId: Data)throws   {try rustCallWithError(FfiConverterTyp
         FfiConverterData.lower(operationId),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * Opens replacement first, then retires the old saved-profile session.
+     */
+open func reconnectSavedSession(sessionId: Data, passwordOverride: String?)throws  -> BridgeReconnectAttempt  {
+    return try  FfiConverterTypeBridgeReconnectAttempt_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_reconnect_saved_session(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterOptionString.lower(passwordOverride),uniffiCallStatus
+    )
+})
 }
     
     /**
@@ -1967,6 +2006,118 @@ public func FfiConverterTypeBridgeProfileOrderItem_lower(_ value: BridgeProfileO
 }
 
 
+public struct BridgeReconnectAttempt: Equatable, Hashable {
+    public var state: String
+    public var sessionId: Data?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(state: String, sessionId: Data?) {
+        self.state = state
+        self.sessionId = sessionId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BridgeReconnectAttempt: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeReconnectAttempt: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeReconnectAttempt {
+        return
+            try BridgeReconnectAttempt(
+                state: FfiConverterString.read(from: &buf), 
+                sessionId: FfiConverterOptionData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeReconnectAttempt, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.state, into: &buf)
+        FfiConverterOptionData.write(value.sessionId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeReconnectAttempt_lift(_ buf: RustBuffer) throws -> BridgeReconnectAttempt {
+    return try FfiConverterTypeBridgeReconnectAttempt.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeReconnectAttempt_lower(_ value: BridgeReconnectAttempt) -> RustBuffer {
+    return FfiConverterTypeBridgeReconnectAttempt.lower(value)
+}
+
+
+public struct BridgeReconnectPlan: Equatable, Hashable {
+    public var action: String
+    public var delayMillis: UInt64?
+    public var restoreLastContext: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(action: String, delayMillis: UInt64?, restoreLastContext: Bool) {
+        self.action = action
+        self.delayMillis = delayMillis
+        self.restoreLastContext = restoreLastContext
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BridgeReconnectPlan: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeReconnectPlan: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeReconnectPlan {
+        return
+            try BridgeReconnectPlan(
+                action: FfiConverterString.read(from: &buf), 
+                delayMillis: FfiConverterOptionUInt64.read(from: &buf), 
+                restoreLastContext: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeReconnectPlan, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.action, into: &buf)
+        FfiConverterOptionUInt64.write(value.delayMillis, into: &buf)
+        FfiConverterBool.write(value.restoreLastContext, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeReconnectPlan_lift(_ buf: RustBuffer) throws -> BridgeReconnectPlan {
+    return try FfiConverterTypeBridgeReconnectPlan.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeReconnectPlan_lower(_ value: BridgeReconnectPlan) -> RustBuffer {
+    return FfiConverterTypeBridgeReconnectPlan.lower(value)
+}
+
+
 /**
  * Safe live-session health projection. No server text or credentials cross UniFFI.
  */
@@ -2801,7 +2952,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_panic_probe() != 16474) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_plan_session_reconnect() != 29748) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_pump() != 15232) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_reconnect_saved_session() != 47584) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_refresh_catalog() != 24952) {

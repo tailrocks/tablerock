@@ -568,7 +568,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
             None,
         )
         .unwrap(),
-        ProfilePreferences::new(ReconnectPreference::Manual, true, 250).unwrap(),
+        ProfilePreferences::new(ReconnectPreference::BoundedAutomatic, true, 250).unwrap(),
     )
     .unwrap();
     actor
@@ -596,6 +596,65 @@ fn open_profile_requires_persistence_and_loads_literals() {
     assert_eq!(listed[0].port.as_deref(), Some("1"));
     assert_eq!(listed[0].context.as_deref(), Some("postgres"));
     assert!(!listed[0].connected);
+    let (_, reconnect_page) = sample_page(Engine::PostgreSql, 141, &[1]);
+    let reconnect_source = bridge
+        .open_driver_session_for_profile(
+            profile_id,
+            Engine::PostgreSql,
+            Box::new(FixedPageSession {
+                engine: Engine::PostgreSql,
+                page: reconnect_page,
+                health_failure: None,
+            }),
+        )
+        .unwrap();
+    let immediate = bridge
+        .plan_session_reconnect(reconnect_source.clone(), 0, false)
+        .unwrap();
+    assert_eq!(immediate.action, "retry");
+    assert_eq!(immediate.delay_millis, Some(0));
+    assert!(immediate.restore_last_context);
+    assert_eq!(
+        bridge
+            .plan_session_reconnect(reconnect_source.clone(), 6, false)
+            .unwrap()
+            .delay_millis,
+        Some(30_000)
+    );
+    assert_eq!(
+        bridge
+            .plan_session_reconnect(reconnect_source.clone(), 7, false)
+            .unwrap()
+            .action,
+        "exhausted"
+    );
+    assert_eq!(
+        bridge
+            .plan_session_reconnect(reconnect_source.clone(), 0, true)
+            .unwrap()
+            .action,
+        "authentication_stopped"
+    );
+    let prompt_stop = bridge
+        .reconnect_saved_session(reconnect_source.clone(), None)
+        .unwrap();
+    assert_eq!(prompt_stop.state, "authentication_stopped");
+    assert_eq!(prompt_stop.session_id, None);
+    let retryable = bridge
+        .reconnect_saved_session(reconnect_source.clone(), Some("unused".into()))
+        .unwrap();
+    assert_eq!(retryable.state, "retryable");
+    assert_eq!(retryable.session_id, None);
+    assert!(
+        bridge
+            .list_profiles()
+            .unwrap()
+            .iter()
+            .find(|item| item.id_bytes == profile_id.to_bytes())
+            .unwrap()
+            .connected
+    );
+    bridge.disconnect(reconnect_source).unwrap();
     assert_eq!(
         bridge
             .search_profiles(Some("POSTGRES".into()))

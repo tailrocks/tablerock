@@ -14,6 +14,7 @@ mod page;
 mod profile;
 mod profile_aggregate;
 mod profile_list;
+mod reconnect;
 mod result_store;
 mod revision;
 mod secret;
@@ -86,6 +87,7 @@ pub use profile_list::{
     ProfileListFilter, ProfileListItem, ProfileListPage, ProfileListRequest, ProfileSearchTerm,
     ProfileSourceFacts,
 };
+pub use reconnect::{ReconnectDecision, reconnect_decision, reconnect_stops_for_redacted_label};
 pub use result_store::{
     AdmissionOutcome, OpenResultOutcome, PageKey, ResultStore, ResultStoreError, ResultStoreLimits,
 };
