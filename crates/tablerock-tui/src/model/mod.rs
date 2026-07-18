@@ -112,6 +112,8 @@ pub enum ActionId {
     CopyRow,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
+    /// Clear server sort only (keep filters) and re-browse.
+    ClearSort,
     /// Add an equality filter for the cursor column using the cursor cell text.
     AddFilter,
     /// Add IS NULL filter for the cursor column.

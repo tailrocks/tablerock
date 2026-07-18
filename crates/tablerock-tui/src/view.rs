@@ -602,6 +602,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let filt_gt = action_label(model, ActionId::FilterGt, "Gt");
     let filt_ge = action_label(model, ActionId::FilterGe, "Ge");
     let raw_where = action_label(model, ActionId::EditRawWhere, "RawWhere");
+    let clear_sort = action_label(model, ActionId::ClearSort, "ClrSort");
+    let cycle_sort = action_label(model, ActionId::CycleSort, "Sort");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
@@ -931,6 +933,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::EditRawWhere,
                         label: raw_where.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CycleSort,
+                        label: cycle_sort.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ClearSort,
+                        label: clear_sort.as_str(),
                         enabled: true,
                         style: None,
                     },

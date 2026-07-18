@@ -909,6 +909,15 @@ impl DataGridModel {
         self.raw_where = None;
     }
 
+    /// Clear sort keys only (keep filters and raw WHERE).
+    pub fn clear_sort(&mut self) -> bool {
+        if self.sort.is_empty() {
+            return false;
+        }
+        self.sort.clear();
+        true
+    }
+
     /// Remove the most recently added server filter chip. Returns true if one was removed.
     pub fn remove_last_filter(&mut self) -> bool {
         self.filters.pop().is_some()
