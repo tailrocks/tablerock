@@ -1,6 +1,7 @@
 //! Database adapters and operation runtime for TableRock.
 
 mod adapter;
+mod browse_plan;
 mod catalog;
 mod clickhouse;
 mod ident;
@@ -23,6 +24,10 @@ pub use catalog::{
 pub use clickhouse::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseError, ClickHouseProbeQuery,
     ClickHouseRowStream, ClickHouseSession, ClickHouseTlsMode,
+};
+pub use browse_plan::{
+    BrowsePlan, BrowsePlanError, FilterOperator, FilterValue, RenderedBrowseSql, SortDirection,
+    SortKey, TypedCondition,
 };
 pub use ident::{QuoteIdentError, qualify_table, quote_ident};
 pub use postgres::{
