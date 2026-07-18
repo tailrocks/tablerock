@@ -589,6 +589,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             context_revision,
             rows_loaded,
             truncated,
+            notice_summary,
         }) => {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
@@ -606,6 +607,10 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     grid.truncated = true;
                 }
                 grid.mark_completed();
+                if let Some(summary) = notice_summary {
+                    // Surface bounded NOTICE text in status (not SQL/values).
+                    grid.error_label = Some(format!("notice: {summary}"));
+                }
             }
             let selected = model.workbench().selected_tab;
             if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
@@ -6404,6 +6409,7 @@ mod tests {
                 context_revision: 3,
                 rows_loaded: 50,
                 truncated: false,
+                notice_summary: None,
             }),
         );
         assert!(!done.needs_render());
@@ -6582,12 +6588,17 @@ mod tests {
                 context_revision: 1,
                 rows_loaded: 2500,
                 truncated: false,
+                notice_summary: Some("NOTICE: table-rock-notice".into()),
             }),
         );
         assert!(done.needs_render());
         let grid = model.workbench().active_grid().unwrap();
         assert_eq!(grid.operation, GridOperationState::Completed);
         assert_eq!(grid.rows_loaded, 2500);
+        assert_eq!(
+            grid.error_label.as_deref(),
+            Some("notice: NOTICE: table-rock-notice")
+        );
     }
 
     #[test]

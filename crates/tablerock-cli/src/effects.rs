@@ -2334,8 +2334,28 @@ async fn execute_sql(
         }
     }
 
+    let notice_summary = if engine == CoreEngine::PostgreSql {
+        let lines = session.drain_server_notices().await;
+        if lines.is_empty() {
+            None
+        } else {
+            Some(lines.join(" · "))
+        }
+    } else {
+        None
+    };
+
     if !first_sent {
         // Empty result set.
+        let progress = match (
+            DriverPageStream::progress_label(stream.as_ref()),
+            notice_summary.as_deref(),
+        ) {
+            (Some(p), Some(n)) => Some(format!("{p} · notice: {n}")),
+            (Some(p), None) => Some(p),
+            (None, Some(n)) => Some(format!("notice: {n}")),
+            (None, None) => None,
+        };
         return Message::Engine(tablerock_tui::EngineMsg::GridPage {
             request_token,
             context_revision,
@@ -2350,7 +2370,7 @@ async fn execute_sql(
             complete: true,
             identity_columns,
             server_query_id,
-            server_progress: DriverPageStream::progress_label(stream.as_ref()),
+            server_progress: progress,
         });
     }
 
@@ -2359,6 +2379,7 @@ async fn execute_sql(
         context_revision,
         rows_loaded: total_rows,
         truncated: hit_cap,
+        notice_summary,
     })
 }
 

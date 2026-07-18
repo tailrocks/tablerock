@@ -193,6 +193,8 @@ pub enum EngineMsg {
         context_revision: u64,
         rows_loaded: u64,
         truncated: bool,
+        /// Bounded PostgreSQL NOTICE summary (severity + message); never secrets.
+        notice_summary: Option<String>,
     },
     HistoryLoaded {
         request_token: u64,

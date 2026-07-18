@@ -296,6 +296,12 @@ pub trait DriverSession: Send + Sync {
     /// Bounded server identity/version facts for Test Connection.
     fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>>;
 
+    /// Non-blocking drain of server notices (PostgreSQL). Default empty.
+    /// Lines are severity + message only; never include SQL or values.
+    fn drain_server_notices<'a>(&'a self) -> DriverFuture<'a, Vec<String>> {
+        Box::pin(async { Vec::new() })
+    }
+
     /// Apply an authorized mutation plan (real engines override; stubs fail closed).
     fn apply_authorized_mutation<'a>(
         &'a self,
@@ -535,6 +541,23 @@ impl DriverPageStream for RedisSubscriptionStream {
 impl DriverSession for PostgresSession {
     fn engine(&self) -> Engine {
         Engine::PostgreSql
+    }
+
+    fn drain_server_notices<'a>(&'a self) -> DriverFuture<'a, Vec<String>> {
+        Box::pin(async move {
+            let deliveries = self.try_drain_notices(8).await;
+            deliveries
+                .into_iter()
+                .map(|delivery| match delivery {
+                    crate::PostgresNoticeDelivery::Notice(notice) => {
+                        format!("{}: {}", notice.severity(), notice.message())
+                    }
+                    crate::PostgresNoticeDelivery::Overflow { dropped } => {
+                        format!("NOTICE overflow: dropped {dropped}")
+                    }
+                })
+                .collect()
+        })
     }
 
     fn start_page_stream<'a>(

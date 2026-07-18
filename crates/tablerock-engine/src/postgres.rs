@@ -1765,6 +1765,25 @@ impl PostgresSession {
             .map(PostgresNoticeDelivery::Notice)
     }
 
+    /// Non-blocking drain of pending notices (bounded). Safe after a statement
+    /// completes; does not wait for future notices.
+    pub async fn try_drain_notices(&self, max: usize) -> Vec<PostgresNoticeDelivery> {
+        let max = max.clamp(1, 32);
+        let mut out = Vec::new();
+        let dropped = self.dropped_notices.swap(0, Ordering::AcqRel);
+        if dropped > 0 {
+            out.push(PostgresNoticeDelivery::Overflow { dropped });
+        }
+        let mut rx = self.notices.lock().await;
+        while out.len() < max {
+            match rx.try_recv() {
+                Ok(notice) => out.push(PostgresNoticeDelivery::Notice(notice)),
+                Err(_) => break,
+            }
+        }
+        out
+    }
+
     pub async fn emit_notice_probe(&self) -> Result<(), PostgresError> {
         self.client
             .batch_execute(
