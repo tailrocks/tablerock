@@ -770,6 +770,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let dup_tab = action_label(model, ActionId::DuplicateTab, "DupTab");
     let go_tab = action_label(model, ActionId::GoToTab, "GoTab");
     let list_tabs = action_label(model, ActionId::ListTabs, "ListTabs");
+    let copy_tabs = action_label(model, ActionId::CopyTabs, "CopyTabs");
     let submit = action_label(model, ActionId::Submit, "Submit");
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
     let quit = action_label(model, ActionId::Quit, "Quit");
@@ -1749,6 +1750,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ListTabs,
                         label: list_tabs.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyTabs,
+                        label: copy_tabs.as_str(),
                         enabled: true,
                         style: None,
                     },

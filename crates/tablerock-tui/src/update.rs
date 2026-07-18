@@ -3378,6 +3378,20 @@ fn activate_selected_action(model: &mut Model) -> Update {
             };
             Update::render()
         }
+        ActionId::CopyTabs if model.screen() == Screen::Workbench => {
+            let text = model.workbench().tabs_panel_text();
+            if text == "no tabs" {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::NewSql if model.screen() == Screen::Workbench => {
             model.workbench_mut().open_sql_tab();
             Update::render()
@@ -4961,6 +4975,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::DuplicateTab
         | ActionId::GoToTab
         | ActionId::ListTabs
+        | ActionId::CopyTabs
         | ActionId::PinTab
         | ActionId::NewSql
         | ActionId::RunSql
@@ -6604,6 +6619,7 @@ fn cycle_action(
                 ActionId::DuplicateTab,
                 ActionId::GoToTab,
                 ActionId::ListTabs,
+                ActionId::CopyTabs,
                 ActionId::CloseTab,
                 ActionId::QuickSwitch,
                 ActionId::PinTab,

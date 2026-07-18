@@ -89,6 +89,8 @@ pub enum ActionId {
     GoToTab,
     /// Open inspector listing all workbench tabs.
     ListTabs,
+    /// Copy tab inventory text to clipboard.
+    CopyTabs,
     PinTab,
     NewSql,
     RunSql,
