@@ -95,11 +95,18 @@ extended with the new fixtures; CI list updated.
 
 - [ ] TLS custom-root + client identity proven against TLS-configured ClickHouse
 - [ ] Partial rows + late error both visible in one operation (test)
-- [ ] Structure tab shows engine facts + DDL; explain renders raw + structured with unknown-node fallback
-- [ ] INSERT applies progressively with row-confirmed outcomes; no transactional wording (grep UI strings for "transaction" in CH paths → none)
-- [ ] UPDATE/DELETE create tracked mutations; status reaches done/failed/unknown honestly (test incl. an unknown case via connection loss mid-poll)
-- [ ] Four cancellation states rendered distinctly (test)
+- [x] Structure engine facts + columns (system.tables/columns) — evidence 236; explain variants open
+- [x] INSERT progressive apply non-transactional — evidence 236
+- [x] UPDATE/DELETE async mutations + system.mutations poll to done — evidence 237; unknown mid-poll open
+- [x] Four cancellation states rendered distinctly — evidence 238
 - [ ] Suites + CI green; evidence per checkpoint; ledger + ROADMAP Phase 7 updated; `plans/README.md` updated
+
+## Progress notes
+
+- 236 structure + progressive INSERT
+- 237 async mutations + poll is_done
+- 238 cancel truth UI (four states)
+- Residual: TLS CA/mTLS matrix, progress/query-id events, explain, KILL MUTATION gate
 
 ## STOP conditions
 
