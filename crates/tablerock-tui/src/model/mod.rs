@@ -7,6 +7,7 @@ pub mod editor;
 pub mod grid;
 pub mod history;
 pub mod inspector;
+pub mod mutation_draft;
 pub mod profiles;
 pub mod query_editor;
 pub mod saved_query;

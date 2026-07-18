@@ -3,6 +3,7 @@
 mod catalog;
 mod command;
 mod diagnostic;
+mod editability;
 mod id;
 mod mutation;
 mod operation;
@@ -32,6 +33,7 @@ pub use diagnostic::{
     OperatorAction, OutcomeCertainty, PositionUnit, PostgreSqlCode, RedisCode, RetryAdvice,
     SafeCode, SafeDiagnostic, Severity,
 };
+pub use editability::{EditabilityFacts, EditabilityReason, StableIdentity};
 pub use id::{
     CatalogNodeId, ContextId, IdDecodeError, IdParts, MutationId, OperationId, ProfileId, QueryId,
     RequestId, ResultId, ReviewTokenId, RowId, SessionId, SubscriptionId, TabId,

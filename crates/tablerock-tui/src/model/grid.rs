@@ -3,6 +3,9 @@
 //! Cell projections are computed by the CLI/engine bridge when pages admit;
 //! the TUI never decodes page arenas.
 
+use super::mutation_draft::MutationDraftModel;
+use tablerock_core::EditabilityFacts;
+
 /// Visual distinction class (text+glyph; never color alone).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CellDistinction {
@@ -229,6 +232,12 @@ pub struct DataGridModel {
     /// Base table identity for SQL INSERT/UPDATE copy (browse only).
     pub base_schema: Option<String>,
     pub base_table: Option<String>,
+    /// Proven primary/unique key column names (empty = unknown).
+    pub identity_columns: Vec<String>,
+    /// Result-level editability (drives staging affordances).
+    pub editability: EditabilityFacts,
+    /// In-memory staged mutations for this tab.
+    pub drafts: MutationDraftModel,
 }
 
 impl Default for DataGridModel {
@@ -256,6 +265,11 @@ impl Default for DataGridModel {
             column_layout: Vec::new(),
             base_schema: None,
             base_table: None,
+            identity_columns: Vec::new(),
+            editability: EditabilityFacts::ReadOnly {
+                reason: tablerock_core::EditabilityReason::NoBaseTable,
+            },
+            drafts: MutationDraftModel::new(),
         }
     }
 }
@@ -358,14 +372,38 @@ impl DataGridModel {
         } else {
             " · page-local filter".into()
         };
+        let staged = self.drafts.status_suffix();
+        let edit = if self.editability.is_editable() {
+            String::new()
+        } else if let Some(reason) = self.editability.reason() {
+            format!(" · read-only ({})", reason.label())
+        } else {
+            String::new()
+        };
         format!(
-            "{} · {} rows · {} B · {}{}{sort}{filt}{quick}{err}",
+            "{} · {} rows · {} B · {}{}{sort}{filt}{quick}{staged}{edit}{err}",
             self.operation.label(),
             self.rows_loaded,
             self.bytes_loaded,
             self.totals.label(),
             trunc
         )
+    }
+
+    /// Recompute editability from base identity + profile safety + shape flag.
+    pub fn recompute_editability(
+        &mut self,
+        safety: tablerock_core::ProfileSafetyMode,
+        non_base: bool,
+    ) {
+        self.editability = EditabilityFacts::classify(
+            safety,
+            non_base,
+            self.base_schema.as_deref(),
+            self.base_table.as_deref(),
+            &self.identity_columns,
+        );
+        self.drafts.apply_editability(&self.editability);
     }
 
     /// Cycle sort on `column` as primary (removes prior keys for that column).
@@ -756,6 +794,35 @@ mod tests {
         assert_eq!(hits, vec![0]);
         assert!(g.status_line().contains("page-local filter"));
         assert!(g.status_line().contains("sort"));
+    }
+
+    #[test]
+    fn recompute_editability_and_staged_status() {
+        use super::super::mutation_draft::{DraftLocatorField, StagedCellEdit};
+        use tablerock_core::ProfileSafetyMode;
+
+        let mut grid = DataGridModel::default();
+        grid.base_schema = Some("public".into());
+        grid.base_table = Some("users".into());
+        grid.identity_columns = vec!["id".into()];
+        grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+        assert!(grid.editability.is_editable());
+        assert!(grid.drafts.staging_allowed());
+        assert!(grid.drafts.stage_cell_edit(StagedCellEdit {
+            abs_row: 0,
+            column: "name".into(),
+            original_text: "a".into(),
+            staged_text: "b".into(),
+            locator: vec![DraftLocatorField {
+                column: "id".into(),
+                original_text: "1".into(),
+            }],
+        }));
+        assert!(grid.status_line().contains("staged 1"));
+        grid.recompute_editability(ProfileSafetyMode::ReadOnly, false);
+        assert!(!grid.editability.is_editable());
+        assert!(grid.drafts.is_empty());
+        assert!(grid.status_line().contains("read-only"));
     }
 
     #[test]
