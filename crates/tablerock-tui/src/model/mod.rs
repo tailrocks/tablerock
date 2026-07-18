@@ -140,6 +140,8 @@ pub enum ActionId {
     CopyColumnNames,
     /// Copy cursor column values for all resident rows (one per line).
     CopyColumn,
+    /// Copy active grid status line to clipboard.
+    CopyStatus,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Append cursor column as secondary sort (or cycle its direction in place).

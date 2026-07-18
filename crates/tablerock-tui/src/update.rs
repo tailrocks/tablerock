@@ -3620,6 +3620,23 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyStatus if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let text = grid.status_line();
+            if text.is_empty() {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -4927,6 +4944,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyPick
         | ActionId::CopyColumnNames
         | ActionId::CopyColumn
+        | ActionId::CopyStatus
         | ActionId::CycleSort
         | ActionId::PushSort
         | ActionId::PopSort
@@ -6565,6 +6583,7 @@ fn cycle_action(
                 ActionId::CopyPick,
                 ActionId::CopyColumnNames,
                 ActionId::CopyColumn,
+                ActionId::CopyStatus,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,
@@ -8130,6 +8149,33 @@ mod tests {
             Some("notice: NOTICE: table-rock-notice")
         );
         assert_eq!(grid.notice_history.as_slice(), ["NOTICE: table-rock-notice"]);
+    }
+
+    #[test]
+    fn copy_status_line_emits_clipboard() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.rows_loaded = 42;
+            grid.operation = GridOperationState::Completed;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::CopyStatus);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("42") || text.contains("rows"), "{text}");
+            }
+            other => panic!("expected CopyToClipboard, got {other:?}"),
+        }
     }
 
     #[test]
