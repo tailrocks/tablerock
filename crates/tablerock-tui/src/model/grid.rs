@@ -273,6 +273,8 @@ pub struct DataGridModel {
     pub result_token: u64,
     /// ClickHouse (or other) server query id for cancel/status while running.
     pub server_query_id: Option<String>,
+    /// ClickHouse X-ClickHouse-Summary progress (partial without wait_end_of_query).
+    pub server_progress: Option<String>,
     pub cursor_row: u64,
     pub cursor_col: usize,
     /// First visible row in the VirtualGrid viewport (absolute).
@@ -316,6 +318,7 @@ impl Default for DataGridModel {
             error_label: None,
             result_token: 0,
             server_query_id: None,
+            server_progress: None,
             cursor_row: 0,
             cursor_col: 0,
             viewport_row: 0,
@@ -442,6 +445,11 @@ impl DataGridModel {
             .as_deref()
             .map(|id| format!(" · qid {id}"))
             .unwrap_or_default();
+        let progress = self
+            .server_progress
+            .as_deref()
+            .map(|p| format!(" · {p}"))
+            .unwrap_or_default();
         let sort = if self.sort.is_empty() {
             String::new()
         } else {
@@ -474,7 +482,7 @@ impl DataGridModel {
             String::new()
         };
         format!(
-            "{} · {} rows · {} B · {}{}{qid}{sort}{filt}{quick}{staged}{edit}{err}",
+            "{} · {} rows · {} B · {}{}{qid}{progress}{sort}{filt}{quick}{staged}{edit}{err}",
             self.operation.label(),
             self.rows_loaded,
             self.bytes_loaded,
@@ -944,8 +952,11 @@ mod tests {
     fn status_line_includes_query_id_when_set() {
         let mut grid = DataGridModel::default();
         grid.server_query_id = Some("tr-42".into());
+        grid.server_progress = Some("read 5 rows".into());
         grid.operation = GridOperationState::Running;
-        assert!(grid.status_line().contains("qid tr-42"));
+        let line = grid.status_line();
+        assert!(line.contains("qid tr-42"), "{line}");
+        assert!(line.contains("read 5 rows"), "{line}");
     }
 
     #[test]

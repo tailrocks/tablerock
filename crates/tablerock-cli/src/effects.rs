@@ -12,7 +12,7 @@ use tablerock_core::{
     SessionId, TlsPolicy,
 };
 use tablerock_engine::{
-    CatalogRequest, DriverPageRequest, DriverSession, SessionRegistry,
+    CatalogRequest, DriverPageRequest, DriverPageStream, DriverSession, SessionRegistry,
 };
 use tablerock_persistence::PersistenceActor;
 use tablerock_tui::{
@@ -2235,6 +2235,7 @@ async fn execute_sql(
                 total_rows = total_rows.max(page_start.saturating_add(row_count));
                 if !first_sent {
                     // First rows before stream completion (Phase 4 exit).
+                    let server_progress = DriverPageStream::progress_label(stream.as_ref());
                     let msg = project_page_message(
                         request_token,
                         context_revision,
@@ -2242,6 +2243,7 @@ async fn execute_sql(
                         false,
                         identity_columns.clone(),
                         server_query_id.clone(),
+                        server_progress,
                     );
                     let _ = ingress.try_send_event(msg);
                     first_sent = true;
@@ -2287,6 +2289,7 @@ async fn execute_sql(
             complete: true,
             identity_columns,
             server_query_id,
+            server_progress: DriverPageStream::progress_label(stream.as_ref()),
         });
     }
 
@@ -2335,7 +2338,15 @@ async fn fetch_page(
     };
     // complete=false: FetchPage only swaps the resident window; terminal
     // completion already arrived (or will) via GridStreamComplete.
-    project_page_message(request_token, context_revision, page, false, None, None)
+    project_page_message(
+        request_token,
+        context_revision,
+        page,
+        false,
+        None,
+        None,
+        None,
+    )
 }
 
 async fn cancel_query(
@@ -3731,7 +3742,7 @@ async fn scan_redis_keys(
     count: u32,
 ) -> Message {
     use tablerock_core::{Engine as CoreEngine, PageLimits};
-    use tablerock_engine::{DriverPageRequest, DriverPageStream};
+    use tablerock_engine::DriverPageRequest;
 
     let session_id = match session_id_hex.parse::<SessionId>() {
         Ok(id) => id,
@@ -4709,6 +4720,7 @@ fn project_page_message(
     complete: bool,
     identity_columns: Option<Vec<String>>,
     server_query_id: Option<String>,
+    server_progress: Option<String>,
 ) -> Message {
     use tablerock_core::{RowTotal, Truncation, ValueKind};
     let envelope = page.envelope();
@@ -4821,6 +4833,7 @@ fn project_page_message(
         complete,
         identity_columns,
         server_query_id,
+        server_progress,
     })
 }
 

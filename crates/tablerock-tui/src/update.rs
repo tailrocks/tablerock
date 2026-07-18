@@ -470,6 +470,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             complete,
             identity_columns,
             server_query_id,
+            server_progress,
         }) => {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
@@ -497,6 +498,9 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     if let Some(qid) = server_query_id {
                         grid.server_query_id = Some(qid);
                     }
+                }
+                if let Some(progress) = server_progress {
+                    grid.server_progress = Some(progress);
                 }
                 if let Some(identity) = identity_columns {
                     grid.identity_columns = identity;
@@ -5741,6 +5745,7 @@ mod tests {
                 complete: true,
                 identity_columns: None,
                 server_query_id: None,
+                server_progress: None,
             }),
         );
         assert!(!late.needs_render());
@@ -6263,6 +6268,7 @@ mod tests {
                 complete: true,
                 identity_columns: None,
                 server_query_id: None,
+                server_progress: None,
             }),
         );
         assert!(!stale.needs_render());
@@ -6287,6 +6293,7 @@ mod tests {
                 complete: true,
                 identity_columns: Some(vec!["id".into()]),
                 server_query_id: Some("tr-1".into()),
+                server_progress: Some("read 10 rows · 128 B".into()),
             }),
         );
         assert!(ok.needs_render());
@@ -6298,7 +6305,12 @@ mod tests {
         assert_eq!(grid.identity_columns, vec!["id".to_owned()]);
         assert!(grid.editability.is_editable());
         assert_eq!(grid.server_query_id.as_deref(), Some("tr-1"));
+        assert_eq!(
+            grid.server_progress.as_deref(),
+            Some("read 10 rows · 128 B")
+        );
         assert!(grid.status_line().contains("qid tr-1"));
+        assert!(grid.status_line().contains("read 10 rows"));
     }
 
     #[test]

@@ -163,11 +163,11 @@ activity/dashboard, and PostgreSQL-specific structure facts.
 
 ## Phase 7 — ClickHouse slice
 
-**Partial→mostly complete (evidence 236–239, 257, 305, 308):** structure facts,
-progressive INSERT, async UPDATE/DELETE + `system.mutations` poll, KILL
-MUTATION destructive gate, multi-engine ExecuteSql (CH query_id on status),
-four-state cancel UI, EXPLAIN raw/AST + editor tree. Residual: custom
-CA/mTLS HttpClient fixture, HTTP progress event surface.
+**Partial→mostly complete (evidence 236–239, 257, 305, 308, 320):** structure
+facts, progressive INSERT, async UPDATE/DELETE + `system.mutations` poll, KILL
+MUTATION destructive gate, multi-engine ExecuteSql (CH query_id + summary
+progress on status), four-state cancel UI, EXPLAIN raw/AST + editor tree.
+Residual: custom CA/mTLS HttpClient fixture matrix.
 
 Deliver databases/objects/DDL, arbitrary dynamic query results through the
 official client, complex values, progress/query IDs, honest cancellation,

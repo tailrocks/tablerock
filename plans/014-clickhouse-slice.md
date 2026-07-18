@@ -104,7 +104,8 @@ extended with the new fixtures; CI list updated.
 ## Residual (non-blocking)
 
 - Custom CA / mTLS via `clickhouse::Client::with_http_client` fixture matrix
-- Progress OperationEvent surface into status bar (query_id status: evidence 308)
+- ~~Progress OperationEvent surface into status bar~~ (closed: evidence 320;
+  X-ClickHouse-Summary → server_progress; query_id was 308)
 - ~~Partial-page + late error single-operation fixture~~ (closed: clickhouse_real)
 - ~~KILL MUTATION destructive gate~~ (closed: evidence 305)
 - ~~Editor Explain action wiring to explain_raw/structured~~ (closed: evidence 239/290/302)

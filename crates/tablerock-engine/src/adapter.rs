@@ -257,6 +257,12 @@ pub trait DriverPageStream: Send {
         identity: PageIdentity,
         start_row: u64,
     ) -> DriverFuture<'a, Result<Option<ResultPage>, AdapterError>>;
+
+    /// Optional server progress label (e.g. ClickHouse X-ClickHouse-Summary).
+    /// Default: none. Safe to call after stream start / page reads.
+    fn progress_label(&self) -> Option<String> {
+        None
+    }
 }
 
 pub trait DriverSession: Send + Sync {
@@ -454,6 +460,10 @@ impl DriverPageStream for ClickHouseRowStream {
                 .await
                 .map_err(map_clickhouse)
         })
+    }
+
+    fn progress_label(&self) -> Option<String> {
+        ClickHouseRowStream::progress_label(self).map(str::to_owned)
     }
 }
 

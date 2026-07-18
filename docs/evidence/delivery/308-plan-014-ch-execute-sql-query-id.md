@@ -31,4 +31,4 @@ cargo test -p tablerock-cli --lib
 ## Remaining work
 
 - ClickHouse browse-plan bind/literal path (parameters today fail closed).
-- Progress/read_bytes OperationEvent coalescing into status bar.
+- ~~Progress/read_bytes into status bar~~ (closed: evidence 320).

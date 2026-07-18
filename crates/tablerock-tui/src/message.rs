@@ -165,6 +165,8 @@ pub enum EngineMsg {
         identity_columns: Option<Vec<String>>,
         /// Server/client query id (ClickHouse cancel target); shown while running.
         server_query_id: Option<String>,
+        /// ClickHouse X-ClickHouse-Summary (or similar) progress label for status.
+        server_progress: Option<String>,
     },
     GridFailed {
         request_token: u64,

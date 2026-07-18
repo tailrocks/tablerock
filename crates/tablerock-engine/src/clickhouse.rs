@@ -699,6 +699,8 @@ pub struct ClickHouseRowStream {
     complete: bool,
     active: Arc<ClickHouseActiveQuery>,
     query_id: BoundedText,
+    /// From `X-ClickHouse-Summary` (may be partial without wait_end_of_query=1).
+    progress_label: Option<String>,
 }
 
 impl ClickHouseRowStream {
@@ -736,6 +738,7 @@ impl ClickHouseRowStream {
             columns.push(ColumnMetadata::new(name, engine_type, type_.nullable()));
             types.push(type_);
         }
+        let progress_label = summary_label_from_cursor(&reader.cursor);
         Ok(Self {
             reader,
             columns,
@@ -745,7 +748,14 @@ impl ClickHouseRowStream {
             complete: false,
             active,
             query_id,
+            progress_label,
         })
+    }
+
+    /// Latest summary label (if HTTP header was present).
+    #[must_use]
+    pub fn progress_label(&self) -> Option<&str> {
+        self.progress_label.as_deref()
     }
 
     pub async fn next_page(
@@ -754,6 +764,10 @@ impl ClickHouseRowStream {
         start_row: u64,
     ) -> Result<Option<ResultPage>, ClickHouseError> {
         let result = self.next_page_inner(identity, start_row).await;
+        // Refresh summary after body progress when available.
+        if let Some(label) = summary_label_from_cursor(&self.reader.cursor) {
+            self.progress_label = Some(label);
+        }
         if self.active.is_confirmed() && !matches!(result, Ok(Some(_))) {
             Err(ClickHouseError::ServerCancelled)
         } else {
@@ -1761,6 +1775,53 @@ struct ChunkReader {
     chunk: Bytes,
 }
 
+/// Format bounded progress for the status bar (no credentials).
+#[must_use]
+pub fn format_clickhouse_progress(
+    read_rows: Option<u64>,
+    total_rows_to_read: Option<u64>,
+    read_bytes: Option<u64>,
+    elapsed_ns: Option<u64>,
+    written_rows: Option<u64>,
+) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(r) = read_rows {
+        if let Some(total) = total_rows_to_read {
+            parts.push(format!("read {r}/{total} rows"));
+        } else {
+            parts.push(format!("read {r} rows"));
+        }
+    }
+    if let Some(b) = read_bytes {
+        parts.push(format!("{b} B"));
+    }
+    if let Some(ns) = elapsed_ns {
+        parts.push(format!("{} ms", ns / 1_000_000));
+    }
+    if let Some(w) = written_rows {
+        if w > 0 {
+            parts.push(format!("wrote {w} rows"));
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" · "))
+    }
+}
+
+/// Format bounded progress from ClickHouse summary header (no credentials).
+fn summary_label_from_cursor(cursor: &BytesCursor) -> Option<String> {
+    let summary = cursor.summary()?;
+    format_clickhouse_progress(
+        summary.read_rows(),
+        summary.total_rows_to_read(),
+        summary.read_bytes(),
+        summary.elapsed_ns(),
+        summary.written_rows(),
+    )
+}
+
 impl ChunkReader {
     fn new(cursor: BytesCursor) -> Self {
         Self {
@@ -1843,9 +1904,26 @@ mod tests {
     use tablerock_core::{OwnedValue, Truncation, ValueRef};
 
     use super::{
-        ClickHouseType, StructuredProjection, apply_decimal_scale, integer_decimal,
-        split_type_arguments, text_or_binary,
+        ClickHouseType, StructuredProjection, apply_decimal_scale, format_clickhouse_progress,
+        integer_decimal, split_type_arguments, text_or_binary,
     };
+
+    #[test]
+    fn format_clickhouse_progress_joins_parts() {
+        let label = format_clickhouse_progress(
+            Some(10),
+            Some(100),
+            Some(2048),
+            Some(5_000_000),
+            Some(0),
+        )
+        .unwrap();
+        assert!(label.contains("read 10/100 rows"), "{label}");
+        assert!(label.contains("2048 B"), "{label}");
+        assert!(label.contains("5 ms"), "{label}");
+        assert!(!label.contains("wrote"), "{label}");
+        assert!(format_clickhouse_progress(None, None, None, None, None).is_none());
+    }
 
     #[test]
     fn parses_recursive_and_named_container_types() {
