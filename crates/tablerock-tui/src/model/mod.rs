@@ -79,6 +79,10 @@ pub enum ActionId {
     CloseOtherTabs,
     /// Rename the active workbench tab title.
     RenameTab,
+    /// Move active tab one slot left in the strip.
+    MoveTabLeft,
+    /// Move active tab one slot right in the strip.
+    MoveTabRight,
     PinTab,
     NewSql,
     RunSql,

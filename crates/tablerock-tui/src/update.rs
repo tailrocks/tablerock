@@ -3312,6 +3312,18 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::MoveTabLeft if model.screen() == Screen::Workbench => {
+            if model.workbench_mut().move_active_tab_left() {
+                return Update::render();
+            }
+            Update::unchanged()
+        }
+        ActionId::MoveTabRight if model.screen() == Screen::Workbench => {
+            if model.workbench_mut().move_active_tab_right() {
+                return Update::render();
+            }
+            Update::unchanged()
+        }
         ActionId::NewSql if model.screen() == Screen::Workbench => {
             model.workbench_mut().open_sql_tab();
             Update::render()
@@ -4873,6 +4885,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CloseTab
         | ActionId::CloseOtherTabs
         | ActionId::RenameTab
+        | ActionId::MoveTabLeft
+        | ActionId::MoveTabRight
         | ActionId::PinTab
         | ActionId::NewSql
         | ActionId::RunSql
@@ -6510,6 +6524,8 @@ fn cycle_action(
                 ActionId::PrevTab,
                 ActionId::CloseOtherTabs,
                 ActionId::RenameTab,
+                ActionId::MoveTabLeft,
+                ActionId::MoveTabRight,
                 ActionId::CloseTab,
                 ActionId::QuickSwitch,
                 ActionId::PinTab,

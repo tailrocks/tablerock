@@ -243,6 +243,28 @@ impl WorkbenchModel {
         self.selected_tab
     }
 
+    /// Move the active tab one slot left. Returns true if order changed.
+    pub fn move_active_tab_left(&mut self) -> bool {
+        if self.selected_tab == 0 || self.tabs.len() < 2 {
+            return false;
+        }
+        let i = self.selected_tab;
+        self.tabs.swap(i, i - 1);
+        self.selected_tab = i - 1;
+        true
+    }
+
+    /// Move the active tab one slot right. Returns true if order changed.
+    pub fn move_active_tab_right(&mut self) -> bool {
+        if self.tabs.len() < 2 || self.selected_tab + 1 >= self.tabs.len() {
+            return false;
+        }
+        let i = self.selected_tab;
+        self.tabs.swap(i, i + 1);
+        self.selected_tab = i + 1;
+        true
+    }
+
     pub fn bump_context_revision(&mut self) -> u64 {
         self.context_revision = self.context_revision.saturating_add(1);
         self.context_revision
@@ -749,6 +771,22 @@ mod tests {
         ));
         wb.force_close_tab(wb.selected_tab);
         assert!(wb.tabs.iter().all(|t| t.title != "users"));
+    }
+
+    #[test]
+    fn move_active_tab_left_right() {
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("a");
+        wb.open_preview_tab("b");
+        wb.open_preview_tab("c");
+        let last = wb.tabs.len() - 1;
+        assert_eq!(wb.tabs[last].title, "c");
+        assert!(wb.move_active_tab_left());
+        assert_eq!(wb.selected_tab_index(), last - 1);
+        assert_eq!(wb.tabs[last - 1].title, "c");
+        assert!(wb.move_active_tab_right());
+        assert_eq!(wb.selected_tab_index(), last);
+        assert!(!wb.move_active_tab_right());
     }
 
     #[test]
