@@ -202,6 +202,8 @@ pub enum ActionId {
     CopyTableName,
     /// Copy base schema only if known.
     CopySchema,
+    /// Copy base schema as a SQL-quoted identifier.
+    CopySchemaIdent,
     /// Copy bare table name only if known.
     CopyBareTable,
     /// Copy schema.table as SQL-quoted identifiers.

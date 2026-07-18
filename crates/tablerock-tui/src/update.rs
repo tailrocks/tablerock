@@ -4207,6 +4207,27 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopySchemaIdent if model.screen() == Screen::Workbench => {
+            use crate::model::structure_ddl::quote_ident_sql;
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let Some(schema) = grid.base_schema.as_ref().filter(|s| !s.is_empty()) else {
+                return Update::unchanged();
+            };
+            let text = quote_ident_sql(schema);
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied schema ident {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyBareTable if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -6943,6 +6964,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyWorkbenchStatus
         | ActionId::CopyTableName
         | ActionId::CopySchema
+        | ActionId::CopySchemaIdent
         | ActionId::CopyBareTable
         | ActionId::CopyTableIdent
         | ActionId::CopySelectSql
@@ -8795,6 +8817,7 @@ fn cycle_action(
                 ActionId::CopyWorkbenchStatus,
                 ActionId::CopyTableName,
                 ActionId::CopySchema,
+                ActionId::CopySchemaIdent,
                 ActionId::CopyBareTable,
                 ActionId::CopyTableIdent,
                 ActionId::CopySelectSql,
@@ -10610,6 +10633,11 @@ mod tests {
             Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "analytics"),
             other => panic!("expected schema copy, got {other:?}"),
         }
+        model.set_action(ActionId::CopySchemaIdent);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "\"analytics\""),
+            other => panic!("expected schema ident, got {other:?}"),
+        }
         model.set_action(ActionId::CopyBareTable);
         match update(&mut model, Message::Activate).effects().next() {
             Some(Effect::CopyToClipboard { text, .. }) => assert_eq!(text, "events"),
@@ -10620,6 +10648,8 @@ mod tests {
             grid.base_table = None;
         }
         model.set_action(ActionId::CopySchema);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        model.set_action(ActionId::CopySchemaIdent);
         assert!(update(&mut model, Message::Activate).effects().next().is_none());
         model.set_action(ActionId::CopyBareTable);
         assert!(update(&mut model, Message::Activate).effects().next().is_none());
