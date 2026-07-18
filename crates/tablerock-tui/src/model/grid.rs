@@ -1476,6 +1476,44 @@ impl DataGridModel {
         true
     }
 
+    /// Jump cursor to the first staged target (lowest row/col).
+    ///
+    /// Returns false when nothing is staged. No-op returns true if already there.
+    pub fn go_to_first_staged(&mut self) -> bool {
+        let targets = self.staged_cursor_targets();
+        let Some(&(r, c)) = targets.first() else {
+            return false;
+        };
+        if self.cursor_row == r && self.cursor_col == c {
+            self.reveal_cursor_column();
+            return true;
+        }
+        self.cursor_row = r;
+        self.cursor_col = c;
+        self.viewport_row = r;
+        self.reveal_cursor_column();
+        true
+    }
+
+    /// Jump cursor to the last staged target (highest row/col).
+    ///
+    /// Returns false when nothing is staged. No-op returns true if already there.
+    pub fn go_to_last_staged(&mut self) -> bool {
+        let targets = self.staged_cursor_targets();
+        let Some(&(r, c)) = targets.last() else {
+            return false;
+        };
+        if self.cursor_row == r && self.cursor_col == c {
+            self.reveal_cursor_column();
+            return true;
+        }
+        self.cursor_row = r;
+        self.cursor_col = c;
+        self.viewport_row = r;
+        self.reveal_cursor_column();
+        true
+    }
+
     /// Stage delete for the cursor row.
     pub fn stage_delete_cursor_row(&mut self) -> bool {
         if !self.drafts.staging_allowed() {
@@ -4137,6 +4175,13 @@ mod tests {
         assert!(grid.go_to_next_staged()); // wrap
         assert_eq!((grid.cursor_row, grid.cursor_col), (0, 1));
         assert!(grid.go_to_prev_staged());
+        assert_eq!((grid.cursor_row, grid.cursor_col), (2, 2));
+        assert!(grid.go_to_first_staged());
+        assert_eq!((grid.cursor_row, grid.cursor_col), (0, 1));
+        assert!(grid.go_to_last_staged());
+        assert_eq!((grid.cursor_row, grid.cursor_col), (2, 2));
+        // Already at last: still true.
+        assert!(grid.go_to_last_staged());
         assert_eq!((grid.cursor_row, grid.cursor_col), (2, 2));
     }
 

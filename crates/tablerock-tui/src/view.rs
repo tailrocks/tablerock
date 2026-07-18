@@ -694,6 +694,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let go_last = action_label(model, ActionId::GoToLastRow, "Last");
     let go_next_staged = action_label(model, ActionId::GoToNextStaged, "NextStg");
     let go_prev_staged = action_label(model, ActionId::GoToPrevStaged, "PrevStg");
+    let go_first_staged = action_label(model, ActionId::GoToFirstStaged, "FirstStg");
+    let go_last_staged = action_label(model, ActionId::GoToLastStaged, "LastStg");
     let page_up = action_label(model, ActionId::PageUp, "PgUp");
     let page_down = action_label(model, ActionId::PageDown, "PgDn");
     let half_up = action_label(model, ActionId::HalfPageUp, "HalfUp");
@@ -1415,6 +1417,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::GoToPrevStaged,
                         label: go_prev_staged.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::GoToFirstStaged,
+                        label: go_first_staged.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::GoToLastStaged,
+                        label: go_last_staged.as_str(),
                         enabled: true,
                         style: None,
                     },

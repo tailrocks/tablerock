@@ -367,6 +367,10 @@ pub enum ActionId {
     GoToNextStaged,
     /// Jump cursor to previous staged mutation.
     GoToPrevStaged,
+    /// Jump cursor to first staged mutation.
+    GoToFirstStaged,
+    /// Jump cursor to last staged mutation.
+    GoToLastStaged,
     /// Move cursor up by one page of resident rows (fetch if needed).
     PageUp,
     /// Move cursor down by one page of resident rows (fetch if needed).
