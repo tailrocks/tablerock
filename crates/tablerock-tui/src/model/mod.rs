@@ -134,6 +134,8 @@ pub enum ActionId {
     CopyCell,
     /// Copy cursor cell as hex of UTF-8 bytes.
     CopyCellHex,
+    /// Copy cursor cell as a SQL literal (NULL / number / quoted).
+    CopyCellSql,
     /// Copy cursor row (visible columns) as TSV.
     CopyRow,
     /// Copy cursor row as CSV.

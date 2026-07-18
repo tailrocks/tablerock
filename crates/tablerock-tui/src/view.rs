@@ -708,6 +708,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let edit_cell = action_label(model, ActionId::EditCell, "Edit");
     let copy_cell = action_label(model, ActionId::CopyCell, "CopyCell");
     let copy_cell_hex = action_label(model, ActionId::CopyCellHex, "CopyHex");
+    let copy_cell_sql = action_label(model, ActionId::CopyCellSql, "CopySql");
     let copy_row = action_label(model, ActionId::CopyRow, "CopyRow");
     let copy_row_csv = action_label(model, ActionId::CopyRowCsv, "RowCsv");
     let copy_row_json = action_label(model, ActionId::CopyRowJson, "RowJson");
@@ -1411,6 +1412,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyCellHex,
                         label: copy_cell_hex.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyCellSql,
+                        label: copy_cell_sql.as_str(),
                         enabled: true,
                         style: None,
                     },

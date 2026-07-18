@@ -70,6 +70,48 @@ pub fn format_cursor_cell_hex(grid: &DataGridModel) -> Result<String, CopyError>
         .join(""))
 }
 
+/// Copy cursor cell as a SQL literal (NULL / number / boolean / quoted text).
+pub fn format_cursor_cell_sql(grid: &DataGridModel) -> Result<String, CopyError> {
+    use super::grid::CellDistinction;
+    if grid.columns.is_empty() {
+        return Err(CopyError::Empty);
+    }
+    let col = grid.cursor_col.min(grid.columns.len().saturating_sub(1));
+    let cell = grid.cell_at(grid.cursor_row, col);
+    if matches!(cell.distinction, CellDistinction::Pending) {
+        return Err(CopyError::Empty);
+    }
+    Ok(match cell.distinction {
+        CellDistinction::Null => "NULL".into(),
+        CellDistinction::Boolean => {
+            let t = cell.text.trim();
+            if t.eq_ignore_ascii_case("true") || t == "t" || t == "1" {
+                "TRUE".into()
+            } else if t.eq_ignore_ascii_case("false") || t == "f" || t == "0" {
+                "FALSE".into()
+            } else {
+                sql_literal(&cell.text)
+            }
+        }
+        CellDistinction::Number => {
+            let t = cell.text.trim();
+            // Unquoted only for plain numeric tokens; else quote (e.g. NaN text).
+            if t.parse::<f64>().is_ok() && !t.is_empty() {
+                t.to_owned()
+            } else {
+                sql_literal(&cell.text)
+            }
+        }
+        _ => {
+            if cell.text.is_empty() {
+                "''".into()
+            } else {
+                sql_literal(&cell.text)
+            }
+        }
+    })
+}
+
 /// Copy the cursor column for all resident rows (one value per line).
 pub fn format_cursor_column(grid: &DataGridModel) -> Result<String, CopyError> {
     if grid.columns.is_empty() || grid.row_count == 0 {
@@ -479,6 +521,36 @@ mod tests {
         g.cursor_col = 1;
         assert_eq!(format_cursor_cell(&g).unwrap(), "x");
         assert_eq!(format_cursor_cell_hex(&g).unwrap(), "78");
+    }
+
+    #[test]
+    fn format_cursor_cell_sql_literals() {
+        let mut g = sample_grid();
+        g.cursor_row = 0;
+        g.cursor_col = 0; // number 1
+        assert_eq!(format_cursor_cell_sql(&g).unwrap(), "1");
+        g.cursor_col = 1; // text a,b
+        assert_eq!(format_cursor_cell_sql(&g).unwrap(), "'a,b'");
+        g.cursor_row = 1;
+        g.cursor_col = 0; // null
+        assert_eq!(format_cursor_cell_sql(&g).unwrap(), "NULL");
+        g.cells[1] = ProjectedCell {
+            text: "o'brien".into(),
+            distinction: CellDistinction::Text,
+            byte_len: 7,
+            original_byte_len: None,
+        };
+        g.cursor_row = 0;
+        g.cursor_col = 1;
+        assert_eq!(format_cursor_cell_sql(&g).unwrap(), "'o''brien'");
+        g.cells[0] = ProjectedCell {
+            text: "true".into(),
+            distinction: CellDistinction::Boolean,
+            byte_len: 4,
+            original_byte_len: None,
+        };
+        g.cursor_col = 0;
+        assert_eq!(format_cursor_cell_sql(&g).unwrap(), "TRUE");
     }
 
     #[test]

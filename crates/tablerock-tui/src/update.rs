@@ -2983,8 +2983,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
                             copy_grid(model, format)
                         }
                         crate::model::copy_format::CopyScope::Cell => {
-                            // Cell scope uses dedicated text/hex actions.
-                            copy_cursor_cell(model, false)
+                            // Cell scope uses dedicated text/hex/sql actions.
+                            copy_cursor_cell(model, CellCopyMode::Raw)
                         }
                     }
                 }
@@ -3635,9 +3635,14 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::CopySqlUpdate if model.screen() == Screen::Workbench => {
             copy_grid(model, crate::model::copy_format::CopyFormat::SqlUpdate)
         }
-        ActionId::CopyCell if model.screen() == Screen::Workbench => copy_cursor_cell(model, false),
+        ActionId::CopyCell if model.screen() == Screen::Workbench => {
+            copy_cursor_cell(model, CellCopyMode::Raw)
+        }
         ActionId::CopyCellHex if model.screen() == Screen::Workbench => {
-            copy_cursor_cell(model, true)
+            copy_cursor_cell(model, CellCopyMode::Hex)
+        }
+        ActionId::CopyCellSql if model.screen() == Screen::Workbench => {
+            copy_cursor_cell(model, CellCopyMode::Sql)
         }
         ActionId::CopyRow if model.screen() == Screen::Workbench => {
             copy_cursor_row(model, crate::model::copy_format::CopyFormat::Tsv)
@@ -5414,6 +5419,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopySqlUpdate
         | ActionId::CopyCell
         | ActionId::CopyCellHex
+        | ActionId::CopyCellSql
         | ActionId::CopyRow
         | ActionId::CopyRowCsv
         | ActionId::CopyRowJson
@@ -6956,16 +6962,26 @@ fn copy_grid(model: &mut Model, format: crate::model::copy_format::CopyFormat) -
     }
 }
 
-fn copy_cursor_cell(model: &mut Model, hex: bool) -> Update {
-    use crate::model::copy_format::{format_cursor_cell, format_cursor_cell_hex};
+#[derive(Clone, Copy)]
+enum CellCopyMode {
+    Raw,
+    Hex,
+    Sql,
+}
+
+fn copy_cursor_cell(model: &mut Model, mode: CellCopyMode) -> Update {
+    use crate::model::copy_format::{
+        format_cursor_cell, format_cursor_cell_hex, format_cursor_cell_sql,
+    };
     let Some(grid) = model.workbench().active_grid() else {
         return Update::unchanged();
     };
-    let text = match if hex {
-        format_cursor_cell_hex(grid)
-    } else {
-        format_cursor_cell(grid)
-    } {
+    let result = match mode {
+        CellCopyMode::Raw => format_cursor_cell(grid),
+        CellCopyMode::Hex => format_cursor_cell_hex(grid),
+        CellCopyMode::Sql => format_cursor_cell_sql(grid),
+    };
+    let text = match result {
         Ok(t) => t,
         Err(err) => {
             if let Some(g) = model.workbench_mut().active_grid_mut() {
@@ -6975,10 +6991,10 @@ fn copy_cursor_cell(model: &mut Model, hex: bool) -> Update {
         }
     };
     if let Some(g) = model.workbench_mut().active_grid_mut() {
-        g.error_label = Some(if hex {
-            format!("copied cell hex ({} bytes)", text.len() / 2)
-        } else {
-            format!("copied cell ({} bytes)", text.len())
+        g.error_label = Some(match mode {
+            CellCopyMode::Hex => format!("copied cell hex ({} bytes)", text.len() / 2),
+            CellCopyMode::Sql => format!("copied cell SQL ({} bytes)", text.len()),
+            CellCopyMode::Raw => format!("copied cell ({} bytes)", text.len()),
         });
     }
     let token = model.mint_request_token();
@@ -7133,6 +7149,7 @@ fn cycle_action(
                 ActionId::CopyJson,
                 ActionId::CopyCell,
                 ActionId::CopyCellHex,
+                ActionId::CopyCellSql,
                 ActionId::CopyRow,
                 ActionId::CopyRowCsv,
                 ActionId::CopyRowJson,
