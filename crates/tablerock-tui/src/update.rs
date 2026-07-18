@@ -4731,6 +4731,48 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyInsertRowSql if model.screen() == Screen::Workbench => {
+            let Some(grid) = model.workbench().active_grid() else {
+                return Update::unchanged();
+            };
+            let text = match crate::model::copy_format::format_insert_row_sql(grid) {
+                Ok(t) => t,
+                Err(_) => return Update::unchanged(),
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied INSERT row ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopyContextSchema if model.screen() == Screen::Workbench => {
+            let Some(text) = model
+                .workbench()
+                .context
+                .schema
+                .clone()
+                .filter(|s| !s.is_empty())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied context schema {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyUpdateWhereSql if model.screen() == Screen::Workbench => {
             use crate::model::copy_format::format_cursor_cell_sql;
             use crate::model::structure_ddl::quote_ident_sql;
@@ -6620,6 +6662,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyUpdateWhereSql
         | ActionId::CopyInsertSql
         | ActionId::CopyValuesSql
+        | ActionId::CopyInsertRowSql
+        | ActionId::CopyContextSchema
         | ActionId::CopyPkNames
         | ActionId::CopyPkIdents
         | ActionId::CopyLocator
@@ -8433,6 +8477,8 @@ fn cycle_action(
                 ActionId::CopyUpdateWhereSql,
                 ActionId::CopyInsertSql,
                 ActionId::CopyValuesSql,
+                ActionId::CopyInsertRowSql,
+                ActionId::CopyContextSchema,
                 ActionId::CopyPkNames,
                 ActionId::CopyPkIdents,
                 ActionId::CopyLocator,
@@ -10640,10 +10686,30 @@ mod tests {
             }
             other => panic!("expected VALUES, got {other:?}"),
         }
+        model.set_action(ActionId::CopyInsertRowSql);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(
+                    text,
+                    r#"INSERT INTO "public"."users" ("id", "name") VALUES (7, 'ada')"#
+                );
+            }
+            other => panic!("expected INSERT row, got {other:?}"),
+        }
+        model.workbench_mut().context.schema = Some("analytics".into());
+        model.set_action(ActionId::CopyContextSchema);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "analytics");
+            }
+            other => panic!("expected context schema, got {other:?}"),
+        }
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
             grid.base_table = None;
         }
         model.set_action(ActionId::CopyInsertSql);
+        assert!(update(&mut model, Message::Activate).effects().next().is_none());
+        model.set_action(ActionId::CopyInsertRowSql);
         assert!(update(&mut model, Message::Activate).effects().next().is_none());
     }
 

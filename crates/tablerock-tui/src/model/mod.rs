@@ -238,6 +238,10 @@ pub enum ActionId {
     CopyInsertSql,
     /// Copy VALUES (literals) for the cursor row visible columns.
     CopyValuesSql,
+    /// Copy full INSERT … VALUES (cursor row) scaffold (presentation aid).
+    CopyInsertRowSql,
+    /// Copy context-bar schema label when set (not base-table schema).
+    CopyContextSchema,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).

@@ -140,6 +140,15 @@ pub fn format_insert_sql(grid: &DataGridModel) -> Result<String, CopyError> {
     ))
 }
 
+/// Presentation aid: full `INSERT INTO … VALUES (…)` for the cursor row.
+///
+/// Identity-gated. Combines [`format_insert_sql`] and [`format_values_sql`].
+pub fn format_insert_row_sql(grid: &DataGridModel) -> Result<String, CopyError> {
+    let head = format_insert_sql(grid)?;
+    let vals = format_values_sql(grid)?;
+    Ok(format!("{head} {vals}"))
+}
+
 /// Presentation aid: `(lit1, lit2, …)` for the cursor row (visible columns).
 ///
 /// Fails closed when any visible cell is Pending. Does not execute.
@@ -643,9 +652,17 @@ mod tests {
             r#"INSERT INTO "public"."users" ("id", "name") VALUES"#
         );
         assert_eq!(format_values_sql(&g).unwrap(), "(1, 'a,b')");
+        assert_eq!(
+            format_insert_row_sql(&g).unwrap(),
+            r#"INSERT INTO "public"."users" ("id", "name") VALUES (1, 'a,b')"#
+        );
         g.base_table = None;
         assert!(matches!(
             format_insert_sql(&g),
+            Err(CopyError::MissingTableIdentity)
+        ));
+        assert!(matches!(
+            format_insert_row_sql(&g),
             Err(CopyError::MissingTableIdentity)
         ));
         // Values still works without identity.
