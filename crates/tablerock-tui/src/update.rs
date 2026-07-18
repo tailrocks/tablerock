@@ -976,8 +976,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             context_revision,
             foreign_schema,
             foreign_table,
-            foreign_column,
-            filter_value,
+            filters,
             ..
         }) => {
             if model.workbench().context_revision != context_revision {
@@ -986,13 +985,24 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
             };
-            let title = format!("{foreign_table} · {foreign_column}={filter_value}");
+            if filters.is_empty() {
+                return Update::unchanged();
+            }
+            let title = {
+                let parts: Vec<_> = filters
+                    .iter()
+                    .map(|(c, v)| format!("{c}={v}"))
+                    .collect();
+                format!("{foreign_table} · {}", parts.join(","))
+            };
             model.workbench_mut().open_preview_tab(&title);
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.base_schema = Some(foreign_schema.clone());
                 grid.base_table = Some(foreign_table.clone());
                 grid.clear_server_controls();
-                grid.add_filter_chip(foreign_column, "eq", Some(filter_value));
+                for (foreign_column, filter_value) in filters {
+                    grid.add_filter_chip(foreign_column, "eq", Some(filter_value));
+                }
                 grid.operation = GridOperationState::Running;
             }
             let token = model.mint_request_token();
@@ -4101,7 +4111,7 @@ fn follow_foreign_key(model: &mut Model) -> Update {
         return Update::unchanged();
     };
     let context_revision = model.workbench().context_revision;
-    let (schema, table, local_column, cell_value) = {
+    let (schema, table, local_column, row_cells) = {
         let Some(grid) = model.workbench().active_grid() else {
             return Update::unchanged();
         };
@@ -4114,8 +4124,15 @@ fn follow_foreign_key(model: &mut Model) -> Update {
         }
         let col_idx = grid.cursor_col.min(grid.columns.len().saturating_sub(1));
         let local_column = grid.columns[col_idx].clone();
-        let cell_value = grid.cell_at(grid.cursor_row, col_idx).text;
-        (schema, table, local_column, cell_value)
+        // Snapshot full row so multi-column FKs can gather every key part.
+        let row = grid.cursor_row;
+        let row_cells: Vec<(String, String)> = grid
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(i, name)| (name.clone(), grid.cell_at(row, i).text))
+            .collect();
+        (schema, table, local_column, row_cells)
     };
     let token = model.mint_request_token();
     Update {
@@ -4127,7 +4144,7 @@ fn follow_foreign_key(model: &mut Model) -> Update {
             schema,
             table,
             local_column,
-            cell_value,
+            row_cells,
         }),
     }
 }
@@ -6080,6 +6097,92 @@ mod tests {
                 assert!(filters.is_empty());
             }
             other => panic!("expected cleared BrowseTable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn follow_fk_sends_full_row_and_applies_multi_filters() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000055".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("orders");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("orders".into());
+            grid.columns = vec!["tenant_id".into(), "user_id".into(), "total".into()];
+            grid.row_count = 1;
+            grid.cells = vec![
+                crate::model::grid::ProjectedCell {
+                    text: "t1".into(),
+                    distinction: crate::model::grid::CellDistinction::Text,
+                    byte_len: 2,
+                    original_byte_len: None,
+                },
+                crate::model::grid::ProjectedCell {
+                    text: "u9".into(),
+                    distinction: crate::model::grid::CellDistinction::Text,
+                    byte_len: 2,
+                    original_byte_len: None,
+                },
+                crate::model::grid::ProjectedCell {
+                    text: "10".into(),
+                    distinction: crate::model::grid::CellDistinction::Number,
+                    byte_len: 2,
+                    original_byte_len: None,
+                },
+            ];
+            grid.cursor_col = 1; // user_id
+            grid.cursor_row = 0;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::FollowForeignKey);
+        let out = update(&mut model, Message::Activate);
+        match out.effects().next() {
+            Some(Effect::LoadForeignKeys {
+                local_column,
+                row_cells,
+                ..
+            }) => {
+                assert_eq!(local_column, "user_id");
+                assert_eq!(row_cells.len(), 3);
+                assert!(row_cells.iter().any(|(n, v)| n == "tenant_id" && v == "t1"));
+                assert!(row_cells.iter().any(|(n, v)| n == "user_id" && v == "u9"));
+            }
+            other => panic!("expected LoadForeignKeys with row_cells, got {other:?}"),
+        }
+        // Engine returns multi-part filters → multiple chips + browse.
+        model.workbench_mut().context_revision = 1;
+        let applied = update(
+            &mut model,
+            Message::Engine(EngineMsg::ForeignKeyEdge {
+                request_token: 1,
+                context_revision: 1,
+                foreign_schema: "public".into(),
+                foreign_table: "users".into(),
+                filters: vec![
+                    ("tenant_id".into(), "t1".into()),
+                    ("id".into(), "u9".into()),
+                ],
+            }),
+        );
+        match applied.effects().next() {
+            Some(Effect::BrowseTable {
+                table, filters, ..
+            }) => {
+                assert_eq!(table, "users");
+                assert_eq!(filters.len(), 2);
+                assert_eq!(filters[0].0, "tenant_id");
+                assert_eq!(filters[0].2.as_deref(), Some("t1"));
+                assert_eq!(filters[1].0, "id");
+                assert_eq!(filters[1].2.as_deref(), Some("u9"));
+            }
+            other => panic!("expected multi-filter BrowseTable, got {other:?}"),
         }
     }
 

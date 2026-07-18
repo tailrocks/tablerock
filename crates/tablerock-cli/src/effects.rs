@@ -328,7 +328,7 @@ impl EffectExecutor {
                 schema,
                 table,
                 local_column,
-                cell_value,
+                row_cells,
             } => {
                 let sessions = Arc::clone(&self.sessions);
                 let ingress = self.ingress.clone();
@@ -341,7 +341,7 @@ impl EffectExecutor {
                         schema,
                         table,
                         local_column,
-                        cell_value,
+                        row_cells,
                     )
                     .await;
                     let _ = ingress.try_send_event(message);
@@ -2918,7 +2918,7 @@ async fn load_foreign_keys(
     schema: String,
     table: String,
     local_column: String,
-    cell_value: String,
+    row_cells: Vec<(String, String)>,
 ) -> Message {
     use tablerock_core::{
         Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
@@ -2953,7 +2953,11 @@ async fn load_foreign_keys(
             reason: FailureProjection::Label("foreign keys only for PostgreSQL".into()),
         });
     }
+    // All key parts of every FK that includes `local_column`, ordered by
+    // constraint then column position (multi-column FKs expand to many rows).
     let sql = "SELECT \
+        con.conname::text, \
+        u.ord::int4, \
         la.attname::text, \
         fn.nspname::text, \
         fc.relname::text, \
@@ -2972,9 +2976,18 @@ async fn load_foreign_keys(
      WHERE con.contype = 'f' \
        AND n.nspname = $1 \
        AND c.relname = $2 \
-       AND la.attname = $3 \
+       AND con.oid IN ( \
+         SELECT con2.oid FROM pg_catalog.pg_constraint con2 \
+         JOIN pg_catalog.pg_class c2 ON c2.oid = con2.conrelid \
+         JOIN pg_catalog.pg_namespace n2 ON n2.oid = c2.relnamespace \
+         JOIN LATERAL unnest(con2.conkey) WITH ORDINALITY AS u2(att, ord) ON true \
+         JOIN pg_catalog.pg_attribute la2 \
+           ON la2.attrelid = c2.oid AND la2.attnum = u2.att \
+         WHERE con2.contype = 'f' \
+           AND n2.nspname = $1 AND c2.relname = $2 AND la2.attname = $3 \
+       ) \
      ORDER BY con.conname, u.ord \
-     LIMIT 8";
+     LIMIT 32";
     let statement = match StatementText::new(sql) {
         Ok(s) => s,
         Err(e) => {
@@ -2985,7 +2998,7 @@ async fn load_foreign_keys(
             });
         }
     };
-    let limits = PageLimits::new(8, 8, 64 * 1024, 4 * 1024);
+    let limits = PageLimits::new(32, 8, 64 * 1024, 4 * 1024);
     let mut stream = match session
         .start_page_stream(DriverPageRequest::PostgreSqlStatement {
             statement,
@@ -3037,19 +3050,43 @@ async fn load_foreign_keys(
             reason: FailureProjection::Label("no foreign key on this column".into()),
         });
     }
-    // Columns: local, foreign_schema, foreign_table, foreign_col
+    // Columns: conname, ord, local_col, foreign_schema, foreign_table, foreign_col
     let text_at = |row: u32, col: u32| -> String {
         page.cell(row, col)
             .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
             .unwrap_or_default()
     };
+    // First constraint only (stable ORDER BY conname).
+    let first_con = text_at(0, 0);
+    let foreign_schema = text_at(0, 3);
+    let foreign_table = text_at(0, 4);
+    let mut filters = Vec::new();
+    for row in 0..page.envelope().row_count() {
+        if text_at(row, 0) != first_con {
+            break;
+        }
+        let local_col = text_at(row, 2);
+        let foreign_col = text_at(row, 5);
+        let value = row_cells
+            .iter()
+            .find(|(n, _)| n == &local_col)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default();
+        filters.push((foreign_col, value));
+    }
+    if filters.is_empty() {
+        return Message::Engine(tablerock_tui::EngineMsg::ForeignKeysFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("no foreign key on this column".into()),
+        });
+    }
     Message::Engine(tablerock_tui::EngineMsg::ForeignKeyEdge {
         request_token,
         context_revision,
-        foreign_schema: text_at(0, 1),
-        foreign_table: text_at(0, 2),
-        foreign_column: text_at(0, 3),
-        filter_value: cell_value,
+        foreign_schema,
+        foreign_table,
+        filters,
     })
 }
 

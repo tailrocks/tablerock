@@ -304,13 +304,16 @@ pub enum EngineMsg {
         needs_re_review: bool,
     },
     /// FK edge for follow-navigation: open filtered browse of foreign table.
+    ///
+    /// `filters` is ordered foreign_column=value pairs (multi-column FKs
+    /// carry every key part from the source row).
     ForeignKeyEdge {
         request_token: u64,
         context_revision: u64,
         foreign_schema: String,
         foreign_table: String,
-        foreign_column: String,
-        filter_value: String,
+        /// (foreign_column, value) equality filters for the target browse.
+        filters: Vec<(String, String)>,
     },
     ForeignKeysFailed {
         request_token: u64,

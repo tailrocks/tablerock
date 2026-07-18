@@ -149,12 +149,13 @@ Redis command editor mirror.
 
 ## Phase 6 — PostgreSQL write/admin slice
 
-**Mostly complete (evidence 227–234, 323–325):** write path, editability,
+**Mostly complete (evidence 227–234, 323–326):** write path, editability,
 staged drafts, typed review, RETURNING, consume-once registry + re-review
-on expiry, FK/structure with index + constraint defs, gated
-truncate/drop/rename, activity + cancel/terminate, mutation apply Unknown
-on interrupted COMMIT, temporal/structured staging validation. Residual
-polish: multi-column FK follow; optional calendar/JSON tree widgets.
+on expiry, FK/structure with index + constraint defs, multi-column FK
+follow, gated truncate/drop/rename, activity + cancel/terminate, mutation
+apply Unknown on interrupted COMMIT, temporal/structured staging validation.
+Residual polish: optional calendar/JSON tree widgets; permission-denied
+activity fixtures.
 
 Deliver proven editability, typed value editors, inserts/updates/deletes
 staged in memory with visible row/cell highlighting, undo/discard, the review

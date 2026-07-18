@@ -225,10 +225,10 @@ pub enum Effect {
         context_revision: u64,
         schema: String,
         table: String,
-        /// Column the operator is on; filter edges to this local column.
+        /// Cursor column used to select which FK constraint to follow.
         local_column: String,
-        /// Cell text used as the equality filter value on the foreign side.
-        cell_value: String,
+        /// All column→value pairs from the current row (multi-col FK support).
+        row_cells: Vec<(String, String)>,
     },
     /// Load column structure facts into the inspector.
     LoadRelationStructure {
