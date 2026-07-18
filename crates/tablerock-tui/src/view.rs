@@ -626,6 +626,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let raw_where = action_label(model, ActionId::EditRawWhere, "RawWhere");
     let clear_sort = action_label(model, ActionId::ClearSort, "ClrSort");
     let cycle_sort = action_label(model, ActionId::CycleSort, "Sort");
+    let push_sort = action_label(model, ActionId::PushSort, "Sort+");
+    let pop_sort = action_label(model, ActionId::PopSort, "Sort-");
     let quick_filt = action_label(model, ActionId::EditQuickFilter, "PgFilt");
     let go_row = action_label(model, ActionId::GoToRow, "GoRow");
     let go_first = action_label(model, ActionId::GoToFirstRow, "First");
@@ -971,6 +973,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CycleSort,
                         label: cycle_sort.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PushSort,
+                        label: push_sort.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PopSort,
+                        label: pop_sort.as_str(),
                         enabled: true,
                         style: None,
                     },
@@ -2168,20 +2182,37 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
         } else {
             (insp_lines.len() as u16).min(grid_area.height / 3).max(1)
         };
+        let sort_bar = wb.active_grid().and_then(|g| g.sort_chip_bar());
         let filter_bar = wb
             .active_grid()
             .and_then(|g| g.filter_chip_bar());
+        let sort_h = u16::from(sort_bar.is_some());
         let filter_h = u16::from(filter_bar.is_some());
+        let control_h = sort_h.saturating_add(filter_h);
         let grid_h = grid_area
             .height
             .saturating_sub(insp_h)
-            .saturating_sub(filter_h);
+            .saturating_sub(control_h);
+        let mut bar_y = grid_area.y;
+        if let (Some(bar), true) = (sort_bar.as_deref(), sort_h > 0) {
+            let clipped: String = bar.chars().take(grid_area.width as usize).collect();
+            Line::from(format!("⇅ {clipped}")).render(
+                Rect {
+                    x: grid_area.x,
+                    y: bar_y,
+                    width: grid_area.width,
+                    height: 1,
+                },
+                frame.buffer_mut(),
+            );
+            bar_y = bar_y.saturating_add(1);
+        }
         if let (Some(bar), true) = (filter_bar.as_deref(), filter_h > 0) {
             let clipped: String = bar.chars().take(grid_area.width as usize).collect();
             Line::from(format!("▣ {clipped}")).render(
                 Rect {
                     x: grid_area.x,
-                    y: grid_area.y,
+                    y: bar_y,
                     width: grid_area.width,
                     height: 1,
                 },
@@ -2195,7 +2226,7 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
                     frame,
                     Rect {
                         x: grid_area.x,
-                        y: grid_area.y.saturating_add(filter_h),
+                        y: grid_area.y.saturating_add(control_h),
                         width: grid_area.width,
                         height: grid_h,
                     },

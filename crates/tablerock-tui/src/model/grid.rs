@@ -892,6 +892,27 @@ impl DataGridModel {
         )
     }
 
+    /// Visual multi-column sort chip bar (glyph + text, never color alone).
+    ///
+    /// Empty when no server sort keys. Index 0 is primary ORDER BY.
+    #[must_use]
+    pub fn sort_chip_bar(&self) -> Option<String> {
+        if self.sort.is_empty() {
+            return None;
+        }
+        let chips: Vec<String> = self
+            .sort
+            .iter()
+            .take(8)
+            .map(|k| format!("[{}{}]", k.column, k.direction.glyph()))
+            .collect();
+        let mut line = format!("sort: {}", chips.join(" "));
+        if self.sort.len() > 8 {
+            line.push_str(&format!(" [+{} more]", self.sort.len() - 8));
+        }
+        Some(line)
+    }
+
     /// Visual filter chip bar for the workbench (glyph + text, never color alone).
     ///
     /// Empty when no server filters, raw WHERE, or page-local quick filter.
@@ -1083,6 +1104,32 @@ impl DataGridModel {
                 },
             );
         }
+    }
+
+    /// Append `column` as a secondary sort key (or cycle its direction in place).
+    ///
+    /// Unlike [`cycle_sort_column`], does not promote the key to primary. Use
+    /// this to build multi-column ORDER BY lists deliberately.
+    pub fn push_sort_column(&mut self, column: &str) {
+        let existing = self.sort.iter().position(|k| k.column == column);
+        if let Some(idx) = existing {
+            let next = self.sort[idx].direction.cycle();
+            if matches!(next, ColumnSort::None) {
+                self.sort.remove(idx);
+            } else {
+                self.sort[idx].direction = next;
+            }
+        } else {
+            self.sort.push(GridSortKey {
+                column: column.to_owned(),
+                direction: ColumnSort::Asc,
+            });
+        }
+    }
+
+    /// Remove the least-significant (last) sort key. Returns true if one removed.
+    pub fn pop_sort_key(&mut self) -> bool {
+        self.sort.pop().is_some()
     }
 
     /// Clear server sort/filter; keep quick filter (page-local).
@@ -1852,6 +1899,37 @@ mod tests {
         assert_eq!(hits, vec![0]);
         assert!(g.status_line().contains("page-local [alp]"));
         assert!(g.status_line().contains("sort"));
+    }
+
+    #[test]
+    fn push_sort_builds_multi_column_and_chip_bar() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into(), "age".into()];
+        g.push_sort_column("name");
+        g.push_sort_column("age");
+        assert_eq!(g.sort.len(), 2);
+        assert_eq!(g.sort[0].column, "name");
+        assert_eq!(g.sort[0].direction, ColumnSort::Asc);
+        assert_eq!(g.sort[1].column, "age");
+        // Cycle secondary in place — still secondary.
+        g.push_sort_column("age");
+        assert_eq!(g.sort[0].column, "name");
+        assert_eq!(g.sort[1].direction, ColumnSort::Desc);
+        let bar = g.sort_chip_bar().expect("sort bar");
+        assert!(bar.contains("[name↑]"), "{bar}");
+        assert!(bar.contains("[age↓]"), "{bar}");
+        assert!(g.pop_sort_key());
+        assert_eq!(g.sort.len(), 1);
+        assert_eq!(g.sort[0].column, "name");
+        // CycleSort promotes: push age again then cycle name to primary.
+        g.push_sort_column("age");
+        g.cycle_sort_column("name");
+        assert_eq!(g.sort[0].column, "name");
+        assert_eq!(g.sort[0].direction, ColumnSort::Desc);
+        assert!(g.pop_sort_key());
+        assert!(g.pop_sort_key());
+        assert!(!g.pop_sort_key());
+        assert!(g.sort_chip_bar().is_none());
     }
 
     #[test]

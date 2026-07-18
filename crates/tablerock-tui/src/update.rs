@@ -3395,6 +3395,29 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::PushSort if model.screen() == Screen::Workbench => {
+            let col = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.columns.get(g.cursor_col).cloned());
+            let Some(col) = col else {
+                return Update::unchanged();
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.push_sort_column(&col);
+            }
+            rebrowse_active_table(model)
+        }
+        ActionId::PopSort if model.screen() == Screen::Workbench => {
+            let popped = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.pop_sort_key());
+            if !popped {
+                return Update::unchanged();
+            }
+            rebrowse_active_table(model)
+        }
         ActionId::ClearSort if model.screen() == Screen::Workbench => {
             let cleared = model
                 .workbench_mut()
@@ -4344,6 +4367,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyCellHex
         | ActionId::CopyRow
         | ActionId::CycleSort
+        | ActionId::PushSort
+        | ActionId::PopSort
         | ActionId::ClearSort
         | ActionId::AddFilter
         | ActionId::FilterIsNull
@@ -5820,6 +5845,8 @@ fn cycle_action(
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,
                 ActionId::CycleSort,
+                ActionId::PushSort,
+                ActionId::PopSort,
                 ActionId::ClearSort,
                 ActionId::AddFilter,
                 ActionId::FilterIsNull,

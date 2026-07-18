@@ -26,4 +26,4 @@ cargo check -p tablerock-tui
 
 ## Remaining work
 
-- Multi-column sort UI list (optional; CycleSort remains primary)
+- Multi-column sort UI — shipped as evidence 370

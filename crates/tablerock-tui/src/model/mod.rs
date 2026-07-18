@@ -114,6 +114,10 @@ pub enum ActionId {
     CopyRow,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
+    /// Append cursor column as secondary sort (or cycle its direction in place).
+    PushSort,
+    /// Remove least-significant (last) sort key and re-browse.
+    PopSort,
     /// Clear server sort only (keep filters) and re-browse.
     ClearSort,
     /// Add an equality filter for the cursor column using the cursor cell text.
