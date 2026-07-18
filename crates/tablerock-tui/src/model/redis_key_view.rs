@@ -263,4 +263,46 @@ mod tests {
                 .any(|l| l.contains("truncated"))
         );
     }
+
+    #[test]
+    fn string_json_label_branches_and_hex_cap() {
+        // Balanced object -> valid-ish.
+        let ok = StringProjections::from_bytes(b"{\"a\": 1}", false);
+        assert_eq!(ok.json_label, "json: valid-ish");
+        // Starts with '{' but unbalanced -> invalid.
+        let bad = StringProjections::from_bytes(b"{not json", false);
+        assert_eq!(bad.json_label, "json: invalid");
+        // Not JSON-shaped -> n/a.
+        let plain = StringProjections::from_bytes(b"hello", false);
+        assert_eq!(plain.json_label, "json: n/a");
+        // Hex projection caps at 64 bytes.
+        let big = StringProjections::from_bytes(&vec![b'A'; 100], false);
+        assert_eq!(big.hex.split(' ').count(), 64);
+        // Truncation flag surfaces in the projection lines.
+        let trunc = StringProjections::from_bytes(b"x", true);
+        assert!(trunc.lines().iter().any(|l| l.contains("truncated: yes")));
+    }
+
+    #[test]
+    fn header_lines_report_kind_and_staleness() {
+        let header = RedisKeyHeader {
+            key_display: "user:1".into(),
+            kind: Some(RedisKeyKind::Hash),
+            ttl_label: "30s".into(),
+            stale: true,
+            last_refresh_label: "1s ago".into(),
+        };
+        let lines = header.lines();
+        assert!(lines.iter().any(|l| l == "key: user:1"));
+        assert!(lines.iter().any(|l| l == "type: hash"));
+        assert!(lines.iter().any(|l| l == "ttl: 30s"));
+        assert!(lines.iter().any(|l| l == "stale: yes"));
+
+        // Missing kind reports unknown (never an empty type line).
+        let unknown = RedisKeyHeader {
+            kind: None,
+            ..header
+        };
+        assert!(unknown.lines().iter().any(|l| l == "type: unknown"));
+    }
 }
