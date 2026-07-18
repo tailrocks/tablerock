@@ -9,7 +9,8 @@ use tablerock_core::{
     BoundedText, ByteLimit, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
     CommandScope, Engine, FieldValue, MutationChange, MutationPlan, MutationPlanLimits,
     MutationReviewRegistry, MutationTarget, OperationId, OperationOutcome, OperationScope,
-    OwnedValue, PageIdentity, PageKey, PageRequest, ProfileId, ProfileProperty, ResultStore,
+    OwnedValue, PageIdentity, PageKey, PageRequest, ProfileId, ProfileListFilter,
+    ProfileListRequest, ProfileProperty, ResultStore,
     ResultStoreLimits, Revision, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
     StatementText,
 };
@@ -152,6 +153,17 @@ struct BridgeInner {
     persistence: Option<PersistenceActor>,
 }
 
+/// One saved profile row for the native connection screen.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeProfileItem {
+    /// 16-byte ProfileId (same form `open_profile` accepts).
+    pub id_bytes: Vec<u8>,
+    pub name: String,
+    pub engine: String,
+    pub group: Option<String>,
+    pub favorite: bool,
+}
+
 /// Process-scoped UniFFI facade. One instance owns the multi-thread runtime.
 #[derive(uniffi::Object)]
 pub struct TableRockBridge {
@@ -193,6 +205,12 @@ impl TableRockBridge {
         password_override: Option<String>,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| self.open_profile_inner(profile_id, password_override))
+    }
+
+    /// Lists saved profiles (all engines) for the native connection screen.
+    /// Requires `configure_persistence` first.
+    pub fn list_profiles(&self) -> Result<Vec<BridgeProfileItem>, BridgeError> {
+        catch_entry(|| self.list_profiles_inner())
     }
 
     /// Submits a command and returns a 16-byte operation id.
@@ -645,6 +663,33 @@ impl TableRockBridge {
             }
         };
         self.open_inner(params)
+    }
+
+    fn list_profiles_inner(&self) -> Result<Vec<BridgeProfileItem>, BridgeError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+        let actor = inner.persistence.as_ref().ok_or_else(|| {
+            BridgeError::rejected("persistence", "configure_persistence first")
+        })?;
+        let request = ProfileListRequest::new(ProfileListFilter::new(None, None), None, 100)
+            .map_err(|error| BridgeError::rejected("profile-list-request", error.to_string()))?;
+        let page = actor
+            .list_profiles(request)
+            .map_err(|error| BridgeError::rejected("profile-list", error.to_string()))?;
+        Ok(page
+            .items()
+            .iter()
+            .map(|item| BridgeProfileItem {
+                id_bytes: item.id().to_bytes().to_vec(),
+                name: item.name().as_str().to_owned(),
+                engine: engine_label(item.engine()).to_owned(),
+                group: item.group().map(|g| g.as_str().to_owned()),
+                favorite: item.favorite(),
+            })
+            .collect())
     }
 
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
@@ -1259,6 +1304,14 @@ fn outcome_label(outcome: OperationOutcome) -> &'static str {
         OperationOutcome::Failed => "failed",
         OperationOutcome::Unknown => "unknown",
         OperationOutcome::Disconnected => "disconnected",
+    }
+}
+
+const fn engine_label(engine: Engine) -> &'static str {
+    match engine {
+        Engine::PostgreSql => "postgresql",
+        Engine::ClickHouse => "clickhouse",
+        Engine::Redis => "redis",
     }
 }
 

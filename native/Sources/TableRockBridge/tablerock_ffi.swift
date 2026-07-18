@@ -650,6 +650,12 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) throws  -> Data
     
     /**
+     * Lists saved profiles (all engines) for the native connection screen.
+     * Requires `configure_persistence` first.
+     */
+    func listProfiles() throws  -> [BridgeProfileItem]
+    
+    /**
      * Returns a bounded event batch starting at `cursor` (exclusive of prior delivery).
      */
     func nextEvents(cursor: UInt64, maximum: UInt32) throws  -> BridgeEventBatch
@@ -860,6 +866,19 @@ open func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64)throws  -
         FfiConverterData.lower(resultId),
         FfiConverterUInt64.lower(startRow),
         FfiConverterUInt64.lower(revision),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Lists saved profiles (all engines) for the native connection screen.
+     * Requires `configure_persistence` first.
+     */
+open func listProfiles()throws  -> [BridgeProfileItem]  {
+    return try  FfiConverterSequenceTypeBridgeProfileItem.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_list_profiles(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -1227,6 +1246,81 @@ public func FfiConverterTypeBridgeEventRecord_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeBridgeEventRecord_lower(_ value: BridgeEventRecord) -> RustBuffer {
     return FfiConverterTypeBridgeEventRecord.lower(value)
+}
+
+
+/**
+ * One saved profile row for the native connection screen.
+ */
+public struct BridgeProfileItem: Equatable, Hashable {
+    /**
+     * 16-byte ProfileId (same form `open_profile` accepts).
+     */
+    public var idBytes: Data
+    public var name: String
+    public var engine: String
+    public var group: String?
+    public var favorite: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * 16-byte ProfileId (same form `open_profile` accepts).
+         */idBytes: Data, name: String, engine: String, group: String?, favorite: Bool) {
+        self.idBytes = idBytes
+        self.name = name
+        self.engine = engine
+        self.group = group
+        self.favorite = favorite
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BridgeProfileItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeProfileItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeProfileItem {
+        return
+            try BridgeProfileItem(
+                idBytes: FfiConverterData.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                engine: FfiConverterString.read(from: &buf), 
+                group: FfiConverterOptionString.read(from: &buf), 
+                favorite: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeProfileItem, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.idBytes, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.engine, into: &buf)
+        FfiConverterOptionString.write(value.group, into: &buf)
+        FfiConverterBool.write(value.favorite, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeProfileItem_lift(_ buf: RustBuffer) throws -> BridgeProfileItem {
+    return try FfiConverterTypeBridgeProfileItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeProfileItem_lower(_ value: BridgeProfileItem) -> RustBuffer {
+    return FfiConverterTypeBridgeProfileItem.lower(value)
 }
 
 
@@ -1817,6 +1911,31 @@ fileprivate struct FfiConverterSequenceTypeBridgeEventRecord: FfiConverterRustBu
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeBridgeProfileItem: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeProfileItem]
+
+    public static func write(_ value: [BridgeProfileItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeProfileItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeProfileItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeProfileItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeProfileItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -1854,6 +1973,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_fetch_page() != 31970) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_profiles() != 34048) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_next_events() != 49029) {

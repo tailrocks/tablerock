@@ -1,33 +1,36 @@
-// TableRock native macOS app — plan 020 checkpoint 1 (workable vertical slice).
+// TableRock native macOS app — plan 020.
 //
 // Built with swiftc via Command Line Tools (no full Xcode required): SwiftUI +
 // AppKit ship with the CLT macOS SDK, and the Rust bridge is linked as the cargo
-// release dylib through the TableRockBridge SwiftPM target. Notarized XCFramework
-// distribution remains the operator-gated release path (plan 019).
+// release dylib. Notarized XCFramework distribution remains the operator-gated
+// release path (plan 019). See scripts/build-native-app.sh (direct swiftc,
+// license-free).
 //
-// This checkpoint proves a workable macOS application: it launches a window,
-// owns a live TableRockBridge (Tokio runtime + local persistence), and reports
-// bridge state. Later checkpoints add the connection list, catalog, editor,
-// grid, and result surfaces over the same coarse operation/event facade.
+// Checkpoint 1: app shell + live bridge (runtime + persistence).
+// Checkpoint 2: connection list — lists saved profiles over the bridge.
 
 import SwiftUI
 import TableRockBridge
 
 @main
 struct TableRockApp: App {
+    @StateObject private var model = BridgeModel()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .frame(minWidth: 720, minHeight: 480)
+                .environmentObject(model)
+                .frame(minWidth: 760, minHeight: 520)
         }
     }
 }
 
-/// Owns the live TableRockBridge for the window's lifetime.
+/// Owns the live TableRockBridge + the profile list for the window's lifetime.
 @MainActor
 final class BridgeModel: ObservableObject {
     @Published var status: String = "starting…"
     @Published var bridgeError: String?
+    @Published var profiles: [BridgeProfileItem] = []
     var bridge: TableRockBridge?
 
     private static let persistenceDirectory: URL = {
@@ -50,42 +53,83 @@ final class BridgeModel: ObservableObject {
                     .path
             )
             self.bridge = bridge
-            status = "Bridge ready · runtime + persistence initialized"
+            refreshProfiles()
         } catch {
             bridgeError = "Bridge init failed: \(error)"
+            status = "error"
+        }
+    }
+
+    func refreshProfiles() {
+        guard let bridge else { return }
+        do {
+            profiles = try bridge.listProfiles()
+            status = profiles.isEmpty
+                ? "Bridge ready · no saved profiles"
+                : "Bridge ready · \(profiles.count) profile\(profiles.count == 1 ? "" : "s")"
+        } catch {
+            bridgeError = "List profiles failed: \(error)"
             status = "error"
         }
     }
 }
 
 struct ContentView: View {
-    @StateObject private var model = BridgeModel()
+    @EnvironmentObject private var model: BridgeModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("TableRock")
-                .font(.largeTitle)
-                .bold()
-            Text(model.status)
-                .foregroundStyle(.secondary)
-            if let bridgeError = model.bridgeError {
-                Text(bridgeError)
-                    .foregroundStyle(.red)
-                    .font(.callout)
-                    .textSelection(.enabled)
+        NavigationSplitView {
+            // Connection list (left sidebar).
+            List(model.profiles, id: \.name) { profile in
+                ProfileRow(profile: profile)
             }
-            Spacer()
-            HStack {
-                Text("PostgreSQL · ClickHouse · Redis")
+            .navigationTitle("Connections")
+            .overlay {
+                if model.profiles.isEmpty {
+                    ContentUnavailableView(
+                        model.bridgeError == nil ? "No profiles" : "Error",
+                        systemImage: model.bridgeError == nil ? "tray" : "exclamationmark.triangle",
+                        description: Text(model.bridgeError ?? "Save a profile from the TUI, then refresh.")
+                    )
+                }
+            }
+        } detail: {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("TableRock").font(.largeTitle).bold()
+                Text(model.status).foregroundStyle(.secondary)
+                if let bridgeError = model.bridgeError {
+                    Text(bridgeError)
+                        .foregroundStyle(.red)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                }
+                Spacer()
+                Text("PostgreSQL · ClickHouse · Redis — native vertical slice")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
-                Spacer()
-                Text("native vertical slice · checkpoint 1")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
             }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(24)
         .task { model.initialize() }
+    }
+}
+
+struct ProfileRow: View {
+    let profile: BridgeProfileItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                if profile.favorite {
+                    Image(systemName: "star.fill").foregroundStyle(.yellow).font(.caption)
+                }
+                Text(profile.name).font(.body)
+            }
+            Text([profile.engine, profile.group].compactMap { $0 }.joined(separator: " · "))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
     }
 }
