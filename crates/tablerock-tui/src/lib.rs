@@ -23,6 +23,7 @@ pub use model::grid::{
 pub use model::completion::{CompletionCandidateView, CompletionSession, StaleCompletion};
 pub use model::history::{HistoryPanel, HistoryRowProjection};
 pub use model::query_editor::{QueryEditorModel, StatementSpanView};
+pub use model::saved_query::{BoundSqlFile, SavedQueryPanel, SavedQueryRow};
 pub use model::{
     ActionId, FocusRegion, LayoutMode, Model, PasswordPrompt, Screen, ScrollDirection,
     SessionFacts, ShellTarget,

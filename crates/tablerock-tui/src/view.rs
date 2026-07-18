@@ -266,6 +266,11 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let complete = action_label(model, ActionId::Complete, "Complete");
     let history = action_label(model, ActionId::History, "History");
     let restore_hist = action_label(model, ActionId::RestoreHistory, "Restore");
+    let saved_q = action_label(model, ActionId::SavedQueries, "Queries");
+    let save_q = action_label(model, ActionId::SaveQuery, "SaveQ");
+    let load_q = action_label(model, ActionId::LoadQuery, "LoadQ");
+    let save_file = action_label(model, ActionId::SaveFile, "SaveFile");
+    let save_intent = action_label(model, ActionId::SaveIntent, "SaveIntent");
     let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
     let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
@@ -375,6 +380,36 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RestoreHistory,
                         label: restore_hist.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SavedQueries,
+                        label: saved_q.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SaveQuery,
+                        label: save_q.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::LoadQuery,
+                        label: load_q.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SaveFile,
+                        label: save_file.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SaveIntent,
+                        label: save_intent.as_str(),
                         enabled: true,
                         style: None,
                     },

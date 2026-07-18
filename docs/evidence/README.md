@@ -186,6 +186,7 @@ How to read an evidence document:
 - 219 — [SQL completion session](delivery/219-sql-completion-session.md)
 - 220 — [Query history persistence](delivery/220-query-history-persistence.md)
 - 221 — [Query history TUI panel](delivery/221-query-history-tui-panel.md)
+- 222 — [Saved queries, files, session intent](delivery/222-saved-queries-files-session-intent.md)
 
 ## TermRock pins
 

@@ -100,6 +100,8 @@ pub enum EngineMsg {
         identity: String,
         temporary: bool,
         engine_label: String,
+        /// Non-temporary connects carry the profile for intent restore.
+        profile_id_hex: Option<String>,
     },
     ConnectFailed {
         request_token: u64,
@@ -183,6 +185,48 @@ pub enum EngineMsg {
     HistoryAppended {
         request_token: u64,
         history_id: Option<i64>,
+    },
+    NamedQuerySaved {
+        request_token: u64,
+        query_id: i64,
+        name: String,
+    },
+    NamedQueriesLoaded {
+        request_token: u64,
+        entries: Vec<crate::model::saved_query::SavedQueryRow>,
+    },
+    NamedQueryLoaded {
+        request_token: u64,
+        name: String,
+        statement: String,
+    },
+    SqlFileSaved {
+        request_token: u64,
+        path: String,
+        mtime_secs: Option<u64>,
+        len: u64,
+    },
+    SqlFileOpened {
+        request_token: u64,
+        path: String,
+        text: String,
+        mtime_secs: Option<u64>,
+        len: u64,
+    },
+    SqlFileFailed {
+        request_token: u64,
+        reason: FailureProjection,
+    },
+    SessionIntentSaved {
+        request_token: u64,
+    },
+    SessionIntentLoaded {
+        request_token: u64,
+        intent_json: Option<String>,
+    },
+    SessionIntentFailed {
+        request_token: u64,
+        reason: FailureProjection,
     },
 }
 

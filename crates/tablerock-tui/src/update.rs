@@ -300,6 +300,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             identity,
             temporary,
             engine_label,
+            profile_id_hex,
             ..
         }) => {
             model.set_session(Some(SessionFacts {
@@ -315,6 +316,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 temporary,
                 identity,
             );
+            workbench.profile_id_hex = profile_id_hex.clone();
             let token = model.mint_request_token();
             let context_revision = workbench.context_revision;
             workbench.catalog = CatalogModel::Loading {
@@ -324,6 +326,16 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             model.set_workbench(workbench);
             model.set_screen(Screen::Workbench);
             model.set_action(ActionId::Disconnect);
+            // Prefer intent restore for non-temporary profiles; catalog still loads after.
+            if let Some(profile_id_hex) = profile_id_hex.filter(|_| !temporary) {
+                return Update {
+                    render: true,
+                    effect: Some(Effect::LoadSessionIntent {
+                        request_token: token,
+                        profile_id_hex,
+                    }),
+                };
+            }
             Update {
                 render: true,
                 effect: Some(Effect::LoadCatalog {
@@ -515,6 +527,135 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::HistoryAppended { .. }) => Update::unchanged(),
+        Message::Engine(EngineMsg::NamedQuerySaved { .. }) => Update::render(),
+        Message::Engine(EngineMsg::NamedQueriesLoaded {
+            request_token,
+            entries,
+        }) => {
+            let ok = matches!(
+                model.workbench().saved_queries,
+                crate::model::saved_query::SavedQueryPanel::Loading { request_token: t }
+                    if t == request_token
+            );
+            if !ok {
+                return Update::unchanged();
+            }
+            model.workbench_mut().saved_queries =
+                crate::model::saved_query::SavedQueryPanel::Open {
+                    request_token,
+                    entries,
+                    selected: 0,
+                };
+            Update::render()
+        }
+        Message::Engine(EngineMsg::NamedQueryLoaded {
+            name,
+            statement,
+            ..
+        }) => {
+            if model.workbench().active_editor().is_none() {
+                model.workbench_mut().open_sql_tab();
+            }
+            if let Some(editor) = model.workbench_mut().active_editor_mut() {
+                editor.set_text(statement);
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.title = name;
+                tab.dirty = false;
+            }
+            model.workbench_mut().saved_queries =
+                crate::model::saved_query::SavedQueryPanel::Closed;
+            Update::render()
+        }
+        Message::Engine(EngineMsg::SqlFileSaved {
+            path,
+            mtime_secs,
+            len,
+            ..
+        }) => {
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.bound_file = Some(crate::model::saved_query::BoundSqlFile {
+                    path,
+                    mtime_secs,
+                    len,
+                });
+                tab.dirty = false;
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::SqlFileOpened {
+            path,
+            text,
+            mtime_secs,
+            len,
+            ..
+        }) => {
+            if model.workbench().active_editor().is_none() {
+                model.workbench_mut().open_sql_tab();
+            }
+            if let Some(editor) = model.workbench_mut().active_editor_mut() {
+                editor.set_text(text);
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.bound_file = Some(crate::model::saved_query::BoundSqlFile {
+                    path: path.clone(),
+                    mtime_secs,
+                    len,
+                });
+                tab.dirty = false;
+                if let Some(name) = std::path::Path::new(&path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                {
+                    tab.title = name.to_owned();
+                }
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::SqlFileFailed { reason, .. }) => {
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::SessionIntentSaved { .. }) => Update::render(),
+        Message::Engine(EngineMsg::SessionIntentLoaded {
+            intent_json, ..
+        }) => {
+            if let Some(json) = intent_json {
+                let _ = model.workbench_mut().apply_intent_json(&json);
+            }
+            // After intent restore, load catalog for the restored context.
+            let Some(session) = model.session() else {
+                return Update::render();
+            };
+            let session_id_hex = session.session_id_hex.clone();
+            let engine_label = model.workbench().engine_kind.clone();
+            let token = model.mint_request_token();
+            let context_revision = model.workbench().context_revision;
+            model.workbench_mut().catalog = CatalogModel::Loading {
+                request_token: token,
+                context_revision,
+            };
+            Update {
+                render: true,
+                effect: Some(Effect::LoadCatalog {
+                    request_token: token,
+                    session_id_hex,
+                    context_revision,
+                    engine_label,
+                    level: crate::effect::CatalogLevelSpec::Root,
+                    parent_id: None,
+                }),
+            }
+        }
+        Message::Engine(EngineMsg::SessionIntentFailed { .. }) => Update::unchanged(),
         Message::Engine(EngineMsg::GridFailed {
             context_revision,
             reason,
@@ -978,6 +1119,114 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.workbench_mut().history = crate::model::history::HistoryPanel::Closed;
             Update::render()
         }
+        ActionId::SavedQueries if model.screen() == Screen::Workbench => {
+            if model.workbench().saved_queries.is_open() {
+                model.workbench_mut().saved_queries =
+                    crate::model::saved_query::SavedQueryPanel::Closed;
+                return Update::render();
+            }
+            let token = model.mint_request_token();
+            let engine_label = model.workbench().engine_kind.clone();
+            model.workbench_mut().saved_queries =
+                crate::model::saved_query::SavedQueryPanel::Loading {
+                    request_token: token,
+                };
+            Update {
+                render: true,
+                effect: Some(Effect::ListNamedQueries {
+                    request_token: token,
+                    engine_label,
+                }),
+            }
+        }
+        ActionId::SaveQuery if model.screen() == Screen::Workbench => {
+            let statement = model
+                .workbench()
+                .active_editor()
+                .map(|e| e.text().to_owned())
+                .unwrap_or_default();
+            if statement.trim().is_empty() {
+                return Update::unchanged();
+            }
+            let name = model
+                .workbench()
+                .active_tab()
+                .map(|t| t.title.clone())
+                .unwrap_or_else(|| "query".into());
+            let engine_label = model.workbench().engine_kind.clone();
+            let token = model.mint_request_token();
+            Update {
+                render: true,
+                effect: Some(Effect::SaveNamedQuery {
+                    request_token: token,
+                    name,
+                    engine_label,
+                    statement,
+                }),
+            }
+        }
+        ActionId::LoadQuery if model.screen() == Screen::Workbench => {
+            let query_id = model
+                .workbench()
+                .saved_queries
+                .selected()
+                .map(|q| q.query_id);
+            let Some(query_id) = query_id else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            Update {
+                render: true,
+                effect: Some(Effect::LoadNamedQuery {
+                    request_token: token,
+                    query_id,
+                }),
+            }
+        }
+        ActionId::SaveFile if model.screen() == Screen::Workbench => {
+            let text = model
+                .workbench()
+                .active_editor()
+                .map(|e| e.text().to_owned())
+                .unwrap_or_default();
+            let path = model
+                .workbench()
+                .active_tab()
+                .and_then(|t| t.bound_file.as_ref().map(|f| f.path.clone()))
+                .or_else(|| {
+                    model
+                        .workbench()
+                        .active_tab()
+                        .map(|t| format!("{}.sql", t.title.replace(' ', "_")))
+                });
+            let Some(path) = path else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            Update {
+                render: true,
+                effect: Some(Effect::SaveSqlFile {
+                    request_token: token,
+                    path,
+                    text,
+                }),
+            }
+        }
+        ActionId::SaveIntent if model.screen() == Screen::Workbench => {
+            let Some(profile_id_hex) = model.workbench().profile_id_hex.clone() else {
+                return Update::unchanged();
+            };
+            let intent_json = model.workbench().intent_json();
+            let token = model.mint_request_token();
+            Update {
+                render: true,
+                effect: Some(Effect::SaveSessionIntent {
+                    request_token: token,
+                    profile_id_hex,
+                    intent_json,
+                }),
+            }
+        }
         ActionId::Cancel if model.screen() == Screen::Workbench && model.workbench().completion.is_some() =>
         {
             model.workbench_mut().dismiss_completion();
@@ -999,6 +1248,11 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::Complete
         | ActionId::History
         | ActionId::RestoreHistory
+        | ActionId::SavedQueries
+        | ActionId::SaveQuery
+        | ActionId::LoadQuery
+        | ActionId::SaveFile
+        | ActionId::SaveIntent
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -1079,6 +1333,11 @@ fn cycle_action(
                 ActionId::Complete,
                 ActionId::History,
                 ActionId::RestoreHistory,
+                ActionId::SavedQueries,
+                ActionId::SaveQuery,
+                ActionId::LoadQuery,
+                ActionId::SaveFile,
+                ActionId::SaveIntent,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,
@@ -1626,6 +1885,7 @@ mod tests {
                 identity: "PostgreSQL 17".into(),
                 temporary: true,
                 engine_label: "PostgreSQL".into(),
+                profile_id_hex: None,
             }),
         );
         assert_eq!(model.screen(), Screen::Workbench);
@@ -1830,6 +2090,50 @@ mod tests {
         let grid = model.workbench().active_grid().unwrap();
         assert_eq!(grid.operation, GridOperationState::Completed);
         assert_eq!(grid.rows_loaded, 2500);
+    }
+
+    #[test]
+    fn save_query_and_file_emit_effects() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.workbench_mut().open_sql_tab();
+        model
+            .workbench_mut()
+            .active_editor_mut()
+            .unwrap()
+            .set_text("SELECT 7");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::SaveQuery);
+        let save_q = update(&mut model, Message::Activate);
+        assert!(matches!(
+            save_q.effects().next(),
+            Some(Effect::SaveNamedQuery {
+                statement,
+                ..
+            }) if statement == "SELECT 7"
+        ));
+        model.set_action(ActionId::SaveFile);
+        let save_f = update(&mut model, Message::Activate);
+        assert!(matches!(
+            save_f.effects().next(),
+            Some(Effect::SaveSqlFile {
+                path,
+                text,
+                ..
+            }) if path.ends_with(".sql") && text == "SELECT 7"
+        ));
+        // Intent requires a profile id.
+        model.workbench_mut().profile_id_hex =
+            Some("00000000000000010000000000000001".into());
+        model.set_action(ActionId::SaveIntent);
+        let intent = update(&mut model, Message::Activate);
+        assert!(matches!(
+            intent.effects().next(),
+            Some(Effect::SaveSessionIntent {
+                intent_json,
+                ..
+            }) if intent_json.contains("SELECT 7") && !intent_json.contains("cells")
+        ));
     }
 
     #[test]

@@ -3,6 +3,9 @@
 mod history_store;
 mod profile_store;
 mod recovery;
+mod saved_query_store;
+mod session_intent_store;
+mod sql_file;
 
 use std::{
     collections::HashSet,
@@ -25,8 +28,14 @@ pub use recovery::{
     BACKUP_FORMAT_VERSION, BackupManifest, MAX_BACKUP_BYTES, create_backup, read_backup_manifest,
     restore_backup,
 };
+pub use saved_query_store::{SavedQuery, SavedQueryUpsert};
+pub use session_intent_store::SessionIntentRecord;
+pub use sql_file::{
+    SqlFileFacts, external_change_detected, read_sql_file, write_sql_file_atomic,
+};
 use tablerock_core::{
-    PersistableProfile, ProfileAggregate, ProfileId, ProfileListPage, ProfileListRequest, Revision,
+    Engine, PersistableProfile, ProfileAggregate, ProfileId, ProfileListPage, ProfileListRequest,
+    Revision,
 };
 
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -47,6 +56,10 @@ const MIGRATIONS: &[(u32, &str)] = &[
     ),
     (7, include_str!("../migrations/0007-environment-tag.sql")),
     (8, include_str!("../migrations/0008-query-history.sql")),
+    (
+        9,
+        include_str!("../migrations/0009-saved-queries-and-session-intent.sql"),
+    ),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,6 +228,87 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
+    pub fn upsert_saved_query(
+        &self,
+        request: SavedQueryUpsert,
+    ) -> Result<i64, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::UpsertSavedQuery(request, sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn list_saved_queries(
+        &self,
+        engine: Option<Engine>,
+    ) -> Result<Vec<SavedQuery>, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::ListSavedQueries(engine, sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn get_saved_query(
+        &self,
+        query_id: i64,
+    ) -> Result<Option<SavedQuery>, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::GetSavedQuery(query_id, sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn delete_saved_query(&self, query_id: i64) -> Result<bool, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::DeleteSavedQuery(query_id, sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn put_session_intent(
+        &self,
+        profile_id: ProfileId,
+        intent_json: String,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::PutSessionIntent(profile_id, intent_json, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn get_session_intent(
+        &self,
+        profile_id: ProfileId,
+    ) -> Result<Option<SessionIntentRecord>, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(&self.sender, Command::GetSessionIntent(profile_id, sender))?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn delete_session_intent(
+        &self,
+        profile_id: ProfileId,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::DeleteSessionIntent(profile_id, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
     pub fn shutdown(mut self) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::Shutdown(sender))?;
@@ -291,6 +385,29 @@ enum Command {
         mpsc::SyncSender<Result<Vec<HistoryEntry>, PersistenceError>>,
     ),
     HistoryCount(mpsc::SyncSender<Result<u64, PersistenceError>>),
+    UpsertSavedQuery(
+        SavedQueryUpsert,
+        mpsc::SyncSender<Result<i64, PersistenceError>>,
+    ),
+    ListSavedQueries(
+        Option<Engine>,
+        mpsc::SyncSender<Result<Vec<SavedQuery>, PersistenceError>>,
+    ),
+    GetSavedQuery(
+        i64,
+        mpsc::SyncSender<Result<Option<SavedQuery>, PersistenceError>>,
+    ),
+    DeleteSavedQuery(i64, mpsc::SyncSender<Result<bool, PersistenceError>>),
+    PutSessionIntent(
+        ProfileId,
+        String,
+        mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
+    GetSessionIntent(
+        ProfileId,
+        mpsc::SyncSender<Result<Option<SessionIntentRecord>, PersistenceError>>,
+    ),
+    DeleteSessionIntent(ProfileId, mpsc::SyncSender<Result<(), PersistenceError>>),
     Shutdown(mpsc::SyncSender<Result<(), PersistenceError>>),
 }
 
@@ -437,6 +554,83 @@ fn worker_main(
                     tokio::time::timeout(OPERATION_TIMEOUT, history_store::count(&connection))
                         .await
                         .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::UpsertSavedQuery(request, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        saved_query_store::upsert(&connection, &request),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::ListSavedQueries(engine, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        saved_query_store::list(&connection, engine),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::GetSavedQuery(query_id, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        saved_query_store::get(&connection, query_id),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::DeleteSavedQuery(query_id, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        saved_query_store::delete(&connection, query_id),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::PutSessionIntent(profile_id, intent_json, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        session_intent_store::put(&connection, profile_id, &intent_json),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::GetSessionIntent(profile_id, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        session_intent_store::get(&connection, profile_id),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::DeleteSessionIntent(profile_id, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        session_intent_store::delete(&connection, profile_id),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
                 });
                 let _ = reply.send(result);
             }

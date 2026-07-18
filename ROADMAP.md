@@ -139,13 +139,12 @@ vs outcome are proven on trunk.
 
 ## Phase 5 — workbench foundation
 
-Add TermRock `TextArea` and `CompletionMenu`; then deliver multiline SQL/Redis
-editing, statement selection, revisioned schema-aware completion, parameters,
-find/replace, formatting, explain foundations, server sorting and the filter
-bar (typed column filters plus raw WHERE), column show/hide/reorder/reset with
-per-table persistence, copy formats including SQL INSERT/UPDATE, query files,
-query history, favorites, saved queries, quick switching, and intent-only
-session restoration.
+**Status: partial.** Plan 011 core on trunk (evidence 217–222): TermRock
+`TextArea`/`CompletionMenu`, multiline SQL editor, dialect statement
+boundaries, revisioned completion, history retention modes, saved queries,
+atomic `.sql` files, intent-only session restore. Still open for full Phase 5
+exit (plan 012+): parameters, find/replace, formatting, explain, server
+sort/filter/columns, copy formats, Redis command editor mirror.
 
 ## Phase 6 — PostgreSQL write/admin slice
 

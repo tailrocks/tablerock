@@ -184,6 +184,45 @@ pub enum Effect {
         /// "full" | "metadata" | "private"
         retention: String,
     },
+    /// Upsert a named saved query (statement text only).
+    SaveNamedQuery {
+        request_token: RequestToken,
+        name: String,
+        engine_label: String,
+        statement: String,
+    },
+    /// List named saved queries for the active engine.
+    ListNamedQueries {
+        request_token: RequestToken,
+        engine_label: String,
+    },
+    /// Load one saved query by id into the editor (caller restores text).
+    LoadNamedQuery {
+        request_token: RequestToken,
+        query_id: i64,
+    },
+    /// Atomic write of editor text to a `.sql` path.
+    SaveSqlFile {
+        request_token: RequestToken,
+        path: String,
+        text: String,
+    },
+    /// Read a `.sql` file into the editor.
+    OpenSqlFile {
+        request_token: RequestToken,
+        path: String,
+    },
+    /// Persist intent-only session (tabs/context text; never results).
+    SaveSessionIntent {
+        request_token: RequestToken,
+        profile_id_hex: String,
+        intent_json: String,
+    },
+    /// Load intent-only session for a profile.
+    LoadSessionIntent {
+        request_token: RequestToken,
+        profile_id_hex: String,
+    },
 }
 
 /// Helper: build a root LoadCatalog effect for the current workbench session.

@@ -6,6 +6,7 @@ use super::grid::DataGridModel;
 use super::history::HistoryPanel;
 use super::inspector::InspectorModel;
 use super::query_editor::QueryEditorModel;
+use super::saved_query::{BoundSqlFile, SavedQueryPanel};
 use tablerock_core::SqlDialect;
 
 /// Context-bar projection for the active session.
@@ -64,6 +65,8 @@ pub struct WorkbenchTab {
     pub grid: DataGridModel,
     /// Multiline SQL editor when this is a statement tab.
     pub editor: Option<QueryEditorModel>,
+    /// Bound `.sql` path for this tab, if opened/saved as a file.
+    pub bound_file: Option<BoundSqlFile>,
 }
 
 /// Status-bar facts for the active tab/session.
@@ -104,6 +107,9 @@ pub struct WorkbenchModel {
     pub history: HistoryPanel,
     /// History retention policy projection: "full" | "metadata" | "private".
     pub history_retention: String,
+    pub saved_queries: SavedQueryPanel,
+    /// Profile id for intent-only session restore (hex), when non-temporary.
+    pub profile_id_hex: Option<String>,
 }
 
 impl Default for WorkbenchModel {
@@ -127,6 +133,7 @@ impl Default for WorkbenchModel {
                 preview: true,
                 grid: DataGridModel::default(),
                 editor: None,
+                bound_file: None,
             }],
             selected_tab: 0,
             status: WorkbenchStatus {
@@ -143,6 +150,8 @@ impl Default for WorkbenchModel {
             completion: None,
             history: HistoryPanel::Closed,
             history_retention: "full".into(),
+            saved_queries: SavedQueryPanel::Closed,
+            profile_id_hex: None,
         }
     }
 }
@@ -223,6 +232,7 @@ impl WorkbenchModel {
             preview: true,
             grid: DataGridModel::default(),
             editor: None,
+            bound_file: None,
         });
         self.selected_tab = self.tabs.len() - 1;
     }
@@ -242,6 +252,7 @@ impl WorkbenchModel {
             preview: false,
             grid: DataGridModel::default(),
             editor: Some(QueryEditorModel::new(dialect)),
+            bound_file: None,
         });
         self.selected_tab = self.tabs.len() - 1;
     }
@@ -280,7 +291,112 @@ impl WorkbenchModel {
         self.completion = None;
     }
 
-    /// Commit selected (or named) candidate when still fresh.
+    /// Build intent-only JSON for the active workbench (tabs + context text).
+    #[must_use]
+    pub fn intent_json(&self) -> String {
+        let mut tabs = String::from("[");
+        for (i, tab) in self.tabs.iter().enumerate() {
+            if i > 0 {
+                tabs.push(',');
+            }
+            let title = json_escape(&tab.title);
+            let sql = tab
+                .editor
+                .as_ref()
+                .map(|e| format!("\"{}\"", json_escape(e.text())))
+                .unwrap_or_else(|| "null".into());
+            tabs.push_str(&format!(r#"{{"title":"{title}","sql":{sql}}}"#));
+        }
+        tabs.push(']');
+        let schema = self
+            .context
+            .schema
+            .as_ref()
+            .map(|s| format!("\"{}\"", json_escape(s)))
+            .unwrap_or_else(|| "null".into());
+        format!(
+            r#"{{"database":"{}","schema":{schema},"selected_tab":{},"tabs":{tabs}}}"#,
+            json_escape(&self.context.database),
+            self.selected_tab,
+        )
+    }
+
+    /// Apply intent-only JSON: database/schema + SQL tab texts (never results).
+    pub fn apply_intent_json(&mut self, json: &str) -> bool {
+        if json.contains("\"cells\"") || json.contains("\"result_pages\"") {
+            return false;
+        }
+        // Minimal hand parser for our controlled shape (avoid serde dep in tui).
+        if let Some(db) = extract_json_string(json, "database") {
+            self.context.database = db;
+        }
+        if let Some(schema) = extract_json_string(json, "schema") {
+            self.context.schema = Some(schema);
+        } else if json.contains("\"schema\":null") {
+            self.context.schema = None;
+        }
+        // Restore SQL tabs from "sql":"..." pairs with preceding title.
+        let mut restored = Vec::new();
+        let mut rest = json;
+        while let Some(title_idx) = rest.find("\"title\"") {
+            rest = &rest[title_idx..];
+            let Some(title) = extract_json_string(rest, "title") else {
+                break;
+            };
+            let sql = extract_json_string(rest, "sql");
+            restored.push((title, sql));
+            rest = rest.get(8..).unwrap_or("");
+        }
+        if restored.is_empty() {
+            return true;
+        }
+        // Replace non-preview tabs with restored SQL tabs; keep one welcome if empty.
+        self.tabs.retain(|t| t.preview && t.title == "Welcome");
+        if self.tabs.is_empty() {
+            self.tabs.push(WorkbenchTab {
+                id: 1,
+                title: "Welcome".into(),
+                dirty: false,
+                running: false,
+                preview: true,
+                grid: DataGridModel::default(),
+                editor: None,
+                bound_file: None,
+            });
+        }
+        let dialect = match self.engine_kind.as_str() {
+            "ClickHouse" => SqlDialect::ClickHouse,
+            _ => SqlDialect::PostgreSql,
+        };
+        for (title, sql) in restored {
+            if sql.is_none() && title == "Welcome" {
+                continue;
+            }
+            let id = self.tabs.iter().map(|t| t.id).max().unwrap_or(0) + 1;
+            let mut editor = QueryEditorModel::new(dialect);
+            if let Some(text) = sql {
+                editor.set_text(text);
+            }
+            self.tabs.push(WorkbenchTab {
+                id,
+                title,
+                dirty: false,
+                running: false,
+                preview: false,
+                grid: DataGridModel::default(),
+                editor: Some(editor),
+                bound_file: None,
+            });
+        }
+        if let Some(sel) = extract_json_number(json, "selected_tab") {
+            let sel = sel as usize;
+            if sel < self.tabs.len() {
+                self.selected_tab = sel;
+            }
+        }
+        true
+    }
+
     pub fn commit_completion(&mut self, candidate_id: Option<&str>) -> bool {
         let Some(session) = self.completion.clone() else {
             return false;
@@ -415,6 +531,71 @@ impl WorkbenchModel {
     }
 }
 
+fn json_escape(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn extract_json_string(json: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{key}\"");
+    let idx = json.find(&needle)?;
+    let after = &json[idx + needle.len()..];
+    let after = after.trim_start();
+    let after = after.strip_prefix(':')?.trim_start();
+    if after.starts_with("null") {
+        return None;
+    }
+    let after = after.strip_prefix('"')?;
+    let mut out = String::new();
+    let mut chars = after.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => return Some(out),
+            '\\' => match chars.next()? {
+                'n' => out.push('\n'),
+                'r' => out.push('\r'),
+                't' => out.push('\t'),
+                '"' => out.push('"'),
+                '\\' => out.push('\\'),
+                'u' => {
+                    let hex: String = chars.by_ref().take(4).collect();
+                    if let Ok(code) = u32::from_str_radix(&hex, 16) {
+                        if let Some(c) = char::from_u32(code) {
+                            out.push(c);
+                        }
+                    }
+                }
+                other => out.push(other),
+            },
+            c => out.push(c),
+        }
+    }
+    None
+}
+
+fn extract_json_number(json: &str, key: &str) -> Option<u64> {
+    let needle = format!("\"{key}\"");
+    let idx = json.find(&needle)?;
+    let after = &json[idx + needle.len()..];
+    let after = after.trim_start().strip_prefix(':')?.trim_start();
+    let digits: String = after
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse().ok()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CloseTabOutcome {
     Empty,
@@ -441,6 +622,39 @@ mod tests {
         ));
         wb.force_close_tab(wb.selected_tab);
         assert!(wb.tabs.iter().all(|t| t.title != "users"));
+    }
+
+    #[test]
+    fn intent_json_round_trip_restores_sql_tabs_not_results() {
+        let mut wb = WorkbenchModel::default();
+        wb.context.database = "app".into();
+        wb.context.schema = Some("public".into());
+        wb.open_sql_tab();
+        wb.active_editor_mut()
+            .unwrap()
+            .set_text("SELECT 99 FROM t");
+        let json = wb.intent_json();
+        assert!(json.contains("SELECT 99"));
+        assert!(!json.contains("cells"));
+
+        let mut other = WorkbenchModel::default();
+        other.engine_kind = "PostgreSQL".into();
+        assert!(other.apply_intent_json(&json));
+        assert_eq!(other.context.database, "app");
+        assert_eq!(other.context.schema.as_deref(), Some("public"));
+        let sql_tabs: Vec<_> = other
+            .tabs
+            .iter()
+            .filter(|t| t.editor.is_some())
+            .collect();
+        assert!(!sql_tabs.is_empty());
+        assert!(
+            sql_tabs
+                .iter()
+                .any(|t| t.editor.as_ref().unwrap().text().contains("SELECT 99"))
+        );
+        // Reject result-shaped payloads.
+        assert!(!other.apply_intent_json(r#"{"database":"x","cells":[]}"#));
     }
 
     #[test]

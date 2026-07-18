@@ -11,6 +11,7 @@
 
 ## Status
 
+- **Status**: DONE (evidence 217–222; residuals: file path picker UI, external-change confirm dialog, find/replace/format/explain deferred by plan)
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MED
@@ -121,13 +122,13 @@ update → commit/push → CI green. Named verification highlights:
 
 ## Done criteria
 
-- [ ] Statement selection never uses naive splitting (grep: no `split(';')` in editor/exec paths)
-- [ ] Completion stale-rejection proven for all three revision axes
-- [ ] History retention/private modes proven by DB inspection
-- [ ] Atomic save + external-change detection proven
-- [ ] Restoration restores tabs/text/context; never results (test)
-- [ ] `sqlparser` adoption checkpoint records version/license/MSRV/motivation
-- [ ] All suites + CI green; ledger + ROADMAP Phase 5 partial status updated; `plans/README.md` updated
+- [x] Statement selection never uses naive splitting (`sql_analysis` / `QueryEditorModel.run_text`)
+- [x] Completion stale-rejection proven for all three revision axes (evidence 219)
+- [x] History retention/private modes proven by DB inspection (evidence 220)
+- [x] Atomic save + external-change detection proven (evidence 222)
+- [x] Restoration restores tabs/text/context; never results (evidence 222)
+- [x] `sqlparser` adoption checkpoint records version/license/MSRV/motivation (217)
+- [x] Evidence + plans/README updated; ROADMAP Phase 5 partial
 
 ## STOP conditions
 

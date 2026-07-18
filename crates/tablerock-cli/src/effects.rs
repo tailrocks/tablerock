@@ -125,7 +125,8 @@ impl EffectExecutor {
                 let sessions = Arc::clone(&self.sessions);
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
-                    let message = connect_session(sessions, request_token, draft, temporary).await;
+                    let message =
+                        connect_session(sessions, request_token, draft, temporary, None).await;
                     let _ = ingress.try_send_event(message);
                 });
             }
@@ -346,6 +347,91 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::SaveNamedQuery {
+                request_token,
+                name,
+                engine_label,
+                statement,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        save_named_query(persistence, request_token, name, engine_label, statement)
+                            .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::ListNamedQueries {
+                request_token,
+                engine_label,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        list_named_queries(persistence, request_token, engine_label).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::LoadNamedQuery {
+                request_token,
+                query_id,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = load_named_query(persistence, request_token, query_id).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::SaveSqlFile {
+                request_token,
+                path,
+                text,
+            } => {
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = save_sql_file(request_token, path, text).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::OpenSqlFile {
+                request_token,
+                path,
+            } => {
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = open_sql_file(request_token, path).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::SaveSessionIntent {
+                request_token,
+                profile_id_hex,
+                intent_json,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        save_session_intent(persistence, request_token, profile_id_hex, intent_json)
+                            .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::LoadSessionIntent {
+                request_token,
+                profile_id_hex,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        load_session_intent(persistence, request_token, profile_id_hex).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
         }
     }
 }
@@ -445,6 +531,278 @@ async fn append_history(
     }
 }
 
+async fn save_named_query(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    name: String,
+    engine_label: String,
+    statement: String,
+) -> Message {
+    use tablerock_core::Engine;
+    use tablerock_persistence::SavedQueryUpsert;
+    let engine = match engine_label.as_str() {
+        "ClickHouse" => Engine::ClickHouse,
+        "Redis" => Engine::Redis,
+        _ => Engine::PostgreSql,
+    };
+    let joined = tokio::task::spawn_blocking(move || {
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .upsert_saved_query(SavedQueryUpsert {
+                name: name.clone(),
+                engine,
+                statement_text: statement,
+            })
+            .map(|query_id| (query_id, name))
+            .map_err(|e| e.to_string())
+    })
+    .await;
+    match joined {
+        Ok(Ok((query_id, name))) => Message::Engine(tablerock_tui::EngineMsg::NamedQuerySaved {
+            request_token,
+            query_id,
+            name,
+        }),
+        Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
+            request_token,
+            reason: FailureProjection::Label("save query task failed".into()),
+        }),
+    }
+}
+
+async fn list_named_queries(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    engine_label: String,
+) -> Message {
+    use tablerock_core::Engine;
+    let engine = match engine_label.as_str() {
+        "ClickHouse" => Engine::ClickHouse,
+        "Redis" => Engine::Redis,
+        _ => Engine::PostgreSql,
+    };
+    let joined = tokio::task::spawn_blocking(move || {
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .list_saved_queries(Some(engine))
+            .map_err(|e| e.to_string())
+    })
+    .await;
+    match joined {
+        Ok(Ok(entries)) => Message::Engine(tablerock_tui::EngineMsg::NamedQueriesLoaded {
+            request_token,
+            entries: entries
+                .into_iter()
+                .map(|q| {
+                    let engine_label = match q.engine {
+                        Engine::PostgreSql => "PostgreSQL",
+                        Engine::ClickHouse => "ClickHouse",
+                        Engine::Redis => "Redis",
+                    }
+                    .to_owned();
+                    tablerock_tui::SavedQueryRow {
+                        query_id: q.query_id,
+                        name: q.name,
+                        engine_label,
+                        statement_preview: q.statement_text.chars().take(120).collect(),
+                    }
+                })
+                .collect(),
+        }),
+        Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
+            request_token,
+            reason: FailureProjection::Label("list queries task failed".into()),
+        }),
+    }
+}
+
+async fn load_named_query(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    query_id: i64,
+) -> Message {
+    let joined = tokio::task::spawn_blocking(move || {
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor.get_saved_query(query_id).map_err(|e| e.to_string())
+    })
+    .await;
+    match joined {
+        Ok(Ok(Some(q))) => Message::Engine(tablerock_tui::EngineMsg::NamedQueryLoaded {
+            request_token,
+            name: q.name,
+            statement: q.statement_text,
+        }),
+        Ok(Ok(None)) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
+            request_token,
+            reason: FailureProjection::Label("query not found".into()),
+        }),
+        Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
+            request_token,
+            reason: FailureProjection::Label("load query task failed".into()),
+        }),
+    }
+}
+
+async fn save_sql_file(request_token: RequestToken, path: String, text: String) -> Message {
+    use std::time::UNIX_EPOCH;
+    use tablerock_persistence::write_sql_file_atomic;
+    let joined = tokio::task::spawn_blocking(move || {
+        write_sql_file_atomic(std::path::Path::new(&path), &text).map(|facts| {
+            let mtime_secs = facts
+                .mtime
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_secs());
+            (facts.path.display().to_string(), mtime_secs, facts.len)
+        })
+    })
+    .await;
+    match joined {
+        Ok(Ok((path, mtime_secs, len))) => Message::Engine(tablerock_tui::EngineMsg::SqlFileSaved {
+            request_token,
+            path,
+            mtime_secs,
+            len,
+        }),
+        Ok(Err(_)) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
+            request_token,
+            reason: FailureProjection::Label("sql file write failed".into()),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
+            request_token,
+            reason: FailureProjection::Label("sql file write task failed".into()),
+        }),
+    }
+}
+
+async fn open_sql_file(request_token: RequestToken, path: String) -> Message {
+    use std::time::UNIX_EPOCH;
+    use tablerock_persistence::read_sql_file;
+    let joined = tokio::task::spawn_blocking(move || {
+        read_sql_file(std::path::Path::new(&path)).map(|(text, facts)| {
+            let mtime_secs = facts
+                .mtime
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_secs());
+            (
+                facts.path.display().to_string(),
+                text,
+                mtime_secs,
+                facts.len,
+            )
+        })
+    })
+    .await;
+    match joined {
+        Ok(Ok((path, text, mtime_secs, len))) => {
+            Message::Engine(tablerock_tui::EngineMsg::SqlFileOpened {
+                request_token,
+                path,
+                text,
+                mtime_secs,
+                len,
+            })
+        }
+        Ok(Err(_)) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
+            request_token,
+            reason: FailureProjection::Label("sql file read failed".into()),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::SqlFileFailed {
+            request_token,
+            reason: FailureProjection::Label("sql file read task failed".into()),
+        }),
+    }
+}
+
+async fn save_session_intent(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    profile_id_hex: String,
+    intent_json: String,
+) -> Message {
+    use tablerock_core::ProfileId;
+    let joined = tokio::task::spawn_blocking(move || {
+        let id: ProfileId = profile_id_hex
+            .parse()
+            .map_err(|_| "invalid profile id".to_owned())?;
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .put_session_intent(id, intent_json)
+            .map_err(|e| e.to_string())
+    })
+    .await;
+    match joined {
+        Ok(Ok(())) => Message::Engine(tablerock_tui::EngineMsg::SessionIntentSaved { request_token }),
+        Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::SessionIntentFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::SessionIntentFailed {
+            request_token,
+            reason: FailureProjection::Label("save intent task failed".into()),
+        }),
+    }
+}
+
+async fn load_session_intent(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    request_token: RequestToken,
+    profile_id_hex: String,
+) -> Message {
+    use tablerock_core::ProfileId;
+    let joined = tokio::task::spawn_blocking(move || {
+        let id: ProfileId = profile_id_hex
+            .parse()
+            .map_err(|_| "invalid profile id".to_owned())?;
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        actor
+            .get_session_intent(id)
+            .map_err(|e| e.to_string())
+            .map(|opt| opt.map(|r| r.intent_json))
+    })
+    .await;
+    match joined {
+        Ok(Ok(intent_json)) => Message::Engine(tablerock_tui::EngineMsg::SessionIntentLoaded {
+            request_token,
+            intent_json,
+        }),
+        Ok(Err(label)) => Message::Engine(tablerock_tui::EngineMsg::SessionIntentFailed {
+            request_token,
+            reason: FailureProjection::Label(label),
+        }),
+        Err(_) => Message::Engine(tablerock_tui::EngineMsg::SessionIntentFailed {
+            request_token,
+            reason: FailureProjection::Label("load intent task failed".into()),
+        }),
+    }
+}
+
 fn history_row(
     entry: tablerock_persistence::HistoryEntry,
 ) -> tablerock_tui::HistoryRowProjection {
@@ -531,6 +889,7 @@ async fn connect_session(
     request_token: RequestToken,
     draft: ConnectionDraft,
     temporary: bool,
+    profile_id_hex: Option<String>,
 ) -> Message {
     let engine_label = match draft.engine {
         EngineKind::PostgreSql => "PostgreSQL",
@@ -558,6 +917,7 @@ async fn connect_session(
                     identity,
                     temporary,
                     engine_label,
+                    profile_id_hex: if temporary { None } else { profile_id_hex },
                 }),
                 Err(error) => Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
                     request_token,
@@ -1258,7 +1618,14 @@ async fn connect_profile(
                 });
             }
         };
-    connect_session(sessions, request_token, draft, false).await
+    connect_session(
+        sessions,
+        request_token,
+        draft,
+        false,
+        Some(profile_id_hex),
+    )
+    .await
 }
 
 async fn reconnect_session(
@@ -1301,6 +1668,7 @@ async fn reconnect_session(
                         EngineKind::Redis => "Redis",
                     }
                     .into(),
+                    profile_id_hex: None,
                 }),
                 Err(error) => Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
                     request_token,

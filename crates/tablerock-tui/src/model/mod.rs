@@ -8,6 +8,7 @@ pub mod history;
 pub mod inspector;
 pub mod profiles;
 pub mod query_editor;
+pub mod saved_query;
 pub mod workbench;
 
 use termrock::{
@@ -72,6 +73,16 @@ pub enum ActionId {
     History,
     /// Restore selected history entry into the active SQL editor.
     RestoreHistory,
+    /// Open/refresh named saved queries panel.
+    SavedQueries,
+    /// Save active editor text as a named query (uses tab title as name).
+    SaveQuery,
+    /// Load selected named query into the editor.
+    LoadQuery,
+    /// Save active editor to its bound `.sql` path (or prompt path later).
+    SaveFile,
+    /// Remember intent-only session for the connected profile.
+    SaveIntent,
     Submit,
     Cancel,
     Quit,
