@@ -42,7 +42,11 @@
   mutex starvation and proves live slow-query cancellation through the strict
   Swift path. Evidence 414 adds a reproducible eight-variant appearance fixture,
   captured artifacts, and a structural custom-control accessibility gate.
-  Remaining system-setting/VoiceOver criteria stay open.
+  Evidence 505 records bounded 10k-row AppKit scrolling and fixes unbounded
+  pre-viewport column initialization. Evidence 506 closes the live
+  query/catalog/cancel/review matrix and Swift ownership audit. Remaining
+  system-setting/VoiceOver, glass, page-decode Instruments, and retained-object
+  criteria stay open.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
@@ -139,16 +143,16 @@ unchanged-green.
 
 ## Done criteria
 
-- [ ] Vertical slice: connect → catalog → query → stream → page → cancel → one reviewed safe operation on each applicable engine (recorded demo + tests)
+- [x] Vertical slice: connect → catalog → query → stream → page → cancel → one reviewed safe operation on each applicable engine (evidence 506)
 - [x] Zero per-cell bridge calls (page snapshot decoded once off-main, then
       rendered by reusable `NSTableView` cells; evidence 408–409)
-- [ ] Swift contains no SQL parsing/safety/mutation construction (code review checklist in evidence; grep for sql-building patterns)
+- [x] Swift contains no SQL parsing/safety/mutation construction (evidence 506)
 - [ ] Glass rules hold: no glass on content surfaces; one cluster per region; accessibility degradation verified (screenshot matrix)
 - [x] Strict-concurrency build clean; no `ObservableObject`, no GCD (evidence
       407–408; Swift 6 complete checking + warnings-as-errors)
 - [ ] Instruments: native 10k-grid scroll/RSS recorded (evidence 505); UniFFI
       page-decode latency and retained-object attribution remain
-- [ ] Conformance suite green through the app's bridge path
+- [x] Conformance suite green through the app's bridge path (evidence 506)
 - [ ] Evidence + ROADMAP Phase 13 complete; `plans/README.md` updated
 
 ## STOP conditions

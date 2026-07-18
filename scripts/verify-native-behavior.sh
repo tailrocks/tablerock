@@ -11,6 +11,12 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NATIVE="$REPO_ROOT/native"
 BUILD="$NATIVE/.build-direct"
 
+cleanup() {
+    docker rm -f tablerock-pg-verify tablerock-ch-verify tablerock-redis-verify \
+        >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
 echo "==> Building bridge module + BehaviorProof (direct swiftc)"
 cd "$REPO_ROOT"
 ./scripts/build-native-app.sh >/dev/null
@@ -43,6 +49,12 @@ run_pg() {
     DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
         TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
         TABLEROCK_CANCEL=1 "$BUILD/BehaviorProof"
+    docker exec "$name" psql -U u -d db -v ON_ERROR_STOP=1 -c \
+        'CREATE TABLE IF NOT EXISTS public.users (id bigint PRIMARY KEY); INSERT INTO public.users (id) VALUES (1) ON CONFLICT (id) DO NOTHING;' \
+        >/dev/null
+    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
+        TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
+        TABLEROCK_REVIEW=1 "$BUILD/BehaviorProof"
     docker rm -f "$name" >/dev/null
 }
 
