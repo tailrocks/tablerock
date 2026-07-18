@@ -79,12 +79,83 @@ fn validate_label(
     Ok(())
 }
 
+/// Optional profile environment. Only `Production` is a persistent warning.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub enum EnvironmentTag {
+    Production,
+    Staging,
+    Development,
+    Testing,
+    Custom(ProfileTag),
+}
+
+impl EnvironmentTag {
+    /// Wire kind 1..=5 for persistence (custom is 5 + label).
+    #[must_use]
+    pub const fn wire_kind(&self) -> u8 {
+        match self {
+            Self::Production => 1,
+            Self::Staging => 2,
+            Self::Development => 3,
+            Self::Testing => 4,
+            Self::Custom(_) => 5,
+        }
+    }
+
+    pub fn from_wire(
+        kind: u8,
+        custom_label: Option<BoundedText>,
+    ) -> Result<Self, ProfileAggregateError> {
+        match kind {
+            1 => Ok(Self::Production),
+            2 => Ok(Self::Staging),
+            3 => Ok(Self::Development),
+            4 => Ok(Self::Testing),
+            5 => {
+                let label = custom_label.ok_or(ProfileAggregateError::InvalidEnvironment)?;
+                Ok(Self::Custom(ProfileTag::new(label)?))
+            }
+            _ => Err(ProfileAggregateError::InvalidEnvironment),
+        }
+    }
+
+    #[must_use]
+    pub fn custom_label(&self) -> Option<&str> {
+        match self {
+            Self::Custom(label) => Some(label.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Spec: only production is a persistent warning; custom never auto-warns.
+    #[must_use]
+    pub const fn is_production_warning(&self) -> bool {
+        matches!(self, Self::Production)
+    }
+}
+
+impl fmt::Debug for EnvironmentTag {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Production => formatter.write_str("EnvironmentTag::Production"),
+            Self::Staging => formatter.write_str("EnvironmentTag::Staging"),
+            Self::Development => formatter.write_str("EnvironmentTag::Development"),
+            Self::Testing => formatter.write_str("EnvironmentTag::Testing"),
+            Self::Custom(label) => formatter
+                .debug_struct("EnvironmentTag::Custom")
+                .field("byte_len", &label.as_str().len())
+                .finish(),
+        }
+    }
+}
+
 #[derive(PartialEq, Eq)]
 pub struct ProfileOrganization {
     group: Option<ProfileGroupName>,
     tags: Vec<ProfileTag>,
     favorite: bool,
     order: u32,
+    environment: Option<EnvironmentTag>,
 }
 
 impl ProfileOrganization {
@@ -97,6 +168,7 @@ impl ProfileOrganization {
             tags: Vec::new(),
             favorite: false,
             order: 0,
+            environment: None,
         }
     }
 
@@ -105,6 +177,7 @@ impl ProfileOrganization {
         tags: Vec<ProfileTag>,
         favorite: bool,
         order: u32,
+        environment: Option<EnvironmentTag>,
     ) -> Result<Self, ProfileAggregateError> {
         if tags.len() > Self::MAX_TAGS {
             return Err(ProfileAggregateError::TooManyTags {
@@ -128,6 +201,7 @@ impl ProfileOrganization {
             tags,
             favorite,
             order,
+            environment,
         })
     }
 
@@ -148,8 +222,16 @@ impl ProfileOrganization {
         self.order
     }
     #[must_use]
+    pub const fn environment(&self) -> Option<&EnvironmentTag> {
+        self.environment.as_ref()
+    }
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.group.is_none() && self.tags.is_empty() && !self.favorite && self.order == 0
+        self.group.is_none()
+            && self.tags.is_empty()
+            && !self.favorite
+            && self.order == 0
+            && self.environment.is_none()
     }
 }
 
@@ -161,6 +243,7 @@ impl fmt::Debug for ProfileOrganization {
             .field("tag_count", &self.tags.len())
             .field("favorite", &self.favorite)
             .field("order", &self.order)
+            .field("has_environment", &self.environment.is_some())
             .finish()
     }
 }
@@ -392,6 +475,7 @@ pub enum ProfileAggregateError {
         actual: u16,
         supported: u16,
     },
+    InvalidEnvironment,
 }
 
 impl fmt::Display for ProfileAggregateError {
@@ -408,6 +492,7 @@ impl fmt::Display for ProfileAggregateError {
             Self::UnsupportedSchemaVersion { .. } => {
                 "profile aggregate schema version is unsupported"
             }
+            Self::InvalidEnvironment => "profile environment tag is invalid",
         })
     }
 }

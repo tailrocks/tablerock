@@ -50,6 +50,7 @@ fn organization() -> ProfileOrganization {
         ],
         true,
         7,
+        Some(tablerock_core::EnvironmentTag::Production),
     )
     .unwrap()
 }
@@ -129,6 +130,7 @@ fn organization_names_tags_and_cardinality_fail_closed() {
             ],
             false,
             0,
+            None,
         ),
         Err(ProfileAggregateError::DuplicateTag { .. })
     ));
@@ -136,7 +138,7 @@ fn organization_names_tags_and_cardinality_fail_closed() {
         .map(|index| ProfileTag::new(text(&format!("tag-{index}"))).unwrap())
         .collect();
     assert!(matches!(
-        ProfileOrganization::new(None, too_many, false, 0),
+        ProfileOrganization::new(None, too_many, false, 0, None),
         Err(ProfileAggregateError::TooManyTags { .. })
     ));
 }
@@ -230,4 +232,29 @@ fn replacement_gate_rejects_stale_cross_identity_and_nonsequential_updates() {
         exhausted.validate_replacement(Revision::from_wire_u64(u64::MAX), &impossible_next),
         Err(ProfileUpdateError::RevisionExhausted)
     );
+}
+
+#[test]
+fn environment_tag_wire_and_production_warning() {
+    assert!(tablerock_core::EnvironmentTag::Production.is_production_warning());
+    assert!(!tablerock_core::EnvironmentTag::Staging.is_production_warning());
+    assert!(
+        !tablerock_core::EnvironmentTag::Custom(ProfileTag::new(text("lab")).unwrap())
+            .is_production_warning()
+    );
+    let custom = tablerock_core::EnvironmentTag::from_wire(5, Some(text("lab"))).unwrap();
+    assert_eq!(custom.custom_label(), Some("lab"));
+    assert_eq!(custom.wire_kind(), 5);
+    assert!(tablerock_core::EnvironmentTag::from_wire(5, None).is_err());
+    assert!(tablerock_core::EnvironmentTag::from_wire(9, None).is_err());
+    let org = ProfileOrganization::new(
+        None,
+        Vec::new(),
+        false,
+        0,
+        Some(tablerock_core::EnvironmentTag::Production),
+    )
+    .unwrap();
+    assert!(!org.is_empty());
+    assert!(org.environment().unwrap().is_production_warning());
 }

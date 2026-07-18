@@ -79,6 +79,7 @@ How to read an evidence document:
 - 73 — [Phase 2 profile group/tag filter evidence](phase-2/profiles/73-phase-2-profile-group-tag-filter.md)
 - 76 — [Phase 2 normalized profile search evidence](phase-2/profiles/76-phase-2-normalized-profile-search.md)
 - 77 — [Phase 2 profile endpoint summary evidence](phase-2/profiles/77-phase-2-profile-endpoint-summary.md)
+- 196 — [Phase 2 environment tag](phase-2/profiles/196-phase-2-environment-tag.md)
 
 ## Phase 2 — persistence
 

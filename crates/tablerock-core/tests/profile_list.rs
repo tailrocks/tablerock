@@ -23,6 +23,7 @@ fn item(low: u64) -> ProfileListItem {
         true,
         low as u32,
         ProfileSafetyMode::ReadOnly,
+        None,
         ProfileEndpointSummary::new(
             ProfileEndpointPart::literal_host(text("private.internal")).unwrap(),
             ProfileEndpointPart::secret_source(),

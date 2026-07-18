@@ -11,3 +11,4 @@ migration; add the next zero-padded SQL file and matching explanation.
 | 0004 | [Profile list index](migration-docs/0004-profile-list-index.md) |
 | 0005 | [Profile engine list index](migration-docs/0005-profile-engine-list-index.md) |
 | 0006 | [Profile group list index](migration-docs/0006-profile-group-list-index.md) |
+| 0007 | [Environment tag](migration-docs/0007-environment-tag.md) |

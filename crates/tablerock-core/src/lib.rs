@@ -57,7 +57,7 @@ pub use profile::{
     PropertyValueSource, TlsPolicy,
 };
 pub use profile_aggregate::{
-    PersistableProfile, ProfileAggregate, ProfileAggregateError, ProfileDurability,
+    EnvironmentTag, PersistableProfile, ProfileAggregate, ProfileAggregateError, ProfileDurability,
     ProfileGroupName, ProfileLabel, ProfileOrganization, ProfilePreferences, ProfileTag,
     ProfileUpdateError, ReconnectPreference,
 };

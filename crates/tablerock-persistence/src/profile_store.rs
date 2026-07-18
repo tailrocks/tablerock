@@ -1,13 +1,13 @@
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, DangerousPlaintext, DangerousTlsAcknowledgement, Engine,
-    EnvironmentReference, KeychainReference, OnePasswordObjectId, OnePasswordReference,
-    OnePasswordSegment, PersistableProfile, PlaintextAcknowledgement, ProfileAggregate,
-    ProfileConnectionSnapshot, ProfileDurability, ProfileEndpointPart, ProfileEndpointSummary,
-    ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits, ProfileListItem, ProfileListPage,
-    ProfileListRequest, ProfileName, ProfileOrganization, ProfilePolicy, ProfilePreferences,
-    ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode,
-    ProfileSourceFacts, ProfileTag, PropertyValueSource, ReconnectPreference, Revision,
-    SecretSource, SecretSourceKind, TlsPolicy,
+    EnvironmentReference, EnvironmentTag, KeychainReference, OnePasswordObjectId,
+    OnePasswordReference, OnePasswordSegment, PersistableProfile, PlaintextAcknowledgement,
+    ProfileAggregate, ProfileConnectionSnapshot, ProfileDurability, ProfileEndpointPart,
+    ProfileEndpointSummary, ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits,
+    ProfileListItem, ProfileListPage, ProfileListRequest, ProfileName, ProfileOrganization,
+    ProfilePolicy, ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
+    ProfileSafetyMode, ProfileSourceFacts, ProfileTag, PropertyValueSource, ReconnectPreference,
+    Revision, SecretSource, SecretSourceKind, TlsPolicy,
 };
 use zeroize::Zeroize;
 
@@ -30,6 +30,8 @@ pub(crate) struct EncodedProfile {
     group_name: Option<String>,
     favorite: bool,
     saved_order: u32,
+    environment_kind: Option<u8>,
+    environment_label: Option<String>,
     reconnect: u8,
     restore_last_context: bool,
     preferred_page_rows: u32,
@@ -66,6 +68,10 @@ impl EncodedProfile {
             group_name: organization.group().map(|group| group.as_str().to_owned()),
             favorite: organization.favorite(),
             saved_order: organization.order(),
+            environment_kind: organization.environment().map(|tag| tag.wire_kind()),
+            environment_label: organization
+                .environment()
+                .and_then(|tag| tag.custom_label().map(str::to_owned)),
             reconnect: match preferences.reconnect() {
                 ReconnectPreference::Manual => 1,
                 ReconnectPreference::BoundedAutomatic => 2,
@@ -191,10 +197,11 @@ pub(crate) async fn create(
                 profile_id, aggregate_schema, connection_schema, property_schema, revision,\
                 engine, name, tls_policy, safety_mode, connect_timeout_ms,\
                 operation_timeout_ms, max_result_rows, max_result_bytes, group_name, favorite,\
-                saved_order, reconnect, restore_last_context, preferred_page_rows\
+                saved_order, environment_kind, environment_label, reconnect,\
+                restore_last_context, preferred_page_rows\
              ) VALUES (\
                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,\
-                ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19\
+                ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21\
              )",
             turso::params![
                 profile.id.as_slice(),
@@ -213,6 +220,8 @@ pub(crate) async fn create(
                 profile.group_name.as_deref(),
                 profile.favorite,
                 profile.saved_order,
+                profile.environment_kind,
+                profile.environment_label.as_deref(),
                 profile.reconnect,
                 profile.restore_last_context,
                 profile.preferred_page_rows,
@@ -292,9 +301,10 @@ pub(crate) async fn replace(
                 revision = ?4, engine = ?5, name = ?6, tls_policy = ?7, safety_mode = ?8, \
                 connect_timeout_ms = ?9, operation_timeout_ms = ?10, max_result_rows = ?11, \
                 max_result_bytes = ?12, group_name = ?13, favorite = ?14, saved_order = ?15, \
-                reconnect = ?16, restore_last_context = ?17, preferred_page_rows = ?18, \
+                environment_kind = ?16, environment_label = ?17, reconnect = ?18, \
+                restore_last_context = ?19, preferred_page_rows = ?20, \
                 updated_at = CURRENT_TIMESTAMP \
-             WHERE profile_id = ?19 AND revision = ?20",
+             WHERE profile_id = ?21 AND revision = ?22",
             turso::params![
                 profile.aggregate_schema,
                 profile.connection_schema,
@@ -311,6 +321,8 @@ pub(crate) async fn replace(
                 profile.group_name.as_deref(),
                 profile.favorite,
                 profile.saved_order,
+                profile.environment_kind,
+                profile.environment_label.as_deref(),
                 profile.reconnect,
                 profile.restore_last_context,
                 profile.preferred_page_rows,
@@ -422,7 +434,7 @@ async fn list_transaction(
     request: &ProfileListRequest,
 ) -> Result<ProfileListPage, PersistenceError> {
     const PROJECTION: &str = "SELECT saved_profiles.profile_id, revision, engine, name, group_name, favorite, \
-        saved_order, safety_mode, \
+        saved_order, safety_mode, environment_kind, environment_label, \
         (SELECT source_kind FROM saved_profile_properties p \
          WHERE p.profile_id = saved_profiles.profile_id AND property = 1), \
         (SELECT text_value FROM saved_profile_properties p \
@@ -463,6 +475,16 @@ async fn list_transaction(
     if let Some(group) = filter.group() {
         let parameter = push_parameter(&mut parameters, group.as_str().to_owned());
         conditions.push(format!("group_name = {parameter}"));
+    }
+    if let Some(environment) = filter.environment() {
+        let kind = push_parameter(&mut parameters, i64::from(environment.wire_kind()));
+        conditions.push(format!("environment_kind = {kind}"));
+        if let Some(label) = environment.custom_label() {
+            let parameter = push_parameter(&mut parameters, label.to_owned());
+            conditions.push(format!("environment_label = {parameter}"));
+        } else {
+            conditions.push("environment_label IS NULL".to_owned());
+        }
     }
     let from_clause = if let Some(tag) = filter.tag() {
         let parameter = push_parameter(&mut parameters, tag.as_str().to_owned());
@@ -527,7 +549,7 @@ async fn list_transaction(
 }
 
 fn decode_search_tags(row: &turso::Row) -> Result<Vec<ProfileTag>, PersistenceError> {
-    let Some(tags) = get::<Option<String>>(row, 14)? else {
+    let Some(tags) = get::<Option<String>>(row, 16)? else {
         return Ok(Vec::new());
     };
     let mut decoded = Vec::new();
@@ -587,21 +609,23 @@ fn decode_list_item(row: &turso::Row) -> Result<ProfileListItem, PersistenceErro
     let favorite = decode_bool(get::<u8>(row, 5)?)?;
     let saved_order = get::<u32>(row, 6)?;
     let safety_mode = decode_safety(get::<u8>(row, 7)?)?;
+    let environment =
+        decode_environment(get::<Option<u8>>(row, 8)?, get::<Option<String>>(row, 9)?)?;
     let endpoint = ProfileEndpointSummary::new(
         decode_endpoint_part(
             ProfileProperty::Host,
-            get::<u8>(row, 8)?,
-            get::<Option<String>>(row, 9)?,
-        )?,
-        decode_endpoint_part(
-            ProfileProperty::Port,
             get::<u8>(row, 10)?,
             get::<Option<String>>(row, 11)?,
         )?,
+        decode_endpoint_part(
+            ProfileProperty::Port,
+            get::<u8>(row, 12)?,
+            get::<Option<String>>(row, 13)?,
+        )?,
     );
     let sources = ProfileSourceFacts::new(
-        decode_bool(get::<u8>(row, 12)?)?,
-        decode_bool(get::<u8>(row, 13)?)?,
+        decode_bool(get::<u8>(row, 14)?)?,
+        decode_bool(get::<u8>(row, 15)?)?,
     );
     Ok(ProfileListItem::new(
         id,
@@ -612,9 +636,32 @@ fn decode_list_item(row: &turso::Row) -> Result<ProfileListItem, PersistenceErro
         favorite,
         saved_order,
         safety_mode,
+        environment,
         endpoint,
         sources,
     ))
+}
+
+fn decode_environment(
+    kind: Option<u8>,
+    label: Option<String>,
+) -> Result<Option<EnvironmentTag>, PersistenceError> {
+    match kind {
+        None => {
+            if label.is_some() {
+                return Err(PersistenceError::ProfileDecode);
+            }
+            Ok(None)
+        }
+        Some(kind) => {
+            let custom = label
+                .map(|value| bounded_text(value, ProfileTag::MAX_BYTES))
+                .transpose()?;
+            EnvironmentTag::from_wire(kind, custom)
+                .map(Some)
+                .map_err(|_| PersistenceError::ProfileDecode)
+        }
+    }
 }
 
 async fn insert_children(
@@ -695,7 +742,8 @@ async fn read_transaction(
             "SELECT aggregate_schema, connection_schema, property_schema, revision, engine,\
                     name, tls_policy, safety_mode, connect_timeout_ms, operation_timeout_ms,\
                     max_result_rows, max_result_bytes, group_name, favorite, saved_order,\
-                    reconnect, restore_last_context, preferred_page_rows \
+                    environment_kind, environment_label, reconnect, restore_last_context,\
+                    preferred_page_rows \
              FROM saved_profiles WHERE profile_id = ?1",
             (id.to_bytes().as_slice(),),
         )
@@ -732,9 +780,13 @@ async fn read_transaction(
         .transpose()?;
     let favorite = decode_bool(get::<u8>(&row, 13)?)?;
     let saved_order = get::<u32>(&row, 14)?;
-    let reconnect = decode_reconnect(get::<u8>(&row, 15)?)?;
-    let restore_last_context = decode_bool(get::<u8>(&row, 16)?)?;
-    let preferred_page_rows = get::<u32>(&row, 17)?;
+    let environment = decode_environment(
+        get::<Option<u8>>(&row, 15)?,
+        get::<Option<String>>(&row, 16)?,
+    )?;
+    let reconnect = decode_reconnect(get::<u8>(&row, 17)?)?;
+    let restore_last_context = decode_bool(get::<u8>(&row, 18)?)?;
+    let preferred_page_rows = get::<u32>(&row, 19)?;
     drop(row);
     drop(rows);
 
@@ -748,8 +800,9 @@ async fn read_transaction(
         ProfilePolicy::new(tls_policy, safety_mode, limits),
     )
     .map_err(|_| PersistenceError::ProfileDecode)?;
-    let organization = ProfileOrganization::new(group_name, tags, favorite, saved_order)
-        .map_err(|_| PersistenceError::ProfileDecode)?;
+    let organization =
+        ProfileOrganization::new(group_name, tags, favorite, saved_order, environment)
+            .map_err(|_| PersistenceError::ProfileDecode)?;
     let preferences = ProfilePreferences::new(reconnect, restore_last_context, preferred_page_rows)
         .map_err(|_| PersistenceError::ProfileDecode)?;
     ProfileAggregate::from_wire(
@@ -929,6 +982,16 @@ impl DecodeCell for Option<String> {
         match value {
             turso::Value::Null => Some(None),
             turso::Value::Text(value) => Some(Some(value)),
+            _ => None,
+        }
+    }
+}
+
+impl DecodeCell for Option<u8> {
+    fn decode(value: turso::Value) -> Option<Self> {
+        match value {
+            turso::Value::Null => Some(None),
+            turso::Value::Integer(value) => u8::try_from(value).ok().map(Some),
             _ => None,
         }
     }

@@ -41,6 +41,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
         6,
         include_str!("../migrations/0006-profile-group-list-index.sql"),
     ),
+    (7, include_str!("../migrations/0007-environment-tag.sql")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

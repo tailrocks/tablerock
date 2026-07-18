@@ -4,7 +4,7 @@ use caseless::Caseless;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::{
-    BoundedText, Engine, ProfileGroupName, ProfileId, ProfileName, ProfileProperty,
+    BoundedText, Engine, EnvironmentTag, ProfileGroupName, ProfileId, ProfileName, ProfileProperty,
     ProfilePropertyBinding, ProfilePropertyError, ProfileSafetyMode, PropertyValueSource, Revision,
 };
 
@@ -66,6 +66,7 @@ pub struct ProfileListFilter {
     favorite: Option<bool>,
     group: Option<ProfileGroupName>,
     tag: Option<crate::ProfileTag>,
+    environment: Option<EnvironmentTag>,
     search: Option<ProfileSearchTerm>,
 }
 
@@ -77,6 +78,7 @@ impl ProfileListFilter {
             favorite,
             group: None,
             tag: None,
+            environment: None,
             search: None,
         }
     }
@@ -90,6 +92,12 @@ impl ProfileListFilter {
     #[must_use]
     pub fn with_tag(mut self, tag: Option<crate::ProfileTag>) -> Self {
         self.tag = tag;
+        self
+    }
+
+    #[must_use]
+    pub fn with_environment(mut self, environment: Option<EnvironmentTag>) -> Self {
+        self.environment = environment;
         self
     }
 
@@ -117,6 +125,11 @@ impl ProfileListFilter {
     #[must_use]
     pub const fn tag(&self) -> Option<&crate::ProfileTag> {
         self.tag.as_ref()
+    }
+
+    #[must_use]
+    pub const fn environment(&self) -> Option<&EnvironmentTag> {
+        self.environment.as_ref()
     }
 
     #[must_use]
@@ -328,6 +341,7 @@ pub struct ProfileListItem {
     favorite: bool,
     saved_order: u32,
     safety_mode: ProfileSafetyMode,
+    environment: Option<EnvironmentTag>,
     endpoint: ProfileEndpointSummary,
     sources: ProfileSourceFacts,
 }
@@ -344,6 +358,7 @@ impl ProfileListItem {
         favorite: bool,
         saved_order: u32,
         safety_mode: ProfileSafetyMode,
+        environment: Option<EnvironmentTag>,
         endpoint: ProfileEndpointSummary,
         sources: ProfileSourceFacts,
     ) -> Self {
@@ -356,6 +371,7 @@ impl ProfileListItem {
             favorite,
             saved_order,
             safety_mode,
+            environment,
             endpoint,
             sources,
         }
@@ -394,6 +410,10 @@ impl ProfileListItem {
         self.safety_mode
     }
     #[must_use]
+    pub const fn environment(&self) -> Option<&EnvironmentTag> {
+        self.environment.as_ref()
+    }
+    #[must_use]
     pub const fn endpoint(&self) -> &ProfileEndpointSummary {
         &self.endpoint
     }
@@ -419,6 +439,7 @@ impl fmt::Debug for ProfileListItem {
             .field("favorite", &self.favorite)
             .field("saved_order", &self.saved_order)
             .field("safety_mode", &self.safety_mode)
+            .field("has_environment", &self.environment.is_some())
             .field("endpoint", &self.endpoint)
             .field("sources", &self.sources)
             .finish()
