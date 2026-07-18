@@ -661,6 +661,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let filt_ge = action_label(model, ActionId::FilterGe, "Ge");
     let raw_where = action_label(model, ActionId::EditRawWhere, "RawWhere");
     let clear_raw = action_label(model, ActionId::ClearRawWhere, "ClrRaw");
+    let clear_filt = action_label(model, ActionId::ClearFilters, "ClrFilt");
+    let clear_filt_keep = action_label(model, ActionId::ClearFiltersKeepSort, "ClrFiltS");
     let copy_filt_bar = action_label(model, ActionId::CopyFilterBar, "CopyBar");
     let copy_sort_bar = action_label(model, ActionId::CopySortBar, "CopySort");
     let clear_sort = action_label(model, ActionId::ClearSort, "ClrSort");
@@ -1122,6 +1124,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ClearRawWhere,
                         label: clear_raw.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ClearFilters,
+                        label: clear_filt.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ClearFiltersKeepSort,
+                        label: clear_filt_keep.as_str(),
                         enabled: true,
                         style: None,
                     },

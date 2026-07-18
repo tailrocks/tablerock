@@ -225,6 +225,8 @@ pub enum ActionId {
     ApplyFilter,
     /// Clear server filters/sort and re-browse.
     ClearFilters,
+    /// Clear typed filters + raw WHERE only (keep sort) and re-browse.
+    ClearFiltersKeepSort,
     /// Paste/edit raw WHERE predicate for browse plan.
     EditRawWhere,
     /// Clear raw WHERE only (keep typed filter chips) and re-browse.

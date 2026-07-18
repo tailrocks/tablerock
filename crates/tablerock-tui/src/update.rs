@@ -4174,6 +4174,16 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::ClearFiltersKeepSort if model.screen() == Screen::Workbench => {
+            let cleared = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.clear_filters_keep_sort());
+            if !cleared {
+                return Update::unchanged();
+            }
+            rebrowse_active_table(model)
+        }
         ActionId::EditRawWhere if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -5379,6 +5389,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::SaveFilter
         | ActionId::ApplyFilter
         | ActionId::ClearFilters
+        | ActionId::ClearFiltersKeepSort
         | ActionId::EditRawWhere
         | ActionId::ClearRawWhere
         | ActionId::CopyFilterBar
@@ -7095,6 +7106,7 @@ fn cycle_action(
                 ActionId::SaveFilter,
                 ActionId::ApplyFilter,
                 ActionId::ClearFilters,
+                ActionId::ClearFiltersKeepSort,
                 ActionId::EditRawWhere,
                 ActionId::ClearRawWhere,
                 ActionId::CopyFilterBar,

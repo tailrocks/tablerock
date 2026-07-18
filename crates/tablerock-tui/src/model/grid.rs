@@ -1411,6 +1411,18 @@ impl DataGridModel {
         true
     }
 
+    /// Clear typed filters + raw WHERE only (keep sort keys).
+    pub fn clear_filters_keep_sort(&mut self) -> bool {
+        let had_filters = !self.filters.is_empty();
+        let had_raw = self.raw_where.as_ref().is_some_and(|s| !s.is_empty());
+        if !had_filters && !had_raw {
+            return false;
+        }
+        self.filters.clear();
+        self.raw_where = None;
+        true
+    }
+
     /// Remove the most recently added server filter chip. Returns true if one was removed.
     pub fn remove_last_filter(&mut self) -> bool {
         self.filters.pop().is_some()
@@ -2641,6 +2653,25 @@ mod tests {
         assert!(g.pop_sort_key());
         assert!(!g.pop_sort_key());
         assert!(g.sort_chip_bar().is_none());
+    }
+
+    #[test]
+    fn clear_filters_keep_sort_preserves_order_by() {
+        let mut g = DataGridModel::default();
+        g.push_sort_column("name");
+        g.add_filter_chip("status", "eq", Some("open".into()));
+        g.raw_where = Some("deleted_at IS NULL".into());
+        assert!(g.clear_filters_keep_sort());
+        assert!(g.filters.is_empty());
+        assert!(g.raw_where.is_none());
+        assert_eq!(g.sort.len(), 1);
+        assert_eq!(g.sort[0].column, "name");
+        assert!(!g.clear_filters_keep_sort());
+        // ClearFilters-style full clear still available separately.
+        g.add_filter_chip("a", "eq", Some("1".into()));
+        g.clear_server_controls();
+        assert!(g.sort.is_empty());
+        assert!(g.filters.is_empty());
     }
 
     #[test]
