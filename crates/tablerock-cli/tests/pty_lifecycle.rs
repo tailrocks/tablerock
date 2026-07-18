@@ -1,7 +1,7 @@
 use std::{
     io::{Read, Write},
     process::Command,
-    sync::mpsc,
+    sync::{Mutex, mpsc},
     thread,
     time::{Duration, Instant},
 };
@@ -130,21 +130,35 @@ fn high_rate_mouse_and_resize_do_not_starve_terminal_quit() {
             }
             if index == 32 {
                 // Mid-flood quit must still be accepted (not starved forever).
-                writer.write_all(b"\x03")?;
+                // Best-effort: on fast hosts the child exits on this Ctrl-C,
+                // closing the PTY before later writes land.
+                let _ = writer.write_all(b"\x03");
             }
             thread::yield_now();
         }
-        // Trailing Ctrl-C covers runners that drop mid-stream delivery under
-        // extreme resize churn; starvation would still hang past TIMEOUT.
-        writer.write_all(b"\x03")?;
-        writer.flush()
+        // Trailing Ctrl-C is best-effort: the child may already have quit from
+        // the mid-flood Ctrl-C, so the write hits a closed PTY. That is the test
+        // succeeding, not failing; starvation would still hang past TIMEOUT.
+        let _ = writer.write_all(b"\x03");
+        let _ = writer.flush();
+        Ok(())
     });
     assert_restored(&output);
 }
 
+/// Serializes PTY lifecycle tests (see `run_pty`).
+static PTY_LOCK: Mutex<()> = Mutex::new(());
+
 fn run_pty(
     action: impl FnOnce(&mut dyn Write, u32, &dyn MasterPty) -> std::io::Result<()>,
 ) -> Vec<u8> {
+    // PTY lifecycle tests spawn the real binary in a PTY; serialize them so the
+    // default concurrent test harness does not run them in parallel (which
+    // starves the spawned children on loaded shared runners and causes timeouts
+    // + broken-pipe races). Each test still drives its own PTY; only concurrency
+    // is removed.
+    let _serial_guard = PTY_LOCK.lock().expect("PTY serialization lock");
+
     let pair = native_pty_system()
         .openpty(PtySize {
             rows: 24,
