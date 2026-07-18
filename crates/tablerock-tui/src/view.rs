@@ -653,6 +653,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let filt_col = action_label(model, ActionId::RemoveColumnFilters, "ClrColF");
     let filt_like = action_label(model, ActionId::FilterLike, "Like");
     let filt_ilike = action_label(model, ActionId::FilterILike, "ILike");
+    let filt_nlike = action_label(model, ActionId::FilterNotLike, "NLike");
+    let filt_nilike = action_label(model, ActionId::FilterINotLike, "NILike");
     let filt_starts = action_label(model, ActionId::FilterStartsWith, "Starts");
     let filt_ends = action_label(model, ActionId::FilterEndsWith, "Ends");
     let filt_istarts = action_label(model, ActionId::FilterIStartsWith, "IStarts");
@@ -1141,6 +1143,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::FilterILike,
                         label: filt_ilike.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterNotLike,
+                        label: filt_nlike.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FilterINotLike,
+                        label: filt_nilike.as_str(),
                         enabled: true,
                         style: None,
                     },

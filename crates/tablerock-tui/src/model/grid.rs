@@ -1016,6 +1016,14 @@ impl DataGridModel {
                     let v = f.value.as_deref().unwrap_or("");
                     format!("{col} ILIKE '{}'", v.replace('\'', "''"))
                 }
+                "notlike" | "nlike" | "not_like" => {
+                    let v = f.value.as_deref().unwrap_or("");
+                    format!("{col} NOT LIKE '{}'", v.replace('\'', "''"))
+                }
+                "notilike" | "nilike" | "not_ilike" => {
+                    let v = f.value.as_deref().unwrap_or("");
+                    format!("{col} NOT ILIKE '{}'", v.replace('\'', "''"))
+                }
                 other => {
                     // Unknown operator: fail closed (skip) rather than invent SQL.
                     let _ = other;

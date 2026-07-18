@@ -32,6 +32,10 @@ pub enum FilterOperator {
     Ge,
     Like,
     ILike,
+    /// `NOT LIKE` (pattern still bound as a parameter).
+    NotLike,
+    /// `NOT ILIKE` (pattern still bound as a parameter).
+    NotILike,
     IsNull,
     IsNotNull,
 }
@@ -52,6 +56,8 @@ impl FilterOperator {
             Self::Ge => ">=",
             Self::Like => "LIKE",
             Self::ILike => "ILIKE",
+            Self::NotLike => "NOT LIKE",
+            Self::NotILike => "NOT ILIKE",
             Self::IsNull => "IS NULL",
             Self::IsNotNull => "IS NOT NULL",
         }
@@ -369,6 +375,33 @@ mod tests {
         // Values never appear inline in SQL.
         assert!(!rendered.sql.contains("21"));
         assert!(!rendered.sql.contains("%a%"));
+    }
+
+    #[test]
+    fn not_like_operators_parameterize_patterns() {
+        let mut plan = base();
+        plan.filters = vec![
+            TypedCondition {
+                column: "name".into(),
+                operator: FilterOperator::NotLike,
+                value: Some(FilterValue::Text("%spam%".into())),
+            },
+            TypedCondition {
+                column: "email".into(),
+                operator: FilterOperator::NotILike,
+                value: Some(FilterValue::Text("%test%".into())),
+            },
+        ];
+        let rendered = plan.render_sql().unwrap();
+        assert!(rendered.sql.contains("\"name\" NOT LIKE $1"), "{}", rendered.sql);
+        assert!(
+            rendered.sql.contains("\"email\" NOT ILIKE $2"),
+            "{}",
+            rendered.sql
+        );
+        assert_eq!(rendered.parameters.len(), 2);
+        assert!(!rendered.sql.contains("%spam%"));
+        assert!(!rendered.sql.contains("%test%"));
     }
 
     #[test]

@@ -1988,6 +1988,8 @@ async fn browse_table(
             "ge" | ">=" => FilterOperator::Ge,
             "like" => FilterOperator::Like,
             "ilike" => FilterOperator::ILike,
+            "notlike" | "nlike" | "not_like" => FilterOperator::NotLike,
+            "notilike" | "nilike" | "not_ilike" => FilterOperator::NotILike,
             "isnull" | "is_null" => FilterOperator::IsNull,
             "isnotnull" | "is_not_null" => FilterOperator::IsNotNull,
             _ => {

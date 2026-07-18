@@ -5241,6 +5241,12 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::FilterILike if model.screen() == Screen::Workbench => {
             add_value_filter(model, "ilike", true)
         }
+        ActionId::FilterNotLike if model.screen() == Screen::Workbench => {
+            add_value_filter(model, "notlike", true)
+        }
+        ActionId::FilterINotLike if model.screen() == Screen::Workbench => {
+            add_value_filter(model, "notilike", true)
+        }
         ActionId::FilterStartsWith if model.screen() == Screen::Workbench => {
             add_affix_like_filter(model, AffixKind::StartsWith, false)
         }
@@ -6715,6 +6721,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::RemoveColumnFilters
         | ActionId::FilterLike
         | ActionId::FilterILike
+        | ActionId::FilterNotLike
+        | ActionId::FilterINotLike
         | ActionId::FilterStartsWith
         | ActionId::FilterEndsWith
         | ActionId::FilterIStartsWith
@@ -8534,6 +8542,8 @@ fn cycle_action(
                 ActionId::RemoveColumnFilters,
                 ActionId::FilterLike,
                 ActionId::FilterILike,
+                ActionId::FilterNotLike,
+                ActionId::FilterINotLike,
                 ActionId::FilterStartsWith,
                 ActionId::FilterEndsWith,
                 ActionId::FilterIStartsWith,
@@ -11839,6 +11849,28 @@ mod tests {
                 assert_eq!(filters[0].2.as_deref(), Some("%alice%"));
             }
             other => panic!("expected like, got {other:?}"),
+        }
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.filters.clear();
+        }
+        model.set_action(ActionId::FilterNotLike);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].1, "notlike");
+                assert_eq!(filters[0].2.as_deref(), Some("%alice%"));
+            }
+            other => panic!("expected notlike, got {other:?}"),
+        }
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.filters.clear();
+        }
+        model.set_action(ActionId::FilterINotLike);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].1, "notilike");
+                assert_eq!(filters[0].2.as_deref(), Some("%alice%"));
+            }
+            other => panic!("expected notilike, got {other:?}"),
         }
         // Clear and test ne
         if let Some(g) = model.workbench_mut().active_grid_mut() {
