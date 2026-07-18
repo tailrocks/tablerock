@@ -1116,18 +1116,34 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 return Update::unchanged();
             }
             let mut body = columns.join("\n");
+            // Presentation-side CREATE TABLE reconstruction for raw DDL dump.
+            let structure_for_ddl = body.clone();
+            match crate::model::structure_ddl::compose_create_table_ddl(
+                &schema,
+                &table,
+                &structure_for_ddl,
+            ) {
+                Ok(ddl) => {
+                    body.push_str("\n-- ddl --\n");
+                    body.push_str(&ddl);
+                }
+                Err(_) => {
+                    body.push_str("\n-- ddl --\n(unavailable)\n");
+                }
+            }
             body.push_str(
                 "\n--- quick actions ---\n\
-                 AddCol / DropCol / AddIdx / DropIdx / AddCon / DropCon\n\
+                 AddCol / DropCol / AddIdx / DropIdx / AddCon / DropCon / CopyDdl\n\
                  (action bar → same review dialog as grid DDL)",
             );
+            let byte_len = body.len() as u64;
             model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
                 open: true,
                 title: format!("{schema}.{table} structure"),
                 kind_label: "structure".into(),
                 text: body,
                 hex: String::new(),
-                byte_len: columns.iter().map(|c| c.len() as u64).sum(),
+                byte_len,
                 original_byte_len: None,
                 stale: false,
                 structure_schema: Some(schema),
@@ -8435,6 +8451,47 @@ mod tests {
                 && schema == "public"
         ));
         assert!(model.confirm().is_none());
+    }
+
+    #[test]
+    fn relation_structure_appends_ddl_section() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.workbench_mut().context_revision = 1;
+        let columns = vec![
+            "-- columns --".into(),
+            "id integer NOT NULL".into(),
+            "name text NULL".into(),
+            "-- indexes --".into(),
+            "PRIMARY users_pkey: CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"
+                .into(),
+            "-- constraints --".into(),
+            "PRIMARY KEY users_pkey: PRIMARY KEY (id)".into(),
+        ];
+        let out = update(
+            &mut model,
+            Message::Engine(EngineMsg::RelationStructure {
+                request_token: 1,
+                context_revision: 1,
+                schema: "public".into(),
+                table: "users".into(),
+                columns,
+            }),
+        );
+        assert!(out.needs_render());
+        let insp = &model.workbench().inspector;
+        assert!(insp.open);
+        assert_eq!(insp.kind_label, "structure");
+        assert!(insp.text.contains("-- ddl --"), "{}", insp.text);
+        assert!(
+            insp.text.contains("CREATE TABLE \"public\".\"users\""),
+            "{}",
+            insp.text
+        );
+        assert!(insp.text.contains("CopyDdl"));
+        let lines = insp.lines().join("\n");
+        assert!(lines.contains("structure:"));
+        assert!(lines.contains("-- ddl --"));
     }
 
     #[test]

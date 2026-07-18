@@ -91,24 +91,34 @@ impl InspectorModel {
             for line in structured_tree_lines(&self.text) {
                 out.push(line);
             }
-        } else if self.text.contains('\n') {
-            out.push("text:".into());
-            for line in self.text.lines() {
+        } else if self.kind_label == "structure" || self.text.contains('\n') {
+            out.push(if self.kind_label == "structure" {
+                "structure:".into()
+            } else {
+                "text:".into()
+            });
+            // Cap structure dump for the panel; full text remains for CopyDdl.
+            for line in self.text.lines().take(120) {
                 out.push(line.to_owned());
+            }
+            if self.text.lines().count() > 120 {
+                out.push("… (structure truncated in panel · use CopyDdl)".into());
             }
         } else {
             out.push(format!("text: {}", self.text));
         }
-        if self.hex.contains('\n') {
-            out.push("hex:".into());
-            for line in self.hex.lines().take(20) {
-                out.push(line.to_owned());
+        if !self.hex.is_empty() {
+            if self.hex.contains('\n') {
+                out.push("hex:".into());
+                for line in self.hex.lines().take(20) {
+                    out.push(line.to_owned());
+                }
+                if self.hex.lines().count() > 20 {
+                    out.push("…".into());
+                }
+            } else {
+                out.push(format!("hex: {}", self.hex));
             }
-            if self.hex.lines().count() > 20 {
-                out.push("…".into());
-            }
-        } else {
-            out.push(format!("hex: {}", self.hex));
         }
         out
     }

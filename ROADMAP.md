@@ -128,7 +128,7 @@ proven on trunk.
 DataGridModel + VirtualGrid, browse first page, SQL/cancel/inspector,
 FetchPage pump-and-store multi-page). Residual deferred by product/plan:
 
-- Structure/raw DDL tab (plan 013 unless trivial)
+- Structure/raw DDL: reconstructed CREATE TABLE in structure panel (evidence 364)
 - Full EngineService event-pump cancel race labels on the TUI path (engine
   races proven; UI shows cancel-requested vs cancelled + observed label)
 - Server sort/filter/columns (Phase 5 / plan 012)

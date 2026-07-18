@@ -125,7 +125,7 @@ architecture decisions.
 
 | Capability | Status | TableRock requirement | Acceptance evidence |
 |---|---|---|---|
-| Structure inspection | Core | Columns, keys/indexes, constraints, engine facts, and DDL/raw metadata | ShowStructure columns (231); indexes/constraints (evidence 324); raw DDL dump still optional polish |
+| Structure inspection | Core | Columns, keys/indexes, constraints, engine facts, and DDL/raw metadata | Columns (231); indexes/constraints (324); reconstructed CREATE TABLE dump in structure panel (evidence 364) |
 | Structure editing | Later | Capability-gated reviewed DDL; PostgreSQL first, ClickHouse-specific forms, no Redis fiction | Destructive-operation and rollback/outcome tests |
 | Table operations | Parity | Refresh, rename where valid, truncate/drop, maintenance/optimize, and copied DDL behind typed safety gates | Truncate/drop (232); rename (340); VACUUM/ANALYZE (341); CopyStructureDdl CREATE TABLE (evidence 342) |
 | Import | Parity | Streaming CSV/JSON and reviewed SQL where meaningful; mapping, transaction/outcome policy, progress, cancel | Malformed input, formula, encoding, and partial-failure fixtures |
