@@ -257,6 +257,8 @@ pub struct DataGridModel {
     pub truncated: bool,
     pub error_label: Option<String>,
     pub result_token: u64,
+    /// ClickHouse (or other) server query id for cancel/status while running.
+    pub server_query_id: Option<String>,
     pub cursor_row: u64,
     pub cursor_col: usize,
     /// First visible row in the VirtualGrid viewport (absolute).
@@ -299,6 +301,7 @@ impl Default for DataGridModel {
             truncated: false,
             error_label: None,
             result_token: 0,
+            server_query_id: None,
             cursor_row: 0,
             cursor_col: 0,
             viewport_row: 0,
@@ -413,6 +416,11 @@ impl DataGridModel {
             .as_deref()
             .map(|e| format!(" · {e}"))
             .unwrap_or_default();
+        let qid = self
+            .server_query_id
+            .as_deref()
+            .map(|id| format!(" · qid {id}"))
+            .unwrap_or_default();
         let sort = if self.sort.is_empty() {
             String::new()
         } else {
@@ -445,7 +453,7 @@ impl DataGridModel {
             String::new()
         };
         format!(
-            "{} · {} rows · {} B · {}{}{sort}{filt}{quick}{staged}{edit}{err}",
+            "{} · {} rows · {} B · {}{}{qid}{sort}{filt}{quick}{staged}{edit}{err}",
             self.operation.label(),
             self.rows_loaded,
             self.bytes_loaded,
@@ -909,6 +917,14 @@ mod tests {
         assert!(!grid.is_resident(11));
         assert_eq!(grid.cell_at(10, 0).text, "1");
         assert_eq!(grid.cell_at(11, 0).distinction, CellDistinction::Pending);
+    }
+
+    #[test]
+    fn status_line_includes_query_id_when_set() {
+        let mut grid = DataGridModel::default();
+        grid.server_query_id = Some("tr-42".into());
+        grid.operation = GridOperationState::Running;
+        assert!(grid.status_line().contains("qid tr-42"));
     }
 
     #[test]

@@ -2093,8 +2093,9 @@ async fn execute_sql(
             reason: FailureProjection::Label("session not registered".into()),
         });
     };
+    let engine = session.engine();
     let identity_columns = match identity_relation {
-        Some((schema, table)) if session.engine() == CoreEngine::PostgreSql => {
+        Some((schema, table)) if engine == CoreEngine::PostgreSql => {
             fetch_primary_key_columns(session.as_ref(), &schema, &table).await
         }
         _ => None,
@@ -2110,15 +2111,52 @@ async fn execute_sql(
         }
     };
     let limits = PageLimits::new(PAGE_ROWS, 64, 2 * 1024 * 1024, 64 * 1024);
-    let mut stream = match session
-        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
+    // ClickHouse cancel uses a client-supplied query_id; surface it on the grid.
+    let server_query_id = match engine {
+        CoreEngine::ClickHouse => Some(format!("tr-{request_token}")),
+        _ => None,
+    };
+    let request = match engine {
+        CoreEngine::PostgreSql => DriverPageRequest::PostgreSqlStatement {
             statement,
             parameters,
             limits,
             max_cell_bytes: 64 * 1024,
-        })
-        .await
-    {
+        },
+        CoreEngine::ClickHouse => {
+            if !parameters.is_empty() {
+                return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                    request_token,
+                    context_revision,
+                    reason: FailureProjection::Label(
+                        "ClickHouse ad-hoc SQL does not accept bound $n parameters; use literals"
+                            .into(),
+                    ),
+                });
+            }
+            use tablerock_core::{BoundedText, ByteLimit};
+            let qid = server_query_id.as_deref().unwrap_or("tr-query");
+            let query_id = BoundedText::copy_from_str(qid, ByteLimit::new(128)).unwrap_or_else(
+                |_| BoundedText::copy_from_str("tr", ByteLimit::new(8)).expect("short qid"),
+            );
+            DriverPageRequest::ClickHouseStatement {
+                statement,
+                query_id,
+                limits,
+                max_cell_bytes: 64 * 1024,
+            }
+        }
+        CoreEngine::Redis => {
+            return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(
+                    "Redis free SQL is unsupported; use SCAN/key views".into(),
+                ),
+            });
+        }
+    };
+    let mut stream = match session.start_page_stream(request).await {
         Ok(stream) => stream,
         Err(error) => {
             return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
@@ -2131,7 +2169,7 @@ async fn execute_sql(
     let low = request_token.max(1);
     let result_id =
         ResultId::from_parts(IdParts::new(1, low).expect("id parts")).expect("result id");
-    let identity = PageIdentity::new(result_id, Revision::INITIAL, CoreEngine::PostgreSql);
+    let identity = PageIdentity::new(result_id, Revision::INITIAL, engine);
     {
         let mut store = results.lock().await;
         let _ = store.open_result(identity);
@@ -2179,6 +2217,7 @@ async fn execute_sql(
                         page,
                         false,
                         identity_columns.clone(),
+                        server_query_id.clone(),
                     );
                     let _ = ingress.try_send_event(msg);
                     first_sent = true;
@@ -2223,6 +2262,7 @@ async fn execute_sql(
             truncated: false,
             complete: true,
             identity_columns,
+            server_query_id,
         });
     }
 
@@ -2271,7 +2311,7 @@ async fn fetch_page(
     };
     // complete=false: FetchPage only swaps the resident window; terminal
     // completion already arrived (or will) via GridStreamComplete.
-    project_page_message(request_token, context_revision, page, false, None)
+    project_page_message(request_token, context_revision, page, false, None, None)
 }
 
 async fn cancel_query(
@@ -4396,6 +4436,7 @@ fn project_page_message(
     page: tablerock_core::ResultPage,
     complete: bool,
     identity_columns: Option<Vec<String>>,
+    server_query_id: Option<String>,
 ) -> Message {
     use tablerock_core::{RowTotal, Truncation, ValueKind};
     let envelope = page.envelope();
@@ -4507,6 +4548,7 @@ fn project_page_message(
         truncated,
         complete,
         identity_columns,
+        server_query_id,
     })
 }
 

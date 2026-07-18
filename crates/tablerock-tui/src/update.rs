@@ -466,6 +466,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             truncated,
             complete,
             identity_columns,
+            server_query_id,
         }) => {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
@@ -482,6 +483,9 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 // First page from Execute/Browse stamps the result_token seed.
                 if start_row == 0 {
                     grid.result_token = request_token;
+                    if let Some(qid) = server_query_id {
+                        grid.server_query_id = Some(qid);
+                    }
                 }
                 if let Some(identity) = identity_columns {
                     grid.identity_columns = identity;
@@ -5413,6 +5417,7 @@ mod tests {
                 truncated: false,
                 complete: true,
                 identity_columns: None,
+                server_query_id: None,
             }),
         );
         assert!(!stale.needs_render());
@@ -5436,6 +5441,7 @@ mod tests {
                 truncated: false,
                 complete: true,
                 identity_columns: Some(vec!["id".into()]),
+                server_query_id: Some("tr-1".into()),
             }),
         );
         assert!(ok.needs_render());
@@ -5446,6 +5452,8 @@ mod tests {
         assert!(grid.is_resident(0));
         assert_eq!(grid.identity_columns, vec!["id".to_owned()]);
         assert!(grid.editability.is_editable());
+        assert_eq!(grid.server_query_id.as_deref(), Some("tr-1"));
+        assert!(grid.status_line().contains("qid tr-1"));
     }
 
     #[test]

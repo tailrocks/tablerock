@@ -163,6 +163,8 @@ pub enum EngineMsg {
         complete: bool,
         /// When present (browse first page), proven primary-key column names.
         identity_columns: Option<Vec<String>>,
+        /// Server/client query id (ClickHouse cancel target); shown while running.
+        server_query_id: Option<String>,
     },
     GridFailed {
         request_token: u64,
