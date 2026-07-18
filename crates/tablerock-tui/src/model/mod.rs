@@ -179,6 +179,8 @@ pub enum ActionId {
     ToggleColumn,
     /// Reset column layout to defaults.
     ResetColumns,
+    /// Hide all columns except the cursor column.
+    SoloColumn,
     /// Persist column layout for the current base table.
     SaveColumns,
     /// Move cursor column left in display order.

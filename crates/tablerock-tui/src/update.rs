@@ -3799,6 +3799,14 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::render()
         }
+        ActionId::SoloColumn if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.solo_cursor_column() {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::MoveColumnLeft if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if grid.move_cursor_column(-1) {
@@ -4694,6 +4702,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::RefreshTable
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
+        | ActionId::SoloColumn
         | ActionId::SaveColumns
         | ActionId::MoveColumnLeft
         | ActionId::MoveColumnRight
@@ -6253,6 +6262,7 @@ fn cycle_action(
                 ActionId::RefreshTable,
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
+                ActionId::SoloColumn,
                 ActionId::SaveColumns,
                 ActionId::MoveColumnLeft,
                 ActionId::MoveColumnRight,

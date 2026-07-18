@@ -1359,6 +1359,31 @@ impl DataGridModel {
         self.ensure_column_layout();
     }
 
+    /// Hide all columns except the cursor column. Returns true if layout changed.
+    pub fn solo_cursor_column(&mut self) -> bool {
+        if self.columns.is_empty() {
+            return false;
+        }
+        self.ensure_column_layout();
+        let name = self
+            .columns
+            .get(self.cursor_col.min(self.columns.len().saturating_sub(1)))
+            .cloned()
+            .unwrap_or_default();
+        if name.is_empty() {
+            return false;
+        }
+        let mut changed = false;
+        for entry in &mut self.column_layout {
+            let want = entry.name == name;
+            if entry.visible != want {
+                entry.visible = want;
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Toggle visibility of a named column (at least one remains visible).
     pub fn toggle_column_visible(&mut self, column: &str) -> bool {
         self.ensure_column_layout();
@@ -1960,6 +1985,19 @@ mod tests {
         let json = g.layout_json();
         assert!(json.contains("\"width\":4"));
         assert!(json.contains("\"name\":\"id\""));
+    }
+
+    #[test]
+    fn solo_cursor_column_hides_others() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into(), "age".into()];
+        g.cursor_col = 1; // name
+        assert!(g.solo_cursor_column());
+        assert_eq!(g.visible_columns(), vec!["name".to_owned()]);
+        // Already solo → no-op.
+        assert!(!g.solo_cursor_column());
+        g.reset_column_layout();
+        assert_eq!(g.visible_columns().len(), 3);
     }
 
     #[test]

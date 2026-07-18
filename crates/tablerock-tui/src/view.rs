@@ -653,6 +653,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let col_fit_all = action_label(model, ActionId::FitAllColumns, "ColFitA");
     let col_toggle = action_label(model, ActionId::ToggleColumn, "ColVis");
     let col_reset = action_label(model, ActionId::ResetColumns, "ColRst");
+    let col_solo = action_label(model, ActionId::SoloColumn, "ColSolo");
     let col_save = action_label(model, ActionId::SaveColumns, "ColSave");
     let undo_staged = action_label(model, ActionId::UndoStaged, "UndoEdit");
     let discard_staged = action_label(model, ActionId::DiscardStaged, "DiscardEdits");
@@ -1117,6 +1118,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::ResetColumns,
                         label: col_reset.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SoloColumn,
+                        label: col_solo.as_str(),
                         enabled: true,
                         style: None,
                     },
