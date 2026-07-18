@@ -5458,6 +5458,28 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::PageColumnLeft if model.screen() == Screen::Workbench => {
+            let moved = model.workbench_mut().active_grid_mut().is_some_and(|g| {
+                let step = g.page_step_visible_columns() as i32;
+                g.step_cursor_visible_column_by(-step)
+            });
+            if moved {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
+        ActionId::PageColumnRight if model.screen() == Screen::Workbench => {
+            let moved = model.workbench_mut().active_grid_mut().is_some_and(|g| {
+                let step = g.page_step_visible_columns() as i32;
+                g.step_cursor_visible_column_by(step)
+            });
+            if moved {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
         ActionId::RefreshTable if model.screen() == Screen::Workbench => {
             rebrowse_active_table(model)
         }
@@ -6596,6 +6618,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::GoToLastIdentityColumn
         | ActionId::HomeCursor
         | ActionId::EndCursor
+        | ActionId::PageColumnLeft
+        | ActionId::PageColumnRight
         | ActionId::RefreshTable
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
@@ -8406,6 +8430,8 @@ fn cycle_action(
                 ActionId::GoToLastIdentityColumn,
                 ActionId::HomeCursor,
                 ActionId::EndCursor,
+                ActionId::PageColumnLeft,
+                ActionId::PageColumnRight,
                 ActionId::RefreshTable,
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
@@ -10294,6 +10320,67 @@ mod tests {
         assert_eq!(
             model.workbench().active_grid().map(|g| g.cursor_row),
             Some(0)
+        );
+    }
+
+    #[test]
+    fn page_column_left_right_and_home_end_visible() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = (0..8).map(|i| format!("c{i}")).collect();
+            grid.row_count = 5;
+            grid.start_row = 0;
+            grid.cursor_row = 3;
+            grid.cursor_col = 0;
+            grid.ensure_column_layout();
+            assert!(grid.toggle_column_visible("c0"));
+            assert!(grid.toggle_column_visible("c7"));
+            grid.cursor_col = 1; // c1
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::HomeCursor);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(
+            model
+                .workbench()
+                .active_grid()
+                .map(|g| (g.cursor_row, g.columns[g.cursor_col].as_str())),
+            Some((0, "c1"))
+        );
+        model.set_action(ActionId::EndCursor);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(
+            model
+                .workbench()
+                .active_grid()
+                .map(|g| (g.cursor_row, g.columns[g.cursor_col].as_str())),
+            Some((4, "c6"))
+        );
+        model.set_action(ActionId::PageColumnLeft);
+        let _ = update(&mut model, Message::Activate);
+        let col = model
+            .workbench()
+            .active_grid()
+            .map(|g| g.columns[g.cursor_col].clone());
+        // 6 visible (c1..c6); half step = 3 → from c6 toward c1
+        assert_eq!(col.as_deref(), Some("c3"));
+        model.set_action(ActionId::PageColumnRight);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(
+            model
+                .workbench()
+                .active_grid()
+                .map(|g| g.columns[g.cursor_col].as_str()),
+            Some("c6")
         );
     }
 

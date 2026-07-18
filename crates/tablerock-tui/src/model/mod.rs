@@ -351,10 +351,14 @@ pub enum ActionId {
     GoToIdentityColumn,
     /// Jump cursor to the last identity (pk) column.
     GoToLastIdentityColumn,
-    /// Move cursor to top-left of resident page (no fetch).
+    /// Move cursor to top-left of resident page (first visible col; no fetch).
     HomeCursor,
-    /// Move cursor to bottom-right of resident page (no fetch).
+    /// Move cursor to bottom-right of resident page (last visible col; no fetch).
     EndCursor,
+    /// Jump left by half of the visible column set (skips hidden).
+    PageColumnLeft,
+    /// Jump right by half of the visible column set (skips hidden).
+    PageColumnRight,
     /// Re-browse the active base table (keep sort/filters).
     RefreshTable,
     /// Toggle visibility of the cursor column.

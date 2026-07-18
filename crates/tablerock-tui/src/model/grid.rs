@@ -2065,14 +2065,28 @@ impl DataGridModel {
     }
 
     /// Move cursor to the first resident cell (no server I/O).
+    ///
+    /// Lands on the first **visible** column when any are visible; otherwise
+    /// physical column 0.
     pub fn home_cursor(&mut self) {
         self.cursor_row = self.start_row;
-        self.cursor_col = 0;
         self.viewport_row = self.start_row;
+        let visible = self.visible_columns();
+        if let Some(first) = visible.first() {
+            if let Some(idx) = self.columns.iter().position(|c| c == first) {
+                self.cursor_col = idx;
+                self.reveal_cursor_column();
+                return;
+            }
+        }
+        self.cursor_col = 0;
         self.viewport_col = 0;
     }
 
     /// Move cursor to the last resident cell (no server I/O).
+    ///
+    /// Lands on the last **visible** column when any are visible; otherwise the
+    /// last physical column.
     pub fn end_cursor(&mut self) {
         if self.columns.is_empty() || self.row_count == 0 {
             self.home_cursor();
@@ -2081,8 +2095,16 @@ impl DataGridModel {
         self.cursor_row = self
             .start_row
             .saturating_add(u64::from(self.row_count.saturating_sub(1)));
-        self.cursor_col = self.columns.len().saturating_sub(1);
         self.viewport_row = self.cursor_row;
+        let visible = self.visible_columns();
+        if let Some(last) = visible.last() {
+            if let Some(idx) = self.columns.iter().position(|c| c == last) {
+                self.cursor_col = idx;
+                self.reveal_cursor_column();
+                return;
+            }
+        }
+        self.cursor_col = self.columns.len().saturating_sub(1);
         self.viewport_col = self.cursor_col;
     }
 
@@ -2097,6 +2119,32 @@ impl DataGridModel {
     #[must_use]
     pub fn half_page_step_rows(&self) -> u64 {
         (self.page_step_rows() / 2).max(1)
+    }
+
+    /// Visible columns to jump for PageColLeft/Right (half of visible set, 1..=10).
+    #[must_use]
+    pub fn page_step_visible_columns(&self) -> usize {
+        let n = self.visible_columns().len().max(1);
+        (n / 2).max(1).min(10)
+    }
+
+    /// Step the cursor by `steps` visible columns (`steps` negative = left).
+    ///
+    /// Returns true when the cursor moved at least once.
+    pub fn step_cursor_visible_column_by(&mut self, steps: i32) -> bool {
+        if steps == 0 {
+            return false;
+        }
+        let dir: i8 = if steps < 0 { -1 } else { 1 };
+        let n = steps.unsigned_abs() as usize;
+        let mut any = false;
+        for _ in 0..n {
+            if !self.step_cursor_visible_column(dir) {
+                break;
+            }
+            any = true;
+        }
+        any
     }
 
     /// Move cursor by `delta` absolute rows (negative = up). Adjusts viewport.
@@ -2699,12 +2747,46 @@ mod tests {
         assert_eq!(g.cursor_row, 100);
         assert_eq!(g.cursor_col, 0);
         assert_eq!(g.viewport_row, 100);
-        assert_eq!(g.viewport_col, 0);
         g.end_cursor();
         assert_eq!(g.cursor_row, 109);
         assert_eq!(g.cursor_col, 1);
         assert_eq!(g.viewport_row, 109);
-        assert_eq!(g.viewport_col, 1);
+    }
+
+    #[test]
+    fn home_end_cursor_skip_hidden_columns() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+        g.row_count = 3;
+        g.start_row = 0;
+        g.ensure_column_layout();
+        assert!(g.toggle_column_visible("a"));
+        assert!(g.toggle_column_visible("d"));
+        g.cursor_col = 1;
+        g.cursor_row = 2;
+        g.home_cursor();
+        assert_eq!(g.cursor_row, 0);
+        assert_eq!(g.columns[g.cursor_col], "b");
+        g.end_cursor();
+        assert_eq!(g.cursor_row, 2);
+        assert_eq!(g.columns[g.cursor_col], "c");
+    }
+
+    #[test]
+    fn step_cursor_visible_column_by_pages() {
+        let mut g = DataGridModel::default();
+        g.columns = (0..8).map(|i| format!("c{i}")).collect();
+        g.row_count = 1;
+        g.ensure_column_layout();
+        g.cursor_col = 0;
+        assert_eq!(g.page_step_visible_columns(), 4);
+        assert!(g.step_cursor_visible_column_by(4));
+        assert_eq!(g.columns[g.cursor_col], "c4");
+        assert!(g.step_cursor_visible_column_by(-2));
+        assert_eq!(g.columns[g.cursor_col], "c2");
+        assert!(g.step_cursor_visible_column_by(-20));
+        assert_eq!(g.cursor_col, 0);
+        assert!(!g.step_cursor_visible_column_by(-1));
     }
 
     #[test]

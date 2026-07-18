@@ -695,6 +695,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let go_pk_last = action_label(model, ActionId::GoToLastIdentityColumn, "GoPkLast");
     let home_cur = action_label(model, ActionId::HomeCursor, "Home");
     let end_cur = action_label(model, ActionId::EndCursor, "End");
+    let page_col_l = action_label(model, ActionId::PageColumnLeft, "PgColL");
+    let page_col_r = action_label(model, ActionId::PageColumnRight, "PgColR");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
@@ -1384,6 +1386,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::EndCursor,
                         label: end_cur.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PageColumnLeft,
+                        label: page_col_l.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::PageColumnRight,
+                        label: page_col_r.as_str(),
                         enabled: true,
                         style: None,
                     },
