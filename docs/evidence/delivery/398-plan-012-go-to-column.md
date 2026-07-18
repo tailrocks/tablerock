@@ -29,3 +29,4 @@ cargo test -p tablerock-tui --lib
 ## Remaining work
 
 - Fuzzy unique match beyond prefix (optional)
+- Viewport reveal after jump — shipped as evidence 406

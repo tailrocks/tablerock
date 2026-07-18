@@ -2897,6 +2897,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                                 entry.visible = true;
                             }
                         }
+                        grid.reveal_cursor_column();
                     }
                     Update::render()
                 }
@@ -8283,6 +8284,7 @@ mod tests {
         model.set_action(ActionId::Submit);
         let _ = update(&mut model, Message::Activate);
         assert_eq!(model.workbench().active_grid().unwrap().cursor_col, 1);
+        assert_eq!(model.workbench().active_grid().unwrap().viewport_col, 1);
         // Unique prefix.
         model.set_action(ActionId::GoToColumn);
         let _ = update(&mut model, Message::Activate);
@@ -8292,6 +8294,7 @@ mod tests {
         model.set_action(ActionId::Submit);
         let _ = update(&mut model, Message::Activate);
         assert_eq!(model.workbench().active_grid().unwrap().cursor_col, 2);
+        assert_eq!(model.workbench().active_grid().unwrap().viewport_col, 2);
         // Ambiguous prefix fails closed (cursor stays).
         model.set_action(ActionId::GoToColumn);
         let _ = update(&mut model, Message::Activate);

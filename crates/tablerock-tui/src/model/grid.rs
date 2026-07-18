@@ -1476,6 +1476,17 @@ impl DataGridModel {
     }
 
     /// Move the cursor's column one step in display layout order (`dir` = -1 left, +1 right).
+    /// Align horizontal viewport so the cursor column is the first visible
+    /// physical column when possible (wide grids after GoToColumn).
+    pub fn reveal_cursor_column(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+        let col = self.cursor_col.min(self.columns.len().saturating_sub(1));
+        self.cursor_col = col;
+        self.viewport_col = col;
+    }
+
     pub fn move_cursor_column(&mut self, dir: i8) -> bool {
         if dir == 0 {
             return false;
@@ -2024,6 +2035,17 @@ mod tests {
         // Cannot hide last visible column.
         assert!(g2.toggle_column_visible("id"));
         assert!(!g2.toggle_column_visible("age"));
+    }
+
+    #[test]
+    fn reveal_cursor_column_sets_viewport() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+        g.cursor_col = 3;
+        g.viewport_col = 0;
+        g.reveal_cursor_column();
+        assert_eq!(g.cursor_col, 3);
+        assert_eq!(g.viewport_col, 3);
     }
 
     #[test]
