@@ -1412,6 +1412,70 @@ impl DataGridModel {
         true
     }
 
+    /// Collect staged (row, physical col) targets: cell edits then deletes (col 0).
+    fn staged_cursor_targets(&self) -> Vec<(u64, usize)> {
+        let mut out = Vec::new();
+        for e in &self.drafts.cell_edits {
+            if let Some(phys) = self.columns.iter().position(|c| c == &e.column) {
+                out.push((e.abs_row, phys));
+            }
+        }
+        for d in &self.drafts.deletes {
+            out.push((d.abs_row, 0.min(self.columns.len().saturating_sub(1))));
+        }
+        out.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        out.dedup();
+        out
+    }
+
+    /// Jump cursor to the next staged cell/row after the current position.
+    ///
+    /// Wraps. Returns false when nothing is staged.
+    pub fn go_to_next_staged(&mut self) -> bool {
+        let targets = self.staged_cursor_targets();
+        if targets.is_empty() {
+            return false;
+        }
+        let cur = (self.cursor_row, self.cursor_col);
+        let next = targets
+            .iter()
+            .copied()
+            .find(|&(r, c)| (r, c) > cur)
+            .unwrap_or(targets[0]);
+        if next == cur && targets.len() == 1 {
+            // Already on the only staged target.
+            self.reveal_cursor_column();
+            return true;
+        }
+        self.cursor_row = next.0;
+        self.cursor_col = next.1;
+        self.viewport_row = next.0;
+        self.reveal_cursor_column();
+        true
+    }
+
+    /// Jump cursor to the previous staged cell/row before the current position.
+    ///
+    /// Wraps. Returns false when nothing is staged.
+    pub fn go_to_prev_staged(&mut self) -> bool {
+        let targets = self.staged_cursor_targets();
+        if targets.is_empty() {
+            return false;
+        }
+        let cur = (self.cursor_row, self.cursor_col);
+        let prev = targets
+            .iter()
+            .rev()
+            .copied()
+            .find(|&(r, c)| (r, c) < cur)
+            .unwrap_or(*targets.last().unwrap());
+        self.cursor_row = prev.0;
+        self.cursor_col = prev.1;
+        self.viewport_row = prev.0;
+        self.reveal_cursor_column();
+        true
+    }
+
     /// Stage delete for the cursor row.
     pub fn stage_delete_cursor_row(&mut self) -> bool {
         if !self.drafts.staging_allowed() {
@@ -3979,6 +4043,101 @@ mod tests {
         assert!(grid.cell_edit.is_none());
         assert_eq!(grid.drafts.pending_count(), 0);
         assert_eq!(grid.cell_display_at(0, 1), "alice");
+    }
+
+    #[test]
+    fn go_to_next_prev_staged_cycles() {
+        use tablerock_core::ProfileSafetyMode;
+        use crate::model::mutation_draft::StagedCellEdit;
+
+        let mut grid = DataGridModel::default();
+        grid.columns = vec!["id".into(), "name".into(), "age".into()];
+        grid.row_count = 3;
+        grid.cells = vec![
+            ProjectedCell {
+                text: "1".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "a".into(),
+                distinction: CellDistinction::Text,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "10".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 2,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "2".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "b".into(),
+                distinction: CellDistinction::Text,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "20".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 2,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "3".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "c".into(),
+                distinction: CellDistinction::Text,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "30".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 2,
+                original_byte_len: None,
+            },
+        ];
+        grid.base_schema = Some("public".into());
+        grid.base_table = Some("users".into());
+        grid.identity_columns = vec!["id".into()];
+        grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+        assert!(!grid.go_to_next_staged());
+        assert!(grid.drafts.stage_cell_edit(StagedCellEdit {
+            abs_row: 0,
+            column: "name".into(),
+            original_text: "a".into(),
+            staged_text: "A".into(),
+            locator: vec![],
+        }));
+        assert!(grid.drafts.stage_cell_edit(StagedCellEdit {
+            abs_row: 2,
+            column: "age".into(),
+            original_text: "30".into(),
+            staged_text: "31".into(),
+            locator: vec![],
+        }));
+        grid.cursor_row = 0;
+        grid.cursor_col = 0;
+        assert!(grid.go_to_next_staged());
+        assert_eq!((grid.cursor_row, grid.cursor_col), (0, 1));
+        assert!(grid.go_to_next_staged());
+        assert_eq!((grid.cursor_row, grid.cursor_col), (2, 2));
+        assert!(grid.go_to_next_staged()); // wrap
+        assert_eq!((grid.cursor_row, grid.cursor_col), (0, 1));
+        assert!(grid.go_to_prev_staged());
+        assert_eq!((grid.cursor_row, grid.cursor_col), (2, 2));
     }
 
     #[test]

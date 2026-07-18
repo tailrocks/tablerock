@@ -5509,6 +5509,28 @@ fn activate_selected_action(model: &mut Model) -> Update {
             };
             jump_to_row(model, last)
         }
+        ActionId::GoToNextStaged if model.screen() == Screen::Workbench => {
+            let moved = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.go_to_next_staged());
+            if moved {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
+        ActionId::GoToPrevStaged if model.screen() == Screen::Workbench => {
+            let moved = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.go_to_prev_staged());
+            if moved {
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
         ActionId::PageUp if model.screen() == Screen::Workbench => {
             page_jump_rows(model, -1, false)
         }
@@ -6951,6 +6973,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::GoToRow
         | ActionId::GoToFirstRow
         | ActionId::GoToLastRow
+        | ActionId::GoToNextStaged
+        | ActionId::GoToPrevStaged
         | ActionId::PageUp
         | ActionId::PageDown
         | ActionId::HalfPageUp
@@ -8802,6 +8826,8 @@ fn cycle_action(
                 ActionId::GoToRow,
                 ActionId::GoToFirstRow,
                 ActionId::GoToLastRow,
+                ActionId::GoToNextStaged,
+                ActionId::GoToPrevStaged,
                 ActionId::PageUp,
                 ActionId::PageDown,
                 ActionId::HalfPageUp,

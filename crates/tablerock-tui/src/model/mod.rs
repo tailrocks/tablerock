@@ -359,6 +359,10 @@ pub enum ActionId {
     GoToFirstRow,
     /// Jump to last known row (Exact/Estimated totals).
     GoToLastRow,
+    /// Jump cursor to next staged mutation (cell edit or delete row).
+    GoToNextStaged,
+    /// Jump cursor to previous staged mutation.
+    GoToPrevStaged,
     /// Move cursor up by one page of resident rows (fetch if needed).
     PageUp,
     /// Move cursor down by one page of resident rows (fetch if needed).
