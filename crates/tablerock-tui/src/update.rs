@@ -5265,6 +5265,12 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::FilterNotEndsWith if model.screen() == Screen::Workbench => {
             add_affix_like_filter(model, AffixKind::EndsWith, false, true)
         }
+        ActionId::FilterINotStartsWith if model.screen() == Screen::Workbench => {
+            add_affix_like_filter(model, AffixKind::StartsWith, true, true)
+        }
+        ActionId::FilterINotEndsWith if model.screen() == Screen::Workbench => {
+            add_affix_like_filter(model, AffixKind::EndsWith, true, true)
+        }
         ActionId::FilterNe if model.screen() == Screen::Workbench => {
             add_value_filter(model, "ne", false)
         }
@@ -6812,6 +6818,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::FilterIEndsWith
         | ActionId::FilterNotStartsWith
         | ActionId::FilterNotEndsWith
+        | ActionId::FilterINotStartsWith
+        | ActionId::FilterINotEndsWith
         | ActionId::FilterNe
         | ActionId::FilterLt
         | ActionId::FilterLe
@@ -8652,6 +8660,8 @@ fn cycle_action(
                 ActionId::FilterIEndsWith,
                 ActionId::FilterNotStartsWith,
                 ActionId::FilterNotEndsWith,
+                ActionId::FilterINotStartsWith,
+                ActionId::FilterINotEndsWith,
                 ActionId::FilterNe,
                 ActionId::FilterLt,
                 ActionId::FilterLe,
@@ -12223,6 +12233,28 @@ mod tests {
                 assert_eq!(filters[0].2.as_deref(), Some("%alice"));
             }
             other => panic!("expected not-ends, got {other:?}"),
+        }
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.filters.clear();
+        }
+        model.set_action(ActionId::FilterINotStartsWith);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].1, "notilike");
+                assert_eq!(filters[0].2.as_deref(), Some("alice%"));
+            }
+            other => panic!("expected i-not-starts, got {other:?}"),
+        }
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.filters.clear();
+        }
+        model.set_action(ActionId::FilterINotEndsWith);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::BrowseTable { filters, .. }) => {
+                assert_eq!(filters[0].1, "notilike");
+                assert_eq!(filters[0].2.as_deref(), Some("%alice"));
+            }
+            other => panic!("expected i-not-ends, got {other:?}"),
         }
         // Already-patterned value is left alone.
         if let Some(g) = model.workbench_mut().active_grid_mut() {
