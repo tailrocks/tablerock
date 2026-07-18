@@ -21,8 +21,11 @@ fn semantic_quit_restores_terminal_modes() {
         writer.write_all(b"\t\t\t\t")?;
         writer.flush()?;
         thread::sleep(Duration::from_millis(50));
-        // Actions: Open -> New -> Remove -> Quit
-        writer.write_all(b"\x1b[C\x1b[C\x1b[C")?;
+        // Reverse-wrap from Open to Quit, the terminal connections action. New
+        // actions are inserted before Quit, so reverse-cycle stays stable where
+        // a hardcoded forward offset would drift (it broke when ImportUrl,
+        // OpenExternalUrl, QuickSwitch, RenameGroup, Reconnect were added).
+        writer.write_all(b"\x1b[D")?;
         writer.flush()?;
         thread::sleep(Duration::from_millis(50));
         writer.write_all(b"\r")?;
@@ -75,8 +78,9 @@ fn resized_render_authorizes_focus_paste_and_mouse_quit() {
         writer.write_all(b"\x1b[Z")?;
         writer.write_all(b"\x1b[<64;2;28M")?;
         writer.flush()?;
-        // Wheel focus selects Open on resized action row 28. Move Open->New->Remove->Quit.
-        writer.write_all(b"\x1b[C\x1b[C\x1b[C\r")?;
+        // Wheel focus selects Open on resized action row 28. Reverse-wrap to
+        // Quit (terminal action) so palette inserts before Quit do not drift.
+        writer.write_all(b"\x1b[D\r")?;
         writer.flush()
     });
     assert_restored(&output);
