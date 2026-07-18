@@ -28,7 +28,7 @@ Editor,Statement selection,Core,implemented,statement_at,plan 011
 Editor,Revisioned completion,Core,implemented,CompletionMenu,plans 010-011
 Editor,Query parameters,Parity,implemented,named :param rewrite + bind dialog + Null,evidence 292
 Editor,Find/replace,Parity,implemented,literal find/replace + all/ci flags,evidence 293
-Editor,Formatting,Parity,gap,deferred by plan 011 residual,
+Editor,Formatting,Parity,implemented,format_sql keyword/whitespace + Format action,evidence 294
 Editor,Query limits,Core,implemented,PageLimits + result store,plans 002 009
 Editor,Explain,Parity,implemented,EXPLAIN wrap action PG/CH; Redis unsupported,evidence 290
 Editor,Vim mode,Later,implemented,keymap layer off by default,plan 017

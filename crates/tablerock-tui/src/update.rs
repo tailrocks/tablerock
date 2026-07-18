@@ -2663,6 +2663,15 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_action(ActionId::Submit);
             Update::render()
         }
+        ActionId::FormatSql if model.screen() == Screen::Workbench => {
+            let Some(ed) = model.workbench_mut().active_editor_mut() else {
+                return Update::unchanged();
+            };
+            let dialect = ed.dialect();
+            let formatted = tablerock_core::format_sql(ed.text(), dialect);
+            ed.set_text(formatted);
+            Update::render()
+        }
         ActionId::PgDump if model.screen() == Screen::Workbench => {
             if !model
                 .session()
@@ -2814,6 +2823,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::Explain
         | ActionId::QuickSwitch
         | ActionId::FindReplace
+        | ActionId::FormatSql
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -3514,6 +3524,7 @@ fn cycle_action(
                 ActionId::RunSql,
                 ActionId::Explain,
                 ActionId::FindReplace,
+                ActionId::FormatSql,
                 ActionId::Complete,
                 ActionId::History,
                 ActionId::RestoreHistory,
@@ -5095,6 +5106,32 @@ mod tests {
                 ..
             }) if kind == "drop_column" && object_name == "email" && type_text.is_empty()
         ));
+    }
+
+    #[test]
+    fn format_sql_action_uppercases_keywords() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().open_sql_tab();
+        model
+            .workbench_mut()
+            .active_editor_mut()
+            .unwrap()
+            .set_text("select  *  from  t");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::FormatSql);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(
+            model.workbench().active_editor().unwrap().text(),
+            "SELECT * FROM t"
+        );
     }
 
     #[test]

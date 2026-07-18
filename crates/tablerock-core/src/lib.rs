@@ -10,6 +10,7 @@ mod id;
 mod mutation;
 mod named_params;
 mod operation;
+mod sql_format;
 mod page;
 mod profile;
 mod profile_aggregate;
@@ -99,6 +100,7 @@ pub use service::{
     ServiceLimits, ServicePhase, ShutdownMode, ShutdownOutcome, SubscriptionStart,
 };
 pub use sql_analysis::{SqlDialect, StatementSpan, statement_at, statements};
+pub use sql_format::format_sql;
 pub use startup_action::{
     MAX_STARTUP_ACTIONS, MAX_STARTUP_STATEMENT_BYTES, StartupAction, StartupActionError,
     StartupActionOutcome, StartupActionSet, StartupRunReport, StartupSafetyClass,

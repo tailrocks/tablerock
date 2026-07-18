@@ -400,6 +400,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let run_sql = action_label(model, ActionId::RunSql, "Run");
     let explain = action_label(model, ActionId::Explain, "Explain");
     let find_rep = action_label(model, ActionId::FindReplace, "FindRep");
+    let format_sql = action_label(model, ActionId::FormatSql, "Format");
     let complete = action_label(model, ActionId::Complete, "Complete");
     let history = action_label(model, ActionId::History, "History");
     let restore_hist = action_label(model, ActionId::RestoreHistory, "Restore");
@@ -553,6 +554,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::FindReplace,
                         label: find_rep.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::FormatSql,
+                        label: format_sql.as_str(),
                         enabled: true,
                         style: None,
                     },

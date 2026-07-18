@@ -180,6 +180,8 @@ pub enum ActionId {
     QuickSwitch,
     /// Find/replace in the active SQL editor (literal; optional case-insensitive).
     FindReplace,
+    /// Format the active SQL editor buffer (keyword case + whitespace).
+    FormatSql,
     Submit,
     Cancel,
     Quit,
