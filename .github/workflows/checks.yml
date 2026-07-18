@@ -50,3 +50,5 @@ jobs:
           --test clickhouse_real
           --test redis_real
           --test three_engine_overlap_real
+      - name: UniFFI bridge real-server conformance
+        run: cargo test -p tablerock-ffi --test bridge_real

@@ -13,11 +13,11 @@ use tablerock_core::{
     ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText,
 };
 use tablerock_engine::{
-    ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
-    DriverPageRequest, DriverRuntime, DriverSession, EngineService, EngineServiceUpdate,
-    PostgresConnectConfig, PostgresProbeQuery, PostgresSession, PostgresTlsMode,
-    RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
-    RedisTlsMode,
+    ClickHouseCompression, ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession,
+    ClickHouseTlsMode, DriverPageRequest, DriverRuntime, DriverSession, EngineService,
+    EngineServiceUpdate, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
+    PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol,
+    RedisSession, RedisTlsMode,
 };
 
 use crate::{
@@ -463,7 +463,7 @@ impl TableRockBridge {
                         database,
                         user,
                         ClickHouseTlsMode::Disable,
-                        ClickHouseCompression::None,
+                        ClickHouseCompression::Lz4,
                     ));
                     let _ = password;
                     Ok(Box::new(session) as Box<dyn DriverSession>)
@@ -637,24 +637,50 @@ impl TableRockBridge {
                     let statement = spec.statement.clone().unwrap_or_else(|| "select 1".into());
                     let text = StatementText::new(statement)
                         .map_err(|error| BridgeError::rejected("statement", error.to_string()))?;
-                    // Driver request is engine-specific. Fake sessions used by unit
-                    // tests ignore the request variant and return fixed pages.
-                    let request = match engine {
-                        Engine::PostgreSql if intent_name == "execute" => {
-                            DriverPageRequest::PostgreSqlStatement {
-                                statement: text.clone(),
-                                parameters: Vec::new(),
-                                limits: default_page_limits(),
-                                max_cell_bytes: 64 * 1024,
-                            }
-                        }
-                        Engine::PostgreSql | Engine::ClickHouse | Engine::Redis => {
-                            DriverPageRequest::PostgreSqlProbe {
-                                query: PostgresProbeQuery::BoundedSeries,
-                                limits: default_page_limits(),
-                                max_cell_bytes: 64 * 1024,
-                            }
-                        }
+                    let limits = default_page_limits();
+                    let max_cell_bytes = 64 * 1024;
+                    let request = match (engine, intent_name.as_str()) {
+                        (Engine::PostgreSql, "execute") => DriverPageRequest::PostgreSqlStatement {
+                            statement: text.clone(),
+                            parameters: Vec::new(),
+                            limits,
+                            max_cell_bytes,
+                        },
+                        (Engine::PostgreSql, _) => DriverPageRequest::PostgreSqlProbe {
+                            query: PostgresProbeQuery::BoundedSeries,
+                            limits,
+                            max_cell_bytes,
+                        },
+                        (Engine::ClickHouse, "execute") => DriverPageRequest::ClickHouseStatement {
+                            statement: text.clone(),
+                            query_id: BoundedText::copy_from_str(
+                                &format!("bridge-{}", page_identity.result_id()),
+                                ByteLimit::new(128),
+                            )
+                            .map_err(|error| {
+                                BridgeError::rejected("query-id", error.to_string())
+                            })?,
+                            limits,
+                            max_cell_bytes,
+                        },
+                        (Engine::ClickHouse, _) => DriverPageRequest::ClickHouseProbe {
+                            query: ClickHouseProbeQuery::TypedValues,
+                            query_id: BoundedText::copy_from_str(
+                                &format!("bridge-probe-{}", page_identity.result_id()),
+                                ByteLimit::new(128),
+                            )
+                            .map_err(|error| {
+                                BridgeError::rejected("query-id", error.to_string())
+                            })?,
+                            limits,
+                            max_cell_bytes,
+                        },
+                        (Engine::Redis, _) => DriverPageRequest::RedisKeyScan {
+                            limits,
+                            max_cell_bytes,
+                            scan_count: 16,
+                            max_scan_rounds: 128,
+                        },
                     };
                     (CommandIntent::Execute { statement: text }, request)
                 }

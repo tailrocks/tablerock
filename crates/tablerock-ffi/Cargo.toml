@@ -19,7 +19,9 @@ tokio = { workspace = true, features = ["rt-multi-thread"] }
 uniffi = { version = "=0.32.0", default-features = false }
 
 [dev-dependencies]
-# In-process panic probe only; not part of the shipping surface.
+redis = { workspace = true }
+testcontainers = { version = "=0.27.3", default-features = false }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 [lints.rust]
 # UniFFI scaffolding requires `unsafe` at the C ABI boundary. Core crates remain forbid.
