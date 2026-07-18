@@ -10,22 +10,24 @@
 
 ## Status
 
-- **Checkpoint 1 IN PROGRESS (2026-07-18)** — workable app shell built and
-  launching via Command Line Tools only (no full Xcode). SwiftUI + AppKit ship
-  with the CLT macOS SDK and `swiftc` links the cargo release dylib
-  transitively through the `TableRockBridge` SwiftPM target, so a runnable
-  `TableRock.app` is producible without Xcode or a Developer ID. The app owns a
-  live `TableRockBridge` (runtime + local persistence) and reports bridge state.
-  Build: `./scripts/build-native-app.sh` → `native/dist/TableRock.app`.
-  **Gate resolution (decision authority, prompt.md):** the plan-019
-  distribution gate gates the *notarized XCFramework release* (needs full Xcode
-  + Developer ID — operator). A *workable local app* does not require that;
-  plan 020 checkpoint 1 proceeds now on the workable-local path. Notarized
-  distribution + the release-optimized Swift build (which needs
-  `sudo xcodebuild -license`, a one-time operator step that does NOT require
-  installing Xcode) remain operator-gated. Later checkpoints add the connection
-  list, catalog, editor, grid, and result surfaces over the same coarse
-  operation/event facade.
+- **Checkpoints 1–7 DONE (2026-07-18) + behaviorally verified (2026-07-19)**
+  — full workbench delivered via Command Line Tools only (no full Xcode, no
+  Developer ID, no CLT license acceptance). The build uses direct `swiftc`
+  (`scripts/build-native-app.sh`), not SwiftPM: swiftc links the cargo release
+  dylib + SwiftUI/AppKit from the CLT macOS SDK, producing a runnable
+  `TableRock.app`. Checkpoints: cp1 shell+bridge · cp2 connection list
+  (`list_profiles`) · cp3 connect (`open_profile`) · cp4 catalog browse
+  (operation/event/page flow) · cp5 grid (full page-body decode: columns +
+  text/NULL/signed/unsigned cells) · cp6 SQL query editor (execute) · cp7
+  edit/review (`stage_probe_review` → authorize → apply). Behavioral
+  verification (`scripts/verify-native-behavior.sh`) round-trips a real query
+  through the bridge + page decode against all three engines (PostgreSQL,
+  ClickHouse, Redis — live Docker); it caught + fixed 3 real decoder bugs
+  (missing `pump`, warnings u32→u16, integers LE→BE). **Gate resolution:**
+  the plan-019 distribution gate gates the *notarized XCFramework release*
+  (full Xcode + Developer ID — operator); a *workable local app* does not
+  require it, and the direct-swiftc build avoids the CLT license that SwiftPM
+  requires.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
