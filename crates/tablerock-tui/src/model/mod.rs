@@ -48,8 +48,27 @@ pub enum ActionId {
     Test,
     Connect,
     Disconnect,
+    Submit,
     Cancel,
     Quit,
+}
+
+/// Ephemeral password prompt; Debug redacts buffer. Cleared after submit.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PasswordPrompt {
+    pub request_token: RequestToken,
+    pub profile_id_hex: String,
+    pub buffer: String,
+}
+
+impl std::fmt::Debug for PasswordPrompt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PasswordPrompt")
+            .field("request_token", &self.request_token)
+            .field("profile_id_hex", &self.profile_id_hex)
+            .field("buffer_bytes", &self.buffer.len())
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,6 +148,7 @@ pub struct Model {
     profiles: ProfileListState,
     editor: ConnectionFormModel,
     session: Option<SessionFacts>,
+    password_prompt: Option<PasswordPrompt>,
     bootstrapped: bool,
 }
 
@@ -150,6 +170,7 @@ impl Default for Model {
             profiles: ProfileListState::default(),
             editor: ConnectionFormModel::default(),
             session: None,
+            password_prompt: None,
             bootstrapped: false,
         }
     }
@@ -337,6 +358,19 @@ impl Model {
 
     pub(crate) fn set_session(&mut self, session: Option<SessionFacts>) {
         self.session = session;
+    }
+
+    #[must_use]
+    pub const fn password_prompt(&self) -> Option<&PasswordPrompt> {
+        self.password_prompt.as_ref()
+    }
+
+    pub(crate) fn set_password_prompt(&mut self, prompt: Option<PasswordPrompt>) {
+        self.password_prompt = prompt;
+    }
+
+    pub(crate) fn password_prompt_mut(&mut self) -> Option<&mut PasswordPrompt> {
+        self.password_prompt.as_mut()
     }
 
     pub(crate) const fn set_bootstrapped(&mut self, value: bool) {

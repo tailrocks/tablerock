@@ -93,4 +93,17 @@ pub enum Effect {
         request_token: RequestToken,
         profile_id_hex: String,
     },
+    /// Resume profile connect after password prompt (secret lives only here).
+    ResumeConnectProfile {
+        request_token: RequestToken,
+        profile_id_hex: String,
+        /// Ephemeral password bytes; never log; executor zeros after use.
+        password: String,
+    },
+    /// Bounded-backoff reconnect for a live session (draft re-connect path).
+    ReconnectSession {
+        request_token: RequestToken,
+        draft: ConnectionDraft,
+        attempt: u32,
+    },
 }

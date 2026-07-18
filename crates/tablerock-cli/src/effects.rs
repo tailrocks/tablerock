@@ -131,7 +131,40 @@ impl EffectExecutor {
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
                     let message =
-                        connect_profile(persistence, sessions, request_token, profile_id_hex).await;
+                        connect_profile(persistence, sessions, request_token, profile_id_hex, None)
+                            .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::ResumeConnectProfile {
+                request_token,
+                profile_id_hex,
+                password,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = connect_profile(
+                        persistence,
+                        sessions,
+                        request_token,
+                        profile_id_hex,
+                        Some(password),
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::ReconnectSession {
+                request_token,
+                draft,
+                attempt,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = reconnect_session(sessions, request_token, draft, attempt).await;
                     let _ = ingress.try_send_event(message);
                 });
             }
@@ -275,22 +308,98 @@ async fn connect_profile(
     sessions: Arc<Mutex<SessionRegistry>>,
     request_token: RequestToken,
     profile_id_hex: String,
+    override_password: Option<String>,
 ) -> Message {
-    let draft = match load_profile_draft(persistence, profile_id_hex).await {
-        Ok(draft) => draft,
-        Err(label) => {
-            return Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
+    let draft =
+        match load_profile_draft(persistence, profile_id_hex.clone(), override_password).await {
+            Ok(draft) => draft,
+            Err(label) if label == "password prompt required" => {
+                return Message::Engine(tablerock_tui::EngineMsg::PasswordPromptRequired {
+                    request_token,
+                    profile_id_hex,
+                });
+            }
+            Err(label) => {
+                return Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
+                    request_token,
+                    reason: FailureProjection::Label(label),
+                });
+            }
+        };
+    connect_session(sessions, request_token, draft, false).await
+}
+
+async fn reconnect_session(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    draft: ConnectionDraft,
+    attempt: u32,
+) -> Message {
+    use tablerock_tui::{next_backoff_ms, stop_on_failure_label};
+    if next_backoff_ms(attempt).is_none() {
+        return Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
+            request_token,
+            reason: FailureProjection::Label("reconnect budget exhausted".into()),
+        });
+    }
+    // Delay is declarative (next_backoff_ms); executor may sleep before re-dispatch.
+    // This attempt connects immediately so auth-stop never burns wall-clock in tests.
+    match open_described_session(draft.clone()).await {
+        Ok((session, identity, _)) => {
+            let session_id = match mint_session_id() {
+                Ok(id) => id,
+                Err(label) => {
+                    let _ = session.shutdown().await;
+                    return Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
+                        request_token,
+                        reason: FailureProjection::Label(label),
+                    });
+                }
+            };
+            let mut registry = sessions.lock().await;
+            match registry.register(session_id, session) {
+                Ok(_) => Message::Engine(tablerock_tui::EngineMsg::ConnectOk {
+                    request_token,
+                    session_id_hex: session_id.to_string(),
+                    identity,
+                    temporary: true,
+                    engine_label: match draft.engine {
+                        EngineKind::PostgreSql => "PostgreSQL",
+                        EngineKind::ClickHouse => "ClickHouse",
+                        EngineKind::Redis => "Redis",
+                    }
+                    .into(),
+                }),
+                Err(error) => Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
+                    request_token,
+                    reason: FailureProjection::Label(error.to_string()),
+                }),
+            }
+        }
+        Err(label) if stop_on_failure_label(&label) => {
+            Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
                 request_token,
                 reason: FailureProjection::Label(label),
-            });
+            })
         }
-    };
-    connect_session(sessions, request_token, draft, false).await
+        Err(_label) => match next_backoff_ms(attempt.saturating_add(1)) {
+            Some(next_delay_ms) => Message::Engine(tablerock_tui::EngineMsg::Reconnecting {
+                request_token,
+                attempt: attempt.saturating_add(1),
+                next_delay_ms,
+            }),
+            None => Message::Engine(tablerock_tui::EngineMsg::ReconnectStopped {
+                request_token,
+                reason: FailureProjection::Label("reconnect budget exhausted".into()),
+            }),
+        },
+    }
 }
 
 async fn load_profile_draft(
     persistence: Arc<Mutex<Option<PersistenceActor>>>,
     profile_id_hex: String,
+    override_password: Option<String>,
 ) -> Result<ConnectionDraft, String> {
     tokio::task::spawn_blocking(move || {
         let profile_id = profile_id_hex
@@ -306,7 +415,11 @@ async fn load_profile_draft(
         else {
             return Err("profile not found".to_owned());
         };
-        aggregate_to_draft(&aggregate)
+        let mut draft = aggregate_to_draft(&aggregate)?;
+        if let Some(password) = override_password {
+            draft.password = password;
+        }
+        Ok(draft)
     })
     .await
     .map_err(|_| "task-failed".to_owned())?

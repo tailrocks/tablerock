@@ -106,6 +106,20 @@ pub enum EngineMsg {
         request_token: u64,
         reason: FailureProjection,
     },
+    /// Prompt-on-connect required; no network I/O happened yet.
+    PasswordPromptRequired {
+        request_token: u64,
+        profile_id_hex: String,
+    },
+    Reconnecting {
+        request_token: u64,
+        attempt: u32,
+        next_delay_ms: u64,
+    },
+    ReconnectStopped {
+        request_token: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

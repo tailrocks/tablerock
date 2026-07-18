@@ -5,7 +5,7 @@ use crate::{
     effect::ProfileListFilterSpec,
     message::{EngineMsg, ProfilesMsg},
     model::{
-        SessionFacts,
+        PasswordPrompt, SessionFacts,
         profiles::{FailureProjection, ProfileListState},
     },
 };
@@ -82,6 +82,12 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 model.set_terminal_focused(focused);
                 Update::render()
             }
+        }
+        Message::Paste(text) if model.password_prompt().is_some() => {
+            if let Some(prompt) = model.password_prompt_mut() {
+                prompt.buffer.push_str(text.text());
+            }
+            Update::render()
         }
         Message::Paste(text) if model.screen() == Screen::Editor => {
             apply_editor_text(model, text.text());
@@ -271,6 +277,41 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::PasswordPromptRequired {
+            request_token,
+            profile_id_hex,
+        }) => {
+            model.set_password_prompt(Some(PasswordPrompt {
+                request_token,
+                profile_id_hex,
+                buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        Message::Engine(EngineMsg::Reconnecting {
+            attempt,
+            next_delay_ms,
+            ..
+        }) => {
+            if let Some(mut session) = model.session().cloned() {
+                session.status = Some(format!(
+                    "reconnecting attempt {attempt} (next {next_delay_ms} ms)"
+                ));
+                model.set_session(Some(session));
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::ReconnectStopped { reason, .. }) => {
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(mut session) = model.session().cloned() {
+                session.status = Some(format!("reconnect stopped: {label}"));
+                model.set_session(Some(session));
+            }
+            Update::render()
+        }
         Message::FocusNext => {
             if model.move_focus(false) {
                 Update::render()
@@ -293,6 +334,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 model.screen(),
                 model.selected_action(),
                 reverse,
+                model.password_prompt().is_some(),
             ));
             Update::render()
         }
@@ -331,6 +373,24 @@ fn focus_target(model: &mut Model, target: ShellTarget) {
 
 fn activate_selected_action(model: &mut Model) -> Update {
     match model.selected_action() {
+        ActionId::Submit if model.password_prompt().is_some() => {
+            let Some(prompt) = model.password_prompt().cloned() else {
+                return Update::unchanged();
+            };
+            model.set_password_prompt(None);
+            Update {
+                render: true,
+                effect: Some(Effect::ResumeConnectProfile {
+                    request_token: prompt.request_token,
+                    profile_id_hex: prompt.profile_id_hex,
+                    password: prompt.buffer,
+                }),
+            }
+        }
+        ActionId::Cancel if model.password_prompt().is_some() => {
+            model.set_password_prompt(None);
+            Update::render()
+        }
         ActionId::Open if model.screen() == Screen::Connections => {
             let Some(profile_id_hex) = model
                 .profiles()
@@ -432,22 +492,32 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::Test
         | ActionId::Connect
         | ActionId::Disconnect
+        | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
 }
 
-fn cycle_action(screen: Screen, current: ActionId, reverse: bool) -> ActionId {
-    let actions: &[ActionId] = match screen {
-        Screen::Editor => &[
-            ActionId::Save,
-            ActionId::Test,
-            ActionId::Connect,
-            ActionId::Cancel,
-            ActionId::Quit,
-        ],
-        Screen::Workbench => &[ActionId::Disconnect, ActionId::Quit],
-        Screen::Connections | Screen::ConnectionPicker => {
-            &[ActionId::Open, ActionId::New, ActionId::Quit]
+fn cycle_action(
+    screen: Screen,
+    current: ActionId,
+    reverse: bool,
+    password_prompt: bool,
+) -> ActionId {
+    let actions: &[ActionId] = if password_prompt {
+        &[ActionId::Submit, ActionId::Cancel, ActionId::Quit]
+    } else {
+        match screen {
+            Screen::Editor => &[
+                ActionId::Save,
+                ActionId::Test,
+                ActionId::Connect,
+                ActionId::Cancel,
+                ActionId::Quit,
+            ],
+            Screen::Workbench => &[ActionId::Disconnect, ActionId::Quit],
+            Screen::Connections | Screen::ConnectionPicker => {
+                &[ActionId::Open, ActionId::New, ActionId::Quit]
+            }
         }
     };
     let idx = actions.iter().position(|a| *a == current).unwrap_or(0);
@@ -677,6 +747,39 @@ mod tests {
             model.editor().test_status.as_deref(),
             Some("failed: connect")
         );
+    }
+
+    #[test]
+    fn password_prompt_debug_redacts_buffer_and_submit_clears() {
+        let mut model = Model::default();
+        let _ = update(
+            &mut model,
+            Message::Engine(EngineMsg::PasswordPromptRequired {
+                request_token: 7,
+                profile_id_hex: "abc".into(),
+            }),
+        );
+        assert!(model.password_prompt().is_some());
+        if let Some(prompt) = model.password_prompt_mut() {
+            prompt.buffer.push_str("super-secret");
+        }
+        let debug = format!("{:?}", model.password_prompt());
+        assert!(!debug.contains("super-secret"));
+        assert!(debug.contains("buffer_bytes"));
+        model.set_action(ActionId::Submit);
+        for _ in 0..4 {
+            let _ = update(&mut model, Message::FocusNext);
+        }
+        model.set_action(ActionId::Submit);
+        let result = update(&mut model, Message::Activate);
+        assert!(matches!(
+            result.effects().next(),
+            Some(Effect::ResumeConnectProfile {
+                password,
+                ..
+            }) if password == "super-secret"
+        ));
+        assert!(model.password_prompt().is_none());
     }
 
     #[test]
