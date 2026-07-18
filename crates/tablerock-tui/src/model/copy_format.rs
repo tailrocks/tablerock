@@ -421,6 +421,24 @@ mod tests {
     }
 
     #[test]
+    fn format_cursor_row_sql_insert_update() {
+        let mut g = sample_grid();
+        g.cursor_row = 0;
+        assert_eq!(
+            format_copy(&g, CopyScope::Row, CopyFormat::SqlInsert),
+            Err(CopyError::MissingTableIdentity)
+        );
+        g.base_schema = Some("public".into());
+        g.base_table = Some("users".into());
+        let ins = format_copy(&g, CopyScope::Row, CopyFormat::SqlInsert).unwrap();
+        assert!(ins.contains("INSERT"), "{ins}");
+        assert!(ins.contains("users"), "{ins}");
+        let upd = format_copy(&g, CopyScope::Row, CopyFormat::SqlUpdate).unwrap();
+        assert!(upd.contains("UPDATE"), "{upd}");
+        assert!(upd.contains("users"), "{upd}");
+    }
+
+    #[test]
     fn sql_insert_requires_identity() {
         let g = sample_grid();
         assert_eq!(

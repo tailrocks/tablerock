@@ -3449,6 +3449,12 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::CopyRowMarkdown if model.screen() == Screen::Workbench => {
             copy_cursor_row(model, crate::model::copy_format::CopyFormat::Markdown)
         }
+        ActionId::CopyRowSqlInsert if model.screen() == Screen::Workbench => {
+            copy_cursor_row(model, crate::model::copy_format::CopyFormat::SqlInsert)
+        }
+        ActionId::CopyRowSqlUpdate if model.screen() == Screen::Workbench => {
+            copy_cursor_row(model, crate::model::copy_format::CopyFormat::SqlUpdate)
+        }
         ActionId::CycleSort if model.screen() == Screen::Workbench => {
             let col = model
                 .workbench()
@@ -4543,6 +4549,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyRowCsv
         | ActionId::CopyRowJson
         | ActionId::CopyRowMarkdown
+        | ActionId::CopyRowSqlInsert
+        | ActionId::CopyRowSqlUpdate
         | ActionId::CycleSort
         | ActionId::PushSort
         | ActionId::PopSort
@@ -6091,6 +6099,8 @@ fn cycle_action(
                 ActionId::CopyRowCsv,
                 ActionId::CopyRowJson,
                 ActionId::CopyRowMarkdown,
+                ActionId::CopyRowSqlInsert,
+                ActionId::CopyRowSqlUpdate,
                 ActionId::CopyMarkdown,
                 ActionId::CopySqlInsert,
                 ActionId::CopySqlUpdate,

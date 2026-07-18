@@ -118,6 +118,10 @@ pub enum ActionId {
     CopyRowJson,
     /// Copy cursor row as Markdown table.
     CopyRowMarkdown,
+    /// Copy cursor row as SQL INSERT (needs base-table identity).
+    CopyRowSqlInsert,
+    /// Copy cursor row as SQL UPDATE (needs base-table identity).
+    CopyRowSqlUpdate,
     /// Cycle sort on the cursor column and re-browse when base table known.
     CycleSort,
     /// Append cursor column as secondary sort (or cycle its direction in place).

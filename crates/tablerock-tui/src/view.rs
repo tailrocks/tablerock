@@ -661,6 +661,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_row_csv = action_label(model, ActionId::CopyRowCsv, "RowCsv");
     let copy_row_json = action_label(model, ActionId::CopyRowJson, "RowJson");
     let copy_row_md = action_label(model, ActionId::CopyRowMarkdown, "RowMd");
+    let copy_row_ins = action_label(model, ActionId::CopyRowSqlInsert, "RowIns");
+    let copy_row_upd = action_label(model, ActionId::CopyRowSqlUpdate, "RowUpd");
     let toggle_bool = action_label(model, ActionId::ToggleBool, "TogBool");
     let set_null = action_label(model, ActionId::SetNull, "SetNull");
     let set_today = action_label(model, ActionId::SetToday, "Today");
@@ -1157,6 +1159,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyRowMarkdown,
                         label: copy_row_md.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyRowSqlInsert,
+                        label: copy_row_ins.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyRowSqlUpdate,
+                        label: copy_row_upd.as_str(),
                         enabled: true,
                         style: None,
                     },
