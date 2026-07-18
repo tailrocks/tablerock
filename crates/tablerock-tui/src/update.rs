@@ -656,6 +656,21 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
         }
         Message::Engine(EngineMsg::SessionIntentFailed { .. }) => Update::unchanged(),
+        Message::Engine(EngineMsg::ClipboardCopied { bytes, .. }) => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.error_label = Some(format!("copied {bytes} B"));
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::ClipboardFailed { reason, .. }) => {
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::GridFailed {
             context_revision,
             reason,
@@ -1227,6 +1242,46 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyCsv if model.screen() == Screen::Workbench => {
+            copy_grid(model, crate::model::copy_format::CopyFormat::Csv)
+        }
+        ActionId::CopyTsv if model.screen() == Screen::Workbench => {
+            copy_grid(model, crate::model::copy_format::CopyFormat::Tsv)
+        }
+        ActionId::CycleSort if model.screen() == Screen::Workbench => {
+            let col = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.columns.get(g.cursor_col).cloned());
+            let Some(col) = col else {
+                return Update::unchanged();
+            };
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.cycle_sort_column(&col);
+            }
+            // Re-browse when base table identity is known.
+            let identity = model.workbench().active_grid().and_then(|g| {
+                Some((g.base_schema.clone()?, g.base_table.clone()?))
+            });
+            let Some((schema, table)) = identity else {
+                return Update::render();
+            };
+            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+                return Update::render();
+            };
+            let token = model.mint_request_token();
+            let context_revision = model.workbench().context_revision;
+            Update {
+                render: true,
+                effect: Some(Effect::BrowseTable {
+                    request_token: token,
+                    session_id_hex,
+                    context_revision,
+                    schema,
+                    table,
+                }),
+            }
+        }
         ActionId::Cancel if model.screen() == Screen::Workbench && model.workbench().completion.is_some() =>
         {
             model.workbench_mut().dismiss_completion();
@@ -1253,8 +1308,35 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::LoadQuery
         | ActionId::SaveFile
         | ActionId::SaveIntent
+        | ActionId::CopyCsv
+        | ActionId::CopyTsv
+        | ActionId::CycleSort
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
+    }
+}
+
+fn copy_grid(model: &mut Model, format: crate::model::copy_format::CopyFormat) -> Update {
+    use crate::model::copy_format::{CopyScope, format_copy};
+    let Some(grid) = model.workbench().active_grid() else {
+        return Update::unchanged();
+    };
+    let text = match format_copy(grid, CopyScope::LoadedResult, format) {
+        Ok(t) => t,
+        Err(err) => {
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.mark_failed(err.to_string());
+            }
+            return Update::render();
+        }
+    };
+    let token = model.mint_request_token();
+    Update {
+        render: true,
+        effect: Some(Effect::CopyToClipboard {
+            request_token: token,
+            text,
+        }),
     }
 }
 
@@ -1338,6 +1420,9 @@ fn cycle_action(
                 ActionId::LoadQuery,
                 ActionId::SaveFile,
                 ActionId::SaveIntent,
+                ActionId::CopyCsv,
+                ActionId::CopyTsv,
+                ActionId::CycleSort,
                 ActionId::CancelQuery,
                 ActionId::Inspect,
                 ActionId::CloseTab,
@@ -1423,6 +1508,11 @@ fn activate_catalog_node(model: &mut Model) -> Update {
             ),
             _ => ("public".into(), node.label.clone()),
         };
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some(schema.clone());
+            grid.base_table = Some(table.clone());
+            grid.ensure_column_layout();
+        }
         return Update {
             render: true,
             effect: Some(Effect::BrowseTable {

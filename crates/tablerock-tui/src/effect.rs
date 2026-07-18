@@ -223,6 +223,11 @@ pub enum Effect {
         request_token: RequestToken,
         profile_id_hex: String,
     },
+    /// Copy UTF-8 payload to the terminal clipboard (OSC 52).
+    CopyToClipboard {
+        request_token: RequestToken,
+        text: String,
+    },
 }
 
 /// Helper: build a root LoadCatalog effect for the current workbench session.

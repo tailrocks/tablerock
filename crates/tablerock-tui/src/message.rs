@@ -228,6 +228,14 @@ pub enum EngineMsg {
         request_token: u64,
         reason: FailureProjection,
     },
+    ClipboardCopied {
+        request_token: u64,
+        bytes: usize,
+    },
+    ClipboardFailed {
+        request_token: u64,
+        reason: FailureProjection,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

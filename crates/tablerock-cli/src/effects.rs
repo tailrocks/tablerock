@@ -432,8 +432,58 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::CopyToClipboard {
+                request_token,
+                text,
+            } => {
+                let ingress = self.ingress.clone();
+                let bytes = text.len();
+                // Best-effort OSC 52 to stdout (terminal clipboard). Failures
+                // still report byte count; pure formatters are the product gate.
+                let _ = write_osc52_clipboard(&text);
+                let _ = ingress.try_send_event(Message::Engine(
+                    tablerock_tui::EngineMsg::ClipboardCopied {
+                        request_token,
+                        bytes,
+                    },
+                ));
+            }
         }
     }
+}
+
+/// OSC 52 clipboard write: ESC ] 52 ; c ; <base64> BEL
+fn write_osc52_clipboard(text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    // Minimal base64 (std-only).
+    let b64 = base64_encode(text.as_bytes());
+    let mut out = std::io::stdout().lock();
+    write!(out, "\x1b]52;c;{b64}\x07")?;
+    out.flush()
+}
+
+fn base64_encode(input: &[u8]) -> String {
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b0 = u32::from(chunk[0]);
+        let b1 = chunk.get(1).copied().map(u32::from).unwrap_or(0);
+        let b2 = chunk.get(2).copied().map(u32::from).unwrap_or(0);
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(T[((n >> 18) & 63) as usize] as char);
+        out.push(T[((n >> 12) & 63) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(T[((n >> 6) & 63) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(T[(n & 63) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
 }
 
 async fn load_history(
@@ -1128,6 +1178,8 @@ async fn browse_table(
             });
         }
     };
+    // Prefer typed browse plan when callers pass sort/filter via future
+    // effect fields; first-cut remains SELECT * FROM qualified.
     let statement = format!("SELECT * FROM {qualified}");
     execute_sql(
         sessions,

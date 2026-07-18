@@ -188,6 +188,7 @@ How to read an evidence document:
 - 221 — [Query history TUI panel](delivery/221-query-history-tui-panel.md)
 - 222 — [Saved queries, files, session intent](delivery/222-saved-queries-files-session-intent.md)
 - 223 — [Typed browse-plan builder](delivery/223-browse-plan-builder.md)
+- 224 — [Grid sort/filter/copy formats](delivery/224-grid-sort-filter-copy.md)
 
 ## TermRock pins
 

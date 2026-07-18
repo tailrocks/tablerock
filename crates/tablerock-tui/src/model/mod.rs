@@ -2,6 +2,7 @@
 
 pub mod catalog;
 pub mod completion;
+pub mod copy_format;
 pub mod editor;
 pub mod grid;
 pub mod history;
@@ -83,6 +84,12 @@ pub enum ActionId {
     SaveFile,
     /// Remember intent-only session for the connected profile.
     SaveIntent,
+    /// Copy loaded result as CSV (clipboard via OSC 52).
+    CopyCsv,
+    /// Copy loaded result as TSV.
+    CopyTsv,
+    /// Cycle sort on the cursor column and re-browse when base table known.
+    CycleSort,
     Submit,
     Cancel,
     Quit,
