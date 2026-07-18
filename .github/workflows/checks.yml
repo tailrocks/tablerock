@@ -56,3 +56,9 @@ jobs:
         run: cargo test -p tablerock-cli --test import_apply_real
       - name: Streaming re-query export
         run: cargo test -p tablerock-cli --test stream_export_real
+      - name: First-row streaming performance budgets
+        run: cargo test -p tablerock-engine --test performance_real -- --nocapture
+      - name: Install PostgreSQL client tools
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: pg_dump/pg_restore real matrix
+        run: cargo test -p tablerock-cli --test pg_dump_real -- --nocapture
