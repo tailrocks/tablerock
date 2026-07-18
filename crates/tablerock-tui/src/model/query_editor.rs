@@ -429,4 +429,29 @@ mod tests {
         ed.set_split_editor_percent(99);
         assert_eq!(ed.split_editor_percent(), 80);
     }
+
+    #[test]
+    fn backspace_removes_char_or_selection() {
+        let mut ed = QueryEditorModel::new(SqlDialect::PostgreSql);
+        ed.set_text("SELECT 1; SELECT 2;");
+        ed.set_cursor(ed.text().len());
+        ed.backspace(); // drop the trailing ';'
+        assert_eq!(ed.text(), "SELECT 1; SELECT 2");
+        ed.set_selection(0, 7); // "SELECT "
+        ed.backspace(); // delete the selection range
+        assert_eq!(ed.text(), "1; SELECT 2");
+    }
+
+    #[test]
+    fn replace_all_counts_and_status_line_reports() {
+        let mut ed = QueryEditorModel::new(SqlDialect::PostgreSql);
+        ed.set_text("foo foo foo");
+        assert_eq!(ed.replace_all("foo", "bar", false), 3);
+        assert_eq!(ed.text(), "bar bar bar");
+
+        ed.set_text("SELECT 1");
+        assert!(ed.current_statement_span().is_some());
+        let status = ed.status_line();
+        assert!(!status.is_empty(), "{status}");
+    }
 }
