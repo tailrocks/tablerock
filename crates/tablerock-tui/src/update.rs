@@ -2985,7 +2985,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
 enum QuickHit {
     Tab { index: usize },
     Profile { id_hex: String },
-    SavedQuery { query_id: i64, name: String },
+    SavedQuery { query_id: i64 },
 }
 
 fn rank_label(needle: &str, label: &str) -> Option<u32> {
@@ -3040,7 +3040,6 @@ fn apply_quick_switch(model: &mut Model, needle: &str) -> Update {
                             score.saturating_add(10), // prefer tabs slightly
                             QuickHit::SavedQuery {
                                 query_id: q.query_id,
-                                name: q.name.clone(),
                             },
                         ));
                     }
@@ -3104,7 +3103,7 @@ fn apply_quick_switch(model: &mut Model, needle: &str) -> Update {
             }
             Update::render()
         }
-        QuickHit::SavedQuery { query_id, name: _ } => {
+        QuickHit::SavedQuery { query_id } => {
             let token = model.mint_request_token();
             Update {
                 render: true,
