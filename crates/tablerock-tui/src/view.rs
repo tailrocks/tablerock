@@ -363,6 +363,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let pin_tab = action_label(model, ActionId::PinTab, "Pin");
     let new_sql = action_label(model, ActionId::NewSql, "SQL");
     let run_sql = action_label(model, ActionId::RunSql, "Run");
+    let explain = action_label(model, ActionId::Explain, "Explain");
     let complete = action_label(model, ActionId::Complete, "Complete");
     let history = action_label(model, ActionId::History, "History");
     let restore_hist = action_label(model, ActionId::RestoreHistory, "Restore");
@@ -498,6 +499,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::RunSql,
                         label: run_sql.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Explain,
+                        label: explain.as_str(),
                         enabled: true,
                         style: None,
                     },

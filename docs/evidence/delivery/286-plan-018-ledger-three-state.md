@@ -17,9 +17,9 @@ Machine-readable export:
 
 | three_state | count |
 |-------------|-------|
-| implemented | 49 |
+| implemented | 50 |
 | excluded | 7 |
-| gap | 11 |
+| gap | 10 |
 
 ### Gap rows (block claims as noted)
 

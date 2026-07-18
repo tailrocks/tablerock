@@ -174,6 +174,8 @@ pub enum ActionId {
     PgRestore,
     /// Paste a connection URL into the editor (reviewable draft).
     ImportUrl,
+    /// Run EXPLAIN on the active SQL editor statement (PG/CH only).
+    Explain,
     Submit,
     Cancel,
     Quit,

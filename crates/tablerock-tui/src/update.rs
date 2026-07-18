@@ -2534,6 +2534,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             export_stream_query(model, "tsv", "export-stream.tsv")
         }
         ActionId::ImportCsv if model.screen() == Screen::Workbench => import_csv_apply(model),
+        ActionId::Explain if model.screen() == Screen::Workbench => explain_active_sql(model),
         ActionId::PgDump if model.screen() == Screen::Workbench => {
             if !model
                 .session()
@@ -2682,8 +2683,57 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::PgDump
         | ActionId::PgRestore
         | ActionId::ImportUrl
+        | ActionId::Explain
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
+    }
+}
+
+/// Prefix the active editor statement with engine-appropriate EXPLAIN.
+fn explain_active_sql(model: &mut Model) -> Update {
+    let Some(session) = model.session() else {
+        return Update::unchanged();
+    };
+    let engine = session.engine_label.clone();
+    let session_id_hex = session.session_id_hex.clone();
+    if engine.eq_ignore_ascii_case("Redis") {
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.mark_failed("EXPLAIN is unsupported for Redis");
+        }
+        return Update::render();
+    }
+    let statement = model
+        .workbench()
+        .active_editor()
+        .and_then(|ed| ed.run_text())
+        .unwrap_or_default();
+    let body = statement.trim();
+    if body.is_empty() {
+        if let Some(g) = model.workbench_mut().active_grid_mut() {
+            g.mark_failed("EXPLAIN needs SQL in the active editor");
+        }
+        return Update::render();
+    }
+    // Fail closed: never wrap statements that already start with EXPLAIN.
+    let lower = body.to_ascii_lowercase();
+    let explained = if lower.starts_with("explain") {
+        body.to_owned()
+    } else if engine.eq_ignore_ascii_case("ClickHouse") {
+        format!("EXPLAIN {body}")
+    } else {
+        // PostgreSQL: plan only (no ANALYZE — ANALYZE executes the query).
+        format!("EXPLAIN (FORMAT TEXT) {body}")
+    };
+    let token = model.mint_request_token();
+    let context_revision = model.workbench().context_revision;
+    Update {
+        render: true,
+        effect: Some(Effect::ExecuteSql {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            statement: explained,
+        }),
     }
 }
 
@@ -3160,6 +3210,7 @@ fn cycle_action(
                 ActionId::PinTab,
                 ActionId::NewSql,
                 ActionId::RunSql,
+                ActionId::Explain,
                 ActionId::Complete,
                 ActionId::History,
                 ActionId::RestoreHistory,
@@ -4741,6 +4792,66 @@ mod tests {
                 ..
             }) if kind == "drop_column" && object_name == "email" && type_text.is_empty()
         ));
+    }
+
+    #[test]
+    fn explain_wraps_editor_sql_for_postgres() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().open_sql_tab();
+        model
+            .workbench_mut()
+            .active_editor_mut()
+            .unwrap()
+            .set_text("select 1");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::Explain);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::ExecuteSql {
+                statement,
+                session_id_hex,
+                ..
+            }) if session_id_hex == "aabb"
+                && statement.starts_with("EXPLAIN (FORMAT TEXT)")
+                && statement.contains("select 1")
+        ));
+    }
+
+    #[test]
+    fn explain_redis_is_unsupported() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "ccdd".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "Redis".into(),
+            status: None,
+        }));
+        model.workbench_mut().open_sql_tab();
+        model
+            .workbench_mut()
+            .active_editor_mut()
+            .unwrap()
+            .set_text("GET k");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::Explain);
+        let out = update(&mut model, Message::Activate);
+        assert!(out.effects().next().is_none());
+        assert!(model
+            .workbench()
+            .active_grid()
+            .and_then(|g| g.error_label.as_ref())
+            .is_some_and(|e| e.contains("unsupported")));
     }
 
     #[test]
