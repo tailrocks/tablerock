@@ -1324,6 +1324,19 @@ impl DataGridModel {
         self.sort.pop().is_some()
     }
 
+    /// Flip primary sort direction Asc↔Desc. Returns false if no sort.
+    pub fn invert_primary_sort(&mut self) -> bool {
+        let Some(key) = self.sort.first_mut() else {
+            return false;
+        };
+        key.direction = match key.direction {
+            ColumnSort::Asc => ColumnSort::Desc,
+            ColumnSort::Desc => ColumnSort::Asc,
+            ColumnSort::None => ColumnSort::Asc,
+        };
+        true
+    }
+
     /// Clear server sort/filter; keep quick filter (page-local).
     pub fn clear_server_controls(&mut self) {
         self.sort.clear();
@@ -2329,6 +2342,18 @@ mod tests {
         assert_eq!(hits, vec![0]);
         assert!(g.status_line().contains("page-local [alp]"));
         assert!(g.status_line().contains("sort"));
+    }
+
+    #[test]
+    fn invert_primary_sort_flips_direction() {
+        let mut g = DataGridModel::default();
+        assert!(!g.invert_primary_sort());
+        g.push_sort_column("name");
+        assert_eq!(g.sort[0].direction, ColumnSort::Asc);
+        assert!(g.invert_primary_sort());
+        assert_eq!(g.sort[0].direction, ColumnSort::Desc);
+        assert!(g.invert_primary_sort());
+        assert_eq!(g.sort[0].direction, ColumnSort::Asc);
     }
 
     #[test]

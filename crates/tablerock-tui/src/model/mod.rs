@@ -176,6 +176,8 @@ pub enum ActionId {
     FilterNotEmpty,
     /// Add eq filters for every identity column of the cursor row.
     FilterByLocator,
+    /// Invert sort direction of primary sort key (no cycle off).
+    InvertPrimarySort,
     /// Remove the last server filter chip and re-browse.
     RemoveLastFilter,
     /// Remove all server filters for the cursor column and re-browse.
