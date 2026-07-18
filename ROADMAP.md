@@ -189,6 +189,12 @@ post-dispatch cancellation. Automatic browsing never uses `KEYS`.
 
 ## Phase 9 — daily workflows and data movement
 
+**Partial→mostly complete (evidence 245–246):** atomic file export,
+loaded-result CSV/JSON/TSV export, CSV import parse (formula-neutral),
+multi-statement result sections, saved filter JSON library, manual
+reconnect policy. Residual: streaming re-query export, import apply
+batches, filter persistence actor.
+
 Complete result tabs, multi-statement outcomes, saved filters/preferences,
 streaming CSV/JSON/SQL import/export where meaningful, cancellation cleanup,
 table operations, health/activity, robust history/search, file change

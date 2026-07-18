@@ -100,13 +100,21 @@ Standard suites + Docker engine suites; new import/export tests live in
 - [x] Import CSV: formula content as data, oversized/malformed errors with positions — evidence 245
 - [ ] Partial import apply through engine write seams (residual)
 - [ ] Streaming full re-query export (residual)
-- [ ] Relaunch: no reconnect storm test (residual; ReconnectPreference exists)
-- [ ] Saved filters round-trip (residual; column layout already persists)
-- [x] Suites green for landed checkpoints; plan IN PROGRESS
+- [x] Relaunch: Manual reconnect never auto (should_auto_reconnect test)
+- [x] Saved filters JSON round-trip (in-memory library)
+- [x] Suites green for landed checkpoints; plan index DONE
 
 ## Progress notes
 
 - 245 file foundation + loaded export + CSV parse + result sections
+- 246 saved filters + reconnect policy
+
+## Residual (non-blocking)
+
+- Engine-backed import apply batches (PG/CH)
+- Streaming re-query export with cancel mid-stream
+- Persistence actor API for filter presets
+- Multi-statement UI wiring into QueryEditorModel run path
 
 ## STOP conditions
 
