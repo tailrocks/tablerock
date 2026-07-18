@@ -186,6 +186,12 @@ pub enum ActionId {
     CopyConnectionName,
     /// Copy profile id hex when known.
     CopyProfileId,
+    /// Copy environment tag from context bar when set.
+    CopyEnvironment,
+    /// Copy safety mode label from context bar.
+    CopySafetyLabel,
+    /// Copy health label from context bar.
+    CopyHealthLabel,
     /// Copy base schema.table identity if known.
     CopyTableName,
     /// Copy base schema only if known.

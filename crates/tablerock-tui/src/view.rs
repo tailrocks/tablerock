@@ -748,6 +748,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_ctx = action_label(model, ActionId::CopyContextBar, "CopyCtx");
     let copy_conn = action_label(model, ActionId::CopyConnectionName, "CopyConn");
     let copy_prof = action_label(model, ActionId::CopyProfileId, "CopyProf");
+    let copy_env = action_label(model, ActionId::CopyEnvironment, "CopyEnv");
+    let copy_safe = action_label(model, ActionId::CopySafetyLabel, "CopySafe");
+    let copy_health = action_label(model, ActionId::CopyHealthLabel, "CopyHlth");
     let copy_table = action_label(model, ActionId::CopyTableName, "CopyTbl");
     let copy_schema = action_label(model, ActionId::CopySchema, "CopySch");
     let copy_bare = action_label(model, ActionId::CopyBareTable, "CopyTblN");
@@ -1696,6 +1699,24 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyProfileId,
                         label: copy_prof.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyEnvironment,
+                        label: copy_env.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopySafetyLabel,
+                        label: copy_safe.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyHealthLabel,
+                        label: copy_health.as_str(),
                         enabled: true,
                         style: None,
                     },

@@ -4050,6 +4050,62 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyEnvironment if model.screen() == Screen::Workbench => {
+            let Some(text) = model
+                .workbench()
+                .context
+                .environment
+                .clone()
+                .filter(|s| !s.is_empty())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied environment {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopySafetyLabel if model.screen() == Screen::Workbench => {
+            let text = model.workbench().context.safety_label.clone();
+            if text.is_empty() {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied safety {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopyHealthLabel if model.screen() == Screen::Workbench => {
+            let text = model.workbench().context.health_label.clone();
+            if text.is_empty() {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied health {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTableName if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -6397,6 +6453,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyContextBar
         | ActionId::CopyConnectionName
         | ActionId::CopyProfileId
+        | ActionId::CopyEnvironment
+        | ActionId::CopySafetyLabel
+        | ActionId::CopyHealthLabel
         | ActionId::CopyTableName
         | ActionId::CopySchema
         | ActionId::CopyBareTable
@@ -8198,6 +8257,9 @@ fn cycle_action(
                 ActionId::CopyContextBar,
                 ActionId::CopyConnectionName,
                 ActionId::CopyProfileId,
+                ActionId::CopyEnvironment,
+                ActionId::CopySafetyLabel,
+                ActionId::CopyHealthLabel,
                 ActionId::CopyTableName,
                 ActionId::CopySchema,
                 ActionId::CopyBareTable,
@@ -10751,6 +10813,30 @@ mod tests {
                 assert!(text.contains("analytics"), "{text}");
             }
             other => panic!("expected context bar, got {other:?}"),
+        }
+        model.workbench_mut().context.environment = Some("production".into());
+        model.workbench_mut().context.safety_label = "Confirm writes".into();
+        model.workbench_mut().context.health_label = "healthy".into();
+        model.set_action(ActionId::CopyEnvironment);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "production");
+            }
+            other => panic!("expected environment, got {other:?}"),
+        }
+        model.set_action(ActionId::CopySafetyLabel);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "Confirm writes");
+            }
+            other => panic!("expected safety label, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyHealthLabel);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "healthy");
+            }
+            other => panic!("expected health label, got {other:?}"),
         }
     }
 
