@@ -448,11 +448,10 @@ mod tests {
 
     #[test]
     fn hostile_identifiers_are_quoted_not_injected() {
-        // Quote-ident must neutralize structural injection in relation/column names.
+        // Quote-ident doubles internal quotes so the token stays one identifier.
         let hostile = "users\"; DROP TABLE t; --";
         let quoted = quote_ident(hostile).unwrap();
-        assert!(quoted.starts_with('"') && quoted.ends_with('"'));
-        assert!(!quoted.contains("\"; DROP"));
+        assert_eq!(quoted, "\"users\"\"; DROP TABLE t; --\"");
         // Values never enter SQL as literals — only $n casts.
         let ph = sql_placeholder(1, &Bound::Text("1; DROP TABLE t".into()));
         assert_eq!(ph, "$1::text");
