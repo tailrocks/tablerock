@@ -3673,9 +3673,11 @@ dependencies = [
 name = "tablerock-ffi"
 version = "0.1.0"
 dependencies = [
+ "redis",
  "tablerock-core",
  "tablerock-engine",
  "tablerock-persistence",
+ "testcontainers",
  "tokio",
  "uniffi",
 ]
