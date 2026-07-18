@@ -3,6 +3,7 @@
 pub mod catalog;
 pub mod editor;
 pub mod grid;
+pub mod inspector;
 pub mod profiles;
 pub mod workbench;
 
@@ -58,6 +59,10 @@ pub enum ActionId {
     NextTab,
     CloseTab,
     PinTab,
+    NewSql,
+    RunSql,
+    CancelQuery,
+    Inspect,
     Submit,
     Cancel,
     Quit,

@@ -2,6 +2,7 @@
 
 use super::catalog::CatalogModel;
 use super::grid::DataGridModel;
+use super::inspector::InspectorModel;
 
 /// Context-bar projection for the active session.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -93,6 +94,7 @@ pub struct WorkbenchModel {
     pub catalog: CatalogModel,
     /// Engine kind string for catalog root request mapping.
     pub engine_kind: String,
+    pub inspector: InspectorModel,
 }
 
 impl Default for WorkbenchModel {
@@ -128,6 +130,7 @@ impl Default for WorkbenchModel {
             context_revision: 1,
             catalog: CatalogModel::Idle,
             engine_kind: "PostgreSQL".into(),
+            inspector: InspectorModel::default(),
         }
     }
 }
@@ -233,6 +236,22 @@ impl WorkbenchModel {
 
     pub fn active_grid(&self) -> Option<&DataGridModel> {
         self.tabs.get(self.selected_tab).map(|t| &t.grid)
+    }
+
+    /// Open inspector for the cursor cell of the active grid.
+    pub fn inspect_cursor(&mut self) {
+        let Some(grid) = self.active_grid() else {
+            self.inspector = InspectorModel::default();
+            return;
+        };
+        let cell = grid.cell_at(grid.cursor_row, grid.cursor_col);
+        let col_name = grid
+            .columns
+            .get(grid.cursor_col)
+            .cloned()
+            .unwrap_or_else(|| format!("col{}", grid.cursor_col));
+        let title = format!("r{} · {col_name}", grid.cursor_row);
+        self.inspector = InspectorModel::from_cell(title, &cell, false);
     }
 
     /// Promote the active preview tab to durable (edit/pin/filter/sort).

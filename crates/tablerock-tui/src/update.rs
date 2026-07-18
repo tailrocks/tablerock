@@ -110,6 +110,20 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             model.workbench_mut().catalog.push_filter(text.text());
             Update::render()
         }
+        Message::Paste(text)
+            if model.screen() == Screen::Workbench
+                && model.focus() == Some(FocusRegion::Content) =>
+        {
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected)
+                && let Some(sql) = tab.sql.as_mut()
+            {
+                sql.push_str(text.text());
+                tab.dirty = true;
+                return Update::render();
+            }
+            Update::unchanged()
+        }
         Message::Paste(_) => Update::unchanged(),
         Message::PointerHovered(target) | Message::PointerDragged(target) => {
             if model.hovered() == target {
@@ -759,6 +773,63 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 CloseTabOutcome::Closed | CloseTabOutcome::Empty => Update::render(),
             }
         }
+        ActionId::NewSql if model.screen() == Screen::Workbench => {
+            model.workbench_mut().open_sql_tab();
+            Update::render()
+        }
+        ActionId::RunSql if model.screen() == Screen::Workbench => {
+            let Some(session) = model.session() else {
+                return Update::unchanged();
+            };
+            let session_id_hex = session.session_id_hex.clone();
+            let statement = model
+                .workbench()
+                .active_tab()
+                .and_then(|t| t.sql.clone())
+                .unwrap_or_default();
+            if statement.trim().is_empty() {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            let context_revision = model.workbench().context_revision;
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.operation = GridOperationState::Running;
+                grid.error_label = None;
+            }
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.running = true;
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::ExecuteSql {
+                    request_token: token,
+                    session_id_hex,
+                    context_revision,
+                    statement,
+                }),
+            }
+        }
+        ActionId::CancelQuery if model.screen() == Screen::Workbench => {
+            let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_cancel_requested();
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CancelQuery {
+                    request_token: token,
+                    session_id_hex,
+                }),
+            }
+        }
+        ActionId::Inspect if model.screen() == Screen::Workbench => {
+            model.workbench_mut().inspect_cursor();
+            Update::render()
+        }
         ActionId::Save
         | ActionId::Test
         | ActionId::Connect
@@ -768,6 +839,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::NextTab
         | ActionId::CloseTab
         | ActionId::PinTab
+        | ActionId::NewSql
+        | ActionId::RunSql
+        | ActionId::CancelQuery
+        | ActionId::Inspect
         | ActionId::Submit
         | ActionId::Cancel => Update::unchanged(),
     }
@@ -843,6 +918,10 @@ fn cycle_action(
                 ActionId::NextDatabase,
                 ActionId::NextTab,
                 ActionId::PinTab,
+                ActionId::NewSql,
+                ActionId::RunSql,
+                ActionId::CancelQuery,
+                ActionId::Inspect,
                 ActionId::CloseTab,
                 ActionId::Disconnect,
                 ActionId::Quit,

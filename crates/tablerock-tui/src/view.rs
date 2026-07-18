@@ -260,6 +260,10 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let next_db = action_label(model, ActionId::NextDatabase, "Next DB");
     let next_tab = action_label(model, ActionId::NextTab, "Next Tab");
     let pin_tab = action_label(model, ActionId::PinTab, "Pin");
+    let new_sql = action_label(model, ActionId::NewSql, "SQL");
+    let run_sql = action_label(model, ActionId::RunSql, "Run");
+    let cancel_q = action_label(model, ActionId::CancelQuery, "Cancel");
+    let inspect = action_label(model, ActionId::Inspect, "Inspect");
     let close_tab = action_label(model, ActionId::CloseTab, "Close Tab");
     let submit = action_label(model, ActionId::Submit, "Submit");
     let cancel = action_label(model, ActionId::Cancel, "Cancel");
@@ -337,6 +341,30 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::PinTab,
                         label: pin_tab.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::NewSql,
+                        label: new_sql.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::RunSql,
+                        label: run_sql.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CancelQuery,
+                        label: cancel_q.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::Inspect,
+                        label: inspect.as_str(),
                         enabled: true,
                         style: None,
                     },
@@ -851,9 +879,15 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
             )
         })
         .unwrap_or_else(|| "tab: —".into());
+    let sql_line = wb
+        .active_tab()
+        .and_then(|t| t.sql.as_ref())
+        .map(|s| format!("sql: {s}"))
+        .unwrap_or_default();
     let header = [
         wb.context.line(),
         tab_line,
+        sql_line,
         wb.active_grid()
             .map(|g| g.status_line())
             .unwrap_or_else(|| wb.status.summary()),
@@ -881,8 +915,46 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
         height: max_y.saturating_sub(y),
     };
     if grid_area.height > 1 {
-        if let Some(grid) = wb.active_grid() {
-            render_data_grid(model, frame, grid_area, grid);
+        let insp_lines = wb.inspector.lines();
+        let insp_h = if insp_lines.is_empty() {
+            0
+        } else {
+            (insp_lines.len() as u16).min(grid_area.height / 3).max(1)
+        };
+        let grid_h = grid_area.height.saturating_sub(insp_h);
+        if grid_h > 0 {
+            if let Some(grid) = wb.active_grid() {
+                render_data_grid(
+                    model,
+                    frame,
+                    Rect {
+                        x: grid_area.x,
+                        y: grid_area.y,
+                        width: grid_area.width,
+                        height: grid_h,
+                    },
+                    grid,
+                );
+            }
+        }
+        if insp_h > 0 {
+            let mut iy = grid_area.y.saturating_add(grid_h);
+            for line in insp_lines {
+                if iy >= grid_area.y.saturating_add(grid_area.height) {
+                    break;
+                }
+                let clipped: String = line.chars().take(grid_area.width as usize).collect();
+                Line::from(clipped).render(
+                    Rect {
+                        x: grid_area.x,
+                        y: iy,
+                        width: grid_area.width,
+                        height: 1,
+                    },
+                    frame.buffer_mut(),
+                );
+                iy = iy.saturating_add(1);
+            }
         }
     }
 }

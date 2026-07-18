@@ -177,6 +177,7 @@ How to read an evidence document:
 - 210 — [Workbench tab lifecycle](delivery/210-workbench-tabs-lifecycle.md)
 - 211 — [DataGridModel, VirtualGrid paint, quote_ident](delivery/211-datagrid-model-and-quote-ident.md)
 - 212 — [Browse table and grid page projection bridge](delivery/212-browse-table-and-grid-page-bridge.md)
+- 213 — [SQL tab, cancel dispatch, and cell inspector](delivery/213-sql-tab-cancel-inspector.md)
 
 ## TermRock pins
 
