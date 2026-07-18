@@ -673,6 +673,7 @@ impl EffectExecutor {
                 tokio::task::spawn_local(async move {
                     let message = execute_redis_subscribe(
                         sessions,
+                        ingress.clone(),
                         request_token,
                         session_id_hex,
                         context_revision,
@@ -4583,6 +4584,7 @@ async fn open_redis_key(
 
 async fn execute_redis_subscribe(
     sessions: Arc<Mutex<SessionRegistry>>,
+    ingress: RootMessageSender,
     request_token: RequestToken,
     session_id_hex: String,
     context_revision: u64,
@@ -4596,6 +4598,10 @@ async fn execute_redis_subscribe(
     use tablerock_engine::{
         DriverPageRequest, RedisSubscriptionKind, RedisSubscriptionOptions,
     };
+
+    const MAX_PAGES: usize = 8;
+    const MAX_LINES: usize = 64;
+    const IDLE: std::time::Duration = std::time::Duration::from_millis(1_500);
 
     let session_id = match session_id_hex.parse::<SessionId>() {
         Ok(id) => id,
@@ -4663,61 +4669,87 @@ async fn execute_redis_subscribe(
         Revision::INITIAL,
         CoreEngine::Redis,
     );
-    // Bounded wait: Pub/Sub is open-ended; first page or 2s timeout.
-    let page = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
-        stream.next_page(identity, 0),
-    )
-    .await;
-    match page {
-        Ok(Ok(Some(page))) => {
-            let mut lines = Vec::new();
-            for row in 0..page.envelope().row_count() {
-                let mut parts = Vec::new();
-                for col in 0..page.envelope().column_count() {
-                    let t = page
-                        .cell(row, col)
-                        .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
-                        .unwrap_or_default();
-                    if !t.is_empty() {
-                        parts.push(t);
-                    }
-                }
-                if !parts.is_empty() {
-                    lines.push(parts.join(" · "));
+
+    // Continuous pump: up to MAX_PAGES / MAX_LINES, stop on idle gap after
+    // first message (or first-page timeout with zero messages).
+    let mut all_lines: Vec<String> = Vec::new();
+    let mut start_row = 0_u64;
+    let mut idle_stop = false;
+    let mut timed_out = false;
+
+    for _page_i in 0..MAX_PAGES {
+        if all_lines.len() >= MAX_LINES {
+            break;
+        }
+        match tokio::time::timeout(IDLE, stream.next_page(identity, start_row)).await {
+            Ok(Ok(Some(page))) => {
+                let batch = pubsub_page_lines(&page);
+                let n = u64::from(page.envelope().row_count());
+                start_row = start_row.saturating_add(n);
+                if !batch.is_empty() {
+                    all_lines.extend(batch.iter().cloned());
+                    let _ = ingress.try_send_event(Message::Engine(
+                        tablerock_tui::EngineMsg::RedisSubscribePage {
+                            request_token,
+                            context_revision,
+                            selector: selector.clone(),
+                            pattern,
+                            lines: batch,
+                            total_messages: all_lines.len() as u32,
+                        },
+                    ));
                 }
             }
-            Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeDone {
-                request_token,
-                context_revision,
-                selector,
-                pattern,
-                lines,
-                timed_out: false,
-            })
+            Ok(Ok(None)) => break,
+            Ok(Err(e)) => {
+                return Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeFailed {
+                    request_token,
+                    context_revision,
+                    reason: FailureProjection::Label(e.to_string()),
+                });
+            }
+            Err(_elapsed) => {
+                if all_lines.is_empty() {
+                    timed_out = true;
+                } else {
+                    idle_stop = true;
+                }
+                break;
+            }
         }
-        Ok(Ok(None)) => Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeDone {
-            request_token,
-            context_revision,
-            selector,
-            pattern,
-            lines: Vec::new(),
-            timed_out: false,
-        }),
-        Ok(Err(e)) => Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeFailed {
-            request_token,
-            context_revision,
-            reason: FailureProjection::Label(e.to_string()),
-        }),
-        Err(_elapsed) => Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeDone {
-            request_token,
-            context_revision,
-            selector,
-            pattern,
-            lines: Vec::new(),
-            timed_out: true,
-        }),
     }
+    // Drop stream to release subscription registry claim.
+    drop(stream);
+
+    Message::Engine(tablerock_tui::EngineMsg::RedisSubscribeDone {
+        request_token,
+        context_revision,
+        selector,
+        pattern,
+        lines: all_lines,
+        timed_out,
+        idle_stop,
+    })
+}
+
+fn pubsub_page_lines(page: &tablerock_core::ResultPage) -> Vec<String> {
+    let mut lines = Vec::new();
+    for row in 0..page.envelope().row_count() {
+        let mut parts = Vec::new();
+        for col in 0..page.envelope().column_count() {
+            let t = page
+                .cell(row, col)
+                .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+                .unwrap_or_default();
+            if !t.is_empty() {
+                parts.push(t);
+            }
+        }
+        if !parts.is_empty() {
+            lines.push(parts.join(" · "));
+        }
+    }
+    lines
 }
 
 async fn execute_redis_blocking_pop(

@@ -461,7 +461,18 @@ pub enum EngineMsg {
         context_revision: u64,
         reason: FailureProjection,
     },
-    /// Pub/Sub page lines (channel + payload) for inspector.
+    /// Incremental Pub/Sub batch while subscription is live (grid stays Running).
+    RedisSubscribePage {
+        request_token: u64,
+        context_revision: u64,
+        selector: String,
+        pattern: bool,
+        /// New message lines in this batch only.
+        lines: Vec<String>,
+        /// Total messages collected so far (including this batch).
+        total_messages: u32,
+    },
+    /// Pub/Sub terminal: full collected lines (channel + payload) for inspector.
     RedisSubscribeDone {
         request_token: u64,
         context_revision: u64,
@@ -470,6 +481,8 @@ pub enum EngineMsg {
         lines: Vec<String>,
         /// True when wait timed out with zero messages (still subscribed briefly).
         timed_out: bool,
+        /// True when pump stopped after at least one idle gap (messages may continue server-side).
+        idle_stop: bool,
     },
     RedisSubscribeFailed {
         request_token: u64,

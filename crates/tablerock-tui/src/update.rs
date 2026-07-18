@@ -1307,12 +1307,43 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::RedisSubscribePage {
+            context_revision,
+            selector,
+            pattern,
+            lines,
+            total_messages,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let mode = if pattern { "PSUBSCRIBE" } else { "SUBSCRIBE" };
+            model.workbench_mut().inspector.open = true;
+            model.workbench_mut().inspector.title =
+                format!("{mode} {selector} · {total_messages} msg (live)");
+            model.workbench_mut().inspector.kind_label = "pubsub".into();
+            if !lines.is_empty() {
+                let prev = model.workbench().inspector.text.clone();
+                let chunk = lines.join("\n");
+                model.workbench_mut().inspector.text = if prev.is_empty() {
+                    chunk
+                } else {
+                    format!("{prev}\n{chunk}")
+                };
+            }
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.operation = GridOperationState::Streaming;
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::RedisSubscribeDone {
             context_revision,
             selector,
             pattern,
             lines,
             timed_out,
+            idle_stop,
             ..
         }) => {
             if model.workbench().context_revision != context_revision {
@@ -1320,7 +1351,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             let mode = if pattern { "PSUBSCRIBE" } else { "SUBSCRIBE" };
             let mut sections = crate::model::result_sections::ResultSectionsModel::default();
-            for (i, line) in lines.iter().enumerate() {
+            for (i, _line) in lines.iter().enumerate() {
                 sections.push(crate::model::result_sections::StatementSection {
                     ordinal: (i + 1) as u32,
                     command_tag: mode.into(),
@@ -1330,7 +1361,6 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     error: None,
                     pinned: false,
                 });
-                let _ = line;
             }
             if timed_out && lines.is_empty() {
                 sections.push(crate::model::result_sections::StatementSection {
@@ -1345,8 +1375,15 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             model.workbench_mut().result_sections = sections;
             model.workbench_mut().inspector.open = true;
+            let suffix = if idle_stop {
+                " · idle stop"
+            } else if timed_out {
+                " · timeout"
+            } else {
+                ""
+            };
             model.workbench_mut().inspector.title =
-                format!("{mode} {selector} · {} msg", lines.len());
+                format!("{mode} {selector} · {} msg{suffix}", lines.len());
             model.workbench_mut().inspector.kind_label = "pubsub".into();
             model.workbench_mut().inspector.text = lines.join("\n");
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
@@ -6269,8 +6306,39 @@ mod tests {
             }
             other => panic!("expected RedisSubscribe effect, got {other:?}"),
         }
-        // Done paints inspector.
+        // Incremental page keeps streaming; Done completes.
         model.workbench_mut().context_revision = 1;
+        let page = update(
+            &mut model,
+            Message::Engine(EngineMsg::RedisSubscribePage {
+                request_token: 1,
+                context_revision: 1,
+                selector: "news".into(),
+                pattern: false,
+                lines: vec!["news · hello".into()],
+                total_messages: 1,
+            }),
+        );
+        assert!(page.needs_render());
+        assert!(model.workbench().inspector.text.contains("hello"));
+        assert_eq!(
+            model.workbench().active_grid().unwrap().operation,
+            GridOperationState::Streaming
+        );
+        let page2 = update(
+            &mut model,
+            Message::Engine(EngineMsg::RedisSubscribePage {
+                request_token: 1,
+                context_revision: 1,
+                selector: "news".into(),
+                pattern: false,
+                lines: vec!["news · world".into()],
+                total_messages: 2,
+            }),
+        );
+        assert!(page2.needs_render());
+        assert!(model.workbench().inspector.text.contains("hello"));
+        assert!(model.workbench().inspector.text.contains("world"));
         let done = update(
             &mut model,
             Message::Engine(EngineMsg::RedisSubscribeDone {
@@ -6278,13 +6346,18 @@ mod tests {
                 context_revision: 1,
                 selector: "news".into(),
                 pattern: false,
-                lines: vec!["news · hello".into()],
+                lines: vec!["news · hello".into(), "news · world".into()],
                 timed_out: false,
+                idle_stop: true,
             }),
         );
         assert!(done.needs_render());
         assert!(model.workbench().inspector.open);
-        assert!(model.workbench().inspector.text.contains("hello"));
+        assert!(model.workbench().inspector.title.contains("idle stop"));
+        assert_eq!(
+            model.workbench().active_grid().unwrap().operation,
+            GridOperationState::Completed
+        );
     }
 
     #[test]

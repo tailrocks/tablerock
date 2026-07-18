@@ -29,4 +29,5 @@ cargo check -p tablerock-cli
 
 ## Remaining work
 
-- Continuous streaming tab / multi-message pump after first page
+- ~~Continuous streaming tab / multi-message pump after first page~~
+  (closed: evidence 330)
