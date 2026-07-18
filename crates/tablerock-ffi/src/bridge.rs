@@ -467,6 +467,10 @@ impl TableRockBridge {
         session_id_bytes: Vec<u8>,
         expected_revision: u64,
     ) -> Result<Vec<u8>, BridgeError> {
+        // Kept in the stable bridge signature for compatibility. Authorization
+        // always uses the registered session revision; caller claims are not
+        // an authority source.
+        let _ = expected_revision;
         self.ensure_runtime_inner()?;
         let token_id = review_token_from_bytes(&token_id_bytes).map_err(|_| {
             BridgeError::rejected("bad-token-id", "review token id must be 16 bytes")
@@ -516,6 +520,8 @@ impl TableRockBridge {
         session_id_bytes: Vec<u8>,
         expected_revision: u64,
     ) -> Result<ApplyOutcome, BridgeError> {
+        // See authorize_review_token_inner: session state owns the revision.
+        let _ = expected_revision;
         self.ensure_runtime_inner()?;
         let token_id = review_token_from_bytes(&token_id_bytes).map_err(|_| {
             BridgeError::rejected("bad-token-id", "review token id must be 16 bytes")

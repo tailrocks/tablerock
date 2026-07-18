@@ -13,6 +13,82 @@ import SwiftUI
 import Observation
 import TableRockBridge
 
+private struct NativeOperationProjection: Sendable {
+    let table: PageV1Table?
+    let envelope: PageV1Envelope?
+    let outcome: String?
+}
+
+/// Sole owner of the synchronous UniFFI object. Blocking driver pumping and
+/// page decoding run away from MainActor; awaiting the detached pump keeps this
+/// actor reentrant so cancellation can use the operation id independently.
+private actor BridgeClient {
+    private let bridge: TableRockBridge
+    private var eventCursor: UInt64 = 0
+
+    init(persistencePath: String) throws {
+        let bridge = TableRockBridge.create()
+        try bridge.ensureRuntime()
+        try bridge.configurePersistence(path: persistencePath)
+        self.bridge = bridge
+    }
+
+    func listProfiles() throws -> [BridgeProfileItem] { try bridge.listProfiles() }
+    func open(params: OpenParams) throws -> Data { try bridge.open(params: params) }
+    func openProfile(id: Data) throws -> Data {
+        try bridge.openProfile(profileId: id, passwordOverride: nil)
+    }
+    func submit(session: Data, intent: String, statement: String?) throws -> Data {
+        try bridge.submit(spec: SubmitSpec(
+            intent: intent, sessionId: session, statement: statement,
+            resultId: nil, startRow: nil, rowCount: 500, expectedRevision: 0
+        ))
+    }
+
+    func finish(operationId: Data) async throws -> NativeOperationProjection {
+        let bridge = bridge
+        try await Task.detached { try bridge.pump(operationId: operationId) }.value
+        var page: Data?
+        var outcome: String?
+        for _ in 0..<64 {
+            let batch = try bridge.nextEvents(cursor: eventCursor, maximum: 64)
+            eventCursor = batch.nextCursor
+            for event in batch.events where event.operationId == operationId {
+                if event.kind == "page" { page = event.pageBytes }
+                if event.kind == "terminal" { outcome = event.outcome ?? "ok" }
+            }
+            if outcome != nil || batch.events.isEmpty { break }
+        }
+        guard let page else {
+            return NativeOperationProjection(table: nil, envelope: nil, outcome: outcome)
+        }
+        let decoded = try await Task.detached {
+            (try PageV1.decodeTable(page), try PageV1.decodeEnvelope(page))
+        }.value
+        return NativeOperationProjection(table: decoded.0, envelope: decoded.1, outcome: outcome)
+    }
+
+    func cancel(operationId: Data) throws -> CancelOutcome {
+        try bridge.cancel(operationId: operationId)
+    }
+
+    func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) async throws
+        -> (PageV1Table, PageV1Envelope)
+    {
+        let bytes = try bridge.fetchPage(
+            resultId: resultId, startRow: startRow, revision: revision)
+        return try await Task.detached {
+            (try PageV1.decodeTable(bytes), try PageV1.decodeEnvelope(bytes))
+        }.value
+    }
+
+    func stageAndApply(session: Data, now: UInt64) throws -> ApplyOutcome {
+        let token = try bridge.stageProbeReview(sessionId: session, nowMs: now)
+        return try bridge.applyReviewToken(
+            tokenId: token, nowMs: now, sessionId: session, expectedRevision: 0)
+    }
+}
+
 @main
 struct TableRockApp: App {
     @State private var model = BridgeModel()
@@ -43,6 +119,8 @@ final class BridgeModel {
     var catalogError: String?
     var catalogTable: PageV1Table?
     var writeOutcome: String?
+    var isRunning = false
+    var cancelOutcome: String?
     // Pagination state for the current result (fetch_page).
     var resultIdData: Data?
     var resultRevision: UInt64 = 0
@@ -58,7 +136,8 @@ final class BridgeModel {
     var formDatabase: String = "postgres"
     var formUser: String = "postgres"
     var formPassword: String = ""
-    var bridge: TableRockBridge?
+    private var client: BridgeClient?
+    private var activeOperationId: Data?
     var sessionData: Data?
 
     private static let persistenceDirectory: URL = {
@@ -71,27 +150,21 @@ final class BridgeModel {
         return base
     }()
 
-    func initialize() {
+    func initialize() async {
         do {
-            let bridge = TableRockBridge.create()
-            try bridge.ensureRuntime()
-            try bridge.configurePersistence(
-                path: Self.persistenceDirectory
-                    .appendingPathComponent("profiles.db")
-                    .path
-            )
-            self.bridge = bridge
-            refreshProfiles()
+            client = try BridgeClient(persistencePath: Self.persistenceDirectory
+                .appendingPathComponent("profiles.db").path)
+            await refreshProfiles()
         } catch {
             bridgeError = "Bridge init failed: \(error)"
             status = "error"
         }
     }
 
-    func refreshProfiles() {
-        guard let bridge else { return }
+    func refreshProfiles() async {
+        guard let client else { return }
         do {
-            profiles = try bridge.listProfiles()
+            profiles = try await client.listProfiles()
             status = profiles.isEmpty
                 ? "Bridge ready · no saved profiles"
                 : "Bridge ready · \(profiles.count) profile\(profiles.count == 1 ? "" : "s")"
@@ -102,8 +175,8 @@ final class BridgeModel {
     }
 
     /// Connect directly from form params (temporary session, no saved profile).
-    func connectByParams() {
-        guard let bridge,
+    func connectByParams() async {
+        guard let client,
               let port = UInt16(formPort),
               !formHost.isEmpty
         else {
@@ -116,7 +189,7 @@ final class BridgeModel {
         catalogSummary = nil
         catalogTable = nil
         do {
-            let session = try bridge.open(params: OpenParams(
+            let session = try await client.open(params: OpenParams(
                 engine: formEngine,
                 host: formHost,
                 port: port,
@@ -133,8 +206,8 @@ final class BridgeModel {
     }
 
     /// Open a saved profile by id (password override nil — inline source only).
-    func connect(_ item: BridgeProfileItem) {
-        guard let bridge else { return }
+    func connect(_ item: BridgeProfileItem) async {
+        guard let client else { return }
         connectingName = item.name
         sessionHex = nil
         sessionData = nil
@@ -142,7 +215,7 @@ final class BridgeModel {
         catalogSummary = nil
         catalogError = nil
         do {
-            let session = try bridge.openProfile(profileId: item.idBytes, passwordOverride: nil)
+            let session = try await client.openProfile(id: item.idBytes)
             connectedEngine = item.engine
             sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
@@ -156,51 +229,40 @@ final class BridgeModel {
     /// decode the v1 page envelope. Proves the operation/event/page flow.
     /// Submit an operation and poll events until the result page arrives.
     /// Returns the decoded table, or nil on terminal-without-page.
-    private func fetchPage(intent: String, statement: String?) throws -> PageV1Table? {
-        guard let bridge, let session = sessionData else { return nil }
-        let spec = SubmitSpec(
-            intent: intent,
-            sessionId: session,
-            statement: statement,
-            resultId: nil,
-            startRow: nil,
-            rowCount: 500,
-            expectedRevision: 0
-        )
-        let operationId = try bridge.submit(spec: spec)
-        try bridge.pump(operationId: operationId)
-        var cursor: UInt64 = 0
-        for _ in 0..<64 {
-            let batch = try bridge.nextEvents(cursor: cursor, maximum: 64)
-            if batch.events.isEmpty { break }
-            for event in batch.events {
-                if event.kind == "page", let page = event.pageBytes {
-                    let env = try PageV1.decodeEnvelope(page)
-                    resultIdData = env.resultId
-                    resultRevision = env.revision
-                    nextStartRow = env.startRow + UInt64(env.rowCount)
-                    writeOutcome = nil
-                    return try PageV1.decodeTable(page)
-                }
-                if event.kind == "terminal" {
-                    writeOutcome = event.outcome ?? "ok"
-                    return nil
-                }
-            }
-            cursor = batch.nextCursor
+    private func fetchPage(intent: String, statement: String?) async throws -> PageV1Table? {
+        guard let client, let session = sessionData else { return nil }
+        let operationId = try await client.submit(
+            session: session, intent: intent, statement: statement)
+        activeOperationId = operationId
+        isRunning = true
+        cancelOutcome = nil
+        defer { activeOperationId = nil; isRunning = false }
+        let projection = try await client.finish(operationId: operationId)
+        writeOutcome = projection.outcome
+        if let env = projection.envelope {
+            resultIdData = env.resultId
+            resultRevision = env.revision
+            nextStartRow = env.startRow + UInt64(env.rowCount)
         }
-        return nil
+        return projection.table
+    }
+
+    func cancel() async {
+        guard let client, let operationId = activeOperationId else { return }
+        do {
+            let outcome = try await client.cancel(operationId: operationId)
+            cancelOutcome = String(describing: outcome)
+        } catch {
+            cancelOutcome = "Cancel failed: \(error)"
+        }
     }
 
     /// Fetch the next page of the current result and append its rows.
-    func loadMore() {
-        guard let bridge, let resultId = resultIdData, let start = nextStartRow else { return }
+    func loadMore() async {
+        guard let client, let resultId = resultIdData, let start = nextStartRow else { return }
         do {
-            let pageBytes = try bridge.fetchPage(
-                resultId: resultId, startRow: start, revision: resultRevision
-            )
-            let env = try PageV1.decodeEnvelope(pageBytes)
-            let more = try PageV1.decodeTable(pageBytes)
+            let (more, env) = try await client.fetchPage(
+                resultId: resultId, startRow: start, revision: resultRevision)
             if more.rows.isEmpty {
                 nextStartRow = nil
                 return
@@ -217,7 +279,7 @@ final class BridgeModel {
         }
     }
 
-    func browse() {
+    func browse() async {
         catalogSummary = nil
         catalogError = nil
         catalogTable = nil
@@ -239,7 +301,7 @@ final class BridgeModel {
         }
         do {
             let stmt = catalogSQL.isEmpty ? nil : catalogSQL
-            if let table = try fetchPage(intent: "execute", statement: stmt) {
+            if let table = try await fetchPage(intent: "execute", statement: stmt) {
                 catalogTable = table
                 catalogSummary = connectedEngine == "redis"
                     ? "keys · \(table.rows.count)"
@@ -252,14 +314,14 @@ final class BridgeModel {
         }
     }
 
-    func runQuery() {
+    func runQuery() async {
         let sql = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sql.isEmpty else { return }
         catalogSummary = nil
         catalogError = nil
         catalogTable = nil
         do {
-            if let table = try fetchPage(intent: "execute", statement: sql) {
+            if let table = try await fetchPage(intent: "execute", statement: sql) {
                 catalogTable = table
                 catalogSummary = "result · \(table.columns.count) columns · \(table.rows.count) rows"
             } else if let outcome = writeOutcome {
@@ -274,18 +336,13 @@ final class BridgeModel {
 
     /// Stage a probe mutation, authorize it, and apply it through the single-use
     /// review-token safety gate. Demonstrates the edit/review flow.
-    func applyProbeEdit() {
-        guard let bridge, let session = sessionData else { return }
+    func applyProbeEdit() async {
+        guard let client, let session = sessionData else { return }
         reviewOutcome = nil
         reviewError = nil
         do {
             let now = UInt64(Date().timeIntervalSince1970 * 1000)
-            let token = try bridge.stageProbeReview(sessionId: session, nowMs: now)
-            // applyReviewToken does the authorize internally (consume-once);
-            // calling authorizeReviewToken separately consumes the token first.
-            let outcome = try bridge.applyReviewToken(
-                tokenId: token, nowMs: now, sessionId: session, expectedRevision: 0
-            )
+            let outcome = try await client.stageAndApply(session: session, now: now)
             reviewOutcome =
                 "\(outcome.transaction) · \(outcome.appliedCount) applied · \(outcome.conflictCount) conflict · \(outcome.failedCount) failed"
         } catch {
@@ -302,7 +359,7 @@ struct ContentView: View {
         NavigationSplitView {
             // Connection list (left sidebar).
             List(model.profiles, id: \.name) { profile in
-                Button { model.connect(profile) } label: {
+                Button { Task { await model.connect(profile) } } label: {
                     ProfileRow(profile: profile)
                 }
                 .buttonStyle(.plain)
@@ -349,7 +406,7 @@ struct ContentView: View {
                         }
                     }
                     HStack {
-                        Button("Connect") { model.connectByParams() }
+                        Button("Connect") { Task { await model.connectByParams() } }
                             .buttonStyle(.borderedProminent)
                         Spacer()
                     }
@@ -364,7 +421,7 @@ struct ContentView: View {
                         systemImage: "checkmark.circle.fill"
                     )
                     .foregroundStyle(.green)
-                    Button("Browse catalog") { model.browse() }
+                    Button("Browse catalog") { Task { await model.browse() } }
                         .buttonStyle(.borderedProminent)
                 }
                 if let catalogSummary = model.catalogSummary {
@@ -380,11 +437,19 @@ struct ContentView: View {
                             .font(.system(.body, design: .monospaced))
                             .frame(minHeight: 56, maxHeight: 80)
                         HStack {
-                            Button("Run query") { model.runQuery() }
+                            Button("Run query") { Task { await model.runQuery() } }
                                 .buttonStyle(.borderedProminent)
                                 .keyboardShortcut("r", modifiers: .command)
-                            Button("Refresh catalog") { model.browse() }
-                            Button("Apply probe edit") { model.applyProbeEdit() }
+                                .disabled(model.isRunning)
+                            Button("Cancel") { Task { await model.cancel() } }
+                                .disabled(!model.isRunning)
+                            Button("Refresh catalog") { Task { await model.browse() } }
+                                .disabled(model.isRunning)
+                            Button("Apply probe edit") { Task { await model.applyProbeEdit() } }
+                                .disabled(model.isRunning)
+                        }
+                        if let cancelOutcome = model.cancelOutcome {
+                            Text(cancelOutcome).foregroundStyle(.secondary).font(.callout)
                         }
                         if let reviewOutcome = model.reviewOutcome {
                             Text(reviewOutcome).foregroundStyle(.green).font(.callout)
@@ -397,7 +462,7 @@ struct ContentView: View {
                 if let table = model.catalogTable {
                     CatalogGrid(table: table)
                     if model.nextStartRow != nil {
-                        Button("Load more rows") { model.loadMore() }
+                        Button("Load more rows") { Task { await model.loadMore() } }
                     }
                 }
                 if let connectError = model.connectError {
@@ -414,7 +479,7 @@ struct ContentView: View {
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .task { model.initialize() }
+        .task { await model.initialize() }
     }
 }
 

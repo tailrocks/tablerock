@@ -31,7 +31,9 @@
   requires. The prototype does not yet satisfy the plan's AppKit controls,
   off-main actor polling, accessibility, appearance, or Instruments done
   criteria. Evidence 407 removes `ObservableObject` and adds the required
-  Settings scene; remaining criteria stay open.
+  Settings scene. Evidence 408 adds actor-owned bridge I/O, off-main pump/page
+  decode, operation-ID cancellation UI, and a strict Swift 6 build gate;
+  remaining criteria stay open.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
@@ -132,7 +134,8 @@ unchanged-green.
 - [ ] Zero per-cell bridge calls (bridge API audit + call counting test)
 - [ ] Swift contains no SQL parsing/safety/mutation construction (code review checklist in evidence; grep for sql-building patterns)
 - [ ] Glass rules hold: no glass on content surfaces; one cluster per region; accessibility degradation verified (screenshot matrix)
-- [ ] Strict-concurrency build clean; no `ObservableObject`, no GCD (grep)
+- [x] Strict-concurrency build clean; no `ObservableObject`, no GCD (evidence
+      407–408; Swift 6 complete checking + warnings-as-errors)
 - [ ] Instruments: stable page latency + scroll at measured sizes recorded
 - [ ] Conformance suite green through the app's bridge path
 - [ ] Evidence + ROADMAP Phase 13 complete; `plans/README.md` updated

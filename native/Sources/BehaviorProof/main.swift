@@ -95,7 +95,7 @@ if let expectCols = env["TABLEROCK_EXPECT_COLS"] {
         exit(1)
     }
     if let expectRow = env["TABLEROCK_EXPECT_ROW"] {
-        guard table.rows.first.map { $0.joined(separator: ",") } == expectRow else {
+        guard table.rows.first.map({ $0.joined(separator: ",") }) == expectRow else {
             FileHandle.standardError.write("FAIL rows: \(table.rows)\n".data(using: .utf8)!)
             exit(1)
         }

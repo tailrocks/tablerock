@@ -28,10 +28,12 @@ rm -rf "$BUILD"
 mkdir -p "$BUILD"
 ( cd "$NATIVE" \
   && swiftc -emit-module -module-name TableRockBridge \
+       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
        -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
        -emit-module-path "$BUILD/TableRockBridge.swiftmodule" \
        Sources/TableRockBridge/tablerock_ffi.swift Sources/TableRockBridge/PageV1.swift \
   && swiftc -c -module-name TableRockBridge \
+       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
        -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
        Sources/TableRockBridge/tablerock_ffi.swift Sources/TableRockBridge/PageV1.swift \
   && mv tablerock_ffi.o PageV1.o "$BUILD/" )
@@ -39,6 +41,7 @@ mkdir -p "$BUILD"
 echo "==> Building SwiftUI app (direct swiftc)"
 ( cd "$NATIVE" \
   && swiftc -parse-as-library \
+       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
        -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
        Sources/TableRockApp/*.swift \
        "$BUILD/tablerock_ffi.o" "$BUILD/PageV1.o" \

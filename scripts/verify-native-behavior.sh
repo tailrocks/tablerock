@@ -15,7 +15,8 @@ echo "==> Building bridge module + BehaviorProof (direct swiftc)"
 cd "$REPO_ROOT"
 ./scripts/build-native-app.sh >/dev/null
 cd "$NATIVE"
-swiftc -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target arm64-apple-macos14 \
+swiftc -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+    -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target arm64-apple-macos14 \
     Sources/BehaviorProof/main.swift \
     "$BUILD/tablerock_ffi.o" "$BUILD/PageV1.o" \
     -L "$REPO_ROOT/target/release" -ltablerock_ffi -framework Foundation \

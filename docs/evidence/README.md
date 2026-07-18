@@ -372,6 +372,7 @@ How to read an evidence document:
 - 405 — [Plan 019 residual — software path reconfirm (post residual 404)](delivery/405-plan-019-software-reconfirm.md)
 - 406 — [Plan 019 universal XCFramework packaging](delivery/406-plan-019-xcframework.md)
 - 407 — [Plan 020 Observation model and Settings scene](delivery/407-plan-020-observation-settings.md)
+- 408 — [Plan 020 actor-owned bridge and cancellation](delivery/408-plan-020-bridge-actor-cancel.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
