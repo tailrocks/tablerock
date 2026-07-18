@@ -182,6 +182,8 @@ pub enum ActionId {
     CopyTableIdent,
     /// Copy SELECT list of visible columns FROM base table (quoted).
     CopySelectSql,
+    /// Copy SELECT … FROM base table WHERE cursor locator (presentation aid).
+    CopySelectWhereSql,
     /// Copy identity (pk) column names tab-separated.
     CopyPkNames,
     /// Copy identity column names as SQL-quoted idents (comma-separated).
