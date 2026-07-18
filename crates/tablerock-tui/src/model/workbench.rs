@@ -287,6 +287,16 @@ impl WorkbenchModel {
         true
     }
 
+    /// Compact tab counts for clipboard (total/dirty/preview/running).
+    #[must_use]
+    pub fn tab_counts_summary(&self) -> String {
+        let total = self.tabs.len();
+        let dirty = self.tabs.iter().filter(|t| t.dirty).count();
+        let preview = self.tabs.iter().filter(|t| t.preview).count();
+        let running = self.tabs.iter().filter(|t| t.running).count();
+        format!("tabs total={total} dirty={dirty} preview={preview} running={running}")
+    }
+
     /// Multi-line inventory of tabs for the inspector panel.
     #[must_use]
     pub fn tabs_panel_text(&self) -> String {
@@ -984,6 +994,20 @@ mod tests {
         assert!(panel.contains("two"), "{panel}");
         assert!(panel.contains('*') || panel.contains("dirty"), "{panel}");
         assert!(panel.contains('>'), "{panel}");
+    }
+
+    #[test]
+    fn tab_counts_summary_reports_flags() {
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("a");
+        wb.open_preview_tab("b");
+        wb.mark_active_dirty(true);
+        wb.tabs[0].running = true;
+        let s = wb.tab_counts_summary();
+        assert!(s.contains("total=2"), "{s}");
+        assert!(s.contains("dirty=1"), "{s}");
+        assert!(s.contains("preview=2"), "{s}");
+        assert!(s.contains("running=1"), "{s}");
     }
 
     #[test]

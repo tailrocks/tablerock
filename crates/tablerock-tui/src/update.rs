@@ -3484,6 +3484,23 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyTabCounts if model.screen() == Screen::Workbench => {
+            if model.workbench().tabs.is_empty() {
+                return Update::unchanged();
+            }
+            let text = model.workbench().tab_counts_summary();
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied tab counts ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTabs if model.screen() == Screen::Workbench => {
             let text = model.workbench().tabs_panel_text();
             if text == "no tabs" {
@@ -7119,6 +7136,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyTabs
         | ActionId::CopyActiveTabTitle
         | ActionId::CopyDirtyTabTitles
+        | ActionId::CopyTabCounts
         | ActionId::PinTab
         | ActionId::NewSql
         | ActionId::RunSql
@@ -8987,6 +9005,7 @@ fn cycle_action(
                 ActionId::CopyTabs,
                 ActionId::CopyActiveTabTitle,
                 ActionId::CopyDirtyTabTitles,
+                ActionId::CopyTabCounts,
                 ActionId::CloseTab,
                 ActionId::QuickSwitch,
                 ActionId::PinTab,
@@ -11140,6 +11159,14 @@ mod tests {
                 assert!(!text.contains("clean"), "{text}");
             }
             other => panic!("expected dirty titles, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyTabCounts);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("total=3"), "{text}");
+                assert!(text.contains("dirty=2"), "{text}");
+            }
+            other => panic!("expected tab counts, got {other:?}"),
         }
         // Clear dirty flags → fail closed.
         for tab in &mut model.workbench_mut().tabs {
