@@ -187,6 +187,23 @@ fn open_params_debug_redacts_password() {
 }
 
 #[test]
+fn cancel_unknown_operation_is_typed() {
+    let bridge = TableRockBridge::new_for_test();
+    bridge.ensure_runtime().unwrap();
+    let bogus = ResultId::from_parts(IdParts::new(0, 3).unwrap())
+        .unwrap()
+        .to_bytes()
+        .to_vec();
+    // Operation id namespace shares 16-byte layout; unknown op returns typed outcome.
+    let outcome = bridge.cancel(bogus).unwrap();
+    assert!(
+        outcome.core.contains("Unknown") || outcome.core.contains("unknown"),
+        "core={}",
+        outcome.core
+    );
+}
+
+#[test]
 fn open_rejects_unreachable_endpoint() {
     let bridge = TableRockBridge::new_for_test();
     let err = bridge

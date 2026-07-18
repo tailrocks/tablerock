@@ -6,10 +6,10 @@ use std::{
 };
 
 use tablerock_core::{
-    CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent, CommandScope, Engine,
-    MutationReviewRegistry, OperationId, OperationOutcome, OperationScope, PageIdentity, PageKey,
-    PageRequest, ResultStore, ResultStoreLimits, Revision, ServiceCoordinator, ServiceLimits,
-    SessionId, ShutdownMode, StatementText,
+    BoundedText, ByteLimit, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
+    CommandScope, Engine, MutationReviewRegistry, OperationId, OperationOutcome, OperationScope,
+    PageIdentity, PageKey, PageRequest, ResultStore, ResultStoreLimits, Revision,
+    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText,
 };
 use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
@@ -18,7 +18,6 @@ use tablerock_engine::{
     RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
     RedisTlsMode,
 };
-use tablerock_core::{BoundedText, ByteLimit};
 
 use crate::{
     error::{catch_entry, BridgeError},

@@ -34,7 +34,7 @@ library does not change without a recorded architecture revision.
 | Persistence | [`turso`](https://github.com/tursodatabase/turso) local database | 0.7.0 | MIT | one serialized Rust async persistence actor |
 | Unicode normalization | [`unicode-normalization`](https://github.com/unicode-rs/unicode-normalization) | 0.1.25 | MIT OR Apache-2.0 | core profile-search normalization only |
 | Unicode case folding | [`caseless`](https://github.com/unicode-rs/rust-caseless) | 0.2.2 | MIT | core profile-search normalization only |
-| Swift binding | [`uniffi`](https://github.com/mozilla/uniffi-rs) | 0.32.0 | MPL-2.0 | synchronous coarse FFI only |
+| Swift binding | [`uniffi`](https://github.com/mozilla/uniffi-rs) | 0.32.0 (adopted plan 019) | MPL-2.0 | synchronous coarse FFI only; `tablerock-ffi` crate + generated Swift under `native/` |
 | Structured diagnostics | [`tracing`](https://github.com/tokio-rs/tracing) | 0.1.44 | MIT | fixed safe fields only |
 | Telemetry export | [`opentelemetry-otlp`](https://github.com/open-telemetry/opentelemetry-rust) | 0.32.0 | Apache-2.0 | opt-in OTLP, disabled by default |
 
