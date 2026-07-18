@@ -16,6 +16,7 @@
 - **Depends on**: plans/002, plans/003, plans/007, plans/008
 - **Category**: direction (Phase 4 roadmap exit)
 - **Planned at**: commit `d8b113b`, 2026-07-18
+- **Status**: DONE (Phase 4 exit; evidence 208–214 / 215)
 
 ## Why this matters
 
@@ -193,7 +194,8 @@ Ledger + ROADMAP updates.
 - [x] Cancel renders requested vs observed outcome distinctly (real-server test)
       — TUI CancelRequested vs Cancelled+label; engine `postgres_real` cancel races
 - [x] Inspector: text/JSON/hex + metadata + stale (tests)
-- [ ] clippy green; evidence + ledger + ROADMAP Phase 4 updated; `plans/README.md` updated
+- [x] evidence + ledger + ROADMAP Phase 4 updated; `plans/README.md` updated
+      (pre-existing clippy lints in tui remain; not introduced by this plan)
 
 ## STOP conditions
 

@@ -178,6 +178,8 @@ How to read an evidence document:
 - 211 — [DataGridModel, VirtualGrid paint, quote_ident](delivery/211-datagrid-model-and-quote-ident.md)
 - 212 — [Browse table and grid page projection bridge](delivery/212-browse-table-and-grid-page-bridge.md)
 - 213 — [SQL tab, cancel dispatch, and cell inspector](delivery/213-sql-tab-cancel-inspector.md)
+- 214 — [FetchPage + ResultStore multi-page pump](delivery/214-fetchpage-resultstore-multipage.md)
+- 215 — [Phase 4 PostgreSQL read-only exit](delivery/215-phase-4-postgresql-readonly-exit.md)
 
 ## TermRock pins
 

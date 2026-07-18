@@ -123,11 +123,19 @@ proven on trunk.
 
 ## Phase 4 — PostgreSQL read-only tracer
 
-Deliver lazy database/schema/object catalog including tables, views, and
-functions, the context bar with database and schema selectors, object and
-query tabs, structure, bounded table pages, arbitrary SQL streaming, typed
-values, progress, cancel, errors, and result inspection. Add TermRock
-`VirtualGrid` before TableRock ships its database-aware grid composition.
+**Status: complete.** Exit evidence: 208–214 (workbench frame/catalog/tabs,
+DataGridModel + VirtualGrid, browse first page, SQL/cancel/inspector,
+FetchPage pump-and-store multi-page). Residual deferred by product/plan:
+
+- Structure/raw DDL tab (plan 013 unless trivial)
+- Full EngineService event-pump cancel race labels on the TUI path (engine
+  races proven; UI shows cancel-requested vs cancelled + observed label)
+- Server sort/filter/columns (Phase 5 / plan 012)
+
+Catalog, context bar, object preview tabs, bounded 500-row pages with
+ResultStore pin, arbitrary SQL streaming, typed display, first-rows-before-
+completion, resident-scroll no-I/O, 10k cap, inspector, and cancel dispatch
+vs outcome are proven on trunk.
 
 ## Phase 5 — workbench foundation
 
