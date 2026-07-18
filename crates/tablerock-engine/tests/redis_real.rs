@@ -2936,6 +2936,7 @@ async fn collection_page_skip_returns_next_for_large_set() {
     let _ = next1;
 }
 
+#[tokio::test]
 async fn applies_multi_type_collection_mutations_non_transactionally() {
     use tablerock_engine::MutationChangeOutcome;
 
