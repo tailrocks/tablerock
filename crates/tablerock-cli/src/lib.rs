@@ -2,6 +2,7 @@
 
 mod effects;
 mod file_effects;
+mod import_apply;
 mod import_csv;
 mod ingress;
 mod telemetry;
@@ -11,6 +12,7 @@ mod projection;
 mod run;
 
 pub use file_effects::{AtomicFileWriter, FileEffectError, validate_export_path, write_atomic};
+pub use import_apply::{ImportApplyError, apply_csv_inserts};
 pub use import_csv::{
     CsvImportError, CsvTable, csv_to_insert_changes, is_formula_like, parse_csv,
     validate_insert_batch_size,

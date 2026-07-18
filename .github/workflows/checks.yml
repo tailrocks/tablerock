@@ -52,3 +52,5 @@ jobs:
           --test three_engine_overlap_real
       - name: UniFFI bridge real-server conformance
         run: cargo test -p tablerock-ffi --test bridge_real
+      - name: CSV import apply through mutation seam
+        run: cargo test -p tablerock-cli --test import_apply_real

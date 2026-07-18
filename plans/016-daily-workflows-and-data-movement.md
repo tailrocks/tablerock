@@ -98,8 +98,8 @@ Standard suites + Docker engine suites; new import/export tests live in
 - [x] Multi-statement sections model: middle failure keeps 1st + 3rd explicit (unit test) — evidence 245
 - [x] Export abort/drop removes partial temp (unit test); ExportResult effect wired — evidence 245
 - [x] Import CSV: formula content as data, oversized/malformed errors with positions — evidence 245
-- [~] Partial import apply: CSV→InsertRow conversion landed (no SQL concat);
-  engine batch apply residual
+- [x] Partial import apply: CSV→InsertRow + review/authorize/apply on PG
+      (`apply_csv_inserts`, real test import_apply_real)
 - [ ] Streaming full re-query export (residual)
 - [x] Relaunch: Manual reconnect never auto (should_auto_reconnect test)
 - [x] Saved filters JSON round-trip (in-memory library)
@@ -112,10 +112,11 @@ Standard suites + Docker engine suites; new import/export tests live in
 
 ## Residual (non-blocking)
 
-- Engine-backed import apply batches (PG/CH)
+- ClickHouse import apply batch (PG path landed)
 - Streaming re-query export with cancel mid-stream
 - Persistence actor API for filter presets
 - Multi-statement UI wiring into QueryEditorModel run path
+- TUI Effect wiring for import apply
 
 ## STOP conditions
 

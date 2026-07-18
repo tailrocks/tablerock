@@ -21,6 +21,7 @@ tokio.workspace = true
 
 [dev-dependencies]
 portable-pty = "0.9.0"
+testcontainers = { version = "=0.27.3", default-features = false }
 
 [lints]
 workspace = true
