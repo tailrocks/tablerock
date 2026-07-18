@@ -4539,6 +4539,7 @@ name = "tablerock-ffi"
 version = "0.1.0"
 dependencies = [
  "redis",
+ "serde_json",
  "tablerock-core",
  "tablerock-engine",
  "tablerock-persistence",
