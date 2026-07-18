@@ -1022,6 +1022,7 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
     let ssh_password = editor.field_value(EditorField::SshPassword);
     let ssh_private_key = editor.field_value(EditorField::SshPrivateKey);
     let ssh_known_hosts = editor.field_value(EditorField::SshKnownHostsPath);
+    let ssh_use_agent = editor.field_value(EditorField::SshUseAgent);
 
     let general = [
         FormField::new(
@@ -1117,6 +1118,11 @@ fn render_connection_form(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             EditorField::SshKnownHostsPath,
             Line::from("known_hosts path"),
             Line::from(ssh_known_hosts.as_str()),
+        ),
+        FormField::new(
+            EditorField::SshUseAgent,
+            Line::from("SSH auth mode"),
+            Line::from(ssh_use_agent.as_str()),
         ),
     ];
     let sections = [

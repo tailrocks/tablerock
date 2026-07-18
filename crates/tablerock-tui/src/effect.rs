@@ -84,10 +84,12 @@ pub struct ConnectionDraft {
     pub ssh_port: String,
     pub ssh_username: String,
     pub ssh_password: String,
-    /// OpenSSH private key PEM (unencrypted) when using public-key auth.
+    /// OpenSSH private key PEM (plaintext or encrypted) when using public-key auth.
     pub ssh_private_key: String,
     /// Absolute OpenSSH known_hosts path (required when `ssh_host` is set).
     pub ssh_known_hosts_path: String,
+    /// When true, use SSH agent (`SSH_AUTH_SOCK`) instead of password/key material.
+    pub ssh_use_agent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

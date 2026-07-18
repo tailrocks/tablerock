@@ -4091,6 +4091,8 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
         ssh_password,
         ssh_private_key,
         ssh_known_hosts_path: literal(ProfileProperty::SshKnownHostsPath).unwrap_or_default(),
+        // Agent mode is session/editor intent; not persisted as a profile property yet.
+        ssh_use_agent: false,
     })
 }
 
@@ -4114,8 +4116,8 @@ async fn open_described_session(
         ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
         LocalForwardTunnel, PostgresConnectConfig, PostgresSession, PostgresTlsMode,
         RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
-        RedisTlsMode, SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth, SshPublicKeyAuth,
-        SshTunnelConfig, open_local_forward_tunnel,
+        RedisTlsMode, SshAgentAuth, SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth,
+        SshPublicKeyAuth, SshTunnelConfig, open_local_forward_tunnel,
     };
     let mut host = draft.host.clone();
     let mut port: u16 = draft.port.parse().map_err(|_| "invalid port".to_owned())?;
@@ -4136,7 +4138,9 @@ async fn open_described_session(
         } else {
             draft.ssh_username.clone()
         };
-        let auth = if !draft.ssh_private_key.trim().is_empty() {
+        let auth = if draft.ssh_use_agent {
+            SshAuthMaterial::Agent(SshAgentAuth::from_env(username))
+        } else if !draft.ssh_private_key.trim().is_empty() {
             // When a private key is set, ssh_password is the key passphrase (if any).
             let passphrase = if draft.ssh_password.is_empty() {
                 None
@@ -4154,7 +4158,7 @@ async fn open_described_session(
         } else if !draft.ssh_password.is_empty() {
             SshAuthMaterial::Password(SshPasswordAuth::new(username, draft.ssh_password.clone()))
         } else {
-            return Err("SSH password or private key required".to_owned());
+            return Err("SSH password, private key, or agent mode required".to_owned());
         };
         let config = SshTunnelConfig {
             bastion_host: draft.ssh_host.clone(),

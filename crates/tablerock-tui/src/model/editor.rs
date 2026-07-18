@@ -21,6 +21,7 @@ pub enum EditorField {
     SshPassword,
     SshPrivateKey,
     SshKnownHostsPath,
+    SshUseAgent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,6 +57,7 @@ pub struct ConnectionFormModel {
     /// OpenSSH private key PEM (plaintext or encrypted; password = passphrase).
     pub ssh_private_key: String,
     pub ssh_known_hosts_path: String,
+    pub ssh_use_agent: bool,
     pub focused: EditorField,
     pub plaintext_acknowledged: bool,
     pub validation_error: Option<String>,
@@ -82,6 +84,7 @@ impl Default for ConnectionFormModel {
             ssh_password: String::new(),
             ssh_private_key: String::new(),
             ssh_known_hosts_path: String::new(),
+            ssh_use_agent: false,
             focused: EditorField::Name,
             plaintext_acknowledged: false,
             validation_error: None,
@@ -136,6 +139,13 @@ impl ConnectionFormModel {
                 }
             }
             EditorField::SshKnownHostsPath => self.ssh_known_hosts_path.clone(),
+            EditorField::SshUseAgent => {
+                if self.ssh_use_agent {
+                    "agent".into()
+                } else {
+                    "password/key".into()
+                }
+            }
         }
     }
 
@@ -177,7 +187,8 @@ impl ConnectionFormModel {
             EditorField::SshUsername => EditorField::SshPassword,
             EditorField::SshPassword => EditorField::SshPrivateKey,
             EditorField::SshPrivateKey => EditorField::SshKnownHostsPath,
-            EditorField::SshKnownHostsPath => EditorField::Engine,
+            EditorField::SshKnownHostsPath => EditorField::SshUseAgent,
+            EditorField::SshUseAgent => EditorField::Engine,
         };
     }
 
@@ -218,9 +229,12 @@ impl ConnectionFormModel {
                 self.validation_error = Some("SSH known_hosts path required".into());
                 return false;
             }
-            if self.ssh_password.is_empty() && self.ssh_private_key.trim().is_empty() {
+            if !self.ssh_use_agent
+                && self.ssh_password.is_empty()
+                && self.ssh_private_key.trim().is_empty()
+            {
                 self.validation_error =
-                    Some("SSH password or private key required".into());
+                    Some("SSH password, private key, or agent mode required".into());
                 return false;
             }
         }
@@ -265,7 +279,22 @@ mod tests {
             .validation_error
             .as_deref()
             .unwrap_or("")
-            .contains("password or private key"));
+            .contains("password, private key, or agent"));
+    }
+
+    #[test]
+    fn ssh_validate_accepts_agent_mode_without_secrets() {
+        let mut editor = ConnectionFormModel {
+            name: "demo".into(),
+            host: "db.internal".into(),
+            port: "5432".into(),
+            ssh_host: "bastion".into(),
+            ssh_port: "22".into(),
+            ssh_use_agent: true,
+            ssh_known_hosts_path: "/tmp/known_hosts".into(),
+            ..ConnectionFormModel::default()
+        };
+        assert!(editor.validate());
     }
 }
 

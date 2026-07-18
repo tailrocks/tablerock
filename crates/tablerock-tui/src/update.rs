@@ -3094,6 +3094,7 @@ fn connection_draft_from_editor(
         ssh_password: editor.ssh_password.clone(),
         ssh_private_key: editor.ssh_private_key.clone(),
         ssh_known_hosts_path: editor.ssh_known_hosts_path.clone(),
+        ssh_use_agent: editor.ssh_use_agent,
     }
 }
 
@@ -3139,6 +3140,9 @@ fn apply_editor_text(model: &mut Model, text: &str) {
         EditorField::SshPassword => editor.ssh_password.push_str(text),
         EditorField::SshPrivateKey => editor.ssh_private_key.push_str(text),
         EditorField::SshKnownHostsPath => editor.ssh_known_hosts_path.push_str(text),
+        EditorField::SshUseAgent => {
+            editor.ssh_use_agent = !editor.ssh_use_agent;
+        }
     }
 }
 

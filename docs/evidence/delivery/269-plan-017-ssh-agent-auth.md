@@ -19,7 +19,11 @@ cargo test -p tablerock-engine ssh_tunnel
 cargo test -p tablerock-engine --test ssh_tunnel_real agent_auth
 ```
 
+## Follow-up landed (same day)
+
+- TUI `SshUseAgent` toggle + draft `ssh_use_agent`
+- Connect path uses `SshAgentAuth::from_env` when toggle set
+
 ## Residual
 
-- Profile property / TUI toggle for agent mode
-- Wire `SshAuthMaterial::Agent` from ConnectionDraft when selected
+- Persist agent preference as a profile property (session intent only today)
