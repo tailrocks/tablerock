@@ -180,6 +180,12 @@ pub enum ActionId {
     CopyDatabaseName,
     /// Copy active database name as a SQL-quoted identifier.
     CopyDatabaseIdent,
+    /// Copy workbench context bar line.
+    CopyContextBar,
+    /// Copy connection name from context bar.
+    CopyConnectionName,
+    /// Copy profile id hex when known.
+    CopyProfileId,
     /// Copy base schema.table identity if known.
     CopyTableName,
     /// Copy base schema only if known.

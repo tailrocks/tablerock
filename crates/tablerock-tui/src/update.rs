@@ -3995,6 +3995,61 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 }),
             }
         }
+        ActionId::CopyContextBar if model.screen() == Screen::Workbench => {
+            let text = model.workbench().context.line();
+            if text.trim().is_empty() {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied context bar ({} B)", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopyConnectionName if model.screen() == Screen::Workbench => {
+            let text = model.workbench().context.connection_name.clone();
+            if text.is_empty() {
+                return Update::unchanged();
+            }
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied connection {text}"));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
+        ActionId::CopyProfileId if model.screen() == Screen::Workbench => {
+            let Some(text) = model
+                .workbench()
+                .profile_id_hex
+                .clone()
+                .filter(|s| !s.is_empty())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                g.error_label = Some(format!("copied profile id ({})", text.len()));
+            }
+            Update {
+                render: true,
+                effect: Some(Effect::CopyToClipboard {
+                    request_token: token,
+                    text,
+                }),
+            }
+        }
         ActionId::CopyTableName if model.screen() == Screen::Workbench => {
             let Some(grid) = model.workbench().active_grid() else {
                 return Update::unchanged();
@@ -6339,6 +6394,9 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CopyEngineLabel
         | ActionId::CopyDatabaseName
         | ActionId::CopyDatabaseIdent
+        | ActionId::CopyContextBar
+        | ActionId::CopyConnectionName
+        | ActionId::CopyProfileId
         | ActionId::CopyTableName
         | ActionId::CopySchema
         | ActionId::CopyBareTable
@@ -8137,6 +8195,9 @@ fn cycle_action(
                 ActionId::CopyEngineLabel,
                 ActionId::CopyDatabaseName,
                 ActionId::CopyDatabaseIdent,
+                ActionId::CopyContextBar,
+                ActionId::CopyConnectionName,
+                ActionId::CopyProfileId,
                 ActionId::CopyTableName,
                 ActionId::CopySchema,
                 ActionId::CopyBareTable,
@@ -10664,6 +10725,32 @@ mod tests {
                 assert_eq!(text, "\"analytics\"");
             }
             other => panic!("expected database ident, got {other:?}"),
+        }
+        model.workbench_mut().context.connection_name = "prod-pg".into();
+        model.workbench_mut().context.engine_label = "PostgreSQL".into();
+        model.workbench_mut().profile_id_hex =
+            Some("00112233445566778899aabbccddeeff".into());
+        model.set_action(ActionId::CopyConnectionName);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "prod-pg");
+            }
+            other => panic!("expected connection name, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyProfileId);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert_eq!(text, "00112233445566778899aabbccddeeff");
+            }
+            other => panic!("expected profile id, got {other:?}"),
+        }
+        model.set_action(ActionId::CopyContextBar);
+        match update(&mut model, Message::Activate).effects().next() {
+            Some(Effect::CopyToClipboard { text, .. }) => {
+                assert!(text.contains("prod-pg"), "{text}");
+                assert!(text.contains("analytics"), "{text}");
+            }
+            other => panic!("expected context bar, got {other:?}"),
         }
     }
 

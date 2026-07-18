@@ -745,6 +745,9 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let copy_eng = action_label(model, ActionId::CopyEngineLabel, "CopyEng");
     let copy_db = action_label(model, ActionId::CopyDatabaseName, "CopyDb");
     let copy_db_q = action_label(model, ActionId::CopyDatabaseIdent, "CopyDbQ");
+    let copy_ctx = action_label(model, ActionId::CopyContextBar, "CopyCtx");
+    let copy_conn = action_label(model, ActionId::CopyConnectionName, "CopyConn");
+    let copy_prof = action_label(model, ActionId::CopyProfileId, "CopyProf");
     let copy_table = action_label(model, ActionId::CopyTableName, "CopyTbl");
     let copy_schema = action_label(model, ActionId::CopySchema, "CopySch");
     let copy_bare = action_label(model, ActionId::CopyBareTable, "CopyTblN");
@@ -1675,6 +1678,24 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CopyDatabaseIdent,
                         label: copy_db_q.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyContextBar,
+                        label: copy_ctx.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyConnectionName,
+                        label: copy_conn.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CopyProfileId,
+                        label: copy_prof.as_str(),
                         enabled: true,
                         style: None,
                     },
