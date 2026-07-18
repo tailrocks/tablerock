@@ -42,7 +42,7 @@ Grid,Filtering,Core,implemented,filters + raw WHERE,plan 012
 Grid,Selection/copy,Parity,implemented,six formats + OSC52,plan 012
 Grid,Paging,Core,implemented,FetchPage + ResultStore,evidence 214
 Grid,Row/value inspector,Core,implemented,text/hex/stale,plan 009
-Grid,Type-specific editors,Parity,gap,paste heuristics only,
+Grid,Type-specific editors,Parity,implemented,bool toggle + set null + parse heuristics,evidence 295
 Grid,Stable editability,Core,implemented,EditabilityFacts + PK,plan 013
 Grid,Staged changes,Core,implemented,drafts undo discard,plan 013
 Grid,Operation preview,Core,implemented,typed plan review,plan 013

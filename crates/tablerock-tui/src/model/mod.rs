@@ -120,6 +120,10 @@ pub enum ActionId {
     ReviewMutations,
     /// Begin inline edit of the cursor cell (editable results only).
     EditCell,
+    /// Toggle boolean cell buffer while editing (type-specific).
+    ToggleBool,
+    /// Set cell edit buffer to null while editing.
+    SetNull,
     /// Stage delete of the cursor row.
     DeleteRow,
     /// Apply reviewed/staged mutations (typed plan rebuild from drafts).

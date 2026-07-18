@@ -14,6 +14,29 @@ pub struct CellEditSession {
     pub original_text: String,
     pub buffer: String,
     pub locator: Vec<DraftLocatorField>,
+    /// Distinction class of the cell when edit began (drives type-specific UX).
+    pub kind: CellDistinction,
+}
+
+impl CellEditSession {
+    /// Cycle boolean buffer true ↔ false (no-op for other kinds).
+    pub fn toggle_boolean(&mut self) -> bool {
+        if self.kind != CellDistinction::Boolean {
+            return false;
+        }
+        let t = self.buffer.trim();
+        self.buffer = if t.eq_ignore_ascii_case("true") || t == "t" || t == "1" {
+            "false".into()
+        } else {
+            "true".into()
+        };
+        true
+    }
+
+    /// Set buffer to SQL NULL presentation token.
+    pub fn set_null(&mut self) {
+        self.buffer = "null".into();
+    }
 }
 
 /// Visual distinction class (text+glyph; never color alone).
@@ -478,6 +501,7 @@ impl DataGridModel {
             original_text: cell.text.clone(),
             buffer: cell.text,
             locator,
+            kind: cell.distinction,
         });
         true
     }
@@ -1087,5 +1111,33 @@ mod tests {
         assert_eq!(grid.next_fetch_start(), 1);
         grid.operation = GridOperationState::Idle;
         assert!(!grid.needs_fetch(1));
+    }
+
+    #[test]
+    fn boolean_toggle_and_set_null_on_edit_session() {
+        let mut session = CellEditSession {
+            abs_row: 0,
+            column: "active".into(),
+            original_text: "true".into(),
+            buffer: "true".into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Boolean,
+        };
+        assert!(session.toggle_boolean());
+        assert_eq!(session.buffer, "false");
+        assert!(session.toggle_boolean());
+        assert_eq!(session.buffer, "true");
+        session.set_null();
+        assert_eq!(session.buffer, "null");
+        let mut text = CellEditSession {
+            abs_row: 0,
+            column: "name".into(),
+            original_text: "a".into(),
+            buffer: "a".into(),
+            locator: Vec::new(),
+            kind: CellDistinction::Text,
+        };
+        assert!(!text.toggle_boolean());
+        assert_eq!(text.buffer, "a");
     }
 }

@@ -413,6 +413,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let discard_staged = action_label(model, ActionId::DiscardStaged, "DiscardEdits");
     let review_mut = action_label(model, ActionId::ReviewMutations, "Review");
     let edit_cell = action_label(model, ActionId::EditCell, "Edit");
+    let toggle_bool = action_label(model, ActionId::ToggleBool, "TogBool");
+    let set_null = action_label(model, ActionId::SetNull, "SetNull");
     let delete_row = action_label(model, ActionId::DeleteRow, "DelRow");
     let apply_mut = action_label(model, ActionId::ApplyMutations, "Apply");
     let follow_fk = action_label(model, ActionId::FollowForeignKey, "FollowFK");
@@ -632,6 +634,18 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::EditCell,
                         label: edit_cell.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::ToggleBool,
+                        label: toggle_bool.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SetNull,
+                        label: set_null.as_str(),
                         enabled: true,
                         style: None,
                     },
