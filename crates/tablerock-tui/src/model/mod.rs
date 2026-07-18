@@ -313,6 +313,10 @@ impl Model {
         self.profiles = state;
     }
 
+    pub(crate) fn profiles_mut(&mut self) -> &mut ProfileListState {
+        &mut self.profiles
+    }
+
     #[must_use]
     pub const fn editor(&self) -> &ConnectionFormModel {
         &self.editor

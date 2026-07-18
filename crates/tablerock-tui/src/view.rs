@@ -391,18 +391,47 @@ fn render_panel(model: &Model, frame: &mut Frame<'_>, area: Rect, title: &str, f
                 crate::Screen::Connections | crate::Screen::ConnectionPicker
             )
         {
-            if let crate::model::profiles::ProfileListState::Loaded { rows, .. } = model.profiles()
-            {
-                for row in rows {
+            if matches!(
+                model.profiles(),
+                crate::model::profiles::ProfileListState::Loaded { .. }
+            ) {
+                let selected = match model.profiles() {
+                    crate::model::profiles::ProfileListState::Loaded { selected, .. } => *selected,
+                    _ => 0,
+                };
+                let search = match model.profiles() {
+                    crate::model::profiles::ProfileListState::Loaded { search, .. } => {
+                        search.clone()
+                    }
+                    _ => String::new(),
+                };
+                if !search.is_empty() && y < max_y {
+                    let filter_line = format!("filter: {search}");
+                    let clipped: String = filter_line.chars().take(width as usize).collect();
+                    ratatui_core::text::Line::from(clipped).render(
+                        Rect {
+                            x,
+                            y,
+                            width,
+                            height: 1,
+                        },
+                        frame.buffer_mut(),
+                    );
+                    y = y.saturating_add(1);
+                }
+                let rows: Vec<_> = model
+                    .profiles()
+                    .visible_rows()
+                    .into_iter()
+                    .cloned()
+                    .collect();
+                for (index, row) in rows.iter().enumerate() {
                     if y >= max_y {
                         break;
                     }
-                    let line = row.list_line();
-                    let clipped = if line.len() > width as usize {
-                        line.chars().take(width as usize).collect::<String>()
-                    } else {
-                        line
-                    };
+                    let marker = if index == selected { ">" } else { " " };
+                    let line = format!("{marker} {}", row.list_line());
+                    let clipped: String = line.chars().take(width as usize).collect();
                     ratatui_core::text::Line::from(clipped).render(
                         Rect {
                             x,

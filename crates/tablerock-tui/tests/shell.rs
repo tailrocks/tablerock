@@ -49,8 +49,9 @@ fn actions_are_root_owned_and_only_activate_from_action_focus() {
     for _ in 0..4 {
         let _ = update(&mut model, Message::FocusNext);
     }
-    assert!(update(&mut model, Message::Activate).needs_render());
-    assert_eq!(model.screen(), Screen::ConnectionPicker);
+    // Open with empty list: no selection → no effect / screen change.
+    assert!(!update(&mut model, Message::Activate).needs_render());
+    assert_eq!(model.screen(), Screen::Connections);
     let _ = update(&mut model, Message::ActionNext);
     assert_eq!(model.selected_action(), ActionId::New);
     let _ = update(&mut model, Message::ActionNext);
@@ -81,8 +82,9 @@ fn pointer_activation_requires_matching_render_authorized_press_and_release() {
 
     let _ = update(&mut model, Message::PointerPressed(open));
     let activated = update(&mut model, Message::PointerReleased(open));
-    assert!(activated.needs_render());
-    assert_eq!(model.screen(), Screen::ConnectionPicker);
+    // Empty list: Open has no selected profile.
+    assert!(!activated.needs_render());
+    assert_eq!(model.screen(), Screen::Connections);
 
     let _ = update(&mut model, Message::PointerPressed(quit));
     assert_eq!(

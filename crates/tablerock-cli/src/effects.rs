@@ -122,6 +122,19 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::ConnectProfile {
+                request_token,
+                profile_id_hex,
+            } => {
+                let persistence = Arc::clone(&self.persistence);
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message =
+                        connect_profile(persistence, sessions, request_token, profile_id_hex).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
         }
     }
 }
@@ -255,6 +268,116 @@ fn mint_session_id() -> Result<SessionId, String> {
     let low = NEXT_SESSION_LOW.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     SessionId::from_parts(IdParts::new(1, low).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())
+}
+
+async fn connect_profile(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+    profile_id_hex: String,
+) -> Message {
+    let draft = match load_profile_draft(persistence, profile_id_hex).await {
+        Ok(draft) => draft,
+        Err(label) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
+                request_token,
+                reason: FailureProjection::Label(label),
+            });
+        }
+    };
+    connect_session(sessions, request_token, draft, false).await
+}
+
+async fn load_profile_draft(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    profile_id_hex: String,
+) -> Result<ConnectionDraft, String> {
+    tokio::task::spawn_blocking(move || {
+        let profile_id = profile_id_hex
+            .parse::<ProfileId>()
+            .map_err(|_| "invalid profile id".to_owned())?;
+        let guard = persistence.blocking_lock();
+        let Some(actor) = guard.as_ref() else {
+            return Err("persistence unavailable".to_owned());
+        };
+        let Some(aggregate) = actor
+            .get_profile(profile_id)
+            .map_err(|error| error.to_string())?
+        else {
+            return Err("profile not found".to_owned());
+        };
+        aggregate_to_draft(&aggregate)
+    })
+    .await
+    .map_err(|_| "task-failed".to_owned())?
+}
+
+fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, String> {
+    use tablerock_core::ProfileProperty;
+    use tablerock_engine::{SecretPromptPort, SecretResolutionError, resolve_for_connect};
+
+    struct FailPrompt;
+    impl SecretPromptPort for FailPrompt {
+        fn request(
+            &mut self,
+            _field: tablerock_core::SecretField,
+            _profile: &tablerock_core::ProfileName,
+        ) -> Result<tablerock_engine::ResolvedSecret, SecretResolutionError> {
+            Err(SecretResolutionError::PromptFailed)
+        }
+    }
+
+    let connection = aggregate.connection();
+    let props = connection.properties();
+    let literal = |property: ProfileProperty| -> Option<String> {
+        props
+            .binding(property)
+            .and_then(|binding| binding.literal_value().map(str::to_owned))
+    };
+    let mut prompt = FailPrompt;
+    let mut password = String::new();
+    if let Some(binding) = props.binding(ProfileProperty::Password) {
+        match resolve_for_connect(binding, connection.name(), &mut prompt) {
+            Ok(Some(secret)) => {
+                password = String::from_utf8_lossy(secret.as_bytes()).into_owned();
+            }
+            Ok(None) => {}
+            Err(SecretResolutionError::PromptFailed) => {
+                return Err("password prompt required".into());
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    let engine = match connection.engine() {
+        Engine::PostgreSql => EngineKind::PostgreSql,
+        Engine::ClickHouse => EngineKind::ClickHouse,
+        Engine::Redis => EngineKind::Redis,
+    };
+    let tls_mode = match connection.tls_policy() {
+        TlsPolicy::Disabled => TlsModeSpec::Off,
+        TlsPolicy::VerifySystemRoots => TlsModeSpec::VerifyCa,
+        TlsPolicy::VerifyCustomCa | TlsPolicy::DangerousAcceptInvalidCertificate(_) => {
+            TlsModeSpec::VerifyFull
+        }
+    };
+    Ok(ConnectionDraft {
+        engine,
+        name: connection.name().as_str().to_owned(),
+        group: aggregate
+            .organization()
+            .group()
+            .map(|group| group.as_str().to_owned())
+            .unwrap_or_default(),
+        environment: String::new(),
+        host: literal(ProfileProperty::Host).unwrap_or_default(),
+        port: literal(ProfileProperty::Port).unwrap_or_default(),
+        database: literal(ProfileProperty::DefaultContext).unwrap_or_default(),
+        username: literal(ProfileProperty::Username).unwrap_or_default(),
+        password,
+        password_source: PasswordSourceSpec::DangerousPlaintext,
+        tls_mode,
+        plaintext_acknowledged: true,
+    })
 }
 
 /// Connect + describe. Caller owns shutdown/register.

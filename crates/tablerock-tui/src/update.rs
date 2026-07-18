@@ -87,6 +87,13 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             apply_editor_text(model, text.text());
             Update::render()
         }
+        Message::Paste(text)
+            if model.screen() == Screen::Connections
+                && model.focus() == Some(FocusRegion::Content) =>
+        {
+            model.profiles_mut().push_search(text.text());
+            Update::render()
+        }
         Message::Paste(_) => Update::unchanged(),
         Message::PointerHovered(target) | Message::PointerDragged(target) => {
             if model.hovered() == target {
@@ -149,6 +156,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             model.set_profiles(ProfileListState::Loaded {
                 request_token,
                 rows: items,
+                selected: 0,
+                search: String::new(),
             });
             Update::render()
         }
@@ -289,6 +298,13 @@ pub fn update(model: &mut Model, message: Message) -> Update {
         Message::Activate if model.focus() == Some(FocusRegion::Actions) => {
             activate_selected_action(model)
         }
+        Message::Activate
+            if model.screen() == Screen::Connections
+                && model.focus() == Some(FocusRegion::Content) =>
+        {
+            model.profiles_mut().select_next();
+            Update::render()
+        }
         Message::Activate if model.screen() == Screen::Editor => {
             model.editor_mut().focus_next();
             Update::render()
@@ -313,6 +329,23 @@ fn focus_target(model: &mut Model, target: ShellTarget) {
 
 fn activate_selected_action(model: &mut Model) -> Update {
     match model.selected_action() {
+        ActionId::Open if model.screen() == Screen::Connections => {
+            let Some(profile_id_hex) = model
+                .profiles()
+                .selected_row()
+                .map(|row| row.id_hex.clone())
+            else {
+                return Update::unchanged();
+            };
+            let token = model.mint_request_token();
+            Update {
+                render: true,
+                effect: Some(Effect::ConnectProfile {
+                    request_token: token,
+                    profile_id_hex,
+                }),
+            }
+        }
         ActionId::Open => {
             model.set_screen(Screen::ConnectionPicker);
             Update::render()

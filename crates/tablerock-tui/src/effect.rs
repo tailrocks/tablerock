@@ -88,4 +88,9 @@ pub enum Effect {
         request_token: RequestToken,
         session_id_hex: String,
     },
+    /// Load a saved profile and connect (non-temporary).
+    ConnectProfile {
+        request_token: RequestToken,
+        profile_id_hex: String,
+    },
 }
