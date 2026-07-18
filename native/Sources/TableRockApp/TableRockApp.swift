@@ -37,6 +37,7 @@ final class BridgeModel: ObservableObject {
     @Published var catalogSummary: String?
     @Published var catalogError: String?
     @Published var catalogTable: PageV1Table?
+    @Published var queryText: String = "SELECT 1;"
     var bridge: TableRockBridge?
     var sessionData: Data?
 
@@ -101,44 +102,66 @@ final class BridgeModel: ObservableObject {
 
     /// Submit a catalog refresh and poll events until the page arrives, then
     /// decode the v1 page envelope. Proves the operation/event/page flow.
+    /// Submit an operation and poll events until the result page arrives.
+    /// Returns the decoded table, or nil on terminal-without-page.
+    private func fetchPage(intent: String, statement: String?) throws -> PageV1Table? {
+        guard let bridge, let session = sessionData else { return nil }
+        let spec = SubmitSpec(
+            intent: intent,
+            sessionId: session,
+            statement: statement,
+            resultId: nil,
+            startRow: nil,
+            rowCount: 500,
+            expectedRevision: 0
+        )
+        _ = try bridge.submit(spec: spec)
+        var cursor: UInt64 = 0
+        for _ in 0..<64 {
+            let batch = try bridge.nextEvents(cursor: cursor, maximum: 64)
+            if batch.events.isEmpty { break }
+            for event in batch.events {
+                if event.kind == "page", let page = event.pageBytes {
+                    return try PageV1.decodeTable(page)
+                }
+                if event.kind == "terminal" { return nil }
+            }
+            cursor = batch.nextCursor
+        }
+        return nil
+    }
+
     func browse() {
-        guard let bridge, let session = sessionData else { return }
         catalogSummary = nil
         catalogError = nil
         catalogTable = nil
         do {
-            let spec = SubmitSpec(
-                intent: "refresh_catalog",
-                sessionId: session,
-                statement: nil,
-                resultId: nil,
-                startRow: nil,
-                rowCount: 50,
-                expectedRevision: 0
-            )
-            _ = try bridge.submit(spec: spec)
-            var cursor: UInt64 = 0
-            for _ in 0..<64 {
-                let batch = try bridge.nextEvents(cursor: cursor, maximum: 64)
-                if batch.events.isEmpty { break }
-                for event in batch.events {
-                    if event.kind == "page", let page = event.pageBytes {
-                        let table = try PageV1.decodeTable(page)
-                        catalogTable = table
-                        catalogSummary =
-                            "catalog · \(table.columns.count) columns · \(table.rows.count) rows"
-                        return
-                    }
-                    if event.kind == "terminal" {
-                        catalogSummary = "catalog: terminal (no page)"
-                        return
-                    }
-                }
-                cursor = batch.nextCursor
+            if let table = try fetchPage(intent: "refresh_catalog", statement: nil) {
+                catalogTable = table
+                catalogSummary = "catalog · \(table.columns.count) columns · \(table.rows.count) rows"
+            } else {
+                catalogSummary = "catalog: no page"
             }
-            catalogSummary = "catalog: no page event"
         } catch {
             catalogError = "Browse failed: \(error)"
+        }
+    }
+
+    func runQuery() {
+        let sql = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sql.isEmpty else { return }
+        catalogSummary = nil
+        catalogError = nil
+        catalogTable = nil
+        do {
+            if let table = try fetchPage(intent: "execute", statement: sql) {
+                catalogTable = table
+                catalogSummary = "result · \(table.columns.count) columns · \(table.rows.count) rows"
+            } else {
+                catalogSummary = "query: no result page (terminal)"
+            }
+        } catch {
+            catalogError = "Query failed: \(error)"
         }
     }
 }
@@ -192,6 +215,20 @@ struct ContentView: View {
                 }
                 if let catalogError = model.catalogError {
                     Text(catalogError).foregroundStyle(.red).font(.callout).textSelection(.enabled)
+                }
+                if model.sessionHex != nil {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("SQL").font(.headline)
+                        TextEditor(text: $model.queryText)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 56, maxHeight: 80)
+                        HStack {
+                            Button("Run query") { model.runQuery() }
+                                .buttonStyle(.borderedProminent)
+                                .keyboardShortcut("r", modifiers: .command)
+                            Button("Refresh catalog") { model.browse() }
+                        }
+                    }
                 }
                 if let table = model.catalogTable {
                     CatalogGrid(table: table)
