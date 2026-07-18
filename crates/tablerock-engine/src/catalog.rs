@@ -239,6 +239,41 @@ impl fmt::Debug for CatalogRequest {
 /// Default logical DB count when Redis CONFIG is denied.
 pub const REDIS_DEFAULT_LOGICAL_DATABASES: u32 = 16;
 
+/// Bounded redacted server identity facts for Test Connection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServerDescribe {
+    engine: Engine,
+    /// Safe version/identity string (no secrets).
+    identity: String,
+    elapsed_millis: u64,
+}
+
+impl ServerDescribe {
+    #[must_use]
+    pub fn new(engine: Engine, identity: impl Into<String>, elapsed_millis: u64) -> Self {
+        Self {
+            engine,
+            identity: identity.into(),
+            elapsed_millis,
+        }
+    }
+
+    #[must_use]
+    pub const fn engine(&self) -> Engine {
+        self.engine
+    }
+
+    #[must_use]
+    pub fn identity(&self) -> &str {
+        &self.identity
+    }
+
+    #[must_use]
+    pub const fn elapsed_millis(&self) -> u64 {
+        self.elapsed_millis
+    }
+}
+
 const CATALOG_NAME_BYTE_LIMIT: u64 = 256;
 
 #[must_use]

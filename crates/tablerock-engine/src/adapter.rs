@@ -10,7 +10,7 @@ use crate::{
     ClickHouseSession, PostgresError, PostgresProbeQuery, PostgresRowStream, PostgresSession,
     RedisCollectionScanKind, RedisCollectionScanOptions, RedisCollectionStream, RedisError,
     RedisKeyStream, RedisSession, RedisSubscriptionKind, RedisSubscriptionOptions,
-    RedisSubscriptionStream,
+    RedisSubscriptionStream, ServerDescribe,
 };
 
 pub type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -267,6 +267,9 @@ pub trait DriverSession: Send + Sync {
         request: CatalogRequest,
     ) -> DriverFuture<'a, Result<CatalogSubtree, AdapterError>>;
 
+    /// Bounded server identity/version facts for Test Connection.
+    fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>>;
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>>;
 }
 
@@ -432,6 +435,10 @@ impl DriverSession for PostgresSession {
         Box::pin(async move { self.list_catalog(request).await.map_err(map_postgres) })
     }
 
+    fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>> {
+        Box::pin(async move { self.describe_server().await.map_err(map_postgres) })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move { (*self).shutdown().await.map_err(map_postgres) })
     }
@@ -497,6 +504,10 @@ impl DriverSession for ClickHouseSession {
         request: CatalogRequest,
     ) -> DriverFuture<'a, Result<CatalogSubtree, AdapterError>> {
         Box::pin(async move { self.list_catalog(request).await.map_err(map_clickhouse) })
+    }
+
+    fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>> {
+        Box::pin(async move { self.describe_server().await.map_err(map_clickhouse) })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
@@ -582,6 +593,10 @@ impl DriverSession for RedisSession {
         request: CatalogRequest,
     ) -> DriverFuture<'a, Result<CatalogSubtree, AdapterError>> {
         Box::pin(async move { self.list_catalog(request).await.map_err(map_redis) })
+    }
+
+    fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>> {
+        Box::pin(async move { self.describe_server().await.map_err(map_redis) })
     }
 
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {

@@ -38,7 +38,7 @@ use tokio_postgres_rustls::MakeRustlsConnect;
 use zeroize::Zeroize;
 
 use crate::{
-    CatalogExactness, CatalogRequest, CatalogSubtree,
+    CatalogExactness, CatalogRequest, CatalogSubtree, ServerDescribe,
     catalog::{catalog_name_list, catalog_seed},
     temporal::format_date_from_unix_days,
 };
@@ -891,6 +891,22 @@ impl PostgresSession {
             .batch_execute(sql)
             .await
             .map_err(|_| PostgresError::Query)
+    }
+
+    pub async fn describe_server(&self) -> Result<ServerDescribe, PostgresError> {
+        let started = std::time::Instant::now();
+        let row = self
+            .client
+            .query_one("SELECT version()", &[])
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        let version: String = row.get(0);
+        let identity = version.chars().take(256).collect::<String>();
+        Ok(ServerDescribe::new(
+            Engine::PostgreSql,
+            identity,
+            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        ))
     }
 
     pub async fn list_catalog(

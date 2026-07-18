@@ -89,6 +89,18 @@ impl DriverSession for HoldSession {
         })
     }
 
+    fn describe<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::ServerDescribe, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::ServerDescribe::new(
+                Engine::PostgreSql,
+                "test",
+                0,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move {
             self.0.store(true, Ordering::SeqCst);
@@ -137,6 +149,18 @@ impl DriverSession for PanicSession {
         })
     }
 
+    fn describe<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::ServerDescribe, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::ServerDescribe::new(
+                Engine::PostgreSql,
+                "test",
+                0,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async { Ok(()) })
     }
@@ -181,6 +205,18 @@ impl DriverSession for PageSession {
             Err(AdapterError::new(
                 Engine::PostgreSql,
                 tablerock_engine::AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
+    fn describe<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::ServerDescribe, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::ServerDescribe::new(
+                Engine::PostgreSql,
+                "test",
+                0,
             ))
         })
     }
@@ -565,6 +601,18 @@ impl DriverSession for CatalogSession {
                 )],
                 true,
                 tablerock_engine::CatalogExactness::Exact,
+            ))
+        })
+    }
+
+    fn describe<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::ServerDescribe, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::ServerDescribe::new(
+                Engine::PostgreSql,
+                "test",
+                0,
             ))
         })
     }

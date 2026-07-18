@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     AdapterError, AdapterFailureClass, CatalogRequest, CatalogSubtree, DriverFuture,
-    DriverPageRequest, DriverPageStream, DriverSession, SessionHealth,
+    DriverPageRequest, DriverPageStream, DriverSession, ServerDescribe, SessionHealth,
 };
 
 /// Upper bound for concurrent registered sessions (ServiceLimits scale).
@@ -119,6 +119,19 @@ impl DriverSession for SessionSlot {
             let guard = self.state.read().await;
             match &*guard {
                 SessionState::Open(session) => session.catalog(request).await,
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
+    fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => session.describe().await,
                 SessionState::Closed => Err(AdapterError::new(
                     self.engine,
                     AdapterFailureClass::Connection,

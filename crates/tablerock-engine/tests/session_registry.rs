@@ -68,6 +68,18 @@ impl DriverSession for CountingSession {
         })
     }
 
+    fn describe<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::ServerDescribe, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::ServerDescribe::new(
+                Engine::PostgreSql,
+                "test",
+                0,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async move {
             self.shutdowns.fetch_add(1, Ordering::SeqCst);

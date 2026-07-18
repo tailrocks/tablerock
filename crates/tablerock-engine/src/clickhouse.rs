@@ -17,7 +17,7 @@ use tablerock_core::{
 };
 
 use crate::{
-    CatalogRequest, CatalogSubtree,
+    CatalogRequest, CatalogSubtree, ServerDescribe,
     catalog::{catalog_name_list, catalog_seed},
     temporal::{format_date_from_unix_days, format_unix_timestamp},
 };
@@ -346,6 +346,23 @@ impl ClickHouseSession {
             .execute()
             .await
             .map_err(|_| ClickHouseError::Query)
+    }
+
+    pub async fn describe_server(&self) -> Result<ServerDescribe, ClickHouseError> {
+        let started = std::time::Instant::now();
+        let names = self.fetch_name_column("SELECT version()").await?;
+        let identity = names
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| "ClickHouse".into())
+            .chars()
+            .take(256)
+            .collect::<String>();
+        Ok(ServerDescribe::new(
+            Engine::ClickHouse,
+            identity,
+            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        ))
     }
 
     pub async fn list_catalog(

@@ -181,7 +181,7 @@ use tablerock_core::{
 
 use crate::{
     CatalogExactness, CatalogRequest, CatalogSubtree, REDIS_DEFAULT_LOGICAL_DATABASES,
-    catalog::catalog_name_list,
+    ServerDescribe, catalog::catalog_name_list,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1216,6 +1216,28 @@ impl RedisSession {
             .await
             .map(|_| ())
             .map_err(|_| RedisError::Connection)
+    }
+
+    pub async fn describe_server(&self) -> Result<ServerDescribe, RedisError> {
+        let started = std::time::Instant::now();
+        let mut connection = self.connection.clone();
+        let info: String = redis::cmd("INFO")
+            .arg("server")
+            .query_async(&mut connection)
+            .await
+            .map_err(|_| RedisError::Command)?;
+        let version = info
+            .lines()
+            .find_map(|line| line.strip_prefix("redis_version:"))
+            .unwrap_or("redis")
+            .chars()
+            .take(64)
+            .collect::<String>();
+        Ok(ServerDescribe::new(
+            Engine::Redis,
+            format!("Redis {version}"),
+            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        ))
     }
 
     pub async fn list_catalog(

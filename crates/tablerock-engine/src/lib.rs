@@ -17,7 +17,7 @@ pub use adapter::{
 };
 pub use catalog::{
     CatalogExactness, CatalogNodeSeed, CatalogRequest, CatalogSubtree,
-    REDIS_DEFAULT_LOGICAL_DATABASES,
+    REDIS_DEFAULT_LOGICAL_DATABASES, ServerDescribe,
 };
 pub use clickhouse::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseError, ClickHouseProbeQuery,
