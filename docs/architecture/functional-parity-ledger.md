@@ -67,8 +67,8 @@ architecture decisions.
 | Environment tag | Core | Per-profile environment label (production/staging/development/custom) shown in list, editor, context bar, and tabs; production renders a persistent warning treatment, never color alone | Snapshot fixtures across all four surfaces |
 | Context switcher | Core | Switch connection/database/schema/logical database using engine-correct semantics | Driver contract tests prove no fake cross-engine abstraction |
 | Health and reconnect | Core | Visible state, bounded backoff, authentication stop condition, context restoration, and no automatic ambiguous-write retry | Disconnect/reconnect race harness |
-| Startup actions | Later | Reviewed, bounded startup SQL/commands with explicit reconnect behavior | Safety classification, timeout, and partial-failure tests |
-| SSH transport | Parity | Rust `russh` adapter below clients with host-key verification, known-hosts, key/agent/password auth, keepalive, cancel, and reconnect | Real SSH bastion matrix; no shell interpolation or secret logging |
+| Startup actions | Later | Reviewed, bounded startup SQL/commands with explicit reconnect behavior | Core contract + PG ReadOnly auto-run executor (evidence 270–271); profile persist, connect-path wire, CH/Redis, and review UI remain |
+| SSH transport | Core | Rust `russh` adapter below clients with host-key verification, known-hosts, key/agent/password auth, local-forward, cancel cleanup | Real bastion matrix (evidence 260–269); keepalive/reconnect polish and profile-persisted agent preference remain |
 | Cloud-provider proxy/identity | Excluded | No vendor proxy/identity workflow in this three-engine program | Product-boundary test and documentation |
 
 ## Workbench and navigation
