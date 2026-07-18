@@ -46,3 +46,14 @@ Plan 021 release evidence; it does not prevent local development or verification
 ./scripts/build-native-app.sh
 open native/dist/TableRock.app
 ```
+
+## Workbench query tabs
+
+Use the plus button above the SQL editor to create up to 64 independent query
+tabs. Each tab owns editor text, result pages, pagination, running/cancel state,
+review outcome, errors, and bound SQL file. The tab action menu renames or
+closes it; running tabs cannot close, and dirty tabs require confirmation.
+
+Saved-profile workspaces persist selected tab, titles, text, and database
+intent through Rust. Results, operation handles, and pending writes never
+restore. Switching profiles clears volatile tab state before loading intent.

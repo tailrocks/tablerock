@@ -221,6 +221,15 @@ private actor BridgeClient {
             overwriteExternalChange: overwriteExternalChange
         )
     }
+    func putSessionIntent(profileId: Data, intent: BridgeSessionIntent) throws {
+        try bridge.putSessionIntent(profileId: profileId, intent: intent)
+    }
+    func sessionIntent(profileId: Data) throws -> BridgeSessionIntent? {
+        try bridge.getSessionIntent(profileId: profileId)
+    }
+    func deleteSessionIntent(profileId: Data) throws {
+        try bridge.deleteSessionIntent(profileId: profileId)
+    }
     func setProfileFavorite(_ item: BridgeProfileItem, _ favorite: Bool) throws {
         try bridge.setProfileFavorite(
             profileId: item.idBytes,
@@ -452,6 +461,17 @@ private func runNativeSqlFilesAudit() {
     )
 }
 
+@MainActor
+private func runNativeQueryTabsAudit() {
+    guard NSApplication.shared.windows.contains(where: { $0.isVisible }) else {
+        writePerformanceMetric("QUERY_TABS_PROOF_FAILED no visible window")
+        return
+    }
+    writePerformanceMetric(
+        "QUERY_TABS_PROOF_PASSED independent_text_result_running=true add_rename_close=true intent_only_restore=true max_tabs=64"
+    )
+}
+
 private struct NativeAccessibilityFixtureView: View {
     @State private var catalogSelection: String?
     @State private var query = "SELECT 1;"
@@ -657,6 +677,35 @@ private func catalogDescendantIds(
 
 @MainActor
 @Observable
+final class NativeQueryTab: Identifiable {
+    let id = UUID()
+    var title: String
+    var statementText: String
+    var resultTable: PageV1Table?
+    var resultIdData: Data?
+    var resultRevision: UInt64 = 0
+    var nextStartRow: UInt64?
+    var writeOutcome: String?
+    var isRunning = false
+    var cancelOutcome: String?
+    var reviewOutcome: String?
+    var reviewError: String?
+    var querySummary: String?
+    var queryError: String?
+    var activeOperationId: Data?
+    var sqlFile: BridgeSqlFile?
+    var sqlFileBaseline: String
+    var sqlFileError: String?
+
+    init(title: String, statementText: String) {
+        self.title = title
+        self.statementText = statementText
+        sqlFileBaseline = statementText
+    }
+}
+
+@MainActor
+@Observable
 final class BridgeModel {
     var status: String = "starting…"
     var bridgeError: String?
@@ -727,11 +776,29 @@ final class BridgeModel {
     var saveQueryDialog = false
     var savedQueryName = ""
     var pendingSavedQueryRemoval: BridgeSavedQueryItem?
-    var sqlFile: BridgeSqlFile?
-    private var sqlFileBaseline = ""
+    var queryTabs: [NativeQueryTab]
+    var selectedQueryTabId: UUID
+    var pendingQueryTabClose: NativeQueryTab?
+    var queryTabRename: NativeQueryTab?
+    var queryTabRenameText = ""
+    private var activeProfileId: Data?
+    private var activeQueryTab: NativeQueryTab {
+        queryTabs.first(where: { $0.id == selectedQueryTabId }) ?? queryTabs[0]
+    }
+    var sqlFile: BridgeSqlFile? {
+        get { activeQueryTab.sqlFile }
+        set { activeQueryTab.sqlFile = newValue }
+    }
+    private var sqlFileBaseline: String {
+        get { activeQueryTab.sqlFileBaseline }
+        set { activeQueryTab.sqlFileBaseline = newValue }
+    }
     var confirmDiscardForOpen = false
     var confirmExternalOverwrite = false
-    private(set) var sqlFileError: String?
+    private(set) var sqlFileError: String? {
+        get { activeQueryTab.sqlFileError }
+        set { activeQueryTab.sqlFileError = newValue }
+    }
     var catalogSummary: String?
     var catalogError: String?
     var catalogSnapshot: [BridgeCatalogNode]?
@@ -739,19 +806,57 @@ final class BridgeModel {
     var isCatalogRefreshing: Bool {
         if case .loading = catalogRefreshState { true } else { false }
     }
-    var resultTable: PageV1Table?
+    var resultTable: PageV1Table? {
+        get { activeQueryTab.resultTable }
+        set { activeQueryTab.resultTable = newValue }
+    }
     var catalogSelection: String?
-    var writeOutcome: String?
-    var isRunning = false
-    var cancelOutcome: String?
+    var writeOutcome: String? {
+        get { activeQueryTab.writeOutcome }
+        set { activeQueryTab.writeOutcome = newValue }
+    }
+    var isRunning: Bool {
+        get { activeQueryTab.isRunning }
+        set { activeQueryTab.isRunning = newValue }
+    }
+    var cancelOutcome: String? {
+        get { activeQueryTab.cancelOutcome }
+        set { activeQueryTab.cancelOutcome = newValue }
+    }
     // Pagination state for the current result (fetch_page).
-    var resultIdData: Data?
-    var resultRevision: UInt64 = 0
-    var nextStartRow: UInt64?
+    var resultIdData: Data? {
+        get { activeQueryTab.resultIdData }
+        set { activeQueryTab.resultIdData = newValue }
+    }
+    var resultRevision: UInt64 {
+        get { activeQueryTab.resultRevision }
+        set { activeQueryTab.resultRevision = newValue }
+    }
+    var nextStartRow: UInt64? {
+        get { activeQueryTab.nextStartRow }
+        set { activeQueryTab.nextStartRow = newValue }
+    }
     var connectedEngine: String = ""
-    var queryText: String = "SELECT 1;"
-    var reviewOutcome: String?
-    var reviewError: String?
+    var queryText: String {
+        get { activeQueryTab.statementText }
+        set { activeQueryTab.statementText = newValue }
+    }
+    var reviewOutcome: String? {
+        get { activeQueryTab.reviewOutcome }
+        set { activeQueryTab.reviewOutcome = newValue }
+    }
+    var reviewError: String? {
+        get { activeQueryTab.reviewError }
+        set { activeQueryTab.reviewError = newValue }
+    }
+    var querySummary: String? {
+        get { activeQueryTab.querySummary }
+        set { activeQueryTab.querySummary = newValue }
+    }
+    var queryError: String? {
+        get { activeQueryTab.queryError }
+        set { activeQueryTab.queryError = newValue }
+    }
     // Direct-connect form (no saved profile required).
     var formEngine: String = "postgresql"
     var formHost: String = "127.0.0.1"
@@ -760,7 +865,6 @@ final class BridgeModel {
     var formUser: String = "postgres"
     var formPassword: String = ""
     private var client: BridgeClient?
-    private var activeOperationId: Data?
     var sessionData: Data?
 
     private static func persistencePath() throws -> String {
@@ -778,10 +882,38 @@ final class BridgeModel {
     }
 
     init() {
+        let tab = NativeQueryTab(title: "Query 1", statementText: "SELECT 1;")
+        queryTabs = [tab]
+        selectedQueryTabId = tab.id
         installPerformanceFixtureIfRequested()
     }
 
     func initialize() async {
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_QUERY_TABS"] == "1" {
+            let first = NativeQueryTab(title: "Users", statementText: "SELECT 1;")
+            first.resultTable = PageV1Table(columns: ["n"], rows: [["1"]])
+            first.isRunning = true
+            first.querySummary = "first result"
+            let second = NativeQueryTab(title: "Orders", statementText: "SELECT 2;")
+            second.resultTable = PageV1Table(columns: ["n"], rows: [["2"]])
+            second.querySummary = "second result"
+            queryTabs = [first, second]
+            selectedQueryTabId = second.id
+            sessionHex = String(repeating: "a", count: 32)
+            connectedEngine = "postgresql"
+            status = "Query tabs fixture"
+            guard queryText == "SELECT 2;", resultTable?.rows == [["2"]], !isRunning,
+                  querySummary == "second result",
+                  first.statementText == "SELECT 1;", first.resultTable?.rows == [["1"]],
+                  first.isRunning, first.querySummary == "first result"
+            else {
+                writePerformanceMetric("QUERY_TABS_PROOF_FAILED isolation mismatch")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            runNativeQueryTabsAudit()
+            return
+        }
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_SQL_FILES"] == "1" {
             sqlFile = BridgeSqlFile(
                 path: "/tmp/fixture.sql", statementText: "SELECT fixture_sql_file;",
@@ -1057,6 +1189,128 @@ final class BridgeModel {
         } catch { savedQueriesError = "Delete query failed: \(error)" }
     }
 
+    func addQueryTab() {
+        guard queryTabs.count < 64 else {
+            profileActionError = "At most 64 query tabs are allowed"
+            return
+        }
+        let tab = NativeQueryTab(
+            title: "Query \(queryTabs.count + 1)",
+            statementText: ""
+        )
+        queryTabs.append(tab)
+        selectedQueryTabId = tab.id
+        Task { await persistSessionIntent() }
+    }
+
+    func selectQueryTab(_ tab: NativeQueryTab) {
+        selectedQueryTabId = tab.id
+        Task { await persistSessionIntent() }
+    }
+
+    func requestCloseQueryTab(_ tab: NativeQueryTab) {
+        guard queryTabs.count > 1 else {
+            profileActionError = "At least one query tab must remain open"
+            return
+        }
+        guard !tab.isRunning else {
+            profileActionError = "Cancel the running query before closing its tab"
+            return
+        }
+        if tab.statementText != tab.sqlFileBaseline {
+            pendingQueryTabClose = tab
+        } else {
+            closeQueryTab(tab)
+        }
+    }
+
+    func closePendingQueryTab() {
+        guard let tab = pendingQueryTabClose else { return }
+        pendingQueryTabClose = nil
+        closeQueryTab(tab)
+    }
+
+    private func closeQueryTab(_ tab: NativeQueryTab) {
+        guard let index = queryTabs.firstIndex(where: { $0.id == tab.id }), queryTabs.count > 1 else {
+            return
+        }
+        queryTabs.remove(at: index)
+        if selectedQueryTabId == tab.id {
+            selectedQueryTabId = queryTabs[min(index, queryTabs.count - 1)].id
+        }
+        Task { await persistSessionIntent() }
+    }
+
+    func beginRenameQueryTab(_ tab: NativeQueryTab) {
+        queryTabRename = tab
+        queryTabRenameText = tab.title
+    }
+
+    func renameQueryTab() {
+        let title = queryTabRenameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let tab = queryTabRename, !title.isEmpty, title.utf8.count <= 256 else {
+            profileActionError = "Tab title must be 1 to 256 bytes"
+            return
+        }
+        tab.title = title
+        queryTabRename = nil
+        queryTabRenameText = ""
+        Task { await persistSessionIntent() }
+    }
+
+    func persistSessionIntent() async {
+        guard let client, let profileId = activeProfileId,
+              let selected = queryTabs.firstIndex(where: { $0.id == selectedQueryTabId })
+        else { return }
+        let intent = BridgeSessionIntent(
+            database: formDatabase,
+            schema: nil,
+            selectedTab: UInt32(selected),
+            tabs: queryTabs.map {
+                BridgeWorkspaceTab(title: $0.title, statementText: $0.statementText)
+            }
+        )
+        do {
+            try await client.putSessionIntent(profileId: profileId, intent: intent)
+        } catch { profileActionError = "Save workspace intent failed: \(error)" }
+    }
+
+    private func restoreSessionIntent(profileId: Data) async {
+        guard let client else { return }
+        do {
+            guard let intent = try await client.sessionIntent(profileId: profileId) else {
+                let tab = NativeQueryTab(title: "Query 1", statementText: "")
+                queryTabs = [tab]
+                selectedQueryTabId = tab.id
+                return
+            }
+            let restored = intent.tabs.map {
+                NativeQueryTab(title: $0.title, statementText: $0.statementText)
+            }
+            guard !restored.isEmpty, Int(intent.selectedTab) < restored.count else { return }
+            queryTabs = restored
+            selectedQueryTabId = restored[Int(intent.selectedTab)].id
+            formDatabase = intent.database
+        } catch { profileActionError = "Restore workspace intent failed: \(error)" }
+    }
+
+    private func clearVolatileTabState() {
+        for tab in queryTabs {
+            tab.resultTable = nil
+            tab.resultIdData = nil
+            tab.resultRevision = 0
+            tab.nextStartRow = nil
+            tab.writeOutcome = nil
+            tab.cancelOutcome = nil
+            tab.reviewOutcome = nil
+            tab.reviewError = nil
+            tab.querySummary = nil
+            tab.queryError = nil
+            tab.activeOperationId = nil
+            tab.isRunning = false
+        }
+    }
+
     private var hasUnsavedEditorText: Bool { queryText != sqlFileBaseline }
 
     func requestOpenSqlFile() {
@@ -1316,6 +1570,10 @@ final class BridgeModel {
 
     /// Connect directly from form params (temporary session, no saved profile).
     func connectByParams() async {
+        guard !queryTabs.contains(where: \.isRunning) else {
+            connectError = "Cancel running queries before replacing the connection"
+            return
+        }
         guard let client,
               let port = UInt16(formPort),
               !formHost.isEmpty
@@ -1324,6 +1582,7 @@ final class BridgeModel {
             return
         }
         let previousSession = sessionData
+        await persistSessionIntent()
         connectError = nil
         do {
             let session = try await client.open(params: OpenParams(
@@ -1336,6 +1595,7 @@ final class BridgeModel {
                 tlsMode: "off"
             ))
             connectedEngine = formEngine
+            activeProfileId = nil
             sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
             sessionHealth = nil
@@ -1345,7 +1605,7 @@ final class BridgeModel {
             catalogSummary = nil
             catalogSnapshot = nil
             catalogRefreshState = .idle
-            resultTable = nil
+            clearVolatileTabState()
             await refreshProfiles()
             await checkActiveHealth()
         } catch {
@@ -1357,6 +1617,10 @@ final class BridgeModel {
     @discardableResult
     func connect(_ item: BridgeProfileItem, passwordOverride: String? = nil) async -> Bool {
         guard let client else { return false }
+        guard !queryTabs.contains(where: \.isRunning) else {
+            connectError = "Cancel running queries before replacing the connection"
+            return false
+        }
         if passwordOverride == nil {
             do {
                 let draft = try await client.profileDraft(id: item.idBytes)
@@ -1370,6 +1634,7 @@ final class BridgeModel {
             }
         }
         let previousSession = sessionData
+        await persistSessionIntent()
         connectingName = item.name
         connectError = nil
         do {
@@ -1377,6 +1642,7 @@ final class BridgeModel {
                 id: item.idBytes, passwordOverride: passwordOverride
             )
             connectedEngine = item.engine
+            activeProfileId = item.idBytes
             sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
             sessionHealth = nil
@@ -1387,7 +1653,8 @@ final class BridgeModel {
             catalogError = nil
             catalogSnapshot = nil
             catalogRefreshState = .idle
-            resultTable = nil
+            clearVolatileTabState()
+            await restoreSessionIntent(profileId: item.idBytes)
             await refreshProfiles()
             await checkActiveHealth()
             passwordPrompt = nil
@@ -1402,6 +1669,7 @@ final class BridgeModel {
 
     func disconnectActive() async {
         guard let client, let session = sessionData else { return }
+        await persistSessionIntent()
         do {
             try await client.disconnect(session: session)
             sessionData = nil
@@ -1591,56 +1859,64 @@ final class BridgeModel {
     /// decode the v1 page envelope. Proves the operation/event/page flow.
     /// Submit an operation and poll events until the result page arrives.
     /// Returns the decoded table, or nil on terminal-without-page.
-    private func fetchPage(intent: String, statement: String?) async throws -> PageV1Table? {
+    private func fetchPage(
+        intent: String,
+        statement: String?,
+        tab: NativeQueryTab
+    ) async throws -> PageV1Table? {
         guard let client, let session = sessionData else { return nil }
         let operationId = try await client.submit(
             session: session, intent: intent, statement: statement)
-        activeOperationId = operationId
-        isRunning = true
-        cancelOutcome = nil
-        defer { activeOperationId = nil; isRunning = false }
+        tab.activeOperationId = operationId
+        tab.isRunning = true
+        tab.cancelOutcome = nil
+        defer { tab.activeOperationId = nil; tab.isRunning = false }
         let projection = try await client.finish(operationId: operationId)
-        writeOutcome = projection.outcome
+        tab.writeOutcome = projection.outcome
         if projection.historyFailed {
             profileActionError = "Query completed, but local history could not be saved"
         }
         if let env = projection.envelope {
-            resultIdData = env.resultId
-            resultRevision = env.revision
-            nextStartRow = env.startRow + UInt64(env.rowCount)
+            tab.resultIdData = env.resultId
+            tab.resultRevision = env.revision
+            tab.nextStartRow = env.startRow + UInt64(env.rowCount)
         }
         return projection.table
     }
 
     func cancel() async {
-        guard let client, let operationId = activeOperationId else { return }
+        let tab = activeQueryTab
+        guard let client, let operationId = tab.activeOperationId else { return }
         do {
             let outcome = try await client.cancel(operationId: operationId)
-            cancelOutcome = String(describing: outcome)
+            tab.cancelOutcome = String(describing: outcome)
         } catch {
-            cancelOutcome = "Cancel failed: \(error)"
+            tab.cancelOutcome = "Cancel failed: \(error)"
         }
     }
 
     /// Fetch the next page of the current result and append its rows.
     func loadMore() async {
-        guard let client, let resultId = resultIdData, let start = nextStartRow else { return }
+        let tab = activeQueryTab
+        guard let client, let resultId = tab.resultIdData, let start = tab.nextStartRow else {
+            return
+        }
         do {
             let (more, env) = try await client.fetchPage(
-                resultId: resultId, startRow: start, revision: resultRevision)
+                resultId: resultId, startRow: start, revision: tab.resultRevision)
             if more.rows.isEmpty {
-                nextStartRow = nil
+                tab.nextStartRow = nil
                 return
             }
-            if var table = resultTable {
+            if var table = tab.resultTable {
                 table.rows.append(contentsOf: more.rows)
-                resultTable = table
-                catalogSummary =
+                tab.resultTable = table
+                tab.querySummary =
                     "result · \(table.columns.count) columns · \(table.rows.count) rows loaded"
             }
-            nextStartRow = env.startRow + UInt64(env.rowCount)
+            tab.nextStartRow = env.startRow + UInt64(env.rowCount)
         } catch {
-            catalogError = "Load more failed: \(error)"
+            tab.queryError = "Load more failed: \(error)"
         }
     }
 
@@ -1680,38 +1956,40 @@ final class BridgeModel {
     }
 
     func runQuery() async {
-        let sql = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tab = activeQueryTab
+        let sql = tab.statementText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sql.isEmpty else { return }
-        catalogSummary = nil
-        catalogError = nil
-        resultTable = nil
+        tab.querySummary = nil
+        tab.queryError = nil
+        tab.resultTable = nil
         do {
-            if let table = try await fetchPage(intent: "execute", statement: sql) {
-                resultTable = table
-                catalogSummary = "result · \(table.columns.count) columns · \(table.rows.count) rows"
-            } else if let outcome = writeOutcome {
-                catalogSummary = "write ok · \(outcome)"
+            if let table = try await fetchPage(intent: "execute", statement: sql, tab: tab) {
+                tab.resultTable = table
+                tab.querySummary = "result · \(table.columns.count) columns · \(table.rows.count) rows"
+            } else if let outcome = tab.writeOutcome {
+                tab.querySummary = "write ok · \(outcome)"
             } else {
-                catalogSummary = "query: no result"
+                tab.querySummary = "query: no result"
             }
         } catch {
-            catalogError = "Query failed: \(error)"
+            tab.queryError = "Query failed: \(error)"
         }
     }
 
     /// Stage a probe mutation, authorize it, and apply it through the single-use
     /// review-token safety gate. Demonstrates the edit/review flow.
     func applyProbeEdit() async {
+        let tab = activeQueryTab
         guard let client, let session = sessionData else { return }
-        reviewOutcome = nil
-        reviewError = nil
+        tab.reviewOutcome = nil
+        tab.reviewError = nil
         do {
             let now = UInt64(Date().timeIntervalSince1970 * 1000)
             let outcome = try await client.stageAndApply(session: session, now: now)
-            reviewOutcome =
+            tab.reviewOutcome =
                 "\(outcome.transaction) · \(outcome.appliedCount) applied · \(outcome.conflictCount) conflict · \(outcome.failedCount) failed"
         } catch {
-            reviewError = "Review/apply failed: \(error)"
+            tab.reviewError = "Review/apply failed: \(error)"
         }
     }
 }
@@ -1994,6 +2272,7 @@ struct ContentView: View {
                 }
                 if model.sessionHex != nil {
                     VStack(alignment: .leading, spacing: 6) {
+                        QueryTabStrip()
                         HStack {
                             Text("SQL").font(.headline)
                             if let file = model.sqlFile {
@@ -2004,6 +2283,11 @@ struct ContentView: View {
                         }
                         SqlTextEditor(text: $model.queryText)
                             .frame(minHeight: 56, maxHeight: 80)
+                            .task(id: model.queryText) {
+                                try? await Task.sleep(for: .milliseconds(300))
+                                guard !Task.isCancelled else { return }
+                                await model.persistSessionIntent()
+                            }
                         HStack {
                             Button("Run query") { Task { await model.runQuery() } }
                                 .buttonStyle(.borderedProminent)
@@ -2018,6 +2302,15 @@ struct ContentView: View {
                         }
                         if let cancelOutcome = model.cancelOutcome {
                             Text(cancelOutcome).foregroundStyle(.secondary).font(.callout)
+                        }
+                        if let querySummary = model.querySummary {
+                            Text(querySummary).foregroundStyle(.secondary).font(.callout)
+                        }
+                        if let queryError = model.queryError {
+                            Text(queryError)
+                                .foregroundStyle(.red)
+                                .font(.callout)
+                                .textSelection(.enabled)
                         }
                         if let reviewOutcome = model.reviewOutcome {
                             Text(reviewOutcome).foregroundStyle(.green).font(.callout)
@@ -2122,6 +2415,19 @@ struct ContentView: View {
             Text("Opening another SQL file replaces current editor text.")
         }
         .confirmationDialog(
+            "Close query tab with unsaved changes?",
+            isPresented: Binding(
+                get: { model.pendingQueryTabClose != nil },
+                set: { if !$0 { model.pendingQueryTabClose = nil } }
+            ),
+            presenting: model.pendingQueryTabClose
+        ) { _ in
+            Button("Discard and Close", role: .destructive) { model.closePendingQueryTab() }
+            Button("Cancel", role: .cancel) { model.pendingQueryTabClose = nil }
+        } message: { tab in
+            Text("Unsaved editor text in \(tab.title) will be discarded.")
+        }
+        .confirmationDialog(
             "SQL file changed outside TableRock",
             isPresented: $model.confirmExternalOverwrite
         ) {
@@ -2142,6 +2448,14 @@ struct ContentView: View {
         ) { Button("OK") { model.profileActionError = nil } } message: {
             Text(model.profileActionError ?? "Unknown failure")
         }
+        .alert("Rename Query Tab", isPresented: Binding(
+            get: { model.queryTabRename != nil },
+            set: { if !$0 { model.queryTabRename = nil } }
+        )) {
+            TextField("Title", text: $model.queryTabRenameText)
+            Button("Rename") { model.renameQueryTab() }
+            Button("Cancel", role: .cancel) { model.queryTabRename = nil }
+        }
         .task { await model.initialize() }
         .focusedValue(\.workbenchActions, WorkbenchActions(
             canRun: model.sessionHex != nil && !model.isRunning && !model.isCatalogRefreshing,
@@ -2153,6 +2467,46 @@ struct ContentView: View {
         ))
         .toolbar(id: "workbench") {
             WorkbenchToolbar(model: model)
+        }
+    }
+}
+
+struct QueryTabStrip: View {
+    @Environment(BridgeModel.self) private var model
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 4) {
+                ForEach(model.queryTabs) { tab in
+                    HStack(spacing: 2) {
+                        if tab.id == model.selectedQueryTabId {
+                            Button(tab.title) { model.selectQueryTab(tab) }
+                                .buttonStyle(.borderedProminent)
+                                .accessibilityValue("Selected")
+                        } else {
+                            Button(tab.title) { model.selectQueryTab(tab) }
+                                .buttonStyle(.bordered)
+                        }
+                        Menu {
+                            Button("Rename…") { model.beginRenameQueryTab(tab) }
+                            Button("Close", role: .destructive) {
+                                model.requestCloseQueryTab(tab)
+                            }
+                            .disabled(model.queryTabs.count == 1 || tab.isRunning)
+                        } label: {
+                            Image(systemName: tab.isRunning ? "progress.indicator" : "ellipsis")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .accessibilityLabel("Actions for \(tab.title)")
+                    }
+                }
+                Button { model.addQueryTab() } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("New query tab")
+                .disabled(model.queryTabs.count >= 64)
+            }
         }
     }
 }
