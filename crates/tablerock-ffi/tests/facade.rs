@@ -185,3 +185,22 @@ fn open_params_debug_redacts_password() {
     assert!(!debug.contains("super-secret"));
     assert!(debug.contains("<redacted>"));
 }
+
+#[test]
+fn open_rejects_unreachable_endpoint() {
+    let bridge = TableRockBridge::new_for_test();
+    let err = bridge
+        .open(tablerock_ffi::OpenParams {
+            engine: "postgresql".into(),
+            host: "127.0.0.1".into(),
+            port: 1,
+            database: "postgres".into(),
+            user: "postgres".into(),
+            password: String::new(),
+        })
+        .unwrap_err();
+    match err {
+        BridgeError::Rejected { code, .. } => assert_eq!(code, "connect"),
+        other => panic!("expected connect reject, got {other:?}"),
+    }
+}

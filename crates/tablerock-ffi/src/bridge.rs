@@ -12,9 +12,13 @@ use tablerock_core::{
     SessionId, ShutdownMode, StatementText,
 };
 use tablerock_engine::{
+    ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
     DriverPageRequest, DriverRuntime, DriverSession, EngineService, EngineServiceUpdate,
-    PostgresProbeQuery,
+    PostgresConnectConfig, PostgresProbeQuery, PostgresSession, PostgresTlsMode,
+    RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
+    RedisTlsMode,
 };
+use tablerock_core::{BoundedText, ByteLimit};
 
 use crate::{
     error::{catch_entry, BridgeError},
@@ -254,14 +258,99 @@ impl TableRockBridge {
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let engine = parse_engine(&params.engine)?;
-        // Direct connect is engine-specific; phase-12 proof uses open_driver_session
-        // for unit tests and real containers through the same registration path.
-        // Connection wiring for live OpenParams lands with the Swift harness.
-        let _ = (engine, params);
-        Err(BridgeError::rejected(
-            "open-not-wired",
-            "use open_driver_session in Rust tests; live open lands with harness",
-        ))
+        let text = |value: &str, field: &str| {
+            BoundedText::copy_from_str(value, ByteLimit::new(256)).map_err(|error| {
+                BridgeError::rejected(field, error.to_string())
+            })
+        };
+        let host = text(&params.host, "host")?;
+        let database = text(
+            if params.database.is_empty() {
+                match engine {
+                    Engine::PostgreSql => "postgres",
+                    Engine::ClickHouse => "default",
+                    Engine::Redis => "0",
+                }
+            } else {
+                &params.database
+            },
+            "database",
+        )?;
+        let user = text(
+            if params.user.is_empty() {
+                match engine {
+                    Engine::PostgreSql => "postgres",
+                    Engine::ClickHouse => "default",
+                    Engine::Redis => "",
+                }
+            } else {
+                &params.user
+            },
+            "user",
+        )?;
+        let port = params.port;
+        // Password is used only for Redis credentials today; PostgreSQL/ClickHouse
+        // trust/config is host-local in the proof harness (same as engine Docker tests).
+        let password = params.password.clone();
+
+        let session: Box<dyn DriverSession> = self.runtime.block_on(async {
+            match engine {
+                Engine::PostgreSql => {
+                    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+                        host,
+                        port,
+                        database,
+                        user,
+                        PostgresTlsMode::Disabled,
+                    ))
+                    .await
+                    .map_err(|error| BridgeError::rejected("connect", error.to_string()))?;
+                    Ok(Box::new(session) as Box<dyn DriverSession>)
+                }
+                Engine::ClickHouse => {
+                    let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
+                        host,
+                        port,
+                        database,
+                        user,
+                        ClickHouseTlsMode::Disable,
+                        ClickHouseCompression::None,
+                    ));
+                    let _ = password;
+                    Ok(Box::new(session) as Box<dyn DriverSession>)
+                }
+                Engine::Redis => {
+                    let db = params.database.parse::<u32>().unwrap_or(0);
+                    let mut security = RedisConnectionSecurity::new();
+                    if !password.is_empty() || !params.user.is_empty() {
+                        let username = if params.user.is_empty() {
+                            None
+                        } else {
+                            Some(params.user.as_str())
+                        };
+                        security = security.with_credentials(RedisCredentials::new(
+                            username,
+                            password.as_str(),
+                        ));
+                    }
+                    let session = RedisSession::connect(
+                        &RedisConnectConfig::new(
+                            host,
+                            port,
+                            db,
+                            RedisProtocol::Resp3,
+                            RedisTlsMode::Disable,
+                        ),
+                        security,
+                    )
+                    .await
+                    .map_err(|error| BridgeError::rejected("connect", error.to_string()))?;
+                    Ok(Box::new(session) as Box<dyn DriverSession>)
+                }
+            }
+        })??;
+
+        self.open_driver_session_inner(engine, session)
     }
 
     fn open_driver_session_inner(

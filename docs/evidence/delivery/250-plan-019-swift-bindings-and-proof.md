@@ -34,10 +34,13 @@ Checks proven:
 
 ```text
 ok  panic_probe_contained
-ok  open_params_rejected_until_wired
+ok  open_params_rejects_unreachable_host
 ok  runtime_ensure_destroy_idempotent
 bridge-proof: all checks passed
 ```
+
+Live `open(OpenParams)` now connects through engine adapters (PG/CH/Redis);
+unreachable hosts return typed `Rejected { code: "connect" }`.
 
 Command:
 

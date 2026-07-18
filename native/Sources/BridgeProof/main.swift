@@ -23,22 +23,23 @@ struct BridgeProof {
             try bridge.destroyRuntime()
         }
 
-        failures += run("open_params_rejected_until_wired") {
+        failures += run("open_params_rejects_unreachable_host") {
             let bridge = TableRockBridge.create()
+            // Port 1 is almost never a PostgreSQL listener; expect typed reject.
             let params = OpenParams(
                 engine: "postgresql",
                 host: "127.0.0.1",
-                port: 5432,
+                port: 1,
                 database: "db",
                 user: "u",
                 password: "secret"
             )
             do {
                 _ = try bridge.open(params: params)
-                throw ProofError.message("open should reject until connect is wired")
+                throw ProofError.message("open should reject unreachable host")
             } catch let error as BridgeError {
                 if case let .Rejected(code, _) = error {
-                    guard code == "open-not-wired" else {
+                    guard code == "connect" else {
                         throw ProofError.message("unexpected reject code \(code)")
                     }
                 } else {
