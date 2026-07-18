@@ -3376,6 +3376,14 @@ fn activate_selected_action(model: &mut Model) -> Update {
                 CloseTabOutcome::Closed | CloseTabOutcome::Empty => Update::render(),
             }
         }
+        ActionId::CloseAllPreviewTabs if model.screen() == Screen::Workbench => {
+            let closed = model.workbench_mut().close_all_preview_tabs();
+            if closed == 0 {
+                Update::unchanged()
+            } else {
+                Update::render()
+            }
+        }
         ActionId::RenameTab if model.screen() == Screen::Workbench => {
             let Some(tab) = model.workbench().active_tab() else {
                 return Update::unchanged();
@@ -7151,6 +7159,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::CloseTabsToRight
         | ActionId::CloseTabsToLeft
         | ActionId::CloseAllTabs
+        | ActionId::CloseAllPreviewTabs
         | ActionId::RenameTab
         | ActionId::MoveTabLeft
         | ActionId::MoveTabRight
@@ -9021,6 +9030,7 @@ fn cycle_action(
                 ActionId::CloseTabsToRight,
                 ActionId::CloseTabsToLeft,
                 ActionId::CloseAllTabs,
+                ActionId::CloseAllPreviewTabs,
                 ActionId::RenameTab,
                 ActionId::MoveTabLeft,
                 ActionId::MoveTabRight,

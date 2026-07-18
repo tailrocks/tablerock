@@ -733,6 +733,32 @@ impl WorkbenchModel {
         }
     }
 
+    /// Close every preview tab. Preview tabs are never dirty (dirty promotes).
+    ///
+    /// Returns the number of tabs closed (0 if none were preview).
+    pub fn close_all_preview_tabs(&mut self) -> usize {
+        let before = self.tabs.len();
+        let active_title = self.tabs.get(self.selected_tab).map(|t| t.title.clone());
+        self.tabs.retain(|t| !t.preview);
+        let closed = before.saturating_sub(self.tabs.len());
+        if closed == 0 {
+            return 0;
+        }
+        if self.tabs.is_empty() {
+            self.selected_tab = 0;
+        } else if let Some(title) = active_title {
+            if let Some(i) = self.tabs.iter().position(|t| t.title == title) {
+                self.selected_tab = i;
+            } else {
+                self.selected_tab = self.selected_tab.min(self.tabs.len() - 1);
+            }
+        } else {
+            self.selected_tab = self.selected_tab.min(self.tabs.len() - 1);
+        }
+        self.recompute_pending();
+        closed
+    }
+
     /// Mark active tab dirty (staged changes or unsaved text).
     pub fn mark_active_dirty(&mut self, dirty: bool) {
         if let Some(tab) = self.tabs.get_mut(self.selected_tab) {
@@ -994,6 +1020,21 @@ mod tests {
         assert!(panel.contains("two"), "{panel}");
         assert!(panel.contains('*') || panel.contains("dirty"), "{panel}");
         assert!(panel.contains('>'), "{panel}");
+    }
+
+    #[test]
+    fn close_all_preview_tabs_keeps_durable() {
+        let mut wb = WorkbenchModel::default();
+        wb.open_preview_tab("peek");
+        wb.open_sql_tab();
+        wb.promote_active_tab(); // durable sql tab
+        let durable_title = wb.active_tab().unwrap().title.clone();
+        wb.open_preview_tab("other");
+        assert_eq!(wb.close_all_preview_tabs(), 3); // Welcome + peek + other (default Welcome is preview)
+        assert_eq!(wb.tabs.len(), 1);
+        assert_eq!(wb.active_tab().unwrap().title, durable_title);
+        assert!(!wb.active_tab().unwrap().preview);
+        assert_eq!(wb.close_all_preview_tabs(), 0);
     }
 
     #[test]

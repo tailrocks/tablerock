@@ -895,6 +895,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let close_right = action_label(model, ActionId::CloseTabsToRight, "CloseRight");
     let close_left = action_label(model, ActionId::CloseTabsToLeft, "CloseLeft");
     let close_all = action_label(model, ActionId::CloseAllTabs, "CloseAll");
+    let close_all_prev = action_label(model, ActionId::CloseAllPreviewTabs, "ClosePrevs");
     let rename_tab = action_label(model, ActionId::RenameTab, "RenTab");
     let tab_left = action_label(model, ActionId::MoveTabLeft, "TabL");
     let tab_right = action_label(model, ActionId::MoveTabRight, "TabR");
@@ -2635,6 +2636,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::CloseAllTabs,
                         label: close_all.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::CloseAllPreviewTabs,
+                        label: close_all_prev.as_str(),
                         enabled: true,
                         style: None,
                     },
