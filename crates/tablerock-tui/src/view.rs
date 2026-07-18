@@ -286,6 +286,10 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
             "Go to row?",
             format!("Paste absolute 0-based row index [{confirm_buffer}]"),
         ),
+        crate::model::ConfirmDialog::GoToColumn { confirm_buffer } => (
+            "Go to column?",
+            format!("Paste column name or unique prefix [{confirm_buffer}]"),
+        ),
         crate::model::ConfirmDialog::PickDate {
             year,
             month,
@@ -650,6 +654,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let go_row = action_label(model, ActionId::GoToRow, "GoRow");
     let go_first = action_label(model, ActionId::GoToFirstRow, "First");
     let go_last = action_label(model, ActionId::GoToLastRow, "Last");
+    let go_col = action_label(model, ActionId::GoToColumn, "GoCol");
     let refresh = action_label(model, ActionId::RefreshTable, "Refresh");
     let col_left = action_label(model, ActionId::MoveColumnLeft, "ColL");
     let col_right = action_label(model, ActionId::MoveColumnRight, "ColR");
@@ -1077,6 +1082,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::GoToLastRow,
                         label: go_last.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::GoToColumn,
+                        label: go_col.as_str(),
                         enabled: true,
                         style: None,
                     },

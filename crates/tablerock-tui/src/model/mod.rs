@@ -179,6 +179,8 @@ pub enum ActionId {
     GoToFirstRow,
     /// Jump to last known row (Exact/Estimated totals).
     GoToLastRow,
+    /// Jump to column by name (exact or unique prefix).
+    GoToColumn,
     /// Re-browse the active base table (keep sort/filters).
     RefreshTable,
     /// Toggle visibility of the cursor column.
@@ -449,6 +451,10 @@ pub enum ConfirmDialog {
     },
     /// Jump to absolute row: confirm_buffer is decimal row index.
     GoToRow {
+        confirm_buffer: String,
+    },
+    /// Jump to column by name (case-sensitive exact or unique prefix).
+    GoToColumn {
         confirm_buffer: String,
     },
     /// Text month calendar for temporal edit: paste day 1-31 (or full YYYY-MM-DD).

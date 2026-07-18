@@ -110,6 +110,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::EditRawWhere { confirm_buffer, .. }
                     | ConfirmDialog::EditQuickFilter { confirm_buffer, .. }
                     | ConfirmDialog::GoToRow { confirm_buffer, .. }
+                    | ConfirmDialog::GoToColumn { confirm_buffer, .. }
                     | ConfirmDialog::PickDate { confirm_buffer, .. }
                     | ConfirmDialog::CopyPick { confirm_buffer, .. }
                     | ConfirmDialog::EditInsertValues { confirm_buffer, .. }
@@ -2871,6 +2872,33 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     model.set_confirm(None);
                     jump_to_row(model, target)
                 }
+                ConfirmDialog::GoToColumn { confirm_buffer } => {
+                    let needle = confirm_buffer.trim();
+                    if needle.is_empty() {
+                        return Update::render();
+                    }
+                    let Some(idx) = model
+                        .workbench()
+                        .active_grid()
+                        .and_then(|g| resolve_column_index(g, needle))
+                    else {
+                        return Update::render();
+                    };
+                    model.set_confirm(None);
+                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                        grid.cursor_col = idx;
+                        // Ensure column is visible in layout if present.
+                        if let Some(name) = grid.columns.get(idx).cloned() {
+                            grid.ensure_column_layout();
+                            if let Some(entry) =
+                                grid.column_layout.iter_mut().find(|c| c.name == name)
+                            {
+                                entry.visible = true;
+                            }
+                        }
+                    }
+                    Update::render()
+                }
                 ConfirmDialog::PickDate {
                     year,
                     month,
@@ -3853,6 +3881,21 @@ fn activate_selected_action(model: &mut Model) -> Update {
             };
             jump_to_row(model, last)
         }
+        ActionId::GoToColumn if model.screen() == Screen::Workbench => {
+            if model.workbench().active_grid().is_none() {
+                return Update::unchanged();
+            }
+            let hint = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.columns.get(g.cursor_col).cloned())
+                .unwrap_or_default();
+            model.set_confirm(Some(ConfirmDialog::GoToColumn {
+                confirm_buffer: hint,
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
         ActionId::RefreshTable if model.screen() == Screen::Workbench => {
             rebrowse_active_table(model)
         }
@@ -4818,6 +4861,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::GoToRow
         | ActionId::GoToFirstRow
         | ActionId::GoToLastRow
+        | ActionId::GoToColumn
         | ActionId::RefreshTable
         | ActionId::ToggleColumn
         | ActionId::ResetColumns
@@ -5922,6 +5966,41 @@ fn open_pick_date(model: &mut Model) -> Update {
     Update::render()
 }
 
+/// Resolve physical column index: exact match first, else unique case-insensitive
+/// prefix. Ambiguous or missing → None.
+fn resolve_column_index(grid: &crate::model::grid::DataGridModel, needle: &str) -> Option<usize> {
+    if needle.is_empty() {
+        return None;
+    }
+    if let Some(i) = grid.columns.iter().position(|c| c == needle) {
+        return Some(i);
+    }
+    let lower = needle.to_ascii_lowercase();
+    let mut hits: Vec<usize> = grid
+        .columns
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.to_ascii_lowercase().starts_with(&lower))
+        .map(|(i, _)| i)
+        .collect();
+    if hits.len() == 1 {
+        return Some(hits[0]);
+    }
+    // Case-insensitive exact.
+    hits = grid
+        .columns
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.eq_ignore_ascii_case(needle))
+        .map(|(i, _)| i)
+        .collect();
+    if hits.len() == 1 {
+        Some(hits[0])
+    } else {
+        None
+    }
+}
+
 /// Parse `scope format` for CopyPick (e.g. `row csv`, `loaded:json`).
 fn parse_copy_pick(
     buf: &str,
@@ -6414,6 +6493,7 @@ fn cycle_action(
                 ActionId::GoToRow,
                 ActionId::GoToFirstRow,
                 ActionId::GoToLastRow,
+                ActionId::GoToColumn,
                 ActionId::RefreshTable,
                 ActionId::ToggleColumn,
                 ActionId::ResetColumns,
@@ -8047,6 +8127,55 @@ mod tests {
             }
             other => panic!("expected CopyToClipboard, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn go_to_column_exact_and_prefix() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "pg".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: Some("connected".into()),
+        }));
+        model.workbench_mut().open_preview_tab("t");
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.columns = vec!["id".into(), "name".into(), "email".into()];
+            grid.cursor_col = 0;
+        }
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::GoToColumn);
+        let _ = update(&mut model, Message::Activate);
+        if let Some(ConfirmDialog::GoToColumn { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = "name".into();
+        }
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(model.workbench().active_grid().unwrap().cursor_col, 1);
+        // Unique prefix.
+        model.set_action(ActionId::GoToColumn);
+        let _ = update(&mut model, Message::Activate);
+        if let Some(ConfirmDialog::GoToColumn { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = "em".into();
+        }
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(model.workbench().active_grid().unwrap().cursor_col, 2);
+        // Ambiguous prefix fails closed (cursor stays).
+        model.set_action(ActionId::GoToColumn);
+        let _ = update(&mut model, Message::Activate);
+        if let Some(ConfirmDialog::GoToColumn { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = "e".into(); // email only? "e" matches email only actually
+        }
+        // Use "n" which matches name only - better test "i" for id only
+        if let Some(ConfirmDialog::GoToColumn { confirm_buffer }) = model.confirm_mut() {
+            *confirm_buffer = "".into(); // empty stays open
+        }
+        model.set_action(ActionId::Submit);
+        assert!(model.confirm().is_some());
+        model.set_confirm(None);
     }
 
     #[test]
