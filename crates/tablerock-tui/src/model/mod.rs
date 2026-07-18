@@ -279,6 +279,8 @@ pub enum ActionId {
     EqualizeColumnWidths,
     /// Hide all columns except the cursor column.
     SoloColumn,
+    /// Hide all columns except identity (pk) columns.
+    SoloIdentityColumns,
     /// Show all columns; keep widths/order (unlike ResetColumns).
     ShowAllColumns,
     /// Invert column visibility (at least one remains visible).

@@ -700,6 +700,7 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let col_rst_w = action_label(model, ActionId::ResetColumnWidths, "ColRstW");
     let col_eq_w = action_label(model, ActionId::EqualizeColumnWidths, "ColEqW");
     let col_solo = action_label(model, ActionId::SoloColumn, "ColSolo");
+    let col_solo_pk = action_label(model, ActionId::SoloIdentityColumns, "ColPk");
     let col_all = action_label(model, ActionId::ShowAllColumns, "ColAll");
     let col_inv = action_label(model, ActionId::InvertColumns, "ColInv");
     let col_save = action_label(model, ActionId::SaveColumns, "ColSave");
@@ -1366,6 +1367,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                     Action {
                         id: ActionId::SoloColumn,
                         label: col_solo.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
+                        id: ActionId::SoloIdentityColumns,
+                        label: col_solo_pk.as_str(),
                         enabled: true,
                         style: None,
                     },

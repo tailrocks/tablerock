@@ -4526,6 +4526,14 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             Update::unchanged()
         }
+        ActionId::SoloIdentityColumns if model.screen() == Screen::Workbench => {
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                if grid.solo_identity_columns() {
+                    return Update::render();
+                }
+            }
+            Update::unchanged()
+        }
         ActionId::ShowAllColumns if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 if grid.show_all_columns() {
@@ -5527,6 +5535,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ResetColumnWidths
         | ActionId::EqualizeColumnWidths
         | ActionId::SoloColumn
+        | ActionId::SoloIdentityColumns
         | ActionId::ShowAllColumns
         | ActionId::InvertColumns
         | ActionId::SaveColumns
@@ -7262,6 +7271,7 @@ fn cycle_action(
                 ActionId::ResetColumnWidths,
                 ActionId::EqualizeColumnWidths,
                 ActionId::SoloColumn,
+                ActionId::SoloIdentityColumns,
                 ActionId::ShowAllColumns,
                 ActionId::InvertColumns,
                 ActionId::SaveColumns,

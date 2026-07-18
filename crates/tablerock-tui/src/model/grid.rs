@@ -1579,6 +1579,37 @@ impl DataGridModel {
         changed
     }
 
+    /// Show only identity (pk) columns; keep widths/order. Needs known identity.
+    pub fn solo_identity_columns(&mut self) -> bool {
+        if self.identity_columns.is_empty() || self.columns.is_empty() {
+            return false;
+        }
+        self.ensure_column_layout();
+        let mut changed = false;
+        for entry in &mut self.column_layout {
+            let want = self.identity_columns.iter().any(|id| id == &entry.name);
+            if entry.visible != want {
+                entry.visible = want;
+                changed = true;
+            }
+        }
+        // Fail closed: if no identity column matched layout, restore first identity if present.
+        if !self.column_layout.iter().any(|c| c.visible) {
+            if let Some(entry) = self
+                .column_layout
+                .iter_mut()
+                .find(|c| self.identity_columns.iter().any(|id| id == &c.name))
+            {
+                entry.visible = true;
+                changed = true;
+            } else if let Some(first) = self.column_layout.first_mut() {
+                first.visible = true;
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Show every column; keep widths and order. Returns true if any were hidden.
     pub fn show_all_columns(&mut self) -> bool {
         if self.columns.is_empty() {
@@ -2418,6 +2449,21 @@ mod tests {
         assert!(!g.show_all_columns());
         g.reset_column_layout();
         assert_eq!(g.visible_columns().len(), 3);
+    }
+
+    #[test]
+    fn solo_identity_columns_shows_pk_only() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "tenant_id".into(), "name".into(), "age".into()];
+        assert!(!g.solo_identity_columns()); // no identity yet
+        g.identity_columns = vec!["tenant_id".into(), "id".into()];
+        assert!(g.solo_identity_columns());
+        let vis = g.visible_columns();
+        assert_eq!(vis.len(), 2);
+        assert!(vis.contains(&"id".to_owned()));
+        assert!(vis.contains(&"tenant_id".to_owned()));
+        assert!(!vis.contains(&"name".to_owned()));
+        assert!(!g.solo_identity_columns()); // already
     }
 
     #[test]
