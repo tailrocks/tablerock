@@ -32,4 +32,5 @@ cargo check -p tablerock-cli
 
 ## Remaining work
 
-- 1Password CLI (`op read`) and macOS Keychain sources
+- 1Password CLI (`op read`) — see evidence 337
+- macOS Keychain sources

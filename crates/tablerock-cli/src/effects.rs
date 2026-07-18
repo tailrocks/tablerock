@@ -5735,6 +5735,20 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
                         var: env.as_str().to_owned(),
                     };
                 }
+                SecretSourceKind::OnePassword(reference) => {
+                    // Keep IDs only; resolve via `op read` at connect time.
+                    password = reference.to_compact_wire();
+                    password_source = PasswordSourceSpec::OnePassword {
+                        account_id: reference.account_id().as_str().to_owned(),
+                        vault_id: reference.vault_id().as_str().to_owned(),
+                        item_id: reference.item_id().as_str().to_owned(),
+                        section_id: reference
+                            .section_id()
+                            .map(|s| s.as_str().to_owned()),
+                        field_id: reference.field_id().as_str().to_owned(),
+                        breadcrumb: reference.breadcrumb().to_owned(),
+                    };
+                }
                 SecretSourceKind::PromptOnConnect => {
                     password_source = PasswordSourceSpec::PromptOnConnect;
                 }
@@ -5748,7 +5762,7 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
                         Err(error) => return Err(error.to_string()),
                     }
                 }
-                SecretSourceKind::OnePassword(_) | SecretSourceKind::Keychain(_) => {
+                SecretSourceKind::Keychain(_) => {
                     match resolve_for_connect(binding, connection.name(), &mut prompt) {
                         Ok(Some(secret)) => {
                             password = String::from_utf8_lossy(secret.as_bytes()).into_owned();
@@ -5967,7 +5981,7 @@ async fn open_described_session(
         tablerock_core::BoundedText::copy_from_str(value, tablerock_core::ByteLimit::new(128))
             .map_err(|e| e.to_string())
     };
-    // Resolve HostEnvironment passwords only for this attempt; never log.
+    // Resolve reference password sources only for this attempt; never log.
     let resolved_password = match &draft.password_source {
         PasswordSourceSpec::HostEnvironment { var } => {
             match std::env::var(var.trim()) {
@@ -5978,6 +5992,80 @@ async fn open_described_session(
                         var.trim()
                     ));
                 }
+            }
+        }
+        PasswordSourceSpec::OnePassword {
+            account_id,
+            vault_id,
+            item_id,
+            section_id,
+            field_id,
+            breadcrumb,
+        } => {
+            use tablerock_core::{
+                BoundedText, ByteLimit, OnePasswordObjectId, OnePasswordReference,
+                OnePasswordSegment, ProfileProperty, ProfilePropertyBinding, SecretSource,
+                SecretSourceKind,
+            };
+            use tablerock_engine::{
+                SecretPromptPort, SecretResolutionError, resolve_for_connect,
+            };
+            struct FailPrompt;
+            impl SecretPromptPort for FailPrompt {
+                fn request(
+                    &mut self,
+                    _field: tablerock_core::SecretField,
+                    _profile: &tablerock_core::ProfileName,
+                ) -> Result<tablerock_engine::ResolvedSecret, SecretResolutionError> {
+                    Err(SecretResolutionError::PromptFailed)
+                }
+            }
+            let section = match section_id.as_deref() {
+                Some(s) if !s.is_empty() => Some(
+                    OnePasswordSegment::parse(s).map_err(|e| e.to_string())?,
+                ),
+                _ => None,
+            };
+            let reference = OnePasswordReference::new(
+                OnePasswordObjectId::parse(account_id.trim()).map_err(|e| e.to_string())?,
+                OnePasswordObjectId::parse(vault_id.trim()).map_err(|e| e.to_string())?,
+                OnePasswordObjectId::parse(item_id.trim()).map_err(|e| e.to_string())?,
+                section,
+                OnePasswordSegment::parse(field_id.trim()).map_err(|e| e.to_string())?,
+                BoundedText::copy_from_str(
+                    if breadcrumb.trim().is_empty() {
+                        field_id.trim()
+                    } else {
+                        breadcrumb.trim()
+                    },
+                    ByteLimit::new(OnePasswordReference::MAX_BREADCRUMB_BYTES),
+                )
+                .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+            let binding = ProfilePropertyBinding::secret(
+                ProfileProperty::Password,
+                SecretSource::new(SecretSourceKind::OnePassword(reference)),
+            );
+            let profile_name = tablerock_core::ProfileName::new(
+                BoundedText::copy_from_str(
+                    if draft.name.trim().is_empty() {
+                        "connect"
+                    } else {
+                        draft.name.trim()
+                    },
+                    ByteLimit::new(128),
+                )
+                .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+            let mut prompt = FailPrompt;
+            match resolve_for_connect(&binding, &profile_name, &mut prompt) {
+                Ok(Some(secret)) => {
+                    String::from_utf8_lossy(secret.as_bytes()).into_owned()
+                }
+                Ok(None) => String::new(),
+                Err(error) => return Err(error.to_string()),
             }
         }
         _ => draft.password.clone(),
@@ -6226,6 +6314,43 @@ fn draft_to_aggregate(draft: &ConnectionDraft) -> Result<ProfileAggregate, Strin
             let env = tablerock_core::EnvironmentReference::parse(var.trim())
                 .map_err(|error| error.to_string())?;
             SecretSourceKind::HostEnvironment(env)
+        }
+        PasswordSourceSpec::OnePassword {
+            account_id,
+            vault_id,
+            item_id,
+            section_id,
+            field_id,
+            breadcrumb,
+        } => {
+            use tablerock_core::{
+                OnePasswordObjectId, OnePasswordReference, OnePasswordSegment,
+            };
+            let section = match section_id.as_deref() {
+                Some(s) if !s.is_empty() => Some(
+                    OnePasswordSegment::parse(s).map_err(|e| e.to_string())?,
+                ),
+                _ => None,
+            };
+            let crumb = if breadcrumb.trim().is_empty() {
+                field_id.trim()
+            } else {
+                breadcrumb.trim()
+            };
+            let reference = OnePasswordReference::new(
+                OnePasswordObjectId::parse(account_id.trim()).map_err(|e| e.to_string())?,
+                OnePasswordObjectId::parse(vault_id.trim()).map_err(|e| e.to_string())?,
+                OnePasswordObjectId::parse(item_id.trim()).map_err(|e| e.to_string())?,
+                section,
+                OnePasswordSegment::parse(field_id.trim()).map_err(|e| e.to_string())?,
+                tablerock_core::BoundedText::copy_from_str(
+                    crumb,
+                    tablerock_core::ByteLimit::new(OnePasswordReference::MAX_BREADCRUMB_BYTES),
+                )
+                .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+            SecretSourceKind::OnePassword(reference)
         }
         PasswordSourceSpec::DangerousPlaintext => {
             if !draft.plaintext_acknowledged {

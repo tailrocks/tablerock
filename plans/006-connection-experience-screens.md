@@ -9,8 +9,8 @@
 
 ## Status
 
-- **Status**: DONE (evidence 200–206, 331–334 reconnect, 336 host-env secrets;
-  residual: 1Password/Keychain deferred by product/tooling)
+- **Status**: DONE (evidence 200–206, 331–334 reconnect, 336 host-env,
+  337 1Password `op read`; residual: Keychain native + op picker UI)
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MED
@@ -107,7 +107,7 @@ the authority for every state on these screens.
   connection, Environment tag, Health and reconnect) + ROADMAP Phase 3 status.
 
 **Out of scope** (spec-deferred; render nothing for them):
-- URL import, external URL open, 1Password/Keychain/env sources, SSH, custom
+- URL import, external URL open, Keychain source, 1Password picker UI, SSH, custom
   CA editing UI, startup actions, favorites-beyond-groups.
 - The workbench itself (plan 007) — Connect may land on a stub workbench
   screen showing session facts.

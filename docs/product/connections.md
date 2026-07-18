@@ -62,8 +62,12 @@ password field with one selected storage source. Initial sources, staged:
 2. **Save locally (dangerous)** — stored plaintext on disk; requires an
    explicit acknowledgement and renders a persistent warning everywhere the
    profile appears.
-3. Later: **1Password reference**, **macOS Keychain** (native client),
-   **environment variable**.
+3. **Environment variable** — stores the variable *name*; resolves at
+   Test/Connect (evidence 336).
+4. **1Password reference** — stores account/vault/item/field IDs; resolves
+   via account-pinned `op read` at Test/Connect (evidence 337). Compact wire
+   in the editor: `account vault item field` or with section.
+5. Later: **macOS Keychain** (native client).
 
 A resolved password exists only during Test/Connect. It never enters
 snapshots, logs, history, telemetry, or FFI events.

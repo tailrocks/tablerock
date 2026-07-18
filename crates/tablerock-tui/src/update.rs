@@ -5230,6 +5230,31 @@ fn connection_draft_from_editor(
             PasswordSourceChoice::HostEnvironment => PasswordSourceSpec::HostEnvironment {
                 var: editor.password.clone(),
             },
+            PasswordSourceChoice::OnePassword => {
+                match tablerock_core::OnePasswordReference::from_compact_wire(
+                    editor.password.trim(),
+                ) {
+                    Ok(reference) => PasswordSourceSpec::OnePassword {
+                        account_id: reference.account_id().as_str().to_owned(),
+                        vault_id: reference.vault_id().as_str().to_owned(),
+                        item_id: reference.item_id().as_str().to_owned(),
+                        section_id: reference
+                            .section_id()
+                            .map(|s| s.as_str().to_owned()),
+                        field_id: reference.field_id().as_str().to_owned(),
+                        breadcrumb: reference.breadcrumb().to_owned(),
+                    },
+                    // Validation should have caught this; keep a safe empty stub.
+                    Err(_) => PasswordSourceSpec::OnePassword {
+                        account_id: String::new(),
+                        vault_id: String::new(),
+                        item_id: String::new(),
+                        section_id: None,
+                        field_id: String::new(),
+                        breadcrumb: String::new(),
+                    },
+                }
+            }
             PasswordSourceChoice::DangerousPlaintext => PasswordSourceSpec::DangerousPlaintext,
         },
         tls_mode: match editor.tls_mode {
@@ -5271,6 +5296,9 @@ fn apply_editor_text(model: &mut Model, text: &str) {
                     crate::model::editor::PasswordSourceChoice::HostEnvironment
                 }
                 crate::model::editor::PasswordSourceChoice::HostEnvironment => {
+                    crate::model::editor::PasswordSourceChoice::OnePassword
+                }
+                crate::model::editor::PasswordSourceChoice::OnePassword => {
                     crate::model::editor::PasswordSourceChoice::DangerousPlaintext
                 }
                 crate::model::editor::PasswordSourceChoice::DangerousPlaintext => {

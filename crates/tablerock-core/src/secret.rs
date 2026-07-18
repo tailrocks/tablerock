@@ -143,6 +143,99 @@ impl OnePasswordReference {
     pub fn breadcrumb(&self) -> &str {
         self.breadcrumb.as_str()
     }
+
+    /// Canonical ID-based secret reference for `op read`.
+    ///
+    /// Format: `op://{vault}/{item}/{field}` or
+    /// `op://{vault}/{item}/{section}/{field}` when a section is present.
+    /// Account is selected separately via `--account`.
+    #[must_use]
+    pub fn secret_reference_uri(&self) -> String {
+        match self.section_id.as_ref() {
+            Some(section) => format!(
+                "op://{}/{}/{}/{}",
+                self.vault_id.as_str(),
+                self.item_id.as_str(),
+                section.as_str(),
+                self.field_id.as_str(),
+            ),
+            None => format!(
+                "op://{}/{}/{}",
+                self.vault_id.as_str(),
+                self.item_id.as_str(),
+                self.field_id.as_str(),
+            ),
+        }
+    }
+
+    /// Space-separated editor/wire form (IDs only; never a resolved secret).
+    ///
+    /// Four tokens without section: `account vault item field`.
+    /// Five tokens with section: `account vault item section field`.
+    #[must_use]
+    pub fn to_compact_wire(&self) -> String {
+        match self.section_id.as_ref() {
+            Some(section) => format!(
+                "{} {} {} {} {}",
+                self.account_id.as_str(),
+                self.vault_id.as_str(),
+                self.item_id.as_str(),
+                section.as_str(),
+                self.field_id.as_str(),
+            ),
+            None => format!(
+                "{} {} {} {}",
+                self.account_id.as_str(),
+                self.vault_id.as_str(),
+                self.item_id.as_str(),
+                self.field_id.as_str(),
+            ),
+        }
+    }
+
+    /// Parse compact wire tokens; breadcrumb defaults to the field id.
+    pub fn from_compact_wire(value: &str) -> Result<Self, SecretBuildError> {
+        let parts: Vec<&str> = value.split_whitespace().collect();
+        match parts.as_slice() {
+            [account, vault, item, field] => {
+                let field_seg = OnePasswordSegment::parse(field)?;
+                let breadcrumb = BoundedText::copy_from_str(
+                    field,
+                    ByteLimit::new(Self::MAX_BREADCRUMB_BYTES),
+                )
+                .map_err(|_| SecretBuildError::EmptyField {
+                    field: SecretField::Breadcrumb,
+                })?;
+                Self::new(
+                    OnePasswordObjectId::parse(account)?,
+                    OnePasswordObjectId::parse(vault)?,
+                    OnePasswordObjectId::parse(item)?,
+                    None,
+                    field_seg,
+                    breadcrumb,
+                )
+            }
+            [account, vault, item, section, field] => {
+                let field_seg = OnePasswordSegment::parse(field)?;
+                let breadcrumb = BoundedText::copy_from_str(
+                    field,
+                    ByteLimit::new(Self::MAX_BREADCRUMB_BYTES),
+                )
+                .map_err(|_| SecretBuildError::EmptyField {
+                    field: SecretField::Breadcrumb,
+                })?;
+                Self::new(
+                    OnePasswordObjectId::parse(account)?,
+                    OnePasswordObjectId::parse(vault)?,
+                    OnePasswordObjectId::parse(item)?,
+                    Some(OnePasswordSegment::parse(section)?),
+                    field_seg,
+                    breadcrumb,
+                )
+            }
+            _ => Err(SecretBuildError::InvalidOnePasswordCompact),
+        }
+    }
 }
 
 impl fmt::Debug for OnePasswordReference {
@@ -415,6 +508,8 @@ pub enum SecretBuildError {
         byte_index: u64,
     },
     InvalidEnvironmentName,
+    /// Compact wire must be 4 or 5 whitespace-separated ID tokens.
+    InvalidOnePasswordCompact,
     EmptyField {
         field: SecretField,
     },
@@ -432,6 +527,9 @@ impl fmt::Display for SecretBuildError {
             Self::InvalidObjectIdLength { .. } => "invalid 1Password object ID length",
             Self::InvalidReferenceCharacter { .. } => "invalid 1Password reference character",
             Self::InvalidEnvironmentName => "invalid host environment variable name",
+            Self::InvalidOnePasswordCompact => {
+                "invalid 1Password compact reference (need account vault item [section] field)"
+            }
             Self::EmptyField { .. } => "secret source field is empty",
             Self::FieldTooLong { .. } => "secret source field exceeds its byte limit",
         })

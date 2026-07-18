@@ -34,6 +34,15 @@ pub enum PasswordSourceSpec {
     /// Password taken from host environment variable at connect time.
     /// `var` is the variable name only — never the resolved value.
     HostEnvironment { var: String },
+    /// 1Password CLI reference (IDs only). Resolved via `op read` at connect.
+    OnePassword {
+        account_id: String,
+        vault_id: String,
+        item_id: String,
+        section_id: Option<String>,
+        field_id: String,
+        breadcrumb: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

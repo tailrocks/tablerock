@@ -215,7 +215,7 @@ matrix; zeroize/redaction assertions.
 
 - Plan 006 consumes: tag in list/editor/context bar; group CRUD in the list
   screen; `resolve_for_connect` inside its Test/Connect effects.
-- 1Password/Keychain/env resolution: later phase; the error variant
-  `SourceNotYetSupported` is the visible gap marker until then.
+- Env resolution: evidence 336. 1Password `op read`: evidence 337.
+  Keychain remains `SourceNotYetSupported` until native adapter (plan 020).
 - Reviewer: migration idempotence, transactional group ops, zero secret bytes
   in any Debug/log path (grep for `{:?}` on resolved types).

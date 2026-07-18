@@ -31,6 +31,9 @@ pub enum PasswordSourceChoice {
     PromptOnConnect,
     /// `password` field holds the environment variable name (not the secret).
     HostEnvironment,
+    /// `password` field holds compact 1Password IDs (not the secret).
+    /// Format: `account vault item field` or `account vault item section field`.
+    OnePassword,
     DangerousPlaintext,
 }
 
@@ -112,17 +115,31 @@ impl ConnectionFormModel {
             EditorField::Port => self.port.clone(),
             EditorField::Database => self.database.clone(),
             EditorField::Username => self.username.clone(),
-            EditorField::Password => {
-                if self.password.is_empty() {
-                    String::new()
-                } else {
-                    "••••".into()
+            EditorField::Password => match self.password_source {
+                // Reference sources store non-secret names/IDs — show them.
+                PasswordSourceChoice::HostEnvironment | PasswordSourceChoice::OnePassword => {
+                    self.password.clone()
                 }
-            }
+                PasswordSourceChoice::PromptOnConnect
+                | PasswordSourceChoice::DangerousPlaintext => {
+                    if self.password.is_empty() {
+                        String::new()
+                    } else {
+                        "••••".into()
+                    }
+                }
+            },
             EditorField::PasswordSource => match self.password_source {
                 PasswordSourceChoice::PromptOnConnect => "prompt".into(),
                 PasswordSourceChoice::HostEnvironment => {
                     format!("env:{}", self.password)
+                }
+                PasswordSourceChoice::OnePassword => {
+                    if self.password.is_empty() {
+                        "op:…".into()
+                    } else {
+                        format!("op:{}", self.password)
+                    }
                 }
                 PasswordSourceChoice::DangerousPlaintext => "plaintext".into(),
             },
@@ -316,6 +333,19 @@ impl ConnectionFormModel {
                 return false;
             }
         }
+        if matches!(self.password_source, PasswordSourceChoice::OnePassword) {
+            if self.password.trim().is_empty() {
+                self.validation_error =
+                    Some("1Password source needs account vault item [section] field".into());
+                return false;
+            }
+            if let Err(error) =
+                tablerock_core::OnePasswordReference::from_compact_wire(self.password.trim())
+            {
+                self.validation_error = Some(error.to_string());
+                return false;
+            }
+        }
         if !self.ssh_host.trim().is_empty() {
             if self
                 .ssh_port
@@ -415,6 +445,23 @@ mod tests {
         };
         assert!(editor.validate());
         editor.password = "bad-name!".into();
+        assert!(!editor.validate());
+        editor.password = String::new();
+        assert!(!editor.validate());
+    }
+
+    #[test]
+    fn one_password_source_validates_compact_wire() {
+        let mut editor = ConnectionFormModel {
+            name: "demo".into(),
+            host: "db.internal".into(),
+            port: "5432".into(),
+            password_source: PasswordSourceChoice::OnePassword,
+            password: "aaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbb cccccccccccccccccccccccccc password".into(),
+            ..ConnectionFormModel::default()
+        };
+        assert!(editor.validate());
+        editor.password = "not-enough-tokens".into();
         assert!(!editor.validate());
         editor.password = String::new();
         assert!(!editor.validate());

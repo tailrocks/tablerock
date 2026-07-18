@@ -46,6 +46,66 @@ fn one_password_reference_is_account_pinned_structured_and_redacted() {
 }
 
 #[test]
+fn one_password_secret_reference_uri_and_compact_wire_round_trip() {
+    let with_section = OnePasswordReference::new(
+        object_id(b'a'),
+        object_id(b'b'),
+        object_id(b'c'),
+        Some(segment("database")),
+        segment("password"),
+        BoundedText::copy_from_str("db/password", ByteLimit::new(32)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        with_section.secret_reference_uri(),
+        format!(
+            "op://{}/{}/{}/{}",
+            object_id(b'b').as_str(),
+            object_id(b'c').as_str(),
+            "database",
+            "password"
+        )
+    );
+    let wire = with_section.to_compact_wire();
+    let parsed = OnePasswordReference::from_compact_wire(&wire).unwrap();
+    assert_eq!(parsed.account_id().as_str(), object_id(b'a').as_str());
+    assert_eq!(parsed.vault_id().as_str(), object_id(b'b').as_str());
+    assert_eq!(parsed.item_id().as_str(), object_id(b'c').as_str());
+    assert_eq!(parsed.section_id().unwrap().as_str(), "database");
+    assert_eq!(parsed.field_id().as_str(), "password");
+    assert_eq!(
+        parsed.secret_reference_uri(),
+        with_section.secret_reference_uri()
+    );
+
+    let no_section = OnePasswordReference::new(
+        object_id(b'a'),
+        object_id(b'b'),
+        object_id(b'c'),
+        None,
+        segment("password"),
+        BoundedText::copy_from_str("password", ByteLimit::new(32)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        no_section.secret_reference_uri(),
+        format!(
+            "op://{}/{}/{}",
+            object_id(b'b').as_str(),
+            object_id(b'c').as_str(),
+            "password"
+        )
+    );
+    let parsed_plain =
+        OnePasswordReference::from_compact_wire(&no_section.to_compact_wire()).unwrap();
+    assert!(parsed_plain.section_id().is_none());
+    assert!(matches!(
+        OnePasswordReference::from_compact_wire("too few"),
+        Err(SecretBuildError::InvalidOnePasswordCompact)
+    ));
+}
+
+#[test]
 fn reference_identifiers_and_environment_names_fail_closed() {
     assert!(matches!(
         OnePasswordObjectId::parse("too-short"),

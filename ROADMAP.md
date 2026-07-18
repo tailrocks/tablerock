@@ -116,10 +116,10 @@ connection shell. Engine sessions are reusable with operator SQL and health
 **Status: complete.** Exit evidence: 199–206, 331 (effect bridge, Test/Connect,
 list/search/Open, Form/Tree, password prompt + reconnect policy,
 describe_server real matrix, group rename dialog). Residual deferred by
-product: 1Password/Keychain sources. Host-env secrets (evidence 336); URL
-import (289); reconnect auto re-dispatch + health (332–334). Temporary
-Connect, save, Test without save, prompt-on-connect fail-closed, Remove
-confirm, and TermRock Form/Tree are proven on trunk.
+product: Keychain source (native). Host-env (336) + 1Password `op read`
+(337); URL import (289); reconnect auto re-dispatch + health (332–334).
+Temporary Connect, save, Test without save, prompt-on-connect fail-closed,
+Remove confirm, and TermRock Form/Tree are proven on trunk.
 
 ## Phase 4 — PostgreSQL read-only tracer
 
