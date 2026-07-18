@@ -722,6 +722,63 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::MutationReviewReady {
+            context_revision,
+            review_token_hex,
+            expires_at_ms,
+            lines,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            model.workbench_mut().pending_review_token_hex = Some(review_token_hex);
+            model.workbench_mut().pending_review_expires_at_ms = Some(expires_at_ms);
+            model.workbench_mut().mutation_review =
+                Some(crate::model::mutation_plan_build::MutationReviewView {
+                    mutation_id_hex: String::new(),
+                    schema: model
+                        .workbench()
+                        .active_grid()
+                        .and_then(|g| g.base_schema.clone())
+                        .unwrap_or_default(),
+                    table: model
+                        .workbench()
+                        .active_grid()
+                        .and_then(|g| g.base_table.clone())
+                        .unwrap_or_default(),
+                    lines: lines
+                        .into_iter()
+                        .map(|sql| crate::model::mutation_plan_build::ReviewStatementLine {
+                            sql,
+                            parameters: Vec::new(),
+                            kind: "review",
+                        })
+                        .collect(),
+                });
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.error_label = Some("review ready — Apply before token expires".into());
+            }
+            Update::render()
+        }
+        Message::Engine(EngineMsg::MutationReviewFailed {
+            context_revision,
+            reason,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            let label = match reason {
+                FailureProjection::Label(label) => label,
+            };
+            model.workbench_mut().pending_review_token_hex = None;
+            model.workbench_mut().pending_review_expires_at_ms = None;
+            if let Some(grid) = model.workbench_mut().active_grid_mut() {
+                grid.mark_failed(label);
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::MutationApplied {
             context_revision,
             committed,
@@ -732,6 +789,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
+            model.workbench_mut().pending_review_token_hex = None;
+            model.workbench_mut().pending_review_expires_at_ms = None;
             if committed {
                 if let Some(grid) = model.workbench_mut().active_grid_mut() {
                     grid.drafts.discard_all();
@@ -753,6 +812,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
         Message::Engine(EngineMsg::MutationFailed {
             context_revision,
             reason,
+            needs_re_review,
             ..
         }) => {
             if model.workbench().context_revision != context_revision {
@@ -761,6 +821,11 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             let label = match reason {
                 FailureProjection::Label(label) => label,
             };
+            if needs_re_review {
+                model.workbench_mut().pending_review_token_hex = None;
+                model.workbench_mut().pending_review_expires_at_ms = None;
+                model.workbench_mut().mutation_review = None;
+            }
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1833,33 +1898,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             Update::render()
         }
         ActionId::ReviewMutations if model.screen() == Screen::Workbench => {
-            use crate::model::mutation_plan_build::review_from_drafts;
-            let (schema, table, database, drafts) = {
-                let Some(grid) = model.workbench().active_grid() else {
-                    return Update::unchanged();
-                };
-                if !grid.editability.is_editable() || grid.drafts.is_empty() {
-                    return Update::unchanged();
-                }
-                (
-                    grid.base_schema.clone().unwrap_or_default(),
-                    grid.base_table.clone().unwrap_or_default(),
-                    model.workbench().context.database.clone(),
-                    grid.drafts.clone(),
-                )
-            };
-            match review_from_drafts(&drafts, &schema, &table, &database) {
-                Ok(view) => {
-                    model.workbench_mut().mutation_review = Some(view);
-                    Update::render()
-                }
-                Err(error) => {
-                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                        grid.error_label = Some(error.to_string());
-                    }
-                    Update::render()
-                }
-            }
+            register_staged_review(model)
         }
         ActionId::EditCell if model.screen() == Screen::Workbench => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
@@ -2118,70 +2157,104 @@ fn show_structure(model: &mut Model) -> Update {
     }
 }
 
-fn apply_staged_mutations(model: &mut Model) -> Update {
+fn collect_mutation_specs(
+    model: &Model,
+) -> Option<(String, String, String, Vec<crate::effect::MutationChangeSpec>)> {
     use crate::effect::MutationChangeSpec;
-    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
-        return Update::unchanged();
-    };
     let database = model.workbench().context.database.clone();
-    let context_revision = model.workbench().context_revision;
-    let (schema, table, changes) = {
-        let Some(grid) = model.workbench().active_grid() else {
-            return Update::unchanged();
-        };
-        if !grid.editability.is_editable() || grid.drafts.is_empty() {
-            return Update::unchanged();
+    let grid = model.workbench().active_grid()?;
+    if !grid.editability.is_editable() || grid.drafts.is_empty() {
+        return None;
+    }
+    let schema = grid.base_schema.clone()?;
+    let table = grid.base_table.clone()?;
+    let mut changes = Vec::new();
+    for insert in &grid.drafts.inserts {
+        changes.push(MutationChangeSpec::Insert {
+            values: insert.values.clone(),
+        });
+    }
+    let mut rows: Vec<u64> = grid.drafts.cell_edits.iter().map(|e| e.abs_row).collect();
+    rows.sort_unstable();
+    rows.dedup();
+    for row in rows {
+        let edits: Vec<_> = grid
+            .drafts
+            .cell_edits
+            .iter()
+            .filter(|e| e.abs_row == row)
+            .collect();
+        if edits.is_empty() {
+            continue;
         }
-        let schema = grid.base_schema.clone().unwrap_or_default();
-        let table = grid.base_table.clone().unwrap_or_default();
-        let mut changes = Vec::new();
-        for insert in &grid.drafts.inserts {
-            changes.push(MutationChangeSpec::Insert {
-                values: insert.values.clone(),
-            });
-        }
-        // Group updates by row.
-        let mut rows: Vec<u64> = grid.drafts.cell_edits.iter().map(|e| e.abs_row).collect();
-        rows.sort_unstable();
-        rows.dedup();
-        for row in rows {
-            let edits: Vec<_> = grid
-                .drafts
-                .cell_edits
-                .iter()
-                .filter(|e| e.abs_row == row)
-                .collect();
-            if edits.is_empty() {
-                continue;
-            }
-            let locator = edits[0]
+        let locator = edits[0]
+            .locator
+            .iter()
+            .map(|f| (f.column.clone(), f.original_text.clone()))
+            .collect();
+        let assignments = edits
+            .iter()
+            .map(|e| (e.column.clone(), e.staged_text.clone()))
+            .collect();
+        changes.push(MutationChangeSpec::Update {
+            locator,
+            assignments,
+        });
+    }
+    for delete in &grid.drafts.deletes {
+        changes.push(MutationChangeSpec::Delete {
+            locator: delete
                 .locator
                 .iter()
                 .map(|f| (f.column.clone(), f.original_text.clone()))
-                .collect();
-            let assignments = edits
-                .iter()
-                .map(|e| (e.column.clone(), e.staged_text.clone()))
-                .collect();
-            changes.push(MutationChangeSpec::Update {
-                locator,
-                assignments,
-            });
-        }
-        for delete in &grid.drafts.deletes {
-            changes.push(MutationChangeSpec::Delete {
-                locator: delete
-                    .locator
-                    .iter()
-                    .map(|f| (f.column.clone(), f.original_text.clone()))
-                    .collect(),
-            });
-        }
-        (schema, table, changes)
-    };
-    if changes.is_empty() {
-        return Update::unchanged();
+                .collect(),
+        });
     }
+    if changes.is_empty() {
+        return None;
+    }
+    Some((database, schema, table, changes))
+}
+
+/// Review: register typed plan in process registry (handle for apply).
+fn register_staged_review(model: &mut Model) -> Update {
+    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+        return Update::unchanged();
+    };
+    let context_revision = model.workbench().context_revision;
+    let Some((database, schema, table, changes)) = collect_mutation_specs(model) else {
+        return Update::unchanged();
+    };
+    let token = model.mint_request_token();
+    // Clear prior token; new review supersedes.
+    model.workbench_mut().pending_review_token_hex = None;
+    model.workbench_mut().pending_review_expires_at_ms = None;
+    Update {
+        render: true,
+        effect: Some(Effect::ReviewMutations {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            database,
+            schema,
+            table,
+            changes,
+        }),
+    }
+}
+
+/// Apply by registry handle only — never rebuilds plan from drafts at apply time.
+fn apply_staged_mutations(model: &mut Model) -> Update {
+    let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
+        return Update::unchanged();
+    };
+    let Some(review_token_hex) = model.workbench().pending_review_token_hex.clone() else {
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.error_label = Some("review required before apply".into());
+        }
+        return Update::render();
+    };
+    let context_revision = model.workbench().context_revision;
     let token = model.mint_request_token();
     if let Some(grid) = model.workbench_mut().active_grid_mut() {
         grid.operation = GridOperationState::Running;
@@ -2193,10 +2266,7 @@ fn apply_staged_mutations(model: &mut Model) -> Update {
             request_token: token,
             session_id_hex,
             context_revision,
-            database,
-            schema,
-            table,
-            changes,
+            review_token_hex,
         }),
     }
 }
@@ -3574,6 +3644,97 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn apply_requires_review_token_and_review_registers_specs() {
+        use crate::model::mutation_draft::{DraftLocatorField, StagedCellEdit};
+        use tablerock_core::ProfileSafetyMode;
+
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "00000000000000010000000000000001".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        if let Some(grid) = model.workbench_mut().active_grid_mut() {
+            grid.base_schema = Some("public".into());
+            grid.base_table = Some("users".into());
+            grid.identity_columns = vec!["id".into()];
+            grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+            assert!(grid.drafts.stage_cell_edit(StagedCellEdit {
+                abs_row: 0,
+                column: "name".into(),
+                original_text: "a".into(),
+                staged_text: "b".into(),
+                locator: vec![DraftLocatorField {
+                    column: "id".into(),
+                    original_text: "1".into(),
+                }],
+            }));
+        }
+        // Apply without review → no effect, status message.
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::ApplyMutations);
+        let blocked = update(&mut model, Message::Activate);
+        assert!(blocked.effects().next().is_none());
+        assert!(model
+            .workbench()
+            .active_grid()
+            .unwrap()
+            .error_label
+            .as_deref()
+            .unwrap_or("")
+            .contains("review required"));
+        // Review dispatches ReviewMutations with change specs (registry path).
+        model.set_action(ActionId::ReviewMutations);
+        let reviewed = update(&mut model, Message::Activate);
+        assert!(matches!(
+            reviewed.effects().next(),
+            Some(Effect::ReviewMutations { changes, .. }) if !changes.is_empty()
+        ));
+        // Simulate ready token then apply is handle-only.
+        let rev = model.workbench().context_revision;
+        let _ = update(
+            &mut model,
+            Message::Engine(EngineMsg::MutationReviewReady {
+                request_token: 1,
+                context_revision: rev,
+                review_token_hex: "00000000000000010000000000000002".into(),
+                expires_at_ms: 9_999_999,
+                lines: vec!["1: UPDATE …".into()],
+            }),
+        );
+        assert_eq!(
+            model.workbench().pending_review_token_hex.as_deref(),
+            Some("00000000000000010000000000000002")
+        );
+        model.set_action(ActionId::ApplyMutations);
+        let apply = update(&mut model, Message::Activate);
+        assert!(matches!(
+            apply.effects().next(),
+            Some(Effect::ApplyMutations {
+                review_token_hex,
+                ..
+            }) if review_token_hex == "00000000000000010000000000000002"
+        ));
+        // Expiry/re-review clears handle.
+        let rev = model.workbench().context_revision;
+        let _ = update(
+            &mut model,
+            Message::Engine(EngineMsg::MutationFailed {
+                request_token: 2,
+                context_revision: rev,
+                reason: FailureProjection::Label(
+                    "authorize failed (Expired); re-review required".into(),
+                ),
+                needs_re_review: true,
+            }),
+        );
+        assert!(model.workbench().pending_review_token_hex.is_none());
     }
 
     #[test]

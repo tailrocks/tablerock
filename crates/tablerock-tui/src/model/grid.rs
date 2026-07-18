@@ -472,10 +472,22 @@ impl DataGridModel {
     }
 
     /// Commit active cell edit into drafts. Returns true if a draft was staged.
+    ///
+    /// Validates staged text against the original cell's distinction class
+    /// (bool/number/text). Truncated/invalid/unknown are never commit-able.
     pub fn commit_cell_edit(&mut self) -> bool {
         let Some(session) = self.cell_edit.take() else {
             return false;
         };
+        let col_idx = self.columns.iter().position(|c| c == &session.column);
+        if let Some(idx) = col_idx {
+            let cell = self.cell_at(session.abs_row, idx);
+            if !staged_value_ok_for_distinction(&session.buffer, cell.distinction) {
+                // Restore session so operator can fix the buffer.
+                self.cell_edit = Some(session);
+                return false;
+            }
+        }
         self.drafts.stage_cell_edit(StagedCellEdit {
             abs_row: session.abs_row,
             column: session.column,
@@ -647,6 +659,33 @@ impl DataGridModel {
             operator: operator.into(),
             value,
         });
+    }
+}
+
+/// Kind-aware staged text gate (presentation; engine re-types for apply).
+fn staged_value_ok_for_distinction(text: &str, distinction: CellDistinction) -> bool {
+    let t = text.trim();
+    match distinction {
+        CellDistinction::Truncated | CellDistinction::Invalid | CellDistinction::Unknown => false,
+        CellDistinction::Boolean => {
+            t.eq_ignore_ascii_case("true")
+                || t.eq_ignore_ascii_case("false")
+                || t.eq_ignore_ascii_case("null")
+                || t.is_empty()
+        }
+        CellDistinction::Number => {
+            t.is_empty()
+                || t.eq_ignore_ascii_case("null")
+                || t.parse::<i64>().is_ok()
+                || t.parse::<f64>().is_ok()
+        }
+        CellDistinction::Null
+        | CellDistinction::Empty
+        | CellDistinction::Text
+        | CellDistinction::Temporal
+        | CellDistinction::Structured
+        | CellDistinction::Binary
+        | CellDistinction::Pending => true,
     }
 }
 
@@ -957,6 +996,45 @@ mod tests {
         assert!(grid.commit_cell_edit());
         assert_eq!(grid.drafts.pending_count(), 1);
         assert_eq!(grid.drafts.staged_for_cell(0, "name"), Some("bob"));
+    }
+
+    #[test]
+    fn number_cell_rejects_non_numeric_stage() {
+        use tablerock_core::ProfileSafetyMode;
+
+        let mut grid = DataGridModel::default();
+        grid.columns = vec!["id".into(), "n".into()];
+        grid.row_count = 1;
+        grid.cells = vec![
+            ProjectedCell {
+                text: "1".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+            ProjectedCell {
+                text: "2".into(),
+                distinction: CellDistinction::Number,
+                byte_len: 1,
+                original_byte_len: None,
+            },
+        ];
+        grid.base_schema = Some("public".into());
+        grid.base_table = Some("t".into());
+        grid.identity_columns = vec!["id".into()];
+        grid.cursor_row = 0;
+        grid.cursor_col = 1;
+        grid.recompute_editability(ProfileSafetyMode::ConfirmWrites, false);
+        assert!(grid.begin_cell_edit());
+        if let Some(edit) = grid.cell_edit.as_mut() {
+            edit.buffer = "not-a-number".into();
+        }
+        assert!(!grid.commit_cell_edit());
+        assert!(grid.cell_edit.is_some());
+        if let Some(edit) = grid.cell_edit.as_mut() {
+            edit.buffer = "42".into();
+        }
+        assert!(grid.commit_cell_edit());
     }
 
     #[test]

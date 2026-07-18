@@ -29,7 +29,7 @@ plan).
 | 010 | TermRock T3: `TextArea` audit + `CompletionMenu` (upstream) | P1 | M | 008 (workflow precedent) | DONE |
 | 011 | SQL editor workbench: parser, completion, history, files (Phase 5 core) | P1 | L | 009, 010 | DONE |
 | 012 | Grid controls: server sort, filter bar, columns, copy formats | P1 | L | 009 | DONE |
-| 013 | PostgreSQL writes: staged edits, review, apply, admin (Phase 6) | P1 | L | 011, 012 | IN PROGRESS |
+| 013 | PostgreSQL writes: staged edits, review, apply, admin (Phase 6) | P1 | L | 011, 012 | DONE |
 | 014 | ClickHouse complete slice (Phase 7) | P2 | L | 011, 012 | TODO |
 | 015 | Redis complete slice (Phase 8) | P2 | L | 007, 011, 013 | TODO |
 | 016 | Daily workflows + data movement (Phase 9) | P2 | L | 013, 014, 015 | TODO |

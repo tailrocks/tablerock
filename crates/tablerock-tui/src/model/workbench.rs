@@ -113,6 +113,10 @@ pub struct WorkbenchModel {
     pub profile_id_hex: Option<String>,
     /// Open mutation review dialog (typed plan preview; never executed text).
     pub mutation_review: Option<MutationReviewView>,
+    /// Handle from MutationReviewReady; required for ApplyMutations (consume-once).
+    pub pending_review_token_hex: Option<String>,
+    /// Wall-clock expiry (ms) for the pending review token (display only).
+    pub pending_review_expires_at_ms: Option<u64>,
 }
 
 impl Default for WorkbenchModel {
@@ -156,6 +160,8 @@ impl Default for WorkbenchModel {
             saved_queries: SavedQueryPanel::Closed,
             profile_id_hex: None,
             mutation_review: None,
+            pending_review_token_hex: None,
+            pending_review_expires_at_ms: None,
         }
     }
 }

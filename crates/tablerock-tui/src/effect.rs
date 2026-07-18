@@ -164,19 +164,24 @@ pub enum Effect {
         filters: Vec<(String, String, Option<String>)>,
         raw_where: Option<String>,
     },
-    /// Apply staged mutations rebuilt as a typed plan (never from preview text).
-    ApplyMutations {
+    /// Build typed plan, review into the process registry (consume-once later).
+    /// Preview lines come back on MutationReviewReady — never executed as SQL.
+    ReviewMutations {
         request_token: RequestToken,
         session_id_hex: String,
         context_revision: u64,
         database: String,
         schema: String,
         table: String,
-        /// Plain change specs: ("insert"|"update"|"delete", fields).
-        /// Insert/update fields are (column, value_text); update/delete locators
-        /// are separate as ("@locator", column, value_text) triples encoded in
-        /// the payload builder.
         changes: Vec<MutationChangeSpec>,
+    },
+    /// Apply by review-token handle only (plan bytes never on this seam).
+    ApplyMutations {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// 32-hex ReviewTokenId from MutationReviewReady.
+        review_token_hex: String,
     },
     /// Load foreign-key edges for a base table (for FollowForeignKey).
     LoadForeignKeys {

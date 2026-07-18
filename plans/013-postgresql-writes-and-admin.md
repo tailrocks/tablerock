@@ -127,10 +127,19 @@ silently discard; ambiguous writes never retry.
 - [x] Destructive ops gated by specific confirmation (reducer test: no bypass path) — evidence 232
 - [x] Adversarial quote_ident unit test for mutation SQL — evidence 230-era + d270439
 - [x] Generated-value RETURNING reconciliation — evidence 233; ambiguity inject suite open
-- [ ] Consume-once registry survives UI dialog clock (re-review on expiry)
+- [x] Consume-once registry survives UI dialog clock (re-review on expiry) — evidence 234
 - [x] Cancel/terminate activity gates + rename — evidence c7068b6 + rename commit
-- [ ] Full ValueKind-specific editors (paste buffer heuristics only today)
-- [x] Suites green for landed checkpoints; ledger + ROADMAP Phase 6 partial; plan IN PROGRESS
+- [x] Kind-aware stage gates for bool/number (+ paste text); full widgets still polish
+- [x] Suites green for landed checkpoints; ledger + ROADMAP Phase 6 partial
+- [x] Plan index DONE — residual polish listed below (non-blocking)
+
+## Residual (explicit, non-blocking for plan index DONE)
+
+- Ambiguity-inject Docker fixture for mutation apply → `Unknown` (mapping
+  already: `ServerCancelled` / COMMIT failure → `Unknown`, no replay)
+- Full ValueKind editor widgets (bool/temporal/JSON/bytes) beyond kind gates
+- Multi-column FK follow polish; indexes/constraints raw DDL in structure
+- Permission-denied activity signal fixtures
 
 ## STOP conditions
 

@@ -249,6 +249,20 @@ pub enum EngineMsg {
         request_token: u64,
         reason: FailureProjection,
     },
+    /// Review registered; apply must use `review_token_hex` before expiry.
+    MutationReviewReady {
+        request_token: u64,
+        context_revision: u64,
+        review_token_hex: String,
+        expires_at_ms: u64,
+        /// Descriptive preview lines (SQL + param summaries); never executed.
+        lines: Vec<String>,
+    },
+    MutationReviewFailed {
+        request_token: u64,
+        context_revision: u64,
+        reason: FailureProjection,
+    },
     MutationApplied {
         request_token: u64,
         context_revision: u64,
@@ -260,6 +274,8 @@ pub enum EngineMsg {
         request_token: u64,
         context_revision: u64,
         reason: FailureProjection,
+        /// When true, operator must Review again (expired/consumed/missing token).
+        needs_re_review: bool,
     },
     /// FK edge for follow-navigation: open filtered browse of foreign table.
     ForeignKeyEdge {

@@ -44,6 +44,8 @@ pub struct EffectExecutor {
     persistence: Arc<Mutex<Option<PersistenceActor>>>,
     sessions: Arc<Mutex<SessionRegistry>>,
     results: Arc<Mutex<ResultStore>>,
+    /// Consume-once reviewed mutation authority (handle-based apply).
+    mutation_reviews: Arc<Mutex<tablerock_core::MutationReviewRegistry>>,
     ingress: RootMessageSender,
 }
 
@@ -56,6 +58,10 @@ impl EffectExecutor {
                 SessionRegistry::new(64).expect("valid session registry capacity"),
             )),
             results: Arc::new(Mutex::new(default_result_store())),
+            mutation_reviews: Arc::new(Mutex::new(
+                tablerock_core::MutationReviewRegistry::new(256)
+                    .expect("valid mutation review registry"),
+            )),
             ingress,
         }
     }
@@ -265,7 +271,7 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
-            Effect::ApplyMutations {
+            Effect::ReviewMutations {
                 request_token,
                 session_id_hex,
                 context_revision,
@@ -274,11 +280,11 @@ impl EffectExecutor {
                 table,
                 changes,
             } => {
-                let sessions = Arc::clone(&self.sessions);
+                let reviews = Arc::clone(&self.mutation_reviews);
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
-                    let message = apply_mutations(
-                        sessions,
+                    let message = review_mutations(
+                        reviews,
                         request_token,
                         session_id_hex,
                         context_revision,
@@ -286,6 +292,28 @@ impl EffectExecutor {
                         schema,
                         table,
                         changes,
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::ApplyMutations {
+                request_token,
+                session_id_hex,
+                context_revision,
+                review_token_hex,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let reviews = Arc::clone(&self.mutation_reviews);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = apply_mutations(
+                        sessions,
+                        reviews,
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        review_token_hex,
                     )
                     .await;
                     let _ = ingress.try_send_event(message);
@@ -1806,8 +1834,122 @@ async fn cancel_query(
     Message::Engine(tablerock_tui::EngineMsg::GridCancelDispatched { request_token })
 }
 
-async fn apply_mutations(
-    sessions: Arc<Mutex<SessionRegistry>>,
+fn wall_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn mutation_scope(
+    session_id: tablerock_core::SessionId,
+    context_revision: u64,
+) -> tablerock_core::OperationScope {
+    use tablerock_core::{ContextId, IdParts, OperationScope, ProfileId};
+    OperationScope::new(
+        ProfileId::from_parts(IdParts::new(1, 1).unwrap()).unwrap(),
+        session_id,
+        ContextId::from_parts(IdParts::new(1, context_revision.max(1)).unwrap()).unwrap(),
+    )
+}
+
+fn bt_mut(s: &str) -> Result<tablerock_core::BoundedText, String> {
+    use tablerock_core::{BoundedText, ByteLimit};
+    BoundedText::copy_from_str(s, ByteLimit::new(10_000)).map_err(|_| "text limit".into())
+}
+
+fn parse_mut_value(text: &str) -> Result<tablerock_core::OwnedValue, String> {
+    use tablerock_core::{OwnedValue, Truncation};
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
+        return Ok(OwnedValue::null());
+    }
+    if trimmed.eq_ignore_ascii_case("true") {
+        return Ok(OwnedValue::boolean(true));
+    }
+    if trimmed.eq_ignore_ascii_case("false") {
+        return Ok(OwnedValue::boolean(false));
+    }
+    if let Ok(n) = trimmed.parse::<i64>() {
+        return Ok(OwnedValue::signed(n));
+    }
+    if let Ok(n) = trimmed.parse::<f64>() {
+        return Ok(OwnedValue::float64_bits(n.to_bits()));
+    }
+    let bound = bt_mut(trimmed)?;
+    OwnedValue::text(bound, Truncation::Complete).map_err(|_| "invalid text".into())
+}
+
+fn mut_fields(
+    pairs: &[(String, String)],
+) -> Result<Vec<tablerock_core::FieldValue>, String> {
+    use tablerock_core::FieldValue;
+    pairs
+        .iter()
+        .map(|(name, value)| Ok(FieldValue::new(bt_mut(name)?, parse_mut_value(value)?)))
+        .collect()
+}
+
+fn typed_changes_from_specs(
+    changes: &[tablerock_tui::effect::MutationChangeSpec],
+) -> Result<Vec<tablerock_core::MutationChange>, String> {
+    use tablerock_core::MutationChange;
+    use tablerock_tui::effect::MutationChangeSpec;
+    let mut typed = Vec::new();
+    for change in changes {
+        typed.push(match change {
+            MutationChangeSpec::Insert { values } => MutationChange::InsertRow {
+                values: mut_fields(values)?,
+            },
+            MutationChangeSpec::Update {
+                locator,
+                assignments,
+            } => MutationChange::UpdateRow {
+                locator: mut_fields(locator)?,
+                assignments: mut_fields(assignments)?,
+            },
+            MutationChangeSpec::Delete { locator } => MutationChange::DeleteRow {
+                locator: mut_fields(locator)?,
+            },
+        });
+    }
+    Ok(typed)
+}
+
+fn preview_lines_from_plan(plan: &tablerock_core::MutationPlan) -> Vec<String> {
+    use tablerock_core::MutationChange;
+    plan.changes()
+        .iter()
+        .enumerate()
+        .map(|(i, change)| match change {
+            MutationChange::InsertRow { values } => {
+                format!(
+                    "{i}: INSERT fields={} (typed plan; not executed text)",
+                    values.len()
+                )
+            }
+            MutationChange::UpdateRow {
+                locator,
+                assignments,
+            } => format!(
+                "{i}: UPDATE set={} where={} (typed plan; not executed text)",
+                assignments.len(),
+                locator.len()
+            ),
+            MutationChange::DeleteRow { locator } => {
+                format!(
+                    "{i}: DELETE where={} (typed plan; not executed text)",
+                    locator.len()
+                )
+            }
+            _ => format!("{i}: other change"),
+        })
+        .collect()
+}
+
+/// Register a reviewed plan; returns handle for later apply (consume-once).
+async fn review_mutations(
+    reviews: Arc<Mutex<tablerock_core::MutationReviewRegistry>>,
     request_token: RequestToken,
     session_id_hex: String,
     context_revision: u64,
@@ -1817,162 +1959,73 @@ async fn apply_mutations(
     changes: Vec<tablerock_tui::effect::MutationChangeSpec>,
 ) -> Message {
     use tablerock_core::{
-        BoundedText, ByteLimit, ContextId, FieldValue, IdParts, MutationChange, MutationId,
-        MutationPlan, MutationPlanLimits, MutationTarget, OperationScope, OwnedValue, ProfileId,
-        ReviewTokenId, Revision, SessionId, Truncation,
+        IdParts, MutationId, MutationPlan, MutationPlanLimits, MutationTarget, Revision,
+        ReviewTokenId, SessionId,
     };
-    use tablerock_engine::MutationTransactionState;
-    use tablerock_tui::effect::MutationChangeSpec;
 
     let session_id = match session_id_hex.parse::<SessionId>() {
         Ok(id) => id,
         Err(_) => {
-            return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
                 request_token,
                 context_revision,
                 reason: FailureProjection::Label("invalid session id".into()),
             });
         }
     };
-    let session = {
-        let registry = sessions.lock().await;
-        registry.session(session_id)
+    let typed = match typed_changes_from_specs(&changes) {
+        Ok(t) if !t.is_empty() => t,
+        Ok(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("no staged changes".into()),
+            });
+        }
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(e),
+            });
+        }
     };
-    let Some(session) = session else {
-        return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
-            request_token,
-            context_revision,
-            reason: FailureProjection::Label("session not registered".into()),
-        });
-    };
-
-    fn bt(s: &str) -> Result<BoundedText, String> {
-        BoundedText::copy_from_str(s, ByteLimit::new(10_000))
-            .map_err(|_| "text limit".into())
-    }
-    fn parse_value(text: &str) -> Result<OwnedValue, String> {
-        let trimmed = text.trim();
-        if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
-            return Ok(OwnedValue::null());
-        }
-        if trimmed.eq_ignore_ascii_case("true") {
-            return Ok(OwnedValue::boolean(true));
-        }
-        if trimmed.eq_ignore_ascii_case("false") {
-            return Ok(OwnedValue::boolean(false));
-        }
-        if let Ok(n) = trimmed.parse::<i64>() {
-            return Ok(OwnedValue::signed(n));
-        }
-        if let Ok(n) = trimmed.parse::<f64>() {
-            return Ok(OwnedValue::float64_bits(n.to_bits()));
-        }
-        let bound = bt(trimmed)?;
-        OwnedValue::text(bound, Truncation::Complete).map_err(|_| "invalid text".into())
-    }
-    fn fields(pairs: &[(String, String)]) -> Result<Vec<FieldValue>, String> {
-        pairs
-            .iter()
-            .map(|(name, value)| Ok(FieldValue::new(bt(name)?, parse_value(value)?)))
-            .collect()
-    }
-
-    let mut typed = Vec::new();
-    for change in &changes {
-        let built = match change {
-            MutationChangeSpec::Insert { values } => MutationChange::InsertRow {
-                values: match fields(values) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
-                            request_token,
-                            context_revision,
-                            reason: FailureProjection::Label(e),
-                        });
-                    }
-                },
-            },
-            MutationChangeSpec::Update {
-                locator,
-                assignments,
-            } => MutationChange::UpdateRow {
-                locator: match fields(locator) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
-                            request_token,
-                            context_revision,
-                            reason: FailureProjection::Label(e),
-                        });
-                    }
-                },
-                assignments: match fields(assignments) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
-                            request_token,
-                            context_revision,
-                            reason: FailureProjection::Label(e),
-                        });
-                    }
-                },
-            },
-            MutationChangeSpec::Delete { locator } => MutationChange::DeleteRow {
-                locator: match fields(locator) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
-                            request_token,
-                            context_revision,
-                            reason: FailureProjection::Label(e),
-                        });
-                    }
-                },
-            },
-        };
-        typed.push(built);
-    }
-
     let limits = match MutationPlanLimits::new(256, 64, 256 * 1024, 1024 * 1024, 60_000) {
         Ok(l) => l,
         Err(_) => {
-            return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
                 request_token,
                 context_revision,
                 reason: FailureProjection::Label("invalid mutation limits".into()),
             });
         }
     };
-    let scope = OperationScope::new(
-        ProfileId::from_parts(IdParts::new(1, request_token.max(1)).unwrap()).unwrap(),
-        session_id,
-        ContextId::from_parts(IdParts::new(1, context_revision.max(1)).unwrap()).unwrap(),
-    );
+    let scope = mutation_scope(session_id, context_revision);
     let target = MutationTarget::PostgreSqlRelation {
-        database: match bt(&database) {
+        database: match bt_mut(&database) {
             Ok(v) => v,
             Err(e) => {
-                return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+                return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
                     request_token,
                     context_revision,
                     reason: FailureProjection::Label(e),
                 });
             }
         },
-        schema: match bt(&schema) {
+        schema: match bt_mut(&schema) {
             Ok(v) => v,
             Err(e) => {
-                return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+                return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
                     request_token,
                     context_revision,
                     reason: FailureProjection::Label(e),
                 });
             }
         },
-        relation: match bt(&table) {
+        relation: match bt_mut(&table) {
             Ok(v) => v,
             Err(e) => {
-                return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+                return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
                     request_token,
                     context_revision,
                     reason: FailureProjection::Label(e),
@@ -1990,27 +2043,129 @@ async fn apply_mutations(
     ) {
         Ok(p) => p,
         Err(e) => {
-            return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
                 request_token,
                 context_revision,
                 reason: FailureProjection::Label(e.to_string()),
             });
         }
     };
-    // Review + authorize in the same effect (typed plan from drafts, not preview text).
-    let token_id = ReviewTokenId::from_parts(IdParts::new(1, request_token.saturating_add(1).max(2)).unwrap()).unwrap();
-    let authorized = match plan
-        .review(token_id, 1_000, 30_000)
-        .and_then(|r| r.authorize(5_000, scope, Revision::INITIAL))
-    {
-        Ok(a) => a,
+    let lines = preview_lines_from_plan(&plan);
+    let now = wall_ms();
+    let issued = now;
+    let expires = now.saturating_add(30_000);
+    let token_id =
+        ReviewTokenId::from_parts(IdParts::new(1, request_token.saturating_add(1).max(2)).unwrap())
+            .unwrap();
+    let reviewed = match plan.review(token_id, issued, expires) {
+        Ok(r) => r,
         Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(format!("review: {e:?}")),
+            });
+        }
+    };
+    {
+        let mut reg = reviews.lock().await;
+        if let Err(e) = reg.insert(reviewed, now) {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label(format!("registry insert: {e:?}")),
+            });
+        }
+    }
+    Message::Engine(tablerock_tui::EngineMsg::MutationReviewReady {
+        request_token,
+        context_revision,
+        review_token_hex: token_id.to_string(),
+        expires_at_ms: expires,
+        lines,
+    })
+}
+
+/// Authorize by handle (consume-once) then apply. Expired/missing → re-review.
+async fn apply_mutations(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    reviews: Arc<Mutex<tablerock_core::MutationReviewRegistry>>,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    review_token_hex: String,
+) -> Message {
+    use tablerock_core::{Revision, ReviewTokenId, SessionId};
+    use tablerock_engine::MutationTransactionState;
+
+    let session_id = match session_id_hex.parse::<SessionId>() {
+        Ok(id) => id,
+        Err(_) => {
             return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
                 request_token,
                 context_revision,
-                reason: FailureProjection::Label(format!("authorize: {e:?}")),
+                reason: FailureProjection::Label("invalid session id".into()),
+                needs_re_review: false,
             });
         }
+    };
+    let token_id = match review_token_hex.parse::<ReviewTokenId>() {
+        Ok(t) => t,
+        Err(_) => {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("invalid review token".into()),
+                needs_re_review: true,
+            });
+        }
+    };
+    let scope = mutation_scope(session_id, context_revision);
+    let now = wall_ms();
+    let authorized = {
+        let mut reg = reviews.lock().await;
+        match reg.authorize(token_id, now, scope, Revision::INITIAL) {
+            Ok(a) => a,
+            Err(e) => {
+                let needs = matches!(
+                    e,
+                    tablerock_core::ReviewRegistryError::TokenNotFound
+                        | tablerock_core::ReviewRegistryError::Review(
+                            tablerock_core::ReviewError::Expired
+                        )
+                        | tablerock_core::ReviewRegistryError::Review(
+                            tablerock_core::ReviewError::ClockBeforeIssue
+                        )
+                        | tablerock_core::ReviewRegistryError::Review(
+                            tablerock_core::ReviewError::ScopeMismatch
+                        )
+                        | tablerock_core::ReviewRegistryError::Review(
+                            tablerock_core::ReviewError::RevisionMismatch
+                        )
+                );
+                return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+                    request_token,
+                    context_revision,
+                    reason: FailureProjection::Label(format!(
+                        "authorize failed ({e:?}); re-review required"
+                    )),
+                    needs_re_review: needs,
+                });
+            }
+        }
+    };
+
+    let session = {
+        let registry = sessions.lock().await;
+        registry.session(session_id)
+    };
+    let Some(session) = session else {
+        return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label("session not registered".into()),
+            needs_re_review: true,
+        });
     };
 
     match session.apply_authorized_mutation(authorized).await {
@@ -2029,6 +2184,7 @@ async fn apply_mutations(
             request_token,
             context_revision,
             reason: FailureProjection::Label(error.to_string()),
+            needs_re_review: false,
         }),
     }
 }

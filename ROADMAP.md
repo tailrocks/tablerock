@@ -149,13 +149,11 @@ Redis command editor mirror.
 
 ## Phase 6 — PostgreSQL write/admin slice
 
-**Partial (evidence 227–232):** `ApplyMutations` intent + PG transactional
-apply; editability facts + staged drafts; review preview from typed plans;
-cell-edit session; browse PK identity; conflict rollback keeps staged state;
-FK follow browse; structure inspector; gated truncate/drop; activity
-snapshot. Still open for full Phase 6 exit: full typed editors,
-RETURNING/generated values, consume-once review registry across UI dialog
-time, permission-aware cancel/terminate, rename gate, ledger fully green.
+**Partial→mostly complete (evidence 227–234):** write path, editability,
+staged drafts, typed review, RETURNING, consume-once registry + re-review
+on expiry, FK/structure, gated truncate/drop/rename, activity +
+cancel/terminate. Residual polish: ambiguity inject fixture, richer
+ValueKind widgets, structure indexes/DDL depth.
 
 Deliver proven editability, typed value editors, inserts/updates/deletes
 staged in memory with visible row/cell highlighting, undo/discard, the review
