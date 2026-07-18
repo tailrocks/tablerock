@@ -156,7 +156,7 @@ on expiry, FK/structure with index + constraint defs, multi-column FK
 follow, gated truncate/drop/rename, activity + cancel/terminate with
 permission-denied signals, mutation apply Unknown on interrupted COMMIT,
 temporal/structured staging validation. Residual polish: optional
-calendar/JSON tree widgets.
+calendar widget; structured JSON tree inspector shipped (evidence 339).
 
 Deliver proven editability, typed value editors, inserts/updates/deletes
 staged in memory with visible row/cell highlighting, undo/discard, the review

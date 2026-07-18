@@ -92,6 +92,16 @@ impl InspectorModel {
             for line in explain_tree_lines(&self.text) {
                 out.push(line);
             }
+        } else if self.kind_label == "structured" {
+            out.push("tree:".into());
+            for line in structured_tree_lines(&self.text) {
+                out.push(line);
+            }
+        } else if self.text.contains('\n') {
+            out.push("text:".into());
+            for line in self.text.lines() {
+                out.push(line.to_owned());
+            }
         } else {
             out.push(format!("text: {}", self.text));
         }
@@ -148,6 +158,9 @@ mod tests {
         let insp = InspectorModel::from_cell("row.payload", &json, false);
         assert!(insp.text.contains('\n') || insp.text.contains("  "));
         assert!(insp.text.contains("\"a\""));
+        let lines = insp.lines().join("\n");
+        assert!(lines.contains("tree:"));
+        assert!(lines.contains("\"a\""));
 
         let temp = ProjectedCell {
             text: "2024-01-15T12:30:00Z".into(),
@@ -163,6 +176,20 @@ mod tests {
     #[test]
     fn pretty_structured_invalid_falls_back() {
         assert_eq!(pretty_structured("not-json"), "not-json");
+        assert_eq!(structured_tree_lines("not-json"), vec!["not-json".to_owned()]);
+    }
+
+    #[test]
+    fn structured_tree_caps_depth() {
+        // Nested arrays deeper than MAX_STRUCTURED_TREE_DEPTH collapse.
+        let deep = "[[[[[[[[[[1]]]]]]]]]]";
+        let lines = structured_tree_lines(deep);
+        let joined = lines.join("\n");
+        assert!(
+            joined.contains('…'),
+            "expected collapse marker in {joined:?}"
+        );
+        assert!(lines.len() <= 64);
     }
 
     #[test]
@@ -213,19 +240,65 @@ fn explain_tree_lines(plan: &str) -> Vec<String> {
     out
 }
 
+/// Max nesting shown as expanded tree lines before collapsing remainder.
+const MAX_STRUCTURED_TREE_DEPTH: i32 = 6;
+/// Cap pretty output growth (invalid/huge payloads stay bounded).
+const MAX_STRUCTURED_PRETTY_BYTES: usize = 16 * 1024;
+
+/// Multi-line tree projection for structured cells (glyph indent + depth cap).
+fn structured_tree_lines(raw: &str) -> Vec<String> {
+    let pretty = pretty_structured(raw);
+    if pretty == raw && !(raw.trim().starts_with('{') || raw.trim().starts_with('[')) {
+        return vec![raw.to_owned()];
+    }
+    let mut out = Vec::new();
+    for line in pretty.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let indent = line.chars().take_while(|c| *c == ' ').count() / 2;
+        let body = line.trim_start();
+        let mut prefix = String::new();
+        for i in 0..indent {
+            if i + 1 == indent {
+                prefix.push_str("└─ ");
+            } else {
+                prefix.push_str("│  ");
+            }
+        }
+        out.push(format!("{prefix}{body}"));
+        if out.len() >= 64 {
+            out.push("└─ … (tree truncated)".into());
+            break;
+        }
+    }
+    if out.is_empty() {
+        out.push(raw.to_owned());
+    }
+    out
+}
+
 /// Indent JSON-like structured text for inspector readability (best-effort).
+///
+/// Depth beyond [`MAX_STRUCTURED_TREE_DEPTH`] is collapsed to `…` so nested
+/// containers remain navigable without dumping unbounded trees.
 fn pretty_structured(raw: &str) -> String {
     let trimmed = raw.trim();
     if !(trimmed.starts_with('{') || trimmed.starts_with('[')) {
         return raw.to_owned();
     }
-    let mut out = String::with_capacity(raw.len() + 32);
+    let mut out = String::with_capacity(raw.len().min(MAX_STRUCTURED_PRETTY_BYTES) + 32);
     let mut depth: i32 = 0;
     let mut in_str = false;
     let mut escape = false;
+    let mut collapse_until: Option<i32> = None;
     let bytes = trimmed.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
+        if out.len() >= MAX_STRUCTURED_PRETTY_BYTES {
+            out.push_str("\n…");
+            break;
+        }
         let b = bytes[i];
         if in_str {
             out.push(b as char);
@@ -239,17 +312,56 @@ fn pretty_structured(raw: &str) -> String {
             i += 1;
             continue;
         }
+        if let Some(floor) = collapse_until {
+            // Skip nested content until we close back to the collapse floor.
+            match b {
+                b'{' | b'[' => depth += 1,
+                b'}' | b']' => {
+                    depth = depth.saturating_sub(1);
+                    if depth <= floor {
+                        collapse_until = None;
+                        out.push(b as char);
+                    }
+                }
+                b'"' => {
+                    // Skip string fully while collapsed.
+                    i += 1;
+                    let mut esc = false;
+                    while i < bytes.len() {
+                        let c = bytes[i];
+                        if esc {
+                            esc = false;
+                        } else if c == b'\\' {
+                            esc = true;
+                        } else if c == b'"' {
+                            break;
+                        }
+                        i += 1;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+            continue;
+        }
         match b {
             b'"' => {
                 in_str = true;
                 out.push('"');
             }
             b'{' | b'[' => {
-                out.push(b as char);
-                depth += 1;
-                out.push('\n');
-                for _ in 0..depth {
-                    out.push_str("  ");
+                if depth >= MAX_STRUCTURED_TREE_DEPTH {
+                    out.push(b as char);
+                    out.push('…');
+                    collapse_until = Some(depth);
+                    depth += 1;
+                } else {
+                    out.push(b as char);
+                    depth += 1;
+                    out.push('\n');
+                    for _ in 0..depth {
+                        out.push_str("  ");
+                    }
                 }
             }
             b'}' | b']' => {
