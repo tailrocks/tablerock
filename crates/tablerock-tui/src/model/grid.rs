@@ -1506,6 +1506,14 @@ impl DataGridModel {
         self.viewport_col = col;
     }
 
+    /// Move cursor to the first resident cell (no server I/O).
+    pub fn home_cursor(&mut self) {
+        self.cursor_row = self.start_row;
+        self.cursor_col = 0;
+        self.viewport_row = self.start_row;
+        self.viewport_col = 0;
+    }
+
     pub fn move_cursor_column(&mut self, dir: i8) -> bool {
         if dir == 0 {
             return false;
@@ -2054,6 +2062,23 @@ mod tests {
         // Cannot hide last visible column.
         assert!(g2.toggle_column_visible("id"));
         assert!(!g2.toggle_column_visible("age"));
+    }
+
+    #[test]
+    fn home_cursor_resets_viewport() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["a".into(), "b".into()];
+        g.start_row = 100;
+        g.row_count = 10;
+        g.cursor_row = 107;
+        g.cursor_col = 1;
+        g.viewport_row = 105;
+        g.viewport_col = 1;
+        g.home_cursor();
+        assert_eq!(g.cursor_row, 100);
+        assert_eq!(g.cursor_col, 0);
+        assert_eq!(g.viewport_row, 100);
+        assert_eq!(g.viewport_col, 0);
     }
 
     #[test]

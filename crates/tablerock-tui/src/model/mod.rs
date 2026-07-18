@@ -211,6 +211,8 @@ pub enum ActionId {
     GoToLastRow,
     /// Jump to column by name (exact or unique prefix).
     GoToColumn,
+    /// Move cursor to top-left of resident page (no fetch).
+    HomeCursor,
     /// Re-browse the active base table (keep sort/filters).
     RefreshTable,
     /// Toggle visibility of the cursor column.
