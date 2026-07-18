@@ -10,7 +10,7 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-19): native connection list/editor/actions (evidence 512–513) and persistent empty groups with collapsible create/rename/delete UI (evidence 514) landed; ordering controls and remaining screens continue**
+- **IN PROGRESS (2026-07-19): native connection list/editor/actions (evidence 512–513), persistent groups (514), ordering/favorites (515), and Rust-owned active-session projection with deletion retention (516) landed; live health and remaining screens continue**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

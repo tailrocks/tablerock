@@ -352,7 +352,7 @@ private func runNativeProfileGroupAudit() {
         return
     }
     writePerformanceMetric(
-        "PROFILE_GROUP_PROOF_PASSED empty_group=true alphabetical=Alpha_Zebra hosting_tree=true"
+        "PROFILE_GROUP_PROOF_PASSED empty_group=true alphabetical=Alpha_Zebra connected_projection=true hosting_tree=true"
     )
 }
 
@@ -652,20 +652,21 @@ final class BridgeModel {
                     name: "Zebra", engine: "postgresql", group: "Production",
                     favorite: false, savedOrder: 0, host: "z.internal", port: "5432",
                     context: "db", safetyMode: "confirm_writes", environment: "production",
-                    productionWarning: true, dangerousPlaintext: false
+                    productionWarning: true, dangerousPlaintext: false, connected: true
                 ),
                 BridgeProfileItem(
                     idBytes: Data(repeating: 2, count: 16), revision: 0,
                     name: "Alpha", engine: "postgresql", group: "Production",
                     favorite: false, savedOrder: 1, host: "a.internal", port: "5432",
                     context: "db", safetyMode: "read_only", environment: "production",
-                    productionWarning: true, dangerousPlaintext: false
+                    productionWarning: true, dangerousPlaintext: false, connected: false
                 ),
             ]
             status = "Profile group fixture"
             guard profileSections.map(\.title) == ["Empty", "Production"],
                   profileSections[0].profiles.isEmpty,
-                  profileSections[1].profiles.map(\.name) == ["Alpha", "Zebra"]
+                  profileSections[1].profiles.map(\.name) == ["Alpha", "Zebra"],
+                  profileSections[1].profiles.last?.connected == true
             else {
                 writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED group projection mismatch")
                 return
@@ -897,13 +898,8 @@ final class BridgeModel {
             connectError = "Invalid host or port"
             return
         }
-        sessionHex = nil
-        sessionData = nil
+        let previousSession = sessionData
         connectError = nil
-        catalogSummary = nil
-        catalogSnapshot = nil
-        catalogRefreshState = .idle
-        resultTable = nil
         do {
             let session = try await client.open(params: OpenParams(
                 engine: formEngine,
@@ -917,6 +913,12 @@ final class BridgeModel {
             connectedEngine = formEngine
             sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
+            if let previousSession { try? await client.disconnect(session: previousSession) }
+            catalogSummary = nil
+            catalogSnapshot = nil
+            catalogRefreshState = .idle
+            resultTable = nil
+            await refreshProfiles()
         } catch {
             connectError = "Connect failed: \(error)"
         }
@@ -925,24 +927,41 @@ final class BridgeModel {
     /// Open a saved profile by id (password override nil — inline source only).
     func connect(_ item: BridgeProfileItem) async {
         guard let client else { return }
+        let previousSession = sessionData
         connectingName = item.name
-        sessionHex = nil
-        sessionData = nil
         connectError = nil
-        catalogSummary = nil
-        catalogError = nil
-        catalogSnapshot = nil
-        catalogRefreshState = .idle
-        resultTable = nil
         do {
             let session = try await client.openProfile(id: item.idBytes)
             connectedEngine = item.engine
             sessionData = session
             sessionHex = session.map { String(format: "%02x", $0) }.joined()
+            if let previousSession { try? await client.disconnect(session: previousSession) }
+            catalogSummary = nil
+            catalogError = nil
+            catalogSnapshot = nil
+            catalogRefreshState = .idle
+            resultTable = nil
+            await refreshProfiles()
         } catch {
             connectError = "Connect failed: \(error)"
         }
         connectingName = nil
+    }
+
+    func disconnectActive() async {
+        guard let client, let session = sessionData else { return }
+        do {
+            try await client.disconnect(session: session)
+            sessionData = nil
+            sessionHex = nil
+            connectedEngine = ""
+            catalogSummary = nil
+            catalogSnapshot = nil
+            catalogRefreshState = .idle
+            resultTable = nil
+            profileActionOutcome = "Disconnected"
+            await refreshProfiles()
+        } catch { profileActionError = "Disconnect failed: \(error)" }
     }
 
     /// Submit a catalog refresh and poll events until the page arrives, then
@@ -1088,12 +1107,16 @@ struct ContentView: View {
                                         ProfileRow(
                                             profile: profile,
                                             connectionState: model.connectingName == profile.name
-                                                ? "Connecting" : "Disconnected"
+                                                ? "Connecting"
+                                                : (profile.connected ? "Connected" : "Disconnected")
                                         )
                                     }
                                     .buttonStyle(.plain)
                                     Menu {
                                         Button("Connect") { Task { await model.connect(profile) } }
+                                        if profile.connected {
+                                            Button("Disconnect") { Task { await model.disconnectActive() } }
+                                        }
                                         Button("Edit…") { Task { await model.editProfile(profile) } }
                                         Button("Duplicate…") { Task { await model.duplicateProfile(profile) } }
                                         Button("Test") { Task { await model.testProfile(profile) } }
@@ -1120,6 +1143,9 @@ struct ContentView: View {
                                 }
                                 .contextMenu {
                                     Button("Connect") { Task { await model.connect(profile) } }
+                                    if profile.connected {
+                                        Button("Disconnect") { Task { await model.disconnectActive() } }
+                                    }
                                     Button("Edit…") { Task { await model.editProfile(profile) } }
                                     Button("Duplicate…") { Task { await model.duplicateProfile(profile) } }
                                     Button("Test") { Task { await model.testProfile(profile) } }
@@ -1453,6 +1479,12 @@ struct ContentView: View {
                 )
                 .accessibilityLabel(model.sessionHex == nil
                     ? "No active connection" : "Connected to \(model.connectedEngine)")
+            }
+            ToolbarItem(id: "disconnect", placement: .automatic) {
+                Button { Task { await model.disconnectActive() } } label: {
+                    Label("Disconnect", systemImage: "bolt.slash")
+                }
+                .disabled(model.sessionHex == nil || model.isRunning)
             }
             ToolbarSpacer(.fixed)
             ToolbarItem(id: "refresh", placement: .automatic) {

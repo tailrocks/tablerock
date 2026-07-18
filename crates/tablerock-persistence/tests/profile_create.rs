@@ -10,7 +10,9 @@ use tablerock_core::{
     ProfileSearchTerm, ProfileTag, PropertyValueSource, ReconnectPreference, Revision,
     SecretSource, SecretSourceKind, StartupAction, StartupActionSet, StartupSafetyClass, TlsPolicy,
 };
-use tablerock_persistence::{PersistenceActor, PersistenceError};
+use tablerock_persistence::{
+    HistoryAppend, HistoryOutcomeClass, HistoryRetention, PersistenceActor, PersistenceError,
+};
 
 fn text(value: &str) -> BoundedText {
     BoundedText::copy_from_str(value, ByteLimit::new(70_000)).unwrap()
@@ -905,6 +907,17 @@ fn deletion_uses_revision_compare_and_swap_and_removes_only_owned_rows() {
     actor
         .create_profile(profile.persistable().unwrap())
         .unwrap();
+    actor
+        .append_history(HistoryAppend {
+            engine: Engine::PostgreSql,
+            database_name: "postgres".into(),
+            schema_name: Some("public".into()),
+            statement_text: "SELECT retained_after_profile_delete".into(),
+            outcome: HistoryOutcomeClass::Completed,
+            retention: HistoryRetention::Full,
+        })
+        .unwrap()
+        .unwrap();
 
     assert_eq!(
         actor
@@ -923,6 +936,13 @@ fn deletion_uses_revision_compare_and_swap_and_removes_only_owned_rows() {
         .delete_profile(profile_id(50), Revision::from_wire_u64(8))
         .unwrap();
     assert_eq!(actor.get_profile(profile_id(50)).unwrap(), None);
+    assert_eq!(actor.history_count().unwrap(), 1);
+    assert_eq!(
+        actor.list_history(None, 10).unwrap()[0]
+            .statement_text
+            .as_deref(),
+        Some("SELECT retained_after_profile_delete")
+    );
     assert_eq!(
         actor
             .delete_profile(profile_id(50), Revision::from_wire_u64(8))

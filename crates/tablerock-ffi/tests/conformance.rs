@@ -576,6 +576,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
     assert_eq!(listed[0].host.as_deref(), Some("127.0.0.1"));
     assert_eq!(listed[0].port.as_deref(), Some("1"));
     assert_eq!(listed[0].context.as_deref(), Some("postgres"));
+    assert!(!listed[0].connected);
     assert_eq!(
         bridge
             .search_profiles(Some("POSTGRES".into()))
@@ -612,8 +613,32 @@ fn open_profile_requires_persistence_and_loads_literals() {
     let copy_id = bridge.save_profile(edited).unwrap();
     assert_ne!(copy_id, profile_id.to_bytes());
     assert_eq!(bridge.list_profiles().unwrap().len(), 2);
+    let copy_profile_id = ProfileId::from_bytes(copy_id.clone().try_into().unwrap()).unwrap();
+    let (copy_result_id, copy_page) = sample_page(Engine::PostgreSql, 142, &[1]);
+    let retained_session = bridge
+        .open_driver_session_for_profile(
+            copy_profile_id,
+            Engine::PostgreSql,
+            Box::new(FixedPageSession {
+                engine: Engine::PostgreSql,
+                page: copy_page,
+            }),
+        )
+        .unwrap();
+    assert!(
+        bridge
+            .list_profiles()
+            .unwrap()
+            .iter()
+            .find(|item| item.id_bytes == copy_id)
+            .unwrap()
+            .connected
+    );
     bridge.delete_profile(copy_id, 0).unwrap();
     assert_eq!(bridge.list_profiles().unwrap().len(), 1);
+    let retained_operation = probe(&bridge, retained_session.clone(), copy_result_id);
+    bridge.pump(retained_operation).unwrap();
+    bridge.disconnect(retained_session).unwrap();
     bridge
         .set_profile_favorite(profile_id.to_bytes().to_vec(), 1, true)
         .unwrap();

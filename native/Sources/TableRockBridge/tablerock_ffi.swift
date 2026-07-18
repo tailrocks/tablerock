@@ -1795,13 +1795,20 @@ public struct BridgeProfileItem: Equatable, Hashable {
     public var environment: String?
     public var productionWarning: Bool
     public var dangerousPlaintext: Bool
+    /**
+     * At least one live bridge session still owns this saved profile id.
+     */
+    public var connected: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(
         /**
          * 16-byte ProfileId (same form `open_profile` accepts).
-         */idBytes: Data, revision: UInt64, name: String, engine: String, group: String?, favorite: Bool, savedOrder: UInt32, host: String?, port: String?, context: String?, safetyMode: String, environment: String?, productionWarning: Bool, dangerousPlaintext: Bool) {
+         */idBytes: Data, revision: UInt64, name: String, engine: String, group: String?, favorite: Bool, savedOrder: UInt32, host: String?, port: String?, context: String?, safetyMode: String, environment: String?, productionWarning: Bool, dangerousPlaintext: Bool, 
+        /**
+         * At least one live bridge session still owns this saved profile id.
+         */connected: Bool) {
         self.idBytes = idBytes
         self.revision = revision
         self.name = name
@@ -1816,6 +1823,7 @@ public struct BridgeProfileItem: Equatable, Hashable {
         self.environment = environment
         self.productionWarning = productionWarning
         self.dangerousPlaintext = dangerousPlaintext
+        self.connected = connected
     }
 
     
@@ -1847,7 +1855,8 @@ public struct FfiConverterTypeBridgeProfileItem: FfiConverterRustBuffer {
                 safetyMode: FfiConverterString.read(from: &buf), 
                 environment: FfiConverterOptionString.read(from: &buf), 
                 productionWarning: FfiConverterBool.read(from: &buf), 
-                dangerousPlaintext: FfiConverterBool.read(from: &buf)
+                dangerousPlaintext: FfiConverterBool.read(from: &buf), 
+                connected: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -1866,6 +1875,7 @@ public struct FfiConverterTypeBridgeProfileItem: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.environment, into: &buf)
         FfiConverterBool.write(value.productionWarning, into: &buf)
         FfiConverterBool.write(value.dangerousPlaintext, into: &buf)
+        FfiConverterBool.write(value.connected, into: &buf)
     }
 }
 

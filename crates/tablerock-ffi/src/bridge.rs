@@ -204,6 +204,8 @@ pub struct BridgeProfileItem {
     pub environment: Option<String>,
     pub production_warning: bool,
     pub dangerous_plaintext: bool,
+    /// At least one live bridge session still owns this saved profile id.
+    pub connected: bool,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -510,7 +512,18 @@ impl TableRockBridge {
         engine: Engine,
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
-        catch_entry(|| self.open_driver_session_inner(engine, session))
+        catch_entry(|| self.open_driver_session_inner(engine, session, None))
+    }
+
+    /// Registers a test driver under an existing saved-profile identity.
+    /// Not exported to UniFFI.
+    pub fn open_driver_session_for_profile(
+        &self,
+        profile_id: ProfileId,
+        engine: Engine,
+        session: Box<dyn DriverSession>,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| self.open_driver_session_inner(engine, session, Some(profile_id)))
     }
 
     /// Inserts a minimal reviewed delete plan for the session (test/conformance only).
@@ -879,7 +892,7 @@ impl TableRockBridge {
                 .into(),
             }
         };
-        self.open_inner(params)
+        self.open_inner_for_profile(params, Some(profile_id))
     }
 
     fn get_profile_draft_inner(
@@ -1028,6 +1041,11 @@ impl TableRockBridge {
             })
             .transpose()?;
         let filter = ProfileListFilter::new(None, None).with_search(search);
+        let connected_profiles = inner
+            .sessions
+            .values()
+            .map(|session| session.profile_id)
+            .collect::<BTreeSet<_>>();
         let mut after = None;
         let mut items = Vec::new();
         loop {
@@ -1037,7 +1055,11 @@ impl TableRockBridge {
             let page = actor
                 .list_profiles(request)
                 .map_err(|error| BridgeError::rejected("profile-list", error.to_string()))?;
-            items.extend(page.items().iter().map(bridge_profile_item));
+            items.extend(
+                page.items()
+                    .iter()
+                    .map(|item| bridge_profile_item(item, connected_profiles.contains(&item.id()))),
+            );
             if items.len() > ProfileListRequest::MAX_SEARCH_CANDIDATES {
                 return Err(BridgeError::rejected(
                     "profile-list",
@@ -1399,6 +1421,14 @@ impl TableRockBridge {
     }
 
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
+        self.open_inner_for_profile(params, None)
+    }
+
+    fn open_inner_for_profile(
+        &self,
+        params: OpenParams,
+        saved_profile_id: Option<ProfileId>,
+    ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let engine = parse_engine(&params.engine)?;
         let text = |value: &str, field: &str| {
@@ -1515,13 +1545,14 @@ impl TableRockBridge {
             }
         })??;
 
-        self.open_driver_session_inner(engine, session)
+        self.open_driver_session_inner(engine, session, saved_profile_id)
     }
 
     fn open_driver_session_inner(
         &self,
         engine: Engine,
         session: Box<dyn DriverSession>,
+        saved_profile_id: Option<ProfileId>,
     ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let mut guard = self
@@ -1532,7 +1563,7 @@ impl TableRockBridge {
         if !inner.accepting {
             return Err(BridgeError::ShuttingDown);
         }
-        let profile_id = inner.ids.profile();
+        let profile_id = saved_profile_id.unwrap_or_else(|| inner.ids.profile());
         let session_id = inner.ids.session();
         let context_id = inner.ids.context();
 
@@ -1932,7 +1963,10 @@ fn environment_label(environment: &EnvironmentTag) -> String {
     }
 }
 
-fn bridge_profile_item(item: &tablerock_core::ProfileListItem) -> BridgeProfileItem {
+fn bridge_profile_item(
+    item: &tablerock_core::ProfileListItem,
+    connected: bool,
+) -> BridgeProfileItem {
     BridgeProfileItem {
         id_bytes: item.id().to_bytes().to_vec(),
         revision: item.revision().get(),
@@ -1958,6 +1992,7 @@ fn bridge_profile_item(item: &tablerock_core::ProfileListItem) -> BridgeProfileI
             .environment()
             .is_some_and(EnvironmentTag::is_production_warning),
         dangerous_plaintext: item.sources().has_dangerous_plaintext(),
+        connected,
     }
 }
 

@@ -24,6 +24,8 @@ for pattern in \
   'Button\(profile.favorite \? "Remove Favorite" : "Add Favorite"\)' \
   'Button\("Move Up"\)' \
   'Button\("Move Down"\)' \
+  'profile.connected \? "Connected" : "Disconnected"' \
+  'Button\("Disconnect"\)' \
   'Connections in .* move to Ungrouped. No connection is deleted.'
 do
   rg -q "$pattern" "$SOURCE" || {
