@@ -874,6 +874,9 @@ impl PostgresSession {
                     crate::browse_plan::FilterValue::Integer(n) => Box::new(*n),
                     crate::browse_plan::FilterValue::Float(n) => Box::new(*n),
                     crate::browse_plan::FilterValue::Boolean(b) => Box::new(*b),
+                    crate::browse_plan::FilterValue::Null => {
+                        Box::new(None::<String>)
+                    }
                 }
             })
             .collect();

@@ -250,6 +250,13 @@ pub enum ConfirmDialog {
     QuickSwitch {
         confirm_buffer: String,
     },
+    /// Bind named SQL parameters: paste `name=value;…` then Submit runs.
+    BindParams {
+        names: Vec<String>,
+        /// Original statement text (with `:name`); rewritten on submit.
+        statement: String,
+        confirm_buffer: String,
+    },
 }
 
 /// Ephemeral password prompt; Debug redacts buffer. Cleared after submit.

@@ -7,6 +7,7 @@ use super::history::HistoryPanel;
 use super::inspector::InspectorModel;
 use super::mutation_plan_build::MutationReviewView;
 use super::query_editor::QueryEditorModel;
+use super::result_sections::ResultSectionsModel;
 use super::saved_query::{BoundSqlFile, SavedQueryPanel};
 use tablerock_core::SqlDialect;
 
@@ -117,6 +118,8 @@ pub struct WorkbenchModel {
     pub pending_review_token_hex: Option<String>,
     /// Wall-clock expiry (ms) for the pending review token (display only).
     pub pending_review_expires_at_ms: Option<u64>,
+    /// Multi-statement run section panel (one row per statement).
+    pub result_sections: ResultSectionsModel,
 }
 
 impl Default for WorkbenchModel {
@@ -162,6 +165,7 @@ impl Default for WorkbenchModel {
             mutation_review: None,
             pending_review_token_hex: None,
             pending_review_expires_at_ms: None,
+            result_sections: ResultSectionsModel::default(),
         }
     }
 }

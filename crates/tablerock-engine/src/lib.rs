@@ -31,6 +31,7 @@ pub use clickhouse::{
 };
 pub use browse_plan::{
     BrowsePlan, BrowsePlanError, FilterOperator, FilterValue, RenderedBrowseSql, SortDirection,
+    parse_bind_text,
     SortKey, TypedCondition,
 };
 pub use ident::{QuoteIdentError, qualify_table, quote_ident};

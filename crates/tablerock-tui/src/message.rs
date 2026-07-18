@@ -361,6 +361,13 @@ pub enum EngineMsg {
         summary: String,
         ok: bool,
     },
+    /// Multi-statement script section snapshot (ordered; earlier never dropped).
+    ScriptSections {
+        request_token: u64,
+        context_revision: u64,
+        /// Display lines from ResultSectionsModel.
+        lines: Vec<String>,
+    },
     BackendSignalDone {
         request_token: u64,
         context_revision: u64,

@@ -671,11 +671,16 @@ impl EffectExecutor {
                 session_id_hex,
                 context_revision,
                 statement,
+                parameters,
             } => {
                 let sessions = Arc::clone(&self.sessions);
                 let results = Arc::clone(&self.results);
                 let ingress = self.ingress.clone();
                 tokio::task::spawn_local(async move {
+                    let bind: Vec<_> = parameters
+                        .iter()
+                        .map(|s| tablerock_engine::parse_bind_text(s))
+                        .collect();
                     let message = execute_sql(
                         sessions,
                         results,
@@ -684,8 +689,33 @@ impl EffectExecutor {
                         session_id_hex,
                         context_revision,
                         statement,
-                        Vec::new(),
+                        bind,
                         None::<(String, String)>, // ad-hoc SQL: no base-table identity
+                    )
+                    .await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
+            Effect::ExecuteSqlScript {
+                request_token,
+                session_id_hex,
+                context_revision,
+                statements,
+                parameters,
+            } => {
+                let sessions = Arc::clone(&self.sessions);
+                let results = Arc::clone(&self.results);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = execute_sql_script(
+                        sessions,
+                        results,
+                        ingress.clone(),
+                        request_token,
+                        session_id_hex,
+                        context_revision,
+                        statements,
+                        parameters,
                     )
                     .await;
                     let _ = ingress.try_send_event(message);
@@ -1823,6 +1853,89 @@ async fn browse_table(
 /// Pump-and-store: stream pages into ResultStore up to the query cap; surface
 /// the first page before completion so the grid can paint early. Further
 /// pages are projected via FetchPage (no OFFSET re-query).
+async fn execute_sql_script(
+    sessions: Arc<Mutex<SessionRegistry>>,
+    results: Arc<Mutex<ResultStore>>,
+    ingress: RootMessageSender,
+    request_token: RequestToken,
+    session_id_hex: String,
+    context_revision: u64,
+    statements: Vec<String>,
+    parameters: Vec<String>,
+) -> Message {
+    use tablerock_tui::model::result_sections::{
+        ResultSectionsModel, StatementSection, StatementSectionKind,
+    };
+
+    let bind: Vec<_> = parameters
+        .iter()
+        .map(|s| tablerock_engine::parse_bind_text(s))
+        .collect();
+    let mut sections = ResultSectionsModel::default();
+    let mut last_grid: Option<Message> = None;
+    for (i, statement) in statements.into_iter().enumerate() {
+        let ordinal = (i + 1) as u32;
+        sections.push(StatementSection {
+            ordinal,
+            command_tag: statement
+                .split_whitespace()
+                .next()
+                .unwrap_or("stmt")
+                .to_ascii_uppercase(),
+            kind: StatementSectionKind::Running,
+            rows: None,
+            elapsed_ms: None,
+            error: None,
+            pinned: false,
+        });
+        let msg = execute_sql(
+            Arc::clone(&sessions),
+            Arc::clone(&results),
+            ingress.clone(),
+            request_token,
+            session_id_hex.clone(),
+            context_revision,
+            statement,
+            bind.clone(),
+            None::<(String, String)>,
+        )
+        .await;
+        match &msg {
+            Message::Engine(tablerock_tui::EngineMsg::GridPage { row_count, .. }) => {
+                if let Some(s) = sections.sections.iter_mut().find(|s| s.ordinal == ordinal) {
+                    s.kind = StatementSectionKind::Completed;
+                    s.rows = Some(u64::from(*row_count));
+                }
+                last_grid = Some(msg);
+            }
+            Message::Engine(tablerock_tui::EngineMsg::GridFailed { reason, .. }) => {
+                let label = match reason {
+                    FailureProjection::Label(l) => l.clone(),
+                };
+                sections.mark_failed(ordinal, label);
+                // Continue so later statements still run (partial script truth).
+            }
+            _ => {
+                if let Some(s) = sections.sections.iter_mut().find(|s| s.ordinal == ordinal) {
+                    s.kind = StatementSectionKind::Completed;
+                }
+            }
+        }
+    }
+    // Deliver section summary; if last statement produced a grid page, deliver it too.
+    let summary = Message::Engine(tablerock_tui::EngineMsg::ScriptSections {
+        request_token,
+        context_revision,
+        lines: sections.display_lines(),
+    });
+    if let Some(grid) = last_grid {
+        let _ = ingress.try_send_event(summary);
+        grid
+    } else {
+        summary
+    }
+}
+
 async fn execute_sql(
     sessions: Arc<Mutex<SessionRegistry>>,
     results: Arc<Mutex<ResultStore>>,

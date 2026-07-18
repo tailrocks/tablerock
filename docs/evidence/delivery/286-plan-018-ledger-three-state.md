@@ -17,16 +17,14 @@ Machine-readable export:
 
 | three_state | count |
 |-------------|-------|
-| implemented | 51 |
+| implemented | 53 |
 | excluded | 7 |
-| gap | 9 |
+| gap | 7 |
 
 ### Gap rows (block claims as noted)
 
 | Capability | Sequencing | Blocks |
 |------------|------------|--------|
-| Result tabs (full multi-statement) | Parity | Parity claim |
-| Query parameters | Parity | Parity claim |
 | Find/replace | Parity | Parity claim |
 | Formatting | Parity | Parity claim |
 | Explain | Parity | Parity claim |

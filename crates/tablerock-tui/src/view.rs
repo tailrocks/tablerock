@@ -253,6 +253,18 @@ fn render_confirm_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
                 ),
             )
         }
+        crate::model::ConfirmDialog::BindParams {
+            names,
+            confirm_buffer,
+            ..
+        } => (
+            "Bind parameters?",
+            format!(
+                "Need: {}. Paste name=value;… then Submit [{}]",
+                names.join(", "),
+                confirm_buffer
+            ),
+        ),
     };
     let panel = Panel::new(&model.theme)
         .title(title)

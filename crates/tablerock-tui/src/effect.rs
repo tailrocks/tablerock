@@ -362,7 +362,21 @@ pub enum Effect {
         request_token: RequestToken,
         session_id_hex: String,
         context_revision: u64,
+        /// Already rewritten to `$n` when named params were used.
         statement: String,
+        /// Positional bind texts (order matches `$n`); empty = no parameters.
+        /// Executor maps via `parse_bind_text` — never concatenated into SQL.
+        parameters: Vec<String>,
+    },
+    /// Run multiple statements in order; section summaries + last grid page.
+    ExecuteSqlScript {
+        request_token: RequestToken,
+        session_id_hex: String,
+        context_revision: u64,
+        /// Statements already rewritten (no named placeholders).
+        statements: Vec<String>,
+        /// Shared positional binds applied to every statement that has `$n`.
+        parameters: Vec<String>,
     },
     /// Cancel the active stream for a session (best-effort).
     CancelQuery {

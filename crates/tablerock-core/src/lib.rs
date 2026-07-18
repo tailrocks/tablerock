@@ -8,6 +8,7 @@ mod diagnostic;
 mod editability;
 mod id;
 mod mutation;
+mod named_params;
 mod operation;
 mod page;
 mod profile;
@@ -53,6 +54,10 @@ pub use mutation::{
     AuthorizedMutationPlan, FieldValue, MutationBuildError, MutationChange, MutationExecutionModel,
     MutationPlan, MutationPlanLimits, MutationReviewRegistry, MutationTarget, RedisExpiration,
     ReviewError, ReviewRegistryError, ReviewedMutationPlan,
+};
+pub use named_params::{
+    MAX_NAMED_PARAMS, MAX_PARAM_NAME_BYTES, NamedParamError, NamedParamPlan, bind_named_values,
+    parse_param_bindings, rewrite_named_params,
 };
 pub use operation::{
     CancelDispatch, EventQueueError, EventQueuePush, EventRejection, OperationCursor,

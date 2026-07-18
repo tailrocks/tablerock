@@ -104,7 +104,8 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     | ConfirmDialog::StartupReview { confirm_buffer, .. }
                     | ConfirmDialog::PgTool { confirm_buffer, .. }
                     | ConfirmDialog::ImportUrl { confirm_buffer, .. }
-                    | ConfirmDialog::QuickSwitch { confirm_buffer, .. } => {
+                    | ConfirmDialog::QuickSwitch { confirm_buffer, .. }
+                    | ConfirmDialog::BindParams { confirm_buffer, .. } => {
                         *confirm_buffer = text.text().to_owned();
                     }
                     _ => {}
@@ -1091,6 +1092,33 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::ScriptSections {
+            context_revision,
+            lines,
+            ..
+        }) => {
+            if model.workbench().context_revision != context_revision {
+                return Update::unchanged();
+            }
+            // Project summary into inspector; grid may also receive last page.
+            model.workbench_mut().inspector = crate::model::inspector::InspectorModel {
+                open: true,
+                title: "script results".into(),
+                kind_label: "script".into(),
+                text: lines.join("\n"),
+                hex: String::new(),
+                byte_len: lines.iter().map(|l| l.len() as u64).sum(),
+                original_byte_len: None,
+                stale: false,
+                structure_schema: None,
+                structure_table: None,
+            };
+            let selected = model.workbench().selected_tab;
+            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+                tab.running = false;
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::PgToolDone {
             kind,
             summary,
@@ -1800,6 +1828,54 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     }
                     Update::render()
                 }
+                ConfirmDialog::BindParams {
+                    names,
+                    statement,
+                    confirm_buffer,
+                } => {
+                    use tablerock_core::{
+                        bind_named_values, parse_param_bindings, rewrite_named_params,
+                    };
+                    let Some(session_id_hex) =
+                        model.session().map(|s| s.session_id_hex.clone())
+                    else {
+                        model.set_confirm(None);
+                        return Update::unchanged();
+                    };
+                    let plan = match rewrite_named_params(&statement) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            model.set_confirm(None);
+                            if let Some(g) = model.workbench_mut().active_grid_mut() {
+                                g.mark_failed(e.to_string());
+                            }
+                            return Update::render();
+                        }
+                    };
+                    let bindings = parse_param_bindings(&confirm_buffer);
+                    match bind_named_values(&plan, &bindings) {
+                        Ok(values) => {
+                            model.set_confirm(None);
+                            emit_execute_sql(model, session_id_hex, plan.sql, values)
+                        }
+                        Err(missing) => {
+                            // Stay open; show which names remain.
+                            let _ = names;
+                            if let Some(ConfirmDialog::BindParams {
+                                confirm_buffer: buf,
+                                ..
+                            }) = model.confirm_mut()
+                            {
+                                *buf = format!(
+                                    "# missing: {}\n{}",
+                                    missing.join(", "),
+                                    confirm_buffer
+                                );
+                            }
+                            Update::render()
+                        }
+                    }
+                }
                 ConfirmDialog::RenameTable {
                     schema,
                     table,
@@ -2032,39 +2108,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.workbench_mut().open_sql_tab();
             Update::render()
         }
-        ActionId::RunSql if model.screen() == Screen::Workbench => {
-            let Some(session) = model.session() else {
-                return Update::unchanged();
-            };
-            let session_id_hex = session.session_id_hex.clone();
-            let statement = model
-                .workbench()
-                .active_editor()
-                .and_then(|ed| ed.run_text())
-                .unwrap_or_default();
-            if statement.trim().is_empty() {
-                return Update::unchanged();
-            }
-            let token = model.mint_request_token();
-            let context_revision = model.workbench().context_revision;
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                grid.operation = GridOperationState::Running;
-                grid.error_label = None;
-            }
-            let selected = model.workbench().selected_tab;
-            if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
-                tab.running = true;
-            }
-            Update {
-                render: true,
-                effect: Some(Effect::ExecuteSql {
-                    request_token: token,
-                    session_id_hex,
-                    context_revision,
-                    statement,
-                }),
-            }
-        }
+        ActionId::RunSql if model.screen() == Screen::Workbench => run_sql_or_bind_params(model),
         ActionId::CancelQuery if model.screen() == Screen::Workbench => {
             let Some(session_id_hex) = model.session().map(|s| s.session_id_hex.clone()) else {
                 return Update::unchanged();
@@ -2729,6 +2773,187 @@ fn activate_selected_action(model: &mut Model) -> Update {
     }
 }
 
+/// Run active SQL, expanding `:name` parameters; prompt when unbound.
+fn run_sql_or_bind_params(model: &mut Model) -> Update {
+    let Some(session) = model.session() else {
+        return Update::unchanged();
+    };
+    let session_id_hex = session.session_id_hex.clone();
+    // Multi-statement script: only when an explicit selection covers ≥2 spans
+    // (default Run stays "current statement under cursor" / selection slice).
+    {
+        let Some(ed) = model.workbench().active_editor() else {
+            return Update::unchanged();
+        };
+        if let Some((a, b)) = ed.selection() {
+            let (start, end) = if a <= b { (a, b) } else { (b, a) };
+            let covered = ed
+                .spans()
+                .iter()
+                .filter(|s| s.start < end && s.end > start)
+                .count();
+            if covered >= 2 {
+                return run_sql_script(model, session_id_hex);
+            }
+        }
+    }
+    let statement = model
+        .workbench()
+        .active_editor()
+        .and_then(|ed| ed.run_text())
+        .unwrap_or_default();
+    if statement.trim().is_empty() {
+        return Update::unchanged();
+    }
+    match prepare_executable_sql(&statement) {
+        Ok((sql, parameters)) => emit_execute_sql(model, session_id_hex, sql, parameters),
+        Err(missing) if !missing.is_empty() => {
+            model.set_confirm(Some(ConfirmDialog::BindParams {
+                names: missing,
+                statement,
+                confirm_buffer: String::new(),
+            }));
+            model.set_action(ActionId::Submit);
+            Update::render()
+        }
+        Err(_) => Update::unchanged(),
+    }
+}
+
+fn run_sql_script(model: &mut Model, session_id_hex: String) -> Update {
+    use tablerock_core::statements;
+    let Some(ed) = model.workbench().active_editor() else {
+        return Update::unchanged();
+    };
+    let dialect = ed.dialect();
+    let text = ed.text().to_owned();
+    let (sel_start, sel_end) = match ed.selection() {
+        Some((a, b)) if a <= b => (a, b),
+        Some((a, b)) => (b, a),
+        None => (0, text.len()),
+    };
+    let spans = statements(&text, dialect);
+    let mut prepared = Vec::new();
+    let mut all_params = Vec::new();
+    for span in &spans {
+        if span.end <= sel_start || span.start >= sel_end {
+            continue;
+        }
+        let slice = text[span.start..span.end.min(text.len())]
+            .trim()
+            .trim_end_matches(';')
+            .trim();
+        if slice.is_empty() {
+            continue;
+        }
+        match prepare_executable_sql(slice) {
+            Ok((sql, params)) => {
+                if all_params.is_empty() && !params.is_empty() {
+                    all_params = params;
+                }
+                prepared.push(sql);
+            }
+            Err(missing) => {
+                model.set_confirm(Some(ConfirmDialog::BindParams {
+                    names: missing,
+                    statement: text,
+                    confirm_buffer: String::new(),
+                }));
+                model.set_action(ActionId::Submit);
+                return Update::render();
+            }
+        }
+    }
+    if prepared.is_empty() {
+        return Update::unchanged();
+    }
+    if prepared.len() == 1 {
+        return emit_execute_sql(model, session_id_hex, prepared.remove(0), all_params);
+    }
+    let token = model.mint_request_token();
+    let context_revision = model.workbench().context_revision;
+    model.workbench_mut().result_sections = crate::model::result_sections::ResultSectionsModel {
+        sections: prepared
+            .iter()
+            .enumerate()
+            .map(|(i, _)| crate::model::result_sections::StatementSection {
+                ordinal: (i + 1) as u32,
+                command_tag: "stmt".into(),
+                kind: crate::model::result_sections::StatementSectionKind::Pending,
+                rows: None,
+                elapsed_ms: None,
+                error: None,
+                pinned: false,
+            })
+            .collect(),
+        selected: 0,
+    };
+    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+        grid.operation = GridOperationState::Running;
+        grid.error_label = None;
+    }
+    let selected = model.workbench().selected_tab;
+    if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+        tab.running = true;
+    }
+    Update {
+        render: true,
+        effect: Some(Effect::ExecuteSqlScript {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            statements: prepared,
+            parameters: all_params,
+        }),
+    }
+}
+
+/// Rewrite named params. Ok = ready to execute; Err = missing binding names.
+fn prepare_executable_sql(statement: &str) -> Result<(String, Vec<String>), Vec<String>> {
+    use tablerock_core::{bind_named_values, parse_param_bindings, rewrite_named_params};
+    let plan = match rewrite_named_params(statement) {
+        Ok(p) => p,
+        // Invalid rewrite: run original text unbound (no silent `:name` expand).
+        Err(_) => return Ok((statement.to_owned(), Vec::new())),
+    };
+    if plan.names.is_empty() {
+        return Ok((plan.sql, Vec::new()));
+    }
+    let empty = parse_param_bindings("");
+    match bind_named_values(&plan, &empty) {
+        Ok(vals) => Ok((plan.sql, vals)),
+        Err(missing) => Err(missing),
+    }
+}
+
+fn emit_execute_sql(
+    model: &mut Model,
+    session_id_hex: String,
+    statement: String,
+    parameters: Vec<String>,
+) -> Update {
+    let token = model.mint_request_token();
+    let context_revision = model.workbench().context_revision;
+    if let Some(grid) = model.workbench_mut().active_grid_mut() {
+        grid.operation = GridOperationState::Running;
+        grid.error_label = None;
+    }
+    let selected = model.workbench().selected_tab;
+    if let Some(tab) = model.workbench_mut().tabs.get_mut(selected) {
+        tab.running = true;
+    }
+    Update {
+        render: true,
+        effect: Some(Effect::ExecuteSql {
+            request_token: token,
+            session_id_hex,
+            context_revision,
+            statement,
+            parameters,
+        }),
+    }
+}
+
 /// Prefix the active editor statement with engine-appropriate EXPLAIN.
 fn explain_active_sql(model: &mut Model) -> Update {
     let Some(session) = model.session() else {
@@ -2764,17 +2989,7 @@ fn explain_active_sql(model: &mut Model) -> Update {
         // PostgreSQL: plan only (no ANALYZE — ANALYZE executes the query).
         format!("EXPLAIN (FORMAT TEXT) {body}")
     };
-    let token = model.mint_request_token();
-    let context_revision = model.workbench().context_revision;
-    Update {
-        render: true,
-        effect: Some(Effect::ExecuteSql {
-            request_token: token,
-            session_id_hex,
-            context_revision,
-            statement: explained,
-        }),
-    }
+    emit_execute_sql(model, session_id_hex, explained, Vec::new())
 }
 
 fn export_stream_query(model: &mut Model, format: &str, default_path: &str) -> Update {
@@ -4833,6 +5048,83 @@ mod tests {
                 ..
             }) if kind == "drop_column" && object_name == "email" && type_text.is_empty()
         ));
+    }
+
+    #[test]
+    fn run_sql_multi_statement_selection_emits_script_effect() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().open_sql_tab();
+        let ed = model.workbench_mut().active_editor_mut().unwrap();
+        ed.set_text("SELECT 1;\nSELECT 2;");
+        // Select entire buffer so ≥2 spans are covered.
+        let len = ed.text().len();
+        ed.set_selection(0, len);
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::RunSql);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::ExecuteSqlScript {
+                statements,
+                session_id_hex,
+                ..
+            }) if session_id_hex == "aabb" && statements.len() == 2
+        ));
+        assert_eq!(model.workbench().result_sections.sections.len(), 2);
+    }
+
+    #[test]
+    fn run_sql_with_named_params_opens_bind_dialog() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().open_sql_tab();
+        model
+            .workbench_mut()
+            .active_editor_mut()
+            .unwrap()
+            .set_text("SELECT :id, :name");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::RunSql);
+        let out = update(&mut model, Message::Activate);
+        assert!(out.effects().next().is_none());
+        assert!(matches!(
+            model.confirm(),
+            Some(ConfirmDialog::BindParams { names, .. })
+                if names.contains(&"id".into()) && names.contains(&"name".into())
+        ));
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("id=1; name=alice".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let run = update(&mut model, Message::Activate);
+        assert!(matches!(
+            run.effects().next(),
+            Some(Effect::ExecuteSql {
+                statement,
+                parameters,
+                ..
+            }) if statement.contains("$1")
+                && statement.contains("$2")
+                && !statement.contains(":id")
+                && *parameters == ["1".to_owned(), "alice".to_owned()]
+        ));
+        assert!(model.confirm().is_none());
     }
 
     #[test]

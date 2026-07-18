@@ -65,6 +65,8 @@ pub enum FilterValue {
     Integer(i64),
     Float(f64),
     Boolean(bool),
+    /// SQL NULL parameter (typed prepare still required by the engine).
+    Null,
 }
 
 impl std::fmt::Debug for FilterValue {
@@ -74,8 +76,33 @@ impl std::fmt::Debug for FilterValue {
             Self::Integer(_) => f.write_str("Integer([redacted])"),
             Self::Float(_) => f.write_str("Float([redacted])"),
             Self::Boolean(b) => f.debug_tuple("Boolean").field(b).finish(),
+            Self::Null => f.write_str("Null"),
         }
     }
+}
+
+/// Parse a presentation string into a bind value (never for SQL concatenation).
+#[must_use]
+pub fn parse_bind_text(raw: &str) -> FilterValue {
+    let t = raw.trim();
+    if t.eq_ignore_ascii_case("null") {
+        return FilterValue::Null;
+    }
+    if t.eq_ignore_ascii_case("true") {
+        return FilterValue::Boolean(true);
+    }
+    if t.eq_ignore_ascii_case("false") {
+        return FilterValue::Boolean(false);
+    }
+    if let Ok(n) = t.parse::<i64>() {
+        return FilterValue::Integer(n);
+    }
+    if let Ok(n) = t.parse::<f64>() {
+        if t.contains('.') || t.contains('e') || t.contains('E') {
+            return FilterValue::Float(n);
+        }
+    }
+    FilterValue::Text(t.to_owned())
 }
 
 /// One typed column condition.
@@ -431,6 +458,21 @@ mod tests {
         assert!(matches!(
             plan.render_sql(),
             Err(BrowsePlanError::Ident(QuoteIdentError::Empty))
+        ));
+    }
+
+    #[test]
+    fn parse_bind_text_heuristics() {
+        assert!(matches!(parse_bind_text("null"), FilterValue::Null));
+        assert!(matches!(
+            parse_bind_text("TRUE"),
+            FilterValue::Boolean(true)
+        ));
+        assert!(matches!(parse_bind_text("42"), FilterValue::Integer(42)));
+        assert!(matches!(parse_bind_text("1.5"), FilterValue::Float(_)));
+        assert!(matches!(
+            parse_bind_text("hello"),
+            FilterValue::Text(s) if s == "hello"
         ));
     }
 }
