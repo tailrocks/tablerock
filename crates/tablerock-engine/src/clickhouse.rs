@@ -26,9 +26,18 @@ const MAX_CLICKHOUSE_TYPE_DEPTH: u8 = 64;
 const MAX_STRUCTURED_NODES: u64 = 1_000_000;
 const MAX_QUERY_ID_BYTES: usize = 256;
 
+/// TLS mode for ClickHouse HTTP(S).
+///
+/// `RequireSystemRoots` uses the crate's rustls native-roots connector
+/// (workspace feature `rustls-tls-native-roots`). Custom CA / mTLS need a
+/// custom `HttpClient` (clickhouse-rs `with_http_client`); that path is
+/// recorded as residual until a connector fixture is wired.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClickHouseTlsMode {
     Disable,
+    /// HTTPS with system/native roots (default when TLS is on).
+    RequireSystemRoots,
+    /// Alias kept for existing call sites; same as RequireSystemRoots.
     Require,
 }
 
@@ -221,7 +230,7 @@ impl ClickHouseSession {
     pub fn connect(config: &ClickHouseConnectConfig) -> Self {
         let scheme = match config.tls {
             ClickHouseTlsMode::Disable => "http",
-            ClickHouseTlsMode::Require => "https",
+            ClickHouseTlsMode::Require | ClickHouseTlsMode::RequireSystemRoots => "https",
         };
         let compression = match config.compression {
             ClickHouseCompression::None => Compression::None,

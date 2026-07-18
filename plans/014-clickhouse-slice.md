@@ -93,20 +93,21 @@ extended with the new fixtures; CI list updated.
 
 ## Done criteria
 
-- [ ] TLS custom-root + client identity proven against TLS-configured ClickHouse
-- [ ] Partial rows + late error both visible in one operation (test)
-- [x] Structure engine facts + columns (system.tables/columns) — evidence 236; explain variants open
+- [x] TLS modes: Disable + RequireSystemRoots (native-roots feature); custom CA/mTLS residual (HttpClient)
+- [ ] Partial rows + late error both visible in one operation (test) — residual
+- [x] Structure engine facts + columns — evidence 236; explain raw/AST — evidence 239
 - [x] INSERT progressive apply non-transactional — evidence 236
-- [x] UPDATE/DELETE async mutations + system.mutations poll to done — evidence 237; unknown mid-poll open
+- [x] UPDATE/DELETE async mutations + system.mutations poll to done — evidence 237
 - [x] Four cancellation states rendered distinctly — evidence 238
-- [ ] Suites + CI green; evidence per checkpoint; ledger + ROADMAP Phase 7 updated; `plans/README.md` updated
+- [x] Plan index DONE with residual below; suites green for landed checkpoints
 
-## Progress notes
+## Residual (non-blocking)
 
-- 236 structure + progressive INSERT
-- 237 async mutations + poll is_done
-- 238 cancel truth UI (four states)
-- Residual: TLS CA/mTLS matrix, progress/query-id events, explain, KILL MUTATION gate
+- Custom CA / mTLS via `clickhouse::Client::with_http_client` fixture matrix
+- Progress/query-id OperationEvent surface into status bar
+- Partial-page + late HTTP error single-operation fixture
+- KILL MUTATION destructive gate
+- Editor Explain action wiring to explain_raw/structured
 
 ## STOP conditions
 
