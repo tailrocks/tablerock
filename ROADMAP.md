@@ -202,6 +202,10 @@ handling, restoration, cache/eviction, and cross-engine support documentation.
 
 ## Phase 10 — scoped parity expansion
 
+**Partial (plan 017):** typed DDL plans + PG execute, roles list, relationship
+graph contract, Vim keymap layer, pg_dump discovery/argv hygiene. Residual:
+russh SSH bastion, full dump/restore process matrix, DDL UI depth.
+
 Close planned later rows from the parity ledger: reviewed structure editing,
 PostgreSQL backup/restore, relationship exploration, role/privilege inspection,
 startup actions, optional Vim behavior, and engine-specific administration.

@@ -911,6 +911,94 @@ impl PostgresSession {
             .map_err(|_| PostgresError::Query)
     }
 
+    /// Execute a reviewed DDL plan (identifiers quoted; never free SQL).
+    pub async fn execute_ddl_plan(
+        &self,
+        plan: &tablerock_core::DdlPlan,
+    ) -> Result<(), PostgresError> {
+        use tablerock_core::{DdlKind, DdlTarget};
+        use crate::ident::quote_ident;
+        if plan.engine != tablerock_core::Engine::PostgreSql {
+            return Err(PostgresError::Query);
+        }
+        let sql = match (&plan.kind, &plan.target) {
+            (
+                DdlKind::AddColumn,
+                DdlTarget::PostgreSqlRelation { schema, relation },
+            ) => {
+                let col = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
+                let ty = plan.type_text.as_deref().ok_or(PostgresError::Query)?;
+                // Type text is restricted: must look like a simple type token.
+                if !ty
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '(' || c == ')' || c == ',' || c == ' ' || c == '"')
+                {
+                    return Err(PostgresError::Query);
+                }
+                format!(
+                    "ALTER TABLE {}.{} ADD COLUMN {} {}",
+                    quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                    quote_ident(relation).map_err(|_| PostgresError::Query)?,
+                    quote_ident(col).map_err(|_| PostgresError::Query)?,
+                    ty
+                )
+            }
+            (
+                DdlKind::DropColumn,
+                DdlTarget::PostgreSqlRelation { schema, relation },
+            ) => {
+                let col = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
+                format!(
+                    "ALTER TABLE {}.{} DROP COLUMN {}",
+                    quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                    quote_ident(relation).map_err(|_| PostgresError::Query)?,
+                    quote_ident(col).map_err(|_| PostgresError::Query)?,
+                )
+            }
+            (
+                DdlKind::Vacuum,
+                DdlTarget::PostgreSqlRelation { schema, relation },
+            ) => {
+                format!(
+                    "VACUUM {}",
+                    format!(
+                        "{}.{}",
+                        quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                        quote_ident(relation).map_err(|_| PostgresError::Query)?
+                    )
+                )
+            }
+            (
+                DdlKind::Analyze,
+                DdlTarget::PostgreSqlRelation { schema, relation },
+            ) => {
+                format!(
+                    "ANALYZE {}.{}",
+                    quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                    quote_ident(relation).map_err(|_| PostgresError::Query)?,
+                )
+            }
+            _ => return Err(PostgresError::Query),
+        };
+        self.execute_sql(&sql).await
+    }
+
+    /// Read-only role names (privilege inspection first cut).
+    pub async fn list_roles(&self, limit: u32) -> Result<Vec<String>, PostgresError> {
+        if limit == 0 {
+            return Err(PostgresError::InvalidLimits);
+        }
+        let rows = self
+            .client
+            .query(
+                "SELECT rolname::text FROM pg_catalog.pg_roles ORDER BY 1 LIMIT $1::int4",
+                &[&i32::try_from(limit).unwrap_or(i32::MAX)],
+            )
+            .await
+            .map_err(|_| PostgresError::Query)?;
+        Ok(rows.into_iter().map(|r| r.get(0)).collect())
+    }
+
     /// Primary-key column names for a relation, ordered by key position.
     ///
     /// Empty when the relation has no PRIMARY KEY (views, heaps without PK).

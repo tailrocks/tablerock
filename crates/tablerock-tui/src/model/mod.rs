@@ -14,6 +14,7 @@ pub mod redis_key_view;
 pub mod redis_namespace;
 pub mod result_sections;
 pub mod saved_filter;
+pub mod vim_mode;
 pub mod profiles;
 pub mod query_editor;
 pub mod saved_query;

@@ -2634,3 +2634,63 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
     let health = session.health_check().await;
     assert!(health.is_ok());
 }
+
+#[tokio::test]
+async fn ddl_add_column_and_list_roles() {
+    use tablerock_core::{
+        ContextId, DdlKind, DdlPlan, DdlTarget, Engine, IdParts, OperationScope, ProfileId,
+        Revision, SessionId,
+    };
+
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+        text("127.0.0.1"),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+
+    session
+        .execute_sql("CREATE TABLE ddl_users (id int PRIMARY KEY);")
+        .await
+        .unwrap();
+    let scope = OperationScope::new(
+        ProfileId::from_parts(IdParts::new(1, 1).unwrap()).unwrap(),
+        SessionId::from_parts(IdParts::new(1, 2).unwrap()).unwrap(),
+        ContextId::from_parts(IdParts::new(1, 3).unwrap()).unwrap(),
+    );
+    let plan = DdlPlan::new(
+        DdlKind::AddColumn,
+        Engine::PostgreSql,
+        scope,
+        Revision::INITIAL,
+        DdlTarget::PostgreSqlRelation {
+            schema: "public".into(),
+            relation: "ddl_users".into(),
+        },
+        Some("email".into()),
+        Some("text".into()),
+    )
+    .unwrap();
+    session.execute_ddl_plan(&plan).await.unwrap();
+    let cols = session
+        .relation_column_facts("public", "ddl_users")
+        .await
+        .unwrap();
+    assert!(cols.iter().any(|(n, _, _, _)| n == "email"));
+
+    let roles = session.list_roles(32).await.unwrap();
+    assert!(roles.iter().any(|r| r == "postgres"));
+}

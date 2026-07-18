@@ -2,6 +2,7 @@
 
 mod catalog;
 mod command;
+mod ddl;
 mod diagnostic;
 mod editability;
 mod id;
@@ -27,6 +28,10 @@ pub use command::{
     BudgetField, CommandBudget, CommandBudgetError, CommandBudgetLimits, CommandBuildError,
     CommandEnvelope, CommandIntent, CommandSafety, CommandScope, MAX_STATEMENT_BYTES, PageRequest,
     RedactionClass, StatementText, StatementTextError, ValidatedCommandBudget,
+};
+pub use ddl::{
+    DdlBuildError, DdlKind, DdlPlan, DdlTarget, RelationshipEdge, RelationshipGraph,
+    RolePrivilegeRow,
 };
 pub use diagnostic::{
     ApplicationCode, DiagnosticBuildError, DiagnosticPosition, FailureClass, OperationSafety,

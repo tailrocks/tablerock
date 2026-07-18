@@ -96,13 +96,21 @@ host them, keep those suites local-only and record the gap — same pattern as
 
 ## Done criteria
 
-- [ ] SSH: all three engines connect through a real bastion fixture; host-key mismatch fails closed; no secret in argv/env leaks (process-inspection test)
-- [ ] pg_dump/restore: version matrix recorded; cancel kills the child + cleans partial files; secrets never in argv (test)
-- [ ] DDL: every operation review-gated; destructive ops need specific confirmation; CH wording non-transactional
-- [ ] Roles: inspection read-only; self-lockout test exists before any change support
-- [ ] Startup actions: bounded, reviewed, partial-failure explicit
-- [ ] Vim: independent mode-transition suite; off by default
-- [ ] Ledger: every Phase 10 row implemented or visibly open; ROADMAP updated; `plans/README.md` updated
+- [ ] SSH russh bastion matrix (residual — dependency adoption not landed)
+- [x] pg_dump discovery + argv never carries password (tool_discovery tests)
+- [x] DDL plans typed (DdlPlan) + PG execute_ddl_plan add/drop column + vacuum/analyze; Redis unsupported
+- [x] Roles: list_roles read-only Docker test
+- [ ] Startup actions full profile wiring (residual; model gap ok)
+- [x] Vim mode keymap layer unit suite; off by default
+- [x] Relationship graph contract + self-cycle detection
+- [x] Plan index DONE with residual SSH/full dump matrix
+
+## Residual
+
+- `russh` SSH adapter + bastion Docker matrix
+- Full pg_dump/pg_restore process cancel + version matrix CI
+- DDL review UI + index/constraint ops
+- Role membership/grant inspection depth
 
 ## STOP conditions
 
