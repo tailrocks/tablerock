@@ -1356,6 +1356,30 @@ impl DataGridModel {
         true
     }
 
+    /// Promote `column` to primary ORDER BY without cycling direction.
+    ///
+    /// - Already primary: no-op (false).
+    /// - Present as secondary: move to index 0, keep direction.
+    /// - Absent: insert Asc as new primary (secondaries stay).
+    pub fn promote_sort_column(&mut self, column: &str) -> bool {
+        if let Some(idx) = self.sort.iter().position(|k| k.column == column) {
+            if idx == 0 {
+                return false;
+            }
+            let key = self.sort.remove(idx);
+            self.sort.insert(0, key);
+            return true;
+        }
+        self.sort.insert(
+            0,
+            GridSortKey {
+                column: column.to_owned(),
+                direction: ColumnSort::Asc,
+            },
+        );
+        true
+    }
+
     /// Clear server sort/filter; keep quick filter (page-local).
     pub fn clear_server_controls(&mut self) {
         self.sort.clear();
@@ -2386,6 +2410,28 @@ mod tests {
         assert_eq!(g.sort.len(), 1);
         assert_eq!(g.sort[0].column, "age");
         assert!(!g.keep_primary_sort());
+    }
+
+    #[test]
+    fn promote_sort_column_moves_without_cycle() {
+        let mut g = DataGridModel::default();
+        g.columns = vec!["id".into(), "name".into(), "age".into()];
+        assert!(g.promote_sort_column("name"));
+        assert_eq!(g.sort.len(), 1);
+        assert_eq!(g.sort[0].column, "name");
+        assert_eq!(g.sort[0].direction, ColumnSort::Asc);
+        // Already primary — no-op.
+        assert!(!g.promote_sort_column("name"));
+        g.push_sort_column("age");
+        g.push_sort_column("id");
+        // Flip secondary age to Desc in place.
+        g.push_sort_column("age");
+        assert_eq!(g.sort[1].direction, ColumnSort::Desc);
+        assert!(g.promote_sort_column("age"));
+        assert_eq!(g.sort[0].column, "age");
+        assert_eq!(g.sort[0].direction, ColumnSort::Desc);
+        assert_eq!(g.sort[1].column, "name");
+        assert_eq!(g.sort[2].column, "id");
     }
 
     #[test]

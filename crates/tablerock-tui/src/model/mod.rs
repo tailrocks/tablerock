@@ -182,6 +182,8 @@ pub enum ActionId {
     RotateSort,
     /// Drop secondary sort keys; keep only the primary ORDER BY.
     KeepPrimarySort,
+    /// Promote cursor column to primary sort without cycling direction.
+    PromoteSort,
     /// Remove the last server filter chip and re-browse.
     RemoveLastFilter,
     /// Remove all server filters for the cursor column and re-browse.

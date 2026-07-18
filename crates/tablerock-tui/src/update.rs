@@ -3847,6 +3847,23 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
             rebrowse_active_table(model)
         }
+        ActionId::PromoteSort if model.screen() == Screen::Workbench => {
+            let col = model
+                .workbench()
+                .active_grid()
+                .and_then(|g| g.columns.get(g.cursor_col).cloned());
+            let Some(col) = col else {
+                return Update::unchanged();
+            };
+            let promoted = model
+                .workbench_mut()
+                .active_grid_mut()
+                .is_some_and(|g| g.promote_sort_column(&col));
+            if !promoted {
+                return Update::unchanged();
+            }
+            rebrowse_active_table(model)
+        }
         ActionId::ClearSort if model.screen() == Screen::Workbench => {
             let cleared = model
                 .workbench_mut()
@@ -5181,6 +5198,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::InvertPrimarySort
         | ActionId::RotateSort
         | ActionId::KeepPrimarySort
+        | ActionId::PromoteSort
         | ActionId::ClearSort
         | ActionId::AddFilter
         | ActionId::FilterIsNull
@@ -6836,6 +6854,7 @@ fn cycle_action(
                 ActionId::InvertPrimarySort,
                 ActionId::RotateSort,
                 ActionId::KeepPrimarySort,
+                ActionId::PromoteSort,
                 ActionId::ClearSort,
                 ActionId::AddFilter,
                 ActionId::FilterIsNull,
