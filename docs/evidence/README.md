@@ -378,6 +378,7 @@ How to read an evidence document:
 - 411 — [Plan 020 AppKit catalog and Rust-owned intent](delivery/411-plan-020-appkit-catalog.md)
 - 412 — [Plan 020 focused commands, toolbar, and macOS 26 target](delivery/412-plan-020-commands-toolbar.md)
 - 413 — [Plan 020 live Swift cancellation and bridge lock fix](delivery/413-plan-020-live-cancellation.md)
+- 414 — [Plan 020 appearance fixtures and accessibility gate](delivery/414-plan-020-appearance-accessibility.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

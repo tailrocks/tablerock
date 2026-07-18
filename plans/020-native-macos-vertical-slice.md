@@ -40,7 +40,9 @@
   commands, customizable toolbar actions, and corrects every native build
   surface to the fixed macOS 26 deployment target. Evidence 413 fixes bridge
   mutex starvation and proves live slow-query cancellation through the strict
-  Swift path. Remaining criteria stay open.
+  Swift path. Evidence 414 adds a reproducible eight-variant appearance fixture,
+  captured artifacts, and a structural custom-control accessibility gate.
+  Remaining system-setting/VoiceOver criteria stay open.
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED

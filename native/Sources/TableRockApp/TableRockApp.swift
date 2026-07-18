@@ -18,6 +18,88 @@ private struct NativeOperationProjection: Sendable {
     let outcome: String?
 }
 
+/// Test-only environment projection for deterministic appearance evidence.
+/// Production launches have no fixture variables and follow system settings.
+private struct NativeAppearanceFixture: Sendable {
+    let scheme: ColorScheme?
+    let increasedContrast: Bool
+    let reduceTransparency: Bool
+    let reduceMotion: Bool
+    let differentiateWithoutColor: Bool
+
+    static let current: NativeAppearanceFixture = {
+        let environment = ProcessInfo.processInfo.environment
+        let scheme: ColorScheme? = switch environment["TABLEROCK_FIXTURE_APPEARANCE"] {
+        case "light": ColorScheme.light
+        case "dark": ColorScheme.dark
+        default: nil
+        }
+        return NativeAppearanceFixture(
+            scheme: scheme,
+            increasedContrast: environment["TABLEROCK_FIXTURE_CONTRAST"] == "1",
+            reduceTransparency: environment["TABLEROCK_FIXTURE_REDUCE_TRANSPARENCY"] == "1",
+            reduceMotion: environment["TABLEROCK_FIXTURE_REDUCE_MOTION"] == "1",
+            differentiateWithoutColor: environment["TABLEROCK_FIXTURE_DIFFERENTIATE"] == "1"
+        )
+    }()
+
+    var isActive: Bool {
+        scheme != nil || increasedContrast || reduceTransparency || reduceMotion
+            || differentiateWithoutColor
+    }
+
+    var label: String {
+        [
+            scheme == .dark ? "Dark" : "Light",
+            increasedContrast ? "Increased contrast" : nil,
+            reduceTransparency ? "Reduced transparency" : nil,
+            reduceMotion ? "Reduced motion" : nil,
+            differentiateWithoutColor ? "Differentiate without color" : nil,
+        ]
+        .compactMap { $0 }
+        .joined(separator: " · ")
+    }
+
+    @MainActor
+    func applyApplicationAppearance() {
+        guard increasedContrast else { return }
+        let name: NSAppearance.Name = scheme == .dark
+            ? .accessibilityHighContrastDarkAqua
+            : .accessibilityHighContrastAqua
+        NSApplication.shared.appearance = NSAppearance(named: name)
+    }
+}
+
+private struct NativeAppearanceFixtureModifier: ViewModifier {
+    let fixture: NativeAppearanceFixture
+
+    func body(content: Content) -> some View {
+        content
+            .preferredColorScheme(fixture.scheme)
+            .background {
+                if fixture.reduceTransparency {
+                    Color(nsColor: .windowBackgroundColor)
+                }
+            }
+            .transaction { transaction in
+                if fixture.reduceMotion {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if fixture.isActive {
+                    Text("Fixture · \(fixture.label)")
+                        .font(.caption2)
+                        .padding(4)
+                        .background(.background)
+                        .padding(8)
+                        .accessibilityLabel("Appearance fixture \(fixture.label)")
+                }
+            }
+    }
+}
+
 @MainActor
 private struct WorkbenchActions {
     let canRun: Bool
@@ -132,10 +214,16 @@ private actor BridgeClient {
 struct TableRockApp: App {
     @State private var model = BridgeModel()
 
+    init() {
+        NativeAppearanceFixture.current.applyApplicationAppearance()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(model)
+                .modifier(NativeAppearanceFixtureModifier(
+                    fixture: NativeAppearanceFixture.current))
                 .frame(minWidth: 760, minHeight: 520)
         }
         .commands {
