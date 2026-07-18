@@ -119,20 +119,20 @@ architecture decisions.
 | Staged changes | Core | Inserts/updates/deletes remain local, visible (per-row/per-cell markers), undoable, reviewable, and discardable until apply | `MutationDraftModel` markers/undo/discard + dirty tab; apply clears on success (evidence 228, 230) |
 | Operation preview | Core | Preview lists the exact parameterized operations; execution uses the typed plan, never reparsed display text | Review lines from typed plan (`mutation_plan_build`); apply rebuilds typed plan from drafts (evidence 229–230) |
 | Conflict handling | Core | PostgreSQL conflicts roll back; ClickHouse and Redis expose their true non-transactional outcomes | PG ≠1-row conflict → ROLLBACK + keep staged; Docker suite (evidence 227, 230) |
-| Foreign-key navigation | Parity | PostgreSQL relationship lookup and navigation with explicit unavailable state elsewhere | Catalog and permission fixtures |
+| Foreign-key navigation | Parity | PostgreSQL relationship lookup and navigation with explicit unavailable state elsewhere | FollowForeignKey → filtered browse of referenced table (evidence 231); multi-column FK polish open |
 
 ## Schema, administration, and data movement
 
 | Capability | Status | TableRock requirement | Acceptance evidence |
 |---|---|---|---|
-| Structure inspection | Core | Columns, keys/indexes, constraints, engine facts, and DDL/raw metadata | Versioned catalog fixtures |
+| Structure inspection | Core | Columns, keys/indexes, constraints, engine facts, and DDL/raw metadata | ShowStructure column type/null/default in inspector (evidence 231); indexes/constraints/raw DDL open |
 | Structure editing | Later | Capability-gated reviewed DDL; PostgreSQL first, ClickHouse-specific forms, no Redis fiction | Destructive-operation and rollback/outcome tests |
-| Table operations | Parity | Refresh, rename where valid, truncate/drop, maintenance/optimize, and copied DDL behind typed safety gates | Per-engine privilege and destructive tests |
+| Table operations | Parity | Refresh, rename where valid, truncate/drop, maintenance/optimize, and copied DDL behind typed safety gates | Truncate/drop gated by exact name re-type (evidence 232); rename/maintenance open |
 | Import | Parity | Streaming CSV/JSON and reviewed SQL where meaningful; mapping, transaction/outcome policy, progress, cancel | Malformed input, formula, encoding, and partial-failure fixtures |
 | Export | Parity | Streaming CSV/JSON plus engine-appropriate SQL; atomic destination and cancellation cleanup | Constant-memory and partial-file tests |
 | Backup/restore | Later | PostgreSQL tool integration with version checks, progress, cancel, and secret-safe process invocation | Real `pg_dump`/`pg_restore` matrix |
 | ER relationships | Later | PostgreSQL relationship graph; terminal tree/list first, native diagram later | Cycles, large graph, and missing-FK tests |
-| Server dashboard | Parity | Current bounded health/activity snapshots, cancel/kill only through explicit capability and confirmation | Permission-denied and version-drift tests |
+| Server dashboard | Parity | Current bounded health/activity snapshots, cancel/kill only through explicit capability and confirmation | Activity snapshot from pg_stat_activity (evidence 232); cancel/terminate gates open |
 | Users and roles | Later | PostgreSQL-only role/privilege inspection before reviewed mutation support | Effective-privilege and self-lockout tests |
 
 ## Engine-specific parity

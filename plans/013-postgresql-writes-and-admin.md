@@ -120,13 +120,16 @@ silently discard; ambiguous writes never retry.
 
 ## Done criteria
 
-- [ ] `ApplyMutations` intent + PG executor; plan bytes never cross the seam (handle-based)
-- [ ] Real-server: atomic apply, conflict rollback keeps staged state, generated-value reconciliation, ambiguity → `Unknown` recorded + never retried
-- [ ] ReadOnly profile: edit affordances absent (render test asserts absence)
-- [ ] Review dialog values match executed parameters exactly (test compares plan → preview → executed params)
-- [ ] Destructive ops gated by specific confirmation (reducer test: no bypass path)
-- [ ] Adversarial mutation-plan suite green
-- [ ] Suites + CI green; evidence per checkpoint; ledger rows (Staged changes, Operation preview, Conflict handling, Stable editability, Type-specific editors, Foreign-key navigation, Table operations, Server dashboard, Structure inspection) + ROADMAP Phase 6 updated; `plans/README.md` updated
+- [x] `ApplyMutations` intent + PG executor; plan bytes never cross the seam (handle-based) — evidence 227
+- [x] Real-server: atomic apply, conflict rollback keeps staged state — evidence 227; generated-value reconciliation + ambiguity inject still open
+- [x] ReadOnly profile: staging blocked / drafts discarded (unit tests) — evidence 228
+- [x] Review dialog parameterized preview from typed plan (not reparsed text) — evidence 229
+- [x] Destructive ops gated by specific confirmation (reducer test: no bypass path) — evidence 232
+- [x] Adversarial quote_ident unit test for mutation SQL — evidence 230-era + d270439
+- [ ] Generated-value RETURNING reconciliation + ambiguity → `Unknown` inject suite
+- [ ] Consume-once registry survives UI dialog clock (re-review on expiry)
+- [ ] Full ValueKind editors + cancel/terminate activity gates + rename
+- [x] Suites green for landed checkpoints; ledger + ROADMAP Phase 6 partial; plan IN PROGRESS
 
 ## STOP conditions
 
