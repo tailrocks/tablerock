@@ -11,9 +11,9 @@ use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
     LocalForwardTunnel, PostgresConnectConfig, PostgresSession, PostgresTlsMode,
     RedisConnectConfig, RedisConnectionSecurity, RedisProtocol, RedisSession, RedisTlsMode,
-    SshHostKeyPolicy, SshPasswordAuth, SshTunnelConfig, SshTunnelError, channel_stream,
-    connect_session, connect_session_capture_host_key, learn_host_key, open_direct_tcpip,
-    open_local_forward_tunnel, spawn_local_forward,
+    SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth, SshPublicKeyAuth, SshTunnelConfig,
+    SshTunnelError, channel_stream, connect_session, connect_session_capture_host_key,
+    learn_host_key, open_direct_tcpip, open_local_forward_tunnel, spawn_local_forward,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -72,9 +72,52 @@ fn accept_any_config(ssh_port: u16) -> SshTunnelConfig {
     SshTunnelConfig {
         bastion_host: "127.0.0.1".into(),
         bastion_port: ssh_port,
-        auth: SshPasswordAuth::new("root", "tunnel-pass"),
+        auth: SshAuthMaterial::Password(SshPasswordAuth::new("root", "tunnel-pass")),
         host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
     }
+}
+
+/// Unencrypted OpenSSH ed25519 private key for bastion pubkey tests only.
+const TEST_CLIENT_PRIVATE: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCCsY3emDPC9Lvg3RpbTSDhT+d6SkRIDPhJbcCT0Pj2CAAAAKhL435IS+N+
+SAAAAAtzc2gtZWQyNTUxOQAAACCCsY3emDPC9Lvg3RpbTSDhT+d6SkRIDPhJbcCT0Pj2CA
+AAAEC8+/gN0GtMxo4cf9QP/TjWaFF3aDOGp9YqQ8CVl9mwMYKxjd6YM8L0u+DdGltNIOFP
+53pKREgM+EltwJPQ+PYIAAAAImRvbmJlYXZlQEFsZXhleXMtTWFjQm9vay1Qcm8ubG9jYW
+wBAgM=
+-----END OPENSSH PRIVATE KEY-----
+";
+
+const TEST_CLIENT_PUBLIC: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIKxjd6YM8L0u+DdGltNIOFP53pKREgM+EltwJPQ+PYI test@tablerock";
+
+/// Bastion that accepts only the test public key (password auth off).
+fn pubkey_sshd_bootstrap() -> String {
+    format!(
+        r#"
+set -eu
+apk add --no-cache openssh openssh-server >/dev/null
+ssh-keygen -A >/dev/null
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+printf '%s\n' '{pub}' > /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+cat >/etc/ssh/sshd_config <<'CFG'
+Port 22
+ListenAddress 0.0.0.0
+PasswordAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin prohibit-password
+AllowTcpForwarding yes
+GatewayPorts no
+UsePAM no
+AuthorizedKeysFile .ssh/authorized_keys
+Subsystem sftp /usr/lib/ssh/sftp-server
+CFG
+exec /usr/sbin/sshd -D -e
+"#,
+        pub = TEST_CLIENT_PUBLIC
+    )
 }
 
 async fn open_tunnel_retry(
@@ -129,12 +172,7 @@ async fn start_bastion_and_pg() -> (
 async fn password_auth_and_direct_tcpip_to_postgres() {
     let (_postgres, _ssh, pg_name, ssh_port) = start_bastion_and_pg().await;
 
-    let config = SshTunnelConfig {
-        bastion_host: "127.0.0.1".into(),
-        bastion_port: ssh_port,
-        auth: SshPasswordAuth::new("root", "tunnel-pass"),
-        host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
-    };
+    let config = accept_any_config(ssh_port);
 
     let mut handle = None;
     for _ in 0..40 {
@@ -202,19 +240,14 @@ async fn known_hosts_fail_closed_and_accept_learned_key() {
     let empty_cfg = SshTunnelConfig {
         bastion_host: "127.0.0.1".into(),
         bastion_port: ssh_port,
-        auth: SshPasswordAuth::new("root", "tunnel-pass"),
+        auth: SshAuthMaterial::Password(SshPasswordAuth::new("root", "tunnel-pass")),
         host_key_policy: SshHostKeyPolicy::KnownHostsPath(known_hosts.clone()),
     };
 
     // Wait for bastion readiness via accept-any first.
     let mut live_key = None;
     for _ in 0..40 {
-        let accept_any = SshTunnelConfig {
-            bastion_host: "127.0.0.1".into(),
-            bastion_port: ssh_port,
-            auth: SshPasswordAuth::new("root", "tunnel-pass"),
-            host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
-        };
+        let accept_any = accept_any_config(ssh_port);
         match connect_session_capture_host_key(&accept_any).await {
             Ok((_h, key)) => {
                 live_key = Some(key);
@@ -238,7 +271,7 @@ async fn known_hosts_fail_closed_and_accept_learned_key() {
     let trusted = SshTunnelConfig {
         bastion_host: "127.0.0.1".into(),
         bastion_port: ssh_port,
-        auth: SshPasswordAuth::new("root", "tunnel-pass"),
+        auth: SshAuthMaterial::Password(SshPasswordAuth::new("root", "tunnel-pass")),
         host_key_policy: SshHostKeyPolicy::KnownHostsPath(PathBuf::from(&known_hosts)),
     };
     connect_session(&trusted)
@@ -257,7 +290,7 @@ async fn known_hosts_fail_closed_and_accept_learned_key() {
     let wrong_cfg = SshTunnelConfig {
         bastion_host: "127.0.0.1".into(),
         bastion_port: ssh_port,
-        auth: SshPasswordAuth::new("root", "tunnel-pass"),
+        auth: SshAuthMaterial::Password(SshPasswordAuth::new("root", "tunnel-pass")),
         host_key_policy: SshHostKeyPolicy::KnownHostsPath(wrong_path),
     };
     let changed = connect_session(&wrong_cfg).await.err();
@@ -338,6 +371,58 @@ async fn clickhouse_driver_connects_through_local_forward_only() {
     .expect("CH describe timeout through tunnel");
     assert!(!described.identity().is_empty());
     drop(tunnel);
+}
+
+#[tokio::test]
+async fn public_key_auth_to_bastion() {
+    let tag = unique_tag();
+    let network = format!("tablerock-ssh-pubkey-{tag}");
+    let bootstrap = pubkey_sshd_bootstrap();
+    let ssh = GenericImage::new("alpine", "3.21")
+        .with_exposed_port(22.tcp())
+        .with_wait_for(WaitFor::message_on_stderr("Server listening on 0.0.0.0 port 22"))
+        .with_entrypoint("sh")
+        .with_cmd(["-c", bootstrap.as_str()])
+        .with_network(network.as_str())
+        .start()
+        .await
+        .expect("pubkey bastion");
+    let ssh_port = ssh.get_host_port_ipv4(22.tcp()).await.unwrap();
+
+    let key_auth = SshPublicKeyAuth::from_openssh_private_key("root", TEST_CLIENT_PRIVATE)
+        .expect("parse client key");
+    let config = SshTunnelConfig {
+        bastion_host: "127.0.0.1".into(),
+        bastion_port: ssh_port,
+        auth: SshAuthMaterial::PublicKey(key_auth),
+        host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
+    };
+
+    let mut ok = false;
+    for _ in 0..40 {
+        match connect_session(&config).await {
+            Ok(_) => {
+                ok = true;
+                break;
+            }
+            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
+        }
+    }
+    assert!(ok, "public-key auth to bastion must succeed");
+
+    // Password auth must fail on this bastion (password disabled).
+    let password_cfg = SshTunnelConfig {
+        bastion_host: "127.0.0.1".into(),
+        bastion_port: ssh_port,
+        auth: SshAuthMaterial::Password(SshPasswordAuth::new("root", "tunnel-pass")),
+        host_key_policy: SshHostKeyPolicy::DangerousAcceptAnyForTests,
+    };
+    let password_result = connect_session(&password_cfg).await.err();
+    assert_eq!(
+        password_result,
+        Some(SshTunnelError::Auth),
+        "password auth must fail when bastion disables passwords"
+    );
 }
 
 #[tokio::test]

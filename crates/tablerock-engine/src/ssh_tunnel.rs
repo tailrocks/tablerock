@@ -6,7 +6,7 @@
 use std::{fmt, path::PathBuf, sync::Arc};
 
 use russh::client::{self, AuthResult, Handle, Handler};
-use russh::keys::{self, PublicKey};
+use russh::keys::{self, PrivateKey, PrivateKeyWithHashAlg, PublicKey};
 use russh::{Channel, ChannelStream};
 use tokio::net::TcpListener;
 
@@ -44,12 +44,74 @@ impl fmt::Debug for SshPasswordAuth {
     }
 }
 
+/// Public-key authentication material (private key redacted in Debug).
+pub struct SshPublicKeyAuth {
+    username: String,
+    private_key: Arc<PrivateKey>,
+}
+
+impl SshPublicKeyAuth {
+    /// Parse an OpenSSH private key (unencrypted) for bastion auth.
+    pub fn from_openssh_private_key(
+        username: impl Into<String>,
+        openssh_private_key: &str,
+    ) -> Result<Self, SshTunnelError> {
+        let private_key = PrivateKey::from_openssh(openssh_private_key.trim())
+            .map_err(|_| SshTunnelError::Auth)?;
+        Ok(Self {
+            username: username.into(),
+            private_key: Arc::new(private_key),
+        })
+    }
+
+    #[must_use]
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+
+    #[must_use]
+    pub fn public_key_openssh(&self) -> Result<String, SshTunnelError> {
+        self.private_key
+            .public_key()
+            .to_openssh()
+            .map_err(|_| SshTunnelError::Auth)
+    }
+}
+
+impl fmt::Debug for SshPublicKeyAuth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SshPublicKeyAuth")
+            .field("username", &self.username)
+            .field("private_key", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Bastion authentication material (password or public key).
+#[derive(Debug)]
+pub enum SshAuthMaterial {
+    Password(SshPasswordAuth),
+    PublicKey(SshPublicKeyAuth),
+}
+
+impl From<SshPasswordAuth> for SshAuthMaterial {
+    fn from(value: SshPasswordAuth) -> Self {
+        Self::Password(value)
+    }
+}
+
+impl From<SshPublicKeyAuth> for SshAuthMaterial {
+    fn from(value: SshPublicKeyAuth) -> Self {
+        Self::PublicKey(value)
+    }
+}
+
 /// Bastion endpoint and auth for opening tunnels.
 #[derive(Debug)]
 pub struct SshTunnelConfig {
     pub bastion_host: String,
     pub bastion_port: u16,
-    pub auth: SshPasswordAuth,
+    pub auth: SshAuthMaterial,
     pub host_key_policy: SshHostKeyPolicy,
 }
 
@@ -165,10 +227,22 @@ pub async fn connect_session_capture_host_key(
     .await
     .map_err(map_connect_error)?;
 
-    let auth = handle
-        .authenticate_password(config.auth.username.as_str(), config.auth.password.as_str())
-        .await
-        .map_err(|_| SshTunnelError::Auth)?;
+    let auth = match &config.auth {
+        SshAuthMaterial::Password(password) => handle
+            .authenticate_password(password.username.as_str(), password.password.as_str())
+            .await
+            .map_err(|_| SshTunnelError::Auth)?,
+        SshAuthMaterial::PublicKey(public_key) => {
+            let key = PrivateKeyWithHashAlg::new(
+                Arc::clone(&public_key.private_key),
+                None,
+            );
+            handle
+                .authenticate_publickey(public_key.username.as_str(), key)
+                .await
+                .map_err(|_| SshTunnelError::Auth)?
+        }
+    };
     match auth {
         AuthResult::Success => {
             let key = presented
@@ -306,6 +380,27 @@ mod tests {
         let debug = format!("{auth:?}");
         assert!(!debug.contains("super-secret"));
         assert!(debug.contains("<redacted>"));
+    }
+
+    const TEST_OPENSSH_PRIVATE: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCCsY3emDPC9Lvg3RpbTSDhT+d6SkRIDPhJbcCT0Pj2CAAAAKhL435IS+N+
+SAAAAAtzc2gtZWQyNTUxOQAAACCCsY3emDPC9Lvg3RpbTSDhT+d6SkRIDPhJbcCT0Pj2CA
+AAAEC8+/gN0GtMxo4cf9QP/TjWaFF3aDOGp9YqQ8CVl9mwMYKxjd6YM8L0u+DdGltNIOFP
+53pKREgM+EltwJPQ+PYIAAAAImRvbmJlYXZlQEFsZXhleXMtTWFjQm9vay1Qcm8ubG9jYW
+wBAgM=
+-----END OPENSSH PRIVATE KEY-----
+";
+
+    #[test]
+    fn public_key_auth_debug_redacts_key_material() {
+        let auth = SshPublicKeyAuth::from_openssh_private_key("root", TEST_OPENSSH_PRIVATE)
+            .expect("parse test key");
+        let debug = format!("{auth:?}");
+        assert!(!debug.contains("BEGIN OPENSSH"));
+        assert!(!debug.contains("b3BlbnNzaC1rZXktdjE"));
+        assert!(debug.contains("<redacted>"));
+        assert!(auth.public_key_openssh().unwrap().starts_with("ssh-ed25519 "));
     }
 
     #[test]
