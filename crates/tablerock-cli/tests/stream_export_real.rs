@@ -58,6 +58,7 @@ fn page_to_strings(page: &tablerock_core::ResultPage) -> (Vec<String>, Vec<Vec<S
     (columns, rows)
 }
 
+#[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn streaming_requery_export_csv_and_cancel_cleanup() {
     let container = GenericImage::new("postgres", "18.4-alpine")

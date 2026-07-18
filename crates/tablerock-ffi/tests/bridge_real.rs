@@ -111,6 +111,7 @@ fn run_bridge_probe(engine: &str, port: u16, database: &str, user: &str) -> (Eng
     panic!("bridge probe failed for {engine}: {last_err:?}");
 }
 
+#[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn bridge_postgres_open_probe_fetch_shutdown() {
     let container = GenericImage::new("postgres", "18.4-alpine")
@@ -133,6 +134,7 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
     assert!(!page.is_empty());
 }
 
+#[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn bridge_clickhouse_open_probe_fetch() {
     let container = GenericImage::new(
@@ -162,6 +164,7 @@ async fn bridge_clickhouse_open_probe_fetch() {
     assert!(!page.is_empty());
 }
 
+#[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn bridge_redis_open_probe_fetch() {
     let container = GenericImage::new(
@@ -205,6 +208,7 @@ async fn bridge_redis_open_probe_fetch() {
     assert!(!page.is_empty());
 }
 
+#[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn bridge_postgres_apply_delete_by_review_token() {
     let container = GenericImage::new("postgres", "18.4-alpine")
@@ -275,6 +279,7 @@ async fn bridge_postgres_apply_delete_by_review_token() {
     assert!(outcome.change_count >= 1);
 }
 
+#[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn bridge_three_engines_sequential_open_probe() {
     let postgres = GenericImage::new("postgres", "18.4-alpine")

@@ -59,6 +59,7 @@ fn require_pg_restore() -> Option<PathBuf> {
     }
 }
 
+#[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn pg_dump_and_restore_against_docker_postgres() {
     let Some(pg_dump) = require_pg_dump() else {

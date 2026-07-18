@@ -20,6 +20,7 @@ fn bt(s: &str) -> BoundedText {
     BoundedText::copy_from_str(s, ByteLimit::new(128)).unwrap()
 }
 
+#[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn applies_csv_insert_rows_through_mutation_seam() {
     let container = GenericImage::new("postgres", "18.4-alpine")
@@ -96,6 +97,7 @@ async fn applies_csv_insert_rows_through_mutation_seam() {
     );
 }
 
+#[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn applies_csv_insert_rows_on_clickhouse_progressive() {
     use tablerock_engine::{

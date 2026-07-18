@@ -51,17 +51,17 @@ jobs:
           --test redis_real
           --test three_engine_overlap_real
       - name: UniFFI bridge real-server conformance
-        run: cargo test -p tablerock-ffi --test bridge_real
+        run: cargo test -p tablerock-ffi --test bridge_real -- --include-ignored
       - name: CSV import apply through mutation seam
-        run: cargo test -p tablerock-cli --test import_apply_real
+        run: cargo test -p tablerock-cli --test import_apply_real -- --include-ignored
       - name: Streaming re-query export
-        run: cargo test -p tablerock-cli --test stream_export_real
+        run: cargo test -p tablerock-cli --test stream_export_real -- --include-ignored
       - name: First-row streaming performance budgets
         run: cargo test -p tablerock-engine --test performance_real -- --nocapture
       - name: Install PostgreSQL client tools
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: pg_dump/pg_restore real matrix
-        run: cargo test -p tablerock-cli --test pg_dump_real -- --nocapture
+        run: cargo test -p tablerock-cli --test pg_dump_real -- --nocapture --include-ignored
       - name: ENOSPC fail-closed on 1MiB tmpfs
         run: |
           set -euo pipefail
