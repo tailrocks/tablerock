@@ -33,6 +33,9 @@ for pattern in \
   'case "authentication_stopped"' \
   'case "exhausted"' \
   'case "authentication_stopped": return "Authentication stopped"' \
+  'EnvironmentSafetyBadge\(model: model\)' \
+  'WorkbenchTabLabel\(title: tab.title, model: model\)' \
+  'accessibilityLabel\("Environment ' \
   'Connections in .* move to Ungrouped. No connection is deleted.'
 do
   rg -q "$pattern" "$SOURCE" || {
@@ -58,7 +61,7 @@ for _ in $(seq 1 50); do
   rg -q '^PROFILE_GROUP_PROOF_' "$audit_log" && break
   sleep 0.1
 done
-if ! rg -q '^PROFILE_GROUP_PROOF_PASSED ' "$audit_log"; then
+if ! rg -q '^PROFILE_GROUP_PROOF_PASSED .*environment_surfaces=list_editor_context_tabs safety_surfaces=list_editor_context_tabs' "$audit_log"; then
   cat "$audit_log" >&2
   echo "error: native profile group runtime proof failed" >&2
   exit 1

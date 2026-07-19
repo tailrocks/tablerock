@@ -532,7 +532,7 @@ private func runNativeProfileGroupAudit() {
         return
     }
     writePerformanceMetric(
-        "PROFILE_GROUP_PROOF_PASSED empty_group=true alphabetical=Alpha_Zebra health=Healthy_12_ms reconnect=attempt_1 hosting_tree=true"
+        "PROFILE_GROUP_PROOF_PASSED empty_group=true alphabetical=Alpha_Zebra health=Healthy_12_ms reconnect=attempt_1 hosting_tree=true environment_surfaces=list_editor_context_tabs safety_surfaces=list_editor_context_tabs"
     )
 }
 
@@ -943,6 +943,25 @@ final class BridgeModel {
     var queryTabRename: NativeQueryTab?
     var queryTabRenameText = ""
     private var activeProfileId: Data?
+    var activeProfile: BridgeProfileItem? {
+        guard let activeProfileId else { return nil }
+        return profiles.first(where: { $0.idBytes == activeProfileId })
+    }
+    var activeEnvironmentLabel: String? {
+        guard let environment = activeProfile?.environment, !environment.isEmpty else { return nil }
+        return switch environment {
+        case "production": "Production"
+        case "staging": "Staging"
+        case "development": "Development"
+        case "testing": "Testing"
+        default: environment
+        }
+    }
+    var activeSafetyLabel: String? {
+        guard let safety = activeProfile?.safetyMode else { return nil }
+        return safety == "read_only" ? "Read only" : "Confirm writes"
+    }
+    var activeProductionWarning: Bool { activeProfile?.productionWarning == true }
     private var activeQueryTab: NativeQueryTab {
         queryTabs.first(where: { $0.id == selectedQueryTabId }) ?? queryTabs[0]
     }
@@ -1233,7 +1252,10 @@ final class BridgeModel {
                   profileSections[0].profiles.isEmpty,
                   profileSections[1].profiles.map(\.name) == ["Alpha", "Zebra"],
                   connectedFixture.connected,
-                  connectionState(connectedFixture) == "Healthy · 12 ms"
+                  connectionState(connectedFixture) == "Healthy · 12 ms",
+                  activeEnvironmentLabel == "Production",
+                  activeSafetyLabel == "Confirm writes",
+                  activeProductionWarning
             else {
                 writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED group projection mismatch")
                 return
@@ -2610,6 +2632,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("TableRock").font(.largeTitle).bold()
                 Text(model.status).foregroundStyle(.secondary)
+                EnvironmentSafetyBadge(model: model)
                 if let outcome = model.profileActionOutcome {
                     Text(outcome).foregroundStyle(.secondary).font(.callout)
                 }
@@ -2926,11 +2949,15 @@ struct QueryTabStrip: View {
                 ForEach(model.queryTabs) { tab in
                     HStack(spacing: 2) {
                         if model.queryWorkbenchSelected && tab.id == model.selectedQueryTabId {
-                            Button(tab.title) { model.selectQueryTab(tab) }
+                            Button { model.selectQueryTab(tab) } label: {
+                                WorkbenchTabLabel(title: tab.title, model: model)
+                            }
                                 .buttonStyle(.borderedProminent)
                                 .accessibilityValue("Selected")
                         } else {
-                            Button(tab.title) { model.selectQueryTab(tab) }
+                            Button { model.selectQueryTab(tab) } label: {
+                                WorkbenchTabLabel(title: tab.title, model: model)
+                            }
                                 .buttonStyle(.bordered)
                         }
                         Menu {
@@ -2950,13 +2977,19 @@ struct QueryTabStrip: View {
                     HStack(spacing: 2) {
                         if !model.queryWorkbenchSelected && tab.id == model.selectedObjectTabId {
                             Button { model.selectObjectTab(tab) } label: {
-                                Label(tab.title, systemImage: tab.pinned ? "pin.fill" : "eye")
+                                WorkbenchTabLabel(
+                                    title: tab.title, model: model,
+                                    leadingSystemImage: tab.pinned ? "pin.fill" : "eye"
+                                )
                             }
                             .buttonStyle(.borderedProminent)
                             .accessibilityValue("Selected")
                         } else {
                             Button { model.selectObjectTab(tab) } label: {
-                                Label(tab.title, systemImage: tab.pinned ? "pin.fill" : "eye")
+                                WorkbenchTabLabel(
+                                    title: tab.title, model: model,
+                                    leadingSystemImage: tab.pinned ? "pin.fill" : "eye"
+                                )
                             }
                             .buttonStyle(.bordered)
                         }
@@ -2981,6 +3014,56 @@ struct QueryTabStrip: View {
                 .accessibilityLabel("New query tab")
                 .disabled(model.queryTabs.count + model.objectTabs.count >= 64)
             }
+        }
+    }
+}
+
+private struct WorkbenchTabLabel: View {
+    let title: String
+    let model: BridgeModel
+    var leadingSystemImage: String?
+
+    init(title: String, model: BridgeModel, leadingSystemImage: String? = nil) {
+        self.title = title
+        self.model = model
+        self.leadingSystemImage = leadingSystemImage
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let leadingSystemImage { Image(systemName: leadingSystemImage) }
+            Text(title)
+            if model.activeProductionWarning {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .accessibilityLabel("Production")
+            } else if let environment = model.activeEnvironmentLabel {
+                Text(environment).font(.caption2)
+            }
+            if model.activeSafetyLabel == "Read only" {
+                Image(systemName: "lock.fill").accessibilityLabel("Read only")
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct EnvironmentSafetyBadge: View {
+    let model: BridgeModel
+
+    var body: some View {
+        if let environment = model.activeEnvironmentLabel,
+           let safety = model.activeSafetyLabel
+        {
+            Label {
+                Text("\(environment) · \(safety)")
+            } icon: {
+                Image(systemName: model.activeProductionWarning
+                    ? "exclamationmark.triangle.fill"
+                    : safety == "Read only" ? "lock.fill" : "shield")
+            }
+            .font(.caption)
+            .foregroundStyle(model.activeProductionWarning ? .orange : .secondary)
+            .accessibilityLabel("Environment \(environment), safety \(safety)")
         }
     }
 }
@@ -3037,6 +3120,9 @@ struct WorkbenchConnectionToolbar: CustomizableToolbarContent {
             )
             .accessibilityLabel(model.sessionHex == nil
                 ? "No active connection" : "Connected to \(model.connectedEngine)")
+        }
+        ToolbarItem(id: "environment-safety", placement: .automatic) {
+            EnvironmentSafetyBadge(model: model)
         }
         ToolbarItem(id: "disconnect", placement: .automatic) {
             Button { Task { await model.disconnectActive() } } label: {
