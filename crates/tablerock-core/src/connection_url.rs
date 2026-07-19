@@ -159,12 +159,7 @@ pub fn parse_connection_url(input: &str) -> Result<ConnectionUrlDraft, Connectio
         "redis" => (Engine::Redis, 6379, ConnectionUrlTls::Off),
         "rediss" => (Engine::Redis, 6379, ConnectionUrlTls::Required),
         // Explicit reject list for common deep-link attack schemes.
-        other
-            if matches!(
-                other,
-                "javascript" | "data" | "file" | "about" | "blob" | "vbscript" | "mailto"
-            ) =>
-        {
+        "javascript" | "data" | "file" | "about" | "blob" | "vbscript" | "mailto" => {
             return Err(ConnectionUrlError::HostileInput);
         }
         other => {
@@ -295,13 +290,13 @@ fn query_requests_tls(query: &str) -> bool {
             Some((k, v)) => (k.to_ascii_lowercase(), v.to_ascii_lowercase()),
             None => (pair.to_ascii_lowercase(), String::new()),
         };
-        if k == "sslmode" || k == "ssl" {
-            if matches!(
+        if (k == "sslmode" || k == "ssl")
+            && matches!(
                 v.as_str(),
                 "require" | "verify-ca" | "verify-full" | "true" | "1" | "yes"
-            ) {
-                return true;
-            }
+            )
+        {
+            return true;
         }
         if k == "secure" && matches!(v.as_str(), "true" | "1" | "yes") {
             return true;

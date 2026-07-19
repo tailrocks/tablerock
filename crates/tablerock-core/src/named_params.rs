@@ -119,23 +119,23 @@ pub fn rewrite_named_params(sql: &str) -> Result<NamedParamPlan, NamedParamError
             continue;
         }
         // Dollar-quoted string $tag$...$tag$
-        if bytes[i] == b'$' {
-            if let Some((tag_end, body_start)) = dollar_tag_end(bytes, i) {
-                let tag = &sql[i..tag_end];
-                let mut j = body_start;
-                let mut closed = false;
-                while j + tag.len() <= bytes.len() {
-                    if &sql[j..j + tag.len()] == tag {
-                        j += tag.len();
-                        closed = true;
-                        break;
-                    }
-                    j += 1;
+        if bytes[i] == b'$'
+            && let Some((tag_end, body_start)) = dollar_tag_end(bytes, i)
+        {
+            let tag = &sql[i..tag_end];
+            let mut j = body_start;
+            let mut closed = false;
+            while j + tag.len() <= bytes.len() {
+                if &sql[j..j + tag.len()] == tag {
+                    j += tag.len();
+                    closed = true;
+                    break;
                 }
-                out.push_str(&sql[i..if closed { j } else { bytes.len() }]);
-                i = if closed { j } else { bytes.len() };
-                continue;
+                j += 1;
             }
+            out.push_str(&sql[i..if closed { j } else { bytes.len() }]);
+            i = if closed { j } else { bytes.len() };
+            continue;
         }
         // Named param :name (not :: cast, not :=). After a `:` (as in `::int`)
         // the second colon must not start a parameter.
@@ -218,7 +218,7 @@ fn dollar_tag_end(bytes: &[u8], i: usize) -> Option<(usize, usize)> {
 /// Empty values are allowed (`name=`). Duplicate names: last wins.
 pub fn parse_param_bindings(raw: &str) -> BTreeMap<String, String> {
     let mut map = BTreeMap::new();
-    for line in raw.split(|c| c == ';' || c == '\n') {
+    for line in raw.split([';', '\n']) {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;

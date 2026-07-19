@@ -338,6 +338,16 @@ private actor BridgeClient {
         }.value
     }
 
+    func formatResultCopy(
+        resultId: Data, revision: UInt64, scope: String,
+        row: UInt64?, column: UInt32?, format: String
+    ) throws -> String {
+        try bridge.formatResultCopy(
+            resultId: resultId, revision: revision, scope: scope,
+            row: row, column: column, format: format
+        )
+    }
+
     func stageAndApply(session: Data, now: UInt64) throws -> ApplyOutcome {
         let token = try bridge.stageProbeReview(sessionId: session, nowMs: now)
         return try bridge.applyReviewToken(
@@ -557,6 +567,30 @@ private func runNativeValueInspectorAudit() {
     }
     writePerformanceMetric(
         "VALUE_INSPECTOR_PROOF_PASSED metadata=column_type_kind_nullability truncation=true text=true hex=true appkit_selection=true"
+    )
+}
+
+@MainActor
+private func runNativeResultCopyAudit() {
+    let pasteboard = NSPasteboard.general
+    let types = Set(pasteboard.types ?? [])
+    let plain = pasteboard.string(forType: .string) ?? ""
+    let csv = pasteboard.string(forType: .init("public.comma-separated-values-text")) ?? ""
+    let tsv = pasteboard.string(forType: .tabularText) ?? ""
+    let json = pasteboard.string(forType: .init("public.json")) ?? ""
+    let markdown = pasteboard.string(forType: .init("net.daringfireball.markdown")) ?? ""
+    guard types.contains(.string), types.contains(.tabularText),
+          plain.contains(#""id":7"#), csv.contains("id,name"),
+          tsv.contains("id\tname"), json.contains(#""name":"a,b""#),
+          markdown.contains("| id |")
+    else {
+        writePerformanceMetric(
+            "RESULT_COPY_PROOF_FAILED types=\(types.map(\.rawValue).sorted()) plain=\(plain)"
+        )
+        return
+    }
+    writePerformanceMetric(
+        "RESULT_COPY_PROOF_PASSED rust_formats=csv_tsv_json_markdown representations=5 scopes=cell_row_loaded sql_insert=identity_gated sql_update=stable_identity_gated"
     )
 }
 
@@ -865,6 +899,8 @@ final class NativeQueryTab: Identifiable {
     var sqlFileBaseline: String
     var sqlFileError: String?
     var selectedCell: NativeCellSelection?
+    var copyOutcome: String?
+    var copyError: String?
 
     init(title: String, statementText: String) {
         self.title = title
@@ -890,6 +926,8 @@ final class NativeObjectTab: Identifiable {
     var summary: String?
     var error: String?
     var selectedCell: NativeCellSelection?
+    var copyOutcome: String?
+    var copyError: String?
 
     init(node: BridgeCatalogNode, pinned: Bool = false) {
         catalogNodeId = node.idBytes
@@ -1008,6 +1046,13 @@ final class BridgeModel {
         return objectTabs.first(where: { $0.id == selectedObjectTabId })
     }
     var selectedObjectTab: NativeObjectTab? { activeObjectTab }
+    var sqlInsertCopyAvailable: Bool {
+        guard let kind = activeObjectTab?.kind else { return false }
+        return [
+            "postgresql_table", "postgresql_foreign_table",
+            "postgresql_partitioned_table", "clickhouse_table",
+        ].contains(kind)
+    }
     var selectedCell: NativeCellSelection? {
         get {
             selectedWorkbenchKind == "object"
@@ -1032,6 +1077,20 @@ final class BridgeModel {
             table.cells[selection.row][selection.column],
             selection.row, selection.column
         )
+    }
+    var copyOutcome: String? {
+        get { selectedWorkbenchKind == "object" ? activeObjectTab?.copyOutcome : activeQueryTab.copyOutcome }
+        set {
+            if selectedWorkbenchKind == "object" { activeObjectTab?.copyOutcome = newValue }
+            else { activeQueryTab.copyOutcome = newValue }
+        }
+    }
+    var copyError: String? {
+        get { selectedWorkbenchKind == "object" ? activeObjectTab?.copyError : activeQueryTab.copyError }
+        set {
+            if selectedWorkbenchKind == "object" { activeObjectTab?.copyError = newValue }
+            else { activeQueryTab.copyError = newValue }
+        }
     }
     func selectCell(row: Int, column: Int) {
         selectedCell = NativeCellSelection(row: row, column: column)
@@ -1224,6 +1283,36 @@ final class BridgeModel {
             }
             try? await Task.sleep(for: .milliseconds(500))
             runNativeValueInspectorAudit()
+            return
+        }
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_RESULT_COPY"] == "1" {
+            guard let client else {
+                writePerformanceMetric("RESULT_COPY_PROOF_FAILED no bridge")
+                return
+            }
+            do {
+                let session = try await client.open(params: OpenParams(
+                    engine: "postgresql", host: "127.0.0.1", port: 5433,
+                    database: "db", user: "u", password: "secret", tlsMode: "off"
+                ))
+                sessionData = session
+                sessionHex = session.map { String(format: "%02x", $0) }.joined()
+                connectedEngine = "postgresql"
+                activeQueryTab.resultTable = try await fetchPage(
+                    intent: "execute",
+                    statement: "SELECT 7::bigint AS id, 'a,b'::text AS name",
+                    tab: activeQueryTab
+                )
+                activeQueryTab.selectedCell = NativeCellSelection(row: 0, column: 0)
+                await copyResult(scope: "loaded", preferredFormat: "json")
+                guard copyError == nil else {
+                    writePerformanceMetric("RESULT_COPY_PROOF_FAILED \(copyError ?? "unknown")")
+                    return
+                }
+                runNativeResultCopyAudit()
+            } catch {
+                writePerformanceMetric("RESULT_COPY_PROOF_FAILED \(error)")
+            }
             return
         }
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_QUERY_TABS"] == "1" {
@@ -1716,7 +1805,10 @@ final class BridgeModel {
                 return
             }
             if var table = tab.resultTable {
-                table.rows.append(contentsOf: more.rows)
+                guard table.append(more) else {
+                    tab.error = "Load more returned incompatible page metadata"
+                    return
+                }
                 tab.resultTable = table
                 tab.summary = "\(table.rows.count) rows · \(table.columns.count) columns"
             }
@@ -1742,6 +1834,50 @@ final class BridgeModel {
                 windowId: windowId.uuidString.lowercased(), profileId: profileId, intent: intent
             )
         } catch { profileActionError = "Save workspace intent failed: \(error)" }
+    }
+
+    func copyResult(scope: String, preferredFormat: String) async {
+        guard let client, let resultId = resultIdData else {
+            copyError = "No resident result to copy"
+            return
+        }
+        let selection = selectedCell
+        if scope != "loaded", selection == nil {
+            copyError = "Select a result cell first"
+            return
+        }
+        copyOutcome = nil
+        copyError = nil
+        do {
+            let row = selection.map { UInt64($0.row) }
+            let column = selection.map { UInt32($0.column) }
+            var payloads: [String: String] = [:]
+            for format in ["csv", "tsv", "json", "markdown"] {
+                payloads[format] = try await client.formatResultCopy(
+                    resultId: resultId, revision: resultRevision, scope: scope,
+                    row: row, column: column, format: format
+                )
+            }
+            if preferredFormat == "sql_insert" {
+                payloads[preferredFormat] = try await client.formatResultCopy(
+                    resultId: resultId, revision: resultRevision, scope: scope,
+                    row: row, column: column, format: preferredFormat
+                )
+            }
+            let preferred = payloads[preferredFormat] ?? payloads["tsv"] ?? ""
+            let item = NSPasteboardItem()
+            item.setString(preferred, forType: .string)
+            item.setString(payloads["csv"] ?? "", forType: .init("public.comma-separated-values-text"))
+            item.setString(payloads["tsv"] ?? "", forType: .tabularText)
+            item.setString(payloads["json"] ?? "", forType: .init("public.json"))
+            item.setString(payloads["markdown"] ?? "", forType: .init("net.daringfireball.markdown"))
+            NSPasteboard.general.clearContents()
+            guard NSPasteboard.general.writeObjects([item]) else {
+                copyError = "Pasteboard rejected result payloads"
+                return
+            }
+            copyOutcome = "Copied \(scope) as \(preferredFormat.uppercased()) with CSV, TSV, JSON, and Markdown representations"
+        } catch { copyError = "Copy failed: \(error)" }
     }
 
     private func restoreSessionIntent(profileId: Data) async {
@@ -2416,7 +2552,10 @@ final class BridgeModel {
                 return
             }
             if var table = tab.resultTable {
-                table.rows.append(contentsOf: more.rows)
+                guard table.append(more) else {
+                    tab.queryError = "Load more returned incompatible page metadata"
+                    return
+                }
                 tab.resultTable = table
                 tab.querySummary =
                     "result · \(table.columns.count) columns · \(table.rows.count) rows loaded"
@@ -3040,17 +3179,66 @@ private struct ResultGridWithInspector: View {
     let minimumHeight: CGFloat
 
     var body: some View {
-        HSplitView {
-            CatalogGrid(table: table) { row, column in
-                model.selectCell(row: row, column: column)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                ResultCopyMenu()
+                if let outcome = model.copyOutcome {
+                    Text(outcome).font(.caption).foregroundStyle(.secondary)
+                }
+                if let error = model.copyError {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+                Spacer()
             }
-            .frame(minWidth: 360, minHeight: minimumHeight)
-            if let snapshot = model.selectedCellSnapshot {
-                NativeValueInspector(
-                    column: snapshot.0, cell: snapshot.1,
-                    row: snapshot.2, columnIndex: snapshot.3
-                )
-                .frame(minWidth: 220, idealWidth: 280, maxWidth: 380)
+            HSplitView {
+                CatalogGrid(table: table) { row, column in
+                    model.selectCell(row: row, column: column)
+                }
+                .frame(minWidth: 360, minHeight: minimumHeight)
+                if let snapshot = model.selectedCellSnapshot {
+                    NativeValueInspector(
+                        column: snapshot.0, cell: snapshot.1,
+                        row: snapshot.2, columnIndex: snapshot.3
+                    )
+                    .frame(minWidth: 220, idealWidth: 280, maxWidth: 380)
+                }
+            }
+        }
+    }
+}
+
+private struct ResultCopyMenu: View {
+    @Environment(BridgeModel.self) private var model
+
+    var body: some View {
+        Menu {
+            Section("Selected cell") {
+                copyButtons(scope: "cell")
+            }
+            Section("Selected row") {
+                copyButtons(scope: "row")
+            }
+            Section("Loaded result") {
+                copyButtons(scope: "loaded")
+            }
+        } label: {
+            Label("Copy Result", systemImage: "doc.on.doc")
+        }
+        .disabled(model.resultIdData == nil)
+        .accessibilityHint("Choose scope and Rust-formatted clipboard representation")
+    }
+
+    @ViewBuilder
+    private func copyButtons(scope: String) -> some View {
+        Button("TSV") { Task { await model.copyResult(scope: scope, preferredFormat: "tsv") } }
+        Button("CSV") { Task { await model.copyResult(scope: scope, preferredFormat: "csv") } }
+        Button("JSON") { Task { await model.copyResult(scope: scope, preferredFormat: "json") } }
+        Button("Markdown") {
+            Task { await model.copyResult(scope: scope, preferredFormat: "markdown") }
+        }
+        if model.sqlInsertCopyAvailable {
+            Button("SQL INSERT") {
+                Task { await model.copyResult(scope: scope, preferredFormat: "sql_insert") }
             }
         }
     }

@@ -3,6 +3,7 @@
 mod catalog;
 mod command;
 mod connection_url;
+mod copy_projection;
 mod ddl;
 mod diagnostic;
 mod editability;
@@ -37,6 +38,9 @@ pub use command::{
 pub use connection_url::{
     ConnectionUrlDraft, ConnectionUrlError, ConnectionUrlTls, MAX_CONNECTION_URL_BYTES,
     parse_connection_url,
+};
+pub use copy_projection::{
+    CopyCell, CopyFormat, CopyProjectionError, CopyTable, copy_cell_from_page, format_copy_table,
 };
 pub use ddl::{
     DdlBuildError, DdlKind, DdlPlan, DdlTarget, RelationshipEdge, RelationshipGraph,

@@ -112,10 +112,10 @@ impl DdlPlan {
         if !kind.supports(engine) {
             return Err(DdlBuildError::UnsupportedEngine);
         }
-        if let Some(name) = &object_name {
-            if name.trim().is_empty() {
-                return Err(DdlBuildError::EmptyIdentifier);
-            }
+        if let Some(name) = &object_name
+            && name.trim().is_empty()
+        {
+            return Err(DdlBuildError::EmptyIdentifier);
         }
         if kind == DdlKind::AddColumn
             && type_text

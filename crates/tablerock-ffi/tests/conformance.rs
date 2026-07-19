@@ -396,9 +396,53 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
             .unwrap();
         bridge.pump(operation.clone()).unwrap();
         let events = bridge.next_events(0, 64).unwrap().events;
-        assert!(events.iter().any(|event| {
-            event.operation_id == operation && event.kind == "page" && event.rows == Some(1)
-        }));
+        let page_event = events
+            .iter()
+            .find(|event| {
+                event.operation_id == operation && event.kind == "page" && event.rows == Some(1)
+            })
+            .expect("browse page");
+        let encoded = page_event.page_bytes.as_ref().expect("encoded page");
+        let result_id = encoded[6..22].to_vec();
+        let csv = bridge
+            .format_result_copy(
+                result_id.clone(),
+                0,
+                "loaded".into(),
+                None,
+                None,
+                "csv".into(),
+            )
+            .unwrap();
+        assert!(csv.contains("n") && csv.contains('7'), "{csv}");
+        let json = bridge
+            .format_result_copy(
+                result_id.clone(),
+                0,
+                "cell".into(),
+                Some(0),
+                Some(0),
+                "json".into(),
+            )
+            .unwrap();
+        assert!(json.contains(":7"), "{json}");
+        let insert = bridge
+            .format_result_copy(
+                result_id.clone(),
+                0,
+                "row".into(),
+                Some(0),
+                None,
+                "sql_insert".into(),
+            )
+            .unwrap();
+        assert!(insert.contains("INSERT INTO"), "{insert}");
+        assert!(matches!(
+            bridge.format_result_copy(
+                result_id, 0, "row".into(), Some(0), None, "sql_update".into()
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "copy-format"
+        ));
         assert!(matches!(
             bridge.submit_catalog_browse(session_id.clone(), roots[0].id_bytes.clone(), 500),
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-kind"

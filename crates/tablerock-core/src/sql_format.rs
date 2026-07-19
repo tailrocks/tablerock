@@ -115,22 +115,22 @@ pub fn format_sql(source: &str, _dialect: SqlDialect) -> String {
             continue;
         }
         // Dollar quote
-        if bytes[i] == b'$' {
-            if let Some(tag_end) = dollar_tag(bytes, i) {
-                flush_space(&mut out, &mut pending_space);
-                let tag = &source[i..tag_end];
-                let mut j = tag_end;
-                while j + tag.len() <= bytes.len() {
-                    if &source[j..j + tag.len()] == tag {
-                        j += tag.len();
-                        break;
-                    }
-                    j += 1;
+        if bytes[i] == b'$'
+            && let Some(tag_end) = dollar_tag(bytes, i)
+        {
+            flush_space(&mut out, &mut pending_space);
+            let tag = &source[i..tag_end];
+            let mut j = tag_end;
+            while j + tag.len() <= bytes.len() {
+                if &source[j..j + tag.len()] == tag {
+                    j += tag.len();
+                    break;
                 }
-                out.push_str(&source[i..j.min(bytes.len())]);
-                i = j.min(bytes.len());
-                continue;
+                j += 1;
             }
+            out.push_str(&source[i..j.min(bytes.len())]);
+            i = j.min(bytes.len());
+            continue;
         }
         // Newline → single newline, no pending space
         if bytes[i] == b'\n' || bytes[i] == b'\r' {

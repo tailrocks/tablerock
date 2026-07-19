@@ -10,17 +10,18 @@ use std::{
 use tablerock_core::{
     BoundedText, ByteLimit, CatalogChildrenState, CatalogNode, CatalogNodeId, CatalogNodeKind,
     ClickHouseObjectKind, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
-    CommandScope, DangerousPlaintext, Engine, EnvironmentReference, EnvironmentTag, FieldValue,
-    MutationChange, MutationPlan, MutationPlanLimits, MutationReviewRegistry, MutationTarget,
-    OnePasswordReference, OperationId, OperationOutcome, OperationScope, OwnedValue, PageIdentity,
-    PageKey, PageRequest, PlaintextAcknowledgement, PostgreSqlObjectKind, ProfileAggregate,
-    ProfileConnectionSnapshot, ProfileDurability, ProfileEndpointPart, ProfileGroupName, ProfileId,
-    ProfileIdentity, ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName,
-    ProfileOrganization, ProfilePolicy, ProfilePreferences, ProfileProperty,
-    ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileSearchTerm, ProfileTag,
-    ReconnectDecision, ReconnectPreference, RedisKeyKind, ResultStore, ResultStoreLimits, Revision,
-    SecretSource, SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
-    StatementText, TlsPolicy, reconnect_decision,
+    CommandScope, CopyFormat, CopyTable, DangerousPlaintext, Engine, EnvironmentReference,
+    EnvironmentTag, FieldValue, MutationChange, MutationPlan, MutationPlanLimits,
+    MutationReviewRegistry, MutationTarget, OnePasswordReference, OperationId, OperationOutcome,
+    OperationScope, OwnedValue, PageIdentity, PageKey, PageRequest, PlaintextAcknowledgement,
+    PostgreSqlObjectKind, ProfileAggregate, ProfileConnectionSnapshot, ProfileDurability,
+    ProfileEndpointPart, ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits,
+    ProfileListFilter, ProfileListRequest, ProfileName, ProfileOrganization, ProfilePolicy,
+    ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
+    ProfileSafetyMode, ProfileSearchTerm, ProfileTag, ReconnectDecision, ReconnectPreference,
+    RedisKeyKind, ResultStore, ResultStoreLimits, Revision, SecretSource, SecretSourceKind,
+    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText, TlsPolicy,
+    copy_cell_from_page, format_copy_table, reconnect_decision,
 };
 use tablerock_engine::{
     AdapterFailureClass, BrowsePlan, CatalogRequest, ClickHouseCompression,
@@ -249,6 +250,7 @@ struct BridgeInner {
     /// Operation -> result identity used when admitting streamed pages.
     operation_results: BTreeMap<OperationId, PageIdentity>,
     operation_history: BTreeMap<OperationId, HistoryAppend>,
+    operation_copy_identity: BTreeMap<OperationId, CopyIdentity>,
     history_retention: HistoryRetention,
     ids: IdFactory,
     events: VecDeque<BridgeEventRecord>,
@@ -260,6 +262,15 @@ struct BridgeInner {
     /// Optional local-only profile store (never logs secrets).
     persistence: Option<PersistenceActor>,
     catalog_nodes: BTreeMap<(SessionId, CatalogNodeId), CatalogNode>,
+    copy_identities: BTreeMap<tablerock_core::ResultId, CopyIdentity>,
+}
+
+#[derive(Clone)]
+struct CopyIdentity {
+    schema: String,
+    table: String,
+    identity_columns: Vec<String>,
+    insertable: bool,
 }
 
 /// One saved profile row for the native connection screen.
@@ -570,6 +581,22 @@ impl TableRockBridge {
         row_count: u32,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| self.submit_catalog_browse_inner(session_id, catalog_node_id, row_count))
+    }
+
+    /// Formats resident Rust-owned result pages for clipboard/export.
+    /// Scope is `cell`, `row`, or `loaded`; format is csv/tsv/json/markdown/sql_insert/sql_update.
+    pub fn format_result_copy(
+        &self,
+        result_id: Vec<u8>,
+        revision: u64,
+        scope: String,
+        row: Option<u64>,
+        column: Option<u32>,
+        format: String,
+    ) -> Result<String, BridgeError> {
+        catch_entry(|| {
+            self.format_result_copy_inner(result_id, revision, scope, row, column, format)
+        })
     }
 
     /// Stage a probe mutation + register a single-use review token for the
@@ -2177,7 +2204,7 @@ impl TableRockBridge {
         let catalog_node_id = catalog_node_from_bytes(&catalog_node_id_bytes).map_err(|_| {
             BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
         })?;
-        let statement = {
+        let (statement, copy_identity) = {
             let guard = self
                 .inner
                 .lock()
@@ -2223,9 +2250,25 @@ impl TableRockBridge {
                     "catalog node is not a browsable table-like object",
                 ));
             }
-            BrowsePlan {
-                schema: parent.name().to_owned(),
-                table: node.name().to_owned(),
+            let insertable = matches!(
+                (registered.engine, node.kind()),
+                (
+                    Engine::PostgreSql,
+                    CatalogNodeKind::PostgreSqlObject(
+                        PostgreSqlObjectKind::Table
+                            | PostgreSqlObjectKind::ForeignTable
+                            | PostgreSqlObjectKind::PartitionedTable
+                    )
+                ) | (
+                    Engine::ClickHouse,
+                    CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Table)
+                )
+            );
+            let schema = parent.name().to_owned();
+            let table = node.name().to_owned();
+            let statement = BrowsePlan {
+                schema: schema.clone(),
+                table: table.clone(),
                 sort: Vec::new(),
                 filters: Vec::new(),
                 raw_where: None,
@@ -2234,9 +2277,18 @@ impl TableRockBridge {
             }
             .render_sql()
             .map_err(|error| BridgeError::rejected("catalog-browse-plan", error.to_string()))?
-            .sql
+            .sql;
+            (
+                statement,
+                CopyIdentity {
+                    schema,
+                    table,
+                    identity_columns: Vec::new(),
+                    insertable,
+                },
+            )
         };
-        self.submit_inner(SubmitSpec {
+        let operation_bytes = self.submit_inner(SubmitSpec {
             intent: "browse_object".into(),
             session_id: session_id_bytes,
             statement: Some(statement),
@@ -2244,7 +2296,127 @@ impl TableRockBridge {
             start_row: None,
             row_count: Some(row_count),
             expected_revision: 0,
-        })
+        })?;
+        let operation_id = operation_from_bytes(&operation_bytes).map_err(|_| {
+            BridgeError::rejected("operation-id", "bridge generated invalid operation id")
+        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        inner
+            .operation_copy_identity
+            .insert(operation_id, copy_identity);
+        Ok(operation_bytes)
+    }
+
+    fn format_result_copy_inner(
+        &self,
+        result_id_bytes: Vec<u8>,
+        revision: u64,
+        scope: String,
+        row: Option<u64>,
+        column: Option<u32>,
+        format: String,
+    ) -> Result<String, BridgeError> {
+        let result_id = result_from_bytes(&result_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-result-id", "result id must be 16 bytes"))?;
+        let revision = Revision::from_wire_u64(revision);
+        let format = match format.as_str() {
+            "csv" => CopyFormat::Csv,
+            "tsv" => CopyFormat::Tsv,
+            "json" => CopyFormat::Json,
+            "markdown" => CopyFormat::Markdown,
+            "sql_insert" => CopyFormat::SqlInsert,
+            "sql_update" => CopyFormat::SqlUpdate,
+            _ => {
+                return Err(BridgeError::rejected(
+                    "copy-format",
+                    "unsupported copy format",
+                ));
+            }
+        };
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        let pages = inner
+            .results
+            .resident_pages(result_id, revision)
+            .ok_or(BridgeError::UnknownPage)?;
+        let first = pages.first().ok_or(BridgeError::UnknownPage)?;
+        let columns = first
+            .columns()
+            .iter()
+            .map(|column| column.name().to_owned())
+            .collect::<Vec<_>>();
+        let selected_columns: Vec<u32> = match scope.as_str() {
+            "cell" => vec![column.ok_or_else(|| {
+                BridgeError::rejected("copy-column", "cell scope requires column")
+            })?],
+            "row" | "loaded" => (0..u32::try_from(columns.len()).unwrap_or(u32::MAX)).collect(),
+            _ => {
+                return Err(BridgeError::rejected(
+                    "copy-scope",
+                    "unsupported copy scope",
+                ));
+            }
+        };
+        if selected_columns
+            .iter()
+            .any(|column| usize::try_from(*column).map_or(true, |index| index >= columns.len()))
+        {
+            return Err(BridgeError::rejected(
+                "copy-column",
+                "column is outside result",
+            ));
+        }
+        let selected_names = selected_columns
+            .iter()
+            .map(|column| columns[*column as usize].clone())
+            .collect();
+        let mut rows = Vec::new();
+        for page in &pages {
+            let envelope = page.envelope();
+            for local_row in 0..envelope.row_count() {
+                let absolute_row = envelope.start_row().saturating_add(u64::from(local_row));
+                if scope != "loaded" && Some(absolute_row) != row {
+                    continue;
+                }
+                let cells = selected_columns
+                    .iter()
+                    .map(|column| {
+                        page.cell(local_row, *column)
+                            .map(copy_cell_from_page)
+                            .map_err(|error| BridgeError::rejected("copy-cell", error.to_string()))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                rows.push(cells);
+            }
+        }
+        if scope != "loaded" && rows.len() != 1 {
+            return Err(BridgeError::rejected(
+                "copy-row",
+                "row is outside resident result",
+            ));
+        }
+        let identity = inner.copy_identities.get(&result_id);
+        let table_identity = identity.filter(|value| value.insertable);
+        format_copy_table(
+            &CopyTable {
+                columns: selected_names,
+                rows,
+                base_schema: table_identity.map(|value| value.schema.clone()),
+                base_table: table_identity.map(|value| value.table.clone()),
+                identity_columns: identity
+                    .map(|value| value.identity_columns.clone())
+                    .unwrap_or_default(),
+            },
+            format,
+        )
+        .map_err(|error| BridgeError::rejected("copy-format", error.to_string()))
     }
 
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
@@ -3433,6 +3605,7 @@ impl BridgeInner {
             sessions: BTreeMap::new(),
             operation_results: BTreeMap::new(),
             operation_history: BTreeMap::new(),
+            operation_copy_identity: BTreeMap::new(),
             history_retention: HistoryRetention::Full,
             ids: IdFactory::new(),
             events: VecDeque::new(),
@@ -3441,6 +3614,7 @@ impl BridgeInner {
             accepting: true,
             persistence: None,
             catalog_nodes: BTreeMap::new(),
+            copy_identities: BTreeMap::new(),
         })
     }
 
@@ -3475,6 +3649,18 @@ impl BridgeInner {
             }
             EngineServiceUpdate::Page(page) => {
                 let page = *page;
+                if let Some(copy_identity) =
+                    self.operation_copy_identity.get(&operation_id).cloned()
+                {
+                    while self.copy_identities.len() >= 32 {
+                        let Some(oldest) = self.copy_identities.keys().next().copied() else {
+                            break;
+                        };
+                        self.copy_identities.remove(&oldest);
+                    }
+                    self.copy_identities
+                        .insert(page.envelope().result_id(), copy_identity);
+                }
                 let identity = PageIdentity::new(
                     page.envelope().result_id(),
                     page.envelope().revision(),
@@ -3511,6 +3697,7 @@ impl BridgeInner {
             }
             EngineServiceUpdate::Terminal(outcome) => {
                 self.operation_results.remove(&operation_id);
+                self.operation_copy_identity.remove(&operation_id);
                 let history_failed =
                     self.operation_history
                         .remove(&operation_id)

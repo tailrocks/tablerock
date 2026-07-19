@@ -203,7 +203,7 @@ public struct PageV1Table: Sendable, Equatable {
     /// One display string per cell. `∅` for NULL; `<kind N>` for non-text kinds.
     public var rows: [[String]]
     public let columnMetadata: [PageV1Column]
-    public let cells: [[PageV1Cell]]
+    public var cells: [[PageV1Cell]]
 
     public init(
         columns: [String], rows: [[String]],
@@ -223,6 +223,15 @@ public struct PageV1Table: Sendable, Equatable {
                 )
             }
         }
+    }
+
+    public mutating func append(_ page: PageV1Table) -> Bool {
+        guard columns == page.columns, columnMetadata == page.columnMetadata,
+              page.rows.count == page.cells.count
+        else { return false }
+        rows.append(contentsOf: page.rows)
+        cells.append(contentsOf: page.cells)
+        return true
     }
 }
 

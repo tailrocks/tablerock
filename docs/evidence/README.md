@@ -403,6 +403,7 @@ How to read an evidence document:
 - 526 — [Plan 021 native multi-window ownership](delivery/526-plan-021-native-multi-window.md)
 - 527 — [Native environment and safety surfaces](delivery/527-native-environment-safety-surfaces.md)
 - 528 — [Native typed value inspector](delivery/528-native-typed-value-inspector.md)
+- 529 — [Shared result copy and native pasteboard](delivery/529-shared-copy-native-pasteboard.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

@@ -77,3 +77,9 @@ Click any loaded result cell to open its tab-local value inspector. It preserves
 Rust page metadata and shows database type, nullability, value kind, truncation,
 selectable text, and raw hexadecimal bytes. Structured JSON trees and editable
 typed controls remain later parity work.
+
+Result grids copy a selected cell, selected row, or all loaded rows through the
+shared Rust formatter. The native pasteboard receives plain text plus CSV, TSV,
+JSON, and Markdown representations. Object tabs also offer SQL INSERT when Rust
+has retained base-table identity. SQL UPDATE stays absent until stable key facts
+are proven; TableRock never emits an unsafe placeholder `WHERE` clause.

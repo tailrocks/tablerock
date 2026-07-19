@@ -256,12 +256,12 @@ fn char_level_spans(source: &str) -> Vec<StatementSpan> {
         }
 
         // dollar-quote open
-        if c == '$' {
-            if let Some((tag, len)) = parse_dollar_tag(&source[i..]) {
-                dollar_tag = Some(tag);
-                i += len;
-                continue;
-            }
+        if c == '$'
+            && let Some((tag, len)) = parse_dollar_tag(&source[i..])
+        {
+            dollar_tag = Some(tag);
+            i += len;
+            continue;
         }
         if c == '\'' {
             in_single = true;
@@ -435,7 +435,7 @@ mod tests {
     fn nested_comments_and_emoji_identifier_corpus() {
         let sql = "/* outer /* nest */ still */ SELECT \"🙂\" AS face; SELECT 1";
         let spans = statements(sql, SqlDialect::PostgreSql);
-        assert!(spans.len() >= 1);
+        assert!(!spans.is_empty());
         assert!(
             spans[0].slice(sql).contains("🙂")
                 || spans.iter().any(|s| s.slice(sql).contains("face"))

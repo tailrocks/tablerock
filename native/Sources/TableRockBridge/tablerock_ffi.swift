@@ -685,6 +685,12 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      */
     func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) throws  -> Data
 
+    /**
+     * Formats resident Rust-owned result pages for clipboard/export.
+     * Scope is `cell`, `row`, or `loaded`; format is csv/tsv/json/markdown/sql_insert/sql_update.
+     */
+    func formatResultCopy(resultId: Data, revision: UInt64, scope: String, row: UInt64?, column: UInt32?, format: String) throws  -> String
+
     func getNativeWindowIntent(windowId: String) throws  -> BridgeNativeWindowIntent?
 
     /**
@@ -1059,6 +1065,25 @@ open func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64)throws  -
         FfiConverterData.lower(resultId),
         FfiConverterUInt64.lower(startRow),
         FfiConverterUInt64.lower(revision),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Formats resident Rust-owned result pages for clipboard/export.
+     * Scope is `cell`, `row`, or `loaded`; format is csv/tsv/json/markdown/sql_insert/sql_update.
+     */
+open func formatResultCopy(resultId: Data, revision: UInt64, scope: String, row: UInt64?, column: UInt32?, format: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_format_result_copy(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(resultId),
+        FfiConverterUInt64.lower(revision),
+        FfiConverterString.lower(scope),
+        FfiConverterOptionUInt64.lower(row),
+        FfiConverterOptionUInt32.lower(column),
+        FfiConverterString.lower(format),uniffiCallStatus
     )
 })
 }
@@ -3648,6 +3673,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_fetch_page() != 31970) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_format_result_copy() != 37886) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_get_native_window_intent() != 55742) {

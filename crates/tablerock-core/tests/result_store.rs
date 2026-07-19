@@ -216,3 +216,28 @@ fn debug_output_never_contains_page_values() {
     assert!(!debug.contains("do-not-log"));
     assert!(debug.contains("resident_buffer_bytes"));
 }
+
+#[test]
+fn resident_pages_are_current_and_ordered_by_start_row() {
+    let current = identity(1, 3, Engine::PostgreSql);
+    let mut store = ResultStore::new(limits(1, 3, 4096));
+    store.open_result(current).unwrap();
+    store.admit(page(current, 10, "later")).unwrap();
+    store.admit(page(current, 0, "first")).unwrap();
+
+    let pages = store
+        .resident_pages(current.result_id(), current.revision())
+        .unwrap();
+    assert_eq!(
+        pages
+            .iter()
+            .map(|page| page.envelope().start_row())
+            .collect::<Vec<_>>(),
+        vec![0, 10]
+    );
+    assert!(
+        store
+            .resident_pages(current.result_id(), Revision::from_wire_u64(2))
+            .is_none()
+    );
+}

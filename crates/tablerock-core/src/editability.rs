@@ -142,7 +142,6 @@ impl EditabilityFacts {
     }
 
     /// Cell-level gate: truncated/invalid/unknown never edit even if result is.
-    #[must_use]
     pub fn cell_writable(kind: ValueKind, truncated: bool) -> Result<(), EditabilityReason> {
         if truncated {
             return Err(EditabilityReason::ValueNotWritable);

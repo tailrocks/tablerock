@@ -3,6 +3,8 @@
 //! Pure functions: no I/O. SQL INSERT/UPDATE require base-table identity.
 
 use super::grid::{DataGridModel, ProjectedCell};
+pub use tablerock_core::CopyFormat;
+use tablerock_core::{CopyCell, CopyProjectionError, CopyTable, format_copy_table};
 
 /// Copy payload scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,22 +15,14 @@ pub enum CopyScope {
     LoadedResult,
 }
 
-/// Requested output format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CopyFormat {
-    Csv,
-    Tsv,
-    Json,
-    Markdown,
-    SqlInsert,
-    SqlUpdate,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CopyError {
     Empty,
     /// INSERT/UPDATE need base_schema + base_table from browse identity.
     MissingTableIdentity,
+    MissingStableIdentity,
+    BoundsExceeded,
+    ShapeMismatch,
 }
 
 impl std::fmt::Display for CopyError {
@@ -36,7 +30,22 @@ impl std::fmt::Display for CopyError {
         f.write_str(match self {
             Self::Empty => "nothing to copy",
             Self::MissingTableIdentity => "SQL INSERT/UPDATE require base-table identity",
+            Self::MissingStableIdentity => "SQL UPDATE requires stable identity columns",
+            Self::BoundsExceeded => "copy payload exceeds bounds",
+            Self::ShapeMismatch => "copy row shape does not match columns",
         })
+    }
+}
+
+impl From<CopyProjectionError> for CopyError {
+    fn from(error: CopyProjectionError) -> Self {
+        match error {
+            CopyProjectionError::Empty => Self::Empty,
+            CopyProjectionError::ShapeMismatch => Self::ShapeMismatch,
+            CopyProjectionError::BoundsExceeded => Self::BoundsExceeded,
+            CopyProjectionError::MissingTableIdentity => Self::MissingTableIdentity,
+            CopyProjectionError::MissingStableIdentity => Self::MissingStableIdentity,
+        }
     }
 }
 
@@ -246,7 +255,7 @@ pub fn format_cursor_column(grid: &DataGridModel) -> Result<String, CopyError> {
         if matches!(cell.distinction, super::grid::CellDistinction::Pending) {
             continue;
         }
-        lines.push(cell_copy_text(&cell));
+        lines.push(cell_plain_text(&cell));
     }
     if lines.is_empty() {
         return Err(CopyError::Empty);
@@ -260,48 +269,30 @@ pub fn format_copy(
     scope: CopyScope,
     format: CopyFormat,
 ) -> Result<String, CopyError> {
-    let rows = collect_rows(grid, scope);
-    if rows.is_empty() {
-        return Err(CopyError::Empty);
-    }
-    let columns = if grid.column_layout.is_empty() {
+    let visible_columns = if grid.column_layout.is_empty() {
         grid.columns.clone()
     } else {
         grid.visible_columns()
     };
+    let columns = if scope == CopyScope::Cell {
+        vec![grid.columns[grid.cursor_col.min(grid.columns.len().saturating_sub(1))].clone()]
+    } else {
+        visible_columns
+    };
     if columns.is_empty() {
         return Err(CopyError::Empty);
     }
-    match format {
-        CopyFormat::Csv => Ok(format_csv(&columns, &rows)),
-        CopyFormat::Tsv => Ok(format_tsv(&columns, &rows)),
-        CopyFormat::Json => Ok(format_json(&columns, &rows)),
-        CopyFormat::Markdown => Ok(format_markdown(&columns, &rows)),
-        CopyFormat::SqlInsert => {
-            let (schema, table) = table_identity(grid)?;
-            Ok(format_sql_insert(schema, table, &columns, &rows))
-        }
-        CopyFormat::SqlUpdate => {
-            let (schema, table) = table_identity(grid)?;
-            Ok(format_sql_update(
-                schema,
-                table,
-                &columns,
-                &rows,
-                &grid.identity_columns,
-            ))
-        }
-    }
+    let table = CopyTable {
+        columns,
+        rows: collect_rows(grid, scope),
+        base_schema: grid.base_schema.clone(),
+        base_table: grid.base_table.clone(),
+        identity_columns: grid.identity_columns.clone(),
+    };
+    format_copy_table(&table, format).map_err(Into::into)
 }
 
-fn table_identity(grid: &DataGridModel) -> Result<(&str, &str), CopyError> {
-    match (&grid.base_schema, &grid.base_table) {
-        (Some(s), Some(t)) if !s.is_empty() && !t.is_empty() => Ok((s.as_str(), t.as_str())),
-        _ => Err(CopyError::MissingTableIdentity),
-    }
-}
-
-fn collect_rows(grid: &DataGridModel, scope: CopyScope) -> Vec<Vec<String>> {
+fn collect_rows(grid: &DataGridModel, scope: CopyScope) -> Vec<Vec<CopyCell>> {
     let col_count = grid.columns.len();
     if col_count == 0 {
         return Vec::new();
@@ -327,225 +318,53 @@ fn collect_rows(grid: &DataGridModel, scope: CopyScope) -> Vec<Vec<String>> {
         .map(|abs| match scope {
             CopyScope::Cell => {
                 let col = grid.cursor_col.min(col_count.saturating_sub(1));
-                vec![cell_copy_text(&grid.cell_at(abs, col))]
+                vec![copy_cell(&grid.cell_at(abs, col))]
             }
             _ => visible
                 .iter()
-                .map(|&col| cell_copy_text(&grid.cell_at(abs, col)))
+                .map(|&col| copy_cell(&grid.cell_at(abs, col)))
                 .collect(),
         })
         .collect()
 }
 
-fn cell_copy_text(cell: &ProjectedCell) -> String {
+fn copy_cell(cell: &ProjectedCell) -> CopyCell {
     use super::grid::CellDistinction;
     match cell.distinction {
-        CellDistinction::Null => "NULL".into(),
-        CellDistinction::Pending => String::new(),
-        CellDistinction::Truncated => format!("{}…", cell.text),
-        CellDistinction::Binary => {
-            if cell.text.is_empty() {
-                "\\x".into()
-            } else {
-                format!("\\x{}", cell.text.replace(' ', ""))
-            }
-        }
-        CellDistinction::Unknown | CellDistinction::Invalid => {
-            if cell.text.is_empty() {
-                "?".into()
-            } else {
-                cell.text.clone()
-            }
-        }
-        _ => cell.text.clone(),
+        CellDistinction::Null => CopyCell::Null,
+        CellDistinction::Boolean => CopyCell::Boolean(matches!(
+            cell.text.trim().to_ascii_lowercase().as_str(),
+            "true" | "t" | "1"
+        )),
+        CellDistinction::Number => CopyCell::Number(cell.text.clone()),
+        CellDistinction::Binary => CopyCell::Binary(cell.text.as_bytes().to_vec()),
+        CellDistinction::Unknown => CopyCell::Unknown(cell.text.as_bytes().to_vec()),
+        CellDistinction::Invalid => CopyCell::Invalid(cell.text.as_bytes().to_vec()),
+        CellDistinction::Truncated => CopyCell::Truncated {
+            display: cell.text.clone(),
+            original_bytes: cell.original_byte_len,
+        },
+        CellDistinction::Pending => CopyCell::Text(String::new()),
+        _ => CopyCell::Text(cell.text.clone()),
     }
 }
 
-fn format_csv(columns: &[String], rows: &[Vec<String>]) -> String {
-    let mut out = String::new();
-    out.push_str(
-        &columns
-            .iter()
-            .map(|c| csv_escape(c))
-            .collect::<Vec<_>>()
-            .join(","),
-    );
-    out.push('\n');
-    for row in rows {
-        let line: Vec<_> = row.iter().map(|c| csv_escape(c)).collect();
-        out.push_str(&line.join(","));
-        out.push('\n');
-    }
-    out
-}
-
-fn csv_escape(value: &str) -> String {
-    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r') {
-        format!("\"{}\"", value.replace('"', "\"\""))
-    } else {
-        value.to_owned()
-    }
-}
-
-fn format_tsv(columns: &[String], rows: &[Vec<String>]) -> String {
-    let mut out = String::new();
-    out.push_str(&columns.join("\t"));
-    out.push('\n');
-    for row in rows {
-        // TSV: no quoting; replace tabs/newlines in cells.
-        let line: Vec<_> = row
-            .iter()
-            .map(|c| c.replace(['\t', '\n', '\r'], " "))
-            .collect();
-        out.push_str(&line.join("\t"));
-        out.push('\n');
-    }
-    out
-}
-
-fn format_json(columns: &[String], rows: &[Vec<String>]) -> String {
-    let mut out = String::from("[\n");
-    for (ri, row) in rows.iter().enumerate() {
-        out.push_str("  {");
-        for (ci, col) in columns.iter().enumerate() {
-            if ci > 0 {
-                out.push_str(", ");
-            }
-            let val = row.get(ci).map(String::as_str).unwrap_or("");
-            out.push_str(&format!("\"{}\":{}", json_escape_key(col), json_value(val)));
-        }
-        out.push('}');
-        if ri + 1 < rows.len() {
-            out.push(',');
-        }
-        out.push('\n');
-    }
-    out.push_str("]\n");
-    out
-}
-
-fn json_escape_key(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-fn json_value(s: &str) -> String {
-    if s == "NULL" {
-        "null".into()
-    } else if s == "true" || s == "false" {
-        s.to_owned()
-    } else if s.parse::<i64>().is_ok() || s.parse::<f64>().is_ok() {
-        s.to_owned()
-    } else {
-        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
-    }
-}
-
-fn format_markdown(columns: &[String], rows: &[Vec<String>]) -> String {
-    let mut out = String::new();
-    out.push('|');
-    for c in columns {
-        out.push_str(&format!(" {} |", c.replace('|', "\\|")));
-    }
-    out.push('\n');
-    out.push('|');
-    for _ in columns {
-        out.push_str(" --- |");
-    }
-    out.push('\n');
-    for row in rows {
-        out.push('|');
-        for cell in row {
-            out.push_str(&format!(" {} |", cell.replace('|', "\\|")));
-        }
-        out.push('\n');
-    }
-    out
-}
-
-fn format_sql_insert(
-    schema: &str,
-    table: &str,
-    columns: &[String],
-    rows: &[Vec<String>],
-) -> String {
-    let cols = columns
-        .iter()
-        .map(|c| format!("\"{}\"", c.replace('"', "\"\"")))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let mut out = String::new();
-    for row in rows {
-        let vals = row
-            .iter()
-            .map(|v| sql_literal(v))
-            .collect::<Vec<_>>()
-            .join(", ");
-        out.push_str(&format!(
-            "INSERT INTO \"{}\".\"{}\" ({cols}) VALUES ({vals});\n",
-            schema.replace('"', "\"\""),
-            table.replace('"', "\"\"")
-        ));
-    }
-    out
-}
-
-fn format_sql_update(
-    schema: &str,
-    table: &str,
-    columns: &[String],
-    rows: &[Vec<String>],
-    identity_columns: &[String],
-) -> String {
-    // Prefer WHERE from proven identity columns; otherwise comment that WHERE
-    // needs a primary key (still gated by base table presence).
-    let mut out = String::new();
-    for row in rows {
-        let sets: Vec<_> = columns
-            .iter()
-            .zip(row.iter())
-            .filter(|(c, _)| !identity_columns.iter().any(|id| id == *c))
-            .map(|(c, v)| format!("\"{}\" = {}", c.replace('"', "\"\""), sql_literal(v)))
-            .collect();
-        // If every column is identity, SET all columns so the statement is usable.
-        let sets = if sets.is_empty() {
-            columns
+fn cell_plain_text(cell: &ProjectedCell) -> String {
+    match copy_cell(cell) {
+        CopyCell::Null => "NULL".into(),
+        CopyCell::Boolean(value) => value.to_string(),
+        CopyCell::Number(value) | CopyCell::Text(value) => value,
+        CopyCell::Binary(bytes) => format!(
+            "\\x{}",
+            bytes
                 .iter()
-                .zip(row.iter())
-                .map(|(c, v)| format!("\"{}\" = {}", c.replace('"', "\"\""), sql_literal(v)))
-                .collect::<Vec<_>>()
-        } else {
-            sets
-        };
-        let where_clause = if identity_columns.is_empty() {
-            "-- WHERE requires primary key".to_owned()
-        } else {
-            let parts: Vec<String> = identity_columns
-                .iter()
-                .filter_map(|id| {
-                    let idx = columns.iter().position(|c| c == id)?;
-                    let val = row.get(idx)?;
-                    Some(format!(
-                        "\"{}\" = {}",
-                        id.replace('"', "\"\""),
-                        sql_literal(val)
-                    ))
-                })
-                .collect();
-            if parts.is_empty() {
-                "-- WHERE requires primary key".to_owned()
-            } else {
-                format!("WHERE {}", parts.join(" AND "))
-            }
-        };
-        out.push_str(&format!(
-            "UPDATE \"{}\".\"{}\" SET {} {};\n",
-            schema.replace('"', "\"\""),
-            table.replace('"', "\"\""),
-            sets.join(", "),
-            where_clause
-        ));
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        ),
+        CopyCell::Unknown(bytes) => format!("<unknown:{} bytes>", bytes.len()),
+        CopyCell::Invalid(bytes) => format!("<invalid:{} bytes>", bytes.len()),
+        CopyCell::Truncated { display, .. } => format!("{display}…"),
     }
-    out
 }
 
 fn sql_literal(value: &str) -> String {
@@ -742,12 +561,9 @@ mod tests {
         let ins = format_copy(&g, CopyScope::Row, CopyFormat::SqlInsert).unwrap();
         assert!(ins.contains("INSERT"), "{ins}");
         assert!(ins.contains("users"), "{ins}");
-        let upd = format_copy(&g, CopyScope::Row, CopyFormat::SqlUpdate).unwrap();
-        assert!(upd.contains("UPDATE"), "{upd}");
-        assert!(upd.contains("users"), "{upd}");
-        assert!(
-            upd.contains("WHERE requires primary key") || upd.contains("WHERE"),
-            "{upd}"
+        assert_eq!(
+            format_copy(&g, CopyScope::Row, CopyFormat::SqlUpdate),
+            Err(CopyError::MissingStableIdentity)
         );
         g.identity_columns = vec!["id".into()];
         let upd_id = format_copy(&g, CopyScope::Row, CopyFormat::SqlUpdate).unwrap();

@@ -338,6 +338,22 @@ impl ResultStore {
         Some(&page.page)
     }
 
+    /// Clones all resident pages for one current result in start-row order.
+    /// Bounded by ResultStore limits; touching pages refreshes their LRU age.
+    pub fn resident_pages(
+        &mut self,
+        result_id: ResultId,
+        revision: Revision,
+    ) -> Option<Vec<ResultPage>> {
+        let starts = self.results.get(&result_id).and_then(|slot| {
+            (slot.revision == revision).then(|| slot.pages.keys().copied().collect::<Vec<_>>())
+        })?;
+        starts
+            .into_iter()
+            .map(|start| self.get(PageKey::new(result_id, revision, start)).cloned())
+            .collect()
+    }
+
     pub fn set_pinned(&mut self, key: PageKey, pinned: bool) -> bool {
         let Some(slot) = self.results.get_mut(&key.result_id) else {
             return false;
