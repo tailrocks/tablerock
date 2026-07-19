@@ -309,6 +309,13 @@ pub struct BridgeRelationStructure {
     pub ddl: String,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRedisKeyView {
+    pub kind: String,
+    pub lines: Vec<String>,
+    pub next_skip: Option<u64>,
+}
+
 #[derive(Clone)]
 struct RegisteredSession {
     profile_id: tablerock_core::ProfileId,
@@ -668,6 +675,16 @@ impl TableRockBridge {
         catalog_node_id: Vec<u8>,
     ) -> Result<BridgeRelationStructure, BridgeError> {
         catch_entry(|| self.relation_structure_inner(session_id, catalog_node_id))
+    }
+
+    /// Loads one bounded type-specific Redis key view from an opaque catalog node.
+    pub fn redis_key_view(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+        collection_skip: u64,
+    ) -> Result<BridgeRedisKeyView, BridgeError> {
+        catch_entry(|| self.redis_key_view_inner(session_id, catalog_node_id, collection_skip))
     }
 
     /// Formats resident Rust-owned result pages for clipboard/export.
@@ -2739,6 +2756,67 @@ impl TableRockBridge {
         })
     }
 
+    fn redis_key_view_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        catalog_node_id_bytes: Vec<u8>,
+        collection_skip: u64,
+    ) -> Result<BridgeRedisKeyView, BridgeError> {
+        if collection_skip > 1_000_000 {
+            return Err(BridgeError::rejected(
+                "redis-key-page",
+                "Redis key collection offset exceeds limit",
+            ));
+        }
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let catalog_node_id = catalog_node_from_bytes(&catalog_node_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let (driver, key) = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let node = inner
+                .catalog_nodes
+                .get(&(session_id, catalog_node_id))
+                .ok_or_else(|| {
+                    BridgeError::rejected(
+                        "unknown-catalog-node",
+                        "catalog node is stale or unknown",
+                    )
+                })?;
+            if registered.engine != Engine::Redis
+                || !matches!(node.kind(), CatalogNodeKind::RedisKey(_))
+            {
+                return Err(BridgeError::rejected(
+                    "redis-key-kind",
+                    "Redis key view requires a cached Redis key node",
+                ));
+            }
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (driver, decode_redis_catalog_key(node.name())?)
+        };
+        let (kind, lines, next_skip) = self
+            .runtime
+            .block_on(driver.redis_key_view_lines(&key, collection_skip))?
+            .map_err(|error| BridgeError::rejected("redis-key-view", error.to_string()))?;
+        Ok(BridgeRedisKeyView {
+            kind,
+            lines,
+            next_skip,
+        })
+    }
+
     fn format_result_copy_inner(
         &self,
         result_id_bytes: Vec<u8>,
@@ -4013,6 +4091,38 @@ fn redis_catalog_display_name(node: &CatalogNode) -> String {
                 .map(|hex| format!("[binary] {hex}"))
         })
         .unwrap_or_else(|| node.name().to_owned())
+}
+
+fn decode_redis_catalog_key(identity: &str) -> Result<Vec<u8>, BridgeError> {
+    if let Some(text) = identity.strip_prefix("text:") {
+        if text.len() > 8 * 1024 {
+            return Err(BridgeError::rejected(
+                "redis-key-identity",
+                "Redis key exceeds view limit",
+            ));
+        }
+        return Ok(text.as_bytes().to_vec());
+    }
+    let hex = identity.strip_prefix("hex:").ok_or_else(|| {
+        BridgeError::rejected("redis-key-identity", "Redis key identity is invalid")
+    })?;
+    if hex.len() > 16 * 1024 || hex.len() % 2 != 0 {
+        return Err(BridgeError::rejected(
+            "redis-key-identity",
+            "Redis key hex identity is invalid",
+        ));
+    }
+    hex.as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let text = std::str::from_utf8(pair).map_err(|_| {
+                BridgeError::rejected("redis-key-identity", "Redis key hex identity is invalid")
+            })?;
+            u8::from_str_radix(text, 16).map_err(|_| {
+                BridgeError::rejected("redis-key-identity", "Redis key hex identity is invalid")
+            })
+        })
+        .collect()
 }
 
 const fn catalog_kind_is_expandable(kind: CatalogNodeKind) -> bool {

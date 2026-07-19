@@ -26,9 +26,9 @@ keys are never shown under a false database parent.
 
 ## Remaining boundary
 
-Typed Redis key-value pages/object tabs, namespace grouping, logical-database
-context switching, key filtering, pagination continuation, and key mutation
-screens remain.
+Namespace grouping, logical-database context switching, key filtering, catalog
+pagination continuation, and key mutation screens remain. Evidence 536 closes
+bounded typed key-value object views and their collection continuation.
 
 ## Provenance
 

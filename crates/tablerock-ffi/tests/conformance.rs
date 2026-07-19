@@ -183,6 +183,22 @@ impl DriverSession for FixedPageSession {
         })
     }
 
+    fn redis_key_view_lines<'a>(
+        &'a self,
+        key: &'a [u8],
+        collection_skip: u64,
+    ) -> DriverFuture<'a, Result<(String, Vec<String>, Option<u64>), AdapterError>> {
+        Box::pin(async move {
+            assert_eq!(key, b"fixture-key");
+            assert_eq!(collection_skip, 0);
+            Ok((
+                "string".into(),
+                vec!["type: String".into(), "value: fixture-value".into()],
+                None,
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async { Ok(()) })
     }
@@ -409,6 +425,12 @@ fn typed_catalog_uses_opaque_parent_handles_for_all_engines() {
                 assert_eq!(children[0].name, "fixture-key");
                 assert_eq!(children[0].kind, "redis_key_string");
                 assert!(!children[0].expandable);
+                let view = bridge
+                    .redis_key_view(session_id.clone(), children[0].id_bytes.clone(), 0)
+                    .unwrap();
+                assert_eq!(view.kind, "string");
+                assert_eq!(view.lines[1], "value: fixture-value");
+                assert_eq!(view.next_skip, None);
             }
         }
         let stale = vec![0xff; 16];

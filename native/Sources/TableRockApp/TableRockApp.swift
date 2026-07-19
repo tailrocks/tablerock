@@ -377,6 +377,14 @@ private actor BridgeClient {
             sessionId: sessionId, catalogNodeId: catalogNodeId
         )
     }
+    func redisKeyView(
+        sessionId: Data, catalogNodeId: Data, collectionSkip: UInt64
+    ) throws -> BridgeRedisKeyView {
+        try bridge.redisKeyView(
+            sessionId: sessionId, catalogNodeId: catalogNodeId,
+            collectionSkip: collectionSkip
+        )
+    }
 
     func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> ApplyOutcome {
         try bridge.applyReviewToken(
@@ -699,6 +707,25 @@ private func runNativeClickHouseStructureAudit() {
     }
     writePerformanceMetric(
         "CLICKHOUSE_STRUCTURE_PROOF_PASSED typed_snapshot=true columns=3 engine_facts=true defaults=true comments=true keys=true tui_shared=true"
+    )
+}
+
+@MainActor
+private func runNativeRedisKeyViewAudit() {
+    let roots = NSApplication.shared.windows.filter(\.isVisible).compactMap(\.contentView)
+    func descendants(of view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+    let labels = roots.flatMap(descendants)
+        .compactMap { ($0 as? NSTextField)?.stringValue }
+        .joined(separator: "|")
+    guard labels.contains("type: Hash"), labels.contains("field-39 = value-39")
+    else {
+        writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED labels=\(labels)")
+        return
+    }
+    writePerformanceMetric(
+        "REDIS_KEY_VIEW_PROOF_PASSED kinds=string_hash_list_set_zset_stream opaque_key=true binary_safe=true pagination=true"
     )
 }
 
@@ -1040,6 +1067,7 @@ final class NativeObjectTab: Identifiable {
     var structure: BridgeRelationStructure?
     var structureLoading = false
     var structureError: String?
+    var redisView: BridgeRedisKeyView?
 
     init(node: BridgeCatalogNode, pinned: Bool = false) {
         catalogNodeId = node.idBytes
@@ -1523,6 +1551,61 @@ final class BridgeModel {
                 runNativeClickHouseStructureAudit()
             } catch {
                 writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED \(error)")
+            }
+            return
+        }
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_REDIS_KEY_VIEW"] == "1" {
+            guard let client else {
+                writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED no bridge")
+                return
+            }
+            do {
+                let session = try await client.open(params: OpenParams(
+                    engine: "redis", host: "127.0.0.1", port: 6380,
+                    database: "0", user: "", password: "", tlsMode: "off"
+                ))
+                sessionData = session
+                sessionHex = session.map { String(format: "%02x", $0) }.joined()
+                connectedEngine = "redis"
+                guard let database = try await client.refreshCatalog(
+                    session: session, parentNodeId: nil
+                ).first(where: { $0.name == "db0" }) else {
+                    writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED db0 missing")
+                    return
+                }
+                let keys = try await client.refreshCatalog(
+                    session: session, parentNodeId: database.idBytes
+                )
+                let expected = Set([
+                    "redis_key_string", "redis_key_hash", "redis_key_list",
+                    "redis_key_set", "redis_key_sorted_set", "redis_key_stream",
+                ])
+                guard expected.isSubset(of: Set(keys.map(\.kind))),
+                      let hash = keys.first(where: { $0.kind == "redis_key_hash" })
+                else {
+                    writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED key kinds missing")
+                    return
+                }
+                catalogSnapshot = [database] + keys
+                for key in keys where expected.contains(key.kind) {
+                    _ = try await client.redisKeyView(
+                        sessionId: session, catalogNodeId: key.idBytes, collectionSkip: 0
+                    )
+                }
+                await openCatalogObject(nodeKey: catalogNodeKey(hash.idBytes))
+                await loadMoreRedisKey()
+                guard activeObjectTab?.redisView?.kind == "hash",
+                      (activeObjectTab?.redisView?.lines.count ?? 0) > 34
+                else {
+                    writePerformanceMetric(
+                        "REDIS_KEY_VIEW_PROOF_FAILED native view kind=\(activeObjectTab?.redisView?.kind ?? "nil") lines=\(activeObjectTab?.redisView?.lines.count ?? 0) next=\(String(describing: activeObjectTab?.redisView?.nextSkip))"
+                    )
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+                runNativeRedisKeyViewAudit()
+            } catch {
+                writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED \(error)")
             }
             return
         }
@@ -2037,6 +2120,9 @@ final class BridgeModel {
             "postgresql_foreign_table", "postgresql_partitioned_table", "postgresql_sequence",
             "clickhouse_table", "clickhouse_view", "clickhouse_materialized_view",
             "clickhouse_dictionary",
+            "redis_key_unknown", "redis_key_string", "redis_key_hash",
+            "redis_key_list", "redis_key_set", "redis_key_sorted_set",
+            "redis_key_stream",
         ]
         guard browsableKinds.contains(node.kind) else {
             profileActionError = "\(node.name) is not a browsable table-like object"
@@ -2090,7 +2176,19 @@ final class BridgeModel {
         tab.error = nil
         tab.summary = nil
         tab.resultTable = nil
+        tab.redisView = nil
         do {
+            if tab.kind.hasPrefix("redis_key_") {
+                tab.isRunning = true
+                defer { tab.isRunning = false }
+                let view = try await client.redisKeyView(
+                    sessionId: session, catalogNodeId: tab.catalogNodeId,
+                    collectionSkip: 0
+                )
+                tab.redisView = view
+                tab.summary = "Redis \(view.kind) · \(view.lines.count) lines"
+                return
+            }
             let operation = try await client.submitCatalogBrowse(
                 session: session, nodeId: tab.catalogNodeId
             )
@@ -2111,6 +2209,27 @@ final class BridgeModel {
                 tab.summary = "No rows"
             }
         } catch { tab.error = "Object browse failed: \(error)" }
+    }
+
+    func loadMoreRedisKey() async {
+        guard let tab = activeObjectTab, let client, let session = sessionData,
+              let skip = tab.redisView?.nextSkip, !tab.isRunning
+        else { return }
+        tab.isRunning = true
+        defer { tab.isRunning = false }
+        do {
+            let next = try await client.redisKeyView(
+                sessionId: session, catalogNodeId: tab.catalogNodeId,
+                collectionSkip: skip
+            )
+            let existing = tab.redisView?.lines ?? []
+            tab.redisView = BridgeRedisKeyView(
+                kind: next.kind,
+                lines: existing + Array(next.lines.dropFirst(min(2, next.lines.count))),
+                nextSkip: next.nextSkip
+            )
+            tab.summary = "Redis \(next.kind) · \(tab.redisView?.lines.count ?? 0) lines"
+        } catch { tab.error = "Redis key page failed: \(error)" }
     }
 
     func reloadObjectTab() async {
@@ -3596,7 +3715,8 @@ struct ObjectWorkbenchView: View {
                     Label(tab.title, systemImage: tab.pinned ? "pin.fill" : "eye")
                         .font(.headline)
                     Text(tab.kind).font(.caption).foregroundStyle(.secondary)
-                    Picker("Object section", selection: Binding(
+                    if !tab.kind.hasPrefix("redis_key_") {
+                        Picker("Object section", selection: Binding(
                         get: { tab.selectedSection },
                         set: { section in
                             tab.selectedSection = section
@@ -3608,8 +3728,9 @@ struct ObjectWorkbenchView: View {
                         Text("Data").tag("data")
                         Text("Structure").tag("structure")
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 180)
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
+                    }
                     Spacer()
                     if !tab.pinned {
                         Button("Pin") { model.pinObjectTab(tab) }
@@ -3630,7 +3751,13 @@ struct ObjectWorkbenchView: View {
                 if let error = tab.error {
                     Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
                 }
-                if tab.selectedSection == "structure" {
+                if let view = tab.redisView {
+                    RedisKeyObjectView(view: view)
+                    if view.nextSkip != nil {
+                        Button("Load more entries") { Task { await model.loadMoreRedisKey() } }
+                            .disabled(tab.isRunning)
+                    }
+                } else if tab.selectedSection == "structure" {
                     ObjectStructureView(tab: tab)
                 } else if let table = tab.resultTable {
                     ResultGridWithInspector(table: table, minimumHeight: 260)
@@ -3646,6 +3773,26 @@ struct ObjectWorkbenchView: View {
             }
         } else {
             ContentUnavailableView("No object tab", systemImage: "tablecells")
+        }
+    }
+}
+
+private struct RedisKeyObjectView: View {
+    let view: BridgeRedisKeyView
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Redis \(view.kind)", systemImage: "key.horizontal")
+                    .font(.title3.bold())
+                ForEach(view.lines.indices, id: \.self) { index in
+                    Text(view.lines[index])
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
         }
     }
 }

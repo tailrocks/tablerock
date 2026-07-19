@@ -770,6 +770,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func reconnectSavedSession(sessionId: Data, passwordOverride: String?) throws  -> BridgeReconnectAttempt
 
     /**
+     * Loads one bounded type-specific Redis key view from an opaque catalog node.
+     */
+    func redisKeyView(sessionId: Data, catalogNodeId: Data, collectionSkip: UInt64) throws  -> BridgeRedisKeyView
+
+    /**
      * Load one typed catalog level. `parent_node_id` is an opaque id previously
      * returned by this method; Swift never chooses engine requests or names.
      */
@@ -1347,6 +1352,21 @@ open func reconnectSavedSession(sessionId: Data, passwordOverride: String?)throw
             self.uniffiCloneHandle(),
         FfiConverterData.lower(sessionId),
         FfiConverterOptionString.lower(passwordOverride),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Loads one bounded type-specific Redis key view from an opaque catalog node.
+     */
+open func redisKeyView(sessionId: Data, catalogNodeId: Data, collectionSkip: UInt64)throws  -> BridgeRedisKeyView  {
+    return try  FfiConverterTypeBridgeRedisKeyView_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_redis_key_view(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(catalogNodeId),
+        FfiConverterUInt64.lower(collectionSkip),uniffiCallStatus
     )
 })
 }
@@ -2750,6 +2770,64 @@ public func FfiConverterTypeBridgeReconnectPlan_lift(_ buf: RustBuffer) throws -
 #endif
 public func FfiConverterTypeBridgeReconnectPlan_lower(_ value: BridgeReconnectPlan) -> RustBuffer {
     return FfiConverterTypeBridgeReconnectPlan.lower(value)
+}
+
+
+public struct BridgeRedisKeyView: Equatable, Hashable {
+    public var kind: String
+    public var lines: [String]
+    public var nextSkip: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: String, lines: [String], nextSkip: UInt64?) {
+        self.kind = kind
+        self.lines = lines
+        self.nextSkip = nextSkip
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRedisKeyView: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRedisKeyView: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRedisKeyView {
+        return
+            try BridgeRedisKeyView(
+                kind: FfiConverterString.read(from: &buf),
+                lines: FfiConverterSequenceString.read(from: &buf),
+                nextSkip: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRedisKeyView, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterSequenceString.write(value.lines, into: &buf)
+        FfiConverterOptionUInt64.write(value.nextSkip, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRedisKeyView_lift(_ buf: RustBuffer) throws -> BridgeRedisKeyView {
+    return try FfiConverterTypeBridgeRedisKeyView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRedisKeyView_lower(_ value: BridgeRedisKeyView) -> RustBuffer {
+    return FfiConverterTypeBridgeRedisKeyView.lower(value)
 }
 
 
@@ -4475,6 +4553,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_reconnect_saved_session() != 47584) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_redis_key_view() != 57762) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_refresh_catalog() != 24952) {
