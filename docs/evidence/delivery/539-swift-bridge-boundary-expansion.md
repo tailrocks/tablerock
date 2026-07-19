@@ -26,9 +26,10 @@ post-runtime-destruction calls, and 64 create/ensure/read/destroy cycles.
 
 ## Remaining boundary
 
-Versioned cross-engine fixture resources, all value kinds/truncation tags,
-offset/count arithmetic overflow, cancellation/shutdown stress, and
-`BehaviorProof` conversion remain checkpoint-11 work.
+All value kinds/truncation tags, offset/count arithmetic overflow,
+cancellation/shutdown stress, and `BehaviorProof` conversion remain
+checkpoint-11 work. Evidence 540 closes the first versioned cross-engine
+fixture-resource set.
 
 ## Provenance
 

@@ -414,6 +414,7 @@ How to read an evidence document:
 - 537 — [Native Redis sampled overview](delivery/537-native-redis-sampled-overview.md)
 - 538 — [SwiftPM bridge regression foundation](delivery/538-swiftpm-bridge-regression-foundation.md)
 - 539 — [Swift bridge boundary expansion](delivery/539-swift-bridge-boundary-expansion.md)
+- 540 — [Cross-engine Swift PageV1 fixtures](delivery/540-cross-engine-swift-page-fixtures.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

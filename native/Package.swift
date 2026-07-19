@@ -44,7 +44,8 @@ let package = Package(
         .testTarget(
             name: "TableRockBridgeTests",
             dependencies: ["TableRockBridge"],
-            path: "Tests/TableRockBridgeTests"
+            path: "Tests/TableRockBridgeTests",
+            resources: [.copy("Fixtures")]
         ),
     ]
 )
