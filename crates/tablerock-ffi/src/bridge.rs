@@ -2397,6 +2397,19 @@ impl TableRockBridge {
                         },
                         CatalogExpectedLevel::ClickHouseObject,
                     ),
+                    CatalogNodeKind::RedisLogicalDatabase => {
+                        let selected = node.name().strip_prefix("db").unwrap_or(node.name());
+                        if selected != registered.database.as_str() {
+                            return Err(BridgeError::rejected(
+                                "redis-database-context",
+                                "reconnect with this Redis logical database before listing keys",
+                            ));
+                        }
+                        (
+                            CatalogRequest::RedisKeys { limits },
+                            CatalogExpectedLevel::RedisKey,
+                        )
+                    }
                     _ => {
                         return Err(BridgeError::rejected(
                             "catalog-leaf",
@@ -3949,6 +3962,7 @@ enum CatalogExpectedLevel {
     ClickHouseDatabase,
     ClickHouseObject,
     RedisLogicalDatabase,
+    RedisKey,
 }
 
 impl CatalogExpectedLevel {
@@ -3969,6 +3983,7 @@ impl CatalogExpectedLevel {
                     Self::RedisLogicalDatabase,
                     CatalogNodeKind::RedisLogicalDatabase
                 )
+                | (Self::RedisKey, CatalogNodeKind::RedisKey(_))
         )
     }
 }
@@ -3978,11 +3993,26 @@ fn bridge_catalog_node(node: &CatalogNode) -> BridgeCatalogNode {
         id_bytes: catalog_node_bytes(node.id()),
         parent_id_bytes: node.parent_id().map(catalog_node_bytes),
         depth: node.depth(),
-        name: node.name().to_owned(),
+        name: redis_catalog_display_name(node),
         kind: catalog_kind_label(node.kind()).to_owned(),
         children_state: catalog_children_label(node.children()).to_owned(),
         expandable: catalog_kind_is_expandable(node.kind()),
     }
+}
+
+fn redis_catalog_display_name(node: &CatalogNode) -> String {
+    if !matches!(node.kind(), CatalogNodeKind::RedisKey(_)) {
+        return node.name().to_owned();
+    }
+    node.name()
+        .strip_prefix("text:")
+        .map(str::to_owned)
+        .or_else(|| {
+            node.name()
+                .strip_prefix("hex:")
+                .map(|hex| format!("[binary] {hex}"))
+        })
+        .unwrap_or_else(|| node.name().to_owned())
 }
 
 const fn catalog_kind_is_expandable(kind: CatalogNodeKind) -> bool {
@@ -3991,6 +4021,7 @@ const fn catalog_kind_is_expandable(kind: CatalogNodeKind) -> bool {
         CatalogNodeKind::PostgreSqlDatabase
             | CatalogNodeKind::PostgreSqlSchema
             | CatalogNodeKind::ClickHouseDatabase
+            | CatalogNodeKind::RedisLogicalDatabase
     )
 }
 

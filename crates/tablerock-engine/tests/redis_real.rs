@@ -3155,6 +3155,31 @@ async fn lists_catalog_logical_databases() {
         subtree.exactness(),
         CatalogExactness::Exact | CatalogExactness::DefaultAssumed
     ));
+    let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+    let mut connection = client.get_multiplexed_async_connection().await.unwrap();
+    let _: () = redis::cmd("SET")
+        .arg(b"catalog-key")
+        .arg(b"value")
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("SET")
+        .arg(&[0xff_u8, 0x00][..])
+        .arg(b"binary")
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    let keys = session
+        .catalog(CatalogRequest::RedisKeys {
+            limits: PageLimits::new(64, 1, 256 * 1024, 8 * 1024),
+        })
+        .await
+        .unwrap();
+    assert!(keys.nodes().iter().any(|node| {
+        node.name() == "text:catalog-key"
+            && node.kind() == CatalogNodeKind::RedisKey(tablerock_core::RedisKeyKind::String)
+    }));
+    assert!(keys.nodes().iter().any(|node| node.name() == "hex:ff00"));
     let _ = REDIS_DEFAULT_LOGICAL_DATABASES;
 }
 

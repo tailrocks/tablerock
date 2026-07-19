@@ -62,8 +62,10 @@ Double-click a PostgreSQL or ClickHouse table-like catalog object to open a
 read-only preview tab. Leaving the preview or choosing Pin makes it durable for
 the current connection. The same object can open more than once with independent
 result/page state. Rust resolves the opaque catalog handle and renders bounded
-identifier-safe browse SQL; Swift never assembles object SQL. Redis object tabs
-remain unavailable until typed key-node catalog projection lands.
+identifier-safe browse SQL; Swift never assembles object SQL. The active Redis
+logical database expands through bounded SCAN/TYPE into typed key nodes;
+non-UTF-8 keys retain reversible hex identity. Redis key-value object tabs
+remain unavailable until their typed value-page contract lands.
 
 ## Multiple windows
 

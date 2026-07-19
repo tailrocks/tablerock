@@ -122,6 +122,11 @@ impl DriverSession for FixedPageSession {
                     "0",
                     CatalogChildrenState::Unrequested,
                 ),
+                CatalogRequest::RedisKeys { .. } => (
+                    CatalogNodeKind::RedisKey(tablerock_core::RedisKeyKind::String),
+                    "text:fixture-key",
+                    CatalogChildrenState::NotApplicable,
+                ),
             };
             Ok(CatalogSubtree::new(
                 engine,
@@ -400,6 +405,11 @@ fn typed_catalog_uses_opaque_parent_handles_for_all_engines() {
                 .unwrap();
             assert_eq!(children.len(), 1);
             assert_eq!(children[0].parent_id_bytes, Some(roots[0].id_bytes.clone()));
+            if engine == Engine::Redis {
+                assert_eq!(children[0].name, "fixture-key");
+                assert_eq!(children[0].kind, "redis_key_string");
+                assert!(!children[0].expandable);
+            }
         }
         let stale = vec![0xff; 16];
         assert!(matches!(

@@ -173,6 +173,9 @@ pub enum CatalogRequest {
     RedisLogicalDatabases {
         limits: PageLimits,
     },
+    RedisKeys {
+        limits: PageLimits,
+    },
 }
 
 impl CatalogRequest {
@@ -183,7 +186,7 @@ impl CatalogRequest {
             | Self::PostgreSqlSchemas { .. }
             | Self::PostgreSqlRelations { .. } => Engine::PostgreSql,
             Self::ClickHouseDatabases { .. } | Self::ClickHouseObjects { .. } => Engine::ClickHouse,
-            Self::RedisLogicalDatabases { .. } => Engine::Redis,
+            Self::RedisLogicalDatabases { .. } | Self::RedisKeys { .. } => Engine::Redis,
         }
     }
 
@@ -195,7 +198,8 @@ impl CatalogRequest {
             | Self::PostgreSqlRelations { limits, .. }
             | Self::ClickHouseDatabases { limits }
             | Self::ClickHouseObjects { limits, .. }
-            | Self::RedisLogicalDatabases { limits } => *limits,
+            | Self::RedisLogicalDatabases { limits }
+            | Self::RedisKeys { limits } => *limits,
         }
     }
 }
@@ -230,6 +234,9 @@ impl fmt::Debug for CatalogRequest {
                 .field("max_rows", &limits.max_rows()),
             Self::RedisLogicalDatabases { limits } => debug
                 .field("level", &"logical_databases")
+                .field("max_rows", &limits.max_rows()),
+            Self::RedisKeys { limits } => debug
+                .field("level", &"keys")
                 .field("max_rows", &limits.max_rows()),
         };
         debug.finish()

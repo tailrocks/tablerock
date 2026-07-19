@@ -409,6 +409,7 @@ How to read an evidence document:
 - 532 — [Native reviewed CSV import](delivery/532-native-reviewed-csv-import.md)
 - 533 — [Native PostgreSQL structure screen](delivery/533-native-postgresql-structure-screen.md)
 - 534 — [Native ClickHouse structure facts](delivery/534-native-clickhouse-structure-facts.md)
+- 535 — [Native Redis typed key catalog](delivery/535-native-redis-key-catalog.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

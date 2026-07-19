@@ -26,6 +26,33 @@ const MAX_REDIS_CREDENTIAL_BYTES: usize = 4_096;
 const MAX_REDIS_TLS_MATERIAL_BYTES: usize = 65_536;
 const MAX_REDIS_SUBSCRIPTION_MESSAGES: usize = 4_096;
 
+fn redis_key_label(key: &[u8]) -> String {
+    if let Ok(text) = std::str::from_utf8(key) {
+        if !text.chars().any(char::is_control) {
+            return format!("text:{text}");
+        }
+    }
+    let mut label = String::with_capacity(4 + key.len().saturating_mul(2));
+    label.push_str("hex:");
+    for byte in key {
+        use std::fmt::Write as _;
+        let _ = write!(label, "{byte:02x}");
+    }
+    label
+}
+
+const fn redis_key_kind_label(kind: tablerock_core::RedisKeyKind) -> &'static str {
+    match kind {
+        tablerock_core::RedisKeyKind::Unknown => "unknown",
+        tablerock_core::RedisKeyKind::String => "string",
+        tablerock_core::RedisKeyKind::Hash => "hash",
+        tablerock_core::RedisKeyKind::List => "list",
+        tablerock_core::RedisKeyKind::Set => "set",
+        tablerock_core::RedisKeyKind::SortedSet => "zset",
+        tablerock_core::RedisKeyKind::Stream => "stream",
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct RedisCredentials<'a> {
     username: Option<&'a str>,
@@ -173,15 +200,15 @@ impl fmt::Debug for RedisConnectionSecurity<'_> {
 }
 use tablerock_core::{
     AuthorizedMutationPlan, BoundedBytes, BoundedText, ByteLimit, CatalogChildrenState,
-    CatalogNodeKind, ColumnMetadata, Engine, EngineType, MutationChange, MutationId,
+    CatalogNodeKind, ColumnMetadata, Engine, EngineType, IdParts, MutationChange, MutationId,
     MutationTarget, OwnedValue, PageDelivery, PageFacts, PageIdentity, PageLimits,
-    PageValidationError, PageWarning, PageWarnings, RedisExpiration, RedisTimeToLive, ResultPage,
-    ReviewTokenId, RowTotal, Truncation,
+    PageValidationError, PageWarning, PageWarnings, RedisExpiration, RedisTimeToLive, ResultId,
+    ResultPage, ReviewTokenId, Revision, RowTotal, Truncation,
 };
 
 use crate::{
-    CatalogExactness, CatalogRequest, CatalogSubtree, REDIS_DEFAULT_LOGICAL_DATABASES,
-    ServerDescribe, catalog::catalog_name_list,
+    CatalogExactness, CatalogNodeSeed, CatalogRequest, CatalogSubtree,
+    REDIS_DEFAULT_LOGICAL_DATABASES, ServerDescribe, catalog::catalog_name_list,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1281,8 +1308,59 @@ impl RedisSession {
             CatalogRequest::RedisLogicalDatabases { limits } => {
                 self.catalog_logical_databases(limits.max_rows()).await
             }
+            CatalogRequest::RedisKeys { limits } => self.catalog_keys(limits).await,
             _ => Err(RedisError::Command),
         }
+    }
+
+    async fn catalog_keys(&self, limits: PageLimits) -> Result<CatalogSubtree, RedisError> {
+        let mut stream = self.scan_keys(limits, 8 * 1024, 128, 128, None)?;
+        let identity = PageIdentity::new(
+            ResultId::from_parts(IdParts::new(1, 9_401).expect("nonzero id parts"))
+                .expect("nonzero result id"),
+            Revision::INITIAL,
+            Engine::Redis,
+        );
+        let page = stream
+            .next_page(identity, 0)
+            .await?
+            .ok_or(RedisError::Protocol)?;
+        let complete = matches!(page.envelope().delivery(), PageDelivery::Final);
+        let mut nodes = Vec::with_capacity(page.envelope().row_count() as usize);
+        for row in 0..page.envelope().row_count() {
+            let cell = page.cell(row, 0).map_err(|_| RedisError::Protocol)?;
+            if !matches!(cell.truncation(), Truncation::Complete) {
+                return Err(RedisError::ScanResponseLimitExceeded);
+            }
+            let key = BoundedBytes::copy_from_slice(cell.bytes(), ByteLimit::new(8 * 1024))
+                .map_err(|_| RedisError::ScanResponseLimitExceeded)?;
+            let kind = self.key_type(&key).await?;
+            let label = redis_key_label(cell.bytes());
+            nodes.push(CatalogNodeSeed::new(
+                CatalogNodeKind::RedisKey(kind),
+                BoundedText::copy_from_str(&label, ByteLimit::new(32 * 1024))
+                    .map_err(|_| RedisError::ScanResponseLimitExceeded)?,
+                CatalogChildrenState::NotApplicable,
+                Some(
+                    EngineType::new(
+                        Engine::Redis,
+                        BoundedText::copy_from_str(redis_key_kind_label(kind), ByteLimit::new(16))
+                            .map_err(|_| RedisError::Protocol)?,
+                    )
+                    .map_err(|_| RedisError::Protocol)?,
+                ),
+            ));
+        }
+        Ok(CatalogSubtree::new(
+            Engine::Redis,
+            nodes,
+            complete,
+            if complete {
+                CatalogExactness::Exact
+            } else {
+                CatalogExactness::Truncated
+            },
+        ))
     }
 
     async fn catalog_logical_databases(&self, limit: u32) -> Result<CatalogSubtree, RedisError> {
