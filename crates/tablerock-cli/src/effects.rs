@@ -3308,7 +3308,7 @@ async fn load_relation_structure(
     let mut columns = vec!["-- columns --".into()];
     columns.extend(snapshot.columns.into_iter().map(|column| {
         let nullability = if column.nullable { "NULL" } else { "NOT NULL" };
-        column.default_expression.map_or_else(
+        let mut line = column.default_expression.map_or_else(
             || format!("{} {} {nullability}", column.name, column.data_type),
             |default| {
                 format!(
@@ -3316,7 +3316,18 @@ async fn load_relation_structure(
                     column.name, column.data_type
                 )
             },
-        )
+        );
+        if column.primary_key {
+            line.push_str(" PRIMARY KEY");
+        }
+        if column.sorting_key {
+            line.push_str(" SORTING KEY");
+        }
+        if let Some(comment) = column.comment {
+            line.push_str(" COMMENT ");
+            line.push_str(&comment);
+        }
+        line
     }));
     columns.push("-- indexes --".into());
     if snapshot.indexes.is_empty() {
@@ -3339,6 +3350,15 @@ async fn load_relation_structure(
                 constraint.kind, constraint.name, constraint.definition
             )
         }));
+    }
+    if !snapshot.facts.is_empty() {
+        columns.push("-- engine facts --".into());
+        columns.extend(
+            snapshot
+                .facts
+                .into_iter()
+                .map(|fact| format!("{}: {}", fact.name, fact.value)),
+        );
     }
 
     Message::Engine(tablerock_tui::EngineMsg::RelationStructure {

@@ -12,6 +12,35 @@ pub struct RelationColumn {
     pub data_type: String,
     pub nullable: bool,
     pub default_expression: Option<String>,
+    pub comment: Option<String>,
+    pub primary_key: bool,
+    pub sorting_key: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelationFact {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClickHouseColumnFacts {
+    pub name: String,
+    pub data_type: String,
+    pub default_kind: String,
+    pub default_expression: String,
+    pub comment: String,
+    pub primary_key: bool,
+    pub sorting_key: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClickHouseEngineFacts {
+    pub engine: String,
+    pub partition_key: String,
+    pub sorting_key: String,
+    pub primary_key: String,
+    pub create_query: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +65,7 @@ pub struct RelationStructureSnapshot {
     pub columns: Vec<RelationColumn>,
     pub indexes: Vec<RelationIndex>,
     pub constraints: Vec<RelationConstraint>,
+    pub facts: Vec<RelationFact>,
 }
 
 #[derive(Debug)]
@@ -74,6 +104,9 @@ pub async fn load_relation_structure(
     namespace: String,
     relation: String,
 ) -> Result<RelationStructureSnapshot, RelationStructureError> {
+    if session.engine() == Engine::ClickHouse {
+        return load_clickhouse_structure(session, namespace, relation).await;
+    }
     if session.engine() != Engine::PostgreSql {
         return Err(RelationStructureError::UnsupportedEngine);
     }
@@ -139,6 +172,9 @@ pub async fn load_relation_structure(
                 data_type: row[1].clone(),
                 nullable: row[2] == "true",
                 default_expression: (!row[3].is_empty()).then(|| row[3].clone()),
+                comment: None,
+                primary_key: false,
+                sorting_key: false,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -175,6 +211,68 @@ pub async fn load_relation_structure(
         columns,
         indexes,
         constraints,
+        facts: Vec::new(),
+    })
+}
+
+async fn load_clickhouse_structure(
+    session: Arc<dyn DriverSession>,
+    database: String,
+    table: String,
+) -> Result<RelationStructureSnapshot, RelationStructureError> {
+    let columns = session
+        .clickhouse_relation_columns(&database, &table)
+        .await
+        .map_err(RelationStructureError::Adapter)?;
+    if columns.is_empty() {
+        return Err(RelationStructureError::Empty);
+    }
+    let engine = session
+        .clickhouse_relation_engine(&database, &table)
+        .await
+        .map_err(RelationStructureError::Adapter)?
+        .ok_or(RelationStructureError::Empty)?;
+    Ok(RelationStructureSnapshot {
+        engine: Engine::ClickHouse,
+        namespace: database,
+        relation: table,
+        columns: columns
+            .into_iter()
+            .map(|column| RelationColumn {
+                nullable: column.data_type.starts_with("Nullable("),
+                default_expression: (!column.default_expression.is_empty())
+                    .then_some(column.default_expression),
+                comment: (!column.comment.is_empty()).then_some(column.comment),
+                name: column.name,
+                data_type: column.data_type,
+                primary_key: column.primary_key,
+                sorting_key: column.sorting_key,
+            })
+            .collect(),
+        indexes: Vec::new(),
+        constraints: Vec::new(),
+        facts: vec![
+            RelationFact {
+                name: "Engine".into(),
+                value: engine.engine,
+            },
+            RelationFact {
+                name: "Partition key".into(),
+                value: engine.partition_key,
+            },
+            RelationFact {
+                name: "Sorting key".into(),
+                value: engine.sorting_key,
+            },
+            RelationFact {
+                name: "Primary key".into(),
+                value: engine.primary_key,
+            },
+            RelationFact {
+                name: "Create query".into(),
+                value: engine.create_query,
+            },
+        ],
     })
 }
 

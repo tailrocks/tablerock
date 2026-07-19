@@ -43,6 +43,10 @@ pub fn compose_create_table_ddl(
             section = Section::Constraints;
             continue;
         }
+        if line.eq_ignore_ascii_case("-- engine facts --") {
+            section = Section::None;
+            continue;
+        }
         if line == "(none)" {
             continue;
         }

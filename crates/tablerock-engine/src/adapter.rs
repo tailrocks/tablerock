@@ -380,6 +380,36 @@ pub trait DriverSession: Send + Sync {
         })
     }
 
+    /// ClickHouse-only bounded system.columns facts using named parameters.
+    fn clickhouse_relation_columns<'a>(
+        &'a self,
+        database: &'a str,
+        table: &'a str,
+    ) -> DriverFuture<'a, Result<Vec<crate::ClickHouseColumnFacts>, AdapterError>> {
+        let _ = (database, table);
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
+    /// ClickHouse-only bounded system.tables engine facts using named parameters.
+    fn clickhouse_relation_engine<'a>(
+        &'a self,
+        database: &'a str,
+        table: &'a str,
+    ) -> DriverFuture<'a, Result<Option<crate::ClickHouseEngineFacts>, AdapterError>> {
+        let _ = (database, table);
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
     /// Redis-only: load a type-specific key view as display lines.
     ///
     /// `collection_skip` skips entries for hash/set/zset pages (0 = first page).
@@ -771,6 +801,43 @@ impl DriverSession for ClickHouseSession {
         Box::pin(async move {
             self.kill_mutation(database, table, mutation_id)
                 .await
+                .map_err(map_clickhouse)
+        })
+    }
+
+    fn clickhouse_relation_columns<'a>(
+        &'a self,
+        database: &'a str,
+        table: &'a str,
+    ) -> DriverFuture<'a, Result<Vec<crate::ClickHouseColumnFacts>, AdapterError>> {
+        Box::pin(async move {
+            self.relation_column_details(database, table)
+                .await
+                .map_err(map_clickhouse)
+        })
+    }
+
+    fn clickhouse_relation_engine<'a>(
+        &'a self,
+        database: &'a str,
+        table: &'a str,
+    ) -> DriverFuture<'a, Result<Option<crate::ClickHouseEngineFacts>, AdapterError>> {
+        Box::pin(async move {
+            self.relation_engine_facts(database, table)
+                .await
+                .map(|facts| {
+                    facts.map(
+                        |(engine, partition_key, sorting_key, primary_key, create_query)| {
+                            crate::ClickHouseEngineFacts {
+                                engine,
+                                partition_key,
+                                sorting_key,
+                                primary_key,
+                                create_query,
+                            }
+                        },
+                    )
+                })
                 .map_err(map_clickhouse)
         })
     }

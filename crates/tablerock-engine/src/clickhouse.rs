@@ -480,6 +480,44 @@ impl ClickHouseSession {
             .collect())
     }
 
+    pub async fn relation_column_details(
+        &self,
+        database: &str,
+        table: &str,
+    ) -> Result<Vec<crate::ClickHouseColumnFacts>, ClickHouseError> {
+        if database.is_empty() || table.is_empty() {
+            return Err(ClickHouseError::InvalidLimits);
+        }
+        let lines = self
+            .fetch_tsv_named(
+                "SELECT name, type, default_kind, default_expression, comment, \
+                 toString(is_in_primary_key), toString(is_in_sorting_key) \
+                 FROM system.columns \
+                 WHERE database = {db:String} AND table = {tbl:String} \
+                 ORDER BY position LIMIT 512",
+                &[("db", database), ("tbl", table)],
+            )
+            .await?;
+        lines
+            .into_iter()
+            .map(|line| {
+                let parts = line.splitn(7, '\t').collect::<Vec<_>>();
+                if parts.len() != 7 {
+                    return Err(ClickHouseError::Protocol);
+                }
+                Ok(crate::ClickHouseColumnFacts {
+                    name: parts[0].to_owned(),
+                    data_type: parts[1].to_owned(),
+                    default_kind: parts[2].to_owned(),
+                    default_expression: parts[3].to_owned(),
+                    comment: parts[4].to_owned(),
+                    primary_key: parts[5] == "1",
+                    sorting_key: parts[6] == "1",
+                })
+            })
+            .collect()
+    }
+
     pub async fn describe_server(&self) -> Result<ServerDescribe, ClickHouseError> {
         let started = std::time::Instant::now();
         let names = self.fetch_name_column("SELECT version()").await?;

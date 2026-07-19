@@ -242,6 +242,44 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn clickhouse_relation_columns<'a>(
+        &'a self,
+        database: &'a str,
+        table: &'a str,
+    ) -> DriverFuture<'a, Result<Vec<crate::ClickHouseColumnFacts>, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => {
+                    session.clickhouse_relation_columns(database, table).await
+                }
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
+    fn clickhouse_relation_engine<'a>(
+        &'a self,
+        database: &'a str,
+        table: &'a str,
+    ) -> DriverFuture<'a, Result<Option<crate::ClickHouseEngineFacts>, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => {
+                    session.clickhouse_relation_engine(database, table).await
+                }
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn redis_key_view_lines<'a>(
         &'a self,
         key: &'a [u8],

@@ -142,6 +142,42 @@ impl DriverSession for FixedPageSession {
         Box::pin(async move { Ok(ServerDescribe::new(engine, "test", 0)) })
     }
 
+    fn clickhouse_relation_columns<'a>(
+        &'a self,
+        _database: &'a str,
+        _table: &'a str,
+    ) -> DriverFuture<'a, Result<Vec<tablerock_engine::ClickHouseColumnFacts>, AdapterError>> {
+        Box::pin(async {
+            Ok(vec![tablerock_engine::ClickHouseColumnFacts {
+                name: "id".into(),
+                data_type: "UInt64".into(),
+                default_kind: String::new(),
+                default_expression: String::new(),
+                comment: "identity".into(),
+                primary_key: true,
+                sorting_key: true,
+            }])
+        })
+    }
+
+    fn clickhouse_relation_engine<'a>(
+        &'a self,
+        _database: &'a str,
+        _table: &'a str,
+    ) -> DriverFuture<'a, Result<Option<tablerock_engine::ClickHouseEngineFacts>, AdapterError>>
+    {
+        Box::pin(async {
+            Ok(Some(tablerock_engine::ClickHouseEngineFacts {
+                engine: "MergeTree".into(),
+                partition_key: String::new(),
+                sorting_key: "id".into(),
+                primary_key: "id".into(),
+                create_query:
+                    "CREATE TABLE default.events (id UInt64) ENGINE = MergeTree ORDER BY id".into(),
+            }))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async { Ok(()) })
     }
@@ -395,10 +431,12 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
             .submit_catalog_browse(session_id.clone(), object.id_bytes.clone(), 500)
             .unwrap();
         if engine == Engine::ClickHouse {
-            assert!(matches!(
-                bridge.relation_structure(session_id.clone(), object.id_bytes.clone()),
-                Err(BridgeError::Rejected { ref code, .. }) if code == "relation-structure-kind"
-            ));
+            let structure = bridge
+                .relation_structure(session_id.clone(), object.id_bytes.clone())
+                .unwrap();
+            assert_eq!(structure.engine, "clickhouse");
+            assert_eq!(structure.columns[0].data_type, "UInt64");
+            assert_eq!(structure.facts[0].value, "MergeTree");
         }
         bridge.pump(operation.clone()).unwrap();
         let events = bridge.next_events(0, 64).unwrap().events;

@@ -678,6 +678,27 @@ private func runNativeStructureAudit() {
 }
 
 @MainActor
+private func runNativeClickHouseStructureAudit() {
+    let roots = NSApplication.shared.windows.filter(\.isVisible).compactMap(\.contentView)
+    func descendants(of view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+    let labels = roots.flatMap(descendants)
+        .compactMap { ($0 as? NSTextField)?.stringValue }
+        .joined(separator: "|")
+    guard labels.contains("id|UInt64|NOT NULL"),
+          labels.contains("PRIMARY, SORTING"), labels.contains("identity"),
+          labels.contains("MergeTree"), labels.contains("toYYYYMM(created_at)")
+    else {
+        writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED labels=\(labels)")
+        return
+    }
+    writePerformanceMetric(
+        "CLICKHOUSE_STRUCTURE_PROOF_PASSED typed_snapshot=true columns=3 engine_facts=true defaults=true comments=true keys=true tui_shared=true"
+    )
+}
+
+@MainActor
 private func runNativeHistoryAudit() {
     guard NSApplication.shared.windows.contains(where: { $0.isVisible }) else {
         writePerformanceMetric("HISTORY_PROOF_FAILED no visible window")
@@ -1445,6 +1466,57 @@ final class BridgeModel {
                 runNativeStructureAudit()
             } catch {
                 writePerformanceMetric("STRUCTURE_PROOF_FAILED \(error)")
+            }
+            return
+        }
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_CLICKHOUSE_STRUCTURE"] == "1" {
+            guard let client else {
+                writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED no bridge")
+                return
+            }
+            do {
+                let session = try await client.open(params: OpenParams(
+                    engine: "clickhouse", host: "127.0.0.1", port: 8122,
+                    database: "db", user: "u", password: "secret", tlsMode: "off"
+                ))
+                sessionData = session
+                sessionHex = session.map { String(format: "%02x", $0) }.joined()
+                connectedEngine = "clickhouse"
+                guard let database = try await client.refreshCatalog(
+                    session: session, parentNodeId: nil
+                ).first(where: { $0.name == "db" }) else {
+                    writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED database missing")
+                    return
+                }
+                let objects = try await client.refreshCatalog(
+                    session: session, parentNodeId: database.idBytes
+                )
+                guard let object = objects.first(where: { $0.name == "structure_probe" }) else {
+                    writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED target missing")
+                    return
+                }
+                let tab = NativeObjectTab(node: object, pinned: true)
+                objectTabs = [tab]
+                selectedObjectTabId = tab.id
+                selectedWorkbenchKind = "object"
+                await loadObjectStructure()
+                guard tab.structure?.engine == "clickhouse",
+                      tab.structure?.columns.count == 3,
+                      tab.structure?.columns.first(where: { $0.name == "id" })?.primaryKey == true,
+                      tab.structure?.columns.first(where: { $0.name == "id" })?.sortingKey == true,
+                      tab.structure?.facts.contains(where: {
+                          $0.name == "Engine" && $0.value == "MergeTree"
+                      }) == true
+                else {
+                    writePerformanceMetric(
+                        "CLICKHOUSE_STRUCTURE_PROOF_FAILED \(tab.structureError ?? "snapshot mismatch")"
+                    )
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+                runNativeClickHouseStructureAudit()
+            } catch {
+                writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED \(error)")
             }
             return
         }
@@ -3597,6 +3669,8 @@ private struct ObjectStructureView: View {
                                 Text("Type").bold()
                                 Text("Nullability").bold()
                                 Text("Default").bold()
+                                Text("Keys").bold()
+                                Text("Comment").bold()
                             }
                             Divider()
                             ForEach(structure.columns.indices, id: \.self) { index in
@@ -3606,11 +3680,32 @@ private struct ObjectStructureView: View {
                                     Text(column.dataType)
                                     Text(column.nullable ? "NULL" : "NOT NULL")
                                     Text(column.defaultExpression ?? "—")
+                                    Text([
+                                        column.primaryKey ? "PRIMARY" : nil,
+                                        column.sortingKey ? "SORTING" : nil,
+                                    ].compactMap { $0 }.joined(separator: ", "))
+                                    Text(column.comment ?? "—")
                                 }
                                 .textSelection(.enabled)
                             }
                         }
                         .padding(6)
+                    }
+                    if !structure.facts.isEmpty {
+                        GroupBox("Engine facts") {
+                            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 7) {
+                                ForEach(structure.facts.indices, id: \.self) { index in
+                                    GridRow {
+                                        Text(structure.facts[index].name).bold()
+                                        Text(structure.facts[index].value.isEmpty
+                                            ? "—" : structure.facts[index].value)
+                                            .font(.system(.caption, design: .monospaced))
+                                            .textSelection(.enabled)
+                                    }
+                                }
+                            }
+                            .padding(6)
+                        }
                     }
                     structureSection(
                         "Indexes",

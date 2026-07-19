@@ -53,8 +53,8 @@ pub use redis::{
     RedisTlsMode, RedisTtlApplication, RedisTtlMutationOutcome,
 };
 pub use relation_structure::{
-    RelationColumn, RelationConstraint, RelationIndex, RelationStructureError,
-    RelationStructureSnapshot, load_relation_structure,
+    ClickHouseColumnFacts, ClickHouseEngineFacts, RelationColumn, RelationConstraint, RelationFact,
+    RelationIndex, RelationStructureError, RelationStructureSnapshot, load_relation_structure,
 };
 pub use runtime::{
     DriverOperationEvent, DriverOperationEvents, DriverRuntime, DriverRuntimeError,

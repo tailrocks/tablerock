@@ -272,6 +272,15 @@ pub struct BridgeRelationColumn {
     pub data_type: String,
     pub nullable: bool,
     pub default_expression: Option<String>,
+    pub comment: Option<String>,
+    pub primary_key: bool,
+    pub sorting_key: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRelationFact {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -296,6 +305,7 @@ pub struct BridgeRelationStructure {
     pub columns: Vec<BridgeRelationColumn>,
     pub indexes: Vec<BridgeRelationIndex>,
     pub constraints: Vec<BridgeRelationConstraint>,
+    pub facts: Vec<BridgeRelationFact>,
 }
 
 #[derive(Clone)]
@@ -2638,12 +2648,15 @@ impl TableRockBridge {
                         "catalog node is stale or unknown",
                     )
                 })?;
-            let supported = registered.engine == Engine::PostgreSql
-                && matches!(node.kind(), CatalogNodeKind::PostgreSqlObject(_));
+            let supported = matches!(
+                (registered.engine, node.kind()),
+                (Engine::PostgreSql, CatalogNodeKind::PostgreSqlObject(_))
+                    | (Engine::ClickHouse, CatalogNodeKind::ClickHouseObject(_))
+            );
             if !supported {
                 return Err(BridgeError::rejected(
                     "relation-structure-kind",
-                    "structure snapshot currently requires a PostgreSQL object",
+                    "structure snapshot requires a PostgreSQL or ClickHouse object",
                 ));
             }
             let parent = node
@@ -2661,7 +2674,12 @@ impl TableRockBridge {
             .block_on(load_structure_snapshot(driver, namespace, relation))?
             .map_err(|error| BridgeError::rejected("relation-structure", error.to_string()))?;
         Ok(BridgeRelationStructure {
-            engine: "postgresql".into(),
+            engine: match snapshot.engine {
+                Engine::PostgreSql => "postgresql",
+                Engine::ClickHouse => "clickhouse",
+                Engine::Redis => "redis",
+            }
+            .into(),
             namespace: snapshot.namespace,
             relation: snapshot.relation,
             columns: snapshot
@@ -2672,6 +2690,9 @@ impl TableRockBridge {
                     data_type: column.data_type,
                     nullable: column.nullable,
                     default_expression: column.default_expression,
+                    comment: column.comment,
+                    primary_key: column.primary_key,
+                    sorting_key: column.sorting_key,
                 })
                 .collect(),
             indexes: snapshot
@@ -2690,6 +2711,14 @@ impl TableRockBridge {
                     kind: constraint.kind,
                     name: constraint.name,
                     definition: constraint.definition,
+                })
+                .collect(),
+            facts: snapshot
+                .facts
+                .into_iter()
+                .map(|fact| BridgeRelationFact {
+                    name: fact.name,
+                    value: fact.value,
                 })
                 .collect(),
         })

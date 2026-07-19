@@ -96,8 +96,9 @@ Rust owns file limits, parsing, catalog target identity, typed mutation plans,
 review expiry, and authorization. PostgreSQL is live-proven; broader types,
 ClickHouse live apply, JSON, large-file streaming, and progress/cancel remain.
 
-PostgreSQL object tabs provide a native Data/Structure switch. Structure uses
-the same bounded typed Rust snapshot as the TUI and shows columns, types,
-nullability, defaults, indexes, and constraints with loading, empty, and error
-states kept independently per object tab. ClickHouse structure facts remain an
-explicit unavailable state pending its engine-specific snapshot.
+PostgreSQL and ClickHouse object tabs provide a native Data/Structure switch.
+Structure uses the same bounded typed Rust snapshot as the TUI. PostgreSQL
+shows columns, defaults, indexes, and constraints. ClickHouse shows columns,
+defaults, comments, primary/sorting membership, engine, partition/sorting/
+primary expressions, and create-query metadata. Loading, empty, and error
+states remain independent per object tab.
