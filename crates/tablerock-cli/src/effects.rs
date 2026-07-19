@@ -3360,6 +3360,8 @@ async fn load_relation_structure(
                 .map(|fact| format!("{}: {}", fact.name, fact.value)),
         );
     }
+    columns.push("-- ddl --".into());
+    columns.extend(snapshot.ddl.lines().map(str::to_owned));
 
     Message::Engine(tablerock_tui::EngineMsg::RelationStructure {
         request_token,

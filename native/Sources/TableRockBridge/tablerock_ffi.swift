@@ -3005,10 +3005,11 @@ public struct BridgeRelationStructure: Equatable, Hashable {
     public var indexes: [BridgeRelationIndex]
     public var constraints: [BridgeRelationConstraint]
     public var facts: [BridgeRelationFact]
+    public var ddl: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(engine: String, namespace: String, relation: String, columns: [BridgeRelationColumn], indexes: [BridgeRelationIndex], constraints: [BridgeRelationConstraint], facts: [BridgeRelationFact]) {
+    public init(engine: String, namespace: String, relation: String, columns: [BridgeRelationColumn], indexes: [BridgeRelationIndex], constraints: [BridgeRelationConstraint], facts: [BridgeRelationFact], ddl: String) {
         self.engine = engine
         self.namespace = namespace
         self.relation = relation
@@ -3016,6 +3017,7 @@ public struct BridgeRelationStructure: Equatable, Hashable {
         self.indexes = indexes
         self.constraints = constraints
         self.facts = facts
+        self.ddl = ddl
     }
 
 
@@ -3040,7 +3042,8 @@ public struct FfiConverterTypeBridgeRelationStructure: FfiConverterRustBuffer {
                 columns: FfiConverterSequenceTypeBridgeRelationColumn.read(from: &buf),
                 indexes: FfiConverterSequenceTypeBridgeRelationIndex.read(from: &buf),
                 constraints: FfiConverterSequenceTypeBridgeRelationConstraint.read(from: &buf),
-                facts: FfiConverterSequenceTypeBridgeRelationFact.read(from: &buf)
+                facts: FfiConverterSequenceTypeBridgeRelationFact.read(from: &buf),
+                ddl: FfiConverterString.read(from: &buf)
         )
     }
 
@@ -3052,6 +3055,7 @@ public struct FfiConverterTypeBridgeRelationStructure: FfiConverterRustBuffer {
         FfiConverterSequenceTypeBridgeRelationIndex.write(value.indexes, into: &buf)
         FfiConverterSequenceTypeBridgeRelationConstraint.write(value.constraints, into: &buf)
         FfiConverterSequenceTypeBridgeRelationFact.write(value.facts, into: &buf)
+        FfiConverterString.write(value.ddl, into: &buf)
     }
 }
 

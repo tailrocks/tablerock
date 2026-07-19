@@ -21,6 +21,10 @@ same typed snapshot.
 Existing per-object Data/Structure state renders ClickHouse columns plus a
 selectable Engine facts section. Empty defaults, comments, and engine
 expressions remain explicit. Primary and sorting membership are distinct.
+Rust owns bounded DDL: ClickHouse preserves its server create query;
+PostgreSQL composes quoted columns and constraints while excluding the primary
+index already created by its constraint. TUI and native Copy DDL consume this
+same snapshot field; presentation no longer reparses display rows.
 
 ## Evidence
 
@@ -34,8 +38,8 @@ expressions remain explicit. Primary and sorting membership are distinct.
 
 ## Remaining boundary
 
-Native copied DDL, richer PostgreSQL column metadata, durable object-tab
-restoration, and reviewed structure editing remain.
+Richer PostgreSQL column metadata, durable object-tab restoration, and
+reviewed structure editing remain.
 
 ## Provenance
 

@@ -306,6 +306,7 @@ pub struct BridgeRelationStructure {
     pub indexes: Vec<BridgeRelationIndex>,
     pub constraints: Vec<BridgeRelationConstraint>,
     pub facts: Vec<BridgeRelationFact>,
+    pub ddl: String,
 }
 
 #[derive(Clone)]
@@ -2721,6 +2722,7 @@ impl TableRockBridge {
                     value: fact.value,
                 })
                 .collect(),
+            ddl: snapshot.ddl,
         })
     }
 

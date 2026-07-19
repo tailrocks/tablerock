@@ -1115,21 +1115,6 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 return Update::unchanged();
             }
             let mut body = columns.join("\n");
-            // Presentation-side CREATE TABLE reconstruction for raw DDL dump.
-            let structure_for_ddl = body.clone();
-            match crate::model::structure_ddl::compose_create_table_ddl(
-                &schema,
-                &table,
-                &structure_for_ddl,
-            ) {
-                Ok(ddl) => {
-                    body.push_str("\n-- ddl --\n");
-                    body.push_str(&ddl);
-                }
-                Err(_) => {
-                    body.push_str("\n-- ddl --\n(unavailable)\n");
-                }
-            }
             body.push_str(
                 "\n--- quick actions ---\n\
                  AddCol / DropCol / AddIdx / DropIdx / AddCon / DropCon / CopyDdl\n\
@@ -8138,7 +8123,7 @@ fn show_structure(model: &mut Model) -> Update {
     }
 }
 
-/// Reconstruct CREATE TABLE from open structure inspector and copy via OSC 52.
+/// Copy Rust-owned CREATE TABLE DDL from open structure inspector via OSC 52.
 fn copy_structure_ddl(model: &mut Model) -> Update {
     use crate::model::structure_ddl::compose_create_table_ddl;
 
@@ -14557,6 +14542,8 @@ mod tests {
                 .into(),
             "-- constraints --".into(),
             "PRIMARY KEY users_pkey: PRIMARY KEY (id)".into(),
+            "-- ddl --".into(),
+            "CREATE TABLE \"public\".\"users\" (\"id\" integer NOT NULL);".into(),
         ];
         let out = update(
             &mut model,
@@ -14605,6 +14592,12 @@ id integer NOT NULL
 name text NULL
 -- constraints --
 PRIMARY KEY users_pkey: PRIMARY KEY (id)
+-- ddl --
+CREATE TABLE \"public\".\"users\" (
+  \"id\" integer NOT NULL,
+  \"name\" text,
+  CONSTRAINT \"users_pkey\" PRIMARY KEY (id)
+);
 "
             .into(),
             hex: String::new(),
@@ -14624,7 +14617,7 @@ PRIMARY KEY users_pkey: PRIMARY KEY (id)
         match out.effects().next() {
             Some(Effect::CopyToClipboard { text, .. }) => {
                 assert!(text.contains("CREATE TABLE \"public\".\"users\""));
-                assert!(text.contains("id integer NOT NULL"));
+                assert!(text.contains("\"id\" integer NOT NULL"));
                 assert!(text.contains("CONSTRAINT \"users_pkey\""));
             }
             other => panic!("expected CopyToClipboard, got {other:?}"),

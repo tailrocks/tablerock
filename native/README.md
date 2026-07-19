@@ -101,4 +101,5 @@ Structure uses the same bounded typed Rust snapshot as the TUI. PostgreSQL
 shows columns, defaults, indexes, and constraints. ClickHouse shows columns,
 defaults, comments, primary/sorting membership, engine, partition/sorting/
 primary expressions, and create-query metadata. Loading, empty, and error
-states remain independent per object tab.
+states remain independent per object tab. Copy DDL uses bounded Rust-owned SQL;
+Swift never reconstructs identifiers or constraints from visible labels.

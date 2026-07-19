@@ -66,6 +66,7 @@ pub struct RelationStructureSnapshot {
     pub indexes: Vec<RelationIndex>,
     pub constraints: Vec<RelationConstraint>,
     pub facts: Vec<RelationFact>,
+    pub ddl: String,
 }
 
 #[derive(Debug)]
@@ -204,6 +205,7 @@ pub async fn load_relation_structure(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let ddl = compose_postgres_ddl(&namespace, &relation, &columns, &indexes, &constraints)?;
     Ok(RelationStructureSnapshot {
         engine: Engine::PostgreSql,
         namespace,
@@ -212,6 +214,7 @@ pub async fn load_relation_structure(
         indexes,
         constraints,
         facts: Vec::new(),
+        ddl,
     })
 }
 
@@ -232,6 +235,10 @@ async fn load_clickhouse_structure(
         .await
         .map_err(RelationStructureError::Adapter)?
         .ok_or(RelationStructureError::Empty)?;
+    if engine.create_query.len() > 256 * 1024 {
+        return Err(RelationStructureError::ShapeMismatch);
+    }
+    let ddl = engine.create_query.clone();
     Ok(RelationStructureSnapshot {
         engine: Engine::ClickHouse,
         namespace: database,
@@ -273,7 +280,57 @@ async fn load_clickhouse_structure(
                 value: engine.create_query,
             },
         ],
+        ddl,
     })
+}
+
+fn quote_ident(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+fn compose_postgres_ddl(
+    namespace: &str,
+    relation: &str,
+    columns: &[RelationColumn],
+    indexes: &[RelationIndex],
+    constraints: &[RelationConstraint],
+) -> Result<String, RelationStructureError> {
+    let mut definitions = columns
+        .iter()
+        .map(|column| {
+            let mut definition = format!("{} {}", quote_ident(&column.name), column.data_type);
+            if !column.nullable {
+                definition.push_str(" NOT NULL");
+            }
+            if let Some(default) = &column.default_expression {
+                definition.push_str(" DEFAULT ");
+                definition.push_str(default);
+            }
+            definition
+        })
+        .collect::<Vec<_>>();
+    definitions.extend(constraints.iter().map(|constraint| {
+        format!(
+            "CONSTRAINT {} {}",
+            quote_ident(&constraint.name),
+            constraint.definition
+        )
+    }));
+    let mut ddl = format!(
+        "CREATE TABLE {}.{} (\n  {}\n);",
+        quote_ident(namespace),
+        quote_ident(relation),
+        definitions.join(",\n  ")
+    );
+    for index in indexes.iter().filter(|index| index.kind != "PRIMARY") {
+        ddl.push_str("\n\n");
+        ddl.push_str(index.definition.trim_end_matches(';'));
+        ddl.push(';');
+    }
+    if ddl.len() > 256 * 1024 {
+        return Err(RelationStructureError::ShapeMismatch);
+    }
+    Ok(ddl)
 }
 
 async fn run_postgres_query(

@@ -666,8 +666,10 @@ private func runNativeStructureAudit() {
     let labels = roots.flatMap(descendants)
         .compactMap { ($0 as? NSTextField)?.stringValue }
         .joined(separator: "|")
+    let copied = NSPasteboard.general.string(forType: .string) ?? ""
     guard labels.contains("id|bigint|NOT NULL"), labels.contains("name|text|NULL"),
-          labels.contains("structure_probe_pkey")
+          labels.contains("structure_probe_pkey"),
+          copied.contains(#"CREATE TABLE "public"."structure_probe""#)
     else {
         writePerformanceMetric("STRUCTURE_PROOF_FAILED labels=\(labels)")
         return
@@ -686,9 +688,11 @@ private func runNativeClickHouseStructureAudit() {
     let labels = roots.flatMap(descendants)
         .compactMap { ($0 as? NSTextField)?.stringValue }
         .joined(separator: "|")
+    let copied = NSPasteboard.general.string(forType: .string) ?? ""
     guard labels.contains("id|UInt64|NOT NULL"),
           labels.contains("PRIMARY, SORTING"), labels.contains("identity"),
-          labels.contains("MergeTree"), labels.contains("toYYYYMM(created_at)")
+          labels.contains("MergeTree"), labels.contains("toYYYYMM(created_at)"),
+          copied.contains("CREATE TABLE db.structure_probe")
     else {
         writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED labels=\(labels)")
         return
@@ -1462,6 +1466,7 @@ final class BridgeModel {
                     )
                     return
                 }
+                copyStructureDdl(tab.structure!.ddl)
                 try? await Task.sleep(for: .milliseconds(500))
                 runNativeStructureAudit()
             } catch {
@@ -1513,6 +1518,7 @@ final class BridgeModel {
                     )
                     return
                 }
+                copyStructureDdl(tab.structure!.ddl)
                 try? await Task.sleep(for: .milliseconds(500))
                 runNativeClickHouseStructureAudit()
             } catch {
@@ -3659,9 +3665,17 @@ private struct ObjectStructureView: View {
         } else if let structure = tab.structure {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("\(structure.namespace).\(structure.relation)")
-                        .font(.title3.bold())
-                        .textSelection(.enabled)
+                    HStack {
+                        Text("\(structure.namespace).\(structure.relation)")
+                            .font(.title3.bold())
+                            .textSelection(.enabled)
+                        Spacer()
+                        Button("Copy DDL", systemImage: "doc.on.doc") {
+                            copyStructureDdl(structure.ddl)
+                        }
+                        .disabled(structure.ddl.isEmpty)
+                        .accessibilityHint("Copies database-generated structure SQL")
+                    }
                     GroupBox("Columns") {
                         Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
                             GridRow {
@@ -3749,6 +3763,12 @@ private struct ObjectStructureView: View {
             }
         }
     }
+}
+
+@MainActor
+private func copyStructureDdl(_ ddl: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(ddl, forType: .string)
 }
 
 private struct CsvImportSheet: View {
