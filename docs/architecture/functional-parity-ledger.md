@@ -129,7 +129,7 @@ architecture decisions.
 | Structure editing | Later | Capability-gated reviewed DDL; PostgreSQL first, ClickHouse-specific forms, no Redis fiction | Destructive-operation and rollback/outcome tests |
 | Table operations | Parity | Refresh, rename where valid, truncate/drop, maintenance/optimize, and copied DDL behind typed safety gates | Truncate/drop (232); rename (340); VACUUM/ANALYZE (341); CopyStructureDdl CREATE TABLE (evidence 342) |
 | Import | Parity | Streaming CSV/JSON and reviewed SQL where meaningful; mapping, transaction/outcome policy, progress, cancel | Malformed input, formula, encoding, and partial-failure fixtures |
-| Export | Parity | Streaming CSV/JSON plus engine-appropriate SQL; atomic destination and cancellation cleanup | Constant-memory and partial-file tests |
+| Export | Parity | Streaming CSV/JSON plus engine-appropriate SQL; atomic destination and cancellation cleanup | Shared atomic writer now serves TUI and native; native save panel exports bounded resident CSV/TSV/JSON/Markdown and identity-gated SQL INSERT with live cleanup proof (evidence 530). Constant-memory full-result native export, progress, and cancellation remain |
 | Backup/restore | Later | PostgreSQL tool integration with version checks, progress, cancel, and secret-safe process invocation | Real `pg_dump`/`pg_restore` matrix |
 | ER relationships | Later | PostgreSQL relationship graph; terminal tree/list first, native diagram later | Cycles, large graph, and missing-FK tests |
 | Server dashboard | Parity | Current bounded health/activity snapshots, cancel/kill only through explicit capability and confirmation | Activity snapshot (232); cancel/terminate + permission-denied (evidence 327) |

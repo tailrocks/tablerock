@@ -1,4 +1,4 @@
-//! Atomic file write/export helpers for TableRock CLI effects.
+//! Atomic file write/export effects shared by TableRock presentation adapters.
 //!
 //! Policy: write to a same-directory temp file, fsync, then rename into place.
 //! On cancel/failure the temp (and any incomplete destination) is removed.
@@ -9,7 +9,10 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
+
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Errors from path validation or atomic write.
 #[derive(Debug)]
@@ -89,15 +92,25 @@ impl AtomicFileWriter {
                 fs::create_dir_all(parent)?;
             }
         }
-        let temp = temp_path_for(&dest);
-        // Exclusive create — fail if leftover temp exists from a crash.
-        let file = match OpenOptions::new().write(true).create_new(true).open(&temp) {
-            Ok(f) => f,
-            Err(e) => {
-                let _ = fs::remove_file(&temp);
-                return Err(FileEffectError::Io(e));
-            }
-        };
+        // Exclusive unique create. A collision belongs to another live writer or
+        // a crashed process and must never be removed by this writer.
+        let (temp, file) = (0..64)
+            .find_map(|_| {
+                let nonce = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+                let temp = temp_path_for(&dest, nonce);
+                match OpenOptions::new().write(true).create_new(true).open(&temp) {
+                    Ok(file) => Some(Ok((temp, file))),
+                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => None,
+                    Err(error) => Some(Err(FileEffectError::Io(error))),
+                }
+            })
+            .transpose()?
+            .ok_or_else(|| {
+                FileEffectError::Io(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "could not reserve a unique export temp file",
+                ))
+            })?;
         Ok(Self {
             dest,
             temp,
@@ -156,12 +169,12 @@ impl Drop for AtomicFileWriter {
     }
 }
 
-fn temp_path_for(dest: &Path) -> PathBuf {
+fn temp_path_for(dest: &Path, nonce: u64) -> PathBuf {
     let name = dest
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("export");
-    let temp_name = format!(".{name}.tablerock-tmp-{}", std::process::id());
+    let temp_name = format!(".{name}.tablerock-tmp-{}-{nonce}", std::process::id());
     match dest.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent.join(temp_name),
         _ => PathBuf::from(temp_name),
@@ -248,6 +261,44 @@ mod tests {
             .collect();
         assert!(temps.is_empty());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn concurrent_writers_never_share_or_delete_temp_files() {
+        let dir = scratch_dir();
+        let dest = dir.join("same.csv");
+        let mut first = AtomicFileWriter::create(dest.clone()).unwrap();
+        first.write_all(b"first").unwrap();
+        let mut second = AtomicFileWriter::create(dest.clone()).unwrap();
+        second.write_all(b"second").unwrap();
+        let temps = dir
+            .read_dir()
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("tablerock-tmp")
+            })
+            .count();
+        assert_eq!(temps, 2);
+
+        first.abort();
+        assert_eq!(second.finish().unwrap(), 6);
+        assert_eq!(fs::read(&dest).unwrap(), b"second");
+        assert_eq!(
+            dir.read_dir()
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("tablerock-tmp"))
+                .count(),
+            0
+        );
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

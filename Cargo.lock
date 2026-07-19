@@ -4496,6 +4496,7 @@ dependencies = [
  "ratatui-crossterm",
  "tablerock-core",
  "tablerock-engine",
+ "tablerock-files",
  "tablerock-persistence",
  "tablerock-tui",
  "termrock",
@@ -4542,11 +4543,16 @@ dependencies = [
  "serde_json",
  "tablerock-core",
  "tablerock-engine",
+ "tablerock-files",
  "tablerock-persistence",
  "testcontainers",
  "tokio",
  "uniffi",
 ]
+
+[[package]]
+name = "tablerock-files"
+version = "0.1.0"
 
 [[package]]
 name = "tablerock-persistence"

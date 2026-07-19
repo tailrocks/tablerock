@@ -415,6 +415,31 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
             )
             .unwrap();
         assert!(csv.contains("n") && csv.contains('7'), "{csv}");
+        let export_path = std::env::temp_dir().join(format!(
+            "tablerock-ffi-export-{}-{low}.csv",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&export_path);
+        let bytes = bridge
+            .export_loaded_result(
+                result_id.clone(),
+                0,
+                "csv".into(),
+                export_path.to_string_lossy().into_owned(),
+            )
+            .unwrap();
+        assert_eq!(bytes, csv.len() as u64);
+        assert_eq!(std::fs::read_to_string(&export_path).unwrap(), csv);
+        std::fs::remove_file(export_path).unwrap();
+        assert!(matches!(
+            bridge.export_loaded_result(
+                result_id.clone(),
+                0,
+                "csv".into(),
+                "relative.csv".into(),
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "export-path"
+        ));
         let json = bridge
             .format_result_copy(
                 result_id.clone(),

@@ -14,6 +14,7 @@ ratatui-core.workspace = true
 ratatui-crossterm.workspace = true
 tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
 tablerock-engine = { version = "=0.1.0", path = "../tablerock-engine" }
+tablerock-files = { version = "=0.1.0", path = "../tablerock-files" }
 tablerock-persistence = { version = "=0.1.0", path = "../tablerock-persistence" }
 tablerock-tui = { version = "=0.1.0", path = "../tablerock-tui" }
 termrock.workspace = true

@@ -83,3 +83,8 @@ shared Rust formatter. The native pasteboard receives plain text plus CSV, TSV,
 JSON, and Markdown representations. Object tabs also offer SQL INSERT when Rust
 has retained base-table identity. SQL UPDATE stays absent until stable key facts
 are proven; TableRock never emits an unsafe placeholder `WHERE` clause.
+
+Result grids also export all currently loaded rows through a native save panel
+as CSV, TSV, JSON, Markdown, or identity-gated SQL INSERT. Rust owns typed
+formatting and atomic replacement; Swift balances security-scoped file access.
+This is bounded resident export, not yet full-result streaming export.

@@ -681,6 +681,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func ensureRuntime() throws
 
     /**
+     * Atomically exports all resident rows through the shared typed formatter.
+     */
+    func exportLoadedResult(resultId: Data, revision: UInt64, format: String, path: String) throws  -> UInt64
+
+    /**
      * Fetches a resident page as version-1 encoded bytes.
      */
     func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) throws  -> Data
@@ -1052,6 +1057,22 @@ open func ensureRuntime()throws   {try rustCallWithError(FfiConverterTypeBridgeE
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
+}
+
+    /**
+     * Atomically exports all resident rows through the shared typed formatter.
+     */
+open func exportLoadedResult(resultId: Data, revision: UInt64, format: String, path: String)throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_export_loaded_result(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(resultId),
+        FfiConverterUInt64.lower(revision),
+        FfiConverterString.lower(format),
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
 }
 
     /**
@@ -3670,6 +3691,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_ensure_runtime() != 35672) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_export_loaded_result() != 24272) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_fetch_page() != 31970) {

@@ -31,6 +31,7 @@ use tablerock_engine::{
     RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
     RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError, resolve_for_connect,
 };
+use tablerock_files::write_atomic;
 use tablerock_persistence::{
     HistoryAppend, HistoryOutcomeClass, HistoryRetention, PersistenceActor, ProfileOrderUpdate,
     SavedQueryUpsert, SqlFileFacts, external_change_detected, read_sql_file, write_sql_file_atomic,
@@ -596,6 +597,35 @@ impl TableRockBridge {
     ) -> Result<String, BridgeError> {
         catch_entry(|| {
             self.format_result_copy_inner(result_id, revision, scope, row, column, format)
+        })
+    }
+
+    /// Atomically exports all resident rows through the shared typed formatter.
+    pub fn export_loaded_result(
+        &self,
+        result_id: Vec<u8>,
+        revision: u64,
+        format: String,
+        path: String,
+    ) -> Result<u64, BridgeError> {
+        catch_entry(|| {
+            if !Path::new(&path).is_absolute() {
+                return Err(BridgeError::rejected(
+                    "export-path",
+                    "native export path must be absolute",
+                ));
+            }
+            let payload = self.format_result_copy_inner(
+                result_id,
+                revision,
+                "loaded".into(),
+                None,
+                None,
+                format,
+            )?;
+            write_atomic(Path::new(&path), payload.as_bytes()).map_err(|error| {
+                BridgeError::rejected("export-file", format!("atomic export failed: {error}"))
+            })
         })
     }
 

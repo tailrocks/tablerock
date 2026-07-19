@@ -14,6 +14,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 [dependencies]
 tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
 tablerock-engine = { version = "=0.1.0", path = "../tablerock-engine" }
+tablerock-files = { version = "=0.1.0", path = "../tablerock-files" }
 tablerock-persistence = { version = "=0.1.0", path = "../tablerock-persistence" }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 uniffi = { version = "=0.32.0", default-features = false }

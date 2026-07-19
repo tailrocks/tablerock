@@ -4439,7 +4439,7 @@ async fn import_csv_apply(
 }
 
 async fn export_result(request_token: RequestToken, path: String, body: String) -> Message {
-    use crate::file_effects::{AtomicFileWriter, validate_export_path};
+    use tablerock_files::{AtomicFileWriter, validate_export_path};
 
     let dest = match validate_export_path(&path) {
         Ok(p) => p,

@@ -10,6 +10,8 @@ APP="$REPO_ROOT/native/dist/TableRock.app"
 EXECUTABLE="$APP/Contents/MacOS/TableRock"
 CONTAINER="tablerock-native-copy-pg"
 APP_PID=""
+EXPORT_DIR=""
+EXPORT_PATH=""
 
 cleanup() {
   if [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
@@ -17,6 +19,8 @@ cleanup() {
     wait "$APP_PID" 2>/dev/null || true
   fi
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  if [[ -n "$EXPORT_PATH" ]]; then rm -f "$EXPORT_PATH"; fi
+  if [[ -n "$EXPORT_DIR" ]]; then rmdir "$EXPORT_DIR" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
 
@@ -34,12 +38,18 @@ rg -q 'format_copy_table\(&table, format\)' "$TUI" || {
 rg -q 'pub fn format_result_copy' "$FFI" || {
   echo "error: FFI result-copy handle missing" >&2; exit 1;
 }
+rg -q 'pub fn export_loaded_result' "$FFI" || {
+  echo "error: FFI atomic result export missing" >&2; exit 1;
+}
 for pattern in \
   'NSPasteboardItem\(\)' \
   'forType: \.tabularText' \
   'forType: \.init\("public.json"\)' \
   'forType: \.init\("net.daringfireball.markdown"\)' \
   'Button\("SQL INSERT"\)' \
+  'ResultExportMenu\(\)' \
+  'startAccessingSecurityScopedResource\(\)' \
+  'selectedWorkbenchKind == "object"' \
   'if !model.queryWorkbenchSelected'
 do
   rg -q "$pattern" "$SOURCE" || { echo "error: missing native copy contract: $pattern" >&2; exit 1; }
@@ -63,7 +73,10 @@ pgrep -f "^$EXECUTABLE$" >/dev/null && {
 }
 "$REPO_ROOT/scripts/build-native-app.sh" >/dev/null
 audit_log="$(mktemp "$REPO_ROOT/target/native-result-copy.XXXXXX")"
+EXPORT_DIR="$(mktemp -d "$REPO_ROOT/target/native-result-export.XXXXXX")"
+EXPORT_PATH="$EXPORT_DIR/result.json"
 open -n -F --env TABLEROCK_FIXTURE_RESULT_COPY=1 \
+  --env TABLEROCK_FIXTURE_RESULT_EXPORT_PATH="$EXPORT_PATH" \
   --stdout "$audit_log" --stderr "$audit_log" "$APP"
 for _ in $(seq 1 50); do
   APP_PID="$(pgrep -n -f "^$EXECUTABLE$" || true)"
@@ -79,5 +92,14 @@ if ! rg -q '^RESULT_COPY_PROOF_PASSED ' "$audit_log"; then
   echo "error: native result-copy runtime proof failed" >&2
   exit 1
 fi
+if [[ ! -f "$EXPORT_PATH" ]] || ! rg -q '"id":7' "$EXPORT_PATH"; then
+  cat "$audit_log" >&2
+  echo "error: native result export file missing or invalid" >&2
+  exit 1
+fi
+if find "$EXPORT_DIR" -name '*.tablerock-tmp-*' -print -quit | rg -q .; then
+  echo "error: atomic export left a temporary file" >&2
+  exit 1
+fi
 
-echo "shared Rust formatter and native multi-representation copy gate passed"
+echo "shared Rust formatter, native copy, and atomic loaded export gate passed"

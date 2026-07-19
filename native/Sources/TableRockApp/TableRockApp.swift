@@ -348,6 +348,14 @@ private actor BridgeClient {
         )
     }
 
+    func exportLoadedResult(
+        resultId: Data, revision: UInt64, format: String, path: String
+    ) throws -> UInt64 {
+        try bridge.exportLoadedResult(
+            resultId: resultId, revision: revision, format: format, path: path
+        )
+    }
+
     func stageAndApply(session: Data, now: UInt64) throws -> ApplyOutcome {
         let token = try bridge.stageProbeReview(sessionId: session, nowMs: now)
         return try bridge.applyReviewToken(
@@ -1157,12 +1165,30 @@ final class BridgeModel {
     }
     // Pagination state for the current result (fetch_page).
     var resultIdData: Data? {
-        get { activeQueryTab.resultIdData }
-        set { activeQueryTab.resultIdData = newValue }
+        get {
+            selectedWorkbenchKind == "object"
+                ? activeObjectTab?.resultIdData : activeQueryTab.resultIdData
+        }
+        set {
+            if selectedWorkbenchKind == "object" {
+                activeObjectTab?.resultIdData = newValue
+            } else {
+                activeQueryTab.resultIdData = newValue
+            }
+        }
     }
     var resultRevision: UInt64 {
-        get { activeQueryTab.resultRevision }
-        set { activeQueryTab.resultRevision = newValue }
+        get {
+            selectedWorkbenchKind == "object"
+                ? activeObjectTab?.resultRevision ?? 0 : activeQueryTab.resultRevision
+        }
+        set {
+            if selectedWorkbenchKind == "object" {
+                activeObjectTab?.resultRevision = newValue
+            } else {
+                activeQueryTab.resultRevision = newValue
+            }
+        }
     }
     var nextStartRow: UInt64? {
         get { activeQueryTab.nextStartRow }
@@ -1308,6 +1334,20 @@ final class BridgeModel {
                 guard copyError == nil else {
                     writePerformanceMetric("RESULT_COPY_PROOF_FAILED \(copyError ?? "unknown")")
                     return
+                }
+                if let exportPath = ProcessInfo.processInfo.environment[
+                    "TABLEROCK_FIXTURE_RESULT_EXPORT_PATH"
+                ] {
+                    let bytes = try await client.exportLoadedResult(
+                        resultId: activeQueryTab.resultIdData ?? Data(),
+                        revision: activeQueryTab.resultRevision,
+                        format: "json", path: exportPath
+                    )
+                    let exported = try String(contentsOfFile: exportPath, encoding: .utf8)
+                    guard bytes == exported.utf8.count, exported.contains(#""id":7"#) else {
+                        writePerformanceMetric("RESULT_EXPORT_PROOF_FAILED payload mismatch")
+                        return
+                    }
                 }
                 runNativeResultCopyAudit()
             } catch {
@@ -1878,6 +1918,32 @@ final class BridgeModel {
             }
             copyOutcome = "Copied \(scope) as \(preferredFormat.uppercased()) with CSV, TSV, JSON, and Markdown representations"
         } catch { copyError = "Copy failed: \(error)" }
+    }
+
+    func exportLoadedResult(format: String) async {
+        guard let client, let resultId = resultIdData else {
+            copyError = "No resident result to export"
+            return
+        }
+        let fileExtension = format == "sql_insert" ? "sql" : format
+        let panel = NSSavePanel()
+        panel.title = "Export Loaded Result"
+        panel.prompt = "Export"
+        panel.nameFieldStringValue = "result.\(fileExtension)"
+        panel.allowedContentTypes = [UTType(filenameExtension: fileExtension) ?? .plainText]
+        guard panel.runModal() == .OK, let selected = panel.url else { return }
+        let url = selected.pathExtension.lowercased() == fileExtension
+            ? selected : selected.appendingPathExtension(fileExtension)
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        copyOutcome = nil
+        copyError = nil
+        do {
+            let bytes = try await client.exportLoadedResult(
+                resultId: resultId, revision: resultRevision, format: format, path: url.path
+            )
+            copyOutcome = "Exported \(bytes) bytes to \(url.lastPathComponent)"
+        } catch { copyError = "Export failed: \(error)" }
     }
 
     private func restoreSessionIntent(profileId: Data) async {
@@ -3182,6 +3248,7 @@ private struct ResultGridWithInspector: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 ResultCopyMenu()
+                ResultExportMenu()
                 if let outcome = model.copyOutcome {
                     Text(outcome).font(.caption).foregroundStyle(.secondary)
                 }
@@ -3204,6 +3271,30 @@ private struct ResultGridWithInspector: View {
                 }
             }
         }
+    }
+}
+
+private struct ResultExportMenu: View {
+    @Environment(BridgeModel.self) private var model
+
+    var body: some View {
+        Menu {
+            exportButton("CSV", format: "csv")
+            exportButton("TSV", format: "tsv")
+            exportButton("JSON", format: "json")
+            exportButton("Markdown", format: "markdown")
+            if model.sqlInsertCopyAvailable {
+                exportButton("SQL INSERT", format: "sql_insert")
+            }
+        } label: {
+            Label("Export Loaded", systemImage: "square.and.arrow.down")
+        }
+        .disabled(model.resultIdData == nil)
+        .accessibilityHint("Atomically export all rows currently resident in this result")
+    }
+
+    private func exportButton(_ label: String, format: String) -> some View {
+        Button(label) { Task { await model.exportLoadedResult(format: format) } }
     }
 }
 
