@@ -24,6 +24,7 @@ public enum PageV1DecodeError: Error, Equatable {
     case columnLimitExceeded(actual: UInt32, limit: UInt32)
     case arenaLimitExceeded(actual: UInt64, limit: UInt64)
     case columnTextLimitExceeded(actual: UInt64, limit: UInt64)
+    case invalidOffsets
 }
 
 public struct PageV1Limits: Sendable {
@@ -303,6 +304,10 @@ extension PageV1 {
         let cells = Int(rowCount) * Int(columnCount)
         var offsets: [UInt64] = []
         for _ in 0..<(cells + 1) { offsets.append(try u64()) }
+        guard offsets.first == 0,
+              offsets.last == UInt64(arenaByteLen),
+              zip(offsets, offsets.dropFirst()).allSatisfy({ $0.0 <= $0.1 })
+        else { throw PageV1DecodeError.invalidOffsets }
         let bitmap = try bytes((cells + 7) / 8)
         var kinds: [UInt8] = []
         for _ in 0..<cells { kinds.append(try u8()) }
@@ -328,8 +333,7 @@ extension PageV1 {
                 let isNull = (bitmap[i / 8] & (1 << (i % 8))) != 0
                 let start = Int(offsets[i])
                 let end = Int(offsets[i + 1])
-                let slice = (start <= end && end <= arena.count)
-                    ? arena.subdata(in: start..<end) : Data()
+                let slice = arena.subdata(in: start..<end)
                 let display: String
                 if isNull {
                     display = "∅"

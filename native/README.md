@@ -28,6 +28,10 @@ cd native
 DYLD_LIBRARY_PATH=../target/release swift test -c release
 ```
 
+The SwiftPM regression target links the real generated UniFFI bridge. It owns
+named lifecycle/redaction tests and hostile PageV1 decoder boundaries; app UI
+automation and live database semantics remain separate testing layers.
+
 ## XCFramework + notarization (operator)
 
 Requires **full Xcode.app** (not only CLT) and a **Developer ID Application**

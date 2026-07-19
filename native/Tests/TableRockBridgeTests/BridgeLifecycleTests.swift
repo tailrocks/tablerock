@@ -50,4 +50,44 @@ struct BridgeLifecycleTests {
             #expect(!String(describing: error).contains(secret))
         }
     }
+
+    @Test("malformed operation IDs are rejected before lookup")
+    func malformedOperationId() throws {
+        let bridge = TableRockBridge.create()
+        do {
+            _ = try bridge.cancel(operationId: Data(repeating: 0, count: 15))
+            Issue.record("malformed operation ID was accepted")
+        } catch let error as BridgeError {
+            guard case let .Rejected(code, _) = error else {
+                Issue.record("expected Rejected, got \(error)")
+                return
+            }
+            #expect(code == "bad-operation-id")
+        }
+    }
+
+    @Test("calls after runtime destruction return typed unavailable")
+    func callAfterRuntimeDestruction() throws {
+        let bridge = TableRockBridge.create()
+        try bridge.destroyRuntime()
+        do {
+            _ = try bridge.nextEvents(cursor: 0, maximum: 1)
+            Issue.record("call after runtime destruction succeeded")
+        } catch let error as BridgeError {
+            guard case .RuntimeUnavailable = error else {
+                Issue.record("expected RuntimeUnavailable, got \(error)")
+                return
+            }
+        }
+    }
+
+    @Test("repeated bridge create and destroy remains usable")
+    func repeatedCreateDestroy() throws {
+        for _ in 0..<64 {
+            let bridge = TableRockBridge.create()
+            try bridge.ensureRuntime()
+            _ = try bridge.nextEvents(cursor: 0, maximum: 1)
+            try bridge.destroyRuntime()
+        }
+    }
 }
