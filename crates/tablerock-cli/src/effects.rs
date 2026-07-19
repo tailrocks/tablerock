@@ -4947,10 +4947,8 @@ async fn execute_redis_pipeline(
     request_token: RequestToken,
     session_id_hex: String,
     context_revision: u64,
-    commands: Vec<(String, Vec<String>)>,
+    commands: Vec<tablerock_core::RedisPlannedCommand>,
 ) -> Message {
-    use tablerock_engine::RedisPipelineCommand;
-
     let session_id = match session_id_hex.parse::<SessionId>() {
         Ok(id) => id,
         Err(_) => {
@@ -4979,11 +4977,11 @@ async fn execute_redis_pipeline(
             reason: FailureProjection::Label("pipeline is Redis-only".into()),
         });
     }
-    let pipeline: Vec<RedisPipelineCommand> = commands
+    let pipeline: Vec<tablerock_engine::RedisPipelineCommand> = commands
         .into_iter()
-        .map(|(name, args)| RedisPipelineCommand {
-            name,
-            args: args.into_iter().map(|a| a.into_bytes()).collect(),
+        .map(|command| tablerock_engine::RedisPipelineCommand {
+            name: command.name,
+            args: command.args,
         })
         .collect();
     match session.redis_execute_pipeline(&pipeline).await {

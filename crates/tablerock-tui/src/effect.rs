@@ -400,8 +400,8 @@ pub enum Effect {
         request_token: RequestToken,
         session_id_hex: String,
         context_revision: u64,
-        /// Pre-tokenized commands: (name, args as UTF-8 strings).
-        commands: Vec<(String, Vec<String>)>,
+        /// Shared-engine planned commands; arguments remain exact UTF-8 bytes.
+        commands: Vec<tablerock_core::RedisPlannedCommand>,
     },
     /// Isolated BLPOP on a disposable connection (not the shared session multiplex).
     RedisBlockingPop {

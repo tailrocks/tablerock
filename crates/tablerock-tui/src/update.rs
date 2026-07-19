@@ -7687,60 +7687,22 @@ fn run_script_entire_buffer(model: &mut Model) -> Update {
 /// A **single** BLPOP/BRPOP with a key uses the disposable-connection path
 /// (engine `blocking_pop`). Mixed pipelines still deny blocking lines.
 fn run_redis_pipeline(model: &mut Model, session_id_hex: String) -> Update {
-    use crate::model::redis_command::{RedisCommandSafety, parse_command_line};
+    use crate::model::redis_command::{RedisCommandPlan, plan_command_text};
     let Some(ed) = model.workbench().active_editor() else {
         return Update::unchanged();
     };
     let text = ed.run_text().unwrap_or_else(|| ed.text().to_owned());
-    let mut commands: Vec<(String, Vec<String>)> = Vec::new();
-    let mut isolated_blocking: Option<(String, String)> = None;
-    for raw in text.lines() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let parsed = parse_command_line(line);
-        match parsed.safety {
-            RedisCommandSafety::Empty => continue,
-            RedisCommandSafety::BlockingDenied => {
-                // Isolated path only for lone BLPOP/BRPOP + first key.
-                if matches!(parsed.name.as_str(), "BLPOP" | "BRPOP")
-                    && !parsed.args.is_empty()
-                    && commands.is_empty()
-                    && isolated_blocking.is_none()
-                {
-                    isolated_blocking = Some((parsed.name, parsed.args[0].clone()));
-                    continue;
-                }
-                if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                    grid.mark_failed(format!(
-                        "blocking command denied on shared pipeline: {}",
-                        parsed.name
-                    ));
-                }
-                return Update::render();
-            }
-            RedisCommandSafety::ReadOnly | RedisCommandSafety::MayWrite => {
-                if isolated_blocking.is_some() {
-                    // Blocking + later non-blocking → deny (no mixed isolated).
-                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                        grid.mark_failed(
-                            "blocking BLPOP/BRPOP must be alone for isolated connection",
-                        );
-                    }
-                    return Update::render();
-                }
-                commands.push((parsed.name, parsed.args));
-            }
-        }
-    }
-    if let Some((_name, key)) = isolated_blocking {
-        if !commands.is_empty() {
+    let plan = match plan_command_text(&text) {
+        Ok(Some(plan)) => plan,
+        Ok(None) => return Update::unchanged(),
+        Err(error) => {
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                grid.mark_failed("blocking BLPOP/BRPOP must be alone for isolated connection");
+                grid.mark_failed(error.to_string());
             }
             return Update::render();
         }
+    };
+    if let RedisCommandPlan::BlockingPop { key, .. } = plan {
         let token = model.mint_request_token();
         let context_revision = model.workbench().context_revision;
         if let Some(grid) = model.workbench_mut().active_grid_mut() {
@@ -7757,19 +7719,13 @@ fn run_redis_pipeline(model: &mut Model, session_id_hex: String) -> Update {
                 request_token: token,
                 session_id_hex,
                 context_revision,
-                key,
+                key: String::from_utf8_lossy(&key).into_owned(),
             }),
         };
     }
-    if commands.is_empty() {
-        return Update::unchanged();
-    }
-    if commands.len() > 64 {
-        if let Some(grid) = model.workbench_mut().active_grid_mut() {
-            grid.mark_failed("redis pipeline exceeds 64 commands");
-        }
-        return Update::render();
-    }
+    let RedisCommandPlan::Pipeline(commands) = plan else {
+        unreachable!("blocking plan returned above")
+    };
     let token = model.mint_request_token();
     let context_revision = model.workbench().context_revision;
     if let Some(grid) = model.workbench_mut().active_grid_mut() {
@@ -9889,8 +9845,8 @@ mod tests {
         match out.effects().next() {
             Some(Effect::ExecuteRedisPipeline { commands, .. }) => {
                 assert_eq!(commands.len(), 2);
-                assert_eq!(commands[0].0, "SET");
-                assert_eq!(commands[1].0, "GET");
+                assert_eq!(commands[0].name, "SET");
+                assert_eq!(commands[1].name, "GET");
             }
             other => panic!("expected ExecuteRedisPipeline, got {other:?}"),
         }

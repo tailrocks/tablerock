@@ -16,6 +16,7 @@ mod profile;
 mod profile_aggregate;
 mod profile_list;
 mod reconnect;
+mod redis_command;
 mod result_store;
 mod revision;
 mod secret;
@@ -92,6 +93,13 @@ pub use profile_list::{
     ProfileSourceFacts,
 };
 pub use reconnect::{ReconnectDecision, reconnect_decision, reconnect_stops_for_redacted_label};
+pub use redis_command::{
+    RedisCommandLine, RedisCommandPlan, RedisCommandPlanError, RedisCommandSafety,
+    RedisPlannedCommand, classify_command as classify_redis_command,
+    complete_prefix as complete_redis_command_prefix,
+    parse_command_line as parse_redis_command_line, plan_command_text as plan_redis_command_text,
+    tokenize as tokenize_redis_command,
+};
 pub use result_store::{
     AdmissionOutcome, OpenResultOutcome, PageKey, ResultStore, ResultStoreError, ResultStoreLimits,
 };

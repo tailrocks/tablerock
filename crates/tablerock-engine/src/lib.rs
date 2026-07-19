@@ -82,5 +82,11 @@ pub use startup_run::{
     run_clickhouse_startup_actions, run_postgres_startup_actions, run_redis_one_authorized,
     run_redis_startup_actions, run_sql_one_ch_authorized, run_sql_one_pg_authorized,
 };
+pub use tablerock_core::{
+    RedisCommandLine, RedisCommandPlan, RedisCommandPlanError, RedisCommandSafety,
+    RedisPlannedCommand, classify_redis_command as classify_command, complete_redis_command_prefix,
+    parse_redis_command_line as parse_command_line, plan_redis_command_text,
+    tokenize_redis_command,
+};
 // SQL analysis is pure and lives in core; re-export for engine consumers.
 pub use tablerock_core::{SqlDialect, StatementSpan, statement_at, statements};
