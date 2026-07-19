@@ -10,7 +10,7 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-19): native connection workflows (evidence 512–518), history/retention (519–520), saved queries (521), SQL files (522), typed intent bridge (523), query tabs (524), read-only preview/pinned object tabs (525), multi-window restoration (526), environment/safety projection (527), typed value inspection (528), shared Rust/native multi-format copy (529), native atomic loaded-result export (530), shared bounded CSV import foundation (531), native reviewed CSV import (532), PostgreSQL/ClickHouse structure (533–534), bounded Redis key catalog projection (535), and native Redis key object views (536) landed; broader import types/engines, full streaming export, advanced object state, and remaining screens continue**
+- **IN PROGRESS (2026-07-19): native connection workflows (evidence 512–518), history/retention (519–520), saved queries (521), SQL files (522), typed intent bridge (523), query tabs (524), read-only preview/pinned object tabs (525), multi-window restoration (526), environment/safety projection (527), typed value inspection (528), shared Rust/native multi-format copy (529), native atomic loaded-result export (530), shared bounded CSV import foundation (531), native reviewed CSV import (532), PostgreSQL/ClickHouse structure (533–534), bounded Redis key catalog projection (535), native Redis key object views (536), and native Redis sampled overview (537) landed; broader import types/engines, full streaming export, advanced object state, and remaining screens continue**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

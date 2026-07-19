@@ -132,7 +132,7 @@ architecture decisions.
 | Export | Parity | Streaming CSV/JSON plus engine-appropriate SQL; atomic destination and cancellation cleanup | Shared atomic writer now serves TUI and native; native save panel exports bounded resident CSV/TSV/JSON/Markdown and identity-gated SQL INSERT with live cleanup proof (evidence 530). Constant-memory full-result native export, progress, and cancellation remain |
 | Backup/restore | Later | PostgreSQL tool integration with version checks, progress, cancel, and secret-safe process invocation | Real `pg_dump`/`pg_restore` matrix |
 | ER relationships | Later | PostgreSQL relationship graph; terminal tree/list first, native diagram later | Cycles, large graph, and missing-FK tests |
-| Server dashboard | Parity | Current bounded health/activity snapshots, cancel/kill only through explicit capability and confirmation | Activity snapshot (232); cancel/terminate + permission-denied (evidence 327) |
+| Server dashboard | Parity | Current bounded health/activity snapshots, cancel/kill only through explicit capability and confirmation | PostgreSQL activity snapshot (232); cancel/terminate + permission-denied (evidence 327); native Redis sample-timed bounded INFO overview with curated required facts and explicit unavailable values (evidence 537) |
 | Users and roles | Later | PostgreSQL-only role/privilege inspection before reviewed mutation support | Effective-privilege and self-lockout tests |
 
 ## Engine-specific parity

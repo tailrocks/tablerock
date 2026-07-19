@@ -316,6 +316,12 @@ pub struct BridgeRedisKeyView {
     pub next_skip: Option<u64>,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRedisOverview {
+    pub sampled_at_ms: u64,
+    pub lines: Vec<String>,
+}
+
 #[derive(Clone)]
 struct RegisteredSession {
     profile_id: tablerock_core::ProfileId,
@@ -685,6 +691,11 @@ impl TableRockBridge {
         collection_skip: u64,
     ) -> Result<BridgeRedisKeyView, BridgeError> {
         catch_entry(|| self.redis_key_view_inner(session_id, catalog_node_id, collection_skip))
+    }
+
+    /// Loads one bounded, sample-timed Redis INFO overview.
+    pub fn redis_overview(&self, session_id: Vec<u8>) -> Result<BridgeRedisOverview, BridgeError> {
+        catch_entry(|| self.redis_overview_inner(session_id))
     }
 
     /// Formats resident Rust-owned result pages for clipboard/export.
@@ -2814,6 +2825,43 @@ impl TableRockBridge {
             kind,
             lines,
             next_skip,
+        })
+    }
+
+    fn redis_overview_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+    ) -> Result<BridgeRedisOverview, BridgeError> {
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let driver = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            if registered.engine != Engine::Redis {
+                return Err(BridgeError::rejected(
+                    "redis-overview-engine",
+                    "Redis overview requires a Redis session",
+                ));
+            }
+            inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?
+        };
+        let (sampled_at_ms, lines) = self
+            .runtime
+            .block_on(driver.redis_info_lines())?
+            .map_err(|error| BridgeError::rejected("redis-overview", error.to_string()))?;
+        Ok(BridgeRedisOverview {
+            sampled_at_ms,
+            lines,
         })
     }
 

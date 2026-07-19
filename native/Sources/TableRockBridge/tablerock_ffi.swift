@@ -775,6 +775,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func redisKeyView(sessionId: Data, catalogNodeId: Data, collectionSkip: UInt64) throws  -> BridgeRedisKeyView
 
     /**
+     * Loads one bounded, sample-timed Redis INFO overview.
+     */
+    func redisOverview(sessionId: Data) throws  -> BridgeRedisOverview
+
+    /**
      * Load one typed catalog level. `parent_node_id` is an opaque id previously
      * returned by this method; Swift never chooses engine requests or names.
      */
@@ -1367,6 +1372,19 @@ open func redisKeyView(sessionId: Data, catalogNodeId: Data, collectionSkip: UIn
         FfiConverterData.lower(sessionId),
         FfiConverterData.lower(catalogNodeId),
         FfiConverterUInt64.lower(collectionSkip),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Loads one bounded, sample-timed Redis INFO overview.
+     */
+open func redisOverview(sessionId: Data)throws  -> BridgeRedisOverview  {
+    return try  FfiConverterTypeBridgeRedisOverview_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_redis_overview(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),uniffiCallStatus
     )
 })
 }
@@ -2828,6 +2846,60 @@ public func FfiConverterTypeBridgeRedisKeyView_lift(_ buf: RustBuffer) throws ->
 #endif
 public func FfiConverterTypeBridgeRedisKeyView_lower(_ value: BridgeRedisKeyView) -> RustBuffer {
     return FfiConverterTypeBridgeRedisKeyView.lower(value)
+}
+
+
+public struct BridgeRedisOverview: Equatable, Hashable {
+    public var sampledAtMs: UInt64
+    public var lines: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sampledAtMs: UInt64, lines: [String]) {
+        self.sampledAtMs = sampledAtMs
+        self.lines = lines
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRedisOverview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRedisOverview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRedisOverview {
+        return
+            try BridgeRedisOverview(
+                sampledAtMs: FfiConverterUInt64.read(from: &buf),
+                lines: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRedisOverview, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.sampledAtMs, into: &buf)
+        FfiConverterSequenceString.write(value.lines, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRedisOverview_lift(_ buf: RustBuffer) throws -> BridgeRedisOverview {
+    return try FfiConverterTypeBridgeRedisOverview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRedisOverview_lower(_ value: BridgeRedisOverview) -> RustBuffer {
+    return FfiConverterTypeBridgeRedisOverview.lower(value)
 }
 
 
@@ -4556,6 +4628,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_redis_key_view() != 57762) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_redis_overview() != 7755) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_refresh_catalog() != 24952) {

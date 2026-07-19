@@ -70,6 +70,12 @@ Sorted Set, and Stream views with TTL facts. Scanned Hash, Set, and Sorted Set
 views page explicitly. Key mutation and namespace/context workflows remain
 later parity work.
 
+Redis connections also expose a refreshable native Overview sheet. Rust owns
+the bounded INFO request and projects version/mode, uptime, memory, clients,
+operations, hit/miss, persistence, and per-database facts under one sample
+timestamp. Required absent fields render an explicit unavailable reason;
+Swift displays the snapshot without parsing INFO.
+
 ## Multiple windows
 
 Open additional workbench windows with the standard macOS New Window command.

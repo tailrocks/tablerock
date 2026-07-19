@@ -411,6 +411,7 @@ How to read an evidence document:
 - 534 — [Native ClickHouse structure facts](delivery/534-native-clickhouse-structure-facts.md)
 - 535 — [Native Redis typed key catalog](delivery/535-native-redis-key-catalog.md)
 - 536 — [Native Redis key object views](delivery/536-native-redis-key-object-views.md)
+- 537 — [Native Redis sampled overview](delivery/537-native-redis-sampled-overview.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

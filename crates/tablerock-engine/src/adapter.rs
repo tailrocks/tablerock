@@ -1056,11 +1056,7 @@ impl DriverSession for RedisSession {
     ) -> DriverFuture<'a, Result<(u64, Vec<String>), AdapterError>> {
         Box::pin(async move {
             let snap = self.server_info_snapshot().await.map_err(map_redis)?;
-            let lines: Vec<String> = snap
-                .fields
-                .into_iter()
-                .map(|(k, v)| format!("{k}: {v}"))
-                .collect();
+            let lines = redis_info_overview_lines(&snap.fields);
             Ok((snap.sampled_at_ms, lines))
         })
     }
@@ -1287,6 +1283,43 @@ fn map_redis(error: RedisError) -> AdapterError {
     AdapterError::new(Engine::Redis, class)
 }
 
+fn redis_info_overview_lines(fields: &[(String, String)]) -> Vec<String> {
+    const REQUIRED: [&str; 13] = [
+        "redis_version",
+        "redis_mode",
+        "uptime_in_seconds",
+        "used_memory",
+        "used_memory_peak",
+        "connected_clients",
+        "instantaneous_ops_per_sec",
+        "keyspace_hits",
+        "keyspace_misses",
+        "rdb_last_save_time",
+        "rdb_last_bgsave_status",
+        "aof_enabled",
+        "aof_last_write_status",
+    ];
+    let mut lines = Vec::with_capacity(REQUIRED.len() + 16);
+    for key in REQUIRED {
+        let value = fields
+            .iter()
+            .find_map(|(candidate, value)| (candidate == key).then_some(value.as_str()))
+            .unwrap_or("unavailable (INFO field absent)");
+        lines.push(format!("{key}: {value}"));
+    }
+    lines.extend(
+        fields
+            .iter()
+            .filter(|(key, _)| {
+                key.strip_prefix("db")
+                    .is_some_and(|suffix| suffix.chars().all(|c| c.is_ascii_digit()))
+            })
+            .take(16)
+            .map(|(key, value)| format!("{key}: {value}")),
+    );
+    lines
+}
+
 #[cfg(test)]
 mod redis_mapping_tests {
     use super::*;
@@ -1317,5 +1350,23 @@ mod redis_mapping_tests {
             map_redis(RedisError::LogicalDatabaseMismatch).class(),
             AdapterFailureClass::InvalidRequest
         );
+    }
+
+    #[test]
+    fn redis_info_overview_is_curated_bounded_and_explicit_when_absent() {
+        let mut fields = vec![("redis_version".into(), "8.0.6".into())];
+        for database in 0..20 {
+            fields.push((format!("db{database}"), format!("keys={database}")));
+        }
+        fields.push(("ignored_raw_fact".into(), "secret-noise".into()));
+
+        let lines = redis_info_overview_lines(&fields);
+
+        assert_eq!(lines.len(), 29);
+        assert_eq!(lines[0], "redis_version: 8.0.6");
+        assert_eq!(lines[1], "redis_mode: unavailable (INFO field absent)");
+        assert!(lines.iter().any(|line| line == "db15: keys=15"));
+        assert!(!lines.iter().any(|line| line.starts_with("db16:")));
+        assert!(!lines.iter().any(|line| line.contains("ignored_raw_fact")));
     }
 }

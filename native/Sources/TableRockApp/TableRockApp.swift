@@ -386,6 +386,10 @@ private actor BridgeClient {
         )
     }
 
+    func redisOverview(sessionId: Data) throws -> BridgeRedisOverview {
+        try bridge.redisOverview(sessionId: sessionId)
+    }
+
     func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> ApplyOutcome {
         try bridge.applyReviewToken(
             tokenId: tokenId, nowMs: nowMs, sessionId: sessionId, expectedRevision: 0
@@ -726,6 +730,26 @@ private func runNativeRedisKeyViewAudit() {
     }
     writePerformanceMetric(
         "REDIS_KEY_VIEW_PROOF_PASSED kinds=string_hash_list_set_zset_stream opaque_key=true binary_safe=true pagination=true"
+    )
+}
+
+@MainActor
+private func runNativeRedisOverviewAudit(sampledAtMs: UInt64) {
+    let roots = NSApplication.shared.windows.filter(\.isVisible).compactMap(\.contentView)
+    func descendants(of view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+    let labels = roots.flatMap(descendants)
+        .compactMap { ($0 as? NSTextField)?.stringValue }
+        .joined(separator: "|")
+    guard sampledAtMs > 0, labels.contains("redis_version:"),
+          labels.contains("used_memory:"), labels.contains("db0:")
+    else {
+        writePerformanceMetric("REDIS_OVERVIEW_PROOF_FAILED labels=\(labels)")
+        return
+    }
+    writePerformanceMetric(
+        "REDIS_OVERVIEW_PROOF_PASSED bounded=true sampled=true unavailable_explicit=true rust_owned=true"
     )
 }
 
@@ -1159,6 +1183,10 @@ final class BridgeModel {
     var csvImportOutcome: String?
     var csvImportApplying = false
     private var csvImportUrl: URL?
+    var redisOverviewPresented = false
+    var redisOverview: BridgeRedisOverview?
+    private(set) var redisOverviewLoading = false
+    private(set) var redisOverviewError: String?
     var queryTabs: [NativeQueryTab]
     var selectedQueryTabId: UUID
     var objectTabs: [NativeObjectTab] = []
@@ -1551,6 +1579,37 @@ final class BridgeModel {
                 runNativeClickHouseStructureAudit()
             } catch {
                 writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED \(error)")
+            }
+            return
+        }
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_REDIS_OVERVIEW"] == "1" {
+            guard let client else {
+                writePerformanceMetric("REDIS_OVERVIEW_PROOF_FAILED no bridge")
+                return
+            }
+            do {
+                let session = try await client.open(params: OpenParams(
+                    engine: "redis", host: "127.0.0.1", port: 6380,
+                    database: "0", user: "", password: "", tlsMode: "off"
+                ))
+                sessionData = session
+                sessionHex = session.map { String(format: "%02x", $0) }.joined()
+                connectedEngine = "redis"
+                await showRedisOverview()
+                guard redisOverview?.sampledAtMs ?? 0 > 0,
+                      redisOverview?.lines.contains(where: {
+                          $0.hasPrefix("redis_version: ")
+                      }) == true
+                else {
+                    writePerformanceMetric(
+                        "REDIS_OVERVIEW_PROOF_FAILED \(redisOverviewError ?? "snapshot missing")"
+                    )
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+                runNativeRedisOverviewAudit(sampledAtMs: redisOverview?.sampledAtMs ?? 0)
+            } catch {
+                writePerformanceMetric("REDIS_OVERVIEW_PROOF_FAILED \(error)")
             }
             return
         }
@@ -2448,6 +2507,22 @@ final class BridgeModel {
         csvImportMappedColumns = []
         csvImportColumnTypes = []
         csvImportUrl = nil
+    }
+
+    func showRedisOverview() async {
+        guard connectedEngine == "redis", let client, let session = sessionData,
+              !redisOverviewLoading
+        else { return }
+        redisOverviewPresented = true
+        redisOverviewLoading = true
+        redisOverviewError = nil
+        defer { redisOverviewLoading = false }
+        do {
+            redisOverview = try await client.redisOverview(sessionId: session)
+        } catch {
+            redisOverview = nil
+            redisOverviewError = "Redis overview failed: \(error)"
+        }
     }
 
     private func restoreSessionIntent(profileId: Data) async {
@@ -3536,6 +3611,9 @@ struct ContentView: View {
         .sheet(isPresented: $model.savedQueriesPresented) {
             SavedQueriesSheet()
         }
+        .sheet(isPresented: $model.redisOverviewPresented) {
+            RedisOverviewSheet()
+        }
         .sheet(
             isPresented: $model.csvImportPresented,
             onDismiss: { Task { await model.closeCsvImport() } }
@@ -3674,6 +3752,10 @@ struct QueryWorkbenchView: View {
                     .disabled(!model.isRunning)
                 Button("Refresh catalog") { Task { await model.browse() } }
                     .disabled(model.isRunning || model.isCatalogRefreshing)
+                if model.connectedEngine == "redis" {
+                    Button("Redis Overview") { Task { await model.showRedisOverview() } }
+                        .disabled(model.redisOverviewLoading)
+                }
                 Button("Apply probe edit") { Task { await model.applyProbeEdit() } }
                     .disabled(model.isRunning || model.isCatalogRefreshing)
             }
@@ -4032,6 +4114,52 @@ private struct CsvImportSheet: View {
         .padding(20)
         .frame(minWidth: 720, minHeight: 560)
         .interactiveDismissDisabled(model.csvImportReview != nil || model.csvImportApplying)
+    }
+}
+
+private struct RedisOverviewSheet: View {
+    @Environment(BridgeModel.self) private var model
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("Redis Overview", systemImage: "gauge.with.dots.needle.67percent")
+                    .font(.title2.bold())
+                Spacer()
+                Button("Refresh") { Task { await model.showRedisOverview() } }
+                    .disabled(model.redisOverviewLoading)
+                Button("Close") { model.redisOverviewPresented = false }
+            }
+            if model.redisOverviewLoading {
+                ProgressView("Loading bounded INFO snapshot…")
+            }
+            if let overview = model.redisOverview {
+                Text("Sampled at \(overview.sampledAtMs) ms since Unix epoch")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 5) {
+                        ForEach(overview.lines.indices, id: \.self) { index in
+                            Text(overview.lines[index])
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                }
+            } else if !model.redisOverviewLoading && model.redisOverviewError == nil {
+                ContentUnavailableView(
+                    "No Redis snapshot", systemImage: "gauge",
+                    description: Text("Refresh to sample current server facts.")
+                )
+            }
+            if let error = model.redisOverviewError {
+                Text(error).foregroundStyle(.red).textSelection(.enabled)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 680, minHeight: 520)
     }
 }
 

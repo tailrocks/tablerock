@@ -199,6 +199,17 @@ impl DriverSession for FixedPageSession {
         })
     }
 
+    fn redis_info_lines<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<(u64, Vec<String>), AdapterError>> {
+        Box::pin(async {
+            Ok((
+                1_726_000_000_000,
+                vec!["redis_version: 8.0.0".into(), "used_memory: 1024".into()],
+            ))
+        })
+    }
+
     fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
         Box::pin(async { Ok(()) })
     }
@@ -431,6 +442,9 @@ fn typed_catalog_uses_opaque_parent_handles_for_all_engines() {
                 assert_eq!(view.kind, "string");
                 assert_eq!(view.lines[1], "value: fixture-value");
                 assert_eq!(view.next_skip, None);
+                let overview = bridge.redis_overview(session_id.clone()).unwrap();
+                assert_eq!(overview.sampled_at_ms, 1_726_000_000_000);
+                assert_eq!(overview.lines[0], "redis_version: 8.0.0");
             }
         }
         let stale = vec![0xff; 16];
