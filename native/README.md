@@ -64,3 +64,11 @@ the current connection. The same object can open more than once with independent
 result/page state. Rust resolves the opaque catalog handle and renders bounded
 identifier-safe browse SQL; Swift never assembles object SQL. Redis object tabs
 remain unavailable until typed key-node catalog projection lands.
+
+## Multiple windows
+
+Open additional workbench windows with the standard macOS New Window command.
+All windows share one Rust bridge but own independent connection controls, tabs,
+results, and errors. macOS may group them with native window tabs. Each restored
+window UUID persists only editor intent and its associated profile; reconnect is
+explicit, and results, credentials, operations, and pending writes never restore.

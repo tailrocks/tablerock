@@ -652,6 +652,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
 
     func createProfileGroup(name: String) throws
 
+    func deleteNativeWindowIntent(windowId: String) throws
+
     /**
      * Revision-checked removal; active sessions remain alive.
      */
@@ -682,6 +684,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Fetches a resident page as version-1 encoded bytes.
      */
     func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) throws  -> Data
+
+    func getNativeWindowIntent(windowId: String) throws  -> BridgeNativeWindowIntent?
 
     /**
      * Loads one editable profile without resolving or returning credentials.
@@ -737,6 +741,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Pumps driver updates for `operation_id` until a terminal fact or no pending work.
      */
     func pump(operationId: Data) throws
+
+    func putNativeWindowIntent(windowId: String, profileId: Data, intent: BridgeSessionIntent) throws
 
     func putSessionIntent(profileId: Data, intent: BridgeSessionIntent) throws
 
@@ -957,6 +963,15 @@ open func createProfileGroup(name: String)throws   {try rustCallWithError(FfiCon
 }
 }
 
+open func deleteNativeWindowIntent(windowId: String)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_delete_native_window_intent(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(windowId),uniffiCallStatus
+    )
+}
+}
+
     /**
      * Revision-checked removal; active sessions remain alive.
      */
@@ -1044,6 +1059,16 @@ open func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64)throws  -
         FfiConverterData.lower(resultId),
         FfiConverterUInt64.lower(startRow),
         FfiConverterUInt64.lower(revision),uniffiCallStatus
+    )
+})
+}
+
+open func getNativeWindowIntent(windowId: String)throws  -> BridgeNativeWindowIntent?  {
+    return try  FfiConverterOptionTypeBridgeNativeWindowIntent.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_get_native_window_intent(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(windowId),uniffiCallStatus
     )
 })
 }
@@ -1203,6 +1228,17 @@ open func pump(operationId: Data)throws   {try rustCallWithError(FfiConverterTyp
     uniffi_tablerock_ffi_fn_method_tablerockbridge_pump(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+}
+}
+
+open func putNativeWindowIntent(windowId: String, profileId: Data, intent: BridgeSessionIntent)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_put_native_window_intent(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(windowId),
+        FfiConverterData.lower(profileId),
+        FfiConverterTypeBridgeSessionIntent_lower(intent),uniffiCallStatus
     )
 }
 }
@@ -1912,6 +1948,60 @@ public func FfiConverterTypeBridgeHistoryItem_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeBridgeHistoryItem_lower(_ value: BridgeHistoryItem) -> RustBuffer {
     return FfiConverterTypeBridgeHistoryItem.lower(value)
+}
+
+
+public struct BridgeNativeWindowIntent: Equatable, Hashable {
+    public var profileId: Data
+    public var intent: BridgeSessionIntent
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(profileId: Data, intent: BridgeSessionIntent) {
+        self.profileId = profileId
+        self.intent = intent
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeNativeWindowIntent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeNativeWindowIntent: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeNativeWindowIntent {
+        return
+            try BridgeNativeWindowIntent(
+                profileId: FfiConverterData.read(from: &buf),
+                intent: FfiConverterTypeBridgeSessionIntent.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeNativeWindowIntent, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.profileId, into: &buf)
+        FfiConverterTypeBridgeSessionIntent.write(value.intent, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeNativeWindowIntent_lift(_ buf: RustBuffer) throws -> BridgeNativeWindowIntent {
+    return try FfiConverterTypeBridgeNativeWindowIntent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeNativeWindowIntent_lower(_ value: BridgeNativeWindowIntent) -> RustBuffer {
+    return FfiConverterTypeBridgeNativeWindowIntent.lower(value)
 }
 
 
@@ -3255,6 +3345,30 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeBridgeNativeWindowIntent: FfiConverterRustBuffer {
+    typealias SwiftType = BridgeNativeWindowIntent?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeBridgeNativeWindowIntent.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeBridgeNativeWindowIntent.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeBridgeSessionIntent: FfiConverterRustBuffer {
     typealias SwiftType = BridgeSessionIntent?
 
@@ -3509,6 +3623,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_create_profile_group() != 43110) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_delete_native_window_intent() != 23067) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_delete_profile() != 49889) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3531,6 +3648,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_fetch_page() != 31970) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_get_native_window_intent() != 55742) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_get_profile_draft() != 6880) {
@@ -3570,6 +3690,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_pump() != 15232) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_put_native_window_intent() != 5240) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_put_session_intent() != 56914) {

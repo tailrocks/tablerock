@@ -400,6 +400,7 @@ How to read an evidence document:
 - 523 — [Plan 021 typed session-intent bridge](delivery/523-plan-021-session-intent-bridge.md)
 - 524 — [Plan 021 native query tabs](delivery/524-plan-021-native-query-tabs.md)
 - 525 — [Plan 021 native object tabs](delivery/525-plan-021-native-object-tabs.md)
+- 526 — [Plan 021 native multi-window ownership](delivery/526-plan-021-native-multi-window.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

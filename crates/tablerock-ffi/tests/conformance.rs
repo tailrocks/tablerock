@@ -855,6 +855,66 @@ fn open_profile_requires_persistence_and_loads_literals() {
             .unwrap(),
         None
     );
+    let window_one = "11111111-1111-4111-8111-111111111111";
+    let window_two = "22222222-2222-4222-8222-222222222222";
+    let first_intent = BridgeSessionIntent {
+        database: "postgres".into(),
+        schema: Some("public".into()),
+        selected_tab: 0,
+        tabs: vec![BridgeWorkspaceTab {
+            title: "First window".into(),
+            statement_text: "SELECT 1;".into(),
+        }],
+    };
+    let second_intent = BridgeSessionIntent {
+        database: "postgres".into(),
+        schema: Some("audit".into()),
+        selected_tab: 0,
+        tabs: vec![BridgeWorkspaceTab {
+            title: "Second window".into(),
+            statement_text: "SELECT 2;".into(),
+        }],
+    };
+    bridge
+        .put_native_window_intent(
+            window_one.into(),
+            profile_id.to_bytes().to_vec(),
+            first_intent.clone(),
+        )
+        .unwrap();
+    bridge
+        .put_native_window_intent(
+            window_two.into(),
+            profile_id.to_bytes().to_vec(),
+            second_intent.clone(),
+        )
+        .unwrap();
+    let restored_one = bridge
+        .get_native_window_intent(window_one.into())
+        .unwrap()
+        .unwrap();
+    let restored_two = bridge
+        .get_native_window_intent(window_two.into())
+        .unwrap()
+        .unwrap();
+    assert_eq!(restored_one.profile_id, profile_id.to_bytes());
+    assert_eq!(restored_one.intent, first_intent);
+    assert_eq!(restored_two.intent, second_intent);
+    bridge
+        .delete_native_window_intent(window_one.into())
+        .unwrap();
+    assert!(
+        bridge
+            .get_native_window_intent(window_one.into())
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        bridge
+            .get_native_window_intent(window_two.into())
+            .unwrap()
+            .is_some()
+    );
     bridge.disconnect(reconnect_source).unwrap();
     assert_eq!(
         bridge

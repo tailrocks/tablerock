@@ -2,6 +2,7 @@
 
 mod column_layout_store;
 mod history_store;
+mod native_window_intent_store;
 mod profile_store;
 mod recovery;
 mod saved_filter_store;
@@ -26,6 +27,7 @@ pub use column_layout_store::{ColumnLayoutKey, ColumnLayoutRecord};
 pub use history_store::{
     DEFAULT_HISTORY_LIMIT, HistoryAppend, HistoryEntry, HistoryOutcomeClass, HistoryRetention,
 };
+pub use native_window_intent_store::NativeWindowIntentRecord;
 use profile_store::EncodedProfile;
 pub use recovery::{
     BACKUP_FORMAT_VERSION, BackupManifest, MAX_BACKUP_BYTES, create_backup, read_backup_manifest,
@@ -81,6 +83,10 @@ const MIGRATIONS: &[(u32, &str)] = &[
         include_str!("../migrations/0015-profile-group-ordering.sql"),
     ),
     (16, include_str!("../migrations/0016-history-retention.sql")),
+    (
+        17,
+        include_str!("../migrations/0017-native-window-session-intent.sql"),
+    ),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -414,6 +420,47 @@ impl PersistenceActor {
             .map_err(map_receive_error)?
     }
 
+    pub fn put_native_window_intent(
+        &self,
+        window_id: String,
+        profile_id: ProfileId,
+        intent_json: String,
+    ) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::PutNativeWindowIntent(window_id, profile_id, intent_json, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn get_native_window_intent(
+        &self,
+        window_id: String,
+    ) -> Result<Option<NativeWindowIntentRecord>, PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::GetNativeWindowIntent(window_id, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
+    pub fn delete_native_window_intent(&self, window_id: String) -> Result<(), PersistenceError> {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        submit(
+            &self.sender,
+            Command::DeleteNativeWindowIntent(window_id, sender),
+        )?;
+        receiver
+            .recv_timeout(CALLER_TIMEOUT)
+            .map_err(map_receive_error)?
+    }
+
     pub fn put_column_layout(
         &self,
         key: ColumnLayoutKey,
@@ -610,6 +657,17 @@ enum Command {
         mpsc::SyncSender<Result<Option<SessionIntentRecord>, PersistenceError>>,
     ),
     DeleteSessionIntent(ProfileId, mpsc::SyncSender<Result<(), PersistenceError>>),
+    PutNativeWindowIntent(
+        String,
+        ProfileId,
+        String,
+        mpsc::SyncSender<Result<(), PersistenceError>>,
+    ),
+    GetNativeWindowIntent(
+        String,
+        mpsc::SyncSender<Result<Option<NativeWindowIntentRecord>, PersistenceError>>,
+    ),
+    DeleteNativeWindowIntent(String, mpsc::SyncSender<Result<(), PersistenceError>>),
     PutColumnLayout(
         ColumnLayoutKey,
         String,
@@ -886,6 +944,44 @@ fn worker_main(
                     tokio::time::timeout(
                         OPERATION_TIMEOUT,
                         session_intent_store::delete(&connection, profile_id),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::PutNativeWindowIntent(window_id, profile_id, intent_json, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        native_window_intent_store::put(
+                            &connection,
+                            &window_id,
+                            profile_id,
+                            &intent_json,
+                        ),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::GetNativeWindowIntent(window_id, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        native_window_intent_store::get(&connection, &window_id),
+                    )
+                    .await
+                    .map_err(|_| PersistenceError::Timeout)?
+                });
+                let _ = reply.send(result);
+            }
+            Command::DeleteNativeWindowIntent(window_id, reply) => {
+                let result = runtime.block_on(async {
+                    tokio::time::timeout(
+                        OPERATION_TIMEOUT,
+                        native_window_intent_store::delete(&connection, &window_id),
                     )
                     .await
                     .map_err(|_| PersistenceError::Timeout)?

@@ -82,8 +82,8 @@ architecture decisions.
 | Responsive layout | Core | Wide split view, medium constrained view, narrow single-region navigation, explicit minimum-size screen | Render fixtures: Wide/Medium/Narrow/TooSmall breakpoints + wide/minimum state paint + Unicode (Cyrillic/CJK/Hangul/emoji) and 240-byte extreme labels at wide and narrow sizes (`crates/tablerock-tui/tests/shell.rs`) |
 | Quick switcher | Parity | Fuzzy switch across visible objects, profiles, tabs, and saved queries using stable IDs | Tab switch (evidence 291); tabs + profiles + queries breadth (evidence 299); ranking and stale-index tests |
 | Favorites and saved queries | Parity | Table/object favorites and named query files with explicit scope | Native named-query create/update, bounded engine/search projection, restore-without-execute, and confirmed delete use Rust persistence through UniFFI (evidence 521); table/object favorites, file-backed rename, and missing-target tests remain |
-| Session restoration | Core | Restore intent and text, never result payloads or pending writes by default | Rust typed intent-only persistence excludes result/pending-write fields (evidence 523); native per-profile selected tab/title/text restoration and volatile-state clearing (evidence 524); full process crash/relaunch window restoration remains |
-| Multi-window | Native | Independent native windows over shared Rust sessions with explicit ownership | macOS restoration and multi-window UI tests |
+| Session restoration | Core | Restore intent and text, never result payloads or pending writes by default | Rust typed intent-only persistence excludes result/pending-write fields (evidence 523); native window-UUID/profile association restores selected tab/title/text after relaunch while excluding volatile state (evidence 526) |
+| Multi-window | Native | Independent native windows over shared Rust sessions with explicit ownership | Shared application bridge, per-window model/session controls, persistent UUID scenes, preferred native tabbing, and same-profile intent isolation (evidence 526) |
 
 ## SQL and command editor
 

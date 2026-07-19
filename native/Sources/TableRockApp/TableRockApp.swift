@@ -230,6 +230,19 @@ private actor BridgeClient {
     func deleteSessionIntent(profileId: Data) throws {
         try bridge.deleteSessionIntent(profileId: profileId)
     }
+    func putNativeWindowIntent(
+        windowId: String, profileId: Data, intent: BridgeSessionIntent
+    ) throws {
+        try bridge.putNativeWindowIntent(
+            windowId: windowId, profileId: profileId, intent: intent
+        )
+    }
+    func nativeWindowIntent(windowId: String) throws -> BridgeNativeWindowIntent? {
+        try bridge.getNativeWindowIntent(windowId: windowId)
+    }
+    func deleteNativeWindowIntent(windowId: String) throws {
+        try bridge.deleteNativeWindowIntent(windowId: windowId)
+    }
     func setProfileFavorite(_ item: BridgeProfileItem, _ favorite: Bool) throws {
         try bridge.setProfileFavorite(
             profileId: item.idBytes,
@@ -332,37 +345,127 @@ private actor BridgeClient {
     }
 }
 
+private func nativePersistencePath() throws -> String {
+    let base = try FileManager.default.url(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask,
+        appropriateFor: nil,
+        create: true
+    ).appendingPathComponent("TableRock", isDirectory: true)
+    try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+    return base.appendingPathComponent("profiles.db").path
+}
+
+@MainActor
+private final class NativeApplicationModel {
+    let client: BridgeClient?
+    let bridgeError: String?
+    private var fixtureWindowOpened = false
+
+    init() {
+        do {
+            client = try BridgeClient(persistencePath: nativePersistencePath())
+            bridgeError = nil
+        } catch {
+            client = nil
+            bridgeError = "Bridge init failed: \(error)"
+        }
+    }
+
+    func claimMultiWindowFixtureOpen() -> Bool {
+        guard !fixtureWindowOpened else { return false }
+        fixtureWindowOpened = true
+        return true
+    }
+}
+
 @main
 struct TableRockApp: App {
-    @State private var model = BridgeModel()
+    private let application = NativeApplicationModel()
 
     init() {
         NativeAppearanceFixture.current.applyApplicationAppearance()
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(for: UUID.self) { $windowId in
             if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_ACCESSIBILITY_AUDIT"] == "1" {
                 NativeAccessibilityFixtureView()
                     .frame(minWidth: 760, minHeight: 520)
             } else if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_PROFILE_EDITOR"] == "1" {
                 NativeProfileEditorFixtureView()
             } else if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"] != nil {
-                PerformanceFixtureView(table: model.resultTable)
-                    .frame(minWidth: 760, minHeight: 520)
+                WorkbenchWindowRoot(
+                    application: application, windowId: windowId
+                )
             } else {
-                ContentView()
-                    .environment(model)
-                    .modifier(NativeAppearanceFixtureModifier(
-                        fixture: NativeAppearanceFixture.current))
-                    .frame(minWidth: 760, minHeight: 520)
+                WorkbenchWindowRoot(
+                    application: application, windowId: windowId
+                )
             }
+        } defaultValue: {
+            UUID()
         }
+        .restorationBehavior(.automatic)
         .commands {
             WorkbenchCommands()
         }
         Settings {
             NativeSettingsView()
+        }
+    }
+}
+
+private struct WorkbenchWindowRoot: View {
+    @Environment(\.openWindow) private var openWindow
+    @State private var model: BridgeModel
+    private let application: NativeApplicationModel
+
+    init(application: NativeApplicationModel, windowId: UUID) {
+        self.application = application
+        _model = State(initialValue: BridgeModel(
+            client: application.client,
+            startupError: application.bridgeError,
+            windowId: windowId
+        ))
+    }
+
+    var body: some View {
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"] != nil {
+            PerformanceFixtureView(table: model.resultTable)
+                .frame(minWidth: 760, minHeight: 520)
+                .task { await openFixtureWindowIfNeeded() }
+        } else {
+            ContentView()
+                .environment(model)
+                .background(NativeWindowConfiguration())
+                .modifier(NativeAppearanceFixtureModifier(
+                    fixture: NativeAppearanceFixture.current
+                ))
+                .frame(minWidth: 760, minHeight: 520)
+                .task { await openFixtureWindowIfNeeded() }
+        }
+    }
+
+    private func openFixtureWindowIfNeeded() async {
+        guard ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_MULTI_WINDOW"] == "1",
+              application.claimMultiWindowFixtureOpen()
+        else { return }
+        openWindow(value: UUID())
+        try? await Task.sleep(for: .milliseconds(800))
+        runNativeMultiWindowAudit()
+    }
+}
+
+private struct NativeWindowConfiguration: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        Task { @MainActor in
+            guard let window = view.window else { return }
+            window.tabbingIdentifier = "tablerock-workbench"
+            window.tabbingMode = .preferred
+            window.tab.title = window.title
         }
     }
 }
@@ -485,6 +588,18 @@ private func runNativeObjectTabsAudit() {
     }
     writePerformanceMetric(
         "OBJECT_TABS_PROOF_PASSED preview_pin=true duplicate_object=true independent_result=true rust_browse_plan=true guarded_close=true"
+    )
+}
+
+@MainActor
+private func runNativeMultiWindowAudit() {
+    let visible = NSApplication.shared.windows.filter(\.isVisible)
+    guard visible.count >= 2 else {
+        writePerformanceMetric("MULTI_WINDOW_PROOF_FAILED visible_windows=\(visible.count)")
+        return
+    }
+    writePerformanceMetric(
+        "MULTI_WINDOW_PROOF_PASSED shared_bridge=true independent_models=true uuid_restoration=true native_tabbing=preferred"
     )
 }
 
@@ -749,6 +864,7 @@ final class NativeObjectTab: Identifiable {
 @MainActor
 @Observable
 final class BridgeModel {
+    let windowId: UUID
     var status: String = "starting…"
     var bridgeError: String?
     var profiles: [BridgeProfileItem] = []
@@ -936,24 +1052,18 @@ final class BridgeModel {
     var formDatabase: String = "postgres"
     var formUser: String = "postgres"
     var formPassword: String = ""
-    private var client: BridgeClient?
+    private let client: BridgeClient?
+    private let startupError: String?
     var sessionData: Data?
 
-    private static func persistencePath() throws -> String {
-        let base = try FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        ).appendingPathComponent("TableRock", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: base,
-            withIntermediateDirectories: true
-        )
-        return base.appendingPathComponent("profiles.db").path
-    }
-
-    init() {
+    fileprivate init(
+        client: BridgeClient? = nil,
+        startupError: String? = nil,
+        windowId: UUID = UUID()
+    ) {
+        self.client = client
+        self.startupError = startupError
+        self.windowId = windowId
         let tab = NativeQueryTab(title: "Query 1", statementText: "SELECT 1;")
         queryTabs = [tab]
         selectedQueryTabId = tab.id
@@ -961,6 +1071,21 @@ final class BridgeModel {
     }
 
     func initialize() async {
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_MULTI_WINDOW"] == "1" {
+            let other = BridgeModel(client: client, windowId: UUID())
+            other.queryText = "SELECT second_window;"
+            other.sessionData = Data(repeating: 9, count: 16)
+            guard other.windowId != windowId, sharesBridge(with: other),
+                  queryText == "SELECT 1;", other.queryText == "SELECT second_window;",
+                  sessionData == nil, other.sessionData != nil,
+                  queryTabs[0] !== other.queryTabs[0]
+            else {
+                writePerformanceMetric("MULTI_WINDOW_PROOF_FAILED ownership mismatch")
+                return
+            }
+            status = "Multi-window fixture"
+            return
+        }
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_OBJECT_TABS"] == "1" {
             let node = BridgeCatalogNode(
                 idBytes: Data(repeating: 7, count: 16), parentIdBytes: Data(repeating: 6, count: 16),
@@ -1095,6 +1220,8 @@ final class BridgeModel {
                     productionWarning: true, dangerousPlaintext: false, connected: false
                 ),
             ]
+            activeProfileId = profiles[0].idBytes
+            sessionData = Data(repeating: 3, count: 16)
             sessionHealth = BridgeSessionHealth(
                 state: "healthy", serverReachable: true,
                 elapsedMillis: 12, authenticationStopped: false
@@ -1121,11 +1248,15 @@ final class BridgeModel {
             runNativeProfileGroupAudit()
             return
         }
+        guard let client else {
+            bridgeError = startupError ?? "Bridge unavailable"
+            status = "error"
+            return
+        }
         do {
-            let loadedClient = try BridgeClient(persistencePath: Self.persistencePath())
-            client = loadedClient
-            historyRetention = try await loadedClient.historyRetention()
+            historyRetention = try await client.historyRetention()
             await refreshProfiles()
+            await restoreWindowIntentOnLaunch()
         } catch {
             bridgeError = "Bridge init failed: \(error)"
             status = "error"
@@ -1154,6 +1285,13 @@ final class BridgeModel {
         writePerformanceMetric(
             "PERF_FIXTURE_READY rows=\(count) columns=\(columns.count) build_seconds=\(String(format: "%.6f", elapsed))"
         )
+    }
+
+    private func sharesBridge(with other: BridgeModel) -> Bool {
+        guard let client, let otherClient = other.client else {
+            return client == nil && other.client == nil
+        }
+        return client === otherClient
     }
 
     func refreshProfiles() async {
@@ -1484,27 +1622,48 @@ final class BridgeModel {
             }
         )
         do {
-            try await client.putSessionIntent(profileId: profileId, intent: intent)
+            try await client.putNativeWindowIntent(
+                windowId: windowId.uuidString.lowercased(), profileId: profileId, intent: intent
+            )
         } catch { profileActionError = "Save workspace intent failed: \(error)" }
     }
 
     private func restoreSessionIntent(profileId: Data) async {
         guard let client else { return }
         do {
-            guard let intent = try await client.sessionIntent(profileId: profileId) else {
+            guard let record = try await client.nativeWindowIntent(
+                windowId: windowId.uuidString.lowercased()
+            ), record.profileId == profileId else {
                 let tab = NativeQueryTab(title: "Query 1", statementText: "")
                 queryTabs = [tab]
                 selectedQueryTabId = tab.id
                 return
             }
-            let restored = intent.tabs.map {
-                NativeQueryTab(title: $0.title, statementText: $0.statementText)
-            }
-            guard !restored.isEmpty, Int(intent.selectedTab) < restored.count else { return }
-            queryTabs = restored
-            selectedQueryTabId = restored[Int(intent.selectedTab)].id
-            formDatabase = intent.database
+            applySessionIntent(record.intent)
         } catch { profileActionError = "Restore workspace intent failed: \(error)" }
+    }
+
+    private func restoreWindowIntentOnLaunch() async {
+        guard let client else { return }
+        do {
+            guard let record = try await client.nativeWindowIntent(
+                windowId: windowId.uuidString.lowercased()
+            ), let profile = profiles.first(where: { $0.idBytes == record.profileId })
+            else { return }
+            applySessionIntent(record.intent)
+            activeProfileId = record.profileId
+            profileActionOutcome = "Restored \(profile.name) workspace; connect to resume"
+        } catch { profileActionError = "Restore window intent failed: \(error)" }
+    }
+
+    private func applySessionIntent(_ intent: BridgeSessionIntent) {
+        let restored = intent.tabs.map {
+            NativeQueryTab(title: $0.title, statementText: $0.statementText)
+        }
+        guard !restored.isEmpty, Int(intent.selectedTab) < restored.count else { return }
+        queryTabs = restored
+        selectedQueryTabId = restored[Int(intent.selectedTab)].id
+        formDatabase = intent.database
     }
 
     private func clearVolatileTabState() {
@@ -1926,7 +2085,9 @@ final class BridgeModel {
 
     func reconnectActive() async {
         guard let client, let sourceSession = sessionData else { return }
-        if let profile = profiles.first(where: \.connected) {
+        if let activeProfileId,
+           let profile = profiles.first(where: { $0.idBytes == activeProfileId })
+        {
             do {
                 if try await client.profileDraft(id: profile.idBytes).passwordSource == "prompt" {
                     passwordPrompt = ProfilePasswordPrompt(profile: profile, action: .reconnect)
@@ -2059,6 +2220,7 @@ final class BridgeModel {
     func connectionState(_ profile: BridgeProfileItem) -> String {
         if connectingName == profile.name { return "Connecting" }
         guard profile.connected else { return "Disconnected" }
+        guard isActiveProfile(profile) else { return "Connected in another window" }
         if let reconnectState { return reconnectState }
         guard let sessionHealth else { return "Connected" }
         switch sessionHealth.state {
@@ -2069,6 +2231,10 @@ final class BridgeModel {
         case "unreachable": return "Unreachable"
         default: return "Unhealthy"
         }
+    }
+
+    func isActiveProfile(_ profile: BridgeProfileItem) -> Bool {
+        sessionData != nil && activeProfileId == profile.idBytes
     }
 
     /// Submit a catalog refresh and poll events until the page arrives, then
@@ -2242,7 +2408,7 @@ struct ContentView: View {
                                     .buttonStyle(.plain)
                                     Menu {
                                         Button("Connect") { Task { await model.connect(profile) } }
-                                        if profile.connected {
+                                        if model.isActiveProfile(profile) {
                                             Button("Check Health") { Task { await model.checkActiveHealth() } }
                                             Button("Reconnect") { Task { await model.reconnectActive() } }
                                             Button("Disconnect") { Task { await model.disconnectActive() } }

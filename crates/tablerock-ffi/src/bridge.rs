@@ -213,6 +213,12 @@ pub struct BridgeSessionIntent {
     pub tabs: Vec<BridgeWorkspaceTab>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct BridgeNativeWindowIntent {
+    pub profile_id: Vec<u8>,
+    pub intent: BridgeSessionIntent,
+}
+
 /// One Rust-owned catalog node. Swift renders these facts and returns only opaque ids.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeCatalogNode {
@@ -484,6 +490,26 @@ impl TableRockBridge {
 
     pub fn delete_session_intent(&self, profile_id: Vec<u8>) -> Result<(), BridgeError> {
         catch_entry(|| self.delete_session_intent_inner(profile_id))
+    }
+
+    pub fn put_native_window_intent(
+        &self,
+        window_id: String,
+        profile_id: Vec<u8>,
+        intent: BridgeSessionIntent,
+    ) -> Result<(), BridgeError> {
+        catch_entry(|| self.put_native_window_intent_inner(window_id, profile_id, intent))
+    }
+
+    pub fn get_native_window_intent(
+        &self,
+        window_id: String,
+    ) -> Result<Option<BridgeNativeWindowIntent>, BridgeError> {
+        catch_entry(|| self.get_native_window_intent_inner(window_id))
+    }
+
+    pub fn delete_native_window_intent(&self, window_id: String) -> Result<(), BridgeError> {
+        catch_entry(|| self.delete_native_window_intent_inner(window_id))
     }
 
     pub fn create_profile_group(&self, name: String) -> Result<(), BridgeError> {
@@ -1693,16 +1719,7 @@ impl TableRockBridge {
     ) -> Result<(), BridgeError> {
         validate_session_intent(&intent)?;
         let profile_id = decode_profile_id(&profile_id)?;
-        let intent_json = serde_json::to_string(&serde_json::json!({
-            "database": intent.database,
-            "schema": intent.schema,
-            "selected_tab": intent.selected_tab,
-            "tabs": intent.tabs.into_iter().map(|tab| serde_json::json!({
-                "title": tab.title,
-                "sql": tab.statement_text,
-            })).collect::<Vec<_>>(),
-        }))
-        .map_err(|_| BridgeError::rejected("session-intent", "cannot encode session intent"))?;
+        let intent_json = encode_session_intent(intent)?;
         let guard = self
             .inner
             .lock()
@@ -1753,6 +1770,74 @@ impl TableRockBridge {
             .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
             .delete_session_intent(profile_id)
             .map_err(|error| BridgeError::rejected("session-intent-delete", error.to_string()))
+    }
+
+    fn put_native_window_intent_inner(
+        &self,
+        window_id: String,
+        profile_id: Vec<u8>,
+        intent: BridgeSessionIntent,
+    ) -> Result<(), BridgeError> {
+        validate_session_intent(&intent)?;
+        let profile_id = decode_profile_id(&profile_id)?;
+        let intent_json = encode_session_intent(intent)?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
+            .put_native_window_intent(window_id, profile_id, intent_json)
+            .map_err(|error| BridgeError::rejected("native-window-intent-save", error.to_string()))
+    }
+
+    fn get_native_window_intent_inner(
+        &self,
+        window_id: String,
+    ) -> Result<Option<BridgeNativeWindowIntent>, BridgeError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let record = guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
+            .get_native_window_intent(window_id)
+            .map_err(|error| {
+                BridgeError::rejected("native-window-intent-load", error.to_string())
+            })?;
+        record
+            .map(|record| {
+                Ok(BridgeNativeWindowIntent {
+                    profile_id: record.profile_id.to_bytes().to_vec(),
+                    intent: decode_session_intent(&record.intent_json)?,
+                })
+            })
+            .transpose()
+    }
+
+    fn delete_native_window_intent_inner(&self, window_id: String) -> Result<(), BridgeError> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        guard
+            .as_ref()
+            .ok_or(BridgeError::RuntimeUnavailable)?
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
+            .delete_native_window_intent(window_id)
+            .map_err(|error| {
+                BridgeError::rejected("native-window-intent-delete", error.to_string())
+            })
     }
 
     fn create_profile_group_inner(&self, name: String) -> Result<(), BridgeError> {
@@ -3142,6 +3227,19 @@ fn validate_session_intent(intent: &BridgeSessionIntent) -> Result<(), BridgeErr
         ));
     }
     Ok(())
+}
+
+fn encode_session_intent(intent: BridgeSessionIntent) -> Result<String, BridgeError> {
+    serde_json::to_string(&serde_json::json!({
+        "database": intent.database,
+        "schema": intent.schema,
+        "selected_tab": intent.selected_tab,
+        "tabs": intent.tabs.into_iter().map(|tab| serde_json::json!({
+            "title": tab.title,
+            "sql": tab.statement_text,
+        })).collect::<Vec<_>>(),
+    }))
+    .map_err(|_| BridgeError::rejected("session-intent", "cannot encode session intent"))
 }
 
 fn decode_session_intent(raw: &str) -> Result<BridgeSessionIntent, BridgeError> {

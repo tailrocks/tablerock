@@ -57,7 +57,8 @@ fn migration_backfills_groups_from_existing_profiles() {
         let connection = database.connect().unwrap();
         connection
             .execute_batch(
-                "DROP TABLE saved_profile_groups;
+                "DROP TABLE native_window_session_intent;
+                 DROP TABLE saved_profile_groups;
                  DELETE FROM schema_migrations WHERE version >= 14;
                  INSERT INTO saved_profiles(
                     profile_id, aggregate_schema, connection_schema, property_schema,
@@ -87,12 +88,9 @@ fn migration_backfills_groups_from_existing_profiles() {
     });
 
     let reopened = PersistenceActor::open(&path).unwrap();
-    assert_eq!(reopened.health().unwrap().schema_version, 16);
+    assert_eq!(reopened.health().unwrap().schema_version, 17);
     assert_eq!(reopened.list_groups().unwrap(), ["Legacy"]);
-    assert_eq!(
-        reopened.list_group_settings().unwrap()[0].alphabetical,
-        false
-    );
+    assert!(!reopened.list_group_settings().unwrap()[0].alphabetical);
     reopened.set_group_alphabetical("Legacy", true).unwrap();
     assert!(reopened.list_group_settings().unwrap()[0].alphabetical);
     let profile = |low| ProfileId::from_parts(IdParts::new(0, low).unwrap()).unwrap();

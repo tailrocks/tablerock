@@ -14,21 +14,25 @@ pub struct SessionIntentRecord {
     pub updated_at: String,
 }
 
-pub async fn put(
-    connection: &turso::Connection,
-    profile_id: ProfileId,
-    intent_json: &str,
-) -> Result<(), PersistenceError> {
+pub(crate) fn validate_intent_json(intent_json: &str) -> Result<(), PersistenceError> {
     if intent_json.len() < 2 || intent_json.len() > 2_097_152 {
         return Err(PersistenceError::Query);
     }
-    // Reject accidental result-shaped keys at the store boundary.
     if intent_json.contains("\"cells\"")
         || intent_json.contains("\"result_pages\"")
         || intent_json.contains("\"pending_writes\"")
     {
         return Err(PersistenceError::Query);
     }
+    Ok(())
+}
+
+pub async fn put(
+    connection: &turso::Connection,
+    profile_id: ProfileId,
+    intent_json: &str,
+) -> Result<(), PersistenceError> {
+    validate_intent_json(intent_json)?;
     let id = profile_id.to_bytes();
     connection
         .execute(
