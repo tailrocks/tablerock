@@ -356,6 +356,30 @@ private actor BridgeClient {
         )
     }
 
+    func previewCsvImport(path: String) throws -> BridgeCsvImportPreview {
+        try bridge.previewCsvImport(path: path)
+    }
+
+    func stageCsvImport(
+        sessionId: Data, catalogNodeId: Data, path: String,
+        mappedColumns: [String], mappedTypes: [String], nowMs: UInt64
+    ) throws -> BridgeCsvImportReview {
+        try bridge.stageCsvImport(
+            sessionId: sessionId, catalogNodeId: catalogNodeId, path: path,
+            mappedColumns: mappedColumns, mappedTypes: mappedTypes, nowMs: nowMs
+        )
+    }
+
+    func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> ApplyOutcome {
+        try bridge.applyReviewToken(
+            tokenId: tokenId, nowMs: nowMs, sessionId: sessionId, expectedRevision: 0
+        )
+    }
+
+    func revokeReviewToken(tokenId: Data) throws -> Bool {
+        try bridge.revokeReviewToken(tokenId: tokenId)
+    }
+
     func stageAndApply(session: Data, now: UInt64) throws -> ApplyOutcome {
         let token = try bridge.stageProbeReview(sessionId: session, nowMs: now)
         return try bridge.applyReviewToken(
@@ -599,6 +623,29 @@ private func runNativeResultCopyAudit() {
     }
     writePerformanceMetric(
         "RESULT_COPY_PROOF_PASSED rust_formats=csv_tsv_json_markdown representations=5 scopes=cell_row_loaded sql_insert=identity_gated sql_update=stable_identity_gated"
+    )
+}
+
+@MainActor
+private func runNativeCsvImportAudit() {
+    let roots = NSApplication.shared.windows.filter(\.isVisible).compactMap(\.contentView)
+    guard !roots.isEmpty else {
+        writePerformanceMetric("CSV_IMPORT_PROOF_FAILED no visible window")
+        return
+    }
+    func descendants(of view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+    let labels = roots.flatMap(descendants)
+        .compactMap { ($0 as? NSTextField)?.stringValue }
+        .joined(separator: "|")
+    guard labels.contains("id|id|name|name"), labels.contains("1|Ada|2|=literal")
+    else {
+        writePerformanceMetric("CSV_IMPORT_PROOF_FAILED labels=\(labels)")
+        return
+    }
+    writePerformanceMetric(
+        "CSV_IMPORT_PROOF_PASSED preview=true mapping=true formula_literal=true review_token=consume_once applied=2 transaction=postgresql_atomic"
     )
 }
 
@@ -1018,6 +1065,15 @@ final class BridgeModel {
     var saveQueryDialog = false
     var savedQueryName = ""
     var pendingSavedQueryRemoval: BridgeSavedQueryItem?
+    var csvImportPresented = false
+    var csvImportPreview: BridgeCsvImportPreview?
+    var csvImportMappedColumns: [String] = []
+    var csvImportColumnTypes: [String] = []
+    var csvImportReview: BridgeCsvImportReview?
+    var csvImportError: String?
+    var csvImportOutcome: String?
+    var csvImportApplying = false
+    private var csvImportUrl: URL?
     var queryTabs: [NativeQueryTab]
     var selectedQueryTabId: UUID
     var objectTabs: [NativeObjectTab] = []
@@ -1309,6 +1365,77 @@ final class BridgeModel {
             }
             try? await Task.sleep(for: .milliseconds(500))
             runNativeValueInspectorAudit()
+            return
+        }
+        if let importPath = ProcessInfo.processInfo.environment[
+            "TABLEROCK_FIXTURE_CSV_IMPORT_PATH"
+        ] {
+            guard let client else {
+                writePerformanceMetric("CSV_IMPORT_PROOF_FAILED no bridge")
+                return
+            }
+            do {
+                let session = try await client.open(params: OpenParams(
+                    engine: "postgresql", host: "127.0.0.1", port: 5433,
+                    database: "db", user: "u", password: "secret", tlsMode: "off"
+                ))
+                sessionData = session
+                sessionHex = session.map { String(format: "%02x", $0) }.joined()
+                connectedEngine = "postgresql"
+                guard let database = try await client.refreshCatalog(
+                    session: session, parentNodeId: nil
+                ).first, let schema = try await client.refreshCatalog(
+                    session: session, parentNodeId: database.idBytes
+                ).first(where: { $0.name == "public" }) else {
+                    writePerformanceMetric("CSV_IMPORT_PROOF_FAILED catalog hierarchy missing")
+                    return
+                }
+                let objects = try await client.refreshCatalog(
+                    session: session, parentNodeId: schema.idBytes
+                )
+                guard let object = objects.first(where: { $0.name == "import_probe" }) else {
+                    writePerformanceMetric(
+                        "CSV_IMPORT_PROOF_FAILED target missing objects=\(objects.map(\.name))"
+                    )
+                    return
+                }
+                let tab = NativeObjectTab(node: object, pinned: true)
+                objectTabs = [tab]
+                selectedObjectTabId = tab.id
+                selectedWorkbenchKind = "object"
+                let url = URL(fileURLWithPath: importPath)
+                csvImportUrl = url
+                csvImportPreview = try await client.previewCsvImport(path: importPath)
+                csvImportMappedColumns = csvImportPreview?.headers ?? []
+                csvImportColumnTypes = ["signed", "text"]
+                csvImportPresented = true
+                await stageCsvImport()
+                guard csvImportReview?.rowCount == 2 else {
+                    writePerformanceMetric(
+                        "CSV_IMPORT_PROOF_FAILED \(csvImportError ?? "review missing")"
+                    )
+                    return
+                }
+                await applyCsvImport()
+                guard csvImportError == nil, csvImportOutcome?.contains("2 applied") == true else {
+                    writePerformanceMetric(
+                        "CSV_IMPORT_PROOF_FAILED \(csvImportError ?? csvImportOutcome ?? "apply missing")"
+                    )
+                    return
+                }
+                guard let verification = try await fetchPage(
+                    intent: "execute",
+                    statement: "SELECT count(*)::bigint AS n FROM import_probe",
+                    tab: activeQueryTab
+                ), verification.rows == [["2"]] else {
+                    writePerformanceMetric("CSV_IMPORT_PROOF_FAILED server count mismatch")
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+                runNativeCsvImportAudit()
+            } catch {
+                writePerformanceMetric("CSV_IMPORT_PROOF_FAILED \(error)")
+            }
             return
         }
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_RESULT_COPY"] == "1" {
@@ -1944,6 +2071,87 @@ final class BridgeModel {
             )
             copyOutcome = "Exported \(bytes) bytes to \(url.lastPathComponent)"
         } catch { copyError = "Export failed: \(error)" }
+    }
+
+    func chooseCsvImport() async {
+        guard let client, sqlInsertCopyAvailable else { return }
+        let panel = NSOpenPanel()
+        panel.title = "Import CSV into Table"
+        panel.prompt = "Preview"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [UTType(filenameExtension: "csv") ?? .commaSeparatedText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let preview = try await client.previewCsvImport(path: url.path)
+            csvImportUrl = url
+            csvImportPreview = preview
+            csvImportMappedColumns = preview.headers
+            csvImportColumnTypes = Array(repeating: "text", count: preview.headers.count)
+            csvImportReview = nil
+            csvImportError = nil
+            csvImportOutcome = nil
+            csvImportPresented = true
+        } catch { csvImportError = "CSV preview failed: \(error)" }
+    }
+
+    func stageCsvImport() async {
+        guard let client, let session = sessionData, let object = activeObjectTab,
+              let url = csvImportUrl
+        else { return }
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        csvImportError = nil
+        do {
+            csvImportReview = try await client.stageCsvImport(
+                sessionId: session, catalogNodeId: object.catalogNodeId, path: url.path,
+                mappedColumns: csvImportMappedColumns,
+                mappedTypes: csvImportColumnTypes,
+                nowMs: UInt64(Date().timeIntervalSince1970 * 1000)
+            )
+        } catch { csvImportError = "Stage import failed: \(error)" }
+    }
+
+    func applyCsvImport() async {
+        guard let client, let session = sessionData, let review = csvImportReview else { return }
+        csvImportApplying = true
+        csvImportError = nil
+        defer { csvImportApplying = false }
+        do {
+            let outcome = try await client.applyReviewToken(
+                tokenId: review.tokenId,
+                nowMs: UInt64(Date().timeIntervalSince1970 * 1000),
+                sessionId: session
+            )
+            csvImportReview = nil
+            csvImportOutcome =
+                "\(outcome.transaction) · \(outcome.appliedCount) applied · \(outcome.conflictCount) conflict · \(outcome.failedCount) failed"
+            if outcome.failedCount == 0 && outcome.conflictCount == 0 {
+                await reloadObjectTab()
+            }
+        } catch {
+            csvImportReview = nil
+            csvImportError = "Import apply failed; review authority consumed: \(error)"
+        }
+    }
+
+    func discardCsvImportReview() async {
+        if let review = csvImportReview, let client {
+            _ = try? await client.revokeReviewToken(tokenId: review.tokenId)
+        }
+        csvImportReview = nil
+    }
+
+    func closeCsvImport() async {
+        await discardCsvImportReview()
+        csvImportPresented = false
+        csvImportPreview = nil
+        csvImportMappedColumns = []
+        csvImportColumnTypes = []
+        csvImportUrl = nil
     }
 
     private func restoreSessionIntent(profileId: Data) async {
@@ -3032,6 +3240,12 @@ struct ContentView: View {
         .sheet(isPresented: $model.savedQueriesPresented) {
             SavedQueriesSheet()
         }
+        .sheet(
+            isPresented: $model.csvImportPresented,
+            onDismiss: { Task { await model.closeCsvImport() } }
+        ) {
+            CsvImportSheet()
+        }
         .alert("Save Query", isPresented: $model.saveQueryDialog) {
             TextField("Name", text: $model.savedQueryName)
             Button("Save") { Task { await model.saveCurrentQuery() } }
@@ -3211,6 +3425,10 @@ struct ObjectWorkbenchView: View {
                     }
                     Button("Refresh") { Task { await model.reloadObjectTab() } }
                         .disabled(tab.isRunning)
+                    if model.sqlInsertCopyAvailable {
+                        Button("Import CSV") { Task { await model.chooseCsvImport() } }
+                            .disabled(tab.isRunning)
+                    }
                     Button("Close", role: .destructive) { model.closeObjectTab(tab) }
                         .disabled(tab.isRunning)
                 }
@@ -3236,6 +3454,123 @@ struct ObjectWorkbenchView: View {
         } else {
             ContentUnavailableView("No object tab", systemImage: "tablecells")
         }
+    }
+}
+
+private struct CsvImportSheet: View {
+    @Environment(BridgeModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("Import CSV", systemImage: "tablecells.badge.ellipsis")
+                    .font(.title2.bold())
+                Spacer()
+                Button("Close") { Task { await model.closeCsvImport() } }
+                    .disabled(model.csvImportApplying)
+            }
+            if let preview = model.csvImportPreview {
+                Text("\(URL(fileURLWithPath: preview.path).lastPathComponent) · \(preview.totalRows) rows · \(preview.headers.count) columns")
+                    .foregroundStyle(.secondary)
+                if preview.formulaLikeCells > 0 {
+                    Label(
+                        "\(preview.formulaLikeCells) formula-like cells will be inserted as literal text",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                }
+                GroupBox("Column mapping") {
+                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+                        ForEach(preview.headers.indices, id: \.self) { index in
+                            GridRow {
+                                Text(preview.headers[index]).textSelection(.enabled)
+                                Image(systemName: "arrow.right")
+                                    .foregroundStyle(.secondary)
+                                TextField(
+                                    "Target column",
+                                    text: $model.csvImportMappedColumns[index]
+                                )
+                                .disabled(model.csvImportReview != nil)
+                                Picker(
+                                    "Value type",
+                                    selection: $model.csvImportColumnTypes[index]
+                                ) {
+                                    Text("Text").tag("text")
+                                    Text("Integer").tag("signed")
+                                    Text("Float").tag("float64")
+                                    Text("Boolean").tag("boolean")
+                                }
+                                .labelsHidden()
+                                .disabled(model.csvImportReview != nil)
+                            }
+                        }
+                    }
+                    .padding(6)
+                }
+                GroupBox("Preview — first \(preview.rows.count) rows") {
+                    ScrollView([.horizontal, .vertical]) {
+                        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 5) {
+                            GridRow {
+                                ForEach(preview.headers, id: \.self) { header in
+                                    Text(header).bold()
+                                }
+                            }
+                            Divider()
+                            ForEach(preview.rows.indices, id: \.self) { rowIndex in
+                                GridRow {
+                                    ForEach(preview.rows[rowIndex].cells.indices, id: \.self) { column in
+                                        Text(preview.rows[rowIndex].cells[column])
+                                            .lineLimit(1)
+                                            .textSelection(.enabled)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(6)
+                    }
+                    .frame(minHeight: 150, maxHeight: 260)
+                }
+            }
+            if let review = model.csvImportReview {
+                GroupBox("Review required") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Insert \(review.rowCount) rows and \(review.columnCount) mapped columns into \(review.target).")
+                            .font(.headline)
+                        if review.formulaLikeCells > 0 {
+                            Text("\(review.formulaLikeCells) formula-like cells are frozen as literal text in this reviewed plan.")
+                                .foregroundStyle(.orange)
+                        }
+                        Text("The reviewed plan is frozen for 60 seconds. Authority is consumed before database I/O and cannot be retried after failure.")
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Button("Apply Import") { Task { await model.applyCsvImport() } }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.csvImportApplying)
+                            Button("Discard Review", role: .cancel) {
+                                Task { await model.discardCsvImportReview() }
+                            }
+                            .disabled(model.csvImportApplying)
+                        }
+                    }
+                    .padding(6)
+                }
+            } else if model.csvImportOutcome == nil {
+                Button("Stage Reviewed Import") { Task { await model.stageCsvImport() } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.csvImportPreview == nil || model.csvImportApplying)
+            }
+            if model.csvImportApplying { ProgressView("Applying reviewed import…") }
+            if let outcome = model.csvImportOutcome {
+                Label(outcome, systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            }
+            if let error = model.csvImportError {
+                Text(error).foregroundStyle(.red).textSelection(.enabled)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 720, minHeight: 560)
+        .interactiveDismissDisabled(model.csvImportReview != nil || model.csvImportApplying)
     }
 }
 

@@ -31,7 +31,10 @@ use tablerock_engine::{
     RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
     RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError, resolve_for_connect,
 };
-use tablerock_files::write_atomic;
+use tablerock_files::{
+    CsvValueType, csv_to_typed_insert_changes, is_formula_like, read_csv_bounded,
+    validate_insert_batch_size, write_atomic,
+};
 use tablerock_persistence::{
     HistoryAppend, HistoryOutcomeClass, HistoryRetention, PersistenceActor, ProfileOrderUpdate,
     SavedQueryUpsert, SqlFileFacts, external_change_detected, read_sql_file, write_sql_file_atomic,
@@ -47,6 +50,11 @@ use crate::{
     page_limits::default_page_limits,
     runtime::RuntimeOwner,
 };
+
+const CSV_IMPORT_MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+const CSV_IMPORT_MAX_ROWS: u32 = 10_001;
+const CSV_IMPORT_MAX_CELL_BYTES: usize = 64 * 1024;
+const CSV_IMPORT_PREVIEW_ROWS: usize = 100;
 
 const MAX_EVENT_LOG: usize = 4_096;
 const MAX_EVENT_BATCH: u32 = 256;
@@ -233,12 +241,37 @@ pub struct BridgeCatalogNode {
     pub expandable: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeCsvRow {
+    pub cells: Vec<String>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeCsvImportPreview {
+    pub path: String,
+    pub headers: Vec<String>,
+    pub rows: Vec<BridgeCsvRow>,
+    pub total_rows: u32,
+    pub formula_like_cells: u32,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeCsvImportReview {
+    pub token_id: Vec<u8>,
+    pub target: String,
+    pub row_count: u32,
+    pub column_count: u32,
+    pub formula_like_cells: u32,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Clone)]
 struct RegisteredSession {
     profile_id: tablerock_core::ProfileId,
     session_id: SessionId,
     context_id: tablerock_core::ContextId,
     engine: Engine,
+    database: BoundedText,
     /// Expected context revision tracked by the bridge.
     context_revision: Revision,
 }
@@ -629,6 +662,33 @@ impl TableRockBridge {
         })
     }
 
+    /// Reads a bounded UTF-8 CSV file for native mapping and review.
+    pub fn preview_csv_import(&self, path: String) -> Result<BridgeCsvImportPreview, BridgeError> {
+        catch_entry(|| preview_csv_import_inner(path))
+    }
+
+    /// Freezes a mapped CSV insert plan behind a single-use review token.
+    pub fn stage_csv_import(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+        path: String,
+        mapped_columns: Vec<String>,
+        mapped_types: Vec<String>,
+        now_ms: u64,
+    ) -> Result<BridgeCsvImportReview, BridgeError> {
+        catch_entry(|| {
+            self.stage_csv_import_inner(
+                session_id,
+                catalog_node_id,
+                path,
+                mapped_columns,
+                mapped_types,
+                now_ms,
+            )
+        })
+    }
+
     /// Stage a probe mutation + register a single-use review token for the
     /// native edit-safety demo. Returns the token id for `authorize_review_token`
     /// / `apply_review_token`. Wraps the conformance staging seam with sensible
@@ -935,7 +995,7 @@ impl TableRockBridge {
         engine: Engine,
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
-        catch_entry(|| self.open_driver_session_inner(engine, session, None))
+        catch_entry(|| self.open_driver_session_inner(engine, session, None, None))
     }
 
     /// Registers a test driver under an existing saved-profile identity.
@@ -946,7 +1006,7 @@ impl TableRockBridge {
         engine: Engine,
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
-        catch_entry(|| self.open_driver_session_inner(engine, session, Some(profile_id)))
+        catch_entry(|| self.open_driver_session_inner(engine, session, Some(profile_id), None))
     }
 
     /// Inserts a minimal reviewed delete plan for the session (test/conformance only).
@@ -1066,6 +1126,171 @@ impl TableRockBridge {
             .insert(reviewed, now_ms)
             .map_err(|error| BridgeError::rejected("review-insert", error.to_string()))?;
         Ok(review_token_bytes(token_id))
+    }
+
+    fn stage_csv_import_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        catalog_node_id_bytes: Vec<u8>,
+        path: String,
+        mapped_columns: Vec<String>,
+        mapped_types: Vec<String>,
+        now_ms: u64,
+    ) -> Result<BridgeCsvImportReview, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let path_ref = Path::new(&path);
+        if !path_ref.is_absolute() {
+            return Err(BridgeError::rejected(
+                "csv-import-path",
+                "native CSV import path must be absolute",
+            ));
+        }
+        let mut table = read_csv_bounded(
+            path_ref,
+            CSV_IMPORT_MAX_FILE_BYTES,
+            CSV_IMPORT_MAX_ROWS,
+            CSV_IMPORT_MAX_CELL_BYTES,
+        )
+        .map_err(|error| BridgeError::rejected("csv-import", error.to_string()))?;
+        if mapped_columns.len() != table.headers.len()
+            || mapped_columns.iter().any(|column| column.is_empty())
+            || mapped_columns.iter().collect::<BTreeSet<_>>().len() != mapped_columns.len()
+        {
+            return Err(BridgeError::rejected(
+                "csv-import-mapping",
+                "mapped columns must be non-empty, unique, and match CSV width",
+            ));
+        }
+        if mapped_types.len() != mapped_columns.len() {
+            return Err(BridgeError::rejected(
+                "csv-import-mapping",
+                "mapped value types must match CSV width",
+            ));
+        }
+        let value_types = mapped_types
+            .iter()
+            .map(|value_type| match value_type.as_str() {
+                "text" => Ok(CsvValueType::Text),
+                "signed" => Ok(CsvValueType::Signed),
+                "float64" => Ok(CsvValueType::Float64),
+                "boolean" => Ok(CsvValueType::Boolean),
+                _ => Err(BridgeError::rejected(
+                    "csv-import-mapping",
+                    "mapped value type must be text, signed, float64, or boolean",
+                )),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let row_count = u32::try_from(table.rows.len()).unwrap_or(u32::MAX);
+        let column_count = u32::try_from(mapped_columns.len()).unwrap_or(u32::MAX);
+        let formula_like_cells = table
+            .rows
+            .iter()
+            .flatten()
+            .filter(|cell| is_formula_like(cell))
+            .count()
+            .try_into()
+            .unwrap_or(u32::MAX);
+        table.headers = mapped_columns;
+        let changes =
+            csv_to_typed_insert_changes(&table, &value_types, CSV_IMPORT_MAX_CELL_BYTES as u64)
+                .map_err(|error| BridgeError::rejected("csv-import-values", error.to_string()))?;
+        validate_insert_batch_size(&changes, 10_000)
+            .map_err(|error| BridgeError::rejected("csv-import-size", error.to_string()))?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let catalog_node_id = catalog_node_from_bytes(&catalog_node_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let expires_at_ms = now_ms
+            .checked_add(60_000)
+            .ok_or_else(|| BridgeError::rejected("csv-import-review", "review expiry overflow"))?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        let registered = inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        let node = inner
+            .catalog_nodes
+            .get(&(session_id, catalog_node_id))
+            .ok_or_else(|| {
+                BridgeError::rejected("unknown-catalog-node", "catalog node is stale or unknown")
+            })?;
+        let parent = node
+            .parent_id()
+            .and_then(|id| inner.catalog_nodes.get(&(session_id, id)))
+            .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+        let identifier = |value: &str| {
+            BoundedText::copy_from_str(value, ByteLimit::new(256))
+                .map_err(|error| BridgeError::rejected("csv-import-target", error.to_string()))
+        };
+        let (target, target_label) = match (registered.engine, node.kind()) {
+            (
+                Engine::PostgreSql,
+                CatalogNodeKind::PostgreSqlObject(
+                    PostgreSqlObjectKind::Table
+                    | PostgreSqlObjectKind::ForeignTable
+                    | PostgreSqlObjectKind::PartitionedTable,
+                ),
+            ) => (
+                MutationTarget::PostgreSqlRelation {
+                    database: registered.database.clone(),
+                    schema: identifier(parent.name())?,
+                    relation: identifier(node.name())?,
+                },
+                format!("{}.{}", parent.name(), node.name()),
+            ),
+            (
+                Engine::ClickHouse,
+                CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Table),
+            ) => (
+                MutationTarget::ClickHouseTable {
+                    database: identifier(parent.name())?,
+                    table: identifier(node.name())?,
+                },
+                format!("{}.{}", parent.name(), node.name()),
+            ),
+            _ => {
+                return Err(BridgeError::rejected(
+                    "csv-import-target",
+                    "CSV import requires a cached writable table",
+                ));
+            }
+        };
+        let scope = OperationScope::new(
+            registered.profile_id,
+            registered.session_id,
+            registered.context_id,
+        );
+        let token_id = inner.ids.review_token();
+        let plan = MutationPlan::new(
+            inner.ids.mutation(),
+            scope,
+            registered.context_revision,
+            target,
+            changes,
+            MutationPlanLimits::new(10_000, 1_024, 64 * 1024, 4 * 1024 * 1024, 60_000)
+                .map_err(|error| BridgeError::rejected("mutation-limits", error.to_string()))?,
+        )
+        .map_err(|error| BridgeError::rejected("mutation-plan", error.to_string()))?;
+        let reviewed = plan
+            .review(token_id, now_ms, expires_at_ms)
+            .map_err(|error| BridgeError::rejected("review", error.to_string()))?;
+        inner
+            .reviews
+            .insert(reviewed, now_ms)
+            .map_err(|error| BridgeError::rejected("review-insert", error.to_string()))?;
+        Ok(BridgeCsvImportReview {
+            token_id: review_token_bytes(token_id),
+            target: target_label,
+            row_count,
+            column_count,
+            formula_like_cells,
+            expires_at_ms,
+        })
     }
 
     fn authorize_review_token_inner(
@@ -2055,10 +2280,11 @@ impl TableRockBridge {
             .lock()
             .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
         let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
-        let registered = *inner
+        let registered = inner
             .sessions
             .get(&session_id)
-            .ok_or(BridgeError::UnknownSession)?;
+            .ok_or(BridgeError::UnknownSession)?
+            .clone();
         let limits = default_page_limits();
         let (request, parent, expected_level) = match parent_id {
             None => (
@@ -2509,7 +2735,7 @@ impl TableRockBridge {
                         &PostgresConnectConfig::new(
                             host,
                             port,
-                            database,
+                            database.clone(),
                             user,
                             if tls_required {
                                 PostgresTlsMode::Required
@@ -2528,7 +2754,7 @@ impl TableRockBridge {
                         &ClickHouseConnectConfig::new(
                             host,
                             port,
-                            database,
+                            database.clone(),
                             user,
                             if tls_required {
                                 ClickHouseTlsMode::Require
@@ -2574,7 +2800,7 @@ impl TableRockBridge {
             }
         })??;
 
-        self.open_driver_session_inner(engine, session, saved_profile_id)
+        self.open_driver_session_inner(engine, session, saved_profile_id, Some(database))
     }
 
     fn open_driver_session_inner(
@@ -2582,6 +2808,7 @@ impl TableRockBridge {
         engine: Engine,
         session: Box<dyn DriverSession>,
         saved_profile_id: Option<ProfileId>,
+        database: Option<BoundedText>,
     ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let mut guard = self
@@ -2639,6 +2866,17 @@ impl TableRockBridge {
                 session_id,
                 context_id,
                 engine,
+                database: database.unwrap_or_else(|| {
+                    BoundedText::copy_from_str(
+                        match engine {
+                            Engine::PostgreSql => "postgres",
+                            Engine::ClickHouse => "default",
+                            Engine::Redis => "0",
+                        },
+                        ByteLimit::new(16),
+                    )
+                    .expect("default database is bounded")
+                }),
                 context_revision: Revision::INITIAL,
             },
         );
@@ -3361,6 +3599,44 @@ fn bridge_sql_file(text: String, facts: SqlFileFacts) -> BridgeSqlFile {
             .and_then(|value| u64::try_from(value.as_nanos()).ok()),
         len: facts.len,
     }
+}
+
+fn preview_csv_import_inner(path: String) -> Result<BridgeCsvImportPreview, BridgeError> {
+    let path_ref = Path::new(&path);
+    if !path_ref.is_absolute() {
+        return Err(BridgeError::rejected(
+            "csv-import-path",
+            "native CSV import path must be absolute",
+        ));
+    }
+    let table = read_csv_bounded(
+        path_ref,
+        CSV_IMPORT_MAX_FILE_BYTES,
+        CSV_IMPORT_MAX_ROWS,
+        CSV_IMPORT_MAX_CELL_BYTES,
+    )
+    .map_err(|error| BridgeError::rejected("csv-import", error.to_string()))?;
+    let total_rows = u32::try_from(table.rows.len()).unwrap_or(u32::MAX);
+    let formula_like_cells = table
+        .rows
+        .iter()
+        .flatten()
+        .filter(|cell| is_formula_like(cell))
+        .count()
+        .try_into()
+        .unwrap_or(u32::MAX);
+    Ok(BridgeCsvImportPreview {
+        path,
+        headers: table.headers,
+        rows: table
+            .rows
+            .into_iter()
+            .take(CSV_IMPORT_PREVIEW_ROWS)
+            .map(|cells| BridgeCsvRow { cells })
+            .collect(),
+        total_rows,
+        formula_like_cells,
+    })
 }
 
 fn read_bridge_sql_file(raw_path: &str) -> Result<BridgeSqlFile, BridgeError> {

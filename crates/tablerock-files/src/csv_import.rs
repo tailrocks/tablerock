@@ -7,13 +7,89 @@
 //! Apply path (residual 016): build typed `MutationChange::InsertRow` values
 //! only — never SQL string concatenation. Engine apply uses `$n` binds.
 
-use std::fmt;
+use std::{
+    fmt,
+    fs::File,
+    io::{self, Read},
+    path::Path,
+};
 
 use tablerock_core::{
     BoundedText, ByteLimit, FieldValue, MutationBuildError, MutationChange, OwnedValue, Truncation,
 };
 
 const MAX_CSV_COLUMNS: usize = 1_024;
+
+#[derive(Debug)]
+pub enum CsvFileError {
+    InvalidLimit,
+    TooLarge { actual: u64, limit: u64 },
+    InvalidUtf8 { byte_offset: usize },
+    Io(io::Error),
+    Parse(CsvImportError),
+}
+
+impl fmt::Display for CsvFileError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidLimit => formatter.write_str("csv file limit must be nonzero"),
+            Self::TooLarge { actual, limit } => {
+                write!(formatter, "csv file has {actual} bytes; limit is {limit}")
+            }
+            Self::InvalidUtf8 { byte_offset } => {
+                write!(formatter, "csv is not UTF-8 at byte {byte_offset}")
+            }
+            Self::Io(error) => write!(formatter, "csv file I/O: {error}"),
+            Self::Parse(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for CsvFileError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::Parse(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+/// Read and parse one CSV file without ever buffering beyond `max_file_bytes + 1`.
+pub fn read_csv_bounded(
+    path: &Path,
+    max_file_bytes: u64,
+    max_rows: u32,
+    max_cell_bytes: usize,
+) -> Result<CsvTable, CsvFileError> {
+    if max_file_bytes == 0 {
+        return Err(CsvFileError::InvalidLimit);
+    }
+    let metadata = path.metadata().map_err(CsvFileError::Io)?;
+    if metadata.len() > max_file_bytes {
+        return Err(CsvFileError::TooLarge {
+            actual: metadata.len(),
+            limit: max_file_bytes,
+        });
+    }
+    let capacity = usize::try_from(metadata.len().min(max_file_bytes)).unwrap_or(usize::MAX);
+    let mut bytes = Vec::with_capacity(capacity);
+    File::open(path)
+        .map_err(CsvFileError::Io)?
+        .take(max_file_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(CsvFileError::Io)?;
+    if bytes.len() as u64 > max_file_bytes {
+        return Err(CsvFileError::TooLarge {
+            actual: bytes.len() as u64,
+            limit: max_file_bytes,
+        });
+    }
+    let text = std::str::from_utf8(&bytes).map_err(|error| CsvFileError::InvalidUtf8 {
+        byte_offset: error.valid_up_to(),
+    })?;
+    parse_csv(text, max_rows, max_cell_bytes).map_err(CsvFileError::Parse)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CsvImportError {
@@ -32,11 +108,21 @@ impl fmt::Display for CsvImportError {
     }
 }
 
+impl std::error::Error for CsvImportError {}
+
 /// Parsed CSV table: header + data rows (all text cells).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CsvTable {
     pub headers: Vec<String>,
     pub rows: Vec<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CsvValueType {
+    Text,
+    Signed,
+    Float64,
+    Boolean,
 }
 
 /// Parse a UTF-8 CSV buffer (RFC-4180-tolerant: quotes, commas, newlines).
@@ -234,11 +320,31 @@ pub fn csv_to_insert_changes(
     table: &CsvTable,
     max_cell_bytes: u64,
 ) -> Result<Vec<MutationChange>, CsvImportError> {
+    csv_to_typed_insert_changes(
+        table,
+        &vec![CsvValueType::Text; table.headers.len()],
+        max_cell_bytes,
+    )
+}
+
+/// Convert CSV rows with explicit operator-reviewed value types.
+pub fn csv_to_typed_insert_changes(
+    table: &CsvTable,
+    value_types: &[CsvValueType],
+    max_cell_bytes: u64,
+) -> Result<Vec<MutationChange>, CsvImportError> {
     if table.headers.is_empty() {
         return Err(CsvImportError {
             row: 0,
             column: 0,
             message: "csv has no columns".into(),
+        });
+    }
+    if value_types.len() != table.headers.len() {
+        return Err(CsvImportError {
+            row: 1,
+            column: 0,
+            message: "value type count does not match header count".into(),
         });
     }
     let limit = ByteLimit::new(max_cell_bytes.max(1));
@@ -257,24 +363,56 @@ pub fn csv_to_insert_changes(
             });
         }
         let mut values = Vec::with_capacity(row.len());
-        for (col_index, (header, cell)) in table.headers.iter().zip(row.iter()).enumerate() {
+        for (col_index, ((header, cell), value_type)) in table
+            .headers
+            .iter()
+            .zip(row.iter())
+            .zip(value_types.iter())
+            .enumerate()
+        {
             let col = u32::try_from(col_index + 1).unwrap_or(u32::MAX);
             let field = BoundedText::copy_from_str(header, limit).map_err(|_| CsvImportError {
                 row: 1,
                 column: col,
                 message: format!("header exceeds {max_cell_bytes} bytes"),
             })?;
-            let text = BoundedText::copy_from_str(cell, limit).map_err(|_| CsvImportError {
+            let invalid = |expected: &str| CsvImportError {
                 row: line,
                 column: col,
-                message: format!("cell exceeds {max_cell_bytes} bytes"),
-            })?;
-            let value =
-                OwnedValue::text(text, Truncation::Complete).map_err(|_| CsvImportError {
-                    row: line,
-                    column: col,
-                    message: "invalid text cell".into(),
-                })?;
+                message: format!("value is not valid {expected}"),
+            };
+            let value = match value_type {
+                CsvValueType::Text => {
+                    let text =
+                        BoundedText::copy_from_str(cell, limit).map_err(|_| CsvImportError {
+                            row: line,
+                            column: col,
+                            message: format!("cell exceeds {max_cell_bytes} bytes"),
+                        })?;
+                    OwnedValue::text(text, Truncation::Complete).map_err(|_| CsvImportError {
+                        row: line,
+                        column: col,
+                        message: "invalid text cell".into(),
+                    })?
+                }
+                CsvValueType::Signed => {
+                    OwnedValue::signed(cell.parse::<i64>().map_err(|_| invalid("signed integer"))?)
+                }
+                CsvValueType::Float64 => {
+                    let parsed = cell.parse::<f64>().map_err(|_| invalid("finite float"))?;
+                    if !parsed.is_finite() {
+                        return Err(invalid("finite float"));
+                    }
+                    OwnedValue::float64_bits(parsed.to_bits())
+                }
+                CsvValueType::Boolean => {
+                    OwnedValue::boolean(match cell.to_ascii_lowercase().as_str() {
+                        "true" | "t" | "1" => true,
+                        "false" | "f" | "0" => false,
+                        _ => return Err(invalid("boolean")),
+                    })
+                }
+            };
             values.push(FieldValue::new(field, value));
         }
         changes.push(MutationChange::InsertRow { values });
@@ -333,6 +471,33 @@ mod tests {
     }
 
     #[test]
+    fn bounded_file_read_rejects_size_and_utf8_before_parsing() {
+        let dir = std::env::temp_dir().join(format!(
+            "tablerock-csv-read-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let valid = dir.join("valid.csv");
+        std::fs::write(&valid, b"id,name\n1,Ada\n").unwrap();
+        assert_eq!(read_csv_bounded(&valid, 64, 10, 16).unwrap().rows.len(), 1);
+        assert!(matches!(
+            read_csv_bounded(&valid, 4, 10, 16),
+            Err(CsvFileError::TooLarge { .. })
+        ));
+        let invalid = dir.join("invalid.csv");
+        std::fs::write(&invalid, b"id\n\xff\n").unwrap();
+        assert!(matches!(
+            read_csv_bounded(&invalid, 64, 10, 16),
+            Err(CsvFileError::InvalidUtf8 { byte_offset: 3 })
+        ));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn csv_to_insert_changes_keeps_formula_as_text_and_rejects_width_mismatch() {
         let t = parse_csv("name,expr\nalice,=SUM(A1)\n", 10, 64).unwrap();
         let changes = csv_to_insert_changes(&t, 64).unwrap();
@@ -355,6 +520,35 @@ mod tests {
             rows: vec![vec!["only-one".into()]],
         };
         assert!(csv_to_insert_changes(&bad, 64).is_err());
+    }
+
+    #[test]
+    fn explicit_types_parse_before_mutation_review() {
+        let table = parse_csv("id,ratio,active,name\n7,1.5,true,Ada\n", 4, 32).unwrap();
+        let changes = csv_to_typed_insert_changes(
+            &table,
+            &[
+                CsvValueType::Signed,
+                CsvValueType::Float64,
+                CsvValueType::Boolean,
+                CsvValueType::Text,
+            ],
+            32,
+        )
+        .unwrap();
+        let MutationChange::InsertRow { values } = &changes[0] else {
+            panic!("expected insert")
+        };
+        assert!(matches!(
+            values[0].value().as_ref(),
+            tablerock_core::ValueRef::Signed(7)
+        ));
+        assert!(matches!(
+            values[2].value().as_ref(),
+            tablerock_core::ValueRef::Boolean(true)
+        ));
+        assert!(csv_to_typed_insert_changes(&table, &[CsvValueType::Text; 4], 32).is_ok());
+        assert!(csv_to_typed_insert_changes(&table, &[CsvValueType::Signed; 4], 32).is_err());
     }
 
     #[test]

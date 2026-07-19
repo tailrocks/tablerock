@@ -392,7 +392,7 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
             level_one[0].clone()
         };
         let operation = bridge
-            .submit_catalog_browse(session_id.clone(), object.id_bytes, 500)
+            .submit_catalog_browse(session_id.clone(), object.id_bytes.clone(), 500)
             .unwrap();
         bridge.pump(operation.clone()).unwrap();
         let events = bridge.next_events(0, 64).unwrap().events;
@@ -440,6 +440,32 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
             ),
             Err(BridgeError::Rejected { ref code, .. }) if code == "export-path"
         ));
+        let csv_path = std::env::temp_dir().join(format!(
+            "tablerock-ffi-import-{}-{low}.csv",
+            std::process::id()
+        ));
+        std::fs::write(&csv_path, "id,name\n8,=literal\n").unwrap();
+        let preview = bridge
+            .preview_csv_import(csv_path.to_string_lossy().into_owned())
+            .unwrap();
+        assert_eq!(preview.headers, ["id", "name"]);
+        assert_eq!(preview.total_rows, 1);
+        assert_eq!(preview.formula_like_cells, 1);
+        let review = bridge
+            .stage_csv_import(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                csv_path.to_string_lossy().into_owned(),
+                vec!["id".into(), "name".into()],
+                vec!["signed".into(), "text".into()],
+                100,
+            )
+            .unwrap();
+        assert_eq!(review.row_count, 1);
+        assert_eq!(review.column_count, 2);
+        assert_eq!(review.formula_like_cells, 1);
+        assert!(bridge.revoke_review_token(review.token_id).unwrap());
+        std::fs::remove_file(csv_path).unwrap();
         let json = bridge
             .format_result_copy(
                 result_id.clone(),

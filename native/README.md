@@ -88,3 +88,10 @@ Result grids also export all currently loaded rows through a native save panel
 as CSV, TSV, JSON, Markdown, or identity-gated SQL INSERT. Rust owns typed
 formatting and atomic replacement; Swift balances security-scoped file access.
 This is bounded resident export, not yet full-result streaming export.
+
+Writable PostgreSQL and ClickHouse object tabs expose bounded CSV import with a
+native preview, editable target-column mapping, explicit Text/Integer/Float/
+Boolean typing, formula-literal warning, and a consume-once reviewed apply.
+Rust owns file limits, parsing, catalog target identity, typed mutation plans,
+review expiry, and authorization. PostgreSQL is live-proven; broader types,
+ClickHouse live apply, JSON, large-file streaming, and progress/cancel remain.

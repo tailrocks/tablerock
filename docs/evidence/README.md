@@ -406,6 +406,7 @@ How to read an evidence document:
 - 529 — [Shared result copy and native pasteboard](delivery/529-shared-copy-native-pasteboard.md)
 - 530 — [Native atomic loaded-result export](delivery/530-native-atomic-loaded-export.md)
 - 531 — [Shared bounded CSV import foundation](delivery/531-shared-csv-import-foundation.md)
+- 532 — [Native reviewed CSV import](delivery/532-native-reviewed-csv-import.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
