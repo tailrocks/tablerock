@@ -537,6 +537,30 @@ private func runNativeProfileGroupAudit() {
 }
 
 @MainActor
+private func runNativeValueInspectorAudit() {
+    guard let root = NSApplication.shared.windows.first(where: { $0.isVisible })?.contentView
+    else {
+        writePerformanceMetric("VALUE_INSPECTOR_PROOF_FAILED no visible window")
+        return
+    }
+    func descendants(of view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+    let labels = descendants(of: root)
+        .compactMap { ($0 as? NSTextField)?.stringValue }
+        .joined(separator: "|")
+    guard labels.contains(#"{"ok":true}"#),
+          labels.contains("7b 22 6f 6b 22 3a 74 72 75 65 7d")
+    else {
+        writePerformanceMetric("VALUE_INSPECTOR_PROOF_FAILED labels=\(labels)")
+        return
+    }
+    writePerformanceMetric(
+        "VALUE_INSPECTOR_PROOF_PASSED metadata=column_type_kind_nullability truncation=true text=true hex=true appkit_selection=true"
+    )
+}
+
+@MainActor
 private func runNativeHistoryAudit() {
     guard NSApplication.shared.windows.contains(where: { $0.isVisible }) else {
         writePerformanceMetric("HISTORY_PROOF_FAILED no visible window")
@@ -809,6 +833,18 @@ private func catalogDescendantIds(
 
 @MainActor
 @Observable
+final class NativeCellSelection {
+    let row: Int
+    let column: Int
+
+    init(row: Int, column: Int) {
+        self.row = row
+        self.column = column
+    }
+}
+
+@MainActor
+@Observable
 final class NativeQueryTab: Identifiable {
     let id = UUID()
     var title: String
@@ -828,6 +864,7 @@ final class NativeQueryTab: Identifiable {
     var sqlFile: BridgeSqlFile?
     var sqlFileBaseline: String
     var sqlFileError: String?
+    var selectedCell: NativeCellSelection?
 
     init(title: String, statementText: String) {
         self.title = title
@@ -852,6 +889,7 @@ final class NativeObjectTab: Identifiable {
     var activeOperationId: Data?
     var summary: String?
     var error: String?
+    var selectedCell: NativeCellSelection?
 
     init(node: BridgeCatalogNode, pinned: Bool = false) {
         catalogNodeId = node.idBytes
@@ -970,6 +1008,34 @@ final class BridgeModel {
         return objectTabs.first(where: { $0.id == selectedObjectTabId })
     }
     var selectedObjectTab: NativeObjectTab? { activeObjectTab }
+    var selectedCell: NativeCellSelection? {
+        get {
+            selectedWorkbenchKind == "object"
+                ? activeObjectTab?.selectedCell : activeQueryTab.selectedCell
+        }
+        set {
+            if selectedWorkbenchKind == "object" {
+                activeObjectTab?.selectedCell = newValue
+            } else {
+                activeQueryTab.selectedCell = newValue
+            }
+        }
+    }
+    var selectedCellSnapshot: (PageV1Column, PageV1Cell, Int, Int)? {
+        guard let table = resultTable, let selection = selectedCell,
+              table.columnMetadata.indices.contains(selection.column),
+              table.cells.indices.contains(selection.row),
+              table.cells[selection.row].indices.contains(selection.column)
+        else { return nil }
+        return (
+            table.columnMetadata[selection.column],
+            table.cells[selection.row][selection.column],
+            selection.row, selection.column
+        )
+    }
+    func selectCell(row: Int, column: Int) {
+        selectedCell = NativeCellSelection(row: row, column: column)
+    }
     var queryWorkbenchSelected: Bool { selectedWorkbenchKind == "query" }
     private var hasRunningWorkbench: Bool {
         queryTabs.contains(where: \.isRunning) || objectTabs.contains(where: \.isRunning)
@@ -1130,6 +1196,34 @@ final class BridgeModel {
             }
             try? await Task.sleep(for: .milliseconds(500))
             runNativeObjectTabsAudit()
+            return
+        }
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_VALUE_INSPECTOR"] == "1" {
+            sessionData = Data(repeating: 4, count: 16)
+            sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+            connectedEngine = "postgresql"
+            let raw = Data(#"{"ok":true}"#.utf8)
+            activeQueryTab.resultTable = PageV1Table(
+                columns: ["payload"], rows: [[#"{"ok":true}"#]],
+                columnMetadata: [PageV1Column(
+                    name: "payload", engine: 0, engineType: "jsonb", nullable: true
+                )],
+                cells: [[PageV1Cell(
+                    display: #"{"ok":true}"#, kind: 8, truncation: 2,
+                    originalByteCount: 128, bytes: raw
+                )]]
+            )
+            activeQueryTab.selectedCell = NativeCellSelection(row: 0, column: 0)
+            status = "Value inspector fixture"
+            guard selectedCellSnapshot?.0.engineType == "jsonb",
+                  selectedCellSnapshot?.1.kindLabel == "Structured",
+                  selectedCellSnapshot?.1.originalByteCount == 128
+            else {
+                writePerformanceMetric("VALUE_INSPECTOR_PROOF_FAILED model projection mismatch")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            runNativeValueInspectorAudit()
             return
         }
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_QUERY_TABS"] == "1" {
@@ -2887,7 +2981,7 @@ struct QueryWorkbenchView: View {
                 Text(value).foregroundStyle(.red).font(.callout).textSelection(.enabled)
             }
             if let table = model.resultTable {
-                CatalogGrid(table: table).frame(minHeight: 220)
+                ResultGridWithInspector(table: table, minimumHeight: 220)
                 if model.nextStartRow != nil {
                     Button("Load more rows") { Task { await model.loadMore() } }
                 }
@@ -2923,7 +3017,7 @@ struct ObjectWorkbenchView: View {
                     Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
                 }
                 if let table = tab.resultTable {
-                    CatalogGrid(table: table).frame(minHeight: 260)
+                    ResultGridWithInspector(table: table, minimumHeight: 260)
                     if tab.nextStartRow != nil {
                         Button("Load more rows") { Task { await model.loadMoreObjectRows() } }
                     }
@@ -2937,6 +3031,81 @@ struct ObjectWorkbenchView: View {
         } else {
             ContentUnavailableView("No object tab", systemImage: "tablecells")
         }
+    }
+}
+
+private struct ResultGridWithInspector: View {
+    @Environment(BridgeModel.self) private var model
+    let table: PageV1Table
+    let minimumHeight: CGFloat
+
+    var body: some View {
+        HSplitView {
+            CatalogGrid(table: table) { row, column in
+                model.selectCell(row: row, column: column)
+            }
+            .frame(minWidth: 360, minHeight: minimumHeight)
+            if let snapshot = model.selectedCellSnapshot {
+                NativeValueInspector(
+                    column: snapshot.0, cell: snapshot.1,
+                    row: snapshot.2, columnIndex: snapshot.3
+                )
+                .frame(minWidth: 220, idealWidth: 280, maxWidth: 380)
+            }
+        }
+    }
+}
+
+private struct NativeValueInspector: View {
+    let column: PageV1Column
+    let cell: PageV1Cell
+    let row: Int
+    let columnIndex: Int
+
+    private var hex: String {
+        cell.bytes.map { String(format: "%02x", $0) }.joined(separator: " ")
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Value Inspector").font(.headline)
+                    Spacer()
+                    Text("R\(row + 1) C\(columnIndex + 1)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                LabeledContent("Column", value: column.name)
+                LabeledContent("Database type", value: column.engineType)
+                LabeledContent("Value kind", value: cell.kindLabel)
+                LabeledContent("Nullable", value: column.nullable ? "Yes" : "No")
+                LabeledContent("Stored bytes", value: "\(cell.bytes.count)")
+                if cell.isTruncated {
+                    Label(
+                        cell.originalByteCount.map { "Truncated from \($0) bytes" }
+                            ?? "Truncated value",
+                        systemImage: "scissors"
+                    )
+                    .foregroundStyle(.orange)
+                }
+                GroupBox("Text") {
+                    Text(cell.display)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                GroupBox("Hex") {
+                    Text(hex.isEmpty ? "Empty" : hex)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(10)
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Value inspector for \(column.name)")
     }
 }
 
@@ -3629,8 +3798,17 @@ struct CatalogOutline: NSViewRepresentable {
 
 struct CatalogGrid: NSViewRepresentable {
     let table: PageV1Table
+    let onSelect: @MainActor (Int, Int) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(table) }
+    init(
+        table: PageV1Table,
+        onSelect: @escaping @MainActor (Int, Int) -> Void = { _, _ in }
+    ) {
+        self.table = table
+        self.onSelect = onSelect
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(table, onSelect: onSelect) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let grid = NSTableView()
@@ -3661,6 +3839,7 @@ struct CatalogGrid: NSViewRepresentable {
         guard let grid = scroll.documentView as? NSTableView else { return }
         let selectedRows = grid.selectedRowIndexes
         context.coordinator.snapshot = table
+        context.coordinator.onSelect = onSelect
         context.coordinator.installColumns(on: grid)
         grid.reloadData()
         context.coordinator.startPerformanceScrollIfRequested(on: grid)
@@ -3671,10 +3850,21 @@ struct CatalogGrid: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         var snapshot: PageV1Table
+        var onSelect: @MainActor (Int, Int) -> Void
         private var fixtureScrollTask: Task<Void, Never>?
 
-        init(_ snapshot: PageV1Table) {
+        init(_ snapshot: PageV1Table, onSelect: @escaping @MainActor (Int, Int) -> Void) {
             self.snapshot = snapshot
+            self.onSelect = onSelect
+        }
+
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            guard let tableView = notification.object as? NSTableView,
+                  tableView.selectedRow >= 0
+            else { return }
+            let column = max(tableView.clickedColumn, 0)
+            guard snapshot.columns.indices.contains(column) else { return }
+            onSelect(tableView.selectedRow, column)
         }
 
         func startPerformanceScrollIfRequested(on tableView: NSTableView) {

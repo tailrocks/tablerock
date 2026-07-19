@@ -204,6 +204,16 @@ guard let table = decoded else {
     FileHandle.standardError.write("FAIL: no page event decoded\n".data(using: .utf8)!)
     exit(1)
 }
+guard table.columnMetadata.count == table.columns.count,
+      table.cells.count == table.rows.count,
+      zip(table.columnMetadata, table.columns).allSatisfy({ $0.0.name == $0.1 }),
+      zip(table.cells, table.rows).allSatisfy({ cells, row in
+          cells.count == row.count && zip(cells, row).allSatisfy { $0.0.display == $0.1 }
+      })
+else {
+    FileHandle.standardError.write("FAIL: typed page metadata shape mismatch\n".data(using: .utf8)!)
+    exit(1)
+}
 print("columns: \(table.columns)")
 print("rows: \(table.rows)")
 let env = ProcessInfo.processInfo.environment

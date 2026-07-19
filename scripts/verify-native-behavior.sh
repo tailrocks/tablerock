@@ -36,7 +36,9 @@ run_pg() {
         -e POSTGRES_PASSWORD=secret -e POSTGRES_USER=u -e POSTGRES_DB=db \
         -p 5433:5432 postgres:18.4-alpine >/dev/null
     for i in $(seq 1 30); do
-        docker exec "$name" pg_isready -U u >/dev/null 2>&1 && break
+        docker exec "$name" pg_isready -U u -d db >/dev/null 2>&1 \
+            && docker exec "$name" psql -U u -d db -c 'SELECT 1' >/dev/null 2>&1 \
+            && break
         sleep 1; [ "$i" -eq 30 ] && { echo "    PG not ready"; return 1; }
     done
     docker exec "$name" psql -U u -d db -v ON_ERROR_STOP=1 -c \
@@ -45,6 +47,11 @@ run_pg() {
     DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
         TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
         TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1 \
+        "$BUILD/BehaviorProof"
+    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
+        TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
+        TABLEROCK_QUERY='SELECT 1.5::double precision AS n' \
+        TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1.5 \
         "$BUILD/BehaviorProof"
     DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
         TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \

@@ -72,3 +72,8 @@ All windows share one Rust bridge but own independent connection controls, tabs,
 results, and errors. macOS may group them with native window tabs. Each restored
 window UUID persists only editor intent and its associated profile; reconnect is
 explicit, and results, credentials, operations, and pending writes never restore.
+
+Click any loaded result cell to open its tab-local value inspector. It preserves
+Rust page metadata and shows database type, nullability, value kind, truncation,
+selectable text, and raw hexadecimal bytes. Structured JSON trees and editable
+typed controls remain later parity work.

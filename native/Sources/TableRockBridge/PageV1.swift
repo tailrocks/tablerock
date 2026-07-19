@@ -145,14 +145,84 @@ public enum PageV1 {
 }
 
 /// A decoded page rendered as columns + display-string cells.
+public struct PageV1Column: Sendable, Equatable {
+    public let name: String
+    public let engine: UInt8
+    public let engineType: String
+    public let nullable: Bool
+
+    public init(name: String, engine: UInt8, engineType: String, nullable: Bool) {
+        self.name = name
+        self.engine = engine
+        self.engineType = engineType
+        self.nullable = nullable
+    }
+}
+
+public struct PageV1Cell: Sendable, Equatable {
+    public let display: String
+    public let kind: UInt8
+    public let truncation: UInt8
+    public let originalByteCount: UInt64?
+    public let bytes: Data
+
+    public init(
+        display: String, kind: UInt8, truncation: UInt8,
+        originalByteCount: UInt64?, bytes: Data
+    ) {
+        self.display = display
+        self.kind = kind
+        self.truncation = truncation
+        self.originalByteCount = originalByteCount
+        self.bytes = bytes
+    }
+
+    public var kindLabel: String {
+        switch kind {
+        case 0: "NULL"
+        case 1: "Boolean"
+        case 2: "Signed integer"
+        case 3: "Unsigned integer"
+        case 4: "Float"
+        case 5: "Decimal"
+        case 6: "Temporal"
+        case 7: "Text"
+        case 8: "Structured"
+        case 9: "Binary"
+        case 10: "Invalid"
+        case 11: "Unknown"
+        default: "Kind \(kind)"
+        }
+    }
+
+    public var isTruncated: Bool { truncation != 0 }
+}
+
 public struct PageV1Table: Sendable, Equatable {
     public let columns: [String]
     /// One display string per cell. `∅` for NULL; `<kind N>` for non-text kinds.
     public var rows: [[String]]
+    public let columnMetadata: [PageV1Column]
+    public let cells: [[PageV1Cell]]
 
-    public init(columns: [String], rows: [[String]]) {
+    public init(
+        columns: [String], rows: [[String]],
+        columnMetadata: [PageV1Column]? = nil,
+        cells: [[PageV1Cell]]? = nil
+    ) {
         self.columns = columns
         self.rows = rows
+        self.columnMetadata = columnMetadata ?? columns.map {
+            PageV1Column(name: $0, engine: 0, engineType: "unknown", nullable: true)
+        }
+        self.cells = cells ?? rows.map { row in
+            row.map {
+                PageV1Cell(
+                    display: $0, kind: 7, truncation: 0,
+                    originalByteCount: nil, bytes: Data($0.utf8)
+                )
+            }
+        }
     }
 }
 
@@ -160,6 +230,7 @@ extension PageV1 {
     /// Decode the full page body: header + column names + cell display strings.
     /// Text cells render from the arena; non-text kinds render as a label.
     public static func decodeTable(_ data: Data) throws -> PageV1Table {
+        _ = try decodeEnvelope(data)
         var pos = 0
         func need(_ n: Int) throws {
             if pos + n > data.count { throw PageV1DecodeError.truncated }
@@ -208,11 +279,16 @@ extension PageV1 {
 
         // Columns: bounded_str(name) + u8(engine) + bounded_str(engine_name) + u8(nullable).
         var columns: [String] = []
+        var columnMetadata: [PageV1Column] = []
         for _ in 0..<columnCount {
-            columns.append(try boundedStr())
-            _ = try u8()
-            _ = try boundedStr()
-            _ = try u8()
+            let name = try boundedStr()
+            let engine = try u8()
+            let engineType = try boundedStr()
+            let nullable = try u8() != 0
+            columns.append(name)
+            columnMetadata.append(PageV1Column(
+                name: name, engine: engine, engineType: engineType, nullable: nullable
+            ))
         }
 
         let cells = Int(rowCount) * Int(columnCount)
@@ -222,48 +298,66 @@ extension PageV1 {
         var kinds: [UInt8] = []
         for _ in 0..<cells { kinds.append(try u8()) }
         // Truncations are variable-length (Complete=0, Truncated(None)=1, Truncated(Some)=2+u64).
+        var truncations: [(tag: UInt8, originalByteCount: UInt64?)] = []
         for _ in 0..<cells {
-            if try u8() == 2 { _ = try u64() }
+            let tag = try u8()
+            truncations.append((tag, tag == 2 ? try u64() : nil))
         }
         let arena = try bytes(arenaByteLen)
 
         var rows: [[String]] = []
+        var decodedCells: [[PageV1Cell]] = []
         let cols = Int(columnCount)
         let nRows = Int(rowCount)
         for r in 0..<nRows {
             var row: [String] = []
+            var decodedRow: [PageV1Cell] = []
             for c in 0..<cols {
                 // Columnar layout: column c's values are contiguous, so cell
                 // (r, c) is at c * rowCount + r (not row-major r * cols + c).
                 let i = c * nRows + r
                 let isNull = (bitmap[i / 8] & (1 << (i % 8))) != 0
-                if isNull {
-                    row.append("∅")
-                    continue
-                }
                 let start = Int(offsets[i])
                 let end = Int(offsets[i + 1])
                 let slice = (start <= end && end <= arena.count)
                     ? arena.subdata(in: start..<end) : Data()
-                switch kinds[i] {
-                case 0: row.append("∅")
-                case 1: row.append(slice.first.map { $0 != 0 ? "true" : "false" } ?? "false")
-                case 2: row.append(formatSigned(slice))
-                case 3: row.append(formatUnsigned(slice))
+                let display: String
+                if isNull {
+                    display = "∅"
+                } else {
+                    display = switch kinds[i] {
+                case 0: "∅"
+                case 1: slice.first.map { $0 != 0 ? "true" : "false" } ?? "false"
+                case 2: formatSigned(slice)
+                case 3: formatUnsigned(slice)
+                case 4: formatFloat(slice)
                 // Decimal(5), Temporal(6), Text(7), Structured(8) are all stored
                 // as their UTF-8 text representation in the arena (page.rs
                 // append_value: BoundedText::as_bytes).
                 case 5, 6, 7, 8:
-                    row.append(String(data: slice, encoding: .utf8) ?? "<text>")
+                    String(data: slice, encoding: .utf8) ?? "<text>"
                 case 9:
                     // Binary — often UTF-8 (e.g., Redis keys); fall back to hex.
-                    row.append(String(data: slice, encoding: .utf8) ?? "0x" + slice.map { String(format: "%02x", $0) }.joined())
-                default: row.append("<kind \(kinds[i])>")
+                    String(data: slice, encoding: .utf8)
+                        ?? "0x" + slice.map { String(format: "%02x", $0) }.joined()
+                case 10: "<invalid \(slice.count) bytes>"
+                case 11: "<unknown \(slice.count) bytes>"
+                default: "<kind \(kinds[i])>"
+                    }
                 }
+                row.append(display)
+                decodedRow.append(PageV1Cell(
+                    display: display, kind: kinds[i], truncation: truncations[i].tag,
+                    originalByteCount: truncations[i].originalByteCount, bytes: slice
+                ))
             }
             rows.append(row)
+            decodedCells.append(decodedRow)
         }
-        return PageV1Table(columns: columns, rows: rows)
+        return PageV1Table(
+            columns: columns, rows: rows,
+            columnMetadata: columnMetadata, cells: decodedCells
+        )
     }
 
     /// Big-endian signed integer of the slice width (PostgreSQL network order).
@@ -281,5 +375,12 @@ extension PageV1 {
         let n = slice.count
         for (i, b) in slice.enumerated() { v |= UInt64(b) << (8 * (n - 1 - i)) }
         return String(v)
+    }
+
+    private static func formatFloat(_ slice: Data) -> String {
+        guard slice.count == 8 else { return "<float>" }
+        var bits: UInt64 = 0
+        for byte in slice { bits = (bits << 8) | UInt64(byte) }
+        return String(Double(bitPattern: bits))
     }
 }

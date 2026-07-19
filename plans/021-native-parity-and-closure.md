@@ -10,7 +10,7 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-19): native connection workflows (evidence 512–518), history/retention (519–520), saved queries (521), SQL files (522), typed intent bridge (523), query tabs (524), read-only preview/pinned object tabs (525), multi-window restoration (526), and four-surface environment/safety projection (527) landed; advanced object state and remaining screens continue**
+- **IN PROGRESS (2026-07-19): native connection workflows (evidence 512–518), history/retention (519–520), saved queries (521), SQL files (522), typed intent bridge (523), query tabs (524), read-only preview/pinned object tabs (525), multi-window restoration (526), four-surface environment/safety projection (527), and typed read-only value inspection (528) landed; advanced object state and remaining screens continue**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED
