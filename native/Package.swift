@@ -12,8 +12,6 @@ let package = Package(
     ],
     products: [
         .library(name: "TableRockBridge", targets: ["TableRockBridge"]),
-        // Proof harness executable (no XCTest — works with Command Line Tools).
-        .executable(name: "tablerock-bridge-proof", targets: ["BridgeProof"]),
     ],
     targets: [
         // System library target wrapping the UniFFI C header + module map.
@@ -36,17 +34,17 @@ let package = Package(
                 ]),
             ]
         ),
-        .executableTarget(
-            name: "BridgeProof",
-            dependencies: ["TableRockBridge"],
-            path: "Sources/BridgeProof"
-        ),
         // Native macOS app (plan 020 checkpoint 1). SwiftUI + AppKit on macOS 26;
         // links the cargo release dylib transitively through TableRockBridge.
         .executableTarget(
             name: "TableRockApp",
             dependencies: ["TableRockBridge"],
             path: "Sources/TableRockApp"
+        ),
+        .testTarget(
+            name: "TableRockBridgeTests",
+            dependencies: ["TableRockBridge"],
+            path: "Tests/TableRockBridgeTests"
         ),
     ]
 )

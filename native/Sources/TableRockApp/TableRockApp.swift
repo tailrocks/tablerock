@@ -988,20 +988,6 @@ struct ProfilePasswordPrompt: Identifiable {
     var id: String { profile.idBytes.base64EncodedString() + ":" + action.rawValue }
 }
 
-extension BridgeProfileDraft: @retroactive Identifiable {
-    public var id: String {
-        idBytes?.base64EncodedString() ?? "new-profile"
-    }
-}
-
-extension BridgeHistoryItem: @retroactive Identifiable {
-    public var id: Int64 { historyId }
-}
-
-extension BridgeSavedQueryItem: @retroactive Identifiable {
-    public var id: Int64 { queryId }
-}
-
 private func catalogNodeKey(_ id: Data) -> String {
     "node:" + id.map { String(format: "%02x", $0) }.joined()
 }
@@ -3590,9 +3576,14 @@ struct ContentView: View {
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .sheet(item: $model.editorDraft) { draft in
-            ProfileEditorSheet(initialDraft: draft) { saved in
-                await model.saveProfile(saved)
+        .sheet(isPresented: Binding(
+            get: { model.editorDraft != nil },
+            set: { if !$0 { model.editorDraft = nil } }
+        )) {
+            if let draft = model.editorDraft {
+                ProfileEditorSheet(initialDraft: draft) { saved in
+                    await model.saveProfile(saved)
+                }
             }
         }
         .sheet(item: $model.groupDialog) { dialog in
@@ -4589,7 +4580,7 @@ struct SavedQueriesSheet: View {
                             : "Try a different name or SQL-text search.")
                     )
                 } else {
-                    List(model.savedQueries) { item in
+                    List(model.savedQueries, id: \.queryId) { item in
                         HStack(spacing: 10) {
                             Button { model.restoreSavedQuery(item) } label: {
                                 VStack(alignment: .leading, spacing: 5) {
@@ -4692,7 +4683,7 @@ struct HistorySheet: View {
                             : "Try a different SQL-text search.")
                     )
                 } else {
-                    List(model.historyItems) { item in
+                    List(model.historyItems, id: \.historyId) { item in
                         Button { model.restoreHistory(item) } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(item.statementText ?? "SQL text not retained")

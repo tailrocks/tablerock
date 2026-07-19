@@ -2,7 +2,7 @@
 
 Rust facade: `crates/tablerock-ffi`  
 Generated Swift: `Generated/` (committed; regenerate with script)  
-Proof executable: `Sources/BridgeProof`  
+Bridge regression tests: `Tests/TableRockBridgeTests`
 Page decode: `Sources/TableRockBridge/PageV1.swift`
 
 ## Build Rust library
@@ -25,7 +25,7 @@ cargo build -p tablerock-ffi --release
 ```bash
 cargo build -p tablerock-ffi --release
 cd native
-DYLD_LIBRARY_PATH=../target/release swift run -c release tablerock-bridge-proof
+DYLD_LIBRARY_PATH=../target/release swift test -c release
 ```
 
 ## XCFramework + notarization (operator)
