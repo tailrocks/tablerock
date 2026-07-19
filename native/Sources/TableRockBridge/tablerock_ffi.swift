@@ -775,6 +775,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      */
     func refreshCatalog(sessionId: Data, parentNodeId: Data?) throws  -> [BridgeCatalogNode]
 
+    /**
+     * Loads a bounded typed structure snapshot for one cached catalog object.
+     */
+    func relationStructure(sessionId: Data, catalogNodeId: Data) throws  -> BridgeRelationStructure
+
     func renameProfileGroup(oldName: String, newName: String) throws  -> UInt32
 
     func reorderProfiles(group: String?, ordered: [BridgeProfileOrderItem]) throws
@@ -1357,6 +1362,20 @@ open func refreshCatalog(sessionId: Data, parentNodeId: Data?)throws  -> [Bridge
             self.uniffiCloneHandle(),
         FfiConverterData.lower(sessionId),
         FfiConverterOptionData.lower(parentNodeId),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Loads a bounded typed structure snapshot for one cached catalog object.
+     */
+open func relationStructure(sessionId: Data, catalogNodeId: Data)throws  -> BridgeRelationStructure  {
+    return try  FfiConverterTypeBridgeRelationStructure_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_relation_structure(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(catalogNodeId),uniffiCallStatus
     )
 })
 }
@@ -2734,6 +2753,254 @@ public func FfiConverterTypeBridgeReconnectPlan_lower(_ value: BridgeReconnectPl
 }
 
 
+public struct BridgeRelationColumn: Equatable, Hashable {
+    public var name: String
+    public var dataType: String
+    public var nullable: Bool
+    public var defaultExpression: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, dataType: String, nullable: Bool, defaultExpression: String?) {
+        self.name = name
+        self.dataType = dataType
+        self.nullable = nullable
+        self.defaultExpression = defaultExpression
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRelationColumn: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRelationColumn: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRelationColumn {
+        return
+            try BridgeRelationColumn(
+                name: FfiConverterString.read(from: &buf),
+                dataType: FfiConverterString.read(from: &buf),
+                nullable: FfiConverterBool.read(from: &buf),
+                defaultExpression: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRelationColumn, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.dataType, into: &buf)
+        FfiConverterBool.write(value.nullable, into: &buf)
+        FfiConverterOptionString.write(value.defaultExpression, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationColumn_lift(_ buf: RustBuffer) throws -> BridgeRelationColumn {
+    return try FfiConverterTypeBridgeRelationColumn.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationColumn_lower(_ value: BridgeRelationColumn) -> RustBuffer {
+    return FfiConverterTypeBridgeRelationColumn.lower(value)
+}
+
+
+public struct BridgeRelationConstraint: Equatable, Hashable {
+    public var kind: String
+    public var name: String
+    public var definition: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: String, name: String, definition: String) {
+        self.kind = kind
+        self.name = name
+        self.definition = definition
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRelationConstraint: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRelationConstraint: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRelationConstraint {
+        return
+            try BridgeRelationConstraint(
+                kind: FfiConverterString.read(from: &buf),
+                name: FfiConverterString.read(from: &buf),
+                definition: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRelationConstraint, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.definition, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationConstraint_lift(_ buf: RustBuffer) throws -> BridgeRelationConstraint {
+    return try FfiConverterTypeBridgeRelationConstraint.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationConstraint_lower(_ value: BridgeRelationConstraint) -> RustBuffer {
+    return FfiConverterTypeBridgeRelationConstraint.lower(value)
+}
+
+
+public struct BridgeRelationIndex: Equatable, Hashable {
+    public var kind: String
+    public var name: String
+    public var definition: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: String, name: String, definition: String) {
+        self.kind = kind
+        self.name = name
+        self.definition = definition
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRelationIndex: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRelationIndex: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRelationIndex {
+        return
+            try BridgeRelationIndex(
+                kind: FfiConverterString.read(from: &buf),
+                name: FfiConverterString.read(from: &buf),
+                definition: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRelationIndex, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.definition, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationIndex_lift(_ buf: RustBuffer) throws -> BridgeRelationIndex {
+    return try FfiConverterTypeBridgeRelationIndex.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationIndex_lower(_ value: BridgeRelationIndex) -> RustBuffer {
+    return FfiConverterTypeBridgeRelationIndex.lower(value)
+}
+
+
+public struct BridgeRelationStructure: Equatable, Hashable {
+    public var engine: String
+    public var namespace: String
+    public var relation: String
+    public var columns: [BridgeRelationColumn]
+    public var indexes: [BridgeRelationIndex]
+    public var constraints: [BridgeRelationConstraint]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(engine: String, namespace: String, relation: String, columns: [BridgeRelationColumn], indexes: [BridgeRelationIndex], constraints: [BridgeRelationConstraint]) {
+        self.engine = engine
+        self.namespace = namespace
+        self.relation = relation
+        self.columns = columns
+        self.indexes = indexes
+        self.constraints = constraints
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRelationStructure: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRelationStructure: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRelationStructure {
+        return
+            try BridgeRelationStructure(
+                engine: FfiConverterString.read(from: &buf),
+                namespace: FfiConverterString.read(from: &buf),
+                relation: FfiConverterString.read(from: &buf),
+                columns: FfiConverterSequenceTypeBridgeRelationColumn.read(from: &buf),
+                indexes: FfiConverterSequenceTypeBridgeRelationIndex.read(from: &buf),
+                constraints: FfiConverterSequenceTypeBridgeRelationConstraint.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRelationStructure, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.engine, into: &buf)
+        FfiConverterString.write(value.namespace, into: &buf)
+        FfiConverterString.write(value.relation, into: &buf)
+        FfiConverterSequenceTypeBridgeRelationColumn.write(value.columns, into: &buf)
+        FfiConverterSequenceTypeBridgeRelationIndex.write(value.indexes, into: &buf)
+        FfiConverterSequenceTypeBridgeRelationConstraint.write(value.constraints, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationStructure_lift(_ buf: RustBuffer) throws -> BridgeRelationStructure {
+    return try FfiConverterTypeBridgeRelationStructure.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationStructure_lower(_ value: BridgeRelationStructure) -> RustBuffer {
+    return FfiConverterTypeBridgeRelationStructure.lower(value)
+}
+
+
 public struct BridgeSavedQueryItem: Equatable, Hashable {
     public var queryId: Int64
     public var name: String
@@ -3866,6 +4133,81 @@ fileprivate struct FfiConverterSequenceTypeBridgeProfileOrderItem: FfiConverterR
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeRelationColumn: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeRelationColumn]
+
+    public static func write(_ value: [BridgeRelationColumn], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeRelationColumn.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeRelationColumn] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeRelationColumn]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeRelationColumn.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeBridgeRelationConstraint: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeRelationConstraint]
+
+    public static func write(_ value: [BridgeRelationConstraint], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeRelationConstraint.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeRelationConstraint] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeRelationConstraint]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeRelationConstraint.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeBridgeRelationIndex: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeRelationIndex]
+
+    public static func write(_ value: [BridgeRelationIndex], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeRelationIndex.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeRelationIndex] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeRelationIndex]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeRelationIndex.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeSavedQueryItem: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeSavedQueryItem]
 
@@ -4037,6 +4379,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_refresh_catalog() != 24952) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_relation_structure() != 7338) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_rename_profile_group() != 49627) {

@@ -29,7 +29,8 @@ use tablerock_engine::{
     DriverPageRequest, DriverRuntime, DriverSession, EngineService, EngineServiceUpdate,
     PostgresConnectConfig, PostgresProbeQuery, PostgresSession, PostgresTlsMode,
     RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
-    RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError, resolve_for_connect,
+    RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError,
+    load_relation_structure as load_structure_snapshot, resolve_for_connect,
 };
 use tablerock_files::{
     CsvValueType, csv_to_typed_insert_changes, is_formula_like, read_csv_bounded,
@@ -263,6 +264,38 @@ pub struct BridgeCsvImportReview {
     pub column_count: u32,
     pub formula_like_cells: u32,
     pub expires_at_ms: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRelationColumn {
+    pub name: String,
+    pub data_type: String,
+    pub nullable: bool,
+    pub default_expression: Option<String>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRelationIndex {
+    pub kind: String,
+    pub name: String,
+    pub definition: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRelationConstraint {
+    pub kind: String,
+    pub name: String,
+    pub definition: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRelationStructure {
+    pub engine: String,
+    pub namespace: String,
+    pub relation: String,
+    pub columns: Vec<BridgeRelationColumn>,
+    pub indexes: Vec<BridgeRelationIndex>,
+    pub constraints: Vec<BridgeRelationConstraint>,
 }
 
 #[derive(Clone)]
@@ -615,6 +648,15 @@ impl TableRockBridge {
         row_count: u32,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| self.submit_catalog_browse_inner(session_id, catalog_node_id, row_count))
+    }
+
+    /// Loads a bounded typed structure snapshot for one cached catalog object.
+    pub fn relation_structure(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+    ) -> Result<BridgeRelationStructure, BridgeError> {
+        catch_entry(|| self.relation_structure_inner(session_id, catalog_node_id))
     }
 
     /// Formats resident Rust-owned result pages for clipboard/export.
@@ -2565,6 +2607,92 @@ impl TableRockBridge {
             .operation_copy_identity
             .insert(operation_id, copy_identity);
         Ok(operation_bytes)
+    }
+
+    fn relation_structure_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        catalog_node_id_bytes: Vec<u8>,
+    ) -> Result<BridgeRelationStructure, BridgeError> {
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let catalog_node_id = catalog_node_from_bytes(&catalog_node_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let (driver, namespace, relation) = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let node = inner
+                .catalog_nodes
+                .get(&(session_id, catalog_node_id))
+                .ok_or_else(|| {
+                    BridgeError::rejected(
+                        "unknown-catalog-node",
+                        "catalog node is stale or unknown",
+                    )
+                })?;
+            let supported = registered.engine == Engine::PostgreSql
+                && matches!(node.kind(), CatalogNodeKind::PostgreSqlObject(_));
+            if !supported {
+                return Err(BridgeError::rejected(
+                    "relation-structure-kind",
+                    "structure snapshot currently requires a PostgreSQL object",
+                ));
+            }
+            let parent = node
+                .parent_id()
+                .and_then(|id| inner.catalog_nodes.get(&(session_id, id)))
+                .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (driver, parent.name().to_owned(), node.name().to_owned())
+        };
+        let snapshot = self
+            .runtime
+            .block_on(load_structure_snapshot(driver, namespace, relation))?
+            .map_err(|error| BridgeError::rejected("relation-structure", error.to_string()))?;
+        Ok(BridgeRelationStructure {
+            engine: "postgresql".into(),
+            namespace: snapshot.namespace,
+            relation: snapshot.relation,
+            columns: snapshot
+                .columns
+                .into_iter()
+                .map(|column| BridgeRelationColumn {
+                    name: column.name,
+                    data_type: column.data_type,
+                    nullable: column.nullable,
+                    default_expression: column.default_expression,
+                })
+                .collect(),
+            indexes: snapshot
+                .indexes
+                .into_iter()
+                .map(|index| BridgeRelationIndex {
+                    kind: index.kind,
+                    name: index.name,
+                    definition: index.definition,
+                })
+                .collect(),
+            constraints: snapshot
+                .constraints
+                .into_iter()
+                .map(|constraint| BridgeRelationConstraint {
+                    kind: constraint.kind,
+                    name: constraint.name,
+                    definition: constraint.definition,
+                })
+                .collect(),
+        })
     }
 
     fn format_result_copy_inner(

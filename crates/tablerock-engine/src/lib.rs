@@ -9,6 +9,7 @@ mod ident;
 mod postgres;
 mod postgres_mutation;
 mod redis;
+mod relation_structure;
 mod runtime;
 mod secret_resolution;
 mod service;
@@ -50,6 +51,10 @@ pub use redis::{
     RedisPipelineOutcome, RedisProtocol, RedisRuntimePolicy, RedisSession, RedisStreamEntry,
     RedisSubscriptionKind, RedisSubscriptionOptions, RedisSubscriptionStream, RedisTlsMaterial,
     RedisTlsMode, RedisTtlApplication, RedisTtlMutationOutcome,
+};
+pub use relation_structure::{
+    RelationColumn, RelationConstraint, RelationIndex, RelationStructureError,
+    RelationStructureSnapshot, load_relation_structure,
 };
 pub use runtime::{
     DriverOperationEvent, DriverOperationEvents, DriverRuntime, DriverRuntimeError,

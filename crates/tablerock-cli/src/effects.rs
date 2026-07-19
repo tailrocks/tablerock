@@ -3271,11 +3271,6 @@ async fn load_relation_structure(
     schema: String,
     table: String,
 ) -> Message {
-    use tablerock_core::{
-        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
-    };
-    use tablerock_engine::{DriverPageRequest, FilterValue};
-
     let session_id = match session_id_hex.parse::<SessionId>() {
         Ok(id) => id,
         Err(_) => {
@@ -3297,156 +3292,54 @@ async fn load_relation_structure(
             reason: FailureProjection::Label("session not registered".into()),
         });
     };
-    let sql = "SELECT a.attname::text, \
-            pg_catalog.format_type(a.atttypid, a.atttypmod), \
-            CASE WHEN a.attnotnull THEN 'NOT NULL' ELSE 'NULL' END, \
-            COALESCE(pg_catalog.pg_get_expr(d.adbin, d.adrelid), '') \
-     FROM pg_catalog.pg_attribute a \
-     JOIN pg_catalog.pg_class c ON c.oid = a.attrelid \
-     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-     LEFT JOIN pg_catalog.pg_attrdef d \
-       ON d.adrelid = a.attrelid AND d.adnum = a.attnum \
-     WHERE n.nspname = $1 \
-       AND c.relname = $2 \
-       AND a.attnum > 0 \
-       AND NOT a.attisdropped \
-     ORDER BY a.attnum \
-     LIMIT 256";
-    let statement = match StatementText::new(sql) {
-        Ok(s) => s,
-        Err(e) => {
-            return Message::Engine(tablerock_tui::EngineMsg::RelationStructureFailed {
-                request_token,
-                context_revision,
-                reason: FailureProjection::Label(e.to_string()),
-            });
-        }
-    };
-    let limits = PageLimits::new(256, 8, 256 * 1024, 8 * 1024);
-    let mut stream = match session
-        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
-            statement,
-            parameters: vec![
-                FilterValue::Text(schema.clone()),
-                FilterValue::Text(table.clone()),
-            ],
-            limits,
-            max_cell_bytes: 8 * 1024,
-        })
-        .await
-    {
-        Ok(s) => s,
-        Err(e) => {
-            return Message::Engine(tablerock_tui::EngineMsg::RelationStructureFailed {
-                request_token,
-                context_revision,
-                reason: FailureProjection::Label(e.to_string()),
-            });
-        }
-    };
-    let identity = PageIdentity::new(
-        ResultId::from_parts(IdParts::new(1, 9_003).unwrap()).unwrap(),
-        Revision::INITIAL,
-        CoreEngine::PostgreSql,
-    );
-    let page = match stream.next_page(identity, 0).await {
-        Ok(Some(p)) => p,
-        Ok(None) => {
-            return Message::Engine(tablerock_tui::EngineMsg::RelationStructureFailed {
-                request_token,
-                context_revision,
-                reason: FailureProjection::Label("relation has no columns".into()),
-            });
-        }
-        Err(e) => {
-            return Message::Engine(tablerock_tui::EngineMsg::RelationStructureFailed {
-                request_token,
-                context_revision,
-                reason: FailureProjection::Label(e.to_string()),
-            });
-        }
-    };
-    let mut columns = Vec::new();
-    columns.push("-- columns --".into());
-    for row in 0..page.envelope().row_count() {
-        let name = page
-            .cell(row, 0)
-            .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
-            .unwrap_or_default();
-        let ty = page
-            .cell(row, 1)
-            .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
-            .unwrap_or_default();
-        let nulls = page
-            .cell(row, 2)
-            .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
-            .unwrap_or_default();
-        let default = page
-            .cell(row, 3)
-            .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
-            .unwrap_or_default();
-        if default.is_empty() {
-            columns.push(format!("{name} {ty} {nulls}"));
-        } else {
-            columns.push(format!("{name} {ty} {nulls} DEFAULT {default}"));
-        }
+    let snapshot =
+        match tablerock_engine::load_relation_structure(session, schema.clone(), table.clone())
+            .await
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                return Message::Engine(tablerock_tui::EngineMsg::RelationStructureFailed {
+                    request_token,
+                    context_revision,
+                    reason: FailureProjection::Label(error.to_string()),
+                });
+            }
+        };
+    let mut columns = vec!["-- columns --".into()];
+    columns.extend(snapshot.columns.into_iter().map(|column| {
+        let nullability = if column.nullable { "NULL" } else { "NOT NULL" };
+        column.default_expression.map_or_else(
+            || format!("{} {} {nullability}", column.name, column.data_type),
+            |default| {
+                format!(
+                    "{} {} {nullability} DEFAULT {default}",
+                    column.name, column.data_type
+                )
+            },
+        )
+    }));
+    columns.push("-- indexes --".into());
+    if snapshot.indexes.is_empty() {
+        columns.push("(none)".into());
+    } else {
+        columns.extend(
+            snapshot
+                .indexes
+                .into_iter()
+                .map(|index| format!("{} {}: {}", index.kind, index.name, index.definition)),
+        );
     }
-
-    // Indexes (PRIMARY/UNIQUE/INDEX + pg_get_indexdef).
-    append_structure_section(
-        &session,
-        &mut columns,
-        "-- indexes --",
-        "SELECT \
-            CASE WHEN ix.indisprimary THEN 'PRIMARY' \
-                 WHEN ix.indisunique THEN 'UNIQUE' \
-                 ELSE 'INDEX' END, \
-            i.relname::text, \
-            pg_catalog.pg_get_indexdef(ix.indexrelid) \
-         FROM pg_catalog.pg_index ix \
-         JOIN pg_catalog.pg_class t ON t.oid = ix.indrelid \
-         JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace \
-         JOIN pg_catalog.pg_class i ON i.oid = ix.indexrelid \
-         WHERE n.nspname = $1 AND t.relname = $2 \
-         ORDER BY ix.indisprimary DESC, i.relname LIMIT 128",
-        &schema,
-        &table,
-        |cells| match cells.as_slice() {
-            [kind, name, def] => format!("{kind} {name}: {def}"),
-            _ => cells.join(" "),
-        },
-    )
-    .await;
-
-    // Constraints (PK/UNIQUE/CHECK/EXCLUDE/FK definitions).
-    append_structure_section(
-        &session,
-        &mut columns,
-        "-- constraints --",
-        "SELECT \
-            CASE con.contype \
-              WHEN 'p' THEN 'PRIMARY KEY' \
-              WHEN 'u' THEN 'UNIQUE' \
-              WHEN 'c' THEN 'CHECK' \
-              WHEN 'x' THEN 'EXCLUDE' \
-              WHEN 'f' THEN 'FOREIGN KEY' \
-              ELSE con.contype::text END, \
-            con.conname::text, \
-            pg_catalog.pg_get_constraintdef(con.oid, true) \
-         FROM pg_catalog.pg_constraint con \
-         JOIN pg_catalog.pg_class c ON c.oid = con.conrelid \
-         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-         WHERE n.nspname = $1 AND c.relname = $2 \
-           AND con.contype IN ('p', 'u', 'c', 'x', 'f') \
-         ORDER BY con.contype, con.conname LIMIT 128",
-        &schema,
-        &table,
-        |cells| match cells.as_slice() {
-            [kind, name, def] => format!("{kind} {name}: {def}"),
-            _ => cells.join(" "),
-        },
-    )
-    .await;
+    columns.push("-- constraints --".into());
+    if snapshot.constraints.is_empty() {
+        columns.push("(none)".into());
+    } else {
+        columns.extend(snapshot.constraints.into_iter().map(|constraint| {
+            format!(
+                "{} {}: {}",
+                constraint.kind, constraint.name, constraint.definition
+            )
+        }));
+    }
 
     Message::Engine(tablerock_tui::EngineMsg::RelationStructure {
         request_token,
@@ -3455,72 +3348,6 @@ async fn load_relation_structure(
         table,
         columns,
     })
-}
-
-/// Run a bound structure-section SQL and append formatted lines (or `(none)`).
-async fn append_structure_section<F>(
-    session: &std::sync::Arc<dyn tablerock_engine::DriverSession>,
-    out: &mut Vec<String>,
-    header: &str,
-    sql: &str,
-    schema: &str,
-    table: &str,
-    format_row: F,
-) where
-    F: Fn(Vec<String>) -> String,
-{
-    use tablerock_core::{
-        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
-    };
-    use tablerock_engine::{DriverPageRequest, FilterValue};
-
-    out.push(header.into());
-    let Ok(statement) = StatementText::new(sql) else {
-        out.push("(unavailable)".into());
-        return;
-    };
-    let limits = PageLimits::new(128, 8, 256 * 1024, 8 * 1024);
-    let Ok(mut stream) = session
-        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
-            statement,
-            parameters: vec![
-                FilterValue::Text(schema.to_owned()),
-                FilterValue::Text(table.to_owned()),
-            ],
-            limits,
-            max_cell_bytes: 8 * 1024,
-        })
-        .await
-    else {
-        out.push("(unavailable)".into());
-        return;
-    };
-    let identity = PageIdentity::new(
-        ResultId::from_parts(IdParts::new(1, 9_004).unwrap()).unwrap(),
-        Revision::INITIAL,
-        CoreEngine::PostgreSql,
-    );
-    let Ok(Some(page)) = stream.next_page(identity, 0).await else {
-        out.push("(none)".into());
-        return;
-    };
-    let rows = page.envelope().row_count();
-    if rows == 0 {
-        out.push("(none)".into());
-        return;
-    }
-    let cols = page.envelope().column_count();
-    for row in 0..rows {
-        let mut cells = Vec::with_capacity(cols as usize);
-        for col in 0..cols {
-            let text = page
-                .cell(row, col)
-                .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
-                .unwrap_or_default();
-            cells.push(text);
-        }
-        out.push(format_row(cells));
-    }
 }
 
 async fn execute_table_op(

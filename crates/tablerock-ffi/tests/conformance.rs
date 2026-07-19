@@ -394,6 +394,12 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
         let operation = bridge
             .submit_catalog_browse(session_id.clone(), object.id_bytes.clone(), 500)
             .unwrap();
+        if engine == Engine::ClickHouse {
+            assert!(matches!(
+                bridge.relation_structure(session_id.clone(), object.id_bytes.clone()),
+                Err(BridgeError::Rejected { ref code, .. }) if code == "relation-structure-kind"
+            ));
+        }
         bridge.pump(operation.clone()).unwrap();
         let events = bridge.next_events(0, 64).unwrap().events;
         let page_event = events

@@ -370,6 +370,14 @@ private actor BridgeClient {
         )
     }
 
+    func relationStructure(sessionId: Data, catalogNodeId: Data) throws
+        -> BridgeRelationStructure
+    {
+        try bridge.relationStructure(
+            sessionId: sessionId, catalogNodeId: catalogNodeId
+        )
+    }
+
     func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> ApplyOutcome {
         try bridge.applyReviewToken(
             tokenId: tokenId, nowMs: nowMs, sessionId: sessionId, expectedRevision: 0
@@ -646,6 +654,26 @@ private func runNativeCsvImportAudit() {
     }
     writePerformanceMetric(
         "CSV_IMPORT_PROOF_PASSED preview=true mapping=true formula_literal=true review_token=consume_once applied=2 transaction=postgresql_atomic"
+    )
+}
+
+@MainActor
+private func runNativeStructureAudit() {
+    let roots = NSApplication.shared.windows.filter(\.isVisible).compactMap(\.contentView)
+    func descendants(of view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+    let labels = roots.flatMap(descendants)
+        .compactMap { ($0 as? NSTextField)?.stringValue }
+        .joined(separator: "|")
+    guard labels.contains("id|bigint|NOT NULL"), labels.contains("name|text|NULL"),
+          labels.contains("structure_probe_pkey")
+    else {
+        writePerformanceMetric("STRUCTURE_PROOF_FAILED labels=\(labels)")
+        return
+    }
+    writePerformanceMetric(
+        "STRUCTURE_PROOF_PASSED typed_snapshot=true columns=3 indexes=true constraints=true defaults=true tui_shared=true"
     )
 }
 
@@ -983,6 +1011,10 @@ final class NativeObjectTab: Identifiable {
     var selectedCell: NativeCellSelection?
     var copyOutcome: String?
     var copyError: String?
+    var selectedSection = "data"
+    var structure: BridgeRelationStructure?
+    var structureLoading = false
+    var structureError: String?
 
     init(node: BridgeCatalogNode, pinned: Bool = false) {
         catalogNodeId = node.idBytes
@@ -1365,6 +1397,55 @@ final class BridgeModel {
             }
             try? await Task.sleep(for: .milliseconds(500))
             runNativeValueInspectorAudit()
+            return
+        }
+        if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_STRUCTURE"] == "1" {
+            guard let client else {
+                writePerformanceMetric("STRUCTURE_PROOF_FAILED no bridge")
+                return
+            }
+            do {
+                let session = try await client.open(params: OpenParams(
+                    engine: "postgresql", host: "127.0.0.1", port: 5433,
+                    database: "db", user: "u", password: "secret", tlsMode: "off"
+                ))
+                sessionData = session
+                sessionHex = session.map { String(format: "%02x", $0) }.joined()
+                connectedEngine = "postgresql"
+                guard let database = try await client.refreshCatalog(
+                    session: session, parentNodeId: nil
+                ).first, let schema = try await client.refreshCatalog(
+                    session: session, parentNodeId: database.idBytes
+                ).first(where: { $0.name == "public" }) else {
+                    writePerformanceMetric("STRUCTURE_PROOF_FAILED catalog hierarchy missing")
+                    return
+                }
+                let objects = try await client.refreshCatalog(
+                    session: session, parentNodeId: schema.idBytes
+                )
+                guard let object = objects.first(where: { $0.name == "structure_probe" }) else {
+                    writePerformanceMetric("STRUCTURE_PROOF_FAILED target missing")
+                    return
+                }
+                let tab = NativeObjectTab(node: object, pinned: true)
+                objectTabs = [tab]
+                selectedObjectTabId = tab.id
+                selectedWorkbenchKind = "object"
+                await loadObjectStructure()
+                guard tab.structure?.columns.count == 3,
+                      tab.structure?.indexes.contains(where: { $0.name == "structure_probe_pkey" }) == true,
+                      tab.structure?.constraints.contains(where: { $0.name == "structure_probe_name_check" }) == true
+                else {
+                    writePerformanceMetric(
+                        "STRUCTURE_PROOF_FAILED \(tab.structureError ?? "snapshot mismatch")"
+                    )
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+                runNativeStructureAudit()
+            } catch {
+                writePerformanceMetric("STRUCTURE_PROOF_FAILED \(error)")
+            }
             return
         }
         if let importPath = ProcessInfo.processInfo.environment[
@@ -1957,6 +2038,24 @@ final class BridgeModel {
     func reloadObjectTab() async {
         guard let tab = activeObjectTab, !tab.isRunning else { return }
         await loadObjectTab(tab)
+    }
+
+    func loadObjectStructure() async {
+        guard let tab = activeObjectTab, let client, let session = sessionData,
+              !tab.structureLoading
+        else { return }
+        tab.selectedSection = "structure"
+        tab.structureLoading = true
+        tab.structureError = nil
+        defer { tab.structureLoading = false }
+        do {
+            tab.structure = try await client.relationStructure(
+                sessionId: session, catalogNodeId: tab.catalogNodeId
+            )
+        } catch {
+            tab.structure = nil
+            tab.structureError = "Structure unavailable: \(error)"
+        }
     }
 
     func loadMoreObjectRows() async {
@@ -3419,6 +3518,20 @@ struct ObjectWorkbenchView: View {
                     Label(tab.title, systemImage: tab.pinned ? "pin.fill" : "eye")
                         .font(.headline)
                     Text(tab.kind).font(.caption).foregroundStyle(.secondary)
+                    Picker("Object section", selection: Binding(
+                        get: { tab.selectedSection },
+                        set: { section in
+                            tab.selectedSection = section
+                            if section == "structure" {
+                                Task { await model.loadObjectStructure() }
+                            }
+                        }
+                    )) {
+                        Text("Data").tag("data")
+                        Text("Structure").tag("structure")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
                     Spacer()
                     if !tab.pinned {
                         Button("Pin") { model.pinObjectTab(tab) }
@@ -3439,7 +3552,9 @@ struct ObjectWorkbenchView: View {
                 if let error = tab.error {
                     Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
                 }
-                if let table = tab.resultTable {
+                if tab.selectedSection == "structure" {
+                    ObjectStructureView(tab: tab)
+                } else if let table = tab.resultTable {
                     ResultGridWithInspector(table: table, minimumHeight: 260)
                     if tab.nextStartRow != nil {
                         Button("Load more rows") { Task { await model.loadMoreObjectRows() } }
@@ -3453,6 +3568,90 @@ struct ObjectWorkbenchView: View {
             }
         } else {
             ContentUnavailableView("No object tab", systemImage: "tablecells")
+        }
+    }
+}
+
+private struct ObjectStructureView: View {
+    let tab: NativeObjectTab
+
+    var body: some View {
+        if tab.structureLoading {
+            ProgressView("Loading structure…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = tab.structureError {
+            ContentUnavailableView(
+                "Structure unavailable", systemImage: "exclamationmark.triangle",
+                description: Text(error)
+            )
+        } else if let structure = tab.structure {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(structure.namespace).\(structure.relation)")
+                        .font(.title3.bold())
+                        .textSelection(.enabled)
+                    GroupBox("Columns") {
+                        Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
+                            GridRow {
+                                Text("Name").bold()
+                                Text("Type").bold()
+                                Text("Nullability").bold()
+                                Text("Default").bold()
+                            }
+                            Divider()
+                            ForEach(structure.columns.indices, id: \.self) { index in
+                                let column = structure.columns[index]
+                                GridRow {
+                                    Text(column.name)
+                                    Text(column.dataType)
+                                    Text(column.nullable ? "NULL" : "NOT NULL")
+                                    Text(column.defaultExpression ?? "—")
+                                }
+                                .textSelection(.enabled)
+                            }
+                        }
+                        .padding(6)
+                    }
+                    structureSection(
+                        "Indexes",
+                        rows: structure.indexes.map {
+                            ("\($0.kind) · \($0.name)", $0.definition)
+                        }
+                    )
+                    structureSection(
+                        "Constraints",
+                        rows: structure.constraints.map {
+                            ("\($0.kind) · \($0.name)", $0.definition)
+                        }
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(4)
+            }
+        } else {
+            ContentUnavailableView(
+                "Structure not loaded", systemImage: "list.bullet.rectangle",
+                description: Text("Select Structure to load bounded database metadata.")
+            )
+        }
+    }
+
+    private func structureSection(_ title: String, rows: [(String, String)]) -> some View {
+        GroupBox(title) {
+            if rows.isEmpty {
+                Text("None").foregroundStyle(.secondary).padding(6)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(rows.indices, id: \.self) { index in
+                        Text(rows[index].0).bold()
+                        Text(rows[index].1)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(6)
+            }
         }
     }
 }
