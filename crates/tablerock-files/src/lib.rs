@@ -5,6 +5,13 @@
 //! Paths must be absolute or resolved against the process cwd; empty paths
 //! and directory targets are rejected.
 
+mod csv_import;
+
+pub use csv_import::{
+    CsvImportError, CsvTable, csv_to_insert_changes, is_formula_like, parse_csv,
+    validate_insert_batch_size,
+};
+
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
@@ -79,18 +86,18 @@ impl AtomicFileWriter {
         if dest.is_dir() {
             return Err(FileEffectError::IsDirectory);
         }
-        if let Some(parent) = dest.parent() {
-            if !parent.as_os_str().is_empty() {
-                // Fail closed before any temp is created when parent is not a dir
-                // (file-as-parent, missing intermediate that is a file, etc.).
-                if parent.exists() && !parent.is_dir() {
-                    return Err(FileEffectError::Io(io::Error::new(
-                        io::ErrorKind::NotADirectory,
-                        "export parent path is not a directory",
-                    )));
-                }
-                fs::create_dir_all(parent)?;
+        if let Some(parent) = dest.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            // Fail closed before any temp is created when parent is not a dir
+            // (file-as-parent, missing intermediate that is a file, etc.).
+            if parent.exists() && !parent.is_dir() {
+                return Err(FileEffectError::Io(io::Error::new(
+                    io::ErrorKind::NotADirectory,
+                    "export parent path is not a directory",
+                )));
             }
+            fs::create_dir_all(parent)?;
         }
         // Exclusive unique create. A collision belongs to another live writer or
         // a crashed process and must never be removed by this writer.
@@ -121,9 +128,10 @@ impl AtomicFileWriter {
     }
 
     pub fn write_all(&mut self, bytes: &[u8]) -> Result<(), FileEffectError> {
-        let file = self.file.as_mut().ok_or_else(|| {
-            FileEffectError::Io(io::Error::new(io::ErrorKind::Other, "writer closed"))
-        })?;
+        let file = self
+            .file
+            .as_mut()
+            .ok_or_else(|| FileEffectError::Io(io::Error::other("writer closed")))?;
         file.write_all(bytes)?;
         self.bytes_written = self.bytes_written.saturating_add(bytes.len() as u64);
         Ok(())
@@ -142,10 +150,10 @@ impl AtomicFileWriter {
         }
         fs::rename(&self.temp, &self.dest)?;
         // Best-effort fsync parent for durability on some filesystems.
-        if let Some(parent) = self.dest.parent() {
-            if let Ok(dir) = File::open(parent) {
-                let _ = dir.sync_all();
-            }
+        if let Some(parent) = self.dest.parent()
+            && let Ok(dir) = File::open(parent)
+        {
+            let _ = dir.sync_all();
         }
         self.finished = true;
         Ok(self.bytes_written)

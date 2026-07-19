@@ -13,6 +13,8 @@ use tablerock_core::{
     BoundedText, ByteLimit, FieldValue, MutationBuildError, MutationChange, OwnedValue, Truncation,
 };
 
+const MAX_CSV_COLUMNS: usize = 1_024;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CsvImportError {
     pub row: u32,
@@ -53,7 +55,14 @@ pub fn parse_csv(
     let mut rows = Vec::new();
     let mut field = String::new();
     let mut row: Vec<String> = Vec::new();
-    let mut in_quotes = false;
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum FieldState {
+        Start,
+        Unquoted,
+        Quoted,
+        AfterQuote,
+    }
+    let mut state = FieldState::Start;
     let mut chars = input.chars().peekable();
     let mut line: u32 = 1;
     let mut col: u32 = 1;
@@ -64,6 +73,13 @@ pub fn parse_csv(
                       line: u32,
                       col: u32|
      -> Result<(), CsvImportError> {
+        if row.len() >= MAX_CSV_COLUMNS {
+            return Err(CsvImportError {
+                row: line,
+                column: col,
+                message: format!("exceeds max columns {MAX_CSV_COLUMNS}"),
+            });
+        }
         if field.len() > max_cell_bytes {
             return Err(CsvImportError {
                 row: line,
@@ -76,24 +92,13 @@ pub fn parse_csv(
     };
 
     while let Some(ch) = chars.next() {
-        match ch {
-            '"' => {
-                if in_quotes {
-                    if chars.peek() == Some(&'"') {
-                        field.push('"');
-                        chars.next();
-                    } else {
-                        in_quotes = false;
-                    }
-                } else {
-                    in_quotes = true;
-                }
-            }
-            ',' if !in_quotes => {
+        match (state, ch) {
+            (FieldState::Start, '"') => state = FieldState::Quoted,
+            (FieldState::Start, ',') => {
                 push_field(&mut field, &mut row, max_cell_bytes, line, col)?;
                 col += 1;
             }
-            '\n' if !in_quotes => {
+            (FieldState::Start, '\n') => {
                 push_field(&mut field, &mut row, max_cell_bytes, line, col)?;
                 if !row.is_empty() {
                     rows.push(std::mem::take(&mut row));
@@ -108,20 +113,82 @@ pub fn parse_csv(
                 line += 1;
                 col = 1;
             }
-            '\r' if !in_quotes => {
-                // swallow CR of CRLF
+            (FieldState::Start, '\r') => {}
+            (FieldState::Start, c) => {
+                field.push(c);
+                state = FieldState::Unquoted;
             }
-            c => field.push(c),
+            (FieldState::Unquoted, '"') => {
+                return Err(CsvImportError {
+                    row: line,
+                    column: col,
+                    message: "quote inside unquoted field".into(),
+                });
+            }
+            (FieldState::Unquoted, ',') => {
+                push_field(&mut field, &mut row, max_cell_bytes, line, col)?;
+                col += 1;
+                state = FieldState::Start;
+            }
+            (FieldState::Unquoted, '\n') => {
+                push_field(&mut field, &mut row, max_cell_bytes, line, col)?;
+                rows.push(std::mem::take(&mut row));
+                if rows.len() as u32 > max_rows {
+                    return Err(CsvImportError {
+                        row: line,
+                        column: 0,
+                        message: format!("exceeds max_rows {max_rows}"),
+                    });
+                }
+                line += 1;
+                col = 1;
+                state = FieldState::Start;
+            }
+            (FieldState::Unquoted, '\r') => {}
+            (FieldState::Unquoted, c) => field.push(c),
+            (FieldState::Quoted, '"') if chars.peek() == Some(&'"') => {
+                field.push('"');
+                chars.next();
+            }
+            (FieldState::Quoted, '"') => state = FieldState::AfterQuote,
+            (FieldState::Quoted, c) => field.push(c),
+            (FieldState::AfterQuote, ',') => {
+                push_field(&mut field, &mut row, max_cell_bytes, line, col)?;
+                col += 1;
+                state = FieldState::Start;
+            }
+            (FieldState::AfterQuote, '\n') => {
+                push_field(&mut field, &mut row, max_cell_bytes, line, col)?;
+                rows.push(std::mem::take(&mut row));
+                if rows.len() as u32 > max_rows {
+                    return Err(CsvImportError {
+                        row: line,
+                        column: 0,
+                        message: format!("exceeds max_rows {max_rows}"),
+                    });
+                }
+                line += 1;
+                col = 1;
+                state = FieldState::Start;
+            }
+            (FieldState::AfterQuote, '\r') => {}
+            (FieldState::AfterQuote, _) => {
+                return Err(CsvImportError {
+                    row: line,
+                    column: col,
+                    message: "unexpected content after closing quote".into(),
+                });
+            }
         }
     }
-    if in_quotes {
+    if state == FieldState::Quoted {
         return Err(CsvImportError {
             row: line,
             column: col,
             message: "unclosed quote".into(),
         });
     }
-    if !field.is_empty() || !row.is_empty() {
+    if state != FieldState::Start || !field.is_empty() || !row.is_empty() {
         push_field(&mut field, &mut row, max_cell_bytes, line, col)?;
         rows.push(row);
     }
@@ -133,6 +200,21 @@ pub fn parse_csv(
         });
     }
     let headers = rows.remove(0);
+    if headers.iter().any(String::is_empty) {
+        return Err(CsvImportError {
+            row: 1,
+            column: 0,
+            message: "headers must be non-empty".into(),
+        });
+    }
+    let unique = headers.iter().collect::<std::collections::BTreeSet<_>>();
+    if unique.len() != headers.len() {
+        return Err(CsvImportError {
+            row: 1,
+            column: 0,
+            message: "headers must be unique".into(),
+        });
+    }
     Ok(CsvTable { headers, rows })
 }
 
@@ -140,7 +222,7 @@ pub fn parse_csv(
 #[must_use]
 pub fn is_formula_like(cell: &str) -> bool {
     let t = cell.trim_start();
-    t.starts_with('=') || t.starts_with('+') || t.starts_with('-') && t.contains('(')
+    t.starts_with(['=', '+', '-', '@'])
 }
 
 /// Convert a parsed CSV table into insert mutation changes (one change per row).
@@ -227,6 +309,27 @@ mod tests {
         let t = parse_csv("a,b\n1,\"x,y\"\n", 10, 64).unwrap();
         assert_eq!(t.headers, vec!["a", "b"]);
         assert_eq!(t.rows[0], vec!["1", "x,y"]);
+    }
+
+    #[test]
+    fn rejects_ambiguous_quotes_and_invalid_headers() {
+        for input in ["a\nplain\"quote\n", "a\n\"closed\"tail\n"] {
+            assert!(parse_csv(input, 10, 64).is_err(), "accepted {input:?}");
+        }
+        assert!(parse_csv("a,a\n1,2\n", 10, 64).is_err());
+        assert!(parse_csv(",b\n1,2\n", 10, 64).is_err());
+        let empty = parse_csv("a\n\"\"", 10, 64).unwrap();
+        assert_eq!(empty.rows, vec![vec![String::new()]]);
+    }
+
+    #[test]
+    fn bounds_column_count_and_flags_spreadsheet_formulas() {
+        let too_wide = format!("{}\n", vec!["h"; MAX_CSV_COLUMNS + 1].join(","));
+        assert!(parse_csv(&too_wide, 2, 8).is_err());
+        for value in ["=1+1", "+cmd", "-2", "@SUM(A1)", "  =trimmed"] {
+            assert!(is_formula_like(value), "missed {value:?}");
+        }
+        assert!(!is_formula_like("plain"));
     }
 
     #[test]

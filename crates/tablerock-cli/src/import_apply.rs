@@ -11,7 +11,7 @@ use tablerock_core::{
 };
 use tablerock_engine::{DriverSession, MutationApplyOutcome};
 
-use crate::import_csv::{
+use tablerock_files::{
     CsvImportError, CsvTable, csv_to_insert_changes, validate_insert_batch_size,
 };
 
@@ -88,7 +88,7 @@ pub async fn apply_csv_inserts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::import_csv::parse_csv;
+    use tablerock_files::parse_csv;
 
     #[test]
     fn rejects_empty_csv_before_any_apply() {

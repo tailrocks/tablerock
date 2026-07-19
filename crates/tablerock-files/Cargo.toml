@@ -6,5 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[dependencies]
+tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
+
 [lints]
 workspace = true

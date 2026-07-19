@@ -4298,7 +4298,7 @@ async fn import_csv_apply(
     };
 
     use crate::import_apply::apply_csv_inserts;
-    use crate::import_csv::parse_csv;
+    use tablerock_files::parse_csv;
 
     let session_id = match session_id_hex.parse::<SessionId>() {
         Ok(id) => id,
