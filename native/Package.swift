@@ -12,6 +12,7 @@ let package = Package(
     ],
     products: [
         .library(name: "TableRockBridge", targets: ["TableRockBridge"]),
+        .library(name: "TableRockFeature", targets: ["TableRockFeature"]),
     ],
     targets: [
         // System library target wrapping the UniFFI C header + module map.
@@ -34,11 +35,15 @@ let package = Package(
                 ]),
             ]
         ),
+        .target(
+            name: "TableRockFeature",
+            path: "Sources/TableRockFeature"
+        ),
         // Native macOS app (plan 020 checkpoint 1). SwiftUI + AppKit on macOS 26;
         // links the cargo release dylib transitively through TableRockBridge.
         .executableTarget(
             name: "TableRockApp",
-            dependencies: ["TableRockBridge"],
+            dependencies: ["TableRockBridge", "TableRockFeature"],
             path: "Sources/TableRockApp"
         ),
         .testTarget(
@@ -46,6 +51,11 @@ let package = Package(
             dependencies: ["TableRockBridge"],
             path: "Tests/TableRockBridgeTests",
             resources: [.copy("Fixtures")]
+        ),
+        .testTarget(
+            name: "TableRockFeatureTests",
+            dependencies: ["TableRockFeature"],
+            path: "Tests/TableRockFeatureTests"
         ),
     ]
 )

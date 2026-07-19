@@ -15,6 +15,7 @@ private func connectedSessionLabel(_ session: String) -> String {
 import Observation
 import AppKit
 import TableRockBridge
+import TableRockFeature
 import UniformTypeIdentifiers
 
 private struct NativeOperationProjection: Sendable {
@@ -407,15 +408,13 @@ private actor BridgeClient {
     }
 }
 
-private func nativePersistencePath() throws -> String {
-    let base = try FileManager.default.url(
+private func nativeApplicationSupportRoot() throws -> URL {
+    try FileManager.default.url(
         for: .applicationSupportDirectory,
         in: .userDomainMask,
         appropriateFor: nil,
         create: true
-    ).appendingPathComponent("TableRock", isDirectory: true)
-    try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-    return base.appendingPathComponent("profiles.db").path
+    )
 }
 
 @MainActor
@@ -426,7 +425,17 @@ private final class NativeApplicationModel {
 
     init() {
         do {
-            client = try BridgeClient(persistencePath: nativePersistencePath())
+            let configuration = try AppConfiguration.resolve(
+                environment: ProcessInfo.processInfo.environment,
+                applicationSupportRoot: nativeApplicationSupportRoot(),
+                temporaryRoot: FileManager.default.temporaryDirectory,
+                processIdentifier: ProcessInfo.processInfo.processIdentifier
+            )
+            try configuration.paths.prepare()
+            guard configuration.backend == .live else {
+                throw AppConfigurationError.unsupportedBackend("scripted backend not installed")
+            }
+            client = try BridgeClient(persistencePath: configuration.paths.profilesDatabase.path)
             bridgeError = nil
         } catch {
             client = nil
