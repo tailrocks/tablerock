@@ -163,7 +163,78 @@ private struct WorkbenchCommands: Commands {
 /// Sole owner of the synchronous UniFFI object. Blocking driver pumping and
 /// page decoding run away from MainActor; awaiting the detached pump keeps this
 /// actor reentrant so cancellation can use the operation id independently.
-private actor BridgeClient {
+private protocol WorkbenchBackend: Actor {
+    func listProfiles() throws -> [BridgeProfileItem]
+    func searchProfiles(_ search: String?) throws -> [BridgeProfileItem]
+    func profileDraft(id: Data) throws -> BridgeProfileDraft
+    func saveProfile(_ draft: BridgeProfileDraft) throws -> Data
+    func deleteProfile(id: Data, revision: UInt64) throws
+    func testProfile(id: Data, secretOverride: Data?) throws -> BridgeConnectionTestReport
+    func listProfileGroups() throws -> [BridgeProfileGroup]
+    func createProfileGroup(_ name: String) throws
+    func renameProfileGroup(_ oldName: String, _ newName: String) throws -> UInt32
+    func deleteProfileGroup(_ name: String) throws -> UInt32
+    func setGroupAlphabetical(_ name: String, _ alphabetical: Bool) throws
+    func listHistory(_ search: String?) throws -> [BridgeHistoryItem]
+    func setHistoryRetention(_ retention: String) throws
+    func historyRetention() throws -> String
+    func listSavedQueries(engine: String?, search: String?) throws -> [BridgeSavedQueryItem]
+    func saveQuery(name: String, engine: String, statement: String) throws -> Int64
+    func deleteSavedQuery(_ id: Int64) throws -> Bool
+    func readSqlFile(path: String) throws -> BridgeSqlFile
+    func writeSqlFile(
+        path: String, statement: String, expectedModifiedNanos: UInt64?,
+        expectedLength: UInt64?, overwriteExternalChange: Bool
+    ) throws -> BridgeSqlFile
+    func putSessionIntent(profileId: Data, intent: BridgeSessionIntent) throws
+    func sessionIntent(profileId: Data) throws -> BridgeSessionIntent?
+    func deleteSessionIntent(profileId: Data) throws
+    func putNativeWindowIntent(
+        windowId: String, profileId: Data, intent: BridgeSessionIntent
+    ) throws
+    func nativeWindowIntent(windowId: String) throws -> BridgeNativeWindowIntent?
+    func deleteNativeWindowIntent(windowId: String) throws
+    func setProfileFavorite(_ item: BridgeProfileItem, _ favorite: Bool) throws
+    func reorderProfiles(group: String?, profiles: [BridgeProfileItem]) throws
+    func open(params: OpenParams) throws -> Data
+    func openProfile(id: Data, secretOverride: Data?) throws -> Data
+    func disconnect(session: Data) throws
+    func checkHealth(session: Data) throws -> BridgeSessionHealth
+    func planReconnect(
+        session: Data, attempt: UInt32, authenticationStopped: Bool
+    ) throws -> BridgeReconnectPlan
+    func reconnect(session: Data, secretOverride: Data?) throws -> BridgeReconnectAttempt
+    func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [BridgeCatalogNode]
+    func submitCatalogBrowse(session: Data, nodeId: Data) throws -> Data
+    func submit(session: Data, intent: String, statement: String?) throws -> Data
+    func finish(operationId: Data) async throws -> NativeOperationProjection
+    func cancel(operationId: Data) throws -> CancelOutcome
+    func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) async throws
+        -> (PageV1Table, PageV1Envelope)
+    func formatResultCopy(
+        resultId: Data, revision: UInt64, scope: String,
+        row: UInt64?, column: UInt32?, format: String
+    ) throws -> String
+    func exportLoadedResult(
+        resultId: Data, revision: UInt64, format: String, path: String
+    ) throws -> UInt64
+    func previewCsvImport(path: String) throws -> BridgeCsvImportPreview
+    func stageCsvImport(
+        sessionId: Data, catalogNodeId: Data, path: String,
+        mappedColumns: [String], mappedTypes: [String], nowMs: UInt64
+    ) throws -> BridgeCsvImportReview
+    func relationStructure(sessionId: Data, catalogNodeId: Data) throws
+        -> BridgeRelationStructure
+    func redisKeyView(
+        sessionId: Data, catalogNodeId: Data, collectionSkip: UInt64
+    ) throws -> BridgeRedisKeyView
+    func redisOverview(sessionId: Data) throws -> BridgeRedisOverview
+    func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> ApplyOutcome
+    func revokeReviewToken(tokenId: Data) throws -> Bool
+    func stageAndApply(session: Data, now: UInt64) throws -> ApplyOutcome
+}
+
+private actor LiveWorkbenchBackend: WorkbenchBackend {
     private let bridge: TableRockBridge
     private var eventCursor: UInt64 = 0
 
@@ -526,7 +597,7 @@ private struct SystemKeychainPort: AppKeychainPort {
 
 @MainActor
 private final class NativeApplicationModel {
-    let client: BridgeClient?
+    let client: (any WorkbenchBackend)?
     let bridgeError: String?
     let dependencies: AppDependencies
     private var fixtureWindowOpened = false
@@ -552,7 +623,7 @@ private final class NativeApplicationModel {
             guard configuration.backend == .live else {
                 throw AppConfigurationError.unsupportedBackend("scripted backend not installed")
             }
-            let configuredClient = try BridgeClient(
+            let configuredClient = try LiveWorkbenchBackend(
                 persistencePath: configuration.paths.profilesDatabase.path
             )
             dependencies = configuredDependencies
@@ -1514,13 +1585,13 @@ final class BridgeModel {
     var formDatabase: String = "postgres"
     var formUser: String = "postgres"
     var formPassword: String = ""
-    private let client: BridgeClient?
+    private let client: (any WorkbenchBackend)?
     private let startupError: String?
     private let dependencies: AppDependencies
     var sessionData: Data?
 
     fileprivate init(
-        client: BridgeClient? = nil,
+        client: (any WorkbenchBackend)? = nil,
         startupError: String? = nil,
         windowId: UUID? = nil,
         dependencies: AppDependencies = AppDependencies()
@@ -3291,7 +3362,9 @@ final class BridgeModel {
                     return
                 }
                 do {
-                    let reconnectAttempt = try await client.reconnect(session: sourceSession)
+                    let reconnectAttempt = try await client.reconnect(
+                        session: sourceSession, secretOverride: nil
+                    )
                     if reconnectAttempt.state == "authentication_stopped" {
                         reconnectState = "Authentication stopped"
                         return

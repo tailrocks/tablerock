@@ -10,7 +10,7 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-21): native connection workflows (evidence 512–518), history/retention (519–520), saved queries (521), SQL files (522), typed intent bridge (523), query tabs (524), read-only preview/pinned object tabs (525), multi-window restoration (526), environment/safety projection (527), typed value inspection (528), shared Rust/native multi-format copy (529), native atomic loaded-result export (530), shared bounded CSV import foundation (531), native reviewed CSV import (532), PostgreSQL/ClickHouse structure (533–534), bounded Redis key catalog projection (535), native Redis key object views (536), native Redis sampled overview (537), SwiftPM bridge regression foundation/boundary expansion (538–539), deterministic cross-engine PageV1 fixtures (540), typed native test-root isolation (541), stable automation identifiers (543), native clock/identity ports (544), isolated file-panel/pasteboard ports (546), and native Keychain resolution (549) landed; testing-system checkpoint 12 remains partial, checkpoint 13 is complete, and checkpoints 14–16 remain unimplemented; broader import types/engines, full streaming export, advanced object state, and remaining screens continue**
+- **IN PROGRESS (2026-07-21): native connection workflows (evidence 512–518), history/retention (519–520), saved queries (521), SQL files (522), typed intent bridge (523), query tabs (524), read-only preview/pinned object tabs (525), multi-window restoration (526), environment/safety projection (527), typed value inspection (528), shared Rust/native multi-format copy (529), native atomic loaded-result export (530), shared bounded CSV import foundation (531), native reviewed CSV import (532), PostgreSQL/ClickHouse structure (533–534), bounded Redis key catalog projection (535), native Redis key object views (536), native Redis sampled overview (537), SwiftPM bridge regression foundation/boundary expansion (538–539), deterministic cross-engine PageV1 fixtures (540), typed native test-root isolation (541), stable automation identifiers (543), native clock/identity ports (544), isolated file-panel/pasteboard ports (546), native Keychain resolution (549), and live backend protocol isolation (552) landed; testing-system checkpoint 12 remains partial, checkpoint 13 is complete, and checkpoints 14–16 remain unimplemented; broader import types/engines, full streaming export, advanced object state, and remaining screens continue**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED
@@ -98,7 +98,7 @@ the durable suites below become authoritative.
       containment, malformed IDs, unreachable-server redaction, calls after
       shutdown, repeated create/free, and bounded shutdown with active work.
 
-12. **Injectable native presentation boundary — partial (evidence 541, 544, 546, 549)**
+12. **Injectable native presentation boundary — partial (evidence 541, 544, 546, 549, 552)**
     - Define an application-owned `WorkbenchBackend: Sendable` and
       application-owned immutable DTOs. `LiveWorkbenchBackend` is the sole
       generated-UniFFI adapter; `BridgeModel` depends only on the protocol.

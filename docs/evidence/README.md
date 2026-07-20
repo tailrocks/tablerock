@@ -426,6 +426,7 @@ How to read an evidence document:
 - 549 — [Native Keychain resolution](delivery/549-native-keychain-resolution.md)
 - 550 — [Persistence startup lease release](delivery/550-persistence-startup-lease-release.md)
 - 551 — [ClickHouse open health gate](delivery/551-clickhouse-open-health-gate.md)
+- 552 — [Live WorkbenchBackend protocol isolation](delivery/552-live-workbench-backend-protocol.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
