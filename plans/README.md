@@ -38,6 +38,7 @@ plan).
 | 019 | UniFFI bridge + XCFramework + notarization proof (Phase 12) | P2 | L | 018 | BLOCKED (software + universal XCFramework green; need Developer ID/notarization credentials) |
 | 020 | Native macOS vertical slice, Liquid Glass (Phase 13) | P2 | L | 019 | DONE |
 | 021 | Native parity + release evidence + closure (Phases 14–15) | P3 | L | 020 | IN PROGRESS |
+| 022 | Preview CI/CD: rolling preview release + Homebrew tap (formula + cask) | P2 | M | 001, 020 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) |
 REJECTED (one-line rationale).
@@ -61,6 +62,13 @@ REJECTED (one-line rationale).
   contract, but the phase-exit claim requires 018 done.
 - Cross-repo: 008/010 commit to TermRock `main` first, then pin-bump here
   (AGENTS.md applies to TermRock changes too).
+- 022 (added 2026-07-21 at `cff5930`) rides `workflow_run` on 001's Checks
+  workflow and packages 020's `TableRock.app`; it does NOT wait on 019 —
+  the cask ships the ad-hoc-signed preview shape and upgrades to
+  signed/notarized when 019's Developer ID gate unblocks (021 release
+  evidence then consumes that shape). Modeled on holla (push-model tap)
+  and parallax (pull-verified tap — chosen); jackin is a read-only
+  reference and was not locally available at planning time.
 
 ## Key survey facts the plans are grounded on
 
