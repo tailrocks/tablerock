@@ -29,5 +29,11 @@ jobs:
           test "$(gh api repos/dtolnay/rust-toolchain/commits/stable --jq .sha)" = "4cda84d5c5c54efe2404f9d843567869ab1699d4"
           test "$(gh api repos/EmbarkStudios/cargo-deny-action/releases/latest --jq .tag_name)" = "v2.1.1"
           test "$(gh api repos/EmbarkStudios/cargo-deny-action/commits/v2.1.1 --jq .sha)" = "3c6349835b2b7b196a839186cb8b78e02f7b5f25"
+
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
       - name: Audit advisories, licenses, bans, and sources
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
