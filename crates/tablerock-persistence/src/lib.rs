@@ -129,11 +129,17 @@ impl PersistenceActor {
                 worker: Some(worker),
             }),
             Ok(Err(error)) => {
-                drop(worker);
+                // Startup owns the path lease inside the worker. Join before
+                // returning so a failed open cannot leave a transient false
+                // DatabaseBusy result for the operator's immediate retry.
+                let _ = worker.join();
                 Err(error)
             }
             Err(mpsc::RecvTimeoutError::Timeout) => Err(PersistenceError::Timeout),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(PersistenceError::WorkerStopped),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = worker.join();
+                Err(PersistenceError::WorkerStopped)
+            }
         }
     }
 

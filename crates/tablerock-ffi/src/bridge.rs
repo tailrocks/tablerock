@@ -3137,6 +3137,10 @@ impl TableRockBridge {
                         ),
                         password_opt,
                     );
+                    session
+                        .health_check()
+                        .await
+                        .map_err(|error| BridgeError::rejected("connect", error.to_string()))?;
                     Ok(Box::new(session) as Box<dyn DriverSession>)
                 }
                 Engine::Redis => {

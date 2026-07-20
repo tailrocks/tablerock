@@ -205,19 +205,25 @@ fn cancel_unknown_operation_is_typed() {
 #[test]
 fn open_rejects_unreachable_endpoint() {
     let bridge = TableRockBridge::new_for_test();
-    let err = bridge
-        .open(tablerock_ffi::OpenParams {
-            engine: "postgresql".into(),
-            host: "127.0.0.1".into(),
-            port: 1,
-            database: "postgres".into(),
-            user: "postgres".into(),
-            password: String::new(),
-            tls_mode: "off".into(),
-        })
-        .unwrap_err();
-    match err {
-        BridgeError::Rejected { code, .. } => assert_eq!(code, "connect"),
-        other => panic!("expected connect reject, got {other:?}"),
+    for (engine, database, user) in [
+        ("postgresql", "postgres", "postgres"),
+        ("clickhouse", "default", "default"),
+        ("redis", "0", ""),
+    ] {
+        let err = bridge
+            .open(tablerock_ffi::OpenParams {
+                engine: engine.into(),
+                host: "127.0.0.1".into(),
+                port: 1,
+                database: database.into(),
+                user: user.into(),
+                password: String::new(),
+                tls_mode: "off".into(),
+            })
+            .unwrap_err();
+        match err {
+            BridgeError::Rejected { code, .. } => assert_eq!(code, "connect", "{engine}"),
+            other => panic!("expected {engine} connect reject, got {other:?}"),
+        }
     }
 }
