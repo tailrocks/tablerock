@@ -6,7 +6,7 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-use futures_util::{FutureExt, StreamExt};
+use futures_util::StreamExt;
 use ratatui_core::terminal::Terminal;
 use ratatui_crossterm::CrosstermBackend;
 use tablerock_tui::subscriptions::{Subscription, root_subscriptions};
@@ -31,6 +31,7 @@ pub enum RootProgress {
 
 enum LoopInput {
     Signal,
+    Render,
     Root(Option<Delivery<Message, RootProgress>>),
     Terminal(Option<io::Result<crossterm::event::Event>>),
     /// BoundedAutomatic continuous health probe interval.
@@ -38,6 +39,8 @@ enum LoopInput {
 }
 
 const TERMINAL_BURST_LIMIT: usize = 64;
+const TERMINAL_EVENT_CAPACITY: usize = 256;
+const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
 
 #[derive(Debug)]
 pub enum RunError {
@@ -208,18 +211,31 @@ async fn run_session(
         executor.dispatch(effect.clone());
     }
     let mut events = EventStream::new();
+    let (terminal_sender, mut terminal_events) =
+        tokio::sync::mpsc::channel(TERMINAL_EVENT_CAPACITY);
+    tokio::task::spawn_local(async move {
+        while let Some(event) = events.next().await {
+            let failed = event.is_err();
+            if terminal_sender.send(event).await.is_err() || failed {
+                return;
+            }
+        }
+    });
     let mut root_ingress_open = true;
     let mut input = InputAdapter::default();
     let mut pending_terminal_event = None;
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
     let mut dirty = true;
+    let mut next_render_at = tokio::time::Instant::now();
     // Continuous health for BoundedAutomatic reconnect (30s; no-op when Manual).
     let mut health_interval = tokio::time::interval(std::time::Duration::from_secs(30));
     health_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        if dirty {
+        if dirty
+            && (pending_terminal_event.is_some() || tokio::time::Instant::now() >= next_render_at)
+        {
             let mut geometry = None;
             terminal
                 .draw(|frame| {
@@ -230,6 +246,7 @@ async fn run_session(
             let geometry = geometry.expect("render publishes shell geometry");
             input.set_geometry(geometry.clone());
             dirty = update(&mut model, Message::FrameRendered(geometry)).needs_render();
+            next_render_at = tokio::time::Instant::now() + FRAME_INTERVAL;
             #[cfg(test)]
             after_frame()?;
         }
@@ -243,11 +260,12 @@ async fn run_session(
                     signal?;
                     LoopInput::Signal
                 }
+                _ = tokio::time::sleep_until(next_render_at), if dirty => LoopInput::Render,
                 _ = health_interval.tick() => LoopInput::HealthTick,
                 input_event = async {
                     tokio::select! {
                         root = root_messages.recv(), if root_ingress_open => LoopInput::Root(root),
-                        terminal = events.next() => LoopInput::Terminal(terminal),
+                        terminal = terminal_events.recv() => LoopInput::Terminal(terminal),
                     }
                 } => input_event,
             }
@@ -255,6 +273,7 @@ async fn run_session(
         let terminal_input = matches!(input_event, LoopInput::Terminal(_));
         let message = match input_event {
             LoopInput::Signal => Message::Quit,
+            LoopInput::Render => continue,
             LoopInput::HealthTick => Message::HealthTick,
             LoopInput::Root(None) => {
                 root_ingress_open = false;
@@ -281,9 +300,12 @@ async fn run_session(
         // input cannot force one full frame per event ahead of a queued key.
         // The cap preserves fairness for signals and engine ingress.
         if terminal_input {
+            tokio::task::yield_now().await;
             for _ in 1..TERMINAL_BURST_LIMIT {
-                let Some(event) = events.next().now_or_never() else {
-                    break;
+                let event = match terminal_events.try_recv() {
+                    Ok(event) => Some(event),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => None,
                 };
                 let event = resolve_terminal_event(event)?;
                 if dirty
