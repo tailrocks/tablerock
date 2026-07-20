@@ -2,21 +2,103 @@
 
 ## Goal
 
-Implement TableRock completely: finish the production CLI/TUI and the full
-native macOS application for PostgreSQL, ClickHouse, and Redis, then finish
-distribution and closure. Execute every applicable requirement in
-`ROADMAP.md`, plans 001–022, the functional-parity ledger, and the product and
-architecture specifications. Do not stop at a vertical slice, preview,
-prototype, partially working UI, "mostly complete" phase, or green narrow test.
-Persist across sessions until every requirement is implemented, verified, and
-honestly marked `DONE`, or a proven external STOP condition requires one
+Implement the entire TableRock program defined by **every plan in `plans/`**.
+Finish the production CLI/TUI and full native macOS application for PostgreSQL,
+ClickHouse, and Redis, then finish distribution and closure. Every plan file is
+an execution contract: complete every step, checkbox, command, artifact,
+behavior, test, evidence requirement, maintenance-triggered update, and done
+criterion. Do not treat a summary, status row, roadmap phase, vertical slice,
+preview, prototype, partially working UI, "mostly complete" phase, or narrow
+green test as a substitute for executing the underlying plans. Persist across
+sessions until every plan is fully implemented, verified against current state,
+and honestly marked `DONE`, or a proven external STOP condition requires one
 specific operator action.
 
 This invocation approves the repository's fixed product and architecture
-decisions and authorizes all remaining implementation needed for Phases 0–15
-and plans 001–022. Existing `DONE` labels are evidence claims, not authority to
-skip inspection. Reopen and repair any completed plan whose current code,
-tests, documentation, or runtime evidence does not satisfy its full criteria.
+decisions and authorizes all remaining implementation required by every file
+currently present in `plans/`, including plans 001–022 and any new plan needed
+to close a discovered gap. Existing `DONE` labels are evidence claims, not
+authority to skip reading or verification. Read every plan fully. Reopen and
+repair any completed plan whose current code, tests, documentation, runtime
+behavior, UI, artifacts, or remote evidence does not satisfy its full contract.
+
+## Plans are the execution backbone
+
+`plans/README.md` and every numbered Markdown file under `plans/` define the
+dependency-ordered implementation backlog. The primary job is to execute that
+backlog completely, not merely audit or rewrite it.
+
+The required plan inventory is:
+
+1. `001-ci-verification-baseline.md` — continuously verified build/test/lint CI.
+2. `002-engine-sessions-and-arbitrary-queries.md` — persistent engine sessions
+   and arbitrary-statement execution.
+3. `003-catalog-listing-service.md` — PostgreSQL, ClickHouse, and Redis catalog
+   listing behind the shared service.
+4. `004-profile-domain-and-secret-resolution.md` — complete profile domain,
+   grouping/search, environment tags, and secret resolution.
+5. `005-tui-effect-executor-and-engine-bridge.md` — TUI effects, engine and
+   persistence bridge, and screen-submodel architecture.
+6. `006-connection-experience-screens.md` — complete connection list, groups,
+   editor, Test, and Connect experience.
+7. `007-workbench-shell-and-session-lifecycle.md` — context bar, catalog, tabs,
+   status, sessions, and context lifecycle.
+8. `008-termrock-virtualgrid.md` — reusable TermRock `VirtualGrid` and exact
+   TableRock pin.
+9. `009-postgresql-read-only-slice.md` — PostgreSQL grid, SQL streaming,
+   inspector, and Phase 4 exit.
+10. `010-termrock-textarea-completionmenu.md` — complete TermRock `TextArea`
+    contract and `CompletionMenu`.
+11. `011-sql-editor-workbench.md` — multiline SQL editor, statement selection,
+    completion, history, saved queries, and files.
+12. `012-grid-controls-and-copy.md` — server sorting, filters, columns, and all
+    copy formats.
+13. `013-postgresql-writes-and-admin.md` — staged edits, review, transactional
+    apply, conflict truth, and PostgreSQL administration.
+14. `014-clickhouse-slice.md` — complete ClickHouse engine and UI slice.
+15. `015-redis-slice.md` — complete Redis engine and UI slice.
+16. `016-daily-workflows-and-data-movement.md` — result tabs, import/export,
+    preferences, files, and resilience.
+17. `017-scoped-parity-expansion.md` — SSH, pg_dump/restore, DDL, roles, and
+    editor/Vim polish.
+18. `018-tui-hardening-release-gate.md` — complete TUI hardening and parity
+    release gate.
+19. `019-uniffi-bridge-proof.md` — UniFFI bridge, XCFramework, Developer ID,
+    hardened runtime, notarization, stapling, and clean-machine proof.
+20. `020-native-macos-vertical-slice.md` — native SwiftUI/AppKit Liquid Glass
+    vertical slice over the Rust bridge.
+21. `021-native-parity-and-closure.md` — every native workflow, release
+    evidence, accessibility/performance, and Phases 14–15 closure.
+22. `022-preview-cicd-and-homebrew-tap.md` — rolling attested preview, CLI/TUI
+    formula, native cask, pull verification, and real installation lifecycle.
+
+This list is a minimum, not a frozen ceiling. At startup, compare it with the
+live `plans/` directory and add any newer numbered plans to the execution
+matrix. A listed plan remains required even when its index row already says
+`DONE`.
+
+For every plan, in dependency order:
+
+1. Read the entire current plan, including drift checks, current-state claims,
+   scope, exclusions, exact steps, commands, test plan, done criteria, STOP
+   conditions, and maintenance notes.
+2. Validate its assumptions against live code, current upstream documentation,
+   installed/latest stable tools, CI, artifacts, and remote repositories.
+3. Amend stale or incomplete plan text before dependent implementation. If a
+   required behavior or screen belongs to no existing plan, create the next
+   numbered dependency-linked plan with concrete steps and evidence gates.
+4. Execute every step. Do not skip a step because similar code exists; inspect
+   and prove that existing code meets the exact current requirement.
+5. Run every named command and inspect its output. Add missing tests when the
+   named commands do not cover the plan's full claim.
+6. Satisfy every done checkbox with direct evidence, add/index required evidence
+   documents, then change the plan's row to `DONE` in the same checkpoint.
+7. Continue immediately to the next dependency-ready plan. Never stop after
+   planning, scaffolding, one screen, one client, or one passing test class.
+
+No requirement may disappear between a plan, roadmap, product document,
+parity-ledger row, implementation, test, and evidence. When they disagree,
+resolve the mismatch explicitly and strengthen the owning plan.
 
 ## Product outcome
 
@@ -40,7 +122,7 @@ RPC, or manual C ABI.
 ## Authority
 
 Before changing code, read `AGENTS.md`, `CONTRIBUTING.md`, `README.md`,
-`ROADMAP.md`, `plans/README.md`, every plan not conclusively complete, and all
+`ROADMAP.md`, `plans/README.md`, every numbered plan in full, and all
 documents linked from `docs/README.md` that govern the current checkpoint.
 Always include these authorities:
 
@@ -142,7 +224,8 @@ current-state audit, not status labels:
 
 1. Verify worktree ownership, `HEAD == origin/main`, remote CI, toolchain, and
    plan drift. Preserve unrelated user changes.
-2. Build a requirement matrix for plans 001–022, roadmap Phases 0–15, every
+2. Build a requirement matrix for every file under `plans/`, roadmap Phases
+   0–15, every
    applicable parity-ledger row, and every named deliverable/test/evidence
    gate. Map each requirement to authoritative current evidence.
 3. Classify each item as proven complete, contradicted, incomplete, weakly
@@ -268,7 +351,8 @@ UI completion requires observable, state-complete proof:
 
 Completion requires direct current evidence for all of these:
 
-- Every checkbox and done criterion in plans 001–022 passes; every plan row is
+- Every step, command, artifact, checkbox, test, evidence requirement, and done
+  criterion in every numbered file under `plans/` passes; every plan row is
   `DONE` except a genuinely inapplicable plan explicitly marked `REJECTED` with
   approved evidence.
 - Every Phase 0–15 exit criterion passes and roadmap language contains no
