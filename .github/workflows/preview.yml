@@ -168,7 +168,10 @@ jobs:
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         if: matrix.builder == 'zigbuild'
         with:
-          install_args: "zig cargo:cargo-zigbuild"
+          mise_toml: |
+            [tools]
+            zig = "0.16.0"
+            "cargo:cargo-zigbuild" = "0.23.0"
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Apple CLI
