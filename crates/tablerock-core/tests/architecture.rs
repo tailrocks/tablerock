@@ -17,30 +17,22 @@ fn core_contract_has_no_runtime_or_presentation_dependency() {
     }
     assert_eq!(manifest.matches(".workspace = true").count(), 9);
 
-    let source = [
-        include_str!("../src/lib.rs"),
-        include_str!("../src/command.rs"),
-        include_str!("../src/diagnostic.rs"),
-        include_str!("../src/id.rs"),
-        include_str!("../src/operation.rs"),
-        include_str!("../src/page.rs"),
-        include_str!("../src/profile.rs"),
-        include_str!("../src/profile_aggregate.rs"),
-        include_str!("../src/profile_list.rs"),
-        include_str!("../src/revision.rs"),
-        include_str!("../src/secret.rs"),
-        include_str!("../src/sql_analysis.rs"),
-        include_str!("../src/value.rs"),
-    ]
-    .concat();
+    // Inspect every source file. A hand-maintained include list let new modules
+    // bypass this guard, while engine-name substrings incorrectly rejected
+    // valid engine-typed contracts. Purity is about dependencies and I/O APIs,
+    // not domain vocabulary.
+    let source_directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let source = std::fs::read_dir(source_directory)
+        .expect("core source directory")
+        .map(|entry| entry.expect("core source entry").path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "rs"))
+        .map(|path| std::fs::read_to_string(path).expect("read core source"))
+        .collect::<String>();
     for forbidden in [
         "tokio",
         "ratatui",
         "termrock",
         "crossterm",
-        "postgres",
-        "clickhouse",
-        "redis",
         "std::time",
         "std::net",
     ] {

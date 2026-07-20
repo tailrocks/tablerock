@@ -427,9 +427,11 @@ private func nativeApplicationSupportRoot() throws -> URL {
 private final class NativeApplicationModel {
     let client: BridgeClient?
     let bridgeError: String?
+    let dependencies: AppDependencies
     private var fixtureWindowOpened = false
 
     init() {
+        dependencies = AppDependencies()
         do {
             let configuration = try AppConfiguration.resolve(
                 environment: ProcessInfo.processInfo.environment,
@@ -481,7 +483,7 @@ struct TableRockApp: App {
                 )
             }
         } defaultValue: {
-            UUID()
+            application.dependencies.identifiers.next()
         }
         .restorationBehavior(.automatic)
         .commands {
@@ -503,7 +505,8 @@ private struct WorkbenchWindowRoot: View {
         _model = State(initialValue: BridgeModel(
             client: application.client,
             startupError: application.bridgeError,
-            windowId: windowId
+            windowId: windowId,
+            dependencies: application.dependencies
         ))
     }
 
@@ -529,7 +532,7 @@ private struct WorkbenchWindowRoot: View {
         guard ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_MULTI_WINDOW"] == "1",
               application.claimMultiWindowFixtureOpen()
         else { return }
-        openWindow(value: UUID())
+        openWindow(value: application.dependencies.identifiers.next())
         try? await Task.sleep(for: .milliseconds(800))
         runNativeMultiWindowAudit()
     }
@@ -989,7 +992,7 @@ struct ProfileSection: Identifiable {
 }
 
 struct ProfileGroupDialog: Identifiable {
-    let id = UUID()
+    let id: UUID
     let oldName: String?
     var name: String
     var title: String { oldName == nil ? "New Group" : "Rename Group" }
@@ -1042,7 +1045,7 @@ final class NativeCellSelection {
 @MainActor
 @Observable
 final class NativeQueryTab: Identifiable {
-    let id = UUID()
+    let id: UUID
     var title: String
     var statementText: String
     var resultTable: PageV1Table?
@@ -1064,7 +1067,8 @@ final class NativeQueryTab: Identifiable {
     var copyOutcome: String?
     var copyError: String?
 
-    init(title: String, statementText: String) {
+    init(id: UUID, title: String, statementText: String) {
+        self.id = id
         self.title = title
         self.statementText = statementText
         sqlFileBaseline = statementText
@@ -1074,7 +1078,7 @@ final class NativeQueryTab: Identifiable {
 @MainActor
 @Observable
 final class NativeObjectTab: Identifiable {
-    let id = UUID()
+    let id: UUID
     let catalogNodeId: Data
     let kind: String
     var title: String
@@ -1096,7 +1100,8 @@ final class NativeObjectTab: Identifiable {
     var structureError: String?
     var redisView: BridgeRedisKeyView?
 
-    init(node: BridgeCatalogNode, pinned: Bool = false) {
+    init(id: UUID, node: BridgeCatalogNode, pinned: Bool = false) {
+        self.id = id
         catalogNodeId = node.idBytes
         kind = node.kind
         title = node.name
@@ -1396,17 +1401,22 @@ final class BridgeModel {
     var formPassword: String = ""
     private let client: BridgeClient?
     private let startupError: String?
+    private let dependencies: AppDependencies
     var sessionData: Data?
 
     fileprivate init(
         client: BridgeClient? = nil,
         startupError: String? = nil,
-        windowId: UUID = UUID()
+        windowId: UUID? = nil,
+        dependencies: AppDependencies = AppDependencies()
     ) {
         self.client = client
         self.startupError = startupError
-        self.windowId = windowId
-        let tab = NativeQueryTab(title: "Query 1", statementText: "SELECT 1;")
+        self.dependencies = dependencies
+        self.windowId = windowId ?? dependencies.identifiers.next()
+        let tab = NativeQueryTab(
+            id: dependencies.identifiers.next(), title: "Query 1", statementText: "SELECT 1;"
+        )
         queryTabs = [tab]
         selectedQueryTabId = tab.id
         installPerformanceFixtureIfRequested()
@@ -1414,7 +1424,7 @@ final class BridgeModel {
 
     func initialize() async {
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_MULTI_WINDOW"] == "1" {
-            let other = BridgeModel(client: client, windowId: UUID())
+            let other = BridgeModel(client: client, dependencies: dependencies)
             other.queryText = "SELECT second_window;"
             other.sessionData = Data(repeating: 9, count: 16)
             guard other.windowId != windowId, sharesBridge(with: other),
@@ -1434,9 +1444,11 @@ final class BridgeModel {
                 depth: 2, name: "users", kind: "postgresql_table",
                 childrenState: "not_applicable", expandable: false
             )
-            let first = NativeObjectTab(node: node, pinned: true)
+            let first = NativeObjectTab(
+                id: dependencies.identifiers.next(), node: node, pinned: true
+            )
             first.resultTable = PageV1Table(columns: ["id"], rows: [["1"]])
-            let preview = NativeObjectTab(node: node)
+            let preview = NativeObjectTab(id: dependencies.identifiers.next(), node: node)
             preview.resultTable = PageV1Table(columns: ["id"], rows: [["2"]])
             objectTabs = [first, preview]
             selectedObjectTabId = preview.id
@@ -1511,7 +1523,9 @@ final class BridgeModel {
                     writePerformanceMetric("STRUCTURE_PROOF_FAILED target missing")
                     return
                 }
-                let tab = NativeObjectTab(node: object, pinned: true)
+                let tab = NativeObjectTab(
+                    id: dependencies.identifiers.next(), node: object, pinned: true
+                )
                 objectTabs = [tab]
                 selectedObjectTabId = tab.id
                 selectedWorkbenchKind = "object"
@@ -1559,7 +1573,9 @@ final class BridgeModel {
                     writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED target missing")
                     return
                 }
-                let tab = NativeObjectTab(node: object, pinned: true)
+                let tab = NativeObjectTab(
+                    id: dependencies.identifiers.next(), node: object, pinned: true
+                )
                 objectTabs = [tab]
                 selectedObjectTabId = tab.id
                 selectedWorkbenchKind = "object"
@@ -1703,7 +1719,9 @@ final class BridgeModel {
                     )
                     return
                 }
-                let tab = NativeObjectTab(node: object, pinned: true)
+                let tab = NativeObjectTab(
+                    id: dependencies.identifiers.next(), node: object, pinned: true
+                )
                 objectTabs = [tab]
                 selectedObjectTabId = tab.id
                 selectedWorkbenchKind = "object"
@@ -1787,11 +1805,15 @@ final class BridgeModel {
             return
         }
         if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_QUERY_TABS"] == "1" {
-            let first = NativeQueryTab(title: "Users", statementText: "SELECT 1;")
+            let first = NativeQueryTab(
+                id: dependencies.identifiers.next(), title: "Users", statementText: "SELECT 1;"
+            )
             first.resultTable = PageV1Table(columns: ["n"], rows: [["1"]])
             first.isRunning = true
             first.querySummary = "first result"
-            let second = NativeQueryTab(title: "Orders", statementText: "SELECT 2;")
+            let second = NativeQueryTab(
+                id: dependencies.identifiers.next(), title: "Orders", statementText: "SELECT 2;"
+            )
             second.resultTable = PageV1Table(columns: ["n"], rows: [["2"]])
             second.querySummary = "second result"
             queryTabs = [first, second]
@@ -2108,6 +2130,7 @@ final class BridgeModel {
             return
         }
         let tab = NativeQueryTab(
+            id: dependencies.identifiers.next(),
             title: "Query \(queryTabs.count + 1)",
             statementText: ""
         )
@@ -2195,7 +2218,7 @@ final class BridgeModel {
             return
         }
         objectTabs.last(where: { !$0.pinned })?.pinned = true
-        let tab = NativeObjectTab(node: node)
+        let tab = NativeObjectTab(id: dependencies.identifiers.next(), node: node)
         objectTabs.append(tab)
         selectedObjectTabId = tab.id
         selectedWorkbenchKind = "object"
@@ -2468,7 +2491,7 @@ final class BridgeModel {
                 sessionId: session, catalogNodeId: object.catalogNodeId, path: url.path,
                 mappedColumns: csvImportMappedColumns,
                 mappedTypes: csvImportColumnTypes,
-                nowMs: UInt64(Date().timeIntervalSince1970 * 1000)
+                nowMs: dependencies.clock.nowMilliseconds()
             )
         } catch { csvImportError = "Stage import failed: \(error)" }
     }
@@ -2481,7 +2504,7 @@ final class BridgeModel {
         do {
             let outcome = try await client.applyReviewToken(
                 tokenId: review.tokenId,
-                nowMs: UInt64(Date().timeIntervalSince1970 * 1000),
+                nowMs: dependencies.clock.nowMilliseconds(),
                 sessionId: session
             )
             csvImportReview = nil
@@ -2534,7 +2557,9 @@ final class BridgeModel {
             guard let record = try await client.nativeWindowIntent(
                 windowId: windowId.uuidString.lowercased()
             ), record.profileId == profileId else {
-                let tab = NativeQueryTab(title: "Query 1", statementText: "")
+                let tab = NativeQueryTab(
+                    id: dependencies.identifiers.next(), title: "Query 1", statementText: ""
+                )
                 queryTabs = [tab]
                 selectedQueryTabId = tab.id
                 return
@@ -2558,7 +2583,11 @@ final class BridgeModel {
 
     private func applySessionIntent(_ intent: BridgeSessionIntent) {
         let restored = intent.tabs.map {
-            NativeQueryTab(title: $0.title, statementText: $0.statementText)
+            NativeQueryTab(
+                id: dependencies.identifiers.next(),
+                title: $0.title,
+                statementText: $0.statementText
+            )
         }
         guard !restored.isEmpty, Int(intent.selectedTab) < restored.count else { return }
         queryTabs = restored
@@ -2674,11 +2703,15 @@ final class BridgeModel {
     }
 
     func beginCreateGroup() {
-        groupDialog = ProfileGroupDialog(oldName: nil, name: "")
+        groupDialog = ProfileGroupDialog(
+            id: dependencies.identifiers.next(), oldName: nil, name: ""
+        )
     }
 
     func beginRenameGroup(_ name: String) {
-        groupDialog = ProfileGroupDialog(oldName: name, name: name)
+        groupDialog = ProfileGroupDialog(
+            id: dependencies.identifiers.next(), oldName: name, name: name
+        )
     }
 
     func saveGroup(_ dialog: ProfileGroupDialog) async -> Bool {
@@ -3279,7 +3312,7 @@ final class BridgeModel {
         tab.reviewOutcome = nil
         tab.reviewError = nil
         do {
-            let now = UInt64(Date().timeIntervalSince1970 * 1000)
+            let now = dependencies.clock.nowMilliseconds()
             let outcome = try await client.stageAndApply(session: session, now: now)
             tab.reviewOutcome =
                 "\(outcome.transaction) · \(outcome.appliedCount) applied · \(outcome.conflictCount) conflict · \(outcome.failedCount) failed"

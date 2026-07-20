@@ -32,11 +32,13 @@ The SwiftPM regression target links the real generated UniFFI bridge. It owns
 named lifecycle/redaction tests and hostile PageV1 decoder boundaries; app UI
 automation and live database semantics remain separate testing layers.
 
-`TableRockFeature` owns typed startup configuration and application paths.
+`TableRockFeature` owns typed startup configuration, application paths, and
+presentation clock/identity ports.
 Production uses `Application Support/TableRock`; explicit test launches require
 an absolute `TABLEROCK_TEST_ROOT`, while legacy fixture launches automatically
 use a process-local temporary root. Tests and fixture gates therefore cannot
-open the developer's real profiles database.
+open the developer's real profiles database. Production uses system clock/UUID
+implementations; deterministic tests inject fixed time and ordered identities.
 
 ## XCFramework + notarization (operator)
 
