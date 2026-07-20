@@ -25,6 +25,28 @@ fn open_params(engine: &str, port: u16, database: &str, user: &str) -> OpenParam
     }
 }
 
+fn open_when_ready(
+    bridge: &TableRockBridge,
+    engine: &str,
+    port: u16,
+    database: &str,
+    user: &str,
+) -> Vec<u8> {
+    let mut last_err = None;
+    for attempt in 0..40 {
+        match bridge.open(open_params(engine, port, database, user)) {
+            Ok(session) => return session,
+            Err(error) => {
+                last_err = Some(error.to_string());
+                if attempt < 39 {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+            }
+        }
+    }
+    panic!("{engine} did not become query-ready: {last_err:?}");
+}
+
 /// Returns (page_bytes, next_event_cursor).
 fn probe_and_fetch(
     bridge: &TableRockBridge,
@@ -337,9 +359,7 @@ async fn bridge_three_engines_sequential_open_probe() {
             ("clickhouse", ch_port, "default", "default"),
             ("redis", redis_port, "0", ""),
         ] {
-            let session = bridge
-                .open(open_params(engine, port, db, user))
-                .unwrap_or_else(|e| panic!("open {engine}: {e}"));
+            let session = open_when_ready(&bridge, engine, port, db, user);
             let (page, next) = probe_and_fetch(&bridge, session, cursor);
             cursor = next;
             let decoded =
