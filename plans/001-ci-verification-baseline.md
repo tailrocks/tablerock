@@ -34,7 +34,7 @@ makes them run on every push.
 - `.github/workflows/dependencies.yml` — the only workflow. Runs on push to
   main + daily cron: `cargo outdated` freshness gate, SHA-pin staleness checks
   via `gh api`, and `EmbarkStudios/cargo-deny-action`. Uses `runs-on: macos-15`
-  and SHA-pinned actions (e.g. `actions/checkout@9c091bb2… # v7.0.0`).
+  and SHA-pinned actions (currently `actions/checkout` v7.0.1).
 - Workspace: 5 crates (`crates/tablerock-{cli,core,engine,persistence,tui}`),
   resolver 3, `rust-version = "1.97"`, edition 2024 (`Cargo.toml:1-10`).
 - Workspace lints already deny `clippy::correctness/suspicious/perf` and forbid

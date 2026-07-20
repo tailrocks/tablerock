@@ -10,7 +10,7 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-19): native connection workflows (evidence 512–518), history/retention (519–520), saved queries (521), SQL files (522), typed intent bridge (523), query tabs (524), read-only preview/pinned object tabs (525), multi-window restoration (526), environment/safety projection (527), typed value inspection (528), shared Rust/native multi-format copy (529), native atomic loaded-result export (530), shared bounded CSV import foundation (531), native reviewed CSV import (532), PostgreSQL/ClickHouse structure (533–534), bounded Redis key catalog projection (535), native Redis key object views (536), native Redis sampled overview (537), SwiftPM bridge regression foundation/boundary expansion (538–539), deterministic cross-engine PageV1 fixtures (540), and typed native test-root isolation (541) landed; testing-system checkpoints 11–12 remain partial and checkpoints 13–16 remain unimplemented; broader import types/engines, full streaming export, advanced object state, and remaining screens continue**
+- **IN PROGRESS (2026-07-21): native connection workflows (evidence 512–518), history/retention (519–520), saved queries (521), SQL files (522), typed intent bridge (523), query tabs (524), read-only preview/pinned object tabs (525), multi-window restoration (526), environment/safety projection (527), typed value inspection (528), shared Rust/native multi-format copy (529), native atomic loaded-result export (530), shared bounded CSV import foundation (531), native reviewed CSV import (532), PostgreSQL/ClickHouse structure (533–534), bounded Redis key catalog projection (535), native Redis key object views (536), native Redis sampled overview (537), SwiftPM bridge regression foundation/boundary expansion (538–539), deterministic cross-engine PageV1 fixtures (540), typed native test-root isolation (541), and stable automation identifiers (543) landed; testing-system checkpoint 12 remains partial, checkpoint 13 is complete, and checkpoints 14–16 remain unimplemented; broader import types/engines, full streaming export, advanced object state, and remaining screens continue**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED
@@ -114,7 +114,7 @@ the durable suites below become authoritative.
       running/dirty tab close, restoration corruption, multi-window ownership,
       and model deallocation during work.
 
-13. **Stable native automation surface**
+13. **Stable native automation surface — complete (evidence 543)**
     - Add stable accessibility identifiers independent of visible/localized
       text for at least `window.workbench`, `sidebar.profiles`, `profile.add`,
       `profile.editor.name`, `profile.editor.save`, `catalog.outline`,
@@ -210,7 +210,7 @@ diff must be empty after regeneration.
 - [ ] Swift bridge and injected feature-model test targets green
 - [ ] Checkpoint/Nightly/Release Xcode test plans exist and required cases pass
 - [ ] Every native test uses an isolated temporary root/capability namespace
-- [ ] Stable accessibility identifiers cover all required automation surfaces
+- [x] Stable accessibility identifiers cover all required automation surfaces
 - [ ] Full accessibility matrix recorded
 - [ ] Clean-machine Release artifact passes install/update/uninstall/crash-recovery audits
 - [ ] Ledger closure: no silently-open row; release claims exact

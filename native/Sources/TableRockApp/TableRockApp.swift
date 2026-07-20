@@ -18,6 +18,12 @@ import TableRockBridge
 import TableRockFeature
 import UniformTypeIdentifiers
 
+private extension Data {
+    func hexEncodedString() -> String {
+        map { String(format: "%02x", $0) }.joined()
+    }
+}
+
 private struct NativeOperationProjection: Sendable {
     let table: PageV1Table?
     let envelope: PageV1Envelope?
@@ -509,6 +515,7 @@ private struct WorkbenchWindowRoot: View {
         } else {
             ContentView()
                 .environment(model)
+                .accessibilityIdentifier("window.workbench")
                 .background(NativeWindowConfiguration())
                 .modifier(NativeAppearanceFixtureModifier(
                     fixture: NativeAppearanceFixture.current
@@ -534,6 +541,7 @@ private struct NativeWindowConfiguration: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) {
         Task { @MainActor in
             guard let window = view.window else { return }
+            window.setAccessibilityIdentifier("window.workbench")
             window.tabbingIdentifier = "tablerock-workbench"
             window.tabbingMode = .preferred
             window.tab.title = window.title
@@ -3301,6 +3309,9 @@ struct ContentView: View {
                                         )
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityIdentifier(
+                                        "profile.\(profile.idBytes.hexEncodedString())"
+                                    )
                                     Menu {
                                         Button("Connect") { Task { await model.connect(profile) } }
                                         if model.isActiveProfile(profile) {
@@ -3406,6 +3417,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                .accessibilityIdentifier("sidebar.profiles")
                 .searchable(text: $model.profileSearch, prompt: "Search connections")
                 .task(id: model.profileSearch) {
                     try? await Task.sleep(for: .milliseconds(150))
@@ -3417,6 +3429,7 @@ struct ContentView: View {
                         Button { model.createProfile() } label: {
                             Label("New connection", systemImage: "plus")
                         }
+                        .accessibilityIdentifier("profile.add")
                         Button { model.beginCreateGroup() } label: {
                             Label("New group", systemImage: "folder.badge.plus")
                         }
@@ -3725,6 +3738,10 @@ struct ContentView: View {
 struct QueryWorkbenchView: View {
     @Environment(BridgeModel.self) private var model
 
+    private var queryStatus: String {
+        model.queryError ?? model.cancelOutcome ?? model.querySummary ?? "Idle"
+    }
+
     var body: some View {
         @Bindable var model = model
         VStack(alignment: .leading, spacing: 6) {
@@ -3745,10 +3762,12 @@ struct QueryWorkbenchView: View {
                 }
             HStack {
                 Button("Run query") { Task { await model.runQuery() } }
+                    .accessibilityIdentifier("query.run")
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut("r", modifiers: .command)
                     .disabled(model.isRunning || model.isCatalogRefreshing)
                 Button("Cancel") { Task { await model.cancel() } }
+                    .accessibilityIdentifier("query.cancel")
                     .disabled(!model.isRunning)
                 Button("Refresh catalog") { Task { await model.browse() } }
                     .disabled(model.isRunning || model.isCatalogRefreshing)
@@ -3759,15 +3778,11 @@ struct QueryWorkbenchView: View {
                 Button("Apply probe edit") { Task { await model.applyProbeEdit() } }
                     .disabled(model.isRunning || model.isCatalogRefreshing)
             }
-            if let value = model.cancelOutcome {
-                Text(value).foregroundStyle(.secondary).font(.callout)
-            }
-            if let value = model.querySummary {
-                Text(value).foregroundStyle(.secondary).font(.callout)
-            }
-            if let value = model.queryError {
-                Text(value).foregroundStyle(.red).font(.callout).textSelection(.enabled)
-            }
+            Text(queryStatus)
+                .foregroundStyle(model.queryError == nil ? Color.secondary : Color.red)
+                .font(.callout)
+                .textSelection(.enabled)
+                .accessibilityIdentifier("query.status")
             if let value = model.reviewOutcome {
                 Text(value).foregroundStyle(.green).font(.callout)
             }
@@ -3781,6 +3796,7 @@ struct QueryWorkbenchView: View {
                 ResultGridWithInspector(table: table, minimumHeight: 220)
                 if model.nextStartRow != nil {
                     Button("Load more rows") { Task { await model.loadMore() } }
+                        .accessibilityIdentifier("results.next-page")
                 }
             }
         }
@@ -4325,12 +4341,14 @@ struct QueryTabStrip: View {
                                 WorkbenchTabLabel(title: tab.title, model: model)
                             }
                                 .buttonStyle(.borderedProminent)
+                                .accessibilityIdentifier("query.tab.\(tab.id.uuidString.lowercased())")
                                 .accessibilityValue("Selected")
                         } else {
                             Button { model.selectQueryTab(tab) } label: {
                                 WorkbenchTabLabel(title: tab.title, model: model)
                             }
                                 .buttonStyle(.bordered)
+                                .accessibilityIdentifier("query.tab.\(tab.id.uuidString.lowercased())")
                         }
                         Menu {
                             Button("Rename…") { model.beginRenameQueryTab(tab) }
@@ -4355,6 +4373,7 @@ struct QueryTabStrip: View {
                                 )
                             }
                             .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("object.tab.\(tab.id.uuidString.lowercased())")
                             .accessibilityValue("Selected")
                         } else {
                             Button { model.selectObjectTab(tab) } label: {
@@ -4364,6 +4383,7 @@ struct QueryTabStrip: View {
                                 )
                             }
                             .buttonStyle(.bordered)
+                            .accessibilityIdentifier("object.tab.\(tab.id.uuidString.lowercased())")
                         }
                         Menu {
                             if !tab.pinned {
@@ -4785,6 +4805,7 @@ struct CatalogOutline: NSViewRepresentable {
         outline.allowsMultipleSelection = false
         outline.autosaveExpandedItems = false
         outline.setAccessibilityLabel("Database catalog")
+        outline.setAccessibilityIdentifier("catalog.outline")
         outline.target = context.coordinator
         outline.doubleAction = #selector(Coordinator.openSelectedObject)
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("catalog-name"))
@@ -4942,6 +4963,7 @@ struct CatalogOutline: NSViewRepresentable {
                 ? "Catalog state \(node.title)"
                 : node.children.isEmpty
                 ? "Catalog object \(node.title)" : "Catalog group \(node.title)")
+            cell.setAccessibilityIdentifier("catalog.node.\(node.key)")
             return cell
         }
 
@@ -5022,6 +5044,7 @@ struct CatalogGrid: NSViewRepresentable {
         grid.rowSizeStyle = .small
         grid.backgroundColor = .textBackgroundColor
         grid.setAccessibilityLabel("Query results")
+        grid.setAccessibilityIdentifier("results.grid")
         let scroll = NSScrollView()
         scroll.documentView = grid
         scroll.drawsBackground = true
@@ -5184,6 +5207,7 @@ struct SqlTextEditor: NSViewRepresentable {
         editor.backgroundColor = .textBackgroundColor
         editor.string = text
         editor.setAccessibilityLabel("SQL editor")
+        editor.setAccessibilityIdentifier("query.editor")
 
         let scroll = NSScrollView()
         scroll.documentView = editor
@@ -5338,6 +5362,7 @@ struct ProfileEditorSheet: View {
                         Text("Redis").tag("redis")
                     }
                     TextField("Name", text: $draft.name)
+                        .accessibilityIdentifier("profile.editor.name")
                     TextField("Group", text: $draft.group)
                     Picker("Environment", selection: $draft.environment) {
                         Text("None").tag("")
@@ -5405,6 +5430,7 @@ struct ProfileEditorSheet: View {
                             saving = false
                         }
                     }
+                    .accessibilityIdentifier("profile.editor.save")
                     .disabled(!canSave || saving)
                 }
             }
