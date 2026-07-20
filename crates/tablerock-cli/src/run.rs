@@ -6,7 +6,6 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-use futures_util::StreamExt;
 use ratatui_core::terminal::Terminal;
 use ratatui_crossterm::CrosstermBackend;
 use tablerock_tui::subscriptions::{Subscription, root_subscriptions};
@@ -14,7 +13,7 @@ use tablerock_tui::{Effect, Message, Model, ShellView, update};
 use termrock::crossterm::{Session, SessionOptions};
 
 use crate::{
-    Delivery, EventStream, IngressReceiver, IngressSender, InputAdapter, bounded_ingress,
+    Delivery, IngressReceiver, IngressSender, InputAdapter, bounded_ingress,
     effects::EffectExecutor,
 };
 
@@ -211,50 +210,57 @@ async fn run_session(
         }
         executor.dispatch(effect.clone());
     }
-    let mut events = EventStream::new();
     let (terminal_sender, mut terminal_events) =
         tokio::sync::mpsc::channel(TERMINAL_EVENT_CAPACITY);
     let (terminal_priority_sender, mut terminal_priority_events) =
         tokio::sync::mpsc::channel(TERMINAL_PRIORITY_CAPACITY);
-    tokio::task::spawn_local(async move {
-        while let Some(event) = events.next().await {
-            let failed = event.is_err();
-            let priority = failed
-                || matches!(
+    // Crossterm decoding owns a dedicated OS thread. Resize-signal storms must
+    // not compete with the current-thread TEA runtime that consumes decoded
+    // input. The detached reader ends when the process exits; channel closure
+    // makes every completed read return without touching restored UI state.
+    std::thread::Builder::new()
+        .name("tablerock-terminal-reader".into())
+        .spawn(move || {
+            loop {
+                let event = crossterm::event::read();
+                let failed = event.is_err();
+                let priority = failed
+                    || matches!(
+                        &event,
+                        Ok(crossterm::event::Event::Key(key))
+                            if key.code == crossterm::event::KeyCode::Char('c')
+                                && key
+                                    .modifiers
+                                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                    );
+                let sent = if priority {
+                    terminal_priority_sender.blocking_send(event).is_ok()
+                } else if matches!(
                     &event,
-                    Ok(crossterm::event::Event::Key(key))
-                        if key.code == crossterm::event::KeyCode::Char('c')
-                            && key
-                                .modifiers
-                                .contains(crossterm::event::KeyModifiers::CONTROL)
-                );
-            let sent = if priority {
-                terminal_priority_sender.send(event).await.is_ok()
-            } else if matches!(
-                &event,
-                Ok(crossterm::event::Event::Resize(_, _))
-                    | Ok(crossterm::event::Event::Mouse(
-                        crossterm::event::MouseEvent {
-                            kind: crossterm::event::MouseEventKind::Moved,
-                            ..
-                        }
-                    ))
-            ) {
-                // Resize and pointer-move events describe latest state. Under
-                // saturation, retaining an old sample is less correct than
-                // allowing the next sample and all semantic input to proceed.
-                match terminal_sender.try_send(event) {
-                    Ok(()) | Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => true,
-                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => false,
+                    Ok(crossterm::event::Event::Resize(_, _))
+                        | Ok(crossterm::event::Event::Mouse(
+                            crossterm::event::MouseEvent {
+                                kind: crossterm::event::MouseEventKind::Moved,
+                                ..
+                            }
+                        ))
+                ) {
+                    // Resize and pointer-move events describe latest state. Under
+                    // saturation, retaining an old sample is less correct than
+                    // allowing the next sample and all semantic input to proceed.
+                    match terminal_sender.try_send(event) {
+                        Ok(()) | Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => true,
+                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => false,
+                    }
+                } else {
+                    terminal_sender.blocking_send(event).is_ok()
+                };
+                if !sent || failed {
+                    break;
                 }
-            } else {
-                terminal_sender.send(event).await.is_ok()
-            };
-            if !sent || failed {
-                return;
             }
-        }
-    });
+        })
+        .map_err(RunError::Input)?;
     let mut root_ingress_open = true;
     let mut input = InputAdapter::default();
     let mut pending_terminal_event = None;

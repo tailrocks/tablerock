@@ -38,4 +38,9 @@ Remote Linux proof: Checks run `29778717500`, Ubuntu job `88474401411`, passed
 the full container-free suite at repair commit `a10c434`, including the PTY
 regression that failed at the preceding HEAD.
 
+This proof was not stable: later Ubuntu job `88476428834` at `7116097` failed
+the same regression after the async decoder never published Quit. Evidence 558
+supersedes the reader architecture; lane priority remains a downstream bound,
+not the complete repair.
+
 No external product influenced this runtime repair.
