@@ -16,6 +16,17 @@ BUILD="$NATIVE/.build-direct"
 DIST="$NATIVE/dist"
 APP="$DIST/TableRock.app"
 TARGET_arm64="arm64-apple-macos26.0"
+TABLEROCK_APP_VERSION="${TABLEROCK_APP_VERSION:-0.1.0}"
+TABLEROCK_BUNDLE_VERSION="${TABLEROCK_BUNDLE_VERSION:-1}"
+
+if [[ -z "$TABLEROCK_APP_VERSION" ]]; then
+  echo "TABLEROCK_APP_VERSION must not be empty" >&2
+  exit 2
+fi
+if [[ ! "$TABLEROCK_BUNDLE_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+  echo "TABLEROCK_BUNDLE_VERSION must be a positive integer" >&2
+  exit 2
+fi
 
 echo "==> Building Rust facade (release)"
 cargo build -p tablerock-ffi --release
@@ -77,6 +88,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key><string>app.tablerock.TableRock</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>TableRockPreviewVersion</key><string>0.1.0</string>
   <key>CFBundleExecutable</key><string>TableRock</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
@@ -84,6 +96,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+
+plutil -replace CFBundleVersion -string "$TABLEROCK_BUNDLE_VERSION" \
+  "$APP/Contents/Info.plist"
+plutil -replace TableRockPreviewVersion -string "$TABLEROCK_APP_VERSION" \
+  "$APP/Contents/Info.plist"
 
 # Ad-hoc sign (install_name_tool invalidated the build signature). Local-run only;
 # notarization is the operator-gated release path.

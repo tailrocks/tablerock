@@ -227,13 +227,14 @@ Jobs:
 4. **publish** (ubuntu, `contents: write`): download all artifacts, verify
    source SHA is on main (holla's compare-API guard), then
    `gh release edit/create preview` — prerelease, `--target <sha>`, title
-   `Preview <version>`, `--clobber` upload of all 6 assets (holla's
+   `Preview <version>`, `--clobber` upload of all 10 assets (five archives
+   plus five checksum files; holla's
    view/edit/create fallback block verbatim).
 
 Every action SHA-pinned with a `# vX.Y.Z` comment (repo convention).
 
 **Verify**: `workflow_dispatch` the workflow; all jobs green;
-`gh release view preview` lists 6 assets with the expected version in the
+`gh release view preview` lists 10 assets with the expected version in the
 title.
 
 ### Step 4: Extend the stale-pin audit
@@ -274,10 +275,10 @@ the repo created.** Then seed:
    pull-verify shape, simplified to this plan's artifact set: cron
    (`*/30`-ish offset minutes) + dispatch; `gh release view preview --repo
    tailrocks/tablerock --json name,targetCommitish`; validate version
-   regex + 40-hex SHA; download all assets; assert exact asset count (6);
+   regex + 40-hex SHA; download all assets; assert the exact 10-asset set;
    sha256 each; `gh attestation verify --repo tailrocks/tablerock
    --source-ref refs/heads/main --source-digest <sha>
-   --deny-self-hosted-runners` on each archive; run the Linux x86 binary
+   --deny-self-hosted-runners` on each of the five archives; run the Linux x86 binary
    and assert `--version` output equals the release version; unzip the app
    archive and assert `TableRock.app/Contents/MacOS/TableRock` exists +
    Info.plist contains the version string (structural check only — ubuntu
@@ -324,8 +325,8 @@ Update the plan 022 row in `plans/README.md`.
 
 - [ ] `tablerock --version` prints overridable release identity; tests green
 - [ ] `preview.yml` green from both `workflow_dispatch` and a real
-      Checks-completed trigger; rolling `preview` prerelease has 6
-      attested assets
+      Checks-completed trigger; rolling `preview` prerelease has 10 release
+      assets and all five archives are attested
 - [ ] All new action pins covered by the dependencies.yml freshness audit
 - [ ] `tailrocks/homebrew-tablerock` exists with formula + alias + cask +
       pull-verify workflow, all carrying the current source-sha
