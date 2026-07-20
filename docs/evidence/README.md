@@ -423,6 +423,7 @@ How to read an evidence document:
 - 546 — [Native file-panel and pasteboard ports](delivery/546-native-file-pasteboard-ports.md)
 - 547 — [PTY terminal-burst fairness](delivery/547-pty-terminal-burst-fairness.md)
 - 548 — [cargo-deny Linux runner boundary](delivery/548-cargo-deny-linux-runner.md)
+- 549 — [Native Keychain resolution](delivery/549-native-keychain-resolution.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

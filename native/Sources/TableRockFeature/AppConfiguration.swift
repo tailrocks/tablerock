@@ -10,6 +10,11 @@ public struct AppConfiguration: Sendable, Equatable {
     public let paths: AppPaths
     public let isTestMode: Bool
 
+    public var keychainNamespace: String {
+        let root = Data(paths.dataRoot.path.utf8).base64EncodedString()
+        return "app.tablerock.credentials.\(root)"
+    }
+
     public static func resolve(
         environment: [String: String],
         applicationSupportRoot: URL,

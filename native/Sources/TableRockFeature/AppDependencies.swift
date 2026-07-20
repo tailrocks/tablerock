@@ -66,6 +66,13 @@ public protocol AppPasteboardPort {
     func write(_ representations: [AppPasteboardRepresentation]) throws
 }
 
+@MainActor
+public protocol AppKeychainPort {
+    func store(secret: Data, account: String) throws -> Data
+    func read(reference: Data) throws -> Data
+    func remove(reference: Data) throws
+}
+
 public enum AppCapabilityError: Error, Equatable {
     case unavailable(String)
     case rejected(String)
@@ -84,22 +91,38 @@ public struct UnavailablePasteboardPort: AppPasteboardPort {
     }
 }
 
+public struct UnavailableKeychainPort: AppKeychainPort {
+    public init() {}
+    public func store(secret: Data, account: String) throws -> Data {
+        throw AppCapabilityError.unavailable("keychain")
+    }
+    public func read(reference: Data) throws -> Data {
+        throw AppCapabilityError.unavailable("keychain")
+    }
+    public func remove(reference: Data) throws {
+        throw AppCapabilityError.unavailable("keychain")
+    }
+}
+
 @MainActor
 public struct AppDependencies {
     public let clock: any AppClock
     public let identifiers: any AppIdentifierGenerator
     public let filePanels: any AppFilePanelPort
     public let pasteboard: any AppPasteboardPort
+    public let keychain: any AppKeychainPort
 
     public init(
         clock: any AppClock = SystemAppClock(),
         identifiers: any AppIdentifierGenerator = SystemAppIdentifierGenerator(),
         filePanels: any AppFilePanelPort = UnavailableFilePanelPort(),
-        pasteboard: any AppPasteboardPort = UnavailablePasteboardPort()
+        pasteboard: any AppPasteboardPort = UnavailablePasteboardPort(),
+        keychain: any AppKeychainPort = UnavailableKeychainPort()
     ) {
         self.clock = clock
         self.identifiers = identifiers
         self.filePanels = filePanels
         self.pasteboard = pasteboard
+        self.keychain = keychain
     }
 }

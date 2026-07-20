@@ -44,6 +44,25 @@ private final class RecordingPasteboard: AppPasteboardPort {
     }
 }
 
+@MainActor
+private final class RecordingKeychain: AppKeychainPort {
+    var stored: [(Data, String)] = []
+    var reads: [Data] = []
+    var removals: [Data] = []
+    let reference = Data([1, 2, 3])
+    let secret = Data("secret".utf8)
+
+    func store(secret: Data, account: String) throws -> Data {
+        stored.append((secret, account))
+        return reference
+    }
+    func read(reference: Data) throws -> Data {
+        reads.append(reference)
+        return secret
+    }
+    func remove(reference: Data) throws { removals.append(reference) }
+}
+
 @Suite("Application dependency injection")
 @MainActor
 struct AppDependenciesTests {
@@ -77,5 +96,21 @@ struct AppDependenciesTests {
         try dependencies.pasteboard.write([payload])
         #expect(panels.saveRequests == [request])
         #expect(pasteboard.writes == [[payload]])
+    }
+
+    @Test("Keychain capability exposes only opaque references and bytes")
+    func isolatedKeychainPort() throws {
+        let keychain = RecordingKeychain()
+        let dependencies = AppDependencies(keychain: keychain)
+        let secret = Data("secret".utf8)
+
+        let reference = try dependencies.keychain.store(secret: secret, account: "profile-1")
+        #expect(reference == Data([1, 2, 3]))
+        #expect(try dependencies.keychain.read(reference: reference) == secret)
+        try dependencies.keychain.remove(reference: reference)
+        #expect(keychain.stored.count == 1)
+        #expect(keychain.stored[0].1 == "profile-1")
+        #expect(keychain.reads == [reference])
+        #expect(keychain.removals == [reference])
     }
 }

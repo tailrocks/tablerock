@@ -61,8 +61,9 @@ pub use runtime::{
     DriverSpawnError, DriverTaskExit, RuntimeCancelOutcome, RuntimeStopOutcome,
 };
 pub use secret_resolution::{
-    OnePasswordReadPort, OpCliReader, ResolvedSecret, SecretPromptPort, SecretResolutionError,
-    SecretSourceKindLabel, resolve_for_connect, resolve_for_connect_with,
+    KeychainReadPort, OnePasswordReadPort, OpCliReader, ResolvedSecret, SecretPromptPort,
+    SecretResolutionError, SecretSourceKindLabel, resolve_for_connect, resolve_for_connect_with,
+    resolve_for_connect_with_ports,
 };
 pub use service::{
     EngineCancelOutcome, EngineService, EngineServiceError, EngineServiceUpdate,

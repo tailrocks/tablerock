@@ -27,9 +27,15 @@ if command -v uniffi-bindgen >/dev/null 2>&1; then
 elif [[ -x "$ROOT/target/$PROFILE/uniffi-bindgen-tablerock" ]]; then
   "$ROOT/target/$PROFILE/uniffi-bindgen-tablerock" generate --library "$LIB" --language swift --out-dir "$OUT_DIR"
 else
-  cargo run -p tablerock-ffi --features bindgen-cli --bin uniffi-bindgen -- \
+  cargo run -p tablerock-ffi --features bindgen-cli --bin uniffi-bindgen-tablerock -- \
     generate --library "$LIB" --language swift --out-dir "$OUT_DIR"
 fi
+
+# UniFFI templates contain trailing spaces. Normalize committed artifacts so
+# generation is stable under the repository whitespace gate.
+for generated in "$OUT_DIR/tablerock_ffi.swift" "$OUT_DIR/tablerock_ffiFFI.h"; do
+  [[ ! -f "$generated" ]] || perl -pi -e 's/[ \t]+$//' "$generated"
+done
 
 # Keep Sources/TableRockBridge in sync for the Swift package (committed artifact).
 SOURCES_SWIFT="$ROOT/native/Sources/TableRockBridge"

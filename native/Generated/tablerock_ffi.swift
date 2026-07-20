@@ -739,6 +739,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func openProfile(profileId: Data, passwordOverride: String?) throws  -> Data
 
     /**
+     * Native credential path: transient bytes cross FFI without observable text state.
+     */
+    func openProfileWithSecret(profileId: Data, secretOverride: Data?) throws  -> Data
+
+    /**
      * Test-only: panics inside catch_unwind so callers observe ContainedPanic.
      */
     func panicProbe() throws
@@ -768,6 +773,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Opens replacement first, then retires the old saved-profile session.
      */
     func reconnectSavedSession(sessionId: Data, passwordOverride: String?) throws  -> BridgeReconnectAttempt
+
+    func reconnectSavedSessionWithSecret(sessionId: Data, secretOverride: Data?) throws  -> BridgeReconnectAttempt
 
     /**
      * Loads one bounded type-specific Redis key view from an opaque catalog node.
@@ -849,6 +856,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Connects, describes, and disconnects without changing persistence.
      */
     func testProfile(profileId: Data, passwordOverride: String?) throws  -> BridgeConnectionTestReport
+
+    func testProfileWithSecret(profileId: Data, secretOverride: Data?) throws  -> BridgeConnectionTestReport
 
     func writeSqlFile(path: String, statementText: String, expectedModifiedNanos: UInt64?, expectedLen: UInt64?, overwriteExternalChange: Bool) throws  -> BridgeSqlFile
 
@@ -1266,6 +1275,20 @@ open func openProfile(profileId: Data, passwordOverride: String?)throws  -> Data
 }
 
     /**
+     * Native credential path: transient bytes cross FFI without observable text state.
+     */
+open func openProfileWithSecret(profileId: Data, secretOverride: Data?)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_open_profile_with_secret(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(profileId),
+        FfiConverterOptionData.lower(secretOverride),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Test-only: panics inside catch_unwind so callers observe ContainedPanic.
      */
 open func panicProbe()throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
@@ -1357,6 +1380,17 @@ open func reconnectSavedSession(sessionId: Data, passwordOverride: String?)throw
             self.uniffiCloneHandle(),
         FfiConverterData.lower(sessionId),
         FfiConverterOptionString.lower(passwordOverride),uniffiCallStatus
+    )
+})
+}
+
+open func reconnectSavedSessionWithSecret(sessionId: Data, secretOverride: Data?)throws  -> BridgeReconnectAttempt  {
+    return try  FfiConverterTypeBridgeReconnectAttempt_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_reconnect_saved_session_with_secret(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterOptionData.lower(secretOverride),uniffiCallStatus
     )
 })
 }
@@ -1607,6 +1641,17 @@ open func testProfile(profileId: Data, passwordOverride: String?)throws  -> Brid
             self.uniffiCloneHandle(),
         FfiConverterData.lower(profileId),
         FfiConverterOptionString.lower(passwordOverride),uniffiCallStatus
+    )
+})
+}
+
+open func testProfileWithSecret(profileId: Data, secretOverride: Data?)throws  -> BridgeConnectionTestReport  {
+    return try  FfiConverterTypeBridgeConnectionTestReport_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_test_profile_with_secret(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(profileId),
+        FfiConverterOptionData.lower(secretOverride),uniffiCallStatus
     )
 })
 }
@@ -2353,6 +2398,7 @@ public struct BridgeProfileDraft: Equatable, Hashable {
     public var username: String
     public var passwordSource: String
     public var passwordValue: String
+    public var passwordReference: Data?
     public var hasStoredPassword: Bool
     public var plaintextAcknowledged: Bool
     public var tlsMode: String
@@ -2360,7 +2406,7 @@ public struct BridgeProfileDraft: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(idBytes: Data?, revision: UInt64, engine: String, name: String, group: String, environment: String, host: String, port: String, database: String, username: String, passwordSource: String, passwordValue: String, hasStoredPassword: Bool, plaintextAcknowledged: Bool, tlsMode: String, safetyMode: String) {
+    public init(idBytes: Data?, revision: UInt64, engine: String, name: String, group: String, environment: String, host: String, port: String, database: String, username: String, passwordSource: String, passwordValue: String, passwordReference: Data?, hasStoredPassword: Bool, plaintextAcknowledged: Bool, tlsMode: String, safetyMode: String) {
         self.idBytes = idBytes
         self.revision = revision
         self.engine = engine
@@ -2373,6 +2419,7 @@ public struct BridgeProfileDraft: Equatable, Hashable {
         self.username = username
         self.passwordSource = passwordSource
         self.passwordValue = passwordValue
+        self.passwordReference = passwordReference
         self.hasStoredPassword = hasStoredPassword
         self.plaintextAcknowledged = plaintextAcknowledged
         self.tlsMode = tlsMode
@@ -2407,6 +2454,7 @@ public struct FfiConverterTypeBridgeProfileDraft: FfiConverterRustBuffer {
                 username: FfiConverterString.read(from: &buf),
                 passwordSource: FfiConverterString.read(from: &buf),
                 passwordValue: FfiConverterString.read(from: &buf),
+                passwordReference: FfiConverterOptionData.read(from: &buf),
                 hasStoredPassword: FfiConverterBool.read(from: &buf),
                 plaintextAcknowledged: FfiConverterBool.read(from: &buf),
                 tlsMode: FfiConverterString.read(from: &buf),
@@ -2427,6 +2475,7 @@ public struct FfiConverterTypeBridgeProfileDraft: FfiConverterRustBuffer {
         FfiConverterString.write(value.username, into: &buf)
         FfiConverterString.write(value.passwordSource, into: &buf)
         FfiConverterString.write(value.passwordValue, into: &buf)
+        FfiConverterOptionData.write(value.passwordReference, into: &buf)
         FfiConverterBool.write(value.hasStoredPassword, into: &buf)
         FfiConverterBool.write(value.plaintextAcknowledged, into: &buf)
         FfiConverterString.write(value.tlsMode, into: &buf)
@@ -4603,6 +4652,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_open_profile() != 61180) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_open_profile_with_secret() != 14542) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_panic_probe() != 16474) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4625,6 +4677,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_reconnect_saved_session() != 47584) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_reconnect_saved_session_with_secret() != 47923) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_redis_key_view() != 57762) {
@@ -4682,6 +4737,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_test_profile() != 43186) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_test_profile_with_secret() != 48622) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_write_sql_file() != 57002) {

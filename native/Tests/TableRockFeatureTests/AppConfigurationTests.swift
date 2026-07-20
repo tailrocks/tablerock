@@ -27,6 +27,8 @@ struct AppConfigurationTests {
         #expect(configuration.isTestMode)
         #expect(configuration.backend == .scripted(scenario: "slow-query"))
         #expect(configuration.paths.dataRoot.path == "/private/tmp/TableRockUITest-123")
+        #expect(configuration.keychainNamespace.contains("TableRockUITest") == false)
+        #expect(configuration.keychainNamespace != try resolve([:]).keychainNamespace)
     }
 
     @Test("legacy fixture launches cannot touch Application Support")

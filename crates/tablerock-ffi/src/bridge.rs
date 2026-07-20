@@ -11,13 +11,13 @@ use tablerock_core::{
     BoundedText, ByteLimit, CatalogChildrenState, CatalogNode, CatalogNodeId, CatalogNodeKind,
     ClickHouseObjectKind, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
     CommandScope, CopyFormat, CopyTable, DangerousPlaintext, Engine, EnvironmentReference,
-    EnvironmentTag, FieldValue, MutationChange, MutationPlan, MutationPlanLimits,
-    MutationReviewRegistry, MutationTarget, OnePasswordReference, OperationId, OperationOutcome,
-    OperationScope, OwnedValue, PageIdentity, PageKey, PageRequest, PlaintextAcknowledgement,
-    PostgreSqlObjectKind, ProfileAggregate, ProfileConnectionSnapshot, ProfileDurability,
-    ProfileEndpointPart, ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits,
-    ProfileListFilter, ProfileListRequest, ProfileName, ProfileOrganization, ProfilePolicy,
-    ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
+    EnvironmentTag, FieldValue, KeychainReference, MutationChange, MutationPlan,
+    MutationPlanLimits, MutationReviewRegistry, MutationTarget, OnePasswordReference, OperationId,
+    OperationOutcome, OperationScope, OwnedValue, PageIdentity, PageKey, PageRequest,
+    PlaintextAcknowledgement, PostgreSqlObjectKind, ProfileAggregate, ProfileConnectionSnapshot,
+    ProfileDurability, ProfileEndpointPart, ProfileGroupName, ProfileId, ProfileIdentity,
+    ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName, ProfileOrganization,
+    ProfilePolicy, ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
     ProfileSafetyMode, ProfileSearchTerm, ProfileTag, ReconnectDecision, ReconnectPreference,
     RedisKeyKind, ResultStore, ResultStoreLimits, Revision, SecretSource, SecretSourceKind,
     ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText, TlsPolicy,
@@ -27,10 +27,10 @@ use tablerock_engine::{
     AdapterFailureClass, BrowsePlan, CatalogRequest, ClickHouseCompression,
     ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession, ClickHouseTlsMode,
     DriverPageRequest, DriverRuntime, DriverSession, EngineService, EngineServiceUpdate,
-    PostgresConnectConfig, PostgresProbeQuery, PostgresSession, PostgresTlsMode,
-    RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession,
-    RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError,
-    load_relation_structure as load_structure_snapshot, resolve_for_connect,
+    KeychainReadPort, OpCliReader, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
+    PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol,
+    RedisSession, RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError,
+    load_relation_structure as load_structure_snapshot, resolve_for_connect_with_ports,
 };
 use tablerock_files::{
     CsvValueType, csv_to_typed_insert_changes, is_formula_like, read_csv_bounded,
@@ -415,6 +415,7 @@ pub struct BridgeProfileDraft {
     pub username: String,
     pub password_source: String,
     pub password_value: String,
+    pub password_reference: Option<Vec<u8>>,
     pub has_stored_password: bool,
     pub plaintext_acknowledged: bool,
     pub tls_mode: String,
@@ -461,7 +462,18 @@ impl TableRockBridge {
         profile_id: Vec<u8>,
         password_override: Option<String>,
     ) -> Result<Vec<u8>, BridgeError> {
-        catch_entry(|| self.open_profile_inner(profile_id, password_override))
+        catch_entry(|| {
+            self.open_profile_inner(profile_id, password_override.map(String::into_bytes))
+        })
+    }
+
+    /// Native credential path: transient bytes cross FFI without observable text state.
+    pub fn open_profile_with_secret(
+        &self,
+        profile_id: Vec<u8>,
+        secret_override: Option<Vec<u8>>,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| self.open_profile_inner(profile_id, secret_override))
     }
 
     /// Lists saved profiles (all engines) for the native connection screen.
@@ -506,7 +518,17 @@ impl TableRockBridge {
         profile_id: Vec<u8>,
         password_override: Option<String>,
     ) -> Result<BridgeConnectionTestReport, BridgeError> {
-        catch_entry(|| self.test_profile_inner(profile_id, password_override))
+        catch_entry(|| {
+            self.test_profile_inner(profile_id, password_override.map(String::into_bytes))
+        })
+    }
+
+    pub fn test_profile_with_secret(
+        &self,
+        profile_id: Vec<u8>,
+        secret_override: Option<Vec<u8>>,
+    ) -> Result<BridgeConnectionTestReport, BridgeError> {
+        catch_entry(|| self.test_profile_inner(profile_id, secret_override))
     }
 
     pub fn list_profile_groups(&self) -> Result<Vec<BridgeProfileGroup>, BridgeError> {
@@ -912,7 +934,20 @@ impl TableRockBridge {
         session_id: Vec<u8>,
         password_override: Option<String>,
     ) -> Result<BridgeReconnectAttempt, BridgeError> {
-        catch_entry(|| self.reconnect_saved_session_inner(session_id, password_override))
+        catch_entry(|| {
+            self.reconnect_saved_session_inner(
+                session_id,
+                password_override.map(String::into_bytes),
+            )
+        })
+    }
+
+    pub fn reconnect_saved_session_with_secret(
+        &self,
+        session_id: Vec<u8>,
+        secret_override: Option<Vec<u8>>,
+    ) -> Result<BridgeReconnectAttempt, BridgeError> {
+        catch_entry(|| self.reconnect_saved_session_inner(session_id, secret_override))
     }
 }
 
@@ -967,7 +1002,7 @@ impl TableRockBridge {
     fn reconnect_saved_session_inner(
         &self,
         old_session_bytes: Vec<u8>,
-        password_override: Option<String>,
+        password_override: Option<Vec<u8>>,
     ) -> Result<BridgeReconnectAttempt, BridgeError> {
         let old_session = session_from_bytes(&old_session_bytes)
             .map_err(|_| BridgeError::rejected("session-id", "invalid session id"))?;
@@ -1581,7 +1616,7 @@ impl TableRockBridge {
     fn open_profile_inner(
         &self,
         profile_id_bytes: Vec<u8>,
-        password_override: Option<String>,
+        password_override: Option<Vec<u8>>,
     ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let profile_id =
@@ -1618,7 +1653,7 @@ impl TableRockBridge {
                 .map_err(|_| BridgeError::rejected("profile-port", "invalid port"))?;
             let database = literal(ProfileProperty::DefaultContext).unwrap_or_default();
             let user = literal(ProfileProperty::Username).unwrap_or_default();
-            struct OverridePrompt(Option<String>);
+            struct OverridePrompt(Option<Vec<u8>>);
             impl SecretPromptPort for OverridePrompt {
                 fn request(
                     &mut self,
@@ -1627,23 +1662,62 @@ impl TableRockBridge {
                 ) -> Result<ResolvedSecret, SecretResolutionError> {
                     self.0
                         .take()
-                        .map(|value| ResolvedSecret::from_prompt(value.into_bytes(), _field))
+                        .map(|value| ResolvedSecret::from_prompt(value, _field))
                         .transpose()?
                         .ok_or(SecretResolutionError::PromptFailed)
                 }
             }
+            struct OverrideKeychain(Option<Vec<u8>>);
+            impl KeychainReadPort for OverrideKeychain {
+                fn read(
+                    &mut self,
+                    _reference: &KeychainReference,
+                ) -> Result<Vec<u8>, SecretResolutionError> {
+                    self.0.take().ok_or(SecretResolutionError::KeychainFailed)
+                }
+            }
+            let mut password_override = password_override;
             let password = if let Some(binding) = props.binding(ProfileProperty::Password) {
-                let mut prompt = OverridePrompt(password_override);
-                resolve_for_connect(binding, connection.name(), &mut prompt)
-                    .map_err(|error| BridgeError::rejected("profile-password", error.to_string()))?
-                    .map(|secret| String::from_utf8_lossy(secret.as_bytes()).into_owned())
-                    .unwrap_or_default()
+                let source = binding.secret_source().map(SecretSource::kind);
+                let mut prompt = OverridePrompt(
+                    matches!(source, Some(SecretSourceKind::PromptOnConnect))
+                        .then(|| password_override.take())
+                        .flatten(),
+                );
+                let mut keychain = OverrideKeychain(
+                    matches!(source, Some(SecretSourceKind::Keychain(_)))
+                        .then(|| password_override.take())
+                        .flatten(),
+                );
+                let mut op = OpCliReader::default();
+                let resolved = resolve_for_connect_with_ports(
+                    binding,
+                    connection.name(),
+                    &mut prompt,
+                    &mut op,
+                    &mut keychain,
+                )
+                .map_err(|error| BridgeError::rejected("profile-password", error.to_string()))?;
+                match resolved {
+                    Some(secret) => std::str::from_utf8(secret.as_bytes())
+                        .map(str::to_owned)
+                        .map_err(|_| {
+                            BridgeError::rejected(
+                                "profile-password",
+                                "password must be valid UTF-8",
+                            )
+                        })?,
+                    None => String::new(),
+                }
             } else {
-                password_override.ok_or_else(|| {
+                let bytes = password_override.ok_or_else(|| {
                     BridgeError::rejected(
                         "profile-password",
                         "prompt-on-connect profile requires a password override",
                     )
+                })?;
+                String::from_utf8(bytes).map_err(|_| {
+                    BridgeError::rejected("profile-password", "password must be valid UTF-8")
                 })?
             };
             let engine = match connection.engine() {
@@ -1695,7 +1769,7 @@ impl TableRockBridge {
     fn test_profile_inner(
         &self,
         profile_id: Vec<u8>,
-        password_override: Option<String>,
+        password_override: Option<Vec<u8>>,
     ) -> Result<BridgeConnectionTestReport, BridgeError> {
         let draft = self.get_profile_draft_inner(profile_id.clone())?;
         let session_bytes = self.open_profile_inner(profile_id, password_override)?;
@@ -3668,6 +3742,14 @@ fn profile_to_bridge_draft(profile: &ProfileAggregate) -> Result<BridgeProfileDr
         username: literal(ProfileProperty::Username),
         password_source: password_source.to_owned(),
         password_value,
+        password_reference: connection
+            .properties()
+            .binding(ProfileProperty::Password)
+            .and_then(ProfilePropertyBinding::secret_source)
+            .and_then(|source| match source.kind() {
+                SecretSourceKind::Keychain(reference) => Some(reference.bytes().to_vec()),
+                _ => None,
+            }),
         has_stored_password,
         plaintext_acknowledged: has_stored_password,
         tls_mode: tls_mode.to_owned(),
@@ -3751,10 +3833,33 @@ fn bridge_draft_to_profile(
             )
         }
         "keychain" => {
-            return Err(BridgeError::rejected(
-                "profile-password",
-                "Keychain editing is not available yet",
-            ));
+            let reference = draft.password_reference.as_deref().or_else(|| {
+                existing
+                    .and_then(|profile| {
+                        profile
+                            .connection()
+                            .properties()
+                            .binding(ProfileProperty::Password)
+                    })
+                    .and_then(ProfilePropertyBinding::secret_source)
+                    .and_then(|source| match source.kind() {
+                        SecretSourceKind::Keychain(reference) => Some(reference.bytes()),
+                        _ => None,
+                    })
+            });
+            let reference = reference.ok_or_else(|| {
+                BridgeError::rejected("profile-password", "Keychain password reference required")
+            })?;
+            SecretSourceKind::Keychain(
+                KeychainReference::new(
+                    tablerock_core::BoundedBytes::copy_from_slice(
+                        reference,
+                        ByteLimit::new(KeychainReference::MAX_BYTES),
+                    )
+                    .map_err(|error| rejected("profile-password", error.to_string()))?,
+                )
+                .map_err(|error| rejected("profile-password", error.to_string()))?,
+            )
         }
         _ => {
             return Err(BridgeError::rejected(

@@ -17,6 +17,13 @@ import AppKit
 import TableRockBridge
 import TableRockFeature
 import UniformTypeIdentifiers
+import Security
+
+private func zeroizeTransientData(_ data: inout Data?) {
+    guard var value = data else { return }
+    value.resetBytes(in: 0..<value.count)
+    data = value
+}
 
 private extension Data {
     func hexEncodedString() -> String {
@@ -180,8 +187,8 @@ private actor BridgeClient {
     func deleteProfile(id: Data, revision: UInt64) throws {
         try bridge.deleteProfile(profileId: id, expectedRevision: revision)
     }
-    func testProfile(id: Data, passwordOverride: String?) throws -> BridgeConnectionTestReport {
-        try bridge.testProfile(profileId: id, passwordOverride: passwordOverride)
+    func testProfile(id: Data, secretOverride: Data?) throws -> BridgeConnectionTestReport {
+        try bridge.testProfileWithSecret(profileId: id, secretOverride: secretOverride)
     }
     func listProfileGroups() throws -> [BridgeProfileGroup] { try bridge.listProfileGroups() }
     func createProfileGroup(_ name: String) throws { try bridge.createProfileGroup(name: name) }
@@ -266,8 +273,8 @@ private actor BridgeClient {
         )
     }
     func open(params: OpenParams) throws -> Data { try bridge.open(params: params) }
-    func openProfile(id: Data, passwordOverride: String?) throws -> Data {
-        try bridge.openProfile(profileId: id, passwordOverride: passwordOverride)
+    func openProfile(id: Data, secretOverride: Data?) throws -> Data {
+        try bridge.openProfileWithSecret(profileId: id, secretOverride: secretOverride)
     }
     func disconnect(session: Data) throws { try bridge.disconnect(sessionId: session) }
     func checkHealth(session: Data) throws -> BridgeSessionHealth {
@@ -281,9 +288,9 @@ private actor BridgeClient {
             authenticationStopped: authenticationStopped
         )
     }
-    func reconnect(session: Data, passwordOverride: String? = nil) throws -> BridgeReconnectAttempt {
-        try bridge.reconnectSavedSession(
-            sessionId: session, passwordOverride: passwordOverride
+    func reconnect(session: Data, secretOverride: Data? = nil) throws -> BridgeReconnectAttempt {
+        try bridge.reconnectSavedSessionWithSecret(
+            sessionId: session, secretOverride: secretOverride
         )
     }
     func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [BridgeCatalogNode] {
@@ -470,6 +477,54 @@ private struct SystemPasteboardPort: AppPasteboardPort {
 }
 
 @MainActor
+private struct SystemKeychainPort: AppKeychainPort {
+    let namespace: String
+
+    func store(secret: Data, account: String) throws -> Data {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: namespace,
+            kSecAttrAccount: account,
+            kSecValueData: secret,
+            kSecReturnPersistentRef: true,
+        ]
+        var result: CFTypeRef?
+        let status = SecItemAdd(query as CFDictionary, &result)
+        guard status == errSecSuccess, let reference = result as? Data else {
+            throw AppCapabilityError.rejected("keychain-store-\(status)")
+        }
+        return reference
+    }
+
+    func read(reference: Data) throws -> Data {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: namespace,
+            kSecMatchItemList: [reference] as CFArray,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne,
+        ]
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let secret = result as? Data, !secret.isEmpty else {
+            throw AppCapabilityError.rejected("keychain-read-\(status)")
+        }
+        return secret
+    }
+
+    func remove(reference: Data) throws {
+        let status = SecItemDelete([
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: namespace,
+            kSecMatchItemList: [reference] as CFArray
+        ] as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw AppCapabilityError.rejected("keychain-remove-\(status)")
+        }
+    }
+}
+
+@MainActor
 private final class NativeApplicationModel {
     let client: BridgeClient?
     let bridgeError: String?
@@ -477,7 +532,7 @@ private final class NativeApplicationModel {
     private var fixtureWindowOpened = false
 
     init() {
-        dependencies = AppDependencies(
+        var configuredDependencies = AppDependencies(
             filePanels: SystemFilePanelPort(),
             pasteboard: SystemPasteboardPort()
         )
@@ -488,13 +543,23 @@ private final class NativeApplicationModel {
                 temporaryRoot: FileManager.default.temporaryDirectory,
                 processIdentifier: ProcessInfo.processInfo.processIdentifier
             )
+            configuredDependencies = AppDependencies(
+                filePanels: SystemFilePanelPort(),
+                pasteboard: SystemPasteboardPort(),
+                keychain: SystemKeychainPort(namespace: configuration.keychainNamespace)
+            )
             try configuration.paths.prepare()
             guard configuration.backend == .live else {
                 throw AppConfigurationError.unsupportedBackend("scripted backend not installed")
             }
-            client = try BridgeClient(persistencePath: configuration.paths.profilesDatabase.path)
+            let configuredClient = try BridgeClient(
+                persistencePath: configuration.paths.profilesDatabase.path
+            )
+            dependencies = configuredDependencies
+            client = configuredClient
             bridgeError = nil
         } catch {
+            dependencies = configuredDependencies
             client = nil
             bridgeError = "Bridge init failed: \(error)"
         }
@@ -607,7 +672,8 @@ private struct NativeProfileEditorFixtureView: View {
         engine: "postgresql", name: "Production analytics", group: "Production",
         environment: "production", host: "db.example.internal", port: "5432",
         database: "analytics", username: "operator", passwordSource: "prompt",
-        passwordValue: "", hasStoredPassword: false, plaintextAcknowledged: false,
+        passwordValue: "", passwordReference: nil, hasStoredPassword: false,
+        plaintextAcknowledged: false,
         tlsMode: "verify_full", safetyMode: "read_only"
     )
 
@@ -2838,7 +2904,7 @@ final class BridgeModel {
             idBytes: nil, revision: 0, engine: "postgresql", name: "",
             group: "", environment: "", host: "127.0.0.1", port: "5432",
             database: "postgres", username: "postgres", passwordSource: "prompt",
-            passwordValue: "", hasStoredPassword: false,
+            passwordValue: "", passwordReference: nil, hasStoredPassword: false,
             plaintextAcknowledged: false, tlsMode: "verify_full",
             safetyMode: "confirm_writes"
         )
@@ -2858,19 +2924,48 @@ final class BridgeModel {
         copy.revision = 0
         copy.name += " Copy"
         if copy.hasStoredPassword { copy.passwordValue = "" }
+        if copy.passwordSource == "keychain" {
+            copy.passwordReference = nil
+            copy.hasStoredPassword = false
+        }
         editorDraft = copy
     }
 
     func saveProfile(_ draft: BridgeProfileDraft) async -> Bool {
         guard let client else { return false }
         profileActionError = nil
+        var draft = draft
+        let oldReference = draft.passwordReference
+        var addedReference: Data?
         do {
+            if draft.passwordSource == "keychain", !draft.passwordValue.isEmpty {
+                var secret = Data(draft.passwordValue.utf8)
+                defer { secret.resetBytes(in: 0..<secret.count) }
+                let reference = try dependencies.keychain.store(
+                    secret: secret,
+                    account: dependencies.identifiers.next().uuidString.lowercased()
+                )
+                addedReference = reference
+                draft.passwordReference = reference
+                draft.passwordValue = ""
+                draft.hasStoredPassword = true
+            }
             _ = try await client.saveProfile(draft)
+            var cleanupWarning = false
+            if let oldReference, let addedReference, oldReference != addedReference {
+                do { try dependencies.keychain.remove(reference: oldReference) }
+                catch { cleanupWarning = true }
+            }
             editorDraft = nil
-            profileActionOutcome = draft.idBytes == nil ? "Connection created" : "Connection saved"
+            profileActionOutcome = cleanupWarning
+                ? "Connection saved; previous Keychain item cleanup failed"
+                : (draft.idBytes == nil ? "Connection created" : "Connection saved")
             await refreshProfiles()
             return true
         } catch {
+            if let addedReference {
+                try? dependencies.keychain.remove(reference: addedReference)
+            }
             profileActionError = "Save connection failed: \(error)"
             return false
         }
@@ -2878,11 +2973,17 @@ final class BridgeModel {
 
     func testProfile(_ item: BridgeProfileItem, passwordOverride: String? = nil) async {
         guard let client else { return }
+        var resolvedOverride = passwordOverride.map { Data($0.utf8) }
+        defer { zeroizeTransientData(&resolvedOverride) }
         if passwordOverride == nil {
             do {
-                if try await client.profileDraft(id: item.idBytes).passwordSource == "prompt" {
+                let draft = try await client.profileDraft(id: item.idBytes)
+                if draft.passwordSource == "prompt" {
                     passwordPrompt = ProfilePasswordPrompt(profile: item, action: .test)
                     return
+                }
+                if draft.passwordSource == "keychain" {
+                    resolvedOverride = try keychainPassword(for: draft)
                 }
             } catch {
                 profileActionError = "Load connection failed: \(error)"
@@ -2893,7 +2994,7 @@ final class BridgeModel {
         profileActionOutcome = "Testing \(item.name)…"
         do {
             let report = try await client.testProfile(
-                id: item.idBytes, passwordOverride: passwordOverride
+                id: item.idBytes, secretOverride: resolvedOverride
             )
             profileActionOutcome =
                 "\(report.identity) · TLS \(report.tlsOutcome) · \(report.elapsedMillis) ms"
@@ -2905,8 +3006,16 @@ final class BridgeModel {
         pendingRemoval = nil
         profileActionError = nil
         do {
+            let reference = try await client.profileDraft(id: item.idBytes).passwordReference
             try await client.deleteProfile(id: item.idBytes, revision: item.revision)
-            profileActionOutcome = "Connection removed: \(item.name)"
+            var cleanupWarning = false
+            if let reference {
+                do { try dependencies.keychain.remove(reference: reference) }
+                catch { cleanupWarning = true }
+            }
+            profileActionOutcome = cleanupWarning
+                ? "Connection removed; Keychain item cleanup failed"
+                : "Connection removed: \(item.name)"
             await refreshProfiles()
         } catch { profileActionError = "Remove connection failed: \(error)" }
     }
@@ -2964,12 +3073,17 @@ final class BridgeModel {
             connectError = "Cancel running queries before replacing the connection"
             return false
         }
+        var resolvedOverride = passwordOverride.map { Data($0.utf8) }
+        defer { zeroizeTransientData(&resolvedOverride) }
         if passwordOverride == nil {
             do {
                 let draft = try await client.profileDraft(id: item.idBytes)
                 if draft.passwordSource == "prompt" {
                     passwordPrompt = ProfilePasswordPrompt(profile: item, action: .connect)
                     return false
+                }
+                if draft.passwordSource == "keychain" {
+                    resolvedOverride = try keychainPassword(for: draft)
                 }
             } catch {
                 connectError = "Load connection failed: \(error)"
@@ -2982,7 +3096,7 @@ final class BridgeModel {
         connectError = nil
         do {
             let session = try await client.openProfile(
-                id: item.idBytes, passwordOverride: passwordOverride
+                id: item.idBytes, secretOverride: resolvedOverride
             )
             connectedEngine = item.engine
             activeProfileId = item.idBytes
@@ -3057,8 +3171,16 @@ final class BridgeModel {
            let profile = profiles.first(where: { $0.idBytes == activeProfileId })
         {
             do {
-                if try await client.profileDraft(id: profile.idBytes).passwordSource == "prompt" {
+                let draft = try await client.profileDraft(id: profile.idBytes)
+                if draft.passwordSource == "prompt" {
                     passwordPrompt = ProfilePasswordPrompt(profile: profile, action: .reconnect)
+                    return
+                }
+                if draft.passwordSource == "keychain" {
+                    let password = try keychainPassword(for: draft)
+                    await reconnectActive(
+                        sourceSession: sourceSession, secretOverride: password
+                    )
                     return
                 }
             } catch {
@@ -3066,17 +3188,30 @@ final class BridgeModel {
                 return
             }
         }
-        await reconnectActive(sourceSession: sourceSession, passwordOverride: nil)
+        await reconnectActive(sourceSession: sourceSession, secretOverride: nil)
     }
 
-    private func reconnectActive(sourceSession: Data, passwordOverride: String?) async {
+    private func keychainPassword(for draft: BridgeProfileDraft) throws -> Data {
+        guard let reference = draft.passwordReference else {
+            throw AppCapabilityError.rejected("keychain-reference-missing")
+        }
+        let bytes = try dependencies.keychain.read(reference: reference)
+        guard !bytes.isEmpty else {
+            throw AppCapabilityError.rejected("keychain-value-invalid")
+        }
+        return bytes
+    }
+
+    private func reconnectActive(sourceSession: Data, secretOverride: Data?) async {
         guard let client else { return }
+        var secretOverride = secretOverride
+        defer { zeroizeTransientData(&secretOverride) }
         reconnectGeneration &+= 1
         let generation = reconnectGeneration
         reconnectState = "Reconnecting"
         do {
             let attempt = try await client.reconnect(
-                session: sourceSession, passwordOverride: passwordOverride
+                session: sourceSession, secretOverride: secretOverride
             )
             guard attempt.state == "connected", let replacement = attempt.sessionId else {
                 reconnectState = attempt.state == "authentication_stopped"
@@ -3109,7 +3244,9 @@ final class BridgeModel {
             return false
         case .reconnect:
             guard let sourceSession = sessionData else { return false }
-            await reconnectActive(sourceSession: sourceSession, passwordOverride: password)
+            await reconnectActive(
+                sourceSession: sourceSession, secretOverride: Data(password.utf8)
+            )
             if reconnectState == nil { passwordPrompt = nil; return true }
             return false
         }
@@ -5424,6 +5561,8 @@ struct ProfileEditorSheet: View {
             && UInt16(draft.port) != nil
             && (draft.passwordSource != "dangerous_plaintext"
                 || (!draft.passwordValue.isEmpty && draft.plaintextAcknowledged))
+            && (draft.passwordSource != "keychain"
+                || draft.passwordReference != nil || !draft.passwordValue.isEmpty)
     }
 
     var body: some View {
@@ -5465,6 +5604,7 @@ struct ProfileEditorSheet: View {
                         Text("Save locally (dangerous)").tag("dangerous_plaintext")
                         Text("Environment variable").tag("environment")
                         Text("1Password reference").tag("onepassword")
+                        Text("macOS Keychain").tag("keychain")
                     }
                     if draft.passwordSource == "dangerous_plaintext" {
                         SecureField(
@@ -5480,6 +5620,11 @@ struct ProfileEditorSheet: View {
                         TextField("Environment variable name", text: $draft.passwordValue)
                     } else if draft.passwordSource == "onepassword" {
                         TextField("account vault item [section] field", text: $draft.passwordValue)
+                    } else if draft.passwordSource == "keychain" {
+                        SecureField(
+                            draft.hasStoredPassword ? "Replace Keychain password" : "Password",
+                            text: $draft.passwordValue
+                        )
                     }
                 }
                 Section("TLS") {

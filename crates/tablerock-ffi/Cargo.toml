@@ -7,6 +7,14 @@ license.workspace = true
 repository.workspace = true
 description = "Synchronous UniFFI facade over TableRock engine for native macOS"
 
+[features]
+bindgen-cli = ["uniffi/cli"]
+
+[[bin]]
+name = "uniffi-bindgen-tablerock"
+path = "src/bin/uniffi-bindgen-tablerock.rs"
+required-features = ["bindgen-cli"]
+
 [lib]
 name = "tablerock_ffi"
 crate-type = ["lib", "staticlib", "cdylib"]

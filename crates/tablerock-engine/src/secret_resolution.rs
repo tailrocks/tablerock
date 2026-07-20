@@ -10,8 +10,8 @@ use std::{
 };
 
 use tablerock_core::{
-    OnePasswordReference, ProfileName, ProfileProperty, ProfilePropertyBinding, SecretField,
-    SecretSource, SecretSourceKind,
+    KeychainReference, OnePasswordReference, ProfileName, ProfileProperty, ProfilePropertyBinding,
+    SecretField, SecretSource, SecretSourceKind,
 };
 use zeroize::Zeroize;
 
@@ -86,6 +86,9 @@ pub enum SecretResolutionError {
     OnePasswordTimeout,
     /// `op read` stdout exceeded the byte cap.
     OnePasswordOutputTooLarge,
+    KeychainFailed,
+    KeychainEmpty,
+    KeychainOutputTooLarge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,6 +115,9 @@ impl fmt::Display for SecretResolutionError {
             Self::OnePasswordEmpty => "1Password CLI returned an empty secret",
             Self::OnePasswordTimeout => "1Password CLI read timed out",
             Self::OnePasswordOutputTooLarge => "1Password CLI output exceeded size limit",
+            Self::KeychainFailed => "Keychain read failed",
+            Self::KeychainEmpty => "Keychain returned an empty secret",
+            Self::KeychainOutputTooLarge => "Keychain value exceeded size limit",
         })
     }
 }
@@ -130,6 +136,21 @@ pub trait SecretPromptPort: Send {
 /// Port for account-pinned `op read`. Default implementation spawns the CLI.
 pub trait OnePasswordReadPort: Send {
     fn read(&mut self, reference: &OnePasswordReference) -> Result<Vec<u8>, SecretResolutionError>;
+}
+
+/// Native platform port for resolving an opaque persistent Keychain reference.
+pub trait KeychainReadPort: Send {
+    fn read(&mut self, reference: &KeychainReference) -> Result<Vec<u8>, SecretResolutionError>;
+}
+
+struct UnsupportedKeychainReader;
+
+impl KeychainReadPort for UnsupportedKeychainReader {
+    fn read(&mut self, _reference: &KeychainReference) -> Result<Vec<u8>, SecretResolutionError> {
+        Err(SecretResolutionError::SourceNotYetSupported {
+            kind: SecretSourceKindLabel::Keychain,
+        })
+    }
 }
 
 /// Bounded `op read --account <id> --no-newline <uri>` implementation.
@@ -245,9 +266,23 @@ pub fn resolve_for_connect_with(
     prompt: &mut dyn SecretPromptPort,
     op: &mut dyn OnePasswordReadPort,
 ) -> Result<Option<ResolvedSecret>, SecretResolutionError> {
+    let mut keychain = UnsupportedKeychainReader;
+    resolve_for_connect_with_ports(binding, profile, prompt, op, &mut keychain)
+}
+
+/// Resolve with injectable 1Password and native Keychain ports.
+pub fn resolve_for_connect_with_ports(
+    binding: &ProfilePropertyBinding,
+    profile: &ProfileName,
+    prompt: &mut dyn SecretPromptPort,
+    op: &mut dyn OnePasswordReadPort,
+    keychain: &mut dyn KeychainReadPort,
+) -> Result<Option<ResolvedSecret>, SecretResolutionError> {
     match binding.secret_source() {
         None => Ok(None),
-        Some(source) => resolve_source(source, binding.property(), profile, prompt, op).map(Some),
+        Some(source) => {
+            resolve_source(source, binding.property(), profile, prompt, op, keychain).map(Some)
+        }
     }
 }
 
@@ -257,6 +292,7 @@ fn resolve_source(
     profile: &ProfileName,
     prompt: &mut dyn SecretPromptPort,
     op: &mut dyn OnePasswordReadPort,
+    keychain: &mut dyn KeychainReadPort,
 ) -> Result<ResolvedSecret, SecretResolutionError> {
     let field = secret_field_for(property);
     match source.kind() {
@@ -269,9 +305,16 @@ fn resolve_source(
             Ok(ResolvedSecret::new(bytes, field))
         }
         SecretSourceKind::HostEnvironment(env) => resolve_host_environment(env.as_str(), field),
-        SecretSourceKind::Keychain(_) => Err(SecretResolutionError::SourceNotYetSupported {
-            kind: SecretSourceKindLabel::Keychain,
-        }),
+        SecretSourceKind::Keychain(reference) => {
+            let bytes = keychain.read(reference)?;
+            if bytes.is_empty() {
+                return Err(SecretResolutionError::KeychainEmpty);
+            }
+            if bytes.len() > ResolvedSecret::MAX_PROMPT_BYTES {
+                return Err(SecretResolutionError::KeychainOutputTooLarge);
+            }
+            Ok(ResolvedSecret::new(bytes, field))
+        }
     }
 }
 
@@ -326,6 +369,21 @@ mod tests {
         fn read(
             &mut self,
             _reference: &OnePasswordReference,
+        ) -> Result<Vec<u8>, SecretResolutionError> {
+            self.calls += 1;
+            self.result.clone()
+        }
+    }
+
+    struct MockKeychain {
+        result: Result<Vec<u8>, SecretResolutionError>,
+        calls: u32,
+    }
+
+    impl KeychainReadPort for MockKeychain {
+        fn read(
+            &mut self,
+            _reference: &KeychainReference,
         ) -> Result<Vec<u8>, SecretResolutionError> {
             self.calls += 1;
             self.result.clone()
@@ -532,6 +590,41 @@ mod tests {
             })
         ));
         assert_eq!(op.calls, 0);
+    }
+
+    #[test]
+    fn keychain_resolves_only_through_explicit_native_port() {
+        let key = KeychainReference::new(
+            BoundedBytes::copy_from_slice(b"persistent-reference", ByteLimit::new(64)).unwrap(),
+        )
+        .unwrap();
+        let binding = ProfilePropertyBinding::secret(
+            ProfileProperty::Password,
+            SecretSource::new(SecretSourceKind::Keychain(key)),
+        );
+        let mut prompt = CountingPrompt {
+            calls: 0,
+            value: Vec::new(),
+        };
+        let mut op = MockOp {
+            result: Ok(b"unused".to_vec()),
+            calls: 0,
+        };
+        let mut keychain = MockKeychain {
+            result: Ok(b"native-secret".to_vec()),
+            calls: 0,
+        };
+
+        let resolved =
+            resolve_for_connect_with_ports(&binding, &name(), &mut prompt, &mut op, &mut keychain)
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(resolved.as_bytes(), b"native-secret");
+        assert_eq!(keychain.calls, 1);
+        assert_eq!(op.calls, 0);
+        assert_eq!(prompt.calls, 0);
+        assert!(!format!("{resolved:?}").contains("native-secret"));
     }
 
     #[test]

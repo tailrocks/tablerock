@@ -1242,6 +1242,27 @@ fn open_profile_requires_persistence_and_loads_literals() {
             .len(),
         1
     );
+    let mut keychain = bridge
+        .get_profile_draft(profile_id.to_bytes().to_vec())
+        .unwrap();
+    keychain.password_source = "keychain".into();
+    keychain.password_reference = Some(b"opaque-persistent-reference".to_vec());
+    keychain.password_value.clear();
+    bridge.save_profile(keychain).unwrap();
+    let projected = bridge
+        .get_profile_draft(profile_id.to_bytes().to_vec())
+        .unwrap();
+    assert_eq!(
+        projected.password_reference.as_deref(),
+        Some(b"opaque-persistent-reference".as_slice())
+    );
+    let error = bridge
+        .open_profile_with_secret(profile_id.to_bytes().to_vec(), Some(b"unused".to_vec()))
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        BridgeError::Rejected { ref code, .. } if code == "connect"
+    ));
     let _ = fs::remove_file(&path);
     let _ = fs::remove_file(format!("{}-wal", path.display()));
     let _ = fs::remove_file(format!("{}-shm", path.display()));
