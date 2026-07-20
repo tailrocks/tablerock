@@ -5,7 +5,7 @@ use tablerock_tui::{Message, subscriptions::ENGINE_EVENT_CAPACITY};
 
 #[test]
 fn non_tty_execution_is_explicit_and_safe() {
-    let output = Command::new(env!("CARGO_BIN_EXE_tablerock-cli"))
+    let output = Command::new(env!("CARGO_BIN_EXE_tablerock"))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -15,6 +15,26 @@ fn non_tty_execution_is_explicit_and_safe() {
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     assert_eq!(output.stderr, b"TableRock: interactive terminal required\n");
+}
+
+#[test]
+fn version_exits_before_terminal_initialization() {
+    for argument in ["--version", "-V"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_tablerock"))
+            .arg(argument)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .expect("print TableRock version without a TTY");
+
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).expect("UTF-8 version output"),
+            format!("tablerock {}\n", env!("CARGO_PKG_VERSION"))
+        );
+        assert!(output.stderr.is_empty());
+    }
 }
 
 #[test]

@@ -157,7 +157,7 @@ fn run_pty(
             pixel_height: 0,
         })
         .expect("open PTY");
-    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_tablerock-cli"));
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_tablerock"));
     command.env("TERM", "xterm-256color");
     #[cfg(unix)]
     let initial_termios = pair.master.get_termios().expect("initial PTY termios");

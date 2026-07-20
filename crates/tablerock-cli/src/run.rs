@@ -40,6 +40,7 @@ enum LoopInput {
 
 const TERMINAL_BURST_LIMIT: usize = 64;
 const TERMINAL_EVENT_CAPACITY: usize = 256;
+const TERMINAL_PRIORITY_CAPACITY: usize = 32;
 const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
 
 #[derive(Debug)]
@@ -213,10 +214,43 @@ async fn run_session(
     let mut events = EventStream::new();
     let (terminal_sender, mut terminal_events) =
         tokio::sync::mpsc::channel(TERMINAL_EVENT_CAPACITY);
+    let (terminal_priority_sender, mut terminal_priority_events) =
+        tokio::sync::mpsc::channel(TERMINAL_PRIORITY_CAPACITY);
     tokio::task::spawn_local(async move {
         while let Some(event) = events.next().await {
             let failed = event.is_err();
-            if terminal_sender.send(event).await.is_err() || failed {
+            let priority = failed
+                || matches!(
+                    &event,
+                    Ok(crossterm::event::Event::Key(key))
+                        if key.code == crossterm::event::KeyCode::Char('c')
+                            && key
+                                .modifiers
+                                .contains(crossterm::event::KeyModifiers::CONTROL)
+                );
+            let sent = if priority {
+                terminal_priority_sender.send(event).await.is_ok()
+            } else if matches!(
+                &event,
+                Ok(crossterm::event::Event::Resize(_, _))
+                    | Ok(crossterm::event::Event::Mouse(
+                        crossterm::event::MouseEvent {
+                            kind: crossterm::event::MouseEventKind::Moved,
+                            ..
+                        }
+                    ))
+            ) {
+                // Resize and pointer-move events describe latest state. Under
+                // saturation, retaining an old sample is less correct than
+                // allowing the next sample and all semantic input to proceed.
+                match terminal_sender.try_send(event) {
+                    Ok(()) | Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => true,
+                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => false,
+                }
+            } else {
+                terminal_sender.send(event).await.is_ok()
+            };
+            if !sent || failed {
                 return;
             }
         }
@@ -264,6 +298,8 @@ async fn run_session(
                 _ = health_interval.tick() => LoopInput::HealthTick,
                 input_event = async {
                     tokio::select! {
+                        biased;
+                        terminal = terminal_priority_events.recv() => LoopInput::Terminal(terminal),
                         root = root_messages.recv(), if root_ingress_open => LoopInput::Root(root),
                         terminal = terminal_events.recv() => LoopInput::Terminal(terminal),
                     }
@@ -302,10 +338,22 @@ async fn run_session(
         if terminal_input {
             tokio::task::yield_now().await;
             for _ in 1..TERMINAL_BURST_LIMIT {
-                let event = match terminal_events.try_recv() {
+                let event = match terminal_priority_events.try_recv() {
                     Ok(event) => Some(event),
-                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
-                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => None,
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                        match terminal_events.try_recv() {
+                            Ok(event) => Some(event),
+                            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => None,
+                        }
+                    }
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                        match terminal_events.try_recv() {
+                            Ok(event) => Some(event),
+                            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => None,
+                        }
+                    }
                 };
                 let event = resolve_terminal_event(event)?;
                 if dirty
