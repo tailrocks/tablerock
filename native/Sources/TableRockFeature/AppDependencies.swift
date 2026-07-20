@@ -26,16 +26,80 @@ public struct SystemAppIdentifierGenerator: AppIdentifierGenerator {
     public func next() -> UUID { UUID() }
 }
 
+public struct AppFilePanelRequest: Equatable, Sendable {
+    public let title: String
+    public let prompt: String
+    public let suggestedFilename: String?
+    public let allowedExtensions: [String]
+
+    public init(
+        title: String,
+        prompt: String,
+        suggestedFilename: String? = nil,
+        allowedExtensions: [String]
+    ) {
+        self.title = title
+        self.prompt = prompt
+        self.suggestedFilename = suggestedFilename
+        self.allowedExtensions = allowedExtensions
+    }
+}
+
+@MainActor
+public protocol AppFilePanelPort {
+    func chooseOpenFile(_ request: AppFilePanelRequest) -> URL?
+    func chooseSaveFile(_ request: AppFilePanelRequest) -> URL?
+}
+
+public struct AppPasteboardRepresentation: Equatable, Sendable {
+    public let type: String
+    public let value: String
+
+    public init(type: String, value: String) {
+        self.type = type
+        self.value = value
+    }
+}
+
+@MainActor
+public protocol AppPasteboardPort {
+    func write(_ representations: [AppPasteboardRepresentation]) throws
+}
+
+public enum AppCapabilityError: Error, Equatable {
+    case unavailable(String)
+    case rejected(String)
+}
+
+public struct UnavailableFilePanelPort: AppFilePanelPort {
+    public init() {}
+    public func chooseOpenFile(_ request: AppFilePanelRequest) -> URL? { nil }
+    public func chooseSaveFile(_ request: AppFilePanelRequest) -> URL? { nil }
+}
+
+public struct UnavailablePasteboardPort: AppPasteboardPort {
+    public init() {}
+    public func write(_ representations: [AppPasteboardRepresentation]) throws {
+        throw AppCapabilityError.unavailable("pasteboard")
+    }
+}
+
 @MainActor
 public struct AppDependencies {
     public let clock: any AppClock
     public let identifiers: any AppIdentifierGenerator
+    public let filePanels: any AppFilePanelPort
+    public let pasteboard: any AppPasteboardPort
 
     public init(
         clock: any AppClock = SystemAppClock(),
-        identifiers: any AppIdentifierGenerator = SystemAppIdentifierGenerator()
+        identifiers: any AppIdentifierGenerator = SystemAppIdentifierGenerator(),
+        filePanels: any AppFilePanelPort = UnavailableFilePanelPort(),
+        pasteboard: any AppPasteboardPort = UnavailablePasteboardPort()
     ) {
         self.clock = clock
         self.identifiers = identifiers
+        self.filePanels = filePanels
+        self.pasteboard = pasteboard
     }
 }

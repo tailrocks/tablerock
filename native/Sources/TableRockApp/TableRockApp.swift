@@ -424,6 +424,52 @@ private func nativeApplicationSupportRoot() throws -> URL {
 }
 
 @MainActor
+private struct SystemFilePanelPort: AppFilePanelPort {
+    func chooseOpenFile(_ request: AppFilePanelRequest) -> URL? {
+        let panel = NSOpenPanel()
+        configure(panel, request: request)
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    func chooseSaveFile(_ request: AppFilePanelRequest) -> URL? {
+        let panel = NSSavePanel()
+        configure(panel, request: request)
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    private func configure(_ panel: NSSavePanel, request: AppFilePanelRequest) {
+        panel.title = request.title
+        panel.prompt = request.prompt
+        if let suggestedFilename = request.suggestedFilename {
+            panel.nameFieldStringValue = suggestedFilename
+        }
+        panel.allowedContentTypes = request.allowedExtensions.map {
+            UTType(filenameExtension: $0) ?? .plainText
+        }
+    }
+}
+
+@MainActor
+private struct SystemPasteboardPort: AppPasteboardPort {
+    func write(_ representations: [AppPasteboardRepresentation]) throws {
+        let item = NSPasteboardItem()
+        for representation in representations {
+            item.setString(
+                representation.value,
+                forType: NSPasteboard.PasteboardType(representation.type)
+            )
+        }
+        NSPasteboard.general.clearContents()
+        guard NSPasteboard.general.writeObjects([item]) else {
+            throw AppCapabilityError.rejected("pasteboard")
+        }
+    }
+}
+
+@MainActor
 private final class NativeApplicationModel {
     let client: BridgeClient?
     let bridgeError: String?
@@ -431,7 +477,10 @@ private final class NativeApplicationModel {
     private var fixtureWindowOpened = false
 
     init() {
-        dependencies = AppDependencies()
+        dependencies = AppDependencies(
+            filePanels: SystemFilePanelPort(),
+            pasteboard: SystemPasteboardPort()
+        )
         do {
             let configuration = try AppConfiguration.resolve(
                 environment: ProcessInfo.processInfo.environment,
@@ -2413,17 +2462,17 @@ final class BridgeModel {
                 )
             }
             let preferred = payloads[preferredFormat] ?? payloads["tsv"] ?? ""
-            let item = NSPasteboardItem()
-            item.setString(preferred, forType: .string)
-            item.setString(payloads["csv"] ?? "", forType: .init("public.comma-separated-values-text"))
-            item.setString(payloads["tsv"] ?? "", forType: .tabularText)
-            item.setString(payloads["json"] ?? "", forType: .init("public.json"))
-            item.setString(payloads["markdown"] ?? "", forType: .init("net.daringfireball.markdown"))
-            NSPasteboard.general.clearContents()
-            guard NSPasteboard.general.writeObjects([item]) else {
-                copyError = "Pasteboard rejected result payloads"
-                return
-            }
+            try dependencies.pasteboard.write([
+                AppPasteboardRepresentation(type: "public.utf8-plain-text", value: preferred),
+                AppPasteboardRepresentation(
+                    type: "public.comma-separated-values-text", value: payloads["csv"] ?? ""
+                ),
+                AppPasteboardRepresentation(type: "public.utf8-tab-separated-values-text", value: payloads["tsv"] ?? ""),
+                AppPasteboardRepresentation(type: "public.json", value: payloads["json"] ?? ""),
+                AppPasteboardRepresentation(
+                    type: "net.daringfireball.markdown", value: payloads["markdown"] ?? ""
+                ),
+            ])
             copyOutcome = "Copied \(scope) as \(preferredFormat.uppercased()) with CSV, TSV, JSON, and Markdown representations"
         } catch { copyError = "Copy failed: \(error)" }
     }
@@ -2434,12 +2483,10 @@ final class BridgeModel {
             return
         }
         let fileExtension = format == "sql_insert" ? "sql" : format
-        let panel = NSSavePanel()
-        panel.title = "Export Loaded Result"
-        panel.prompt = "Export"
-        panel.nameFieldStringValue = "result.\(fileExtension)"
-        panel.allowedContentTypes = [UTType(filenameExtension: fileExtension) ?? .plainText]
-        guard panel.runModal() == .OK, let selected = panel.url else { return }
+        guard let selected = dependencies.filePanels.chooseSaveFile(AppFilePanelRequest(
+            title: "Export Loaded Result", prompt: "Export",
+            suggestedFilename: "result.\(fileExtension)", allowedExtensions: [fileExtension]
+        )) else { return }
         let url = selected.pathExtension.lowercased() == fileExtension
             ? selected : selected.appendingPathExtension(fileExtension)
         let accessed = url.startAccessingSecurityScopedResource()
@@ -2456,14 +2503,9 @@ final class BridgeModel {
 
     func chooseCsvImport() async {
         guard let client, sqlInsertCopyAvailable else { return }
-        let panel = NSOpenPanel()
-        panel.title = "Import CSV into Table"
-        panel.prompt = "Preview"
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowedContentTypes = [UTType(filenameExtension: "csv") ?? .commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let url = dependencies.filePanels.chooseOpenFile(AppFilePanelRequest(
+            title: "Import CSV into Table", prompt: "Preview", allowedExtensions: ["csv"]
+        )) else { return }
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         do {
@@ -2627,14 +2669,9 @@ final class BridgeModel {
 
     func openSqlFile() async {
         confirmDiscardForOpen = false
-        let panel = NSOpenPanel()
-        panel.title = "Open SQL File"
-        panel.prompt = "Open"
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowedContentTypes = [UTType(filenameExtension: "sql") ?? .plainText]
-        guard panel.runModal() == .OK, let url = panel.url, let client else { return }
+        guard let url = dependencies.filePanels.chooseOpenFile(AppFilePanelRequest(
+            title: "Open SQL File", prompt: "Open", allowedExtensions: ["sql"]
+        )), let client else { return }
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         do {
@@ -2651,12 +2688,10 @@ final class BridgeModel {
         guard let client else { return }
         var url = sqlFile.map { URL(fileURLWithPath: $0.path) }
         if saveAs || url == nil {
-            let panel = NSSavePanel()
-            panel.title = "Save SQL File"
-            panel.prompt = "Save"
-            panel.allowedContentTypes = [UTType(filenameExtension: "sql") ?? .plainText]
-            panel.nameFieldStringValue = "query.sql"
-            guard panel.runModal() == .OK, let selected = panel.url else { return }
+            guard let selected = dependencies.filePanels.chooseSaveFile(AppFilePanelRequest(
+                title: "Save SQL File", prompt: "Save", suggestedFilename: "query.sql",
+                allowedExtensions: ["sql"]
+            )) else { return }
             url = selected.pathExtension == "sql"
                 ? selected : selected.appendingPathExtension("sql")
         }
@@ -3320,6 +3355,17 @@ final class BridgeModel {
             tab.reviewError = "Review/apply failed: \(error)"
         }
     }
+
+    func copyStructureDdl(_ ddl: String) {
+        do {
+            try dependencies.pasteboard.write([
+                AppPasteboardRepresentation(type: "public.utf8-plain-text", value: ddl)
+            ])
+            copyOutcome = "Copied structure DDL"
+        } catch {
+            copyError = "Copy DDL failed: \(error)"
+        }
+    }
 }
 
 struct ContentView: View {
@@ -3929,6 +3975,7 @@ private struct RedisKeyObjectView: View {
 }
 
 private struct ObjectStructureView: View {
+    @Environment(BridgeModel.self) private var model
     let tab: NativeObjectTab
 
     var body: some View {
@@ -3949,7 +3996,7 @@ private struct ObjectStructureView: View {
                             .textSelection(.enabled)
                         Spacer()
                         Button("Copy DDL", systemImage: "doc.on.doc") {
-                            copyStructureDdl(structure.ddl)
+                            model.copyStructureDdl(structure.ddl)
                         }
                         .disabled(structure.ddl.isEmpty)
                         .accessibilityHint("Copies database-generated structure SQL")
@@ -4041,12 +4088,6 @@ private struct ObjectStructureView: View {
             }
         }
     }
-}
-
-@MainActor
-private func copyStructureDdl(_ ddl: String) {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(ddl, forType: .string)
 }
 
 private struct CsvImportSheet: View {

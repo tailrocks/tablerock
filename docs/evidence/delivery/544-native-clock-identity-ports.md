@@ -37,7 +37,7 @@ full-Xcode CI gate remains required before it becomes release evidence.
 
 - application-owned `WorkbenchBackend` DTO boundary and live adapter;
 - scripted scenarios and model-deallocation coverage;
-- Keychain namespace, file-panel, and pasteboard ports.
+- Keychain namespace (file-panel and pasteboard ports closed by evidence 546).
 
 This is a dependency checkpoint, not a visual redesign. TablePro influenced
 no expression here. Copied source, tests, identifiers, assets, product text,

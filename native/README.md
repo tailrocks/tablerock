@@ -39,6 +39,8 @@ an absolute `TABLEROCK_TEST_ROOT`, while legacy fixture launches automatically
 use a process-local temporary root. Tests and fixture gates therefore cannot
 open the developer's real profiles database. Production uses system clock/UUID
 implementations; deterministic tests inject fixed time and ordered identities.
+File selection and pasteboard writes likewise use application-owned ports;
+tests default to unavailable capabilities unless they explicitly inject one.
 
 ## XCFramework + notarization (operator)
 
