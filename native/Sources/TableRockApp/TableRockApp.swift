@@ -234,6 +234,115 @@ private protocol WorkbenchBackend: Actor {
     func stageAndApply(session: Data, now: UInt64) throws -> ApplyOutcome
 }
 
+private enum ScriptedBackendError: Error {
+    case unavailable(String)
+    case connectionFailed
+    case authenticationFailed
+    case staleResultRevision
+    case staleEvent
+    case cursorResyncRequired
+    case mismatchedPageColumns
+    case historyFailedAfterPage
+    case restorationCorrupt
+}
+
+private func scriptedUnavailable<T>(_ operation: String) throws -> T {
+    throw ScriptedBackendError.unavailable(operation)
+}
+
+private extension WorkbenchBackend {
+    func searchProfiles(_ search: String?) throws -> [BridgeProfileItem] { try listProfiles() }
+    func profileDraft(id: Data) throws -> BridgeProfileDraft { try scriptedUnavailable("draft") }
+    func saveProfile(_ draft: BridgeProfileDraft) throws -> Data { try scriptedUnavailable("save") }
+    func deleteProfile(id: Data, revision: UInt64) throws { throw ScriptedBackendError.unavailable("delete") }
+    func testProfile(id: Data, secretOverride: Data?) throws -> BridgeConnectionTestReport { try scriptedUnavailable("test") }
+    func createProfileGroup(_ name: String) throws { throw ScriptedBackendError.unavailable("group-create") }
+    func renameProfileGroup(_ oldName: String, _ newName: String) throws -> UInt32 { try scriptedUnavailable("group-rename") }
+    func deleteProfileGroup(_ name: String) throws -> UInt32 { try scriptedUnavailable("group-delete") }
+    func setGroupAlphabetical(_ name: String, _ alphabetical: Bool) throws { throw ScriptedBackendError.unavailable("group-order") }
+    func listHistory(_ search: String?) throws -> [BridgeHistoryItem] { [] }
+    func setHistoryRetention(_ retention: String) throws { throw ScriptedBackendError.unavailable("retention") }
+    func listSavedQueries(engine: String?, search: String?) throws -> [BridgeSavedQueryItem] { [] }
+    func saveQuery(name: String, engine: String, statement: String) throws -> Int64 { try scriptedUnavailable("query-save") }
+    func deleteSavedQuery(_ id: Int64) throws -> Bool { try scriptedUnavailable("query-delete") }
+    func readSqlFile(path: String) throws -> BridgeSqlFile { try scriptedUnavailable("file-read") }
+    func writeSqlFile(path: String, statement: String, expectedModifiedNanos: UInt64?, expectedLength: UInt64?, overwriteExternalChange: Bool) throws -> BridgeSqlFile { try scriptedUnavailable("file-write") }
+    func putSessionIntent(profileId: Data, intent: BridgeSessionIntent) throws {}
+    func sessionIntent(profileId: Data) throws -> BridgeSessionIntent? { nil }
+    func deleteSessionIntent(profileId: Data) throws {}
+    func putNativeWindowIntent(windowId: String, profileId: Data, intent: BridgeSessionIntent) throws {}
+    func nativeWindowIntent(windowId: String) throws -> BridgeNativeWindowIntent? { nil }
+    func deleteNativeWindowIntent(windowId: String) throws {}
+    func setProfileFavorite(_ item: BridgeProfileItem, _ favorite: Bool) throws { throw ScriptedBackendError.unavailable("favorite") }
+    func reorderProfiles(group: String?, profiles: [BridgeProfileItem]) throws { throw ScriptedBackendError.unavailable("reorder") }
+    func open(params: OpenParams) throws -> Data { try scriptedUnavailable("open") }
+    func disconnect(session: Data) throws {}
+    func checkHealth(session: Data) throws -> BridgeSessionHealth { try scriptedUnavailable("health") }
+    func planReconnect(session: Data, attempt: UInt32, authenticationStopped: Bool) throws -> BridgeReconnectPlan { try scriptedUnavailable("reconnect-plan") }
+    func reconnect(session: Data, secretOverride: Data?) throws -> BridgeReconnectAttempt { try scriptedUnavailable("reconnect") }
+    func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [BridgeCatalogNode] { [] }
+    func submitCatalogBrowse(session: Data, nodeId: Data) throws -> Data { try scriptedUnavailable("browse") }
+    func submit(session: Data, intent: String, statement: String?) throws -> Data { try scriptedUnavailable("submit") }
+    func finish(operationId: Data) async throws -> NativeOperationProjection { try scriptedUnavailable("finish") }
+    func cancel(operationId: Data) throws -> CancelOutcome { try scriptedUnavailable("cancel") }
+    func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) async throws -> (PageV1Table, PageV1Envelope) { try scriptedUnavailable("fetch") }
+    func formatResultCopy(resultId: Data, revision: UInt64, scope: String, row: UInt64?, column: UInt32?, format: String) throws -> String { try scriptedUnavailable("copy") }
+    func exportLoadedResult(resultId: Data, revision: UInt64, format: String, path: String) throws -> UInt64 { try scriptedUnavailable("export") }
+    func previewCsvImport(path: String) throws -> BridgeCsvImportPreview { try scriptedUnavailable("import-preview") }
+    func stageCsvImport(sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String], mappedTypes: [String], nowMs: UInt64) throws -> BridgeCsvImportReview { try scriptedUnavailable("import-stage") }
+    func relationStructure(sessionId: Data, catalogNodeId: Data) throws -> BridgeRelationStructure { try scriptedUnavailable("structure") }
+    func redisKeyView(sessionId: Data, catalogNodeId: Data, collectionSkip: UInt64) throws -> BridgeRedisKeyView { try scriptedUnavailable("redis-key") }
+    func redisOverview(sessionId: Data) throws -> BridgeRedisOverview { try scriptedUnavailable("redis-overview") }
+    func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> ApplyOutcome { try scriptedUnavailable("apply") }
+    func revokeReviewToken(tokenId: Data) throws -> Bool { try scriptedUnavailable("revoke") }
+    func stageAndApply(session: Data, now: UInt64) throws -> ApplyOutcome { try scriptedUnavailable("stage-apply") }
+}
+
+private actor ScriptedWorkbenchBackend: WorkbenchBackend {
+    let scenario: String
+    private var cancelled = false
+
+    init(scenario: String) { self.scenario = scenario }
+
+    func listProfiles() throws -> [BridgeProfileItem] { [] }
+    func listProfileGroups() throws -> [BridgeProfileGroup] { [] }
+    func historyRetention() throws -> String { "full" }
+
+    func openProfile(id: Data, secretOverride: Data?) throws -> Data {
+        switch scenario {
+        case "connection-failure": throw ScriptedBackendError.connectionFailed
+        case "authentication-failure": throw ScriptedBackendError.authenticationFailed
+        default: return Data(repeating: 1, count: 16)
+        }
+    }
+
+    func submit(session: Data, intent: String, statement: String?) throws -> Data {
+        Data(repeating: 2, count: 16)
+    }
+
+    func finish(operationId: Data) async throws -> NativeOperationProjection {
+        if scenario == "slow-until-cancelled" {
+            while !cancelled { try await Task.sleep(for: .milliseconds(10)) }
+            return NativeOperationProjection(table: nil, envelope: nil, outcome: "cancelled", historyFailed: false)
+        }
+        if scenario == "stale-event" { throw ScriptedBackendError.staleEvent }
+        if scenario == "cursor-resync" { throw ScriptedBackendError.cursorResyncRequired }
+        if scenario == "history-failure-after-page" { throw ScriptedBackendError.historyFailedAfterPage }
+        return NativeOperationProjection(table: nil, envelope: nil, outcome: "ok", historyFailed: false)
+    }
+
+    func cancel(operationId: Data) throws -> CancelOutcome {
+        cancelled = true
+        return CancelOutcome(core: "Requested", runtime: nil)
+    }
+
+    func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) async throws -> (PageV1Table, PageV1Envelope) {
+        if scenario == "stale-result-revision" { throw ScriptedBackendError.staleResultRevision }
+        if scenario == "mismatched-next-page-columns" { throw ScriptedBackendError.mismatchedPageColumns }
+        return try scriptedUnavailable("fetch")
+    }
+}
+
 private actor LiveWorkbenchBackend: WorkbenchBackend {
     private let bridge: TableRockBridge
     private var eventCursor: UInt64 = 0
@@ -620,12 +729,15 @@ private final class NativeApplicationModel {
                 keychain: SystemKeychainPort(namespace: configuration.keychainNamespace)
             )
             try configuration.paths.prepare()
-            guard configuration.backend == .live else {
-                throw AppConfigurationError.unsupportedBackend("scripted backend not installed")
+            let configuredClient: any WorkbenchBackend
+            switch configuration.backend {
+            case .live:
+                configuredClient = try LiveWorkbenchBackend(
+                    persistencePath: configuration.paths.profilesDatabase.path
+                )
+            case .scripted(let scenario):
+                configuredClient = ScriptedWorkbenchBackend(scenario: scenario)
             }
-            let configuredClient = try LiveWorkbenchBackend(
-                persistencePath: configuration.paths.profilesDatabase.path
-            )
             dependencies = configuredDependencies
             client = configuredClient
             bridgeError = nil
