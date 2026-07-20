@@ -306,6 +306,9 @@ PTY/process tests prove:
 - key press/release/repeat policy, paste, focus, resize, mouse press/drag/release,
   wheel, and tiny resize map into deterministic TEA messages;
 - high-rate mouse/resize/progress input cannot starve terminal outcomes;
+- ready resize/pointer-motion bursts reduce before one render, while
+  geometry-dependent mouse events wait for the newly painted frame and the
+  burst cap preserves signal/engine-ingress fairness;
 - terminal output contains no database value or secret diagnostics.
 
 ## Persistence matrix

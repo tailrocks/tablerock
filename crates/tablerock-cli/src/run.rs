@@ -6,7 +6,7 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use ratatui_core::terminal::Terminal;
 use ratatui_crossterm::CrosstermBackend;
 use tablerock_tui::subscriptions::{Subscription, root_subscriptions};
@@ -36,6 +36,8 @@ enum LoopInput {
     /// BoundedAutomatic continuous health probe interval.
     HealthTick,
 }
+
+const TERMINAL_BURST_LIMIT: usize = 64;
 
 #[derive(Debug)]
 pub enum RunError {
@@ -208,6 +210,7 @@ async fn run_session(
     let mut events = EventStream::new();
     let mut root_ingress_open = true;
     let mut input = InputAdapter::default();
+    let mut pending_terminal_event = None;
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
     let mut dirty = true;
@@ -231,20 +234,25 @@ async fn run_session(
             after_frame()?;
         }
 
-        let input_event = tokio::select! {
-            biased;
-            signal = &mut shutdown => {
-                signal?;
-                LoopInput::Signal
-            }
-            _ = health_interval.tick() => LoopInput::HealthTick,
-            input_event = async {
-                tokio::select! {
-                    root = root_messages.recv(), if root_ingress_open => LoopInput::Root(root),
-                    terminal = events.next() => LoopInput::Terminal(terminal),
+        let input_event = if let Some(event) = pending_terminal_event.take() {
+            LoopInput::Terminal(Some(Ok(event)))
+        } else {
+            tokio::select! {
+                biased;
+                signal = &mut shutdown => {
+                    signal?;
+                    LoopInput::Signal
                 }
-            } => input_event,
+                _ = health_interval.tick() => LoopInput::HealthTick,
+                input_event = async {
+                    tokio::select! {
+                        root = root_messages.recv(), if root_ingress_open => LoopInput::Root(root),
+                        terminal = events.next() => LoopInput::Terminal(terminal),
+                    }
+                } => input_event,
+            }
         };
+        let terminal_input = matches!(input_event, LoopInput::Terminal(_));
         let message = match input_event {
             LoopInput::Signal => Message::Quit,
             LoopInput::HealthTick => Message::HealthTick,
@@ -258,32 +266,88 @@ async fn run_session(
                 RootProgress::Redraw => Message::RequestRedraw,
             },
             LoopInput::Root(Some(Delivery::ResyncRequired)) => Message::EngineResyncRequired,
-            LoopInput::Terminal(event) => {
-                let event = event
-                    .ok_or_else(|| {
-                        RunError::Input(io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            "terminal event stream closed",
-                        ))
-                    })?
-                    .map_err(RunError::Input)?;
+            LoopInput::Terminal(event) => match map_terminal_event(&input, &model, event)? {
+                Some(message) => message,
+                None => continue,
+            },
+        };
+
+        if apply_message(&mut model, message, executor, &mut dirty) {
+            return Ok(());
+        }
+
+        // Backend event streams can already contain a burst of resize and
+        // pointer traffic. Reduce the ready burst before drawing so transient
+        // input cannot force one full frame per event ahead of a queued key.
+        // The cap preserves fairness for signals and engine ingress.
+        if terminal_input {
+            for _ in 1..TERMINAL_BURST_LIMIT {
+                let Some(event) = events.next().now_or_never() else {
+                    break;
+                };
+                let event = resolve_terminal_event(event)?;
+                if dirty
+                    && matches!(event, crossterm::event::Event::Mouse(mouse)
+                    if mouse.kind != crossterm::event::MouseEventKind::Moved)
+                {
+                    pending_terminal_event = Some(event);
+                    break;
+                }
+                if dirty
+                    && matches!(event, crossterm::event::Event::Mouse(mouse)
+                    if mouse.kind == crossterm::event::MouseEventKind::Moved)
+                {
+                    continue;
+                }
                 let Some(message) = input.map_backend_event_with_keymap(event, model.keymap())
                 else {
                     continue;
                 };
-                message
+                if apply_message(&mut model, message, executor, &mut dirty) {
+                    return Ok(());
+                }
             }
-        };
-
-        let result = update(&mut model, message);
-        dirty |= result.needs_render();
-        for effect in result.effects() {
-            if *effect == Effect::Exit {
-                return Ok(());
-            }
-            executor.dispatch(effect.clone());
         }
     }
+}
+
+fn map_terminal_event(
+    input: &InputAdapter,
+    model: &Model,
+    event: Option<io::Result<crossterm::event::Event>>,
+) -> Result<Option<Message>, RunError> {
+    let event = resolve_terminal_event(event)?;
+    Ok(input.map_backend_event_with_keymap(event, model.keymap()))
+}
+
+fn resolve_terminal_event(
+    event: Option<io::Result<crossterm::event::Event>>,
+) -> Result<crossterm::event::Event, RunError> {
+    event
+        .ok_or_else(|| {
+            RunError::Input(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "terminal event stream closed",
+            ))
+        })?
+        .map_err(RunError::Input)
+}
+
+fn apply_message(
+    model: &mut Model,
+    message: Message,
+    executor: &EffectExecutor,
+    dirty: &mut bool,
+) -> bool {
+    let result = update(model, message);
+    *dirty |= result.needs_render();
+    for effect in result.effects() {
+        if *effect == Effect::Exit {
+            return true;
+        }
+        executor.dispatch(effect.clone());
+    }
+    false
 }
 
 async fn shutdown_signal() -> Result<(), RunError> {
