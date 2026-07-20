@@ -19,6 +19,11 @@ Dependency responsibilities now have explicit platform jobs:
 Both jobs independently check out the exact source revision and install the
 pinned stable Rust toolchain. No audit is skipped or weakened.
 
+The first real Linux audit then exposed a pre-existing policy mismatch: UniFFI
+0.32 was adopted and documented as MPL-2.0, but `deny.toml` omitted MPL-2.0 from
+the explicit allowlist. The allowlist now matches the already-approved
+dependency/license decision; no dependency or license changed.
+
 ## Verification
 
 The workflow YAML preserves the exact current action pins. The pushed GitHub
