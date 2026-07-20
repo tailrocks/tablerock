@@ -431,6 +431,7 @@ How to read an evidence document:
 - 554 — [CLI release version identity](delivery/554-cli-release-version-identity.md)
 - 555 — [Terminal semantic-input priority ingress](delivery/555-terminal-priority-ingress.md)
 - 556 — [Native preview version stamping](delivery/556-native-preview-version-stamping.md)
+- 557 — [Rolling preview workflow foundation](delivery/557-preview-workflow-foundation.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

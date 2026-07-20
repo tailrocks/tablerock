@@ -1,0 +1,327 @@
+name: Publish Homebrew Preview
+
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers] gated before checkout
+    workflows: ["Checks"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A real multi-target publish must finish; later green-main events queue.
+  group: tablerock-preview-publish
+  cancel-in-progress: false
+
+jobs:
+  source-changed:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    outputs:
+      source: ${{ steps.filter.outputs.source }}
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.meta.outputs.version }}
+      commit_count: ${{ steps.meta.outputs.commit_count }}
+    steps:
+      - name: Resolve source SHA
+        id: source
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "sha=${DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${WORKFLOW_RUN_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify changed paths
+        id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          old_sha=""
+          formula_err=""
+          if formula_body=$(curl -fsSL --max-time 30 \
+            "https://raw.githubusercontent.com/tailrocks/homebrew-tablerock/main/Formula/tablerock-preview.rb" 2>&1); then
+            old_sha=$(printf '%s\n' "$formula_body" | sed -n \
+              's|^[[:space:]]*# source-sha: \([0-9a-f]\{40\}\)$|\1|p' | head -1)
+          else
+            formula_err="$formula_body"
+            echo "::warning::failed to fetch homebrew tap formula: ${formula_err}; falling open"
+          fi
+
+          if [ -n "$formula_err" ] || [ -z "$old_sha" ] \
+             || [ "$old_sha" = "$SOURCE_SHA" ] \
+             || ! git rev-parse --verify "${old_sha}^{commit}" >/dev/null 2>&1; then
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! diff_files=$(git diff --name-only "${old_sha}...${SOURCE_SHA}" 2>/tmp/diff.err); then
+            echo "::warning::diff failed: $(cat /tmp/diff.err); falling open"
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          source=false
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            case "$path" in
+              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|crates/**|native/**|scripts/build-native-app.sh|scripts/generate-swift-bindings.sh)
+                source=true
+                ;;
+            esac
+          done <<< "$diff_files"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+
+      - name: Compute preview metadata
+        id: meta
+        if: steps.filter.outputs.source == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FULL_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          base_version=${base_version%-dev}
+          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
+          # shellcheck disable=SC2016
+          graphql_query='query($owner: String!, $name: String!, $oid: GitObjectID!) { repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { history(first: 1) { totalCount } } } } }'
+          commit_count=$(
+            jq -cn \
+              --arg query "$graphql_query" \
+              --arg owner "$GITHUB_REPOSITORY_OWNER" \
+              --arg name "${GITHUB_REPOSITORY#*/}" \
+              --arg oid "$FULL_SHA" \
+              '{query: $query, variables: {owner: $owner, name: $name, oid: $oid}}' |
+              curl -fsSL \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Content-Type: application/json" \
+                --data @- https://api.github.com/graphql |
+              jq -er '.data.repository.object.history.totalCount'
+          )
+          {
+            echo "commit_count=$commit_count"
+            echo "version=${base_version}-preview.${commit_count}+${short_sha}"
+          } >> "$GITHUB_OUTPUT"
+
+  build-cli:
+    needs: source-changed
+    if: needs.source-changed.outputs.source == 'true'
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            builder: cargo
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            builder: cargo
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            builder: zigbuild
+            build_target: aarch64-unknown-linux-gnu.2.17
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            builder: zigbuild
+            build_target: x86_64-unknown-linux-gnu.2.17
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.source-changed.outputs.sha }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        if: matrix.builder == 'zigbuild'
+        with:
+          install_args: "zig cargo:cargo-zigbuild"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Apple CLI
+        if: matrix.builder == 'cargo'
+        env:
+          TABLEROCK_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: cargo build -p tablerock-cli --release --locked --target "$TARGET"
+
+      - name: Build Linux CLI
+        if: matrix.builder == 'zigbuild'
+        env:
+          TABLEROCK_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
+          TARGET: ${{ matrix.build_target }}
+        run: cargo zigbuild -p tablerock-cli --release --locked --target "$TARGET"
+
+      - name: Package CLI
+        id: package
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          archive="tablerock-${TARGET}.tar.gz"
+          tar -czf "$archive" -C "target/${TARGET}/release" tablerock
+          shasum -a 256 "$archive" | awk '{print $1}' > "${archive}.sha256"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: ${{ steps.package.outputs.archive }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tablerock-${{ matrix.target }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+
+  build-app:
+    needs: source-changed
+    if: needs.source-changed.outputs.source == 'true'
+    runs-on: macos-26
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.source-changed.outputs.sha }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+
+      - name: Select latest stable Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      - name: Build native application
+        env:
+          TABLEROCK_APP_VERSION: ${{ needs.source-changed.outputs.version }}
+          TABLEROCK_BUNDLE_VERSION: ${{ needs.source-changed.outputs.commit_count }}
+        run: ./scripts/build-native-app.sh
+
+      - name: Package native application
+        id: package
+        run: |
+          set -euo pipefail
+          archive="tablerock-app-aarch64-apple-darwin.zip"
+          ditto -c -k --keepParent native/dist/TableRock.app "$archive"
+          shasum -a 256 "$archive" | awk '{print $1}' > "${archive}.sha256"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: ${{ steps.package.outputs.archive }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tablerock-app-aarch64-apple-darwin
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+
+  publish:
+    needs: [source-changed, build-cli, build-app]
+    if: needs.source-changed.outputs.source == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Verify complete artifact set
+        run: |
+          set -euo pipefail
+          test "$(find artifacts -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 10
+          for archive in \
+            artifacts/tablerock-aarch64-apple-darwin.tar.gz \
+            artifacts/tablerock-x86_64-apple-darwin.tar.gz \
+            artifacts/tablerock-aarch64-unknown-linux-gnu.tar.gz \
+            artifacts/tablerock-x86_64-unknown-linux-gnu.tar.gz \
+            artifacts/tablerock-app-aarch64-apple-darwin.zip; do
+            test -f "$archive"
+            test -f "${archive}.sha256"
+            test "$(cat "${archive}.sha256")" = "$(sha256sum "$archive" | awk '{print $1}')"
+          done
+
+      - name: Verify source SHA is on main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
+        run: |
+          set -euo pipefail
+          compare_status=$(
+            curl -fsSL \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/compare/${FULL_SHA}...main" |
+              jq -er '.status'
+          )
+          case "$compare_status" in
+            identical|ahead) ;;
+            *)
+              echo "::error::source SHA ${FULL_SHA} is not on main (${compare_status})"
+              exit 1
+              ;;
+          esac
+
+      - name: Publish preview GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
+          SHA: ${{ needs.source-changed.outputs.sha }}
+        run: |
+          set -euo pipefail
+          notes="Preview build from [${SHA:0:7}](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})."
+          assets=(artifacts/tablerock-*)
+          if view_output=$(gh release view preview --repo "$GITHUB_REPOSITORY" --json tagName 2>&1); then
+            echo "preview release exists: $view_output"
+            gh release edit preview --repo "$GITHUB_REPOSITORY" \
+              --prerelease --target "$SHA" --title "Preview ${VERSION}" --notes "$notes"
+            gh release upload preview --repo "$GITHUB_REPOSITORY" "${assets[@]}" --clobber
+          else
+            status=$?
+            if echo "$view_output" | grep -qiE 'release not found|not found|release does not exist'; then
+              gh release create preview --repo "$GITHUB_REPOSITORY" \
+                --prerelease --target "$SHA" --title "Preview ${VERSION}" \
+                --notes "$notes" "${assets[@]}"
+            else
+              echo "::error::gh release view failed: $view_output"
+              exit "$status"
+            fi
+          fi

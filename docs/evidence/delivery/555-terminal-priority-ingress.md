@@ -34,7 +34,8 @@ cargo clippy --workspace --all-targets
 # passed; existing non-denied warnings unchanged
 ```
 
-Remote Linux proof is required on the pushed repair before the baseline is
-considered green again.
+Remote Linux proof: Checks run `29778717500`, Ubuntu job `88474401411`, passed
+the full container-free suite at repair commit `a10c434`, including the PTY
+regression that failed at the preceding HEAD.
 
 No external product influenced this runtime repair.
