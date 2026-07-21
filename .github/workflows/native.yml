@@ -101,6 +101,28 @@ jobs:
             CODE_SIGN_IDENTITY=- \
             | tee artifacts/xcodebuild-checkpoint.log
 
+      - name: Archive and verify canonical Release app
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project native/App/TableRock.xcodeproj \
+            -scheme TableRock \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath artifacts/TableRock.xcarchive \
+            CODE_SIGN_IDENTITY=- \
+            | tee artifacts/xcodebuild-archive.log
+          app=artifacts/TableRock.xcarchive/Products/Applications/TableRock.app
+          test -d "$app"
+          codesign --verify --deep --strict "$app"
+          test "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" = \
+            "app.tablerock.TableRock"
+          archs="$(lipo -archs "$app/Contents/MacOS/TableRock")"
+          [[ "$archs" == "arm64 x86_64" || "$archs" == "x86_64 arm64" ]]
+          ! otool -L "$app/Contents/MacOS/TableRock" | grep -E \
+            '/target/|libtablerock_ffi[.]dylib'
+          test -z "$(find "$app" -name 'libtablerock_ffi*.dylib' -print -quit)"
+
       - name: Build and verify development app
         run: |
           ./scripts/build-native-app.sh
@@ -124,4 +146,6 @@ jobs:
             native/App/TestPlans
             artifacts/TableRock-Checkpoint.xcresult
             artifacts/xcodebuild-checkpoint.log
+            artifacts/TableRock.xcarchive
+            artifacts/xcodebuild-archive.log
             ~/Library/Logs/DiagnosticReports/TableRock*.crash
