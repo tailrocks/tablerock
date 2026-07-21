@@ -31,6 +31,9 @@ behavior is unchanged.
 - `cargo nextest run -p tablerock-engine --test redis_real rejects_untrusted_or_recredentialed_tls_pubsub_replacement -- --exact --nocapture`
   passed all 32 hostile replacement combinations in 353.61 seconds.
 - Exact-main Velnor proof remains required after push.
+- Velnor run 29860746521 exposed the replacement forward's intentionally
+  lifetime-only ownership binding under `-D warnings`; it is named as an
+  ownership guard so workspace Clippy can verify the test target.
 
 ## Provenance
 
