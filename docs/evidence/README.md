@@ -482,6 +482,8 @@ How to read an evidence document:
 - 606 — [UniFFI bridge real-server container host](delivery/606-bridge-real-container-host.md)
 - 607 — [CLI real-server container hosts](delivery/607-cli-real-container-hosts.md)
 - 608 — [Native checkpoint control reachability](delivery/608-native-checkpoint-control-reachability.md)
+- 609 — [Portable real-server CI host capabilities](delivery/609-portable-real-server-ci-host.md)
+- 610 — [Redis TLS replacement case isolation](delivery/610-redis-tls-replacement-parallelism.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

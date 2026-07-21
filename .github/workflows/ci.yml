@@ -149,7 +149,7 @@ jobs:
           archive="${RUNNER_TEMP}/tablerock-files-tests.tar.zst"
           cargo nextest archive -p tablerock-files --lib --locked \
             --archive-file "$archive"
-          nextest_binary="$(command -v cargo-nextest)"
+          nextest_binary="$(readlink -f "$(command -v cargo-nextest)")"
           test -x "$nextest_binary"
           container="tablerock-enospc-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }

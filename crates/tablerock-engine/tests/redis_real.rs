@@ -659,33 +659,277 @@ async fn verify_tls_subscription_restart(
     drop(replacement);
 }
 
-#[tokio::test]
-async fn rejects_untrusted_or_recredentialed_tls_pubsub_replacement() {
-    for tag in [
-        "7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99",
-        "8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005",
-    ] {
-        for protocol in [RedisProtocol::Resp2, RedisProtocol::Resp3] {
-            for require_client_identity in [false, true] {
-                for kind in [
-                    RedisSubscriptionKind::Channel,
-                    RedisSubscriptionKind::Pattern,
-                ] {
-                    for invalid_trust in [false, true] {
-                        verify_rejected_tls_subscription_replacement(
-                            tag,
-                            protocol,
-                            require_client_identity,
-                            kind,
-                            invalid_trust,
-                        )
-                        .await;
-                    }
-                }
-            }
+const REDIS_7_4: &str =
+    "7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99";
+const REDIS_8_8: &str =
+    "8.8.0-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005";
+
+macro_rules! rejected_tls_replacement_case {
+    ($name:ident, $tag:expr, $protocol:expr, $identity:expr, $kind:expr, $trust:expr) => {
+        #[tokio::test]
+        async fn $name() {
+            verify_rejected_tls_subscription_replacement($tag, $protocol, $identity, $kind, $trust)
+                .await;
         }
-    }
+    };
 }
+
+rejected_tls_replacement_case!(
+    redis74_resp2_server_channel_recredentials,
+    REDIS_7_4,
+    RedisProtocol::Resp2,
+    false,
+    RedisSubscriptionKind::Channel,
+    false
+);
+rejected_tls_replacement_case!(
+    redis74_resp2_server_channel_untrusted,
+    REDIS_7_4,
+    RedisProtocol::Resp2,
+    false,
+    RedisSubscriptionKind::Channel,
+    true
+);
+rejected_tls_replacement_case!(
+    redis74_resp2_server_pattern_recredentials,
+    REDIS_7_4,
+    RedisProtocol::Resp2,
+    false,
+    RedisSubscriptionKind::Pattern,
+    false
+);
+rejected_tls_replacement_case!(
+    redis74_resp2_server_pattern_untrusted,
+    REDIS_7_4,
+    RedisProtocol::Resp2,
+    false,
+    RedisSubscriptionKind::Pattern,
+    true
+);
+rejected_tls_replacement_case!(
+    redis74_resp2_mutual_channel_recredentials,
+    REDIS_7_4,
+    RedisProtocol::Resp2,
+    true,
+    RedisSubscriptionKind::Channel,
+    false
+);
+rejected_tls_replacement_case!(
+    redis74_resp2_mutual_channel_untrusted,
+    REDIS_7_4,
+    RedisProtocol::Resp2,
+    true,
+    RedisSubscriptionKind::Channel,
+    true
+);
+rejected_tls_replacement_case!(
+    redis74_resp2_mutual_pattern_recredentials,
+    REDIS_7_4,
+    RedisProtocol::Resp2,
+    true,
+    RedisSubscriptionKind::Pattern,
+    false
+);
+rejected_tls_replacement_case!(
+    redis74_resp2_mutual_pattern_untrusted,
+    REDIS_7_4,
+    RedisProtocol::Resp2,
+    true,
+    RedisSubscriptionKind::Pattern,
+    true
+);
+rejected_tls_replacement_case!(
+    redis74_resp3_server_channel_recredentials,
+    REDIS_7_4,
+    RedisProtocol::Resp3,
+    false,
+    RedisSubscriptionKind::Channel,
+    false
+);
+rejected_tls_replacement_case!(
+    redis74_resp3_server_channel_untrusted,
+    REDIS_7_4,
+    RedisProtocol::Resp3,
+    false,
+    RedisSubscriptionKind::Channel,
+    true
+);
+rejected_tls_replacement_case!(
+    redis74_resp3_server_pattern_recredentials,
+    REDIS_7_4,
+    RedisProtocol::Resp3,
+    false,
+    RedisSubscriptionKind::Pattern,
+    false
+);
+rejected_tls_replacement_case!(
+    redis74_resp3_server_pattern_untrusted,
+    REDIS_7_4,
+    RedisProtocol::Resp3,
+    false,
+    RedisSubscriptionKind::Pattern,
+    true
+);
+rejected_tls_replacement_case!(
+    redis74_resp3_mutual_channel_recredentials,
+    REDIS_7_4,
+    RedisProtocol::Resp3,
+    true,
+    RedisSubscriptionKind::Channel,
+    false
+);
+rejected_tls_replacement_case!(
+    redis74_resp3_mutual_channel_untrusted,
+    REDIS_7_4,
+    RedisProtocol::Resp3,
+    true,
+    RedisSubscriptionKind::Channel,
+    true
+);
+rejected_tls_replacement_case!(
+    redis74_resp3_mutual_pattern_recredentials,
+    REDIS_7_4,
+    RedisProtocol::Resp3,
+    true,
+    RedisSubscriptionKind::Pattern,
+    false
+);
+rejected_tls_replacement_case!(
+    redis74_resp3_mutual_pattern_untrusted,
+    REDIS_7_4,
+    RedisProtocol::Resp3,
+    true,
+    RedisSubscriptionKind::Pattern,
+    true
+);
+rejected_tls_replacement_case!(
+    redis88_resp2_server_channel_recredentials,
+    REDIS_8_8,
+    RedisProtocol::Resp2,
+    false,
+    RedisSubscriptionKind::Channel,
+    false
+);
+rejected_tls_replacement_case!(
+    redis88_resp2_server_channel_untrusted,
+    REDIS_8_8,
+    RedisProtocol::Resp2,
+    false,
+    RedisSubscriptionKind::Channel,
+    true
+);
+rejected_tls_replacement_case!(
+    redis88_resp2_server_pattern_recredentials,
+    REDIS_8_8,
+    RedisProtocol::Resp2,
+    false,
+    RedisSubscriptionKind::Pattern,
+    false
+);
+rejected_tls_replacement_case!(
+    redis88_resp2_server_pattern_untrusted,
+    REDIS_8_8,
+    RedisProtocol::Resp2,
+    false,
+    RedisSubscriptionKind::Pattern,
+    true
+);
+rejected_tls_replacement_case!(
+    redis88_resp2_mutual_channel_recredentials,
+    REDIS_8_8,
+    RedisProtocol::Resp2,
+    true,
+    RedisSubscriptionKind::Channel,
+    false
+);
+rejected_tls_replacement_case!(
+    redis88_resp2_mutual_channel_untrusted,
+    REDIS_8_8,
+    RedisProtocol::Resp2,
+    true,
+    RedisSubscriptionKind::Channel,
+    true
+);
+rejected_tls_replacement_case!(
+    redis88_resp2_mutual_pattern_recredentials,
+    REDIS_8_8,
+    RedisProtocol::Resp2,
+    true,
+    RedisSubscriptionKind::Pattern,
+    false
+);
+rejected_tls_replacement_case!(
+    redis88_resp2_mutual_pattern_untrusted,
+    REDIS_8_8,
+    RedisProtocol::Resp2,
+    true,
+    RedisSubscriptionKind::Pattern,
+    true
+);
+rejected_tls_replacement_case!(
+    redis88_resp3_server_channel_recredentials,
+    REDIS_8_8,
+    RedisProtocol::Resp3,
+    false,
+    RedisSubscriptionKind::Channel,
+    false
+);
+rejected_tls_replacement_case!(
+    redis88_resp3_server_channel_untrusted,
+    REDIS_8_8,
+    RedisProtocol::Resp3,
+    false,
+    RedisSubscriptionKind::Channel,
+    true
+);
+rejected_tls_replacement_case!(
+    redis88_resp3_server_pattern_recredentials,
+    REDIS_8_8,
+    RedisProtocol::Resp3,
+    false,
+    RedisSubscriptionKind::Pattern,
+    false
+);
+rejected_tls_replacement_case!(
+    redis88_resp3_server_pattern_untrusted,
+    REDIS_8_8,
+    RedisProtocol::Resp3,
+    false,
+    RedisSubscriptionKind::Pattern,
+    true
+);
+rejected_tls_replacement_case!(
+    redis88_resp3_mutual_channel_recredentials,
+    REDIS_8_8,
+    RedisProtocol::Resp3,
+    true,
+    RedisSubscriptionKind::Channel,
+    false
+);
+rejected_tls_replacement_case!(
+    redis88_resp3_mutual_channel_untrusted,
+    REDIS_8_8,
+    RedisProtocol::Resp3,
+    true,
+    RedisSubscriptionKind::Channel,
+    true
+);
+rejected_tls_replacement_case!(
+    redis88_resp3_mutual_pattern_recredentials,
+    REDIS_8_8,
+    RedisProtocol::Resp3,
+    true,
+    RedisSubscriptionKind::Pattern,
+    false
+);
+rejected_tls_replacement_case!(
+    redis88_resp3_mutual_pattern_untrusted,
+    REDIS_8_8,
+    RedisProtocol::Resp3,
+    true,
+    RedisSubscriptionKind::Pattern,
+    true
+);
 
 async fn verify_rejected_tls_subscription_replacement(
     tag: &str,
