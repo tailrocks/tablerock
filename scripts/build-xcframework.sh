@@ -10,13 +10,35 @@ XCFRAMEWORK="$OUT_DIR/$FRAMEWORK_NAME.xcframework"
 
 cd "$ROOT"
 
+if [[ "${SKIP_BINDINGS:-0}" == "1" ]]; then
+  echo "==> using previously verified Swift bindings"
+else
+  echo "==> generating Swift bindings (from host release dylib)"
+  cargo build -p tablerock-ffi --release --locked
+  PROFILE=release OUT_DIR="$ROOT/native/Generated" \
+    bash "$ROOT/scripts/generate-swift-bindings.sh"
+fi
+
 echo "==> building staticlibs for apple-darwin targets"
 rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null
-cargo build -p tablerock-ffi --release --target aarch64-apple-darwin
-cargo build -p tablerock-ffi --release --target x86_64-apple-darwin
 
+HOST_LIB="$ROOT/target/release/libtablerock_ffi.a"
 ARM_LIB="$ROOT/target/aarch64-apple-darwin/release/libtablerock_ffi.a"
 X86_LIB="$ROOT/target/x86_64-apple-darwin/release/libtablerock_ffi.a"
+
+if [[ -f "$HOST_LIB" && "$(lipo -archs "$HOST_LIB")" == "arm64" ]]; then
+  echo "==> reusing verified host arm64 staticlib"
+  ARM_LIB="$HOST_LIB"
+else
+  cargo build -p tablerock-ffi --release --locked --target aarch64-apple-darwin
+fi
+
+if [[ -f "$HOST_LIB" && "$(lipo -archs "$HOST_LIB")" == "x86_64" ]]; then
+  echo "==> reusing verified host x86_64 staticlib"
+  X86_LIB="$HOST_LIB"
+else
+  cargo build -p tablerock-ffi --release --locked --target x86_64-apple-darwin
+fi
 
 for lib in "$ARM_LIB" "$X86_LIB"; do
   if [[ ! -f "$lib" ]]; then
@@ -24,15 +46,6 @@ for lib in "$ARM_LIB" "$X86_LIB"; do
     exit 1
   fi
 done
-
-if [[ "${SKIP_BINDINGS:-0}" == "1" ]]; then
-  echo "==> using previously verified Swift bindings"
-else
-  echo "==> generating Swift bindings (from host release dylib)"
-  cargo build -p tablerock-ffi --release
-  PROFILE=release OUT_DIR="$ROOT/native/Generated" \
-    bash "$ROOT/scripts/generate-swift-bindings.sh"
-fi
 
 HEADER="$ROOT/native/Generated/tablerock_ffiFFI.h"
 MODULEMAP="$ROOT/native/Generated/tablerock_ffiFFI.modulemap"
