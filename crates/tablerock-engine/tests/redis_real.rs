@@ -405,6 +405,7 @@ async fn resubscribes_with_visible_gap_after_redis_restart() {
                     .start()
                     .await
                     .unwrap();
+                record_host!(container, port);
                 let session = connect_session_until_ready(
                     &RedisConnectConfig::new(
                         container_text(port),
@@ -445,6 +446,7 @@ async fn resubscribes_with_visible_gap_after_redis_restart() {
                     .start()
                     .await
                     .unwrap();
+                record_host!(replacement, port);
 
                 let mut publisher = raw_connection_in_database(port, protocol, 0).await;
                 tokio::time::timeout(Duration::from_secs(5), async {
@@ -593,8 +595,10 @@ async fn verify_tls_subscription_restart(
     .unwrap();
 
     drop(container);
+    drop(endpoint);
     tokio::time::sleep(Duration::from_millis(250)).await;
     let replacement = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
+    let endpoint = local_tls_endpoint(&replacement, port, Some(port)).await;
     let mut publisher =
         raw_tls_admin_connection(port, protocol, &fixture, require_client_identity).await;
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -768,6 +772,7 @@ async fn verify_rejected_tls_subscription_replacement(
     }
     drop(observer);
     drop(container);
+    drop(endpoint);
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let replacement_fixture = if invalid_trust {
@@ -788,6 +793,7 @@ async fn verify_rejected_tls_subscription_replacement(
         replacement_acl,
     )
     .await;
+    let endpoint = local_tls_endpoint(&replacement, port, Some(port)).await;
     let replacement_ready =
         raw_tls_admin_connection(port, protocol, replacement_fixture, require_client_identity)
             .await;
@@ -806,6 +812,7 @@ async fn verify_rejected_tls_subscription_replacement(
         .expect("rejected TLS replacement terminates within policy deadline"),
         Err(expected)
     );
+    drop(endpoint);
     drop(replacement);
 }
 

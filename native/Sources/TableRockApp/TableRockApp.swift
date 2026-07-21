@@ -2602,7 +2602,8 @@ final class BridgeModel {
     }
     resultTable = WorkbenchTable(columns: columns, rows: rows)
     let elapsed = Date().timeIntervalSince(started)
-    catalogSummary = "Performance fixture · \(count) rows · \(columns.count) columns"
+    catalogSummary =
+      "Performance fixture · \(counted(count, "row")) · \(counted(columns.count, "column"))"
     writePerformanceMetric(
       "PERF_FIXTURE_READY rows=\(count) columns=\(columns.count) build_seconds=\(String(format: "%.6f", elapsed))"
     )
@@ -2917,7 +2918,8 @@ final class BridgeModel {
           ? envelope.startRow + UInt64(envelope.rowCount) : nil
       }
       if let table = projection.table {
-        tab.summary = "\(table.rows.count) rows · \(table.columns.count) columns"
+        tab.summary =
+          "\(counted(table.rows.count, "row")) · \(counted(table.columns.count, "column"))"
       } else {
         tab.summary = "No rows"
       }
@@ -2986,7 +2988,8 @@ final class BridgeModel {
           return
         }
         tab.resultTable = table
-        tab.summary = "\(table.rows.count) rows · \(table.columns.count) columns"
+        tab.summary =
+          "\(counted(table.rows.count, "row")) · \(counted(table.columns.count, "column"))"
       }
       tab.nextStartRow =
         envelope.rowCount == 500
@@ -3978,7 +3981,7 @@ final class BridgeModel {
         }
         tab.resultTable = table
         tab.querySummary =
-          "result · \(table.columns.count) columns · \(table.rows.count) rows loaded"
+          "result · \(counted(table.columns.count, "column")) · \(counted(table.rows.count, "row")) loaded"
       }
       tab.nextStartRow =
         env.rowCount == 500
@@ -4039,7 +4042,8 @@ final class BridgeModel {
     do {
       if let table = try await fetchPage(intent: "execute", statement: sql, tab: tab) {
         tab.resultTable = table
-        tab.querySummary = "result · \(table.columns.count) columns · \(table.rows.count) rows"
+        tab.querySummary =
+          "result · \(counted(table.columns.count, "column")) · \(counted(table.rows.count, "row"))"
       } else if let outcome = tab.writeOutcome {
         tab.querySummary = "write ok · \(outcome)"
       } else {
@@ -4516,6 +4520,7 @@ struct ContentView: View {
       presenting: model.pendingQueryTabClose
     ) { _ in
       Button("Discard and Close", role: .destructive) { model.closePendingQueryTab() }
+        .accessibilityIdentifier("query.tab.discard-close")
       Button("Cancel", role: .cancel) { model.pendingQueryTabClose = nil }
     } message: { tab in
       Text("Unsaved editor text in \(tab.title) will be discarded.")
@@ -6147,7 +6152,6 @@ struct CatalogGrid: NSViewRepresentable {
       }
       let value = snapshot.rows[row][column]
       cell.textField?.stringValue = value
-      cell.textField?.setAccessibilityIdentifier("results.cell.\(row).\(column)")
       cell.setAccessibilityLabel("\(snapshot.columns[column]), row \(row + 1)")
       cell.setAccessibilityValue(value)
       cell.setAccessibilityIdentifier("results.cell.\(row).\(column)")
@@ -6158,6 +6162,10 @@ struct CatalogGrid: NSViewRepresentable {
 
 private func writePerformanceMetric(_ metric: String) {
   FileHandle.standardError.write(Data("\(metric)\n".utf8))
+}
+
+private func counted(_ count: Int, _ singular: String) -> String {
+  "\(count) \(singular)\(count == 1 ? "" : "s")"
 }
 
 struct SqlTextEditor: NSViewRepresentable {

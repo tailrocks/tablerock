@@ -196,7 +196,7 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(
       app.staticTexts["Close query tab with unsaved changes?"]
         .waitForExistence(timeout: 10))
-    let discard = app.buttons["Discard and Close"]
+    let discard = app.descendants(matching: .any)["query.tab.discard-close"]
     XCTAssertTrue(discard.waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["Cancel"].exists)
     discard.click()

@@ -19,11 +19,15 @@ hittable and is superseded by this correction.
 
 - Query-tab `Close` actions expose `query.tab.close`; UI automation now selects
   the semantic identifier without assuming an AppKit menu-item role.
-- Result-cell automation observes the existing `results.cell.<row>.<column>`
-  identifier without assuming whether AppKit exports the cell or its text field.
+- Result cells alone own `results.cell.<row>.<column>`; their non-actionable
+  text children no longer duplicate the identifier.
 - `Load more rows` moved into the always-visible result toolbar. Result paging
   remains adjacent to its result while no longer depending on synthetic scroll
   gestures or viewport dimensions.
+- The discard confirmation action owns `query.tab.discard-close`, independent
+  of duplicate visible-label representations emitted by SwiftUI.
+- Shared count formatting preserves singular `column`/`row` status text after
+  page append and in other native result summaries.
 
 These identifiers describe user-facing actions and data cells. They do not add
 fixture-only production controls.
@@ -32,7 +36,10 @@ fixture-only production controls.
 
 - `swiftc -parse native/Sources/TableRockApp/TableRockApp.swift native/Tests/TableRockAppUITests/TableRockAppUITests.swift`
 - `git diff --check`
-- Exact-main hosted Xcode checkpoint remains required after push.
+- Hosted run 29857152743 proved the paging control itself became hittable and
+  appended row 501. It then exposed duplicate AX ownership, a duplicate
+  confirmation-label query, and `1 columns`; those follow-up corrections await
+  exact-main hosted proof after push.
 
 ## Provenance
 

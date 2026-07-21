@@ -19,8 +19,10 @@ endpoint aborts the forwarding task and its children.
 
 This preserves strict CA and hostname verification. No insecure TLS option,
 certificate widening, or production transport exception is introduced.
-Fixed-port restart/recredential tests keep one forward across replacement
-containers; ordinary TLS matrices receive an ephemeral local port.
+Fixed-port restart/recredential tests replace the forward with the container,
+which closes stale accepted connections before binding the same loopback port
+to the replacement target. Ordinary TLS matrices receive an ephemeral local
+port.
 
 ## Verification
 
