@@ -162,6 +162,24 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testResultPagingAppendsThroughUserControl() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_RESULT_PAGING": "1"])
+
+    let nextPage = app.buttons["results.next-page"]
+    XCTAssertTrue(nextPage.waitForExistence(timeout: 10))
+    let status = app.staticTexts["query.status"]
+    XCTAssertEqual(status.value as? String, "result · 1 column · 500 rows loaded")
+    nextPage.click()
+
+    let appended = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value CONTAINS '501 rows loaded'"), object: status)
+    XCTAssertEqual(XCTWaiter.wait(for: [appended], timeout: 10), .completed)
+    XCTAssertFalse(nextPage.exists)
+  }
+
+  @MainActor
   func testMarkedTextSurvivesPresentationUpdate() throws {
     let app = launch(
       scenario: "success",

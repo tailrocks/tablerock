@@ -500,6 +500,16 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     if scenario == "mismatched-next-page-columns" {
       throw ScriptedBackendError.mismatchedPageColumns
     }
+    if scenario == "success", resultId == Data(repeating: 8, count: 16), startRow == 500,
+      revision == 1
+    {
+      return (
+        WorkbenchTable(columns: ["n"], rows: [["501"]]),
+        WorkbenchPageEnvelope(
+          encodingVersion: 1, resultId: resultId, revision: revision, engine: 0,
+          startRow: startRow, rowCount: 1, columnCount: 1, arenaByteLen: 3,
+          columnTextByteLen: 1, delivery: 1, warnings: 0))
+    }
     return try scriptedUnavailable("fetch")
   }
 }
@@ -2019,6 +2029,19 @@ final class BridgeModel {
         ]])
       activeQueryTab.selectedCell = nil
       status = "Selectable inspector fixture"
+      return
+    }
+    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_RESULT_PAGING"] == "1" {
+      sessionData = Data(repeating: 5, count: 16)
+      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+      connectedEngine = "postgresql"
+      activeQueryTab.resultTable = WorkbenchTable(
+        columns: ["n"], rows: (1...500).map { [String($0)] })
+      activeQueryTab.resultIdData = Data(repeating: 8, count: 16)
+      activeQueryTab.resultRevision = 1
+      activeQueryTab.nextStartRow = 500
+      activeQueryTab.querySummary = "result · 1 column · 500 rows loaded"
+      status = "Result paging fixture"
       return
     }
     if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_IME"] == "1" {

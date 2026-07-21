@@ -456,6 +456,7 @@ How to read an evidence document:
 - 580 — [Native temporary-connect XCUITest](delivery/580-native-temporary-connect-xcuitest.md)
 - 581 — [Native catalog-refresh XCUITest](delivery/581-native-catalog-refresh-xcuitest.md)
 - 582 — [Native grid-selection XCUITest](delivery/582-native-grid-selection-xcuitest.md)
+- 583 — [Native result-paging XCUITest](delivery/583-native-result-paging-xcuitest.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
