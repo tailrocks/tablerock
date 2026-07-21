@@ -145,6 +145,23 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testGridSelectionOpensValueInspector() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_SELECTABLE_INSPECTOR": "1"])
+
+    let cell = app.cells["results.cell.0.0"]
+    XCTAssertTrue(cell.waitForExistence(timeout: 10))
+    XCTAssertFalse(app.descendants(matching: .any)["value.inspector"].exists)
+    cell.click()
+
+    XCTAssertTrue(
+      app.descendants(matching: .any)["value.inspector"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["value.inspector.tree"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
   func testMarkedTextSurvivesPresentationUpdate() throws {
     let app = launch(
       scenario: "success",

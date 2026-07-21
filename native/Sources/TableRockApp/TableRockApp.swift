@@ -2002,6 +2002,25 @@ final class BridgeModel {
       runNativeValueInspectorAudit()
       return
     }
+    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_SELECTABLE_INSPECTOR"] == "1" {
+      sessionData = Data(repeating: 5, count: 16)
+      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+      connectedEngine = "postgresql"
+      let raw = Data(#"{"selected":true}"#.utf8)
+      activeQueryTab.resultTable = WorkbenchTable(
+        columns: ["payload"], rows: [[#"{"selected":true}"#]],
+        columnMetadata: [
+          WorkbenchColumn(name: "payload", engine: 0, engineType: "jsonb", nullable: false)
+        ],
+        cells: [[
+          WorkbenchCell(
+            display: #"{"selected":true}"#, kind: 8, truncation: 0,
+            originalByteCount: UInt64(raw.count), bytes: raw)
+        ]])
+      activeQueryTab.selectedCell = nil
+      status = "Selectable inspector fixture"
+      return
+    }
     if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_IME"] == "1" {
       activeQueryTab.statementText = "SELECT "
       status = "Preparing IME fixture"
@@ -6098,6 +6117,7 @@ struct CatalogGrid: NSViewRepresentable {
       cell.textField?.stringValue = value
       cell.setAccessibilityLabel("\(snapshot.columns[column]), row \(row + 1)")
       cell.setAccessibilityValue(value)
+      cell.setAccessibilityIdentifier("results.cell.\(row).\(column)")
       return cell
     }
   }
