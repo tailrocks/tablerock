@@ -9,7 +9,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: native-nightly-${{ github.ref }}
+  # Must exactly match native.yml: both jobs use the same self-hosted workspace.
+  group: native-macos-${{ github.ref }}
   cancel-in-progress: false
 
 env:

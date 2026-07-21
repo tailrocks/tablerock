@@ -23,7 +23,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: native-checkpoint-${{ github.ref }}
+  # Checkpoint and nightly share one self-hosted macOS workspace. Serialize
+  # across both workflow files so Cargo/Xcode outputs cannot corrupt each other.
+  group: native-macos-${{ github.ref }}
   cancel-in-progress: false
 
 env:

@@ -1,4 +1,5 @@
 import XCTest
+import TableRockFeature
 
 @testable import TableRock
 
