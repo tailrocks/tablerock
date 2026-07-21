@@ -15,6 +15,8 @@ Three layers, read in this order:
 [`../ROADMAP.md`](../ROADMAP.md) sequences the work.
 [`prompt.md`](prompt.md) is the canonical `/goal` prompt that authorizes and
 drives the whole program.
+[`support-matrix.md`](support-matrix.md) records only configurations exercised
+by repository evidence and names the unproven boundaries.
 
 ## Product specification
 
