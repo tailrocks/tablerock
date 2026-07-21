@@ -59,10 +59,13 @@ async fn overlaps_postgres_clickhouse_and_redis_through_one_service() {
     let postgres_port = postgres.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let clickhouse_port = clickhouse.get_host_port_ipv4(8123.tcp()).await.unwrap();
     let redis_port = redis.get_host_port_ipv4(6379.tcp()).await.unwrap();
-    seed_redis(redis_port).await;
+    let postgres_host = postgres.get_host().await.unwrap().to_string();
+    let clickhouse_host = clickhouse.get_host().await.unwrap().to_string();
+    let redis_host = redis.get_host().await.unwrap().to_string();
+    seed_redis(&redis_host, redis_port).await;
 
     let postgres = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        text(&postgres_host),
         postgres_port,
         text("postgres"),
         text("postgres"),
@@ -70,10 +73,10 @@ async fn overlaps_postgres_clickhouse_and_redis_through_one_service() {
     ))
     .await
     .unwrap();
-    let clickhouse = ready_clickhouse(clickhouse_port).await;
+    let clickhouse = ready_clickhouse(&clickhouse_host, clickhouse_port).await;
     let redis = RedisSession::connect(
         &RedisConnectConfig::new(
-            text("127.0.0.1"),
+            text(&redis_host),
             redis_port,
             0,
             RedisProtocol::Resp3,
@@ -191,9 +194,9 @@ async fn overlaps_postgres_clickhouse_and_redis_through_one_service() {
     assert_eq!(service.core().active_operations(), 0);
 }
 
-async fn ready_clickhouse(port: u16) -> ClickHouseSession {
+async fn ready_clickhouse(host: &str, port: u16) -> ClickHouseSession {
     let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
-        text("127.0.0.1"),
+        text(host),
         port,
         text("default"),
         text("default"),
@@ -224,8 +227,8 @@ async fn ready_clickhouse(port: u16) -> ClickHouseSession {
     panic!("ClickHouse fixture accepts HTTP queries: {last_error:?}");
 }
 
-async fn seed_redis(port: u16) {
-    let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+async fn seed_redis(host: &str, port: u16) {
+    let client = redis::Client::open(format!("redis://{host}:{port}/0")).unwrap();
     let mut connection = client.get_multiplexed_async_connection().await.unwrap();
     for key in ["overlap-a", "overlap-b", "overlap-c"] {
         let _: () = connection.set(key, "value").await.unwrap();

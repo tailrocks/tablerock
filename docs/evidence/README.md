@@ -474,6 +474,7 @@ How to read an evidence document:
 - 598 — [Concurrent cancellation transport and stream drain](delivery/598-concurrent-cancel-stream-drain.md)
 - 599 — [PostgreSQL activity fixture container host](delivery/599-postgres-activity-container-host.md)
 - 600 — [Redis fixture container-host registry](delivery/600-redis-container-host-registry.md)
+- 601 — [Three-engine overlap container hosts](delivery/601-three-engine-container-hosts.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
