@@ -24,6 +24,8 @@ production connection behavior.
 - `cargo clippy -p tablerock-ffi --test bridge_real --locked -- -D warnings`
 - `cargo nextest run -p tablerock-ffi --test bridge_real bridge_clickhouse_open_probe_fetch --locked --run-ignored ignored-only`
   passed locally.
+- `cargo nextest run -p tablerock-ffi --test bridge_real --locked --run-ignored ignored-only`
+  passed all five bridge real-server cases locally in 6.535 seconds.
 - Exact-main GitHub/Velnor proof remains required after push.
 
 ## Provenance
