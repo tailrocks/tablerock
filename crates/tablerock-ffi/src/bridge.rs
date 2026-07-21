@@ -4,7 +4,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::{Duration, UNIX_EPOCH},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use tablerock_core::{
@@ -868,13 +868,13 @@ impl TableRockBridge {
         catch_entry(|| self.cancel_inner(operation_id))
     }
 
-    /// Graceful or cancel-active shutdown. `deadline_ms` reserved for future hard caps.
+    /// Graceful or cancel-active shutdown with a hard drain deadline.
     pub fn shutdown(
         &self,
         cancel_active: bool,
-        _deadline_ms: u64,
+        deadline_ms: u64,
     ) -> Result<ShutdownOutcome, BridgeError> {
-        catch_entry(|| self.shutdown_inner(cancel_active))
+        catch_entry(|| self.shutdown_inner(cancel_active, deadline_ms))
     }
 
     /// Drops the Tokio runtime after service shutdown. Idempotent.
@@ -3623,7 +3623,11 @@ impl TableRockBridge {
         })
     }
 
-    fn shutdown_inner(&self, cancel_active: bool) -> Result<ShutdownOutcome, BridgeError> {
+    fn shutdown_inner(
+        &self,
+        cancel_active: bool,
+        deadline_ms: u64,
+    ) -> Result<ShutdownOutcome, BridgeError> {
         self.ensure_runtime_inner()?;
         let mode = if cancel_active {
             ShutdownMode::CancelActive
@@ -3640,14 +3644,48 @@ impl TableRockBridge {
             .service
             .begin_shutdown(mode)
             .map_err(|error| BridgeError::rejected("shutdown", error.to_string()))?;
-        // Drain active ops when possible.
-        let active = match outcome.core {
+        let initial_active = match outcome.core {
             tablerock_core::ShutdownOutcome::Draining { active_operations } => active_operations,
             tablerock_core::ShutdownOutcome::Stopped
             | tablerock_core::ShutdownOutcome::AlreadyStopped => 0,
         };
-        if active == 0 {
+        let deadline = Duration::from_millis(deadline_ms);
+        let started = Instant::now();
+        while inner.service.core().active_operations() > 0 && started.elapsed() < deadline {
+            let operation_ids = inner.service.active_operation_ids();
+            if operation_ids.is_empty() {
+                break;
+            }
+            for operation_id in operation_ids {
+                let remaining = deadline.saturating_sub(started.elapsed());
+                if remaining.is_zero() {
+                    break;
+                }
+                let wait = remaining.min(Duration::from_millis(10));
+                let update = self.runtime.block_on(async {
+                    tokio::time::timeout(wait, inner.service.next_update(operation_id)).await
+                })?;
+                let Ok(update) = update else { continue };
+                let update = update
+                    .map_err(|error| BridgeError::rejected("shutdown-drain", error.to_string()))?;
+                if let Some(update) = update {
+                    let terminal = inner.apply_update(operation_id, update)?;
+                    if terminal {
+                        inner.service.retire(operation_id).map_err(|error| {
+                            BridgeError::rejected("shutdown-retire", error.to_string())
+                        })?;
+                    }
+                }
+            }
+        }
+        let active = inner.service.core().active_operations();
+        let core = if active == 0 {
             let _ = self.runtime.block_on(inner.service.complete_shutdown());
+            "Stopped".to_owned()
+        } else {
+            format!("Draining {{ active_operations: {active} }}")
+        };
+        if active == 0 {
             drop(guard);
             let mut guard = self
                 .inner
@@ -3657,7 +3695,11 @@ impl TableRockBridge {
             let _ = self.runtime.shutdown();
         }
         Ok(ShutdownOutcome {
-            core: format!("{:?}", outcome.core),
+            core: if initial_active == 0 {
+                format!("{:?}", outcome.core)
+            } else {
+                core
+            },
             active_operations: active,
         })
     }

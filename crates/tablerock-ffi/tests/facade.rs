@@ -6,6 +6,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use tablerock_core::{
@@ -22,6 +23,7 @@ use tablerock_ffi::{BridgeError, SubmitSpec, TableRockBridge};
 struct OnePageStream {
     page: Option<ResultPage>,
     fail: bool,
+    hold: bool,
 }
 
 impl DriverPageStream for OnePageStream {
@@ -31,6 +33,9 @@ impl DriverPageStream for OnePageStream {
         _start_row: u64,
     ) -> DriverFuture<'a, Result<Option<ResultPage>, AdapterError>> {
         Box::pin(async move {
+            if self.hold {
+                std::future::pending::<()>().await;
+            }
             if self.fail {
                 return Err(AdapterError::new(
                     Engine::PostgreSql,
@@ -45,6 +50,7 @@ impl DriverPageStream for OnePageStream {
 struct FixedPageSession {
     page: ResultPage,
     fail: bool,
+    hold: bool,
     shutdown: Arc<AtomicBool>,
 }
 
@@ -59,10 +65,12 @@ impl DriverSession for FixedPageSession {
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
         let page = self.page.clone();
         let fail = self.fail;
+        let hold = self.hold;
         Box::pin(async move {
             Ok(Box::new(OnePageStream {
                 page: Some(page),
                 fail,
+                hold,
             }) as Box<dyn DriverPageStream>)
         })
     }
@@ -144,6 +152,7 @@ fn open_submit_pump_fetch_shutdown_round_trip() {
             Box::new(FixedPageSession {
                 page,
                 fail: false,
+                hold: false,
                 shutdown: Arc::new(AtomicBool::new(false)),
             }),
         )
@@ -199,6 +208,7 @@ fn failed_runtime_outcome_enters_safe_support_bundle() {
             Box::new(FixedPageSession {
                 page: sample_page(result_id),
                 fail: true,
+                hold: false,
                 shutdown: Arc::new(AtomicBool::new(false)),
             }),
         )
@@ -229,6 +239,78 @@ fn failed_runtime_outcome_enters_safe_support_bundle() {
     assert!(payload.contains("operation_outcome.0=PostgreSql|Failed\n"));
     assert!(!payload.contains("secret statement"));
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn cancel_active_shutdown_drains_within_deadline() {
+    let result_id = ResultId::from_parts(IdParts::new(0, 101).unwrap()).unwrap();
+    let bridge = TableRockBridge::new_for_test();
+    let session_id = bridge
+        .open_driver_session(
+            Engine::PostgreSql,
+            Box::new(FixedPageSession {
+                page: sample_page(result_id),
+                fail: false,
+                hold: true,
+                shutdown: Arc::new(AtomicBool::new(false)),
+            }),
+        )
+        .unwrap();
+    bridge
+        .submit(SubmitSpec {
+            intent: "probe".into(),
+            session_id,
+            statement: Some("select pg_sleep(10)".into()),
+            result_id: Some(result_id.to_bytes().to_vec()),
+            start_row: None,
+            row_count: Some(100),
+            expected_revision: 0,
+        })
+        .unwrap();
+
+    let started = std::time::Instant::now();
+    let outcome = bridge.shutdown(true, 1_000).unwrap();
+    assert_eq!(outcome.active_operations, 0);
+    assert_eq!(outcome.core, "Stopped");
+    assert!(started.elapsed() < Duration::from_secs(1));
+}
+
+#[test]
+fn graceful_shutdown_reports_active_work_at_deadline() {
+    let result_id = ResultId::from_parts(IdParts::new(0, 102).unwrap()).unwrap();
+    let bridge = TableRockBridge::new_for_test();
+    let session_id = bridge
+        .open_driver_session(
+            Engine::PostgreSql,
+            Box::new(FixedPageSession {
+                page: sample_page(result_id),
+                fail: false,
+                hold: true,
+                shutdown: Arc::new(AtomicBool::new(false)),
+            }),
+        )
+        .unwrap();
+    bridge
+        .submit(SubmitSpec {
+            intent: "probe".into(),
+            session_id,
+            statement: Some("select pg_sleep(10)".into()),
+            result_id: Some(result_id.to_bytes().to_vec()),
+            start_row: None,
+            row_count: Some(100),
+            expected_revision: 0,
+        })
+        .unwrap();
+
+    let started = std::time::Instant::now();
+    let outcome = bridge.shutdown(false, 20).unwrap();
+    assert_eq!(outcome.active_operations, 1);
+    assert_eq!(outcome.core, "Draining { active_operations: 1 }");
+    assert!(started.elapsed() < Duration::from_millis(500));
+
+    let drained = bridge.shutdown(true, 1_000).unwrap();
+    assert_eq!(drained.active_operations, 0);
+    assert_eq!(drained.core, "Stopped");
 }
 
 #[test]

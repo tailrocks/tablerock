@@ -450,6 +450,11 @@ impl EngineService {
         Ok(())
     }
 
+    #[must_use]
+    pub fn active_operation_ids(&self) -> Vec<OperationId> {
+        self.operations.keys().copied().collect()
+    }
+
     pub fn begin_shutdown(
         &mut self,
         mode: ShutdownMode,
