@@ -50,6 +50,7 @@ jobs:
           disable_annotations: "false"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
+          install_args: rust github:nextest-rs/nextest
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache Cargo registry
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -103,6 +104,7 @@ jobs:
           disable_annotations: "false"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
+          install_args: rust github:nextest-rs/nextest
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache Cargo registry
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -158,6 +160,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
+          install_args: rust cargo:cargo-deny cargo:cargo-outdated github:rustsec/rustsec
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Audit advisories
         run: cargo audit
