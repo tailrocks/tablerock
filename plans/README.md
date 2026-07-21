@@ -38,7 +38,7 @@ plan).
 | 019 | UniFFI bridge + XCFramework + notarization proof (Phase 12) | P2 | L | 018 | BLOCKED (software + universal XCFramework green; need Developer ID/notarization credentials) |
 | 020 | Native macOS vertical slice, Liquid Glass (Phase 13) | P2 | L | 019 | DONE |
 | 021 | Native parity + release evidence + closure (Phases 14–15) | P3 | L | 020 | IN PROGRESS |
-| 022 | Preview CI/CD: rolling preview release + Homebrew tap (formula + cask) | P2 | M | 001, 020 | TODO |
+| 022 | Preview CI/CD: rolling preview release + Homebrew tap (formula + cask) | P2 | M | 001, 020 | IN PROGRESS (delivery/install green; reconcile uncommitted CI migration) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) |
 REJECTED (one-line rationale).
