@@ -303,12 +303,9 @@ final class TableRockAppUITests: XCTestCase {
         "TABLEROCK_TEST_SAVE_FILE": output.path,
       ])
 
-    let export = app.menuButtons["results.export"]
+    let export = app.buttons["results.export.csv"]
     XCTAssertTrue(export.waitForExistence(timeout: 10))
     export.click()
-    let csv = app.menuItems["CSV"]
-    XCTAssertTrue(csv.waitForExistence(timeout: 5))
-    csv.click()
 
     let outcome = app.staticTexts["results.copy.outcome"]
     let exported = XCTNSPredicateExpectation(

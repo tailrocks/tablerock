@@ -28,6 +28,10 @@ engine/behavior assertion that failed.
 - Give every result cell an explicit click and accessibility-press action. The
   cell records its column, selects its row, and invokes the same value-selection
   callback without depending on `clickedColumn`.
+- Run 29875658677 proved the callback method had no installed cell recognizer;
+  every created cell now installs that concrete action seam. It also moved CSV
+  authority actions into their own fixed row and made CSV export a direct
+  button after AX hit testing exposed both prior controls as unreachable.
 - Replace the anonymous `BehaviorProof` executable with named Swift XCTest
   cases for typed pages, catalog browse, PostgreSQL cancellation, and reviewed
   apply. The nightly workflow runs each case against isolated PostgreSQL,

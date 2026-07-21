@@ -39,8 +39,12 @@ apply controls.
   AX tree, matching the stable-identifier contract instead of framework role.
   Run 29874013100 proved the action was physically absent from the clipped
   sheet, not merely assigned another role. Stage/Apply/Discard now live in the
-  always-visible sheet header; scrollable details can no longer displace the
-  authority actions. Exact-main hosted proof remains required.
+  always-visible sheet header. Run 29875658677 showed that title, actions, and
+  Close still competed in one clipped horizontal row. Close now owns the title
+  row; Stage/Apply/Discard own a separate fixed action row. The same run showed
+  the SwiftUI export menu lacked a reliable AX hit point, so CSV is a direct
+  button while other formats remain in a separately identified menu.
+  Exact-main hosted proof remains required.
 
 ## Provenance
 

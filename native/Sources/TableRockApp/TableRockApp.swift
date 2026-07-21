@@ -5411,6 +5411,10 @@ private struct CsvImportSheet: View {
         Label("Import CSV", systemImage: "tablecells.badge.ellipsis")
           .font(.title2.bold())
         Spacer()
+        Button("Close") { Task { await model.closeCsvImport() } }
+          .disabled(model.csvImportApplying)
+      }
+      HStack {
         if model.csvImportReview != nil {
           Button("Apply Import") { Task { await model.applyCsvImport() } }
             .buttonStyle(.borderedProminent)
@@ -5426,8 +5430,7 @@ private struct CsvImportSheet: View {
             .accessibilityIdentifier("import.csv.stage")
             .disabled(model.csvImportPreview == nil || model.csvImportApplying)
         }
-        Button("Close") { Task { await model.closeCsvImport() } }
-          .disabled(model.csvImportApplying)
+        Spacer()
       }
       ScrollView {
         VStack(alignment: .leading, spacing: 14) {
@@ -5620,10 +5623,13 @@ private struct ResultGridWithInspector: View {
         )
         .frame(minWidth: 120, maxWidth: 220)
         .accessibilityIdentifier("results.quick-filter")
-        Text("Loaded rows only · \(visibleRowIndices.count)/\(table.rows.count)")
+        let loadedRowsStatus =
+          "Loaded rows only · \(visibleRowIndices.count)/\(table.rows.count)"
+        Text(loadedRowsStatus)
           .font(.caption)
           .foregroundStyle(.secondary)
           .accessibilityIdentifier("results.quick-filter.status")
+          .accessibilityLabel(loadedRowsStatus)
         if exposesResultPaging && model.nextStartRow != nil {
           Button("Load more rows") { Task { await model.loadMore() } }
             .accessibilityIdentifier("results.next-page")
@@ -5661,19 +5667,21 @@ private struct ResultExportMenu: View {
   @Environment(BridgeModel.self) private var model
 
   var body: some View {
-    Menu {
-      exportButton("CSV", format: "csv")
-      exportButton("TSV", format: "tsv")
-      exportButton("JSON", format: "json")
-      exportButton("Markdown", format: "markdown")
-      if model.sqlInsertCopyAvailable {
-        exportButton("SQL INSERT", format: "sql_insert")
+    HStack(spacing: 6) {
+      exportButton("Export CSV", format: "csv")
+      Menu {
+        exportButton("TSV", format: "tsv")
+        exportButton("JSON", format: "json")
+        exportButton("Markdown", format: "markdown")
+        if model.sqlInsertCopyAvailable {
+          exportButton("SQL INSERT", format: "sql_insert")
+        }
+      } label: {
+        Label("More Export Formats", systemImage: "ellipsis.circle")
       }
-    } label: {
-      Label("Export Loaded", systemImage: "square.and.arrow.down")
+      .accessibilityIdentifier("results.export.more")
     }
     .disabled(model.resultIdData == nil)
-    .accessibilityIdentifier("results.export")
     .accessibilityHint("Atomically export all rows currently resident in this result")
   }
 
@@ -6801,6 +6809,8 @@ struct CatalogGrid: NSViewRepresentable {
       } else {
         cell = ResultCellView()
         cell.identifier = identifier
+        cell.addGestureRecognizer(
+          NSClickGestureRecognizer(target: cell, action: #selector(ResultCellView.activate(_:))))
         let label = NSTextField(labelWithString: "")
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false

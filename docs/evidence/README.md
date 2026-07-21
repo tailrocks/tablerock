@@ -491,6 +491,7 @@ How to read an evidence document:
 - 615 — [Native loaded-row quick filter](delivery/615-native-loaded-row-quick-filter.md)
 - 616 — [Velnor Cargo source freshness barrier](delivery/616-velnor-cargo-source-freshness.md)
 - 617 — [Native ordered sort headers](delivery/617-native-ordered-sort-headers.md)
+- 618 — [Native direct control activation](delivery/618-native-direct-control-activation.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

@@ -29,8 +29,10 @@ xcrun swiftc -parse native/Tests/TableRockAppUITests/TableRockAppUITests.swift
 # parsed
 ```
 
-Hosted Xcode execution remains pending. This evidence does not claim the new
-control passed before its exact-main run completes.
+Hosted run `29875658677` found the control and status element but the status
+exposed an empty accessibility label. The status now explicitly publishes the
+same loaded-only text as its visible and accessibility label. Exact-main
+hosted proof remains required.
 
 ## Remaining scope
 

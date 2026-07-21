@@ -23,8 +23,11 @@ GitHub-hosted lanes keep their normal clean-workspace behavior.
 The failed job log records exact checkout `13fa79e`, then no
 `Checking tablerock-core` line before unresolved exports in `tablerock-tui`.
 Local clean compilation, 497 relevant nextest cases, and clippy were already
-green from the same source. Hosted proof of the freshness barrier remains
-pending and is not claimed until the next exact-main run completes.
+green from the same source. Exact-main hosted run `29875658673` then passed
+format, clippy, check, all container-free suites, the full three-engine
+real-server matrix, UniFFI conformance, import/export, PostgreSQL client-tool
+coverage, performance budgets, and the true 1-MiB-tmpfs ENOSPC gate. Its log
+shows the freshness step before compilation; no stale export failure recurred.
 
 ## Provenance
 

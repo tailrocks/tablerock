@@ -54,6 +54,9 @@ fixture-only production controls.
   authoritative AppKit action seam. The grid now also installs the standard
   `NSTableView` target/action callback, resolves `clickedRow`/`clickedColumn`,
   and routes pointer, selection, and AX activation through one coordinator
+  method. Run 29875658677 proved a cell click still did not reach that seam:
+  `ResultCellView.activate` existed but no recognizer was installed. Each new
+  cell now owns an explicit click recognizer wired to the same coordinator
   method. Exact-main hosted proof remains required.
 
 ## Provenance
