@@ -229,129 +229,129 @@ private func scriptedUnavailable<T>(_ operation: String) throws -> T {
 }
 
 extension WorkbenchBackend {
-  fileprivate func searchProfiles(_ search: String?) throws -> [WorkbenchProfileItem] {
+  func searchProfiles(_ search: String?) throws -> [WorkbenchProfileItem] {
     try listProfiles()
   }
-  fileprivate func profileDraft(id: Data) throws -> WorkbenchProfileDraft {
+  func profileDraft(id: Data) throws -> WorkbenchProfileDraft {
     try scriptedUnavailable("draft")
   }
-  fileprivate func saveProfile(_ draft: WorkbenchProfileDraft) throws -> Data {
+  func saveProfile(_ draft: WorkbenchProfileDraft) throws -> Data {
     try scriptedUnavailable("save")
   }
-  fileprivate func deleteProfile(id: Data, revision: UInt64) throws {
+  func deleteProfile(id: Data, revision: UInt64) throws {
     throw ScriptedBackendError.unavailable("delete")
   }
-  fileprivate func testProfile(id: Data, secretOverride: Data?) throws
+  func testProfile(id: Data, secretOverride: Data?) throws
     -> WorkbenchConnectionTestReport
   { try scriptedUnavailable("test") }
-  fileprivate func createProfileGroup(_ name: String) throws {
+  func createProfileGroup(_ name: String) throws {
     throw ScriptedBackendError.unavailable("group-create")
   }
-  fileprivate func renameProfileGroup(_ oldName: String, _ newName: String) throws -> UInt32 {
+  func renameProfileGroup(_ oldName: String, _ newName: String) throws -> UInt32 {
     try scriptedUnavailable("group-rename")
   }
-  fileprivate func deleteProfileGroup(_ name: String) throws -> UInt32 {
+  func deleteProfileGroup(_ name: String) throws -> UInt32 {
     try scriptedUnavailable("group-delete")
   }
-  fileprivate func setGroupAlphabetical(_ name: String, _ alphabetical: Bool) throws {
+  func setGroupAlphabetical(_ name: String, _ alphabetical: Bool) throws {
     throw ScriptedBackendError.unavailable("group-order")
   }
-  fileprivate func listHistory(_ search: String?) throws -> [WorkbenchHistoryItem] { [] }
-  fileprivate func setHistoryRetention(_ retention: String) throws {
+  func listHistory(_ search: String?) throws -> [WorkbenchHistoryItem] { [] }
+  func setHistoryRetention(_ retention: String) throws {
     throw ScriptedBackendError.unavailable("retention")
   }
-  fileprivate func listSavedQueries(engine: String?, search: String?) throws
+  func listSavedQueries(engine: String?, search: String?) throws
     -> [WorkbenchSavedQueryItem]
   { [] }
-  fileprivate func saveQuery(name: String, engine: String, statement: String) throws -> Int64 {
+  func saveQuery(name: String, engine: String, statement: String) throws -> Int64 {
     try scriptedUnavailable("query-save")
   }
-  fileprivate func deleteSavedQuery(_ id: Int64) throws -> Bool {
+  func deleteSavedQuery(_ id: Int64) throws -> Bool {
     try scriptedUnavailable("query-delete")
   }
-  fileprivate func readSqlFile(path: String) throws -> WorkbenchSQLFile {
+  func readSqlFile(path: String) throws -> WorkbenchSQLFile {
     try scriptedUnavailable("file-read")
   }
-  fileprivate func writeSqlFile(
+  func writeSqlFile(
     path: String, statement: String, expectedModifiedNanos: UInt64?, expectedLength: UInt64?,
     overwriteExternalChange: Bool
   ) throws -> WorkbenchSQLFile { try scriptedUnavailable("file-write") }
-  fileprivate func putSessionIntent(profileId: Data, intent: WorkbenchSessionIntent) throws {}
-  fileprivate func sessionIntent(profileId: Data) throws -> WorkbenchSessionIntent? { nil }
-  fileprivate func deleteSessionIntent(profileId: Data) throws {}
-  fileprivate func putNativeWindowIntent(
+  func putSessionIntent(profileId: Data, intent: WorkbenchSessionIntent) throws {}
+  func sessionIntent(profileId: Data) throws -> WorkbenchSessionIntent? { nil }
+  func deleteSessionIntent(profileId: Data) throws {}
+  func putNativeWindowIntent(
     windowId: String, profileId: Data, intent: WorkbenchSessionIntent
   ) throws {}
-  fileprivate func nativeWindowIntent(windowId: String) throws -> WorkbenchNativeWindowIntent? {
+  func nativeWindowIntent(windowId: String) throws -> WorkbenchNativeWindowIntent? {
     nil
   }
-  fileprivate func deleteNativeWindowIntent(windowId: String) throws {}
-  fileprivate func setProfileFavorite(_ item: WorkbenchProfileItem, _ favorite: Bool) throws {
+  func deleteNativeWindowIntent(windowId: String) throws {}
+  func setProfileFavorite(_ item: WorkbenchProfileItem, _ favorite: Bool) throws {
     throw ScriptedBackendError.unavailable("favorite")
   }
-  fileprivate func reorderProfiles(group: String?, profiles: [WorkbenchProfileItem]) throws {
+  func reorderProfiles(group: String?, profiles: [WorkbenchProfileItem]) throws {
     throw ScriptedBackendError.unavailable("reorder")
   }
-  fileprivate func open(params: WorkbenchOpenParams) throws -> Data {
+  func open(params: WorkbenchOpenParams) throws -> Data {
     try scriptedUnavailable("open")
   }
-  fileprivate func disconnect(session: Data) throws {}
-  fileprivate func checkHealth(session: Data) throws -> WorkbenchSessionHealth {
+  func disconnect(session: Data) throws {}
+  func checkHealth(session: Data) throws -> WorkbenchSessionHealth {
     try scriptedUnavailable("health")
   }
-  fileprivate func planReconnect(session: Data, attempt: UInt32, authenticationStopped: Bool) throws
+  func planReconnect(session: Data, attempt: UInt32, authenticationStopped: Bool) throws
     -> WorkbenchReconnectPlan
   { try scriptedUnavailable("reconnect-plan") }
-  fileprivate func reconnect(session: Data, secretOverride: Data?) throws
+  func reconnect(session: Data, secretOverride: Data?) throws
     -> WorkbenchReconnectAttempt
   { try scriptedUnavailable("reconnect") }
-  fileprivate func refreshCatalog(session: Data, parentNodeId: Data?) throws
+  func refreshCatalog(session: Data, parentNodeId: Data?) throws
     -> [WorkbenchCatalogNode]
   { [] }
-  fileprivate func submitCatalogBrowse(session: Data, nodeId: Data) throws -> Data {
+  func submitCatalogBrowse(session: Data, nodeId: Data) throws -> Data {
     try scriptedUnavailable("browse")
   }
-  fileprivate func submit(session: Data, intent: String, statement: String?) throws -> Data {
+  func submit(session: Data, intent: String, statement: String?) throws -> Data {
     try scriptedUnavailable("submit")
   }
-  fileprivate func finish(operationId: Data) async throws -> WorkbenchOperation {
+  func finish(operationId: Data) async throws -> WorkbenchOperation {
     try scriptedUnavailable("finish")
   }
-  fileprivate func cancel(operationId: Data) throws -> WorkbenchCancelOutcome {
+  func cancel(operationId: Data) throws -> WorkbenchCancelOutcome {
     try scriptedUnavailable("cancel")
   }
-  fileprivate func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) async throws -> (
+  func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) async throws -> (
     WorkbenchTable, WorkbenchPageEnvelope
   ) { try scriptedUnavailable("fetch") }
-  fileprivate func formatResultCopy(
+  func formatResultCopy(
     resultId: Data, revision: UInt64, scope: String, row: UInt64?, column: UInt32?, format: String
   ) throws -> String { try scriptedUnavailable("copy") }
-  fileprivate func exportLoadedResult(
+  func exportLoadedResult(
     resultId: Data, revision: UInt64, format: String, path: String
   ) throws -> UInt64 { try scriptedUnavailable("export") }
-  fileprivate func previewCsvImport(path: String) throws -> WorkbenchCSVImportPreview {
+  func previewCsvImport(path: String) throws -> WorkbenchCSVImportPreview {
     try scriptedUnavailable("import-preview")
   }
-  fileprivate func stageCsvImport(
+  func stageCsvImport(
     sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String],
     mappedTypes: [String], nowMs: UInt64
   ) throws -> WorkbenchCSVImportReview { try scriptedUnavailable("import-stage") }
-  fileprivate func relationStructure(sessionId: Data, catalogNodeId: Data) throws
+  func relationStructure(sessionId: Data, catalogNodeId: Data) throws
     -> WorkbenchRelationStructure
   { try scriptedUnavailable("structure") }
-  fileprivate func redisKeyView(sessionId: Data, catalogNodeId: Data, collectionSkip: UInt64) throws
+  func redisKeyView(sessionId: Data, catalogNodeId: Data, collectionSkip: UInt64) throws
     -> WorkbenchRedisKeyView
   { try scriptedUnavailable("redis-key") }
-  fileprivate func redisOverview(sessionId: Data) throws -> WorkbenchRedisOverview {
+  func redisOverview(sessionId: Data) throws -> WorkbenchRedisOverview {
     try scriptedUnavailable("redis-overview")
   }
-  fileprivate func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
+  func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
     -> WorkbenchApplyOutcome
   { try scriptedUnavailable("apply") }
-  fileprivate func revokeReviewToken(tokenId: Data) throws -> Bool {
+  func revokeReviewToken(tokenId: Data) throws -> Bool {
     try scriptedUnavailable("revoke")
   }
-  fileprivate func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome {
+  func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome {
     try scriptedUnavailable("stage-apply")
   }
 }
