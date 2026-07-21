@@ -4,4 +4,8 @@ module tablerock_ffiFFI {
     use "Darwin"
     use "_Builtin_stdbool"
     use "_Builtin_stdint"
+    link framework "SystemConfiguration"
+    link framework "CoreFoundation"
+    link framework "Security"
+    link "iconv"
 }

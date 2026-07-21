@@ -76,6 +76,10 @@ framework module $FRAMEWORK_NAME {
   umbrella header "$(basename "$HEADER")"
   export *
   module * { export * }
+  link framework "SystemConfiguration"
+  link framework "CoreFoundation"
+  link framework "Security"
+  link "iconv"
 }
 EOF
 

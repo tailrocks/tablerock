@@ -43,15 +43,23 @@ mkdir -p "$SOURCES_SWIFT"
 if [[ -f "$OUT_DIR/tablerock_ffi.swift" ]]; then
   cp "$OUT_DIR/tablerock_ffi.swift" "$SOURCES_SWIFT/tablerock_ffi.swift"
 fi
-if [[ -f "$OUT_DIR/tablerock_ffiFFI.modulemap" && ! -f "$OUT_DIR/module.modulemap" ]]; then
-  # SPM systemLibrary expects module.modulemap at the system-lib root.
-  cat >"$OUT_DIR/module.modulemap" <<'EOF'
+# UniFFI does not encode native dependencies of the Rust static library. Keep
+# those dependencies on the C module so every Swift consumer links them.
+for module_map in "$OUT_DIR/tablerock_ffiFFI.modulemap" "$OUT_DIR/module.modulemap"; do
+  cat >"$module_map" <<'EOF'
 module tablerock_ffiFFI {
     header "tablerock_ffiFFI.h"
     export *
+    use "Darwin"
+    use "_Builtin_stdbool"
+    use "_Builtin_stdint"
+    link framework "SystemConfiguration"
+    link framework "CoreFoundation"
+    link framework "Security"
+    link "iconv"
 }
 EOF
-fi
+done
 
 echo "==> generated:"
 ls -la "$OUT_DIR"
