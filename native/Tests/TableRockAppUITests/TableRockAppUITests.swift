@@ -190,7 +190,7 @@ final class TableRockAppUITests: XCTestCase {
     editor.click()
     editor.typeText(" -- dirty")
 
-    let actions = app.buttons["Actions for Orders"]
+    let actions = app.descendants(matching: .any)["Actions for Orders"]
     XCTAssertTrue(actions.waitForExistence(timeout: 10))
     actions.click()
     let close = app.menuItems["Close"]
@@ -207,9 +207,10 @@ final class TableRockAppUITests: XCTestCase {
 
     let removed = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "exists == false"),
-      object: app.buttons["Actions for Orders"])
+      object: app.descendants(matching: .any)["Actions for Orders"])
     XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 10), .completed)
-    XCTAssertTrue(app.buttons["Actions for Users"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["Actions for Users"].waitForExistence(timeout: 10))
   }
 
   @MainActor
@@ -240,6 +241,7 @@ final class TableRockAppUITests: XCTestCase {
       "TABLEROCK_TEST_BACKEND": "scripted",
       "TABLEROCK_TEST_SCENARIO": scenario,
     ].merging(environment) { _, fixture in fixture }
+    app.launchArguments = ["-ApplePersistenceIgnoreState", "YES"]
     app.launch()
     return app
   }

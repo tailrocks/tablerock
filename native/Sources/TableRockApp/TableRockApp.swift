@@ -5232,6 +5232,7 @@ struct QueryTabStrip: View {
               Image(systemName: tab.isRunning ? "progress.indicator" : "ellipsis")
             }
             .menuStyle(.borderlessButton)
+            .accessibilityIdentifier("query.tab.actions.\(tab.id.uuidString.lowercased())")
             .accessibilityLabel("Actions for \(tab.title)")
           }
         }
