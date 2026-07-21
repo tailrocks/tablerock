@@ -17,18 +17,25 @@ True ENOSPC is host-specific. CI creates a 1MiB tmpfs, prefills it, and runs
 the AtomicFileWriter fail-closed test under `TABLEROCK_ENOSPC_MNT`. Without
 the env var the test no-ops so developer machines are never filled.
 
+The job builds a nextest archive, copies that archive and the pinned
+`cargo-nextest` executable into the Ubuntu container, and executes the exact
+test through nextest there. This preserves the real tmpfs boundary without a
+forbidden `cargo test --no-run` build path or direct libtest invocation.
+
 ## Evidence
 
 ```text
 # local skip path
-cargo test -p tablerock-cli --lib enospc_volume_fails_closed
+cargo nextest run -p tablerock-files --lib \
+  -E 'test(=tests::enospc_volume_fails_closed_without_temp_debris)'
 
 # CI (ubuntu real-servers job)
-# sudo mount -t tmpfs -o size=1M ...
-# TABLEROCK_ENOSPC_MNT=... cargo test -p tablerock-cli --lib enospc_volume_fails_closed
+# cargo nextest archive ...
+# docker run --tmpfs /enospc:rw,size=1m ...
+# /cargo-nextest nextest run --archive-file ... -E 'test(=tests::enospc...)'
 ```
 
-Workflow: `.github/workflows/checks.yml` step `ENOSPC fail-closed on 1MiB tmpfs`.
+Workflow: `.github/workflows/ci.yml` step `ENOSPC fail-closed on 1MiB tmpfs`.
 
 ## Remaining work
 
