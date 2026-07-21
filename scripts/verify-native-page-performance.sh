@@ -22,10 +22,10 @@ mkdir -p "$OUT_DIR"
 "$REPO_ROOT/scripts/build-native-app.sh" >/dev/null
 swiftc -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
   -I "$BUILD" -I "$NATIVE/Generated" -Xcc -I -Xcc "$NATIVE/Generated" \
-  -target arm64-apple-macos26.0 "$NATIVE/Sources/BehaviorProof/main.swift" \
+  -target arm64-apple-macos26.0 "$NATIVE/Sources/PageDecodeBenchmark/main.swift" \
   "$BUILD/tablerock_ffi.o" "$BUILD/PageV1.o" \
   -L "$REPO_ROOT/target/release" -ltablerock_ffi -framework Foundation \
-  -o "$BUILD/BehaviorProof"
+  -o "$BUILD/PageDecodeBenchmark"
 
 cleanup
 docker run -d --name "$CONTAINER" \
@@ -52,13 +52,13 @@ environment=(
 
 xcrun xctrace record --template 'Time Profiler' --time-limit 10s \
   --output "$OUT_DIR/page-decode.trace" --no-prompt --launch -- \
-  /usr/bin/env "${environment[@]}" "$BUILD/BehaviorProof" \
+  /usr/bin/env "${environment[@]}" "$BUILD/PageDecodeBenchmark" \
   >"$OUT_DIR/xctrace.log" 2>&1
 xcrun xctrace export --input "$OUT_DIR/page-decode.trace" --toc \
   --output "$OUT_DIR/page-decode-toc.xml" >/dev/null
 
 /usr/bin/env "${environment[@]}" TABLEROCK_BENCH_HOLD_SECONDS=30 \
-  "$BUILD/BehaviorProof" >"$OUT_DIR/benchmark.log" 2>&1 &
+  "$BUILD/PageDecodeBenchmark" >"$OUT_DIR/benchmark.log" 2>&1 &
 BENCH_PID="$!"
 for _ in $(seq 1 150); do
   rg -q '^PERF_PAGE_DECODE ' "$OUT_DIR/benchmark.log" && break

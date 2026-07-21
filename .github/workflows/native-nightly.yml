@@ -86,6 +86,11 @@ jobs:
             CODE_SIGN_IDENTITY=- \
             | tee artifacts/xcodebuild-nightly.log
 
+      - name: Run named live Swift bridge tests
+        run: |
+          set -o pipefail
+          ./scripts/verify-native-behavior.sh | tee artifacts/native-live-bridge.log
+
       - name: Archive and verify unsigned Release shape
         run: |
           set -o pipefail
@@ -129,6 +134,7 @@ jobs:
           path: |
             artifacts/TableRock-Nightly.xcresult
             artifacts/xcodebuild-nightly.log
+            artifacts/native-live-bridge.log
             artifacts/TableRock.xcarchive
             artifacts/xcodebuild-archive.log
             artifacts/native-performance

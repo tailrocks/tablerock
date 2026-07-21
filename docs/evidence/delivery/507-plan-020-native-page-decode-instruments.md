@@ -33,9 +33,9 @@ metrics remain in generated local directory
 ## Retained-object residual
 
 The Leaks template was also attempted directly against the unrestricted local
-`BehaviorProof` executable. Unlike Time Profiler, it did not begin its timed
-capture or honor the time limit; the target remained suspended during attach
-until the owned profiler/target processes were terminated. The earlier app
+page-decode benchmark executable. Unlike Time Profiler, it did not begin its
+timed capture or honor the time limit; the target remained suspended during
+attach until the owned profiler/target processes were terminated. The earlier app
 `leaks` scan reports only the system AppIntents/LNDaemon XPC graph, but that is
 not strong enough to close retained-object attribution. This residual remains
 open; SIP was not disabled.

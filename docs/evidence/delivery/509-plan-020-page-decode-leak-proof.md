@@ -8,8 +8,8 @@ The app-level leak scan in evidence 505 contained 14,400 bytes rooted entirely
 in the system AppIntents/LNDaemon XPC graph. That could not prove whether the
 Swift page decoder retained objects.
 
-`BehaviorProof` now supports a bounded post-benchmark hold. The native page
-performance verifier runs 2,000 decodes over one real 500-row × 2-column,
+The dedicated page-decode benchmark supports a bounded post-benchmark hold.
+The native page performance verifier runs 2,000 decodes over one real 500-row × 2-column,
 46,244-byte UniFFI page, waits until the metric is durably emitted, and invokes
 the system `leaks` tool against that exact still-live process. It then terminates
 only its owned proof process and container.

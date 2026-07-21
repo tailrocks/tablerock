@@ -1,109 +1,113 @@
 #!/usr/bin/env bash
-# Behavioral verification of the native macOS bridge against all three engines
-# (PostgreSQL, ClickHouse, Redis). Spins Docker containers, builds the
-# BehaviorProof harness via direct swiftc, and asserts real query round-trips
-# through the bridge + page decode for each engine.
-#
-# Usage: ./scripts/verify-native-behavior.sh
+# Named Swift XCTest coverage against PostgreSQL, ClickHouse, and Redis.
+# Each invocation gets an independently created bridge/runtime and the script
+# owns every live-server container it creates.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NATIVE="$REPO_ROOT/native"
-BUILD="$NATIVE/.build-direct"
+RUN_ID="${GITHUB_RUN_ID:-local}-$$"
+PG="tablerock-pg-swift-$RUN_ID"
+CH="tablerock-ch-swift-$RUN_ID"
+REDIS="tablerock-redis-swift-$RUN_ID"
 
 cleanup() {
-    docker rm -f tablerock-pg-verify tablerock-ch-verify tablerock-redis-verify \
-        >/dev/null 2>&1 || true
+    docker rm -f "$PG" "$CH" "$REDIS" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-echo "==> Building bridge module + BehaviorProof (direct swiftc)"
+mapped_port() {
+    docker port "$1" "$2/tcp" | sed -En '1s/^.*:([0-9]+)$/\1/p'
+}
+
+run_test() {
+    local engine="$1"
+    local port="$2"
+    local test_name="$3"
+    shift 3
+    (
+        cd "$NATIVE"
+        env \
+            DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
+            TABLEROCK_LIVE_TEST=1 \
+            TABLEROCK_ENGINE="$engine" \
+            TABLEROCK_HOST=127.0.0.1 \
+            TABLEROCK_PORT="$port" \
+            "$@" \
+            swift test -c release --filter "LiveBridgeBehaviorTests/$test_name"
+    )
+}
+
+echo "==> Building native bridge"
 cd "$REPO_ROOT"
-./scripts/build-native-app.sh >/dev/null
-cd "$NATIVE"
-swiftc -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
-    -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target arm64-apple-macos26.0 \
-    Sources/BehaviorProof/main.swift \
-    "$BUILD/tablerock_ffi.o" "$BUILD/PageV1.o" \
-    -L "$REPO_ROOT/target/release" -ltablerock_ffi -framework Foundation \
-    -o "$BUILD/BehaviorProof"
+cargo build -p tablerock-ffi --release --locked
+./scripts/generate-swift-bindings.sh
+git diff --exit-code -- native/Generated native/Sources/TableRockBridge/tablerock_ffi.swift
 
-run_pg() {
-    local name="tablerock-pg-verify"
-    echo "==> PostgreSQL"
-    docker rm -f "$name" 2>/dev/null || true
-    docker run -d --name "$name" \
-        -e POSTGRES_PASSWORD=secret -e POSTGRES_USER=u -e POSTGRES_DB=db \
-        -p 5433:5432 postgres:18.4-alpine >/dev/null
-    for i in $(seq 1 30); do
-        docker exec "$name" pg_isready -U u -d db >/dev/null 2>&1 \
-            && docker exec "$name" psql -U u -d db -c 'SELECT 1' >/dev/null 2>&1 \
-            && break
-        sleep 1; [ "$i" -eq 30 ] && { echo "    PG not ready"; return 1; }
-    done
-    docker exec "$name" psql -U u -d db -v ON_ERROR_STOP=1 -c \
-        'CREATE TABLE IF NOT EXISTS public.users (id bigint PRIMARY KEY); INSERT INTO public.users (id) VALUES (1) ON CONFLICT (id) DO NOTHING;' \
-        >/dev/null
-    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
-        TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
-        TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1 \
-        "$BUILD/BehaviorProof"
-    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
-        TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
-        TABLEROCK_QUERY='SELECT 1.5::double precision AS n' \
-        TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1.5 \
-        "$BUILD/BehaviorProof"
-    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
-        TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
-        TABLEROCK_CATALOG=1 "$BUILD/BehaviorProof"
-    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
-        TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
-        TABLEROCK_CANCEL=1 "$BUILD/BehaviorProof"
-    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
-        TABLEROCK_ENGINE=postgresql TABLEROCK_PORT=5433 TABLEROCK_DB=db \
-        TABLEROCK_REVIEW=1 "$BUILD/BehaviorProof"
-    docker rm -f "$name" >/dev/null
-}
+echo "==> PostgreSQL named Swift tests"
+docker run -d --name "$PG" \
+    -e POSTGRES_PASSWORD=secret -e POSTGRES_USER=u -e POSTGRES_DB=db \
+    -P postgres:18.4-alpine >/dev/null
+pg_port="$(mapped_port "$PG" 5432)"
+for i in $(seq 1 30); do
+    docker exec "$PG" pg_isready -U u -d db >/dev/null 2>&1 \
+        && docker exec "$PG" psql -U u -d db -c 'SELECT 1' >/dev/null 2>&1 \
+        && break
+    sleep 1
+    [ "$i" -eq 30 ] && { echo "PostgreSQL not ready" >&2; exit 1; }
+done
+docker exec "$PG" psql -U u -d db -v ON_ERROR_STOP=1 -c \
+    'CREATE TABLE public.users (id bigint PRIMARY KEY); INSERT INTO public.users VALUES (1);' \
+    >/dev/null
+run_test postgresql "$pg_port" testQueryReturnsTypedPageWithExpectedValue \
+    TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret \
+    TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1
+run_test postgresql "$pg_port" testQueryReturnsTypedPageWithExpectedValue \
+    TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret \
+    TABLEROCK_QUERY='SELECT 1.5::double precision AS n' \
+    TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1.5
+run_test postgresql "$pg_port" testCatalogReturnsTypedNodesAndBrowsableObjectPage \
+    TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret
+run_test postgresql "$pg_port" testPostgreSQLCancellationReportsRuntimeAndTerminalWithinBudget \
+    TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret
+run_test postgresql "$pg_port" testPostgreSQLReviewTokenAppliesProbe \
+    TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret
+docker rm -f "$PG" >/dev/null
 
-run_ch() {
-    local name="tablerock-ch-verify"
-    echo "==> ClickHouse"
-    docker rm -f "$name" 2>/dev/null || true
-    docker run -d --name "$name" \
-        -e CLICKHOUSE_USER=u -e CLICKHOUSE_PASSWORD=secret -e CLICKHOUSE_DB=db \
-        -p 8122:8123 clickhouse/clickhouse-server:25.8 >/dev/null
-    sleep 12
-    docker exec "$name" clickhouse-client --user u --password secret --database db \
-        --query 'CREATE TABLE IF NOT EXISTS events (id UInt64) ENGINE = MergeTree ORDER BY id; INSERT INTO events SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM events WHERE id = 1)' \
-        >/dev/null
-    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
-        TABLEROCK_ENGINE=clickhouse TABLEROCK_PORT=8122 TABLEROCK_DB=db \
-        TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1 \
-        "$BUILD/BehaviorProof"
-    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
-        TABLEROCK_ENGINE=clickhouse TABLEROCK_PORT=8122 TABLEROCK_DB=db \
-        TABLEROCK_CATALOG=1 "$BUILD/BehaviorProof"
-    docker rm -f "$name" >/dev/null
-}
+echo "==> ClickHouse named Swift tests"
+docker run -d --name "$CH" \
+    -e CLICKHOUSE_USER=u -e CLICKHOUSE_PASSWORD=secret -e CLICKHOUSE_DB=db \
+    -P clickhouse/clickhouse-server:25.8 >/dev/null
+ch_port="$(mapped_port "$CH" 8123)"
+for i in $(seq 1 45); do
+    docker exec "$CH" clickhouse-client --user u --password secret --database db \
+        --query 'SELECT 1' >/dev/null 2>&1 && break
+    sleep 1
+    [ "$i" -eq 45 ] && { echo "ClickHouse not ready" >&2; exit 1; }
+done
+docker exec "$CH" clickhouse-client --user u --password secret --database db \
+    --multiquery --query \
+    'CREATE TABLE events (id UInt64) ENGINE = MergeTree ORDER BY id; INSERT INTO events VALUES (1);' \
+    >/dev/null
+run_test clickhouse "$ch_port" testQueryReturnsTypedPageWithExpectedValue \
+    TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret \
+    TABLEROCK_EXPECT_COLS=n TABLEROCK_EXPECT_ROW=1
+run_test clickhouse "$ch_port" testCatalogReturnsTypedNodesAndBrowsableObjectPage \
+    TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret
+docker rm -f "$CH" >/dev/null
 
-run_redis() {
-    local name="tablerock-redis-verify"
-    echo "==> Redis"
-    docker rm -f "$name" 2>/dev/null || true
-    docker run -d --name "$name" -p 6380:6379 redis:8.0 >/dev/null
-    sleep 4
-    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
-        TABLEROCK_ENGINE=redis TABLEROCK_PORT=6380 TABLEROCK_DB=0 \
-        TABLEROCK_USER="" TABLEROCK_PASSWORD="" TABLEROCK_QUERY="PING" \
-        "$BUILD/BehaviorProof"
-    DYLD_LIBRARY_PATH="$REPO_ROOT/target/release" \
-        TABLEROCK_ENGINE=redis TABLEROCK_PORT=6380 TABLEROCK_DB=0 \
-        TABLEROCK_USER="" TABLEROCK_PASSWORD="" TABLEROCK_CATALOG=1 \
-        "$BUILD/BehaviorProof"
-    docker rm -f "$name" >/dev/null
-}
+echo "==> Redis named Swift tests"
+docker run -d --name "$REDIS" -P redis:8.0 >/dev/null
+redis_port="$(mapped_port "$REDIS" 6379)"
+for i in $(seq 1 30); do
+    docker exec "$REDIS" redis-cli ping 2>/dev/null | grep -q PONG && break
+    sleep 1
+    [ "$i" -eq 30 ] && { echo "Redis not ready" >&2; exit 1; }
+done
+run_test redis "$redis_port" testQueryReturnsTypedPageWithExpectedValue \
+    TABLEROCK_DB=0 TABLEROCK_USER= TABLEROCK_PASSWORD= TABLEROCK_QUERY=PING
+run_test redis "$redis_port" testCatalogReturnsTypedNodesAndBrowsableObjectPage \
+    TABLEROCK_DB=0 TABLEROCK_USER= TABLEROCK_PASSWORD=
+docker rm -f "$REDIS" >/dev/null
 
-run_pg
-run_ch
-run_redis
-echo "==> All three engines verified"
+echo "==> All named live Swift bridge tests passed"
