@@ -30,11 +30,18 @@ final class PageV1FixtureTests: XCTestCase {
     }
 
     private func fixtureData(named name: String) throws -> Data {
-        let root = try XCTUnwrap(Bundle.module.resourceURL)
-        let url = root
-            .appendingPathComponent("Fixtures/PageV1")
-            .appendingPathComponent(name)
-            .appendingPathExtension("hex")
+        #if SWIFT_PACKAGE
+            let bundle = Bundle.module
+        #else
+            let bundle = Bundle(for: PageV1FixtureTests.self)
+        #endif
+        let url = try XCTUnwrap(
+            bundle.url(
+                forResource: name,
+                withExtension: "hex",
+                subdirectory: "Fixtures/PageV1"
+            ) ?? bundle.url(forResource: name, withExtension: "hex")
+        )
         let hex = try String(contentsOf: url, encoding: .utf8)
             .filter { !$0.isWhitespace }
         guard hex.count.isMultiple(of: 2) else {
