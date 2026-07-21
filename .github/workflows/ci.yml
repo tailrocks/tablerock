@@ -160,7 +160,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          install_args: rust cargo:cargo-deny cargo:cargo-outdated github:rustsec/rustsec
+          install_args: rust github:EmbarkStudios/cargo-deny github:kbknapp/cargo-outdated github:rustsec/rustsec
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Audit advisories
         run: cargo audit

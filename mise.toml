@@ -1,6 +1,6 @@
 [tools]
-"cargo:cargo-deny" = "0.20.2"
-"cargo:cargo-outdated" = "0.19.0"
+"github:EmbarkStudios/cargo-deny" = "0.20.2"
+"github:kbknapp/cargo-outdated" = "0.19.0"
 "github:rhysd/actionlint" = "v1.7.12"
 "github:rustsec/rustsec" = "cargo-audit/v0.22.2"
 "github:nextest-rs/nextest" = "cargo-nextest-0.9.140"
