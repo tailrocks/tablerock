@@ -21,8 +21,12 @@ ClickHouse, Redis, UniFFI, import, export, and performance case passed.
   and reads the codename from `/etc/os-release`.
 - The ENOSPC gate creates a nextest archive for the `tablerock-files` library,
   resolves the active installed executable with `mise which`, and
-  copies both into a disposable Ubuntu 26.04 container. It selects only the
-  exact fail-closed test on a kernel-backed 1 MiB Docker `--tmpfs`. This
+  copies both into a disposable Ubuntu 26.04 container. It creates an explicit
+  container workspace skeleton (root manifest plus archived package directory)
+  and passes nextest `--workspace-remap`, because an archive records its
+  producer's workspace root and that host path does not exist inside the
+  verification container. It selects only the exact
+  fail-closed test on a kernel-backed 1 MiB Docker `--tmpfs`. This
   preserves real ENOSPC behavior without granting host mount authority,
   bypassing the repository's nextest-only test policy, or weakening the
   assertion.
@@ -44,7 +48,10 @@ local nextest archive creation and exact filter selection all pass. Run
 29868378990 exposed the initial mise symlink. Exact-head run 29869612537 then
 proved `readlink -f` still selected mise's logical shim, which cannot run after
 being copied alone. The forward correction asks mise for the real active binary
-before crossing the container boundary.
+before crossing the container boundary. Run 29870823032 then proved that
+nextest correctly rejects an archived workspace whose original `/__w` root is
+absent in the container. The workflow now supplies its explicit portable
+workspace remap instead of depending on runner filesystem coincidence.
 
 ## Provenance
 

@@ -156,11 +156,14 @@ jobs:
           trap cleanup EXIT
           docker run -d --name "$container" \
             --tmpfs /enospc:rw,size=1m,mode=1777 ubuntu:26.04 sleep infinity >/dev/null
+          docker exec "$container" mkdir -p /workspace/crates/tablerock-files
+          docker cp Cargo.toml "$container:/workspace/Cargo.toml"
           docker cp "$archive" "$container:/tablerock-files-tests.tar.zst"
           docker cp "$nextest_binary" "$container:/cargo-nextest"
           docker exec -e TABLEROCK_ENOSPC_MNT=/enospc "$container" \
             /cargo-nextest nextest run \
               --archive-file /tablerock-files-tests.tar.zst \
+              --workspace-remap /workspace \
               -E 'test(=tests::enospc_volume_fails_closed_without_temp_debris)' \
               --no-capture
 

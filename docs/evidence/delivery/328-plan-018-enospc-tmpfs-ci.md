@@ -19,8 +19,10 @@ the env var the test no-ops so developer machines are never filled.
 
 The job builds a nextest archive, asks `mise which cargo-nextest` for the
 active installation binary instead of copying its PATH shim, copies that binary and the
-archive into the Ubuntu container, and executes the exact test through nextest
-there. This preserves the real tmpfs boundary without a forbidden
+archive into the Ubuntu container, creates nextest's required remapped root
+manifest and package directory, remaps the archived workspace metadata there,
+and executes the exact test through nextest. This preserves the real tmpfs
+boundary without a forbidden
 `cargo test --no-run` build path or direct libtest invocation.
 
 ## Evidence
@@ -33,7 +35,8 @@ cargo nextest run -p tablerock-files --lib \
 # CI (ubuntu real-servers job)
 # cargo nextest archive ...
 # docker run --tmpfs /enospc:rw,size=1m ...
-# /cargo-nextest nextest run --archive-file ... -E 'test(=tests::enospc...)'
+# /cargo-nextest nextest run --archive-file ... --workspace-remap /workspace \
+#   -E 'test(=tests::enospc...)'
 ```
 
 Workflow: `.github/workflows/ci.yml` step `ENOSPC fail-closed on 1MiB tmpfs`.
