@@ -1,28 +1,15 @@
-name: Native Checkpoint
+name: Native Nightly
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/native.yml"
-      - "Cargo.lock"
-      - "Cargo.toml"
-      - "crates/tablerock-core/**"
-      - "crates/tablerock-engine/**"
-      - "crates/tablerock-ffi/**"
-      - "crates/tablerock-files/**"
-      - "crates/tablerock-persistence/**"
-      - "native/**"
-      - "scripts/build-native-app.sh"
-      - "scripts/build-xcframework.sh"
-      - "scripts/generate-swift-bindings.sh"
   workflow_dispatch:
+  schedule:
+    - cron: "29 4 * * *"
 
 permissions:
   contents: read
 
 concurrency:
-  group: native-checkpoint-${{ github.ref }}
+  group: native-nightly-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -34,10 +21,10 @@ env:
   SCCACHE_CACHE_SIZE: 20G
 
 jobs:
-  native:
-    name: Swift bridge, app, and XCFramework
+  nightly:
+    name: Full native plan and performance
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,43 +51,31 @@ jobs:
           rustc --version
           cargo --version
 
-      - name: Regenerate and reject Xcode project drift
+      - name: Build canonical project and universal bridge
         run: |
           mise install github:yonaskolb/XcodeGen@2.46.0
           mise exec github:yonaskolb/XcodeGen@2.46.0 -- \
             xcodegen generate --spec native/App/project.yml
           git diff --exit-code -- native/App/TableRock.xcodeproj native/App/TableRock-Info.plist
-
-      - name: Build Rust bridge
-        run: cargo build -p tablerock-ffi --release --locked
-
-      - name: Regenerate and reject binding drift
-        run: |
+          cargo build -p tablerock-ffi --release --locked
           ./scripts/generate-swift-bindings.sh
           git diff --exit-code -- native/Generated native/Sources/TableRockBridge/tablerock_ffi.swift
+          SKIP_BINDINGS=1 ./scripts/build-xcframework.sh
 
-      - name: Run Swift bridge and feature tests
-        env:
-          DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
-        run: swift test --package-path native -c release
-
-      - name: Build universal static XCFramework
-        run: SKIP_BINDINGS=1 ./scripts/build-xcframework.sh
-
-      - name: Run canonical Xcode checkpoint plan
+      - name: Run canonical Xcode nightly plan
         run: |
           mkdir -p artifacts
           set -o pipefail
           xcodebuild test \
             -project native/App/TableRock.xcodeproj \
             -scheme TableRock \
-            -testPlan Checkpoint \
+            -testPlan Nightly \
             -destination 'platform=macOS' \
-            -resultBundlePath artifacts/TableRock-Checkpoint.xcresult \
+            -resultBundlePath artifacts/TableRock-Nightly.xcresult \
             CODE_SIGN_IDENTITY=- \
-            | tee artifacts/xcodebuild-checkpoint.log
+            | tee artifacts/xcodebuild-nightly.log
 
-      - name: Archive and verify canonical Release app
+      - name: Archive and verify unsigned Release shape
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -112,39 +87,33 @@ jobs:
             CODE_SIGN_IDENTITY=- \
             | tee artifacts/xcodebuild-archive.log
           app=artifacts/TableRock.xcarchive/Products/Applications/TableRock.app
-          test -d "$app"
           codesign --verify --deep --strict "$app"
-          test "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" = \
-            "app.tablerock.TableRock"
           archs="$(lipo -archs "$app/Contents/MacOS/TableRock")"
           [[ "$archs" == "arm64 x86_64" || "$archs" == "x86_64 arm64" ]]
           ! otool -L "$app/Contents/MacOS/TableRock" | grep -E \
             '/target/|libtablerock_ffi[.]dylib'
-          test -z "$(find "$app" -name 'libtablerock_ffi*.dylib' -print -quit)"
 
-      - name: Build and verify development app
+      - name: Run accessibility and performance gates
         run: |
-          ./scripts/build-native-app.sh
-          codesign --verify --deep --strict native/dist/TableRock.app
-          test "$(plutil -extract CFBundleIdentifier raw native/dist/TableRock.app/Contents/Info.plist)" = "app.tablerock.TableRock"
-          test "$(lipo -archs target/xcframework/macos-universal/tablerock_ffiFFI.framework/tablerock_ffiFFI)" = "x86_64 arm64" \
-            || test "$(lipo -archs target/xcframework/macos-universal/tablerock_ffiFFI.framework/tablerock_ffiFFI)" = "arm64 x86_64"
+          ./scripts/verify-native-accessibility.sh
+          ./scripts/verify-native-performance.sh artifacts/native-performance \
+            | tee artifacts/native-performance.log
+          test -s artifacts/native-performance/metrics.txt
+          test -s artifacts/native-performance/scroll-toc.xml
 
-      - name: Archive structural artifacts
+      - name: Archive nightly evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: native-checkpoint-${{ github.sha }}
+          name: native-nightly-${{ github.sha }}
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
           path: |
-            native/dist/TableRock.app
-            target/xcframework/tablerock_ffiFFI.xcframework
-            native/Generated
-            native/App/TableRock.xcodeproj
-            native/App/TestPlans
-            artifacts/TableRock-Checkpoint.xcresult
-            artifacts/xcodebuild-checkpoint.log
+            artifacts/TableRock-Nightly.xcresult
+            artifacts/xcodebuild-nightly.log
             artifacts/TableRock.xcarchive
             artifacts/xcodebuild-archive.log
+            artifacts/native-performance
+            artifacts/native-performance.log
             ~/Library/Logs/DiagnosticReports/TableRock*.crash
+            ~/Library/Developer/Xcode/DerivedData/**/Logs/Test/Attachments
