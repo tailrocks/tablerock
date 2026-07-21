@@ -51,6 +51,11 @@ jobs:
           rustc --version
           cargo --version
 
+      - name: Install script prerequisites
+        run: |
+          brew install ripgrep
+          test "$(rg --version | head -n 1)" = "ripgrep 15.2.0"
+
       - name: Build canonical project and universal bridge
         run: |
           mise install github:yonaskolb/XcodeGen@2.46.0
