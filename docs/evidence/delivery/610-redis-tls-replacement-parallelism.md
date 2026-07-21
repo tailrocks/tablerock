@@ -35,5 +35,5 @@ cargo nextest run -p tablerock-engine --test redis_real --locked -j 4 \
   redis88_resp3_server_pattern_recredentials
 ```
 
-Discovery reports all 32 replacement cases. Representative cross-matrix run:
-4 passed, 40 skipped, 46.792 seconds.
+Discovery reports all 32 replacement cases. Full replacement matrix run:
+32 passed, 12 unrelated tests skipped, 339.086 seconds.
