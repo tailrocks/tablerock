@@ -37,6 +37,7 @@ pub fn write_sql_file_atomic(path: &Path, text: &str) -> Result<SqlFileFacts, Pe
     if !parent.exists() {
         fs::create_dir_all(parent).map_err(|_| PersistenceError::InvalidPath)?;
     }
+    reject_mode_readonly_parent(parent)?;
     let file_name = path
         .file_name()
         .ok_or(PersistenceError::InvalidPath)?
@@ -55,6 +56,24 @@ pub fn write_sql_file_atomic(path: &Path, text: &str) -> Result<SqlFileFacts, Pe
         PersistenceError::Query
     })?;
     file_facts(path)
+}
+
+#[cfg(unix)]
+fn reject_mode_readonly_parent(parent: &Path) -> Result<(), PersistenceError> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let permissions = fs::metadata(parent)
+        .map_err(|_| PersistenceError::InvalidPath)?
+        .permissions();
+    if permissions.mode() & 0o222 == 0 {
+        return Err(PersistenceError::Query);
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn reject_mode_readonly_parent(_parent: &Path) -> Result<(), PersistenceError> {
+    Ok(())
 }
 
 /// Compare current mtime/len to previously observed facts.

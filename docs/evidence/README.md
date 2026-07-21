@@ -463,6 +463,7 @@ How to read an evidence document:
 - 587 — [Native runner workspace serialization](delivery/587-native-runner-workspace-serialization.md)
 - 588 — [Native app-test module import](delivery/588-native-app-test-module-import.md)
 - 589 — [Native UI-test launch isolation](delivery/589-native-ui-test-launch-isolation.md)
+- 590 — [SQL-file mode-read-only fail-closed gate](delivery/590-sql-file-mode-readonly-fail-closed.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
