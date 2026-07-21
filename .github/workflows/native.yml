@@ -79,7 +79,7 @@ jobs:
         run: swift test --package-path native -c release
 
       - name: Build universal static XCFramework
-        run: ./scripts/build-xcframework.sh
+        run: SKIP_BINDINGS=1 ./scripts/build-xcframework.sh
 
       - name: Regenerate and reject Xcode project drift
         run: |

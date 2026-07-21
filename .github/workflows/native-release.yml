@@ -92,7 +92,7 @@ jobs:
           cargo build -p tablerock-ffi --release --locked
           ./scripts/generate-swift-bindings.sh
           git diff --exit-code -- native/Generated native/Sources/TableRockBridge/tablerock_ffi.swift
-          ./scripts/build-xcframework.sh
+          SKIP_BINDINGS=1 ./scripts/build-xcframework.sh
           mise install github:yonaskolb/XcodeGen@2.46.0
           mise exec github:yonaskolb/XcodeGen@2.46.0 -- \
             xcodegen generate --spec native/App/project.yml

@@ -25,10 +25,14 @@ for lib in "$ARM_LIB" "$X86_LIB"; do
   fi
 done
 
-echo "==> generating Swift bindings (from host release dylib)"
-cargo build -p tablerock-ffi --release
-PROFILE=release OUT_DIR="$ROOT/native/Generated" \
-  bash "$ROOT/scripts/generate-swift-bindings.sh"
+if [[ "${SKIP_BINDINGS:-0}" == "1" ]]; then
+  echo "==> using previously verified Swift bindings"
+else
+  echo "==> generating Swift bindings (from host release dylib)"
+  cargo build -p tablerock-ffi --release
+  PROFILE=release OUT_DIR="$ROOT/native/Generated" \
+    bash "$ROOT/scripts/generate-swift-bindings.sh"
+fi
 
 HEADER="$ROOT/native/Generated/tablerock_ffiFFI.h"
 MODULEMAP="$ROOT/native/Generated/tablerock_ffiFFI.modulemap"
