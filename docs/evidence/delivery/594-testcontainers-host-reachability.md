@@ -28,7 +28,9 @@ receive that host explicitly. Loopback-only synthetic tests remain unchanged.
 - `cargo test -p tablerock-engine --test clickhouse_real explain_raw_and_structured_with_fallback --no-run`
 - `cargo test -p tablerock-engine --test clickhouse_real explain_raw_and_structured_with_fallback -- --nocapture --test-threads=1`
   passed: 1 passed, 6 filtered out.
-- Velnor hosted rerun required after push.
+- Velnor run 29853060077 passed the first three ClickHouse real-server tests,
+  including the formerly failing readiness test. Its fourth test exposed a
+  separate synchronous-cancellation latency defect recorded in evidence 595.
 
 ## Provenance
 

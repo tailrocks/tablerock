@@ -468,6 +468,7 @@ How to read an evidence document:
 - 592 — [Native UI hit-testing correction](delivery/592-native-ui-hit-testing-correction.md)
 - 593 — [Bounded real-server test concurrency](delivery/593-bounded-real-server-test-concurrency.md)
 - 594 — [Testcontainers host reachability](delivery/594-testcontainers-host-reachability.md)
+- 595 — [ClickHouse asynchronous cancellation dispatch](delivery/595-clickhouse-async-cancel-dispatch.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
