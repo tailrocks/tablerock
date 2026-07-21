@@ -88,6 +88,15 @@ public struct WorkbenchBrowseSort: Sendable, Equatable, Identifiable {
   }
 }
 
+public func workbenchColumnHeaderTitle(
+  column: String,
+  sorts: [WorkbenchBrowseSort]
+) -> String {
+  guard let index = sorts.firstIndex(where: { $0.column == column }) else { return column }
+  let direction = sorts[index].descending ? "↓" : "↑"
+  return "\(column) \(direction) \(index + 1)"
+}
+
 public struct WorkbenchBrowseFilter: Sendable, Equatable, Identifiable {
   public let id: UUID
   public let column: String

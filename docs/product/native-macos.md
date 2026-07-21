@@ -89,7 +89,9 @@ Table-like object tabs expose ordered server sorting, typed parameterized
 filters, and an explicitly labeled raw-WHERE editor. Raw fragments are capped
 at 64 KiB and pass unchanged to Rust for validation and parenthesized query
 composition; Swift never constructs SQL. Apply and clear are explicit actions,
-and active raw mode remains visibly announced.
+and active raw mode remains visibly announced. Result column headers project
+each active server sort's direction and one-based priority; unsorted headers
+retain the database column name unchanged.
 
 ## Platform evidence gates
 

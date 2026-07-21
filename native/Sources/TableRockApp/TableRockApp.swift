@@ -1925,6 +1925,9 @@ final class BridgeModel {
       selectedCell = nil
     }
   }
+  var resultSort: [WorkbenchBrowseSort] {
+    selectedWorkbenchKind == "object" ? activeObjectTab?.sort ?? [] : []
+  }
   var copyOutcome: String? {
     get {
       selectedWorkbenchKind == "object" ? activeObjectTab?.copyOutcome : activeQueryTab.copyOutcome
@@ -5637,7 +5640,7 @@ private struct ResultGridWithInspector: View {
         Spacer()
       }
       HSplitView {
-        CatalogGrid(table: visibleTable) { row, column in
+        CatalogGrid(table: visibleTable, sorts: model.resultSort) { row, column in
           guard visibleRowIndices.indices.contains(row) else { return }
           model.selectCell(row: visibleRowIndices[row], column: column)
         }
@@ -6589,17 +6592,22 @@ struct CatalogOutline: NSViewRepresentable {
 
 struct CatalogGrid: NSViewRepresentable {
   let table: WorkbenchTable
+  let sorts: [WorkbenchBrowseSort]
   let onSelect: @MainActor (Int, Int) -> Void
 
   init(
     table: WorkbenchTable,
+    sorts: [WorkbenchBrowseSort] = [],
     onSelect: @escaping @MainActor (Int, Int) -> Void = { _, _ in }
   ) {
     self.table = table
+    self.sorts = sorts
     self.onSelect = onSelect
   }
 
-  func makeCoordinator() -> Coordinator { Coordinator(table, onSelect: onSelect) }
+  func makeCoordinator() -> Coordinator {
+    Coordinator(table, sorts: sorts, onSelect: onSelect)
+  }
 
   final class ResultTableView: NSTableView {
     var onCellActivate: ((Int, Int) -> Void)?
@@ -6651,6 +6659,7 @@ struct CatalogGrid: NSViewRepresentable {
     guard let grid = scroll.documentView as? NSTableView else { return }
     let selectedRows = grid.selectedRowIndexes
     context.coordinator.snapshot = table
+    context.coordinator.sorts = sorts
     context.coordinator.onSelect = onSelect
     if let resultGrid = grid as? ResultTableView {
       resultGrid.onCellActivate = {
@@ -6682,12 +6691,18 @@ struct CatalogGrid: NSViewRepresentable {
     }
 
     var snapshot: WorkbenchTable
+    var sorts: [WorkbenchBrowseSort]
     var onSelect: @MainActor (Int, Int) -> Void
     private var fixtureScrollTask: Task<Void, Never>?
     private var lastActivatedColumn = 0
 
-    init(_ snapshot: WorkbenchTable, onSelect: @escaping @MainActor (Int, Int) -> Void) {
+    init(
+      _ snapshot: WorkbenchTable,
+      sorts: [WorkbenchBrowseSort],
+      onSelect: @escaping @MainActor (Int, Int) -> Void
+    ) {
       self.snapshot = snapshot
+      self.sorts = sorts
       self.onSelect = onSelect
     }
 
@@ -6751,7 +6766,7 @@ struct CatalogGrid: NSViewRepresentable {
       }
       if tableView.tableColumns.map(\.identifier) == expected {
         for (column, title) in zip(tableView.tableColumns, snapshot.columns) {
-          column.title = title
+          column.title = workbenchColumnHeaderTitle(column: title, sorts: sorts)
         }
         return
       }
@@ -6759,7 +6774,7 @@ struct CatalogGrid: NSViewRepresentable {
       for (index, title) in snapshot.columns.enumerated() {
         let column = NSTableColumn(
           identifier: NSUserInterfaceItemIdentifier("result-column-\(index)"))
-        column.title = title
+        column.title = workbenchColumnHeaderTitle(column: title, sorts: sorts)
         column.minWidth = 60
         column.width = 140
         column.resizingMask = [.autoresizingMask, .userResizingMask]
