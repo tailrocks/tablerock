@@ -195,12 +195,11 @@ impl MutationDraftModel {
         }
         let removed = self.inserts.pop();
         // Drop matching undo entry if it is the tip Insert for this draft.
-        if let Some(ins) = removed.as_ref() {
-            if let Some(UndoEntry::Insert(top)) = self.undo.last() {
-                if top.draft_id == ins.draft_id {
-                    self.undo.pop();
-                }
-            }
+        if let Some(ins) = removed.as_ref()
+            && let Some(UndoEntry::Insert(top)) = self.undo.last()
+            && top.draft_id == ins.draft_id
+        {
+            self.undo.pop();
         }
         removed.is_some()
     }

@@ -3451,10 +3451,10 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
                 &mut menu_state,
             );
         }
-        if results_area.height > 0 {
-            if let Some(grid) = wb.active_grid() {
-                render_data_grid(model, frame, results_area, grid);
-            }
+        if results_area.height > 0
+            && let Some(grid) = wb.active_grid()
+        {
+            render_data_grid(model, frame, results_area, grid);
         }
         return;
     }
@@ -3502,20 +3502,20 @@ fn render_workbench_facts(model: &Model, frame: &mut Frame<'_>, area: Rect, _sta
                 frame.buffer_mut(),
             );
         }
-        if grid_h > 0 {
-            if let Some(grid) = wb.active_grid() {
-                render_data_grid(
-                    model,
-                    frame,
-                    Rect {
-                        x: grid_area.x,
-                        y: grid_area.y.saturating_add(control_h),
-                        width: grid_area.width,
-                        height: grid_h,
-                    },
-                    grid,
-                );
-            }
+        if grid_h > 0
+            && let Some(grid) = wb.active_grid()
+        {
+            render_data_grid(
+                model,
+                frame,
+                Rect {
+                    x: grid_area.x,
+                    y: grid_area.y.saturating_add(control_h),
+                    width: grid_area.width,
+                    height: grid_h,
+                },
+                grid,
+            );
         }
         if insp_h > 0 {
             let mut iy = grid_area.y.saturating_add(grid_h);

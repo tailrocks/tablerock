@@ -2,6 +2,10 @@
 //!
 //! Builds typed `MutationChange::InsertRow` values only — never SQL string
 //! concatenation. Authorization is consume-once via the core review registry.
+#![allow(
+    clippy::too_many_arguments,
+    reason = "import application keeps authorization and destination inputs explicit"
+)]
 
 use std::sync::Arc;
 

@@ -270,155 +270,6 @@ impl InspectorModel {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::model::grid::{CellDistinction, ProjectedCell};
-
-    #[test]
-    fn inspector_marks_truncation_and_stale() {
-        let cell = ProjectedCell {
-            text: "hello".into(),
-            distinction: CellDistinction::Truncated,
-            byte_len: 5,
-            original_byte_len: Some(50),
-        };
-        let insp = InspectorModel::from_cell("users.id", &cell, true);
-        let lines = insp.lines().join("\n");
-        assert!(lines.contains("truncated"));
-        assert!(lines.contains("stale: yes"));
-        assert!(lines.contains("kind: truncated"));
-    }
-
-    #[test]
-    fn binary_hex_panel_is_multiline_dump() {
-        let cell = ProjectedCell {
-            text: "Hello, binary!\n\0\x01\x02".into(),
-            distinction: CellDistinction::Binary,
-            byte_len: 18,
-            original_byte_len: None,
-        };
-        let insp = InspectorModel::from_cell("row.blob", &cell, false);
-        assert!(insp.hex.contains("0000"));
-        assert!(insp.hex.contains('|'));
-        assert!(insp.hex.contains("48 65 6c 6c 6f")); // Hello
-        let lines = insp.lines().join("\n");
-        assert!(lines.contains("hex:"));
-        assert!(insp.text.contains("binary"));
-    }
-
-    #[test]
-    fn hex_window_pages_beyond_first_256() {
-        let payload: String = (0..600)
-            .map(|i| char::from(b'a' + (i % 26) as u8))
-            .collect();
-        let cell = ProjectedCell {
-            text: payload.clone(),
-            distinction: CellDistinction::Binary,
-            byte_len: payload.len() as u64,
-            original_byte_len: None,
-        };
-        let mut insp = InspectorModel::from_cell("blob", &cell, false);
-        assert_eq!(insp.hex_offset, 0);
-        assert!(insp.hex.contains("0000"));
-        assert!(insp.hex.contains("more bytes"));
-        assert!(insp.page_hex(1));
-        assert_eq!(insp.hex_offset, HEX_WINDOW);
-        assert!(insp.hex.contains(&format!("{HEX_WINDOW:04x}")) || insp.hex.contains("0100"));
-        assert!(insp.hex.contains("bytes before"));
-        assert!(insp.page_hex(-1));
-        assert_eq!(insp.hex_offset, 0);
-        assert!(!insp.page_hex(-1));
-    }
-
-    #[test]
-    fn structured_pretty_print_and_temporal_annotation() {
-        let json = ProjectedCell {
-            text: r#"{"a":1,"b":true}"#.into(),
-            distinction: CellDistinction::Structured,
-            byte_len: 15,
-            original_byte_len: None,
-        };
-        let insp = InspectorModel::from_cell("row.payload", &json, false);
-        assert!(insp.text.contains('\n') || insp.text.contains("  "));
-        assert!(insp.text.contains("\"a\""));
-        let lines = insp.lines().join("\n");
-        assert!(lines.contains("tree"), "{lines}");
-        assert!(lines.contains("\"a\""));
-
-        let temp = ProjectedCell {
-            text: "2024-01-15T12:30:00Z".into(),
-            distinction: CellDistinction::Temporal,
-            byte_len: 20,
-            original_byte_len: None,
-        };
-        let t = InspectorModel::from_cell("row.ts", &temp, false);
-        assert!(t.text.contains("date:"));
-        assert!(t.text.contains("2024-01-15"));
-    }
-
-    #[test]
-    fn pretty_structured_invalid_falls_back() {
-        assert_eq!(pretty_structured("not-json"), "not-json");
-        assert_eq!(
-            structured_tree_lines("not-json"),
-            vec!["not-json".to_owned()]
-        );
-    }
-
-    #[test]
-    fn structured_tree_caps_depth() {
-        // Nested arrays deeper than MAX_STRUCTURED_TREE_DEPTH collapse.
-        let deep = "[[[[[[[[[[1]]]]]]]]]]";
-        let lines = structured_tree_lines(deep);
-        let joined = lines.join("\n");
-        assert!(
-            joined.contains('…'),
-            "expected collapse marker in {joined:?}"
-        );
-        assert!(lines.len() <= 64);
-    }
-
-    #[test]
-    fn expand_and_collapse_structured_tree_depth() {
-        let deep = "[[[[1]]]]";
-        let cell = ProjectedCell {
-            text: deep.into(),
-            distinction: CellDistinction::Structured,
-            byte_len: deep.len() as u64,
-            original_byte_len: None,
-        };
-        let mut insp = InspectorModel::from_cell("j", &cell, false);
-        assert_eq!(insp.tree_depth, MAX_STRUCTURED_TREE_DEPTH);
-        let shallow = pretty_structured_depth(deep, 1);
-        assert!(shallow.contains('…') || shallow.chars().filter(|c| *c == '[').count() <= 2);
-        assert!(insp.collapse_tree() || insp.tree_depth > 1);
-        // Collapse down to 1
-        while insp.collapse_tree() {}
-        assert_eq!(insp.tree_depth, 1);
-        assert!(!insp.collapse_tree());
-        assert!(insp.expand_tree());
-        assert_eq!(insp.tree_depth, 2);
-        assert!(insp.text.contains("depth 2"));
-    }
-
-    #[test]
-    fn explain_tree_uses_indent_glyphs() {
-        let plan = "Seq Scan on t  (cost=0.00..1.00 rows=1)\n  Filter: (id = 1)\n  ->  Index Scan on t_pkey";
-        let lines = explain_tree_lines(plan);
-        assert!(lines.iter().any(|l| l.contains("Seq Scan")));
-        assert!(
-            lines
-                .iter()
-                .any(|l| l.contains("│") || l.contains("└") || l.contains("  "))
-        );
-        let insp = InspectorModel::from_explain_text("explain", plan);
-        let joined = insp.lines().join("\n");
-        assert!(joined.contains("plan:"));
-        assert!(joined.contains("Seq Scan"));
-    }
-}
-
 fn looks_like_explain_plan(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
     lower.contains("seq scan")
@@ -460,6 +311,7 @@ const MAX_STRUCTURED_TREE_DEPTH: i32 = 6;
 const MAX_STRUCTURED_PRETTY_BYTES: usize = 16 * 1024;
 
 /// Multi-line tree projection for structured cells (glyph indent + depth cap).
+#[cfg(test)]
 fn structured_tree_lines(raw: &str) -> Vec<String> {
     structured_tree_lines_depth(raw, MAX_STRUCTURED_TREE_DEPTH)
 }
@@ -542,15 +394,11 @@ fn format_hex_window(bytes: &[u8], offset: usize) -> String {
     lines.join("\n")
 }
 
-/// First-window hex panel for tests/callers that pass a cell.
-fn format_hex_panel(cell: &ProjectedCell) -> String {
-    format_hex_window(&hex_source_bytes(cell), 0)
-}
-
 /// Indent JSON-like structured text for inspector readability (best-effort).
 ///
 /// Depth beyond the default cap is collapsed to `…` so nested containers remain
 /// navigable without dumping unbounded trees.
+#[cfg(test)]
 fn pretty_structured(raw: &str) -> String {
     pretty_structured_depth(raw, MAX_STRUCTURED_TREE_DEPTH)
 }
@@ -700,7 +548,7 @@ fn annotate_temporal(raw: &str) -> String {
         }
     }
     if let Some(r) = rest {
-        let r = r.trim_start_matches(|c: char| c == 'T' || c == ' ');
+        let r = r.trim_start_matches(['T', ' ']);
         if r.is_empty() {
             return lines.join("\n");
         }
@@ -712,8 +560,8 @@ fn annotate_temporal(raw: &str) -> String {
         } else {
             None
         };
-        let body = if r.ends_with('Z') {
-            &r[..r.len() - 1]
+        let body = if let Some(body) = r.strip_suffix('Z') {
+            body
         } else if let Some(tz_s) = tz {
             r.strip_suffix(tz_s).unwrap_or(r)
         } else {
@@ -726,14 +574,163 @@ fn annotate_temporal(raw: &str) -> String {
         if !clock.is_empty() {
             lines.push(format!("time: {clock}"));
         }
-        if let Some(f) = frac {
-            if f.chars().all(|c| c.is_ascii_digit()) {
-                lines.push(format!("fraction: {f}"));
-            }
+        if let Some(f) = frac
+            && f.chars().all(|c| c.is_ascii_digit())
+        {
+            lines.push(format!("fraction: {f}"));
         }
         if let Some(tz_s) = tz {
             lines.push(format!("tz: {tz_s}"));
         }
     }
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::grid::{CellDistinction, ProjectedCell};
+
+    #[test]
+    fn inspector_marks_truncation_and_stale() {
+        let cell = ProjectedCell {
+            text: "hello".into(),
+            distinction: CellDistinction::Truncated,
+            byte_len: 5,
+            original_byte_len: Some(50),
+        };
+        let insp = InspectorModel::from_cell("users.id", &cell, true);
+        let lines = insp.lines().join("\n");
+        assert!(lines.contains("truncated"));
+        assert!(lines.contains("stale: yes"));
+        assert!(lines.contains("kind: truncated"));
+    }
+
+    #[test]
+    fn binary_hex_panel_is_multiline_dump() {
+        let cell = ProjectedCell {
+            text: "Hello, binary!\n\0\x01\x02".into(),
+            distinction: CellDistinction::Binary,
+            byte_len: 18,
+            original_byte_len: None,
+        };
+        let insp = InspectorModel::from_cell("row.blob", &cell, false);
+        assert!(insp.hex.contains("0000"));
+        assert!(insp.hex.contains('|'));
+        assert!(insp.hex.contains("48 65 6c 6c 6f")); // Hello
+        let lines = insp.lines().join("\n");
+        assert!(lines.contains("hex:"));
+        assert!(insp.text.contains("binary"));
+    }
+
+    #[test]
+    fn hex_window_pages_beyond_first_256() {
+        let payload: String = (0..600)
+            .map(|i| char::from(b'a' + (i % 26) as u8))
+            .collect();
+        let cell = ProjectedCell {
+            text: payload.clone(),
+            distinction: CellDistinction::Binary,
+            byte_len: payload.len() as u64,
+            original_byte_len: None,
+        };
+        let mut insp = InspectorModel::from_cell("blob", &cell, false);
+        assert_eq!(insp.hex_offset, 0);
+        assert!(insp.hex.contains("0000"));
+        assert!(insp.hex.contains("more bytes"));
+        assert!(insp.page_hex(1));
+        assert_eq!(insp.hex_offset, HEX_WINDOW);
+        assert!(insp.hex.contains(&format!("{HEX_WINDOW:04x}")) || insp.hex.contains("0100"));
+        assert!(insp.hex.contains("bytes before"));
+        assert!(insp.page_hex(-1));
+        assert_eq!(insp.hex_offset, 0);
+        assert!(!insp.page_hex(-1));
+    }
+
+    #[test]
+    fn structured_pretty_print_and_temporal_annotation() {
+        let json = ProjectedCell {
+            text: r#"{"a":1,"b":true}"#.into(),
+            distinction: CellDistinction::Structured,
+            byte_len: 15,
+            original_byte_len: None,
+        };
+        let insp = InspectorModel::from_cell("row.payload", &json, false);
+        assert!(insp.text.contains('\n') || insp.text.contains("  "));
+        assert!(insp.text.contains("\"a\""));
+        let lines = insp.lines().join("\n");
+        assert!(lines.contains("tree"), "{lines}");
+        assert!(lines.contains("\"a\""));
+
+        let temp = ProjectedCell {
+            text: "2024-01-15T12:30:00Z".into(),
+            distinction: CellDistinction::Temporal,
+            byte_len: 20,
+            original_byte_len: None,
+        };
+        let t = InspectorModel::from_cell("row.ts", &temp, false);
+        assert!(t.text.contains("date:"));
+        assert!(t.text.contains("2024-01-15"));
+    }
+
+    #[test]
+    fn pretty_structured_invalid_falls_back() {
+        assert_eq!(pretty_structured("not-json"), "not-json");
+        assert_eq!(
+            structured_tree_lines("not-json"),
+            vec!["not-json".to_owned()]
+        );
+    }
+
+    #[test]
+    fn structured_tree_caps_depth() {
+        // Nested arrays deeper than MAX_STRUCTURED_TREE_DEPTH collapse.
+        let deep = "[[[[[[[[[[1]]]]]]]]]]";
+        let lines = structured_tree_lines(deep);
+        let joined = lines.join("\n");
+        assert!(
+            joined.contains('…'),
+            "expected collapse marker in {joined:?}"
+        );
+        assert!(lines.len() <= 64);
+    }
+
+    #[test]
+    fn expand_and_collapse_structured_tree_depth() {
+        let deep = "[[[[1]]]]";
+        let cell = ProjectedCell {
+            text: deep.into(),
+            distinction: CellDistinction::Structured,
+            byte_len: deep.len() as u64,
+            original_byte_len: None,
+        };
+        let mut insp = InspectorModel::from_cell("j", &cell, false);
+        assert_eq!(insp.tree_depth, MAX_STRUCTURED_TREE_DEPTH);
+        let shallow = pretty_structured_depth(deep, 1);
+        assert!(shallow.contains('…') || shallow.chars().filter(|c| *c == '[').count() <= 2);
+        assert!(insp.collapse_tree() || insp.tree_depth > 1);
+        // Collapse down to 1
+        while insp.collapse_tree() {}
+        assert_eq!(insp.tree_depth, 1);
+        assert!(!insp.collapse_tree());
+        assert!(insp.expand_tree());
+        assert_eq!(insp.tree_depth, 2);
+        assert!(insp.text.contains("depth 2"));
+    }
+
+    #[test]
+    fn explain_tree_uses_indent_glyphs() {
+        let plan = "Seq Scan on t  (cost=0.00..1.00 rows=1)\n  Filter: (id = 1)\n  ->  Index Scan on t_pkey";
+        let lines = explain_tree_lines(plan);
+        assert!(lines.iter().any(|l| l.contains("Seq Scan")));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("│") || l.contains("└") || l.contains("  "))
+        );
+        let insp = InspectorModel::from_explain_text("explain", plan);
+        let joined = insp.lines().join("\n");
+        assert!(joined.contains("plan:"));
+        assert!(joined.contains("Seq Scan"));
+    }
 }

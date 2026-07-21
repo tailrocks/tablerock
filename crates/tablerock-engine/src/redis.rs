@@ -27,10 +27,10 @@ const MAX_REDIS_TLS_MATERIAL_BYTES: usize = 65_536;
 const MAX_REDIS_SUBSCRIPTION_MESSAGES: usize = 4_096;
 
 fn redis_key_label(key: &[u8]) -> String {
-    if let Ok(text) = std::str::from_utf8(key) {
-        if !text.chars().any(char::is_control) {
-            return format!("text:{text}");
-        }
+    if let Ok(text) = std::str::from_utf8(key)
+        && !text.chars().any(char::is_control)
+    {
+        return format!("text:{text}");
     }
     let mut label = String::with_capacity(4 + key.len().saturating_mul(2));
     label.push_str("hex:");

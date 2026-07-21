@@ -148,6 +148,10 @@ fn delete_change(delete: &StagedDelete) -> Result<MutationChange, DraftPlanError
 }
 
 /// Build a typed plan from drafts + editable identity.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "mutation identity seeds are explicit trust-boundary inputs"
+)]
 pub fn plan_from_drafts(
     drafts: &MutationDraftModel,
     schema: &str,
@@ -434,7 +438,7 @@ mod tests {
             plan_from_drafts(&draft, "public", "t", "db", 1, 2, 3, 4, Revision::INITIAL),
             Err(DraftPlanError::NotEditable)
         ));
-        let mut ready = ready_draft();
+        let ready = ready_draft();
         assert!(matches!(
             plan_from_drafts(&ready, "public", "t", "db", 1, 2, 3, 4, Revision::INITIAL),
             Err(DraftPlanError::Empty)

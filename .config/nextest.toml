@@ -1,0 +1,6 @@
+[test-groups]
+real-server = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary_id(/.*_real/)'
+test-group = 'real-server'

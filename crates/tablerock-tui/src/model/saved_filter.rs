@@ -106,10 +106,10 @@ impl SavedFilterLibrary {
                 let mut frest = &rest[fstart..];
                 while let Some(cidx) = frest.find(r#""column""#) {
                     // Stop at next preset object if present.
-                    if let Some(next_name) = frest.find(r#""name""#) {
-                        if next_name < cidx {
-                            break;
-                        }
+                    if let Some(next_name) = frest.find(r#""name""#)
+                        && next_name < cidx
+                    {
+                        break;
                     }
                     frest = &frest[cidx..];
                     let column = extract_string(frest, "column")?;

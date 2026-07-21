@@ -119,8 +119,9 @@ impl ConnectionNodeId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ProfileListState {
+    #[default]
     Idle,
     Loading {
         request_token: RequestToken,
@@ -139,12 +140,6 @@ pub enum ProfileListState {
         request_token: RequestToken,
         reason: FailureProjection,
     },
-}
-
-impl Default for ProfileListState {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 impl ProfileListState {

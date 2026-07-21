@@ -7,14 +7,16 @@ use tablerock_core::{
 use tablerock_engine::{
     ClickHouseCompression, ClickHouseConnectConfig, ClickHouseSession, ClickHouseTlsMode,
     PostgresConnectConfig, PostgresSession, PostgresTlsMode, RedisConnectConfig,
-    RedisConnectionSecurity, RedisProtocol, RedisSession, RedisTlsMode,
-    run_clickhouse_startup_actions, run_postgres_startup_actions, run_redis_startup_actions,
+    RedisConnectionSecurity, RedisProtocol, RedisTlsMode, run_clickhouse_startup_actions,
+    run_postgres_startup_actions, run_redis_startup_actions,
 };
 use testcontainers::{
     GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
     runners::AsyncRunner,
 };
+
+mod support;
 
 fn text(s: &str) -> BoundedText {
     BoundedText::copy_from_str(s, ByteLimit::new(253)).unwrap()
@@ -138,7 +140,7 @@ async fn redis_startup_actions_auto_run() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
-    let session = RedisSession::connect(
+    let session = support::connect_redis_until_ready(
         &RedisConnectConfig::new(
             text("127.0.0.1"),
             port,
@@ -148,8 +150,7 @@ async fn redis_startup_actions_auto_run() {
         ),
         RedisConnectionSecurity::new(),
     )
-    .await
-    .unwrap();
+    .await;
     let set = StartupActionSet::new(vec![
         StartupAction::from_str("PING", StartupSafetyClass::ReadOnly, 5_000, true).unwrap(),
         StartupAction::from_str("FLUSHDB", StartupSafetyClass::Dangerous, 5_000, true).unwrap(),

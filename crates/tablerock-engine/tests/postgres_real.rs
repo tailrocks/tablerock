@@ -636,26 +636,21 @@ async fn browses_2500_row_table_in_500_row_pages_with_result_store_pin() {
     let mut pages = 0_u32;
     let mut total = 0_u64;
     let mut first_page_seen = false;
-    loop {
-        match stream.next_page(id, start_row).await.unwrap() {
-            Some(page) => {
-                let rows = u64::from(page.envelope().row_count());
-                assert!(rows <= 500);
-                if !first_page_seen {
-                    assert_eq!(page.envelope().start_row(), 0);
-                    assert_eq!(rows, 500);
-                    first_page_seen = true;
-                }
-                let outcome = store.admit(page).unwrap();
-                if start_row == 0 {
-                    assert!(store.set_pinned(outcome.admitted(), true));
-                }
-                start_row = start_row.saturating_add(rows);
-                total = total.saturating_add(rows);
-                pages += 1;
-            }
-            None => break,
+    while let Some(page) = stream.next_page(id, start_row).await.unwrap() {
+        let rows = u64::from(page.envelope().row_count());
+        assert!(rows <= 500);
+        if !first_page_seen {
+            assert_eq!(page.envelope().start_row(), 0);
+            assert_eq!(rows, 500);
+            first_page_seen = true;
         }
+        let outcome = store.admit(page).unwrap();
+        if start_row == 0 {
+            assert!(store.set_pinned(outcome.admitted(), true));
+        }
+        start_row = start_row.saturating_add(rows);
+        total = total.saturating_add(rows);
+        pages += 1;
     }
     assert!(first_page_seen, "first page must render before stream end");
     assert_eq!(total, 2500);
@@ -3101,15 +3096,15 @@ async fn activity_signal_permission_denied_for_restricted_role() {
                 Revision::INITIAL,
                 Engine::PostgreSql,
             );
-            if let Ok(Some(page)) = stream.next_page(identity, 0).await {
-                if page.envelope().row_count() > 0 {
-                    let text = page
-                        .cell(0, 0)
-                        .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
-                        .unwrap_or_default();
-                    if let Ok(pid) = text.parse::<i32>() {
-                        return pid;
-                    }
+            if let Ok(Some(page)) = stream.next_page(identity, 0).await
+                && page.envelope().row_count() > 0
+            {
+                let text = page
+                    .cell(0, 0)
+                    .map(|c| String::from_utf8_lossy(c.bytes()).into_owned())
+                    .unwrap_or_default();
+                if let Ok(pid) = text.parse::<i32>() {
+                    return pid;
                 }
             }
             tokio::time::sleep(Duration::from_millis(20)).await;

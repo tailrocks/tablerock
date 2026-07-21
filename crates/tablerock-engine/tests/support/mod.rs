@@ -1,9 +1,39 @@
+#![allow(
+    dead_code,
+    reason = "each integration-test binary consumes a different subset of shared fixtures"
+)]
+
+use std::time::Duration;
+
 use tablerock_core::{
     CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent, CommandScope, ContextId,
     Engine, IdParts, OperationId, OperationScope, PageIdentity, ProfileId, RequestId, ResultId,
     Revision, ServiceCoordinator, ServiceLimits, SessionId,
 };
-use tablerock_engine::{DriverRuntime, EngineService};
+
+use tablerock_engine::{
+    DriverRuntime, EngineService, RedisConnectConfig, RedisConnectionSecurity, RedisError,
+    RedisSession,
+};
+
+pub async fn connect_redis_until_ready(
+    config: &RedisConnectConfig,
+    security: RedisConnectionSecurity<'_>,
+) -> RedisSession {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            match RedisSession::connect(config, security).await {
+                Ok(session) => return session,
+                Err(RedisError::Connect | RedisError::Connection | RedisError::Timeout) => {
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+                Err(error) => panic!("Redis fixture rejected a valid connection: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("Redis fixture accepts an adapter connection within fifteen seconds")
+}
 
 fn opaque<T>(
     low: u64,

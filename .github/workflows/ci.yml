@@ -1,0 +1,198 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      lanes:
+        description: velnor (default) | github | both
+        type: choice
+        default: velnor
+        options: [velnor, github, both]
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "false"
+  SCCACHE_CACHE_SIZE: 20G
+
+jobs:
+  rust:
+    name: Format, lint, and test (${{ matrix.config.lane }})
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache Cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+          key: cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Check
+        run: cargo check --workspace --all-targets --locked
+      - name: Container-free tests
+        run: cargo nextest run -p tablerock-core -p tablerock-persistence -p tablerock-tui -p tablerock-cli -p tablerock-ffi --locked
+      - name: Engine unit and container-free integration tests
+        run: >
+          cargo nextest run -p tablerock-engine --locked
+          --lib
+          --test engine_service
+          --test driver_runtime
+          --test session_registry
+          --test adapter_contract
+
+  integration:
+    name: Real-server integration (${{ matrix.config.lane }})
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache Cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+          key: cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-
+      - name: Real-server integration tests
+        run: cargo nextest run -p tablerock-engine --test postgres_real --test clickhouse_real --test redis_real --test three_engine_overlap_real --locked
+      - name: UniFFI bridge real-server conformance
+        run: cargo nextest run -p tablerock-ffi --test bridge_real --locked --run-ignored ignored-only
+      - name: CSV import apply through mutation seam
+        run: cargo nextest run -p tablerock-cli --test import_apply_real --locked --run-ignored ignored-only
+      - name: Streaming re-query export
+        run: cargo nextest run -p tablerock-cli --test stream_export_real --locked --run-ignored ignored-only
+      - name: First-row streaming performance budgets
+        run: cargo nextest run -p tablerock-engine --test performance_real --locked
+      - name: Install PostgreSQL client tools (18, matching the test server)
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-18
+      - name: pg_dump/pg_restore real matrix
+        run: cargo nextest run -p tablerock-cli --test pg_dump_real --locked --run-ignored ignored-only
+      - name: ENOSPC fail-closed on 1MiB tmpfs
+        run: |
+          set -euo pipefail
+          MNT="${RUNNER_TEMP}/tablerock-enospc"
+          mkdir -p "$MNT"
+          sudo mount -t tmpfs -o size=1M,mode=1777 tmpfs "$MNT"
+          dd if=/dev/zero of="$MNT/prefill.bin" bs=1k count=900 status=none || true
+          export TABLEROCK_ENOSPC_MNT="$MNT"
+          cargo nextest run -p tablerock-files --lib --locked -E 'test(enospc_volume_fails_closed_without_temp_debris)'
+          sudo umount "$MNT"
+
+  audit:
+    name: Dependency audit (${{ matrix.config.lane }})
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Audit advisories
+        run: cargo audit
+      - name: Audit licenses, bans, and sources
+        run: cargo deny check
+      - name: Reject outdated direct dependencies
+        run: cargo outdated --workspace --root-deps-only --exit-code 1
+      - name: Reject stale CI action pins
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh api repos/actions/checkout/releases/latest --jq .tag_name)" = "v7.0.1"
+          test "$(gh api repos/actions/checkout/commits/v7.0.1 --jq .sha)" = "3d3c42e5aac5ba805825da76410c181273ba90b1"
+          test "$(gh api repos/actions/cache/releases/latest --jq .tag_name)" = "v6.1.0"
+          test "$(gh api repos/actions/cache/commits/v6.1.0 --jq .sha)" = "55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+          test "$(gh api repos/jdx/mise-action/releases/latest --jq .tag_name)" = "v4.2.1"
+          test "$(gh api repos/jdx/mise-action/commits/v4.2.1 --jq .sha)" = "dad1bfd3df957f44999b559dd69dc1671cb4e9ea"
+          test "$(gh api repos/mozilla-actions/sccache-action/releases/latest --jq .tag_name)" = "v0.0.10"
+          test "$(gh api repos/mozilla-actions/sccache-action/commits/v0.0.10 --jq .sha)" = "9e7fa8a12102821edf02ca5dbea1acd0f89a2696"
+          test "$(gh api repos/rui314/setup-mold/commits/v1 --jq .sha)" = "9c9c13bf4c3f1adef0cc596abc155580bcb04444"
+          test "$(gh api repos/actions/upload-artifact/releases/latest --jq .tag_name)" = "v7.0.1"
+          test "$(gh api repos/actions/upload-artifact/commits/v7.0.1 --jq .sha)" = "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+          test "$(gh api repos/actions/download-artifact/releases/latest --jq .tag_name)" = "v8.0.1"
+          test "$(gh api repos/actions/download-artifact/commits/v8.0.1 --jq .sha)" = "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+          test "$(gh api repos/actions/attest-build-provenance/releases/latest --jq .tag_name)" = "v4.1.1"
+          test "$(gh api repos/actions/attest-build-provenance/commits/v4.1.1 --jq .sha)" = "0f67c3f4856b2e3261c31976d6725780e5e4c373"
+
+  ci-required:
+    needs: [rust, integration, audit]
+    if: always()
+    name: CI required (${{ matrix.config.lane }})
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true},{"lane":"GitHub","runner":"ubuntu-26.04","writer":false}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') && '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]') }}
+    runs-on: ${{ matrix.config.runner }}
+    steps:
+      - name: Fail on any failed or cancelled need
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS_JSON" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled") | not' >/dev/null \
+            || { echo "A required job failed or was cancelled." >&2; exit 1; }

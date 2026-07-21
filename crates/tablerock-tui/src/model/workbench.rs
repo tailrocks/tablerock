@@ -1,4 +1,8 @@
 //! Workbench shell submodel (TableRock-local; TermRock widgets render it).
+#![allow(
+    clippy::items_after_test_module,
+    reason = "comparison helper stays adjacent to its inspector-focused tests"
+)]
 
 use super::catalog::CatalogModel;
 use super::completion::CompletionSession;
@@ -707,10 +711,11 @@ impl WorkbenchModel {
         ) {
             draft_lines.push("draft: modified row (other cells staged)".into());
         }
-        if let Some(edit) = grid.cell_edit.as_ref() {
-            if edit.abs_row == row && edit.column == col_name {
-                draft_lines.push(format!("editing: {}", edit.buffer));
-            }
+        if let Some(edit) = grid.cell_edit.as_ref()
+            && edit.abs_row == row
+            && edit.column == col_name
+        {
+            draft_lines.push(format!("editing: {}", edit.buffer));
         }
         if !draft_lines.is_empty() {
             insp.text = format!("{}\n{}", insp.text, draft_lines.join("\n"));
@@ -952,10 +957,10 @@ fn extract_json_string(json: &str, key: &str) -> Option<String> {
                 '\\' => out.push('\\'),
                 'u' => {
                     let hex: String = chars.by_ref().take(4).collect();
-                    if let Ok(code) = u32::from_str_radix(&hex, 16) {
-                        if let Some(c) = char::from_u32(code) {
-                            out.push(c);
-                        }
+                    if let Ok(code) = u32::from_str_radix(&hex, 16)
+                        && let Some(c) = char::from_u32(code)
+                    {
+                        out.push(c);
                     }
                 }
                 other => out.push(other),
@@ -983,6 +988,10 @@ pub enum CloseTabOutcome {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::field_reassign_with_default,
+    reason = "tests mutate individual workbench fields to isolate state transitions"
+)]
 mod tests {
     use super::*;
 

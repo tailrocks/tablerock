@@ -376,6 +376,32 @@ impl ConnectionFormModel {
     }
 }
 
+/// Split optional safety prefix from a startup SQL line.
+fn parse_startup_line(trimmed: &str) -> (tablerock_core::StartupSafetyClass, &str) {
+    use tablerock_core::StartupSafetyClass;
+    let lower = trimmed.to_ascii_lowercase();
+    for (prefix, safety) in [
+        ("!dangerous ", StartupSafetyClass::Dangerous),
+        ("!danger ", StartupSafetyClass::Dangerous),
+        ("!d ", StartupSafetyClass::Dangerous),
+        ("!write ", StartupSafetyClass::Write),
+        ("!w ", StartupSafetyClass::Write),
+    ] {
+        if lower.starts_with(prefix) {
+            return (safety, trimmed[prefix.len()..].trim());
+        }
+    }
+    (StartupSafetyClass::ReadOnly, trimmed)
+}
+
+const fn engine_label(engine: EngineKind) -> &'static str {
+    match engine {
+        EngineKind::PostgreSql => "PostgreSQL",
+        EngineKind::ClickHouse => "ClickHouse",
+        EngineKind::Redis => "Redis",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -518,31 +544,5 @@ mod tests {
         assert_eq!(set.actions()[2].statement(), "DROP TABLE tmp");
         assert_eq!(set.review_required(false).len(), 2);
         assert_eq!(set.auto_runnable(false).len(), 1);
-    }
-}
-
-/// Split optional safety prefix from a startup SQL line.
-fn parse_startup_line(trimmed: &str) -> (tablerock_core::StartupSafetyClass, &str) {
-    use tablerock_core::StartupSafetyClass;
-    let lower = trimmed.to_ascii_lowercase();
-    for (prefix, safety) in [
-        ("!dangerous ", StartupSafetyClass::Dangerous),
-        ("!danger ", StartupSafetyClass::Dangerous),
-        ("!d ", StartupSafetyClass::Dangerous),
-        ("!write ", StartupSafetyClass::Write),
-        ("!w ", StartupSafetyClass::Write),
-    ] {
-        if lower.starts_with(prefix) {
-            return (safety, trimmed[prefix.len()..].trim());
-        }
-    }
-    (StartupSafetyClass::ReadOnly, trimmed)
-}
-
-const fn engine_label(engine: EngineKind) -> &'static str {
-    match engine {
-        EngineKind::PostgreSql => "PostgreSQL",
-        EngineKind::ClickHouse => "ClickHouse",
-        EngineKind::Redis => "Redis",
     }
 }

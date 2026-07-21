@@ -103,10 +103,10 @@ pub fn parse_bind_text(raw: &str) -> FilterValue {
     if let Ok(n) = t.parse::<i64>() {
         return FilterValue::Integer(n);
     }
-    if let Ok(n) = t.parse::<f64>() {
-        if t.contains('.') || t.contains('e') || t.contains('E') {
-            return FilterValue::Float(n);
-        }
+    if let Ok(n) = t.parse::<f64>()
+        && (t.contains('.') || t.contains('e') || t.contains('E'))
+    {
+        return FilterValue::Float(n);
     }
     FilterValue::Text(t.to_owned())
 }

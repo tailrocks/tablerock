@@ -976,10 +976,11 @@ impl DataGridModel {
         use super::mutation_draft::DraftMarker;
 
         let col_name = self.columns.get(col).map(String::as_str).unwrap_or("");
-        if let Some(edit) = self.cell_edit.as_ref() {
-            if edit.abs_row == abs_row && edit.column == col_name {
-                return format!("✎ {}", edit.buffer);
-            }
+        if let Some(edit) = self.cell_edit.as_ref()
+            && edit.abs_row == abs_row
+            && edit.column == col_name
+        {
+            return format!("✎ {}", edit.buffer);
         }
         let row_marker = self.drafts.row_marker(abs_row);
         if matches!(row_marker, DraftMarker::Deleted) {
@@ -1006,6 +1007,10 @@ impl DataGridModel {
         base
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "page replacement mirrors the complete engine page contract"
+    )]
     pub fn replace_page(
         &mut self,
         start_row: u64,
@@ -1324,11 +1329,11 @@ impl DataGridModel {
                 _ => format!("[{} {}]", f.column, f.operator),
             })
             .collect();
-        if let Some(raw) = self.raw_where.as_deref() {
-            if !raw.is_empty() {
-                let clipped: String = raw.chars().take(48).collect();
-                chips.push(format!("[WHERE {clipped}]"));
-            }
+        if let Some(raw) = self.raw_where.as_deref()
+            && !raw.is_empty()
+        {
+            let clipped: String = raw.chars().take(48).collect();
+            chips.push(format!("[WHERE {clipped}]"));
         }
         if !self.quick_filter.is_empty() {
             chips.push(format!("[page:{}]", self.quick_filter));
@@ -1487,7 +1492,7 @@ impl DataGridModel {
             }
         }
         for d in &self.drafts.deletes {
-            out.push((d.abs_row, 0.min(self.columns.len().saturating_sub(1))));
+            out.push((d.abs_row, 0));
         }
         out.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
         out.dedup();
@@ -2396,12 +2401,12 @@ impl DataGridModel {
         self.cursor_row = self.start_row;
         self.viewport_row = self.start_row;
         let visible = self.visible_columns();
-        if let Some(first) = visible.first() {
-            if let Some(idx) = self.columns.iter().position(|c| c == first) {
-                self.cursor_col = idx;
-                self.reveal_cursor_column();
-                return;
-            }
+        if let Some(first) = visible.first()
+            && let Some(idx) = self.columns.iter().position(|c| c == first)
+        {
+            self.cursor_col = idx;
+            self.reveal_cursor_column();
+            return;
         }
         self.cursor_col = 0;
         self.viewport_col = 0;
@@ -2421,12 +2426,12 @@ impl DataGridModel {
             .saturating_add(u64::from(self.row_count.saturating_sub(1)));
         self.viewport_row = self.cursor_row;
         let visible = self.visible_columns();
-        if let Some(last) = visible.last() {
-            if let Some(idx) = self.columns.iter().position(|c| c == last) {
-                self.cursor_col = idx;
-                self.reveal_cursor_column();
-                return;
-            }
+        if let Some(last) = visible.last()
+            && let Some(idx) = self.columns.iter().position(|c| c == last)
+        {
+            self.cursor_col = idx;
+            self.reveal_cursor_column();
+            return;
         }
         self.cursor_col = self.columns.len().saturating_sub(1);
         self.viewport_col = self.cursor_col;
@@ -2436,7 +2441,7 @@ impl DataGridModel {
     #[must_use]
     pub fn page_step_rows(&self) -> u64 {
         let n = u64::from(self.row_count.max(1));
-        n.min(100).max(1)
+        n.clamp(1, 100)
     }
 
     /// Rows to jump for HalfPageUp/Down (half of page step, min 1).
@@ -2449,7 +2454,7 @@ impl DataGridModel {
     #[must_use]
     pub fn page_step_visible_columns(&self) -> usize {
         let n = self.visible_columns().len().max(1);
-        (n / 2).max(1).min(10)
+        (n / 2).clamp(1, 10)
     }
 
     /// Step the cursor by `steps` visible columns (`steps` negative = left).
@@ -2611,11 +2616,11 @@ impl DataGridModel {
         let mut changed = false;
         for name in names {
             let fitted = self.measure_column_width(&name);
-            if let Some(entry) = self.column_layout.iter_mut().find(|c| c.name == name) {
-                if entry.width != fitted {
-                    entry.width = fitted;
-                    changed = true;
-                }
+            if let Some(entry) = self.column_layout.iter_mut().find(|c| c.name == name)
+                && entry.width != fitted
+            {
+                entry.width = fitted;
+                changed = true;
             }
         }
         changed
@@ -2992,6 +2997,10 @@ pub fn distinction_from_kind_label(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::field_reassign_with_default,
+    reason = "tests mutate individual model fields to isolate grid behavior"
+)]
 mod tests {
     use super::*;
 

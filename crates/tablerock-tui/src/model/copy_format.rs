@@ -376,6 +376,10 @@ fn sql_literal(value: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::field_reassign_with_default,
+    reason = "tests mutate individual options to isolate formatting contracts"
+)]
 mod tests {
     use super::*;
     use crate::model::grid::{CellDistinction, ProjectedCell};

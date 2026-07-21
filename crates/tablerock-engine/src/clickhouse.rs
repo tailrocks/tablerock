@@ -377,7 +377,7 @@ impl ClickHouseSession {
     ) -> Result<(), ClickHouseError> {
         let mut request = self.client.query(sql);
         for (name, value) in params {
-            request = request.param(*name, *value);
+            request = request.param(name, *value);
         }
         request.execute().await.map_err(|_| ClickHouseError::Query)
     }
@@ -648,7 +648,7 @@ impl ClickHouseSession {
     ) -> Result<Vec<String>, ClickHouseError> {
         let mut request = self.client.query(sql);
         for (name, value) in params {
-            request = request.param(*name, *value);
+            request = request.param(name, *value);
         }
         let cursor = request
             .fetch_bytes("TabSeparated")
@@ -1848,10 +1848,10 @@ pub fn format_clickhouse_progress(
     if let Some(ns) = elapsed_ns {
         parts.push(format!("{} ms", ns / 1_000_000));
     }
-    if let Some(w) = written_rows {
-        if w > 0 {
-            parts.push(format!("wrote {w} rows"));
-        }
+    if let Some(w) = written_rows
+        && w > 0
+    {
+        parts.push(format!("wrote {w} rows"));
     }
     if parts.is_empty() {
         None

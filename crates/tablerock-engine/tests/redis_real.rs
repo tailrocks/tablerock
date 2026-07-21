@@ -192,23 +192,7 @@ async fn connect_session_until_ready(
     config: &RedisConnectConfig,
     security: RedisConnectionSecurity<'_>,
 ) -> RedisSession {
-    tokio::time::timeout(Duration::from_secs(15), async {
-        loop {
-            match RedisSession::connect(config, security).await {
-                Ok(session) => return session,
-                Err(
-                    tablerock_engine::RedisError::Connect
-                    | tablerock_engine::RedisError::Connection
-                    | tablerock_engine::RedisError::Timeout,
-                ) => {
-                    tokio::time::sleep(Duration::from_millis(25)).await;
-                }
-                Err(error) => panic!("Redis fixture rejected a valid connection: {error}"),
-            }
-        }
-    })
-    .await
-    .expect("Redis fixture accepts an adapter connection within fifteen seconds")
+    support::connect_redis_until_ready(config, security).await
 }
 
 async fn start_tls_redis(
@@ -2827,7 +2811,7 @@ async fn seed(port: u16) {
 
 #[tokio::test]
 async fn executes_sequential_pipeline_without_multi_exec() {
-    use tablerock_engine::{RedisPipelineCommand, RedisPipelineOutcome};
+    use tablerock_engine::RedisPipelineCommand;
 
     let container = GenericImage::new("redis", "8.8.0")
         .with_exposed_port(6379.tcp())
@@ -2836,7 +2820,7 @@ async fn executes_sequential_pipeline_without_multi_exec() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
-    let session = RedisSession::connect(
+    let session = connect_session_until_ready(
         &RedisConnectConfig::new(
             text("127.0.0.1"),
             port,
@@ -2846,8 +2830,7 @@ async fn executes_sequential_pipeline_without_multi_exec() {
         ),
         RedisConnectionSecurity::new(),
     )
-    .await
-    .unwrap();
+    .await;
     let outcomes = session
         .execute_pipeline(&[
             RedisPipelineCommand {
@@ -2897,7 +2880,7 @@ async fn collection_page_skip_returns_next_for_large_set() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
-    let session = RedisSession::connect(
+    let session = connect_session_until_ready(
         &RedisConnectConfig::new(
             text("127.0.0.1"),
             port,
@@ -2907,8 +2890,7 @@ async fn collection_page_skip_returns_next_for_large_set() {
         ),
         RedisConnectionSecurity::new(),
     )
-    .await
-    .unwrap();
+    .await;
     let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
     let mut c = client.get_multiplexed_async_connection().await.unwrap();
     let key = b"tablerock-page-set";
@@ -2947,7 +2929,7 @@ async fn applies_multi_type_collection_mutations_non_transactionally() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
-    let session = RedisSession::connect(
+    let session = connect_session_until_ready(
         &RedisConnectConfig::new(
             text("127.0.0.1"),
             port,
@@ -2957,8 +2939,7 @@ async fn applies_multi_type_collection_mutations_non_transactionally() {
         ),
         RedisConnectionSecurity::new(),
     )
-    .await
-    .unwrap();
+    .await;
 
     let hash_key = b"tablerock-mut-hash";
     let set_key = b"tablerock-mut-set";
@@ -3125,7 +3106,7 @@ async fn lists_catalog_logical_databases() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
-    let session = RedisSession::connect(
+    let session = connect_session_until_ready(
         &RedisConnectConfig::new(
             text("127.0.0.1"),
             port,
@@ -3135,8 +3116,7 @@ async fn lists_catalog_logical_databases() {
         ),
         RedisConnectionSecurity::new(),
     )
-    .await
-    .unwrap();
+    .await;
     let subtree = session
         .catalog(CatalogRequest::RedisLogicalDatabases {
             limits: PageLimits::new(64, 1, 1024, 64),
@@ -3197,7 +3177,7 @@ async fn key_type_list_stream_and_info_snapshot() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
-    let session = RedisSession::connect(
+    let session = connect_session_until_ready(
         &RedisConnectConfig::new(
             text("127.0.0.1"),
             port,
@@ -3207,8 +3187,7 @@ async fn key_type_list_stream_and_info_snapshot() {
         ),
         RedisConnectionSecurity::new(),
     )
-    .await
-    .unwrap();
+    .await;
 
     // Seed fixture via separate redis-rs connection.
     let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();

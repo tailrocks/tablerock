@@ -15,8 +15,7 @@ use tablerock_core::{
     StatementText, Truncation, ValueKind,
 };
 use tablerock_engine::{
-    DriverPageRequest, DriverPageStream, DriverSession, PostgresConnectConfig, PostgresSession,
-    PostgresTlsMode,
+    DriverPageRequest, DriverSession, PostgresConnectConfig, PostgresSession, PostgresTlsMode,
 };
 use testcontainers::{
     GenericImage, ImageExt,

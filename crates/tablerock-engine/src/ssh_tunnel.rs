@@ -80,7 +80,6 @@ impl SshPublicKeyAuth {
         &self.username
     }
 
-    #[must_use]
     pub fn public_key_openssh(&self) -> Result<String, SshTunnelError> {
         self.private_key
             .public_key()
@@ -238,10 +237,8 @@ impl Handler for ClientHandler {
             self.bastion_port,
             server_public_key,
         );
-        if accept {
-            if let Ok(mut guard) = self.presented.lock() {
-                *guard = Some(server_public_key.clone());
-            }
+        if accept && let Ok(mut guard) = self.presented.lock() {
+            *guard = Some(server_public_key.clone());
         }
         Ok(accept)
     }
@@ -257,10 +254,11 @@ pub const SSH_KEEPALIVE_MAX: usize = 3;
 /// Build the russh client config used for all TableRock bastion sessions.
 #[must_use]
 pub fn ssh_client_config() -> client::Config {
-    let mut conf = client::Config::default();
-    conf.keepalive_interval = Some(std::time::Duration::from_secs(SSH_KEEPALIVE_INTERVAL_SECS));
-    conf.keepalive_max = SSH_KEEPALIVE_MAX;
-    conf
+    client::Config {
+        keepalive_interval: Some(std::time::Duration::from_secs(SSH_KEEPALIVE_INTERVAL_SECS)),
+        keepalive_max: SSH_KEEPALIVE_MAX,
+        ..client::Config::default()
+    }
 }
 
 /// Open SSH session with password auth (host-key policy enforced).
@@ -477,6 +475,10 @@ pub async fn spawn_local_forward(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::field_reassign_with_default,
+    reason = "tests mutate one config field at a time to isolate behavior"
+)]
 mod tests {
     use super::*;
     use std::io::Write;

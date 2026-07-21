@@ -51,6 +51,10 @@ impl Update {
     }
 }
 
+#[expect(
+    clippy::collapsible_match,
+    reason = "paste handling first selects dialog ownership, then writable variants"
+)]
 pub fn update(model: &mut Model, message: Message) -> Update {
     match message {
         Message::Resize { width, height } => {
@@ -315,9 +319,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 return Update::unchanged();
             }
             model.set_confirm(None);
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             // Surface as list failure without dropping existing rows if possible.
             model.set_profiles(ProfileListState::Failed {
                 request_token,
@@ -334,27 +336,25 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::HealthFailed { reason, .. }) => {
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(mut session) = model.session().cloned() {
                 session.status = Some(format!("unhealthy: {label}"));
                 model.set_session(Some(session));
             }
             model.workbench_mut().context.health_label = format!("unhealthy: {label}");
             // BoundedAutomatic: start reconnect attempt 0 from last draft.
-            if crate::model::saved_filter::should_auto_reconnect(&model.reconnect_preference) {
-                if let Some(draft) = model.last_connect_draft.clone() {
-                    let token = model.mint_request_token();
-                    return Update {
-                        render: true,
-                        effect: Some(Effect::ReconnectSession {
-                            request_token: token,
-                            draft,
-                            attempt: 0,
-                        }),
-                    };
-                }
+            if crate::model::saved_filter::should_auto_reconnect(&model.reconnect_preference)
+                && let Some(draft) = model.last_connect_draft.clone()
+            {
+                let token = model.mint_request_token();
+                return Update {
+                    render: true,
+                    effect: Some(Effect::ReconnectSession {
+                        request_token: token,
+                        draft,
+                        attempt: 0,
+                    }),
+                };
             }
             Update::render()
         }
@@ -398,9 +398,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::TestFailed { reason, .. }) => {
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             model.editor_mut().test_status = Some(format!("failed: {label}"));
             Update::render()
         }
@@ -519,9 +517,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if !catalog.accepts(request_token, context_revision) {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             model.workbench_mut().catalog = CatalogModel::Failed {
                 request_token,
                 context_revision,
@@ -709,9 +705,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if !loading {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             model.workbench_mut().history = crate::model::history::HistoryPanel::Failed {
                 request_token,
                 reason: label,
@@ -806,9 +800,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::SqlFileFailed { reason, .. }) => {
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -853,39 +845,34 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::ClipboardFailed { reason, .. }) => {
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
             Update::render()
         }
         Message::Engine(EngineMsg::ColumnLayoutLoaded { layout_json, .. }) => {
-            if let Some(json) = layout_json {
-                if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                    let _ = grid.apply_layout_json(&json);
-                }
+            if let Some(json) = layout_json
+                && let Some(grid) = model.workbench_mut().active_grid_mut()
+            {
+                let _ = grid.apply_layout_json(&json);
             }
             // After layout load (or miss), start the browse stream.
             rebrowse_active_table(model)
         }
         Message::Engine(EngineMsg::ColumnLayoutSaved { .. }) => Update::render(),
         Message::Engine(EngineMsg::ColumnLayoutFailed { reason, .. }) => {
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
             Update::render()
         }
         Message::Engine(EngineMsg::SavedFilterLibraryLoaded { library_json, .. }) => {
-            if let Some(json) = library_json {
-                if let Some(lib) = crate::model::saved_filter::SavedFilterLibrary::from_json(&json)
-                {
-                    model.workbench_mut().filter_library = lib;
-                }
+            if let Some(json) = library_json
+                && let Some(lib) = crate::model::saved_filter::SavedFilterLibrary::from_json(&json)
+            {
+                model.workbench_mut().filter_library = lib;
             }
             // Continue connect path: catalog for restored context.
             load_workbench_root_catalog(model)
@@ -897,9 +884,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::SavedFilterLibraryFailed { reason, .. }) => {
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             // Connect-path load failures still open the catalog.
             if model.session().is_some() && matches!(model.workbench().catalog, CatalogModel::Idle)
             {
@@ -959,9 +944,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             model.workbench_mut().pending_review_token_hex = None;
             model.workbench_mut().pending_review_expires_at_ms = None;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
@@ -994,23 +977,22 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                 model.workbench_mut().mark_active_dirty(false);
                 if was_redis {
                     // Re-open key view so collection page reflects server.
-                    if let Some((_, key, _)) = model.workbench().redis_stage_target.clone() {
-                        if let Some(session_id_hex) =
+                    if let Some((_, key, _)) = model.workbench().redis_stage_target.clone()
+                        && let Some(session_id_hex) =
                             model.session().map(|s| s.session_id_hex.clone())
-                        {
-                            let token = model.mint_request_token();
-                            let context_revision = model.workbench().context_revision;
-                            return Update {
-                                render: true,
-                                effect: Some(Effect::OpenRedisKey {
-                                    request_token: token,
-                                    session_id_hex,
-                                    context_revision,
-                                    key,
-                                    collection_skip: 0,
-                                }),
-                            };
-                        }
+                    {
+                        let token = model.mint_request_token();
+                        let context_revision = model.workbench().context_revision;
+                        return Update {
+                            render: true,
+                            effect: Some(Effect::OpenRedisKey {
+                                request_token: token,
+                                session_id_hex,
+                                context_revision,
+                                key,
+                                collection_skip: 0,
+                            }),
+                        };
                     }
                     return Update::render();
                 }
@@ -1032,9 +1014,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if needs_re_review {
                 model.workbench_mut().pending_review_token_hex = None;
                 model.workbench_mut().pending_review_expires_at_ms = None;
@@ -1096,9 +1076,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1147,9 +1125,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1197,9 +1173,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1239,9 +1213,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1281,9 +1253,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1496,9 +1466,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(l) => l,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1516,9 +1484,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1573,9 +1539,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1625,9 +1589,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1678,9 +1640,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1739,9 +1699,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1782,9 +1740,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             if model.workbench().context_revision != context_revision {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1801,9 +1757,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             partial_removed,
             ..
         }) => {
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(format!(
                     "export failed: {label} (partial_removed={partial_removed})"
@@ -1826,9 +1780,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             {
                 return Update::unchanged();
             }
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(label);
             }
@@ -1876,9 +1828,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::ConnectFailed { reason, .. }) => {
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             model.editor_mut().test_status = Some(format!("connect failed: {label}"));
             if let Some(session) = model.session().cloned() {
                 let mut session = session;
@@ -1894,9 +1844,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             Update::render()
         }
         Message::Engine(EngineMsg::DisconnectFailed { reason, .. }) => {
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(mut session) = model.session().cloned() {
                 session.status = Some(format!("disconnect failed: {label}"));
                 model.set_session(Some(session));
@@ -1939,9 +1887,7 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
         }
         Message::Engine(EngineMsg::ReconnectStopped { reason, .. }) => {
-            let label = match reason {
-                FailureProjection::Label(label) => label,
-            };
+            let FailureProjection::Label(label) = reason;
             if let Some(mut session) = model.session().cloned() {
                 session.status = Some(format!("reconnect stopped: {label}"));
                 model.set_session(Some(session));
@@ -2003,10 +1949,10 @@ pub fn update(model: &mut Model, message: Message) -> Update {
                     .active_grid()
                     .is_some_and(|g| g.cell_edit.is_some()) =>
         {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.commit_cell_edit() {
-                    model.workbench_mut().mark_active_dirty(true);
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.commit_cell_edit()
+            {
+                model.workbench_mut().mark_active_dirty(true);
             }
             Update::render()
         }
@@ -2462,13 +2408,14 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         match tablerock_core::parse_connection_url(trimmed) {
                             Ok(draft) => {
                                 let mut summary = draft.safety_summary();
-                                if let Some(secret) = draft.password.as_deref() {
-                                    if !secret.is_empty() && summary.contains(secret) {
-                                        model.set_confirm(None);
-                                        model.editor_mut().validation_error =
-                                            Some("refusing to show password in summary".into());
-                                        return Update::render();
-                                    }
+                                if let Some(secret) = draft.password.as_deref()
+                                    && !secret.is_empty()
+                                    && summary.contains(secret)
+                                {
+                                    model.set_confirm(None);
+                                    model.editor_mut().validation_error =
+                                        Some("refusing to show password in summary".into());
+                                    return Update::render();
                                 }
                                 let engine_label = match draft.engine {
                                     tablerock_core::Engine::PostgreSql => "PostgreSQL",
@@ -2901,12 +2848,11 @@ fn activate_selected_action(model: &mut Model) -> Update {
                         format!("{y:04}-{m:02}-{d:02}{time_suffix}")
                     };
                     model.set_confirm(None);
-                    if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                        if let Some(edit) = grid.cell_edit.as_mut() {
-                            if edit.kind == crate::model::grid::CellDistinction::Temporal {
-                                edit.buffer = value;
-                            }
-                        }
+                    if let Some(grid) = model.workbench_mut().active_grid_mut()
+                        && let Some(edit) = grid.cell_edit.as_mut()
+                        && edit.kind == crate::model::grid::CellDistinction::Temporal
+                    {
+                        edit.buffer = value;
                     }
                     Update::render()
                 }
@@ -5776,20 +5722,15 @@ fn activate_selected_action(model: &mut Model) -> Update {
         }
         ActionId::GoToFirstRow if model.screen() == Screen::Workbench => jump_to_row(model, 0),
         ActionId::GoToLastRow if model.screen() == Screen::Workbench => {
-            let last = model
-                .workbench()
-                .active_grid()
-                .and_then(|g| match g.totals {
-                    crate::model::grid::GridRowTotal::Exact(n) if n > 0 => Some(n - 1),
-                    crate::model::grid::GridRowTotal::Estimated(n) if n > 0 => Some(n - 1),
-                    _ => {
-                        // Fall back to end of resident window.
-                        Some(
-                            g.start_row
-                                .saturating_add(u64::from(g.row_count.saturating_sub(1))),
-                        )
-                    }
-                });
+            let last = model.workbench().active_grid().map(|g| match g.totals {
+                crate::model::grid::GridRowTotal::Exact(n) if n > 0 => n - 1,
+                crate::model::grid::GridRowTotal::Estimated(n) if n > 0 => n - 1,
+                _ => {
+                    // Fall back to end of resident window.
+                    g.start_row
+                        .saturating_add(u64::from(g.row_count.saturating_sub(1)))
+                }
+            });
             let Some(last) = last else {
                 return Update::unchanged();
             };
@@ -5995,126 +5936,126 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
         }
         ActionId::SoloColumn if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.solo_cursor_column() {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.solo_cursor_column()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::SoloIdentityColumns if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.solo_identity_columns() {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.solo_identity_columns()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::HideEmptyColumns if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.hide_empty_resident_columns() {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.hide_empty_resident_columns()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::SnapCursorVisible if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.ensure_cursor_on_visible_column() {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.ensure_cursor_on_visible_column()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::ShowAllColumns if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.show_all_columns() {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.show_all_columns()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::InvertColumns if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.invert_column_visibility() {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.invert_column_visibility()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::MoveColumnLeft if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.move_cursor_column(-1) {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.move_cursor_column(-1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::MoveColumnRight if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.move_cursor_column(1) {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.move_cursor_column(1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::MoveColumnFirst if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.move_cursor_column_to_edge(-1) {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.move_cursor_column_to_edge(-1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::MoveColumnLast if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.move_cursor_column_to_edge(1) {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.move_cursor_column_to_edge(1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::NarrowColumn if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.adjust_cursor_column_width(-2) {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.adjust_cursor_column_width(-2)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::WidenColumn if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.adjust_cursor_column_width(2) {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.adjust_cursor_column_width(2)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::FitColumn if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.fit_cursor_column() {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.fit_cursor_column()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::FitAllColumns if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.fit_all_visible_columns() {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.fit_all_visible_columns()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::UndoStaged if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.drafts.undo() {
-                    let empty = grid.drafts.is_empty();
-                    if empty {
-                        model.workbench_mut().mark_active_dirty(false);
-                    }
-                    return Update::render();
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.drafts.undo()
+            {
+                let empty = grid.drafts.is_empty();
+                if empty {
+                    model.workbench_mut().mark_active_dirty(false);
                 }
+                return Update::render();
             }
             Update::unchanged()
         }
@@ -6205,10 +6146,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
             register_staged_review(model)
         }
         ActionId::EditCell if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.begin_cell_edit() {
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.begin_cell_edit()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
@@ -6343,296 +6284,274 @@ fn activate_selected_action(model: &mut Model) -> Update {
             }
         }
         ActionId::ToggleBool if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.toggle_boolean() {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.toggle_boolean()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::SetNull if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    edit.set_null();
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+            {
+                edit.set_null();
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::SetToday if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.set_today() {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.set_today()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::SetYesterday if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.set_yesterday() {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.set_yesterday()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::SetTomorrow if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.set_tomorrow() {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.set_tomorrow()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::SetNow if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.set_now() {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.set_now()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::SetStartOfDay if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.set_start_of_day() {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.set_start_of_day()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::SetNoon if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.set_noon() {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.set_noon()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::SetEndOfDay if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.set_end_of_day() {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.set_end_of_day()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::IncDay if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_day(1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_day(1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::DecDay if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_day(-1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_day(-1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::IncMonth if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_month(1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_month(1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::DecMonth if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_month(-1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_month(-1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::IncYear if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_year(1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_year(1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::DecYear if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_year(-1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_year(-1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::IncHour if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_hour(1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_hour(1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::DecHour if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_hour(-1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_hour(-1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::IncMinute if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_minute(1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_minute(1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::DecMinute if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_minute(-1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_minute(-1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::PickDate if model.screen() == Screen::Workbench => open_pick_date(model),
         ActionId::IncNumber if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_number(1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_number(1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::DecNumber if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.step_number(-1) {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.step_number(-1)
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::FormatJson if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.format_structured() {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.format_structured()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::CompactJson if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if let Some(edit) = grid.cell_edit.as_mut() {
-                    if edit.compact_structured() {
-                        return Update::render();
-                    }
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && let Some(edit) = grid.cell_edit.as_mut()
+                && edit.compact_structured()
+            {
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::DeleteRow if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.stage_delete_cursor_row() {
-                    model.workbench_mut().mark_active_dirty(true);
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.stage_delete_cursor_row()
+            {
+                model.workbench_mut().mark_active_dirty(true);
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::InsertRow if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.stage_insert_blank().is_some() {
-                    model.workbench_mut().mark_active_dirty(true);
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.stage_insert_blank().is_some()
+            {
+                model.workbench_mut().mark_active_dirty(true);
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::DuplicateRow if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.stage_insert_from_cursor().is_some() {
-                    model.workbench_mut().mark_active_dirty(true);
-                    return Update::render();
-                }
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.stage_insert_from_cursor().is_some()
+            {
+                model.workbench_mut().mark_active_dirty(true);
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::EditInsert if model.screen() == Screen::Workbench => open_edit_insert(model),
         ActionId::DiscardLastInsert if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.drafts.discard_last_insert() {
-                    let empty = grid.drafts.is_empty();
-                    if empty {
-                        model.workbench_mut().mark_active_dirty(false);
-                    }
-                    return Update::render();
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.drafts.discard_last_insert()
+            {
+                let empty = grid.drafts.is_empty();
+                if empty {
+                    model.workbench_mut().mark_active_dirty(false);
                 }
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::UnstageCell if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.unstage_cursor_cell() {
-                    let empty = grid.drafts.is_empty();
-                    if empty {
-                        model.workbench_mut().mark_active_dirty(false);
-                    }
-                    return Update::render();
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.unstage_cursor_cell()
+            {
+                let empty = grid.drafts.is_empty();
+                if empty {
+                    model.workbench_mut().mark_active_dirty(false);
                 }
+                return Update::render();
             }
             Update::unchanged()
         }
         ActionId::UnstageRow if model.screen() == Screen::Workbench => {
-            if let Some(grid) = model.workbench_mut().active_grid_mut() {
-                if grid.unstage_cursor_row() {
-                    let empty = grid.drafts.is_empty();
-                    if empty {
-                        model.workbench_mut().mark_active_dirty(false);
-                    }
-                    return Update::render();
+            if let Some(grid) = model.workbench_mut().active_grid_mut()
+                && grid.unstage_cursor_row()
+            {
+                let empty = grid.drafts.is_empty();
+                if empty {
+                    model.workbench_mut().mark_active_dirty(false);
                 }
+                return Update::render();
             }
             Update::unchanged()
         }
@@ -8149,10 +8068,10 @@ fn is_safe_group_name(name: &str) -> bool {
 }
 
 fn relation_ddl_target(model: &Model) -> Option<(String, String)> {
-    if let Some(grid) = model.workbench().active_grid() {
-        if let (Some(schema), Some(table)) = (grid.base_schema.clone(), grid.base_table.clone()) {
-            return Some((schema, table));
-        }
+    if let Some(grid) = model.workbench().active_grid()
+        && let (Some(schema), Some(table)) = (grid.base_schema.clone(), grid.base_table.clone())
+    {
+        return Some((schema, table));
     }
     let insp = &model.workbench().inspector;
     if insp.has_structure_target() {
@@ -9858,7 +9777,7 @@ mod tests {
         model.set_action(ActionId::RunSql);
         let isolated = update(&mut model, Message::Activate);
         match isolated.effects().next() {
-            Some(Effect::RedisBlockingPop { key, .. }) => assert_eq!(&*key, "q"),
+            Some(Effect::RedisBlockingPop { key, .. }) => assert_eq!(key, "q"),
             other => panic!("expected RedisBlockingPop, got {other:?}"),
         }
         // Mixed pipeline with blocking still denied.
@@ -9927,7 +9846,7 @@ mod tests {
                 collection_skip,
                 ..
             }) => {
-                assert_eq!(&*key, "bigset");
+                assert_eq!(key, "bigset");
                 assert_eq!(*collection_skip, 32);
             }
             other => panic!("expected OpenRedisKey with skip, got {other:?}"),
@@ -10050,7 +9969,7 @@ mod tests {
         let out = update(&mut model, Message::Activate);
         match out.effects().next() {
             Some(Effect::ScanRedisKeys { pattern, count, .. }) => {
-                assert_eq!(&*pattern, "user:*");
+                assert_eq!(pattern, "user:*");
                 assert_eq!(*count, 100);
             }
             other => panic!("expected ScanRedisKeys with MATCH pattern, got {other:?}"),
@@ -11297,10 +11216,10 @@ mod tests {
                 .map(|e| e.buffer.as_str()),
             Some("alice")
         );
-        if let Some(grid) = model.workbench_mut().active_grid_mut() {
-            if let Some(edit) = grid.cell_edit.as_mut() {
-                edit.buffer = "carol".into();
-            }
+        if let Some(grid) = model.workbench_mut().active_grid_mut()
+            && let Some(edit) = grid.cell_edit.as_mut()
+        {
+            edit.buffer = "carol".into();
         }
         model.set_action(ActionId::CommitCellEdit);
         let _ = update(&mut model, Message::Activate);

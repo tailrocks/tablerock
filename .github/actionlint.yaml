@@ -1,0 +1,4 @@
+self-hosted-runner:
+  labels:
+    - velnor-target-mvp
+    - ubuntu-26.04

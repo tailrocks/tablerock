@@ -2,7 +2,7 @@ name: Publish Homebrew Preview
 
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers] gated before checkout
-    workflows: ["Checks"]
+    workflows: ["CI"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   # A real multi-target publish must finish; later green-main events queue.
-  group: tablerock-preview-publish
+  group: preview-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -24,7 +24,8 @@ jobs:
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_repository.full_name == github.repository &&
        github.event.workflow_run.head_branch == 'main')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
     outputs:
       source: ${{ steps.filter.outputs.source }}
       sha: ${{ steps.source.outputs.sha }}
@@ -47,7 +48,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.source.outputs.sha }}
-          fetch-depth: 0
+          fetch-depth: 0 # Required to diff against previously published source SHA.
           persist-credentials: false
 
       - name: Classify changed paths
@@ -133,6 +134,11 @@ jobs:
     needs: source-changed
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
     permissions:
       contents: read
       id-token: write
@@ -148,11 +154,11 @@ jobs:
             os: macos-latest
             builder: cargo
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-26.04
             builder: zigbuild
             build_target: aarch64-unknown-linux-gnu.2.17
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-26.04
             builder: zigbuild
             build_target: x86_64-unknown-linux-gnu.2.17
     steps:
@@ -161,9 +167,10 @@ jobs:
           ref: ${{ needs.source-changed.outputs.sha }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          targets: ${{ matrix.target }}
+          install_args: rust
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         if: matrix.builder == 'zigbuild'
@@ -173,6 +180,16 @@ jobs:
             zig = "0.16.0"
             "cargo:cargo-zigbuild" = "0.23.0"
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install target
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add "$TARGET"
+
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
 
       - name: Build Apple CLI
         if: matrix.builder == 'cargo'
@@ -214,6 +231,7 @@ jobs:
     needs: source-changed
     if: needs.source-changed.outputs.source == 'true'
     runs-on: macos-26
+    timeout-minutes: 60
     permissions:
       contents: read
       id-token: write
@@ -224,7 +242,9 @@ jobs:
           ref: ${{ needs.source-changed.outputs.sha }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Select latest stable Xcode 26
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
@@ -258,7 +278,8 @@ jobs:
   publish:
     needs: [source-changed, build-cli, build-app]
     if: needs.source-changed.outputs.source == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:

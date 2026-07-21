@@ -1207,26 +1207,27 @@ impl PostgresSession {
         for (role, m) in &memberships {
             lines.push(format!("{role} <- {m}"));
         }
-        if let (Some(schema), Some(table)) = (schema, table) {
-            if !schema.is_empty() && !table.is_empty() {
-                match self.list_table_privileges(schema, table, 64).await {
-                    Ok(privs) => {
+        if let (Some(schema), Some(table)) = (schema, table)
+            && !schema.is_empty()
+            && !table.is_empty()
+        {
+            match self.list_table_privileges(schema, table, 64).await {
+                Ok(privs) => {
+                    lines.push(format!(
+                        "--- table privileges {schema}.{table} ({}) ---",
+                        privs.len()
+                    ));
+                    for p in privs {
                         lines.push(format!(
-                            "--- table privileges {schema}.{table} ({}) ---",
-                            privs.len()
-                        ));
-                        for p in privs {
-                            lines.push(format!(
-                                "{} {} grantable={}",
-                                p.grantee, p.privilege, p.is_grantable
-                            ));
-                        }
-                    }
-                    Err(_) => {
-                        lines.push(format!(
-                            "--- table privileges {schema}.{table}: unavailable ---"
+                            "{} {} grantable={}",
+                            p.grantee, p.privilege, p.is_grantable
                         ));
                     }
+                }
+                Err(_) => {
+                    lines.push(format!(
+                        "--- table privileges {schema}.{table}: unavailable ---"
+                    ));
                 }
             }
         }

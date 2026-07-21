@@ -2,6 +2,10 @@
 //!
 //! Password is passed only via `PGPASSWORD` environment variable — never argv.
 //! Cancellation kills the process group and removes incomplete output files.
+#![allow(
+    clippy::too_many_arguments,
+    reason = "process boundary keeps connection, credential, path, and cancellation inputs explicit"
+)]
 
 use std::{
     path::{Path, PathBuf},

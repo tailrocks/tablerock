@@ -49,8 +49,9 @@ impl CatalogNodeProjection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum CatalogModel {
+    #[default]
     Idle,
     Loading {
         request_token: RequestToken,
@@ -69,12 +70,6 @@ pub enum CatalogModel {
         context_revision: u64,
         reason: String,
     },
-}
-
-impl Default for CatalogModel {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 impl CatalogModel {

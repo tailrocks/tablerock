@@ -270,9 +270,7 @@ fn json_escape_key(s: &str) -> String {
 fn json_value(s: &str) -> String {
     if s == "NULL" {
         "null".into()
-    } else if s == "true" || s == "false" {
-        s.to_owned()
-    } else if s.parse::<i64>().is_ok() || s.parse::<f64>().is_ok() {
+    } else if s == "true" || s == "false" || s.parse::<i64>().is_ok() || s.parse::<f64>().is_ok() {
         s.to_owned()
     } else {
         format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
@@ -311,13 +309,7 @@ where
             None => break,
         }
     }
-    match exporter.finish() {
-        Ok(outcome) => Ok(outcome),
-        Err(e) => {
-            // finish consumes exporter only on Ok; on Path error the writer may still drop-clean.
-            Err(e)
-        }
-    }
+    exporter.finish()
 }
 
 #[cfg(test)]

@@ -414,6 +414,10 @@ pub trait DriverSession: Send + Sync {
     ///
     /// `collection_skip` skips entries for hash/set/zset pages (0 = first page).
     /// Returns `next_skip` when more collection entries remain.
+    #[expect(
+        clippy::type_complexity,
+        reason = "driver trait preserves typed Redis page metadata across adapters"
+    )]
     fn redis_key_view_lines<'a>(
         &'a self,
         key: &'a [u8],
@@ -577,17 +581,17 @@ impl DriverSession for PostgresSession {
                 .map(|delivery| match delivery {
                     crate::PostgresNoticeDelivery::Notice(notice) => {
                         let mut line = format!("{}: {}", notice.severity(), notice.message());
-                        if let Some(detail) = notice.detail() {
-                            if !detail.is_empty() {
-                                line.push_str(" · detail: ");
-                                line.push_str(detail);
-                            }
+                        if let Some(detail) = notice.detail()
+                            && !detail.is_empty()
+                        {
+                            line.push_str(" · detail: ");
+                            line.push_str(detail);
                         }
-                        if let Some(hint) = notice.hint() {
-                            if !hint.is_empty() {
-                                line.push_str(" · hint: ");
-                                line.push_str(hint);
-                            }
+                        if let Some(hint) = notice.hint()
+                            && !hint.is_empty()
+                        {
+                            line.push_str(" · hint: ");
+                            line.push_str(hint);
                         }
                         line
                     }

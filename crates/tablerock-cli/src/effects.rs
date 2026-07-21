@@ -1,4 +1,8 @@
 //! Async effect executor: pure TUI effects → persistence/engine → messages.
+#![allow(
+    clippy::too_many_arguments,
+    reason = "effect handlers expose complete typed message payloads at the async boundary"
+)]
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -4113,10 +4117,10 @@ async fn scan_redis_keys(
     };
     let mut keys = Vec::new();
     for row in 0..page.envelope().row_count() {
-        if let Ok(cell) = page.cell(row, 0) {
-            if !cell.is_null() {
-                keys.push(String::from_utf8_lossy(cell.bytes()).into_owned());
-            }
+        if let Ok(cell) = page.cell(row, 0)
+            && !cell.is_null()
+        {
+            keys.push(String::from_utf8_lossy(cell.bytes()).into_owned());
         }
     }
     // Heuristic: full page means more may exist.
@@ -5304,10 +5308,10 @@ async fn fetch_primary_key_columns(
     let mut names = Vec::new();
     let rows = page.envelope().row_count();
     for row in 0..rows {
-        if let Ok(cell) = page.cell(row, 0) {
-            if !cell.is_null() {
-                names.push(String::from_utf8_lossy(cell.bytes()).into_owned());
-            }
+        if let Ok(cell) = page.cell(row, 0)
+            && !cell.is_null()
+        {
+            names.push(String::from_utf8_lossy(cell.bytes()).into_owned());
         }
     }
     Some(names)
@@ -5842,52 +5846,52 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
     let mut prompt = FailPrompt;
     let mut password = String::new();
     let mut password_source = PasswordSourceSpec::PromptOnConnect;
-    if let Some(binding) = props.binding(ProfileProperty::Password) {
-        if let Some(source) = binding.secret_source() {
-            match source.kind() {
-                SecretSourceKind::HostEnvironment(env) => {
-                    // Keep env *name* in draft; resolve only at connect time.
-                    password = env.as_str().to_owned();
-                    password_source = PasswordSourceSpec::HostEnvironment {
-                        var: env.as_str().to_owned(),
-                    };
-                }
-                SecretSourceKind::OnePassword(reference) => {
-                    // Keep IDs only; resolve via `op read` at connect time.
-                    password = reference.to_compact_wire();
-                    password_source = PasswordSourceSpec::OnePassword {
-                        account_id: reference.account_id().as_str().to_owned(),
-                        vault_id: reference.vault_id().as_str().to_owned(),
-                        item_id: reference.item_id().as_str().to_owned(),
-                        section_id: reference.section_id().map(|s| s.as_str().to_owned()),
-                        field_id: reference.field_id().as_str().to_owned(),
-                        breadcrumb: reference.breadcrumb().to_owned(),
-                    };
-                }
-                SecretSourceKind::PromptOnConnect => {
-                    password_source = PasswordSourceSpec::PromptOnConnect;
-                }
-                SecretSourceKind::DangerousPlaintext(_) => {
-                    match resolve_for_connect(binding, connection.name(), &mut prompt) {
-                        Ok(Some(secret)) => {
-                            password = String::from_utf8_lossy(secret.as_bytes()).into_owned();
-                            password_source = PasswordSourceSpec::DangerousPlaintext;
-                        }
-                        Ok(None) => {}
-                        Err(error) => return Err(error.to_string()),
+    if let Some(binding) = props.binding(ProfileProperty::Password)
+        && let Some(source) = binding.secret_source()
+    {
+        match source.kind() {
+            SecretSourceKind::HostEnvironment(env) => {
+                // Keep env *name* in draft; resolve only at connect time.
+                password = env.as_str().to_owned();
+                password_source = PasswordSourceSpec::HostEnvironment {
+                    var: env.as_str().to_owned(),
+                };
+            }
+            SecretSourceKind::OnePassword(reference) => {
+                // Keep IDs only; resolve via `op read` at connect time.
+                password = reference.to_compact_wire();
+                password_source = PasswordSourceSpec::OnePassword {
+                    account_id: reference.account_id().as_str().to_owned(),
+                    vault_id: reference.vault_id().as_str().to_owned(),
+                    item_id: reference.item_id().as_str().to_owned(),
+                    section_id: reference.section_id().map(|s| s.as_str().to_owned()),
+                    field_id: reference.field_id().as_str().to_owned(),
+                    breadcrumb: reference.breadcrumb().to_owned(),
+                };
+            }
+            SecretSourceKind::PromptOnConnect => {
+                password_source = PasswordSourceSpec::PromptOnConnect;
+            }
+            SecretSourceKind::DangerousPlaintext(_) => {
+                match resolve_for_connect(binding, connection.name(), &mut prompt) {
+                    Ok(Some(secret)) => {
+                        password = String::from_utf8_lossy(secret.as_bytes()).into_owned();
+                        password_source = PasswordSourceSpec::DangerousPlaintext;
                     }
+                    Ok(None) => {}
+                    Err(error) => return Err(error.to_string()),
                 }
-                SecretSourceKind::Keychain(_) => {
-                    match resolve_for_connect(binding, connection.name(), &mut prompt) {
-                        Ok(Some(secret)) => {
-                            password = String::from_utf8_lossy(secret.as_bytes()).into_owned();
-                        }
-                        Ok(None) => {}
-                        Err(SecretResolutionError::PromptFailed) => {
-                            return Err("password prompt required".into());
-                        }
-                        Err(error) => return Err(error.to_string()),
+            }
+            SecretSourceKind::Keychain(_) => {
+                match resolve_for_connect(binding, connection.name(), &mut prompt) {
+                    Ok(Some(secret)) => {
+                        password = String::from_utf8_lossy(secret.as_bytes()).into_owned();
                     }
+                    Ok(None) => {}
+                    Err(SecretResolutionError::PromptFailed) => {
+                        return Err("password prompt required".into());
+                    }
+                    Err(error) => return Err(error.to_string()),
                 }
             }
         }
@@ -6310,7 +6314,7 @@ async fn save_connection(
     draft: ConnectionDraft,
 ) -> Message {
     let joined = tokio::task::spawn_blocking(move || {
-        let aggregate = draft_to_aggregate(&draft).map_err(|label| label)?;
+        let aggregate = draft_to_aggregate(&draft)?;
         let guard = persistence.blocking_lock();
         let Some(actor) = guard.as_ref() else {
             return Err("persistence unavailable".to_owned());
