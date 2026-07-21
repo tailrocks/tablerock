@@ -99,6 +99,19 @@ jobs:
             xcodegen generate --spec native/App/project.yml
           git diff --exit-code -- native/App/TableRock.xcodeproj native/App/TableRock-Info.plist
 
+      - name: Run canonical Release test plan
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          xcodebuild test \
+            -project native/App/TableRock.xcodeproj \
+            -scheme TableRock \
+            -testPlan Release \
+            -destination 'platform=macOS' \
+            -resultBundlePath artifacts/TableRock-Release.xcresult \
+            CODE_SIGN_IDENTITY=- \
+            | tee artifacts/xcodebuild-release-tests.log
+
       - name: Archive canonical Release app
         env:
           VERSION: ${{ inputs.version }}
@@ -190,6 +203,8 @@ jobs:
             artifacts/TableRock-*-macos-universal.zip
             artifacts/TableRock-*-macos-universal.zip.sha256
             artifacts/xcodebuild-release.log
+            artifacts/TableRock-Release.xcresult
+            artifacts/xcodebuild-release-tests.log
             artifacts/codesign.txt
             artifacts/entitlements.plist
             artifacts/notary-submission.json
