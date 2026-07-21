@@ -59,6 +59,21 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testTemporaryConnectionOpensThroughUserControl() throws {
+    let app = launch(scenario: "success")
+
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    XCTAssertTrue(connect.isEnabled)
+    connect.click()
+
+    let status = app.staticTexts["query.status"]
+    let connected = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value CONTAINS 'Connected'"), object: status)
+    XCTAssertEqual(XCTWaiter.wait(for: [connected], timeout: 10), .completed)
+  }
+
+  @MainActor
   func testMultiWindowFixtureCreatesIndependentWorkbenchWindow() throws {
     let app = launch(
       scenario: "success",
