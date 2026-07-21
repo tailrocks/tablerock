@@ -6,7 +6,7 @@
 //! deterministic driver stubs for all three engines.
 
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -21,8 +21,8 @@ use tablerock_engine::{
     ServerDescribe, SessionHealth,
 };
 use tablerock_ffi::{
-    BridgeError, BridgeProfileOrderItem, BridgeSessionIntent, BridgeWorkspaceTab, SubmitSpec,
-    TableRockBridge,
+    BridgeBrowseSort, BridgeError, BridgeProfileOrderItem, BridgeSessionIntent, BridgeWorkspaceTab,
+    SubmitSpec, TableRockBridge,
 };
 
 struct OnePageStream(Option<ResultPage>);
@@ -53,6 +53,7 @@ struct FixedPageSession {
     engine: Engine,
     page: ResultPage,
     health_failure: Option<AdapterFailureClass>,
+    statements: Arc<Mutex<Vec<String>>>,
 }
 
 impl DriverSession for FixedPageSession {
@@ -62,8 +63,16 @@ impl DriverSession for FixedPageSession {
 
     fn start_page_stream<'a>(
         &'a self,
-        _request: DriverPageRequest,
+        request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
+        if let DriverPageRequest::PostgreSqlStatement { statement, .. }
+        | DriverPageRequest::ClickHouseStatement { statement, .. } = request
+        {
+            self.statements
+                .lock()
+                .unwrap()
+                .push(statement.as_str().to_owned());
+        }
         let page = self.page.clone();
         Box::pin(
             async move { Ok(Box::new(OnePageStream(Some(page))) as Box<dyn DriverPageStream>) },
@@ -294,6 +303,16 @@ fn sample_page(engine: Engine, result_low: u64, values: &[i64]) -> (ResultId, Re
 }
 
 fn open_fixed(bridge: &TableRockBridge, engine: Engine, page: ResultPage) -> Vec<u8> {
+    open_fixed_observed(bridge, engine, page).0
+}
+
+fn open_fixed_observed(
+    bridge: &TableRockBridge,
+    engine: Engine,
+    page: ResultPage,
+) -> (Vec<u8>, Arc<Mutex<Vec<String>>>) {
+    let statements = Arc::new(Mutex::new(Vec::new()));
+    let observer = Arc::clone(&statements);
     bridge
         .open_driver_session(
             engine,
@@ -301,8 +320,10 @@ fn open_fixed(bridge: &TableRockBridge, engine: Engine, page: ResultPage) -> Vec
                 engine,
                 page,
                 health_failure: None,
+                statements,
             }),
         )
+        .map(|session| (session, observer))
         .unwrap()
 }
 
@@ -585,6 +606,62 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
             Err(BridgeError::Rejected { ref code, .. }) if code == "copy-format"
         ));
         assert!(matches!(
+            bridge.submit_catalog_browse_with_sort(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                vec![BridgeBrowseSort {
+                    column: "id\0evil".into(),
+                    direction: "asc".into(),
+                }],
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-plan"
+        ));
+        assert!(matches!(
+            bridge.submit_catalog_browse_with_sort(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                vec![BridgeBrowseSort {
+                    column: "id".into(),
+                    direction: "sideways".into(),
+                }],
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-sort"
+        ));
+        assert!(matches!(
+            bridge.submit_catalog_browse_with_sort(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                vec![
+                    BridgeBrowseSort {
+                        column: "id".into(),
+                        direction: "asc".into(),
+                    },
+                    BridgeBrowseSort {
+                        column: "id".into(),
+                        direction: "desc".into(),
+                    },
+                ],
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-sort"
+        ));
+        assert!(matches!(
+            bridge.submit_catalog_browse_with_sort(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                (0..17)
+                    .map(|index| BridgeBrowseSort {
+                        column: format!("column_{index}"),
+                        direction: "asc".into(),
+                    })
+                    .collect(),
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-sort"
+        ));
+        assert!(matches!(
             bridge.submit_catalog_browse(session_id.clone(), roots[0].id_bytes.clone(), 500),
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-kind"
         ));
@@ -592,6 +669,59 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
             bridge.submit_catalog_browse(session_id, roots[0].id_bytes.clone(), 0),
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-bounds"
         ));
+    }
+}
+
+#[test]
+fn catalog_browse_sort_is_rust_rendered_in_operator_order() {
+    for (engine, low) in [(Engine::PostgreSql, 185_u64), (Engine::ClickHouse, 186)] {
+        let (_, page) = sample_page(engine, low, &[7]);
+        let bridge = TableRockBridge::new_for_test();
+        let (session_id, statements) = open_fixed_observed(&bridge, engine, page);
+        let roots = bridge.refresh_catalog(session_id.clone(), None).unwrap();
+        let level_one = bridge
+            .refresh_catalog(session_id.clone(), Some(roots[0].id_bytes.clone()))
+            .unwrap();
+        let object = if engine == Engine::PostgreSql {
+            bridge
+                .refresh_catalog(session_id.clone(), Some(level_one[0].id_bytes.clone()))
+                .unwrap()
+                .remove(0)
+        } else {
+            level_one[0].clone()
+        };
+        let operation = bridge
+            .submit_catalog_browse_with_sort(
+                session_id,
+                object.id_bytes,
+                vec![
+                    BridgeBrowseSort {
+                        column: "created_at".into(),
+                        direction: "desc".into(),
+                    },
+                    BridgeBrowseSort {
+                        column: "id".into(),
+                        direction: "asc".into(),
+                    },
+                ],
+                500,
+            )
+            .unwrap();
+        bridge.pump(operation).unwrap();
+        let statements = statements.lock().unwrap();
+        assert_eq!(statements.len(), 1);
+        assert_eq!(
+            statements[0],
+            match engine {
+                Engine::PostgreSql => {
+                    "SELECT * FROM \"public\".\"users\" ORDER BY \"created_at\" DESC, \"id\" ASC LIMIT 500 OFFSET 0"
+                }
+                Engine::ClickHouse => {
+                    "SELECT * FROM \"default\".\"events\" ORDER BY \"created_at\" DESC, \"id\" ASC LIMIT 500 OFFSET 0"
+                }
+                Engine::Redis => unreachable!(),
+            }
+        );
     }
 }
 
@@ -850,6 +980,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
                 engine: Engine::PostgreSql,
                 page: reconnect_page,
                 health_failure: None,
+                statements: Arc::new(Mutex::new(Vec::new())),
             }),
         )
         .unwrap();
@@ -931,6 +1062,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
                 engine: Engine::PostgreSql,
                 page: metadata_page,
                 health_failure: None,
+                statements: Arc::new(Mutex::new(Vec::new())),
             }),
         )
         .unwrap();
@@ -957,6 +1089,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
                 engine: Engine::PostgreSql,
                 page: private_page,
                 health_failure: None,
+                statements: Arc::new(Mutex::new(Vec::new())),
             }),
         )
         .unwrap();
@@ -1147,6 +1280,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
                 engine: Engine::PostgreSql,
                 page: copy_page,
                 health_failure: None,
+                statements: Arc::new(Mutex::new(Vec::new())),
             }),
         )
         .unwrap();
@@ -1368,6 +1502,7 @@ fn session_health_projects_authentication_as_terminal_state() {
                 engine: Engine::PostgreSql,
                 page,
                 health_failure: Some(AdapterFailureClass::Authentication),
+                statements: Arc::new(Mutex::new(Vec::new())),
             }),
         )
         .unwrap();

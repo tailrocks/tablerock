@@ -857,6 +857,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
 
     func submitCatalogBrowse(sessionId: Data, catalogNodeId: Data, rowCount: UInt32) throws  -> Data
 
+    func submitCatalogBrowseWithSort(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], rowCount: UInt32) throws  -> Data
+
     /**
      * Connects, describes, and disconnects without changing persistence.
      */
@@ -1649,6 +1651,19 @@ open func submitCatalogBrowse(sessionId: Data, catalogNodeId: Data, rowCount: UI
 })
 }
 
+open func submitCatalogBrowseWithSort(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], rowCount: UInt32)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_submit_catalog_browse_with_sort(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(catalogNodeId),
+        FfiConverterSequenceTypeBridgeBrowseSort.lower(sort),
+        FfiConverterUInt32.lower(rowCount),uniffiCallStatus
+    )
+})
+}
+
     /**
      * Connects, describes, and disconnects without changing persistence.
      */
@@ -1802,6 +1817,69 @@ public func FfiConverterTypeApplyOutcome_lift(_ buf: RustBuffer) throws -> Apply
 #endif
 public func FfiConverterTypeApplyOutcome_lower(_ value: ApplyOutcome) -> RustBuffer {
     return FfiConverterTypeApplyOutcome.lower(value)
+}
+
+
+/**
+ * One native object-browse sort key. Rust validates and quotes the column.
+ */
+public struct BridgeBrowseSort: Equatable, Hashable {
+    public var column: String
+    /**
+     * `asc` or `desc`.
+     */
+    public var direction: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(column: String,
+        /**
+         * `asc` or `desc`.
+         */direction: String) {
+        self.column = column
+        self.direction = direction
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeBrowseSort: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeBrowseSort: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeBrowseSort {
+        return
+            try BridgeBrowseSort(
+                column: FfiConverterString.read(from: &buf),
+                direction: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeBrowseSort, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.column, into: &buf)
+        FfiConverterString.write(value.direction, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeBrowseSort_lift(_ buf: RustBuffer) throws -> BridgeBrowseSort {
+    return try FfiConverterTypeBridgeBrowseSort.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeBrowseSort_lower(_ value: BridgeBrowseSort) -> RustBuffer {
+    return FfiConverterTypeBridgeBrowseSort.lower(value)
 }
 
 
@@ -4249,6 +4327,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeBrowseSort: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeBrowseSort]
+
+    public static func write(_ value: [BridgeBrowseSort], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeBrowseSort.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeBrowseSort] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeBrowseSort]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeBrowseSort.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeCatalogNode: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeCatalogNode]
 
@@ -4755,6 +4858,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_catalog_browse() != 61783) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_catalog_browse_with_sort() != 1474) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_test_profile() != 43186) {

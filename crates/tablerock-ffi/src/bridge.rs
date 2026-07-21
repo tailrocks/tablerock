@@ -30,7 +30,8 @@ use tablerock_engine::{
     KeychainReadPort, OpCliReader, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
     PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol,
     RedisSession, RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError,
-    load_relation_structure as load_structure_snapshot, resolve_for_connect_with_ports,
+    SortDirection, SortKey, load_relation_structure as load_structure_snapshot,
+    resolve_for_connect_with_ports,
 };
 use tablerock_files::{
     CsvValueType, csv_to_typed_insert_changes, is_formula_like, read_csv_bounded,
@@ -109,6 +110,14 @@ pub struct SubmitSpec {
     pub row_count: Option<u32>,
     /// Expected aggregate revision (context scope).
     pub expected_revision: u64,
+}
+
+/// One native object-browse sort key. Rust validates and quotes the column.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeBrowseSort {
+    pub column: String,
+    /// `asc` or `desc`.
+    pub direction: String,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -694,7 +703,21 @@ impl TableRockBridge {
         catalog_node_id: Vec<u8>,
         row_count: u32,
     ) -> Result<Vec<u8>, BridgeError> {
-        catch_entry(|| self.submit_catalog_browse_inner(session_id, catalog_node_id, row_count))
+        catch_entry(|| {
+            self.submit_catalog_browse_inner(session_id, catalog_node_id, Vec::new(), row_count)
+        })
+    }
+
+    pub fn submit_catalog_browse_with_sort(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+        sort: Vec<BridgeBrowseSort>,
+        row_count: u32,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| {
+            self.submit_catalog_browse_inner(session_id, catalog_node_id, sort, row_count)
+        })
     }
 
     /// Loads a bounded typed structure snapshot for one cached catalog object.
@@ -2641,6 +2664,7 @@ impl TableRockBridge {
         &self,
         session_id_bytes: Vec<u8>,
         catalog_node_id_bytes: Vec<u8>,
+        sort: Vec<BridgeBrowseSort>,
         row_count: u32,
     ) -> Result<Vec<u8>, BridgeError> {
         if !(1..=1_000).contains(&row_count) {
@@ -2716,10 +2740,42 @@ impl TableRockBridge {
             );
             let schema = parent.name().to_owned();
             let table = node.name().to_owned();
+            if sort.len() > 16 {
+                return Err(BridgeError::rejected(
+                    "catalog-browse-sort",
+                    "at most 16 sort keys are allowed",
+                ));
+            }
+            let mut seen = BTreeSet::new();
+            let sort = sort
+                .into_iter()
+                .map(|key| {
+                    if !seen.insert(key.column.clone()) {
+                        return Err(BridgeError::rejected(
+                            "catalog-browse-sort",
+                            "sort columns must be unique",
+                        ));
+                    }
+                    let direction = match key.direction.as_str() {
+                        "asc" => SortDirection::Asc,
+                        "desc" => SortDirection::Desc,
+                        _ => {
+                            return Err(BridgeError::rejected(
+                                "catalog-browse-sort",
+                                "sort direction must be asc or desc",
+                            ));
+                        }
+                    };
+                    Ok(SortKey {
+                        column: key.column,
+                        direction,
+                    })
+                })
+                .collect::<Result<Vec<_>, BridgeError>>()?;
             let statement = BrowsePlan {
                 schema: schema.clone(),
                 table: table.clone(),
-                sort: Vec::new(),
+                sort,
                 filters: Vec::new(),
                 raw_where: None,
                 limit: row_count,

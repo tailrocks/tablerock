@@ -311,7 +311,7 @@ extension WorkbenchBackend {
   func refreshCatalog(session: Data, parentNodeId: Data?) throws
     -> [WorkbenchCatalogNode]
   { [] }
-  func submitCatalogBrowse(session: Data, nodeId: Data) throws -> Data {
+  func submitCatalogBrowse(session: Data, nodeId: Data, sort: [WorkbenchBrowseSort]) throws -> Data {
     try scriptedUnavailable("browse")
   }
   func submit(session: Data, intent: String, statement: String?) throws -> Data {
@@ -712,9 +712,12 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
   func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [WorkbenchCatalogNode] {
     try bridge.refreshCatalog(sessionId: session, parentNodeId: parentNodeId).map(\.workbench)
   }
-  func submitCatalogBrowse(session: Data, nodeId: Data) throws -> Data {
-    try bridge.submitCatalogBrowse(
-      sessionId: session, catalogNodeId: nodeId, rowCount: 500
+  func submitCatalogBrowse(session: Data, nodeId: Data, sort: [WorkbenchBrowseSort]) throws -> Data {
+    try bridge.submitCatalogBrowseWithSort(
+      sessionId: session, catalogNodeId: nodeId,
+      sort: sort.map {
+        BridgeBrowseSort(column: $0.column, direction: $0.descending ? "desc" : "asc")
+      }, rowCount: 500
     )
   }
   func submit(session: Data, intent: String, statement: String?) throws -> Data {
@@ -1681,6 +1684,7 @@ final class NativeObjectTab: Identifiable {
   var structureLoading = false
   var structureError: String?
   var redisView: WorkbenchRedisKeyView?
+  var sort: [WorkbenchBrowseSort] = []
 
   init(id: UUID, node: WorkbenchCatalogNode, pinned: Bool = false) {
     self.id = id
@@ -3012,7 +3016,7 @@ final class BridgeModel {
         return
       }
       let operation = try await client.submitCatalogBrowse(
-        session: session, nodeId: tab.catalogNodeId
+        session: session, nodeId: tab.catalogNodeId, sort: tab.sort
       )
       tab.activeOperationId = operation
       tab.isRunning = true
@@ -3061,6 +3065,30 @@ final class BridgeModel {
 
   func reloadObjectTab() async {
     guard let tab = activeObjectTab, !tab.isRunning else { return }
+    await loadObjectTab(tab)
+  }
+
+  func addObjectSort(column: String) async {
+    guard let tab = activeObjectTab, !tab.isRunning, tab.sort.count < 16,
+      !tab.sort.contains(where: { $0.column == column })
+    else { return }
+    tab.sort.append(WorkbenchBrowseSort(column: column))
+    await loadObjectTab(tab)
+  }
+
+  func toggleObjectSort(column: String) async {
+    guard let tab = activeObjectTab, !tab.isRunning,
+      let index = tab.sort.firstIndex(where: { $0.column == column })
+    else { return }
+    let current = tab.sort[index]
+    tab.sort[index] = WorkbenchBrowseSort(
+      column: current.column, descending: !current.descending)
+    await loadObjectTab(tab)
+  }
+
+  func removeObjectSort(column: String) async {
+    guard let tab = activeObjectTab, !tab.isRunning else { return }
+    tab.sort.removeAll(where: { $0.column == column })
     await loadObjectTab(tab)
   }
 
@@ -4801,6 +4829,11 @@ struct ObjectWorkbenchView: View {
         if let summary = tab.summary {
           Text(summary).font(.callout).foregroundStyle(.secondary)
         }
+        if tab.selectedSection == "data", let table = tab.resultTable,
+          !tab.kind.hasPrefix("redis_key_")
+        {
+          ObjectSortBar(tab: tab, table: table)
+        }
         if let error = tab.error {
           Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
         }
@@ -4827,6 +4860,54 @@ struct ObjectWorkbenchView: View {
     } else {
       ContentUnavailableView("No object tab", systemImage: "tablecells")
     }
+  }
+}
+
+private struct ObjectSortBar: View {
+  @Environment(BridgeModel.self) private var model
+  let tab: NativeObjectTab
+  let table: WorkbenchTable
+
+  private var availableColumns: [String] {
+    table.columns.filter { column in
+      !tab.sort.contains(where: { $0.column == column })
+    }
+  }
+
+  var body: some View {
+    ScrollView(.horizontal) {
+      HStack(spacing: 6) {
+        Menu("Add sort", systemImage: "arrow.up.arrow.down") {
+          ForEach(availableColumns, id: \.self) { column in
+            Button(column) { Task { await model.addObjectSort(column: column) } }
+          }
+        }
+        .disabled(tab.isRunning || availableColumns.isEmpty || tab.sort.count >= 16)
+        .accessibilityIdentifier("object.sort.add")
+        ForEach(tab.sort) { key in
+          ControlGroup {
+            Button {
+              Task { await model.toggleObjectSort(column: key.column) }
+            } label: {
+              Label(
+                key.descending ? "Descending" : "Ascending",
+                systemImage: key.descending ? "arrow.down" : "arrow.up")
+            }
+            .accessibilityLabel(
+              "\(key.column), \(key.descending ? "descending" : "ascending"); change direction")
+            Button(role: .destructive) {
+              Task { await model.removeObjectSort(column: key.column) }
+            } label: {
+              Label("Remove \(key.column) sort", systemImage: "xmark")
+            }
+          } label: {
+            Text(key.column)
+          }
+          .disabled(tab.isRunning)
+        }
+      }
+    }
+    .accessibilityLabel("Object sort order")
   }
 }
 
