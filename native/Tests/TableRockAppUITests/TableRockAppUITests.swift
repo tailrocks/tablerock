@@ -34,7 +34,37 @@ final class TableRockAppUITests: XCTestCase {
     waitForExpectations(timeout: 10)
   }
 
-  private func launch(scenario: String) -> XCUIApplication {
+  func testProfileEditorFixtureExposesStableControls() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_PROFILE_EDITOR": "1"])
+
+    XCTAssertTrue(app.textFields["profile.editor.name"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["profile.editor.save"].exists)
+  }
+
+  func testAccessibilityFixtureExposesCatalogEditorAndGrid() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_ACCESSIBILITY_AUDIT": "1"])
+
+    XCTAssertTrue(app.outlines["catalog.outline"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.textViews["query.editor"].exists)
+    XCTAssertTrue(app.tables["results.grid"].exists)
+  }
+
+  func testLargeGridFixtureExposesBoundedNativeTable() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_GRID_ROWS": "10000"])
+
+    XCTAssertTrue(app.tables["results.grid"].waitForExistence(timeout: 10))
+  }
+
+  private func launch(
+    scenario: String,
+    environment: [String: String] = [:]
+  ) -> XCUIApplication {
     let app = XCUIApplication()
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)
@@ -44,7 +74,7 @@ final class TableRockAppUITests: XCTestCase {
       "TABLEROCK_TEST_ROOT": root.path,
       "TABLEROCK_TEST_BACKEND": "scripted",
       "TABLEROCK_TEST_SCENARIO": scenario,
-    ]
+    ].merging(environment) { _, fixture in fixture }
     app.launch()
     return app
   }
