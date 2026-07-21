@@ -554,6 +554,7 @@ How to read an evidence document:
 ## TermRock pins
 
 - 203 — [TermRock T2 VirtualGrid adoption pin](termrock/203-termrock-virtualgrid-t2.md)
+- 577 — [TermRock main compatibility refresh](termrock/577-termrock-main-refresh.md)
 
 ## TermRock migrations and updates
 
