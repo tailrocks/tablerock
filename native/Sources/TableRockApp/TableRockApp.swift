@@ -4460,6 +4460,7 @@ struct QueryWorkbenchView: View {
         .font(.callout)
         .textSelection(.enabled)
         .accessibilityIdentifier("query.status")
+        .accessibilityValue(queryStatus)
       if let value = model.reviewOutcome {
         Text(value).foregroundStyle(.green).font(.callout)
       }

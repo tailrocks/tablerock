@@ -28,7 +28,7 @@ final class TableRockAppUITests: XCTestCase {
 
     let status = app.staticTexts["query.status"]
     let cancelled = NSPredicate(
-      format: "label CONTAINS[c] 'Requested' OR label CONTAINS[c] 'cancelled'")
+      format: "value CONTAINS[c] 'Requested' OR value CONTAINS[c] 'cancelled'")
     let terminalState = XCTNSPredicateExpectation(predicate: cancelled, object: status)
     XCTAssertEqual(XCTWaiter.wait(for: [terminalState], timeout: 10), .completed)
   }
