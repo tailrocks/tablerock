@@ -167,6 +167,11 @@ jobs:
           ref: ${{ needs.source-changed.outputs.sha }}
           persist-credentials: false
 
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
+
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           install_args: rust
@@ -185,11 +190,6 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: rustup target add "$TARGET"
-
-      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        with:
-          version: v0.16.0
-          disable_annotations: "false"
 
       - name: Build Apple CLI
         if: matrix.builder == 'cargo'
