@@ -129,22 +129,27 @@ jobs:
         run: cargo nextest run -p tablerock-engine --test performance_real --locked
       - name: Install PostgreSQL client tools (18, matching the test server)
         run: |
-          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client-18
+          root=()
+          if (( EUID != 0 )); then root=(sudo); fi
+          "${root[@]}" sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | "${root[@]}" gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          "${root[@]}" apt-get update
+          "${root[@]}" apt-get install -y postgresql-client-18
       - name: pg_dump/pg_restore real matrix
         run: cargo nextest run -p tablerock-cli --test pg_dump_real --locked --run-ignored ignored-only
       - name: ENOSPC fail-closed on 1MiB tmpfs
         run: |
           set -euo pipefail
+          root=()
+          if (( EUID != 0 )); then root=(sudo); fi
           MNT="${RUNNER_TEMP}/tablerock-enospc"
           mkdir -p "$MNT"
-          sudo mount -t tmpfs -o size=1M,mode=1777 tmpfs "$MNT"
+          "${root[@]}" mount -t tmpfs -o size=1M,mode=1777 tmpfs "$MNT"
           dd if=/dev/zero of="$MNT/prefill.bin" bs=1k count=900 status=none || true
           export TABLEROCK_ENOSPC_MNT="$MNT"
           cargo nextest run -p tablerock-files --lib --locked -E 'test(enospc_volume_fails_closed_without_temp_debris)'
-          sudo umount "$MNT"
+          "${root[@]}" umount "$MNT"
 
   audit:
     name: Dependency audit (${{ matrix.config.lane }})
