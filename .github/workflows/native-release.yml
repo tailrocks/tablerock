@@ -1,0 +1,191 @@
+name: Native Developer ID Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic application version
+        required: true
+        type: string
+      bundle_version:
+        description: Positive integer bundle version
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-developer-id-release
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "false"
+  SCCACHE_CACHE_SIZE: 20G
+
+jobs:
+  release:
+    name: Build, sign, notarize, and staple
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
+
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          install_args: rust
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Select stable Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      - name: Validate release inputs and credentials
+        env:
+          VERSION: ${{ inputs.version }}
+          BUNDLE_VERSION: ${{ inputs.bundle_version }}
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_DEVELOPER_IDENTITY: ${{ secrets.MACOS_DEVELOPER_IDENTITY }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+[.][0-9]+[.][0-9]+([-.][0-9A-Za-z.-]+)?$ ]]
+          [[ "$BUNDLE_VERSION" =~ ^[1-9][0-9]*$ ]]
+          : "${MACOS_CERTIFICATE_P12:?missing MACOS_CERTIFICATE_P12}"
+          : "${MACOS_CERTIFICATE_PASSWORD:?missing MACOS_CERTIFICATE_PASSWORD}"
+          : "${MACOS_DEVELOPER_IDENTITY:?missing MACOS_DEVELOPER_IDENTITY}"
+          : "${APPLE_NOTARY_KEY_P8:?missing APPLE_NOTARY_KEY_P8}"
+          : "${APPLE_NOTARY_KEY_ID:?missing APPLE_NOTARY_KEY_ID}"
+          : "${APPLE_NOTARY_ISSUER_ID:?missing APPLE_NOTARY_ISSUER_ID}"
+
+      - name: Import ephemeral Developer ID identity
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/tablerock-release.keychain-db"
+          password="$(uuidgen)$(uuidgen)"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/developer-id.p12" \
+            -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+
+      - name: Build universal static bridge and canonical project
+        run: |
+          cargo build -p tablerock-ffi --release --locked
+          ./scripts/generate-swift-bindings.sh
+          git diff --exit-code -- native/Generated native/Sources/TableRockBridge/tablerock_ffi.swift
+          ./scripts/build-xcframework.sh
+          mise install github:yonaskolb/XcodeGen@2.46.0
+          mise exec github:yonaskolb/XcodeGen@2.46.0 -- \
+            xcodegen generate --spec native/App/project.yml
+          git diff --exit-code -- native/App/TableRock.xcodeproj native/App/TableRock-Info.plist
+
+      - name: Archive canonical Release app
+        env:
+          VERSION: ${{ inputs.version }}
+          BUNDLE_VERSION: ${{ inputs.bundle_version }}
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          xcodebuild archive \
+            -project native/App/TableRock.xcodeproj \
+            -scheme TableRock \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath artifacts/TableRock.xcarchive \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUNDLE_VERSION" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee artifacts/xcodebuild-release.log
+
+      - name: Developer ID sign and verify
+        env:
+          MACOS_DEVELOPER_IDENTITY: ${{ secrets.MACOS_DEVELOPER_IDENTITY }}
+        run: |
+          app=artifacts/TableRock.xcarchive/Products/Applications/TableRock.app
+          codesign --force --deep --options runtime --timestamp \
+            --sign "$MACOS_DEVELOPER_IDENTITY" "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --display --verbose=4 "$app" 2> artifacts/codesign.txt
+          ! codesign --display --entitlements :- "$app" 2>/dev/null \
+            | grep -q 'com.apple.security.get-task-allow.*true'
+          archs="$(lipo -archs "$app/Contents/MacOS/TableRock")"
+          [[ "$archs" == "arm64 x86_64" || "$archs" == "x86_64 arm64" ]]
+          ! otool -L "$app/Contents/MacOS/TableRock" | grep -E \
+            '/target/|libtablerock_ffi[.]dylib'
+
+      - name: Notarize and staple
+        env:
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          app=artifacts/TableRock.xcarchive/Products/Applications/TableRock.app
+          key="$RUNNER_TEMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          printf '%s' "$APPLE_NOTARY_KEY_P8" > "$key"
+          ditto -c -k --keepParent "$app" artifacts/TableRock-notary.zip
+          xcrun notarytool submit artifacts/TableRock-notary.zip \
+            --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" \
+            --issuer "$APPLE_NOTARY_ISSUER_ID" --wait --output-format json \
+            > artifacts/notary-submission.json
+          test "$(jq -r .status artifacts/notary-submission.json)" = "Accepted"
+          submission="$(jq -r .id artifacts/notary-submission.json)"
+          xcrun notarytool log "$submission" \
+            --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" \
+            --issuer "$APPLE_NOTARY_ISSUER_ID" artifacts/notary-log.json
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=4 "$app" 2>&1 \
+            | tee artifacts/gatekeeper.txt
+          rm -f "$key" artifacts/TableRock-notary.zip
+
+      - name: Package stapled release
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          app=artifacts/TableRock.xcarchive/Products/Applications/TableRock.app
+          archive="artifacts/TableRock-${VERSION}-macos-universal.zip"
+          ditto -c -k --keepParent "$app" "$archive"
+          shasum -a 256 "$archive" > "$archive.sha256"
+          lipo -archs "$app/Contents/MacOS/TableRock" > artifacts/architectures.txt
+
+      - name: Remove ephemeral signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP"/AuthKey_*.p8
+          security delete-keychain "$RUNNER_TEMP/tablerock-release.keychain-db" || true
+
+      - name: Archive release evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-developer-id-${{ inputs.version }}-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            artifacts/TableRock-*-macos-universal.zip
+            artifacts/TableRock-*-macos-universal.zip.sha256
+            artifacts/xcodebuild-release.log
+            artifacts/codesign.txt
+            artifacts/notary-submission.json
+            artifacts/notary-log.json
+            artifacts/gatekeeper.txt
+            artifacts/architectures.txt
