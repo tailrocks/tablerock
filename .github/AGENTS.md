@@ -2,10 +2,10 @@
 
 Every executable workflow uses one canonical YAML shape on all Linux lanes:
 
-- `github` is the automatic and manual default and runs on `ubuntu-26.04`;
-  never use `ubuntu-latest` or an unpinned Ubuntu label.
-- `velnor` is an opt-in lane on `self-hosted,velnor-target-mvp`; select it
-  only while that runner is registered and online.
+- `velnor` is the automatic and manual default and runs on
+  `self-hosted,velnor-target-mvp`.
+- `github` is the pinned comparison and fleet-recovery lane and runs on
+  `ubuntu-26.04`; never use `ubuntu-latest` or an unpinned Ubuntu label.
 - `both` executes identical jobs and steps on both lanes.
 
 Use the `lanes` choice input and canonical inline `matrix.config` expression.
