@@ -182,13 +182,9 @@ jobs:
   ci-required:
     needs: [rust, integration, audit]
     if: always()
-    name: CI required (${{ matrix.config.lane }})
+    name: CI required
     timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.lanes == 'both') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":false},{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]' || (github.event_name == 'workflow_dispatch' && inputs.lanes == 'velnor') && '[{"lane":"Velnor","runner":["self-hosted","velnor-target-mvp"],"writer":true}]' || '[{"lane":"GitHub","runner":"ubuntu-26.04","writer":true}]') }}
-    runs-on: ${{ matrix.config.runner }}
+    runs-on: ubuntu-26.04
     steps:
       - name: Fail on any failed or cancelled need
         env:
