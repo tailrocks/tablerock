@@ -4,3 +4,11 @@ real-server = { max-threads = 1 }
 [[profile.default.overrides]]
 filter = 'binary_id(/.*_real/)'
 test-group = 'real-server'
+
+# PTY lifecycle cases own process signals, terminal modes, resize delivery, and
+# wall-clock starvation bounds. Run each without competing nextest processes;
+# this preserves the 30-second bound instead of masking scheduler contention
+# with retries or a larger timeout.
+[[profile.default.overrides]]
+filter = 'binary_id(tablerock-cli::pty_lifecycle)'
+threads-required = "num-test-threads"
