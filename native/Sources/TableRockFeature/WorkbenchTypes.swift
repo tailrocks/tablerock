@@ -52,6 +52,7 @@ public protocol WorkbenchBackend: Actor, Sendable {
   ) throws -> String
   func exportLoadedResult(resultId: Data, revision: UInt64, format: String, path: String) throws
     -> UInt64
+  func exportSupportBundle(path: String) throws -> UInt64
   func previewCsvImport(path: String) throws -> WorkbenchCSVImportPreview
   func stageCsvImport(
     sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String],

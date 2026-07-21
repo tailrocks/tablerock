@@ -20,8 +20,8 @@ use tablerock_core::{
     ProfilePolicy, ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
     ProfileSafetyMode, ProfileSearchTerm, ProfileTag, ReconnectDecision, ReconnectPreference,
     RedisKeyKind, ResultStore, ResultStoreLimits, Revision, SecretSource, SecretSourceKind,
-    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText, TlsPolicy,
-    copy_cell_from_page, format_copy_table, reconnect_decision,
+    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText, SupportBundle,
+    SupportPlatform, TlsPolicy, copy_cell_from_page, format_copy_table, reconnect_decision,
 };
 use tablerock_engine::{
     AdapterFailureClass, BrowsePlan, CatalogRequest, ClickHouseCompression,
@@ -761,6 +761,26 @@ impl TableRockBridge {
             )?;
             write_atomic(Path::new(&path), payload.as_bytes()).map_err(|error| {
                 BridgeError::rejected("export-file", format!("atomic export failed: {error}"))
+            })
+        })
+    }
+
+    /// Atomically exports the closed safe-schema support manifest.
+    pub fn export_support_bundle(&self, path: String) -> Result<u64, BridgeError> {
+        catch_entry(|| {
+            if !Path::new(&path).is_absolute() {
+                return Err(BridgeError::rejected(
+                    "support-path",
+                    "native support path must be absolute",
+                ));
+            }
+            let payload =
+                SupportBundle::new(SupportPlatform::current()).render(env!("CARGO_PKG_VERSION"));
+            write_atomic(Path::new(&path), payload.as_bytes()).map_err(|error| {
+                BridgeError::rejected(
+                    "support-file",
+                    format!("atomic support export failed: {error}"),
+                )
             })
         })
     }

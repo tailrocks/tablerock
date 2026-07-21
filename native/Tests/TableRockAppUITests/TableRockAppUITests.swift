@@ -78,6 +78,16 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testSettingsExposeSafeSupportExport() throws {
+    let app = launch(scenario: "success")
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+
+    app.typeKey(",", modifierFlags: .command)
+
+    XCTAssertTrue(app.buttons["settings.support.export"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
   private func launch(
     scenario: String,
     environment: [String: String] = [:]

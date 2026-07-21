@@ -686,6 +686,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func exportLoadedResult(resultId: Data, revision: UInt64, format: String, path: String) throws  -> UInt64
 
     /**
+     * Atomically exports the closed safe-schema support manifest.
+     */
+    func exportSupportBundle(path: String) throws  -> UInt64
+
+    /**
      * Fetches a resident page as version-1 encoded bytes.
      */
     func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) throws  -> Data
@@ -1104,6 +1109,19 @@ open func exportLoadedResult(resultId: Data, revision: UInt64, format: String, p
         FfiConverterData.lower(resultId),
         FfiConverterUInt64.lower(revision),
         FfiConverterString.lower(format),
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Atomically exports the closed safe-schema support manifest.
+     */
+open func exportSupportBundle(path: String)throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_export_support_bundle(
+            self.uniffiCloneHandle(),
         FfiConverterString.lower(path),uniffiCallStatus
     )
 })
@@ -4611,6 +4629,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_export_loaded_result() != 24272) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_export_support_bundle() != 24766) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_fetch_page() != 31970) {

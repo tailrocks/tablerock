@@ -1,8 +1,11 @@
 //! Facade unit tests: runtime lifecycle, panic containment, page encode path.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    fs,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use tablerock_core::{
@@ -226,4 +229,28 @@ fn open_rejects_unreachable_endpoint() {
             other => panic!("expected {engine} connect reject, got {other:?}"),
         }
     }
+}
+
+#[test]
+fn support_bundle_export_is_atomic_safe_schema() {
+    let bridge = TableRockBridge::new_for_test();
+    let directory = std::env::temp_dir().join(format!(
+        "tablerock-support-export-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let destination = directory.join("support.txt");
+
+    let bytes = bridge
+        .export_support_bundle(destination.to_string_lossy().into_owned())
+        .unwrap();
+    let payload = fs::read_to_string(&destination).unwrap();
+    assert_eq!(bytes as usize, payload.len());
+    assert!(payload.starts_with("schema=1\nclient.version="));
+    assert!(payload.contains("diagnostics.count=0\n"));
+    for forbidden in ["password", "SELECT", "localhost", "cell-value"] {
+        assert!(!payload.contains(forbidden));
+    }
+    fs::remove_dir_all(directory).unwrap();
 }
