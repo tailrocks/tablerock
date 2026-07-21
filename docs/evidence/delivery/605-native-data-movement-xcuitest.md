@@ -30,7 +30,10 @@ apply controls.
 - `swiftc -parse native/Sources/TableRockApp/TableRockApp.swift native/Tests/TableRockAppTests/BridgeModelScenarioTests.swift native/Tests/TableRockAppUITests/TableRockAppUITests.swift`
 - `swiftc -typecheck -parse-as-library -swift-version 6 -strict-concurrency=complete -warnings-as-errors ... native/Sources/TableRockApp/*.swift`
 - `git diff --check`
-- Exact-main hosted Swift/App/XCUITest checkpoint required after push.
+- Hosted run 29864380153 passed loaded-result export and exposed the import
+  sheet's Stage action as clipped below the fixed-height sheet viewport. Import
+  details now scroll independently while Stage/Apply/Discard remain in a fixed
+  action footer. Exact-main hosted proof remains required.
 
 ## Provenance
 

@@ -46,6 +46,11 @@ fixture-only production controls.
   paging. Its remaining grid test showed that removing the child identifier
   also removed the implicit cell from the AX tree; explicit cell-role ownership
   is the follow-up under test.
+- Hosted run 29864380153 proved explicit cell discovery, but an AX-directed
+  click stopped at the newly explicit cell instead of invoking selection. The
+  cell now owns one activation path used by pointer gestures and AX press;
+  activation selects the row and reports the exact column through the existing
+  presentation callback. Exact-main hosted proof remains required.
 
 ## Provenance
 

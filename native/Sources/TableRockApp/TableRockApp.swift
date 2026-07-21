@@ -4982,7 +4982,9 @@ private struct CsvImportSheet: View {
         Button("Close") { Task { await model.closeCsvImport() } }
           .disabled(model.csvImportApplying)
       }
-      if let preview = model.csvImportPreview {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 14) {
+          if let preview = model.csvImportPreview {
         Text(
           "\(URL(fileURLWithPath: preview.path).lastPathComponent) · \(preview.totalRows) rows · \(preview.headers.count) columns"
         )
@@ -5045,36 +5047,45 @@ private struct CsvImportSheet: View {
           }
           .frame(minHeight: 150, maxHeight: 260)
         }
-      }
-      if let review = model.csvImportReview {
-        GroupBox("Review required") {
-          VStack(alignment: .leading, spacing: 6) {
-            Text(
-              "Insert \(review.rowCount) rows and \(review.columnCount) mapped columns into \(review.target)."
-            )
-            .font(.headline)
-            if review.formulaLikeCells > 0 {
-              Text(
-                "\(review.formulaLikeCells) formula-like cells are frozen as literal text in this reviewed plan."
-              )
-              .foregroundStyle(.orange)
-            }
-            Text(
-              "The reviewed plan is frozen for 60 seconds. Authority is consumed before database I/O and cannot be retried after failure."
-            )
-            .foregroundStyle(.secondary)
-            HStack {
-              Button("Apply Import") { Task { await model.applyCsvImport() } }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("import.csv.apply")
-                .disabled(model.csvImportApplying)
-              Button("Discard Review", role: .cancel) {
-                Task { await model.discardCsvImportReview() }
+          }
+          if let review = model.csvImportReview {
+            GroupBox("Review required") {
+              VStack(alignment: .leading, spacing: 6) {
+                Text(
+                  "Insert \(review.rowCount) rows and \(review.columnCount) mapped columns into \(review.target)."
+                )
+                .font(.headline)
+                if review.formulaLikeCells > 0 {
+                  Text(
+                    "\(review.formulaLikeCells) formula-like cells are frozen as literal text in this reviewed plan."
+                  )
+                  .foregroundStyle(.orange)
+                }
+                Text(
+                  "The reviewed plan is frozen for 60 seconds. Authority is consumed before database I/O and cannot be retried after failure."
+                )
+                .foregroundStyle(.secondary)
               }
-              .disabled(model.csvImportApplying)
+              .padding(6)
             }
           }
-          .padding(6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      if model.csvImportReview != nil {
+        HStack {
+          Button("Apply Import") { Task { await model.applyCsvImport() } }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("import.csv.apply")
+            .disabled(model.csvImportApplying)
+          Button("Discard Review", role: .cancel) {
+            Task { await model.discardCsvImportReview() }
+          }
+          .disabled(model.csvImportApplying)
+          Text("Review expires in 60 seconds")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
         }
       } else if model.csvImportOutcome == nil {
         Button("Stage Reviewed Import") { Task { await model.stageCsvImport() } }
@@ -6176,9 +6187,23 @@ struct CatalogGrid: NSViewRepresentable {
 
   @MainActor
   final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    final class ResultCellView: NSTableCellView {
+      var onActivate: (() -> Void)?
+
+      @objc func activate() {
+        onActivate?()
+      }
+
+      override func accessibilityPerformPress() -> Bool {
+        onActivate?()
+        return true
+      }
+    }
+
     var snapshot: WorkbenchTable
     var onSelect: @MainActor (Int, Int) -> Void
     private var fixtureScrollTask: Task<Void, Never>?
+    private var lastActivatedColumn = 0
 
     init(_ snapshot: WorkbenchTable, onSelect: @escaping @MainActor (Int, Int) -> Void) {
       self.snapshot = snapshot
@@ -6189,7 +6214,8 @@ struct CatalogGrid: NSViewRepresentable {
       guard let tableView = notification.object as? NSTableView,
         tableView.selectedRow >= 0
       else { return }
-      let column = max(tableView.clickedColumn, 0)
+      let column = tableView.clickedColumn >= 0
+        ? tableView.clickedColumn : lastActivatedColumn
       guard snapshot.columns.indices.contains(column) else { return }
       onSelect(tableView.selectedRow, column)
     }
@@ -6255,14 +6281,16 @@ struct CatalogGrid: NSViewRepresentable {
         snapshot.rows[row].indices.contains(column)
       else { return nil }
       let identifier = NSUserInterfaceItemIdentifier("result-cell")
-      let cell: NSTableCellView
+      let cell: ResultCellView
       if let reused = tableView.makeView(withIdentifier: identifier, owner: nil)
-        as? NSTableCellView
+        as? ResultCellView
       {
         cell = reused
       } else {
-        cell = NSTableCellView()
+        cell = ResultCellView()
         cell.identifier = identifier
+        cell.addGestureRecognizer(
+          NSClickGestureRecognizer(target: cell, action: #selector(ResultCellView.activate)))
         let label = NSTextField(labelWithString: "")
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -6282,6 +6310,12 @@ struct CatalogGrid: NSViewRepresentable {
       cell.setAccessibilityLabel("\(snapshot.columns[column]), row \(row + 1)")
       cell.setAccessibilityValue(value)
       cell.setAccessibilityIdentifier("results.cell.\(row).\(column)")
+      cell.onActivate = { [weak self, weak tableView] in
+        guard let self, let tableView else { return }
+        self.lastActivatedColumn = column
+        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        self.onSelect(row, column)
+      }
       return cell
     }
   }
