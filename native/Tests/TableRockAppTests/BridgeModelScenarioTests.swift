@@ -59,6 +59,16 @@ final class BridgeModelScenarioTests: XCTestCase {
     }
   }
 
+  func testScriptedDirectConnectionOpensWorkbench() async {
+    let backend = ScriptedWorkbenchBackend(scenario: "slow-until-cancelled")
+    let model = BridgeModel(client: backend)
+
+    await model.connectByParams()
+
+    XCTAssertNotNil(model.sessionHex)
+    XCTAssertNil(model.connectError)
+  }
+
   func testHistoryFailureRemainsVisibleAfterSuccessfulOperation() async throws {
     let backend = ScriptedWorkbenchBackend(scenario: "history-failure-after-page")
     let projection = try await backend.finish(operationId: Data(repeating: 1, count: 16))

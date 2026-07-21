@@ -396,6 +396,14 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     }
   }
 
+  func open(params: WorkbenchOpenParams) throws -> Data {
+    switch scenario {
+    case "connection-failure": throw ScriptedBackendError.connectionFailed
+    case "authentication-failure": throw ScriptedBackendError.authenticationFailed
+    default: return Data(repeating: 1, count: 16)
+    }
+  }
+
   func submit(session: Data, intent: String, statement: String?) throws -> Data {
     Data(repeating: 2, count: 16)
   }
