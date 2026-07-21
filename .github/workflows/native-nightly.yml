@@ -53,6 +53,7 @@ jobs:
 
       - name: Install script prerequisites
         run: |
+          brew update
           brew install ripgrep
           test "$(rg --version | head -n 1)" = "ripgrep 15.2.0"
 
