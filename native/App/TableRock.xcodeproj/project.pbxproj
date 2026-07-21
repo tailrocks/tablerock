@@ -45,6 +45,7 @@
 		D796F83A9C02E834BFEDD256 /* tablerock_ffiFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */; };
 		E0946F568BF416413F94CAF8 /* AppDependenciesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 170A6205E293BBDD55598B6C /* AppDependenciesTests.swift */; };
 		E1C6D3B67FC986686DCD30FE /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = D2CD044701909D9865A79995 /* libiconv.tbd */; };
+		F212B359F604BAA292F4664F /* ColumnHeaderPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6AFA7C53FF20F48FF62523 /* ColumnHeaderPresentationTests.swift */; };
 		F3E6C5EB63188CF0940F0330 /* WorkbenchTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD18301D71E2140043B680F /* WorkbenchTypes.swift */; };
 		F42BEA2AD4B262850D8C3D96 /* TableRockApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */; };
 /* End PBXBuildFile section */
@@ -161,6 +162,7 @@
 		D2CD044701909D9865A79995 /* libiconv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libiconv.tbd; path = usr/lib/libiconv.tbd; sourceTree = SDKROOT; };
 		DCD18301D71E2140043B680F /* WorkbenchTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchTypes.swift; sourceTree = "<group>"; };
 		E25AD0385D015297CBBA9D78 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
+		EC6AFA7C53FF20F48FF62523 /* ColumnHeaderPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColumnHeaderPresentationTests.swift; sourceTree = "<group>"; };
 		F0BD73D03EAEEE2DE99D6F35 /* PageV1BoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1BoundaryTests.swift; sourceTree = "<group>"; };
 		F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TableRockFeature.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5A94F4528ED04C3B8016BDA /* AppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependencies.swift; sourceTree = "<group>"; };
@@ -277,6 +279,7 @@
 			children = (
 				A2C51BE56FE33E3F86FAD4A4 /* AppConfigurationTests.swift */,
 				170A6205E293BBDD55598B6C /* AppDependenciesTests.swift */,
+				EC6AFA7C53FF20F48FF62523 /* ColumnHeaderPresentationTests.swift */,
 				13C717EA88A43EE4A3BD7F62 /* StructuredValueTreeTests.swift */,
 			);
 			path = TableRockFeatureTests;
@@ -644,6 +647,7 @@
 			files = (
 				B1E398B44C08B80C28D66530 /* AppConfigurationTests.swift in Sources */,
 				E0946F568BF416413F94CAF8 /* AppDependenciesTests.swift in Sources */,
+				F212B359F604BAA292F4664F /* ColumnHeaderPresentationTests.swift in Sources */,
 				A40F73637B5A9903607565E6 /* StructuredValueTreeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
