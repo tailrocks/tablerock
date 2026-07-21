@@ -31,12 +31,18 @@ targets:
   TableRockFeature:
     type: framework.static
     platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     sources:
       - path: ../Sources/TableRockFeature
 
   TableRockBridge:
     type: framework.static
     platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     sources:
       - path: ../Sources/TableRockBridge
     dependencies:
@@ -72,6 +78,9 @@ targets:
   TableRockFeatureTests:
     type: bundle.unit-test
     platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     sources:
       - path: ../Tests/TableRockFeatureTests
     dependencies:
@@ -80,6 +89,9 @@ targets:
   TableRockBridgeTests:
     type: bundle.unit-test
     platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     sources:
       - path: ../Tests/TableRockBridgeTests
     dependencies:
@@ -90,6 +102,9 @@ targets:
   TableRockAppUITests:
     type: bundle.ui-testing
     platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     sources:
       - path: ../Tests/TableRockAppUITests
     dependencies:
@@ -98,6 +113,9 @@ targets:
   TableRockAppTests:
     type: bundle.unit-test
     platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     sources:
       - path: ../Tests/TableRockAppTests
     dependencies:
