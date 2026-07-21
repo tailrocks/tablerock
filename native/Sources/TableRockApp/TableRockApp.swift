@@ -5547,9 +5547,9 @@ private struct NativeSettingsView: View {
     else { return }
     let destination =
       url.pathExtension.lowercased() == "txt" ? url : url.appendingPathExtension("txt")
-    let accessed = destination.startAccessingSecurityScopedResource()
-    defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
     Task {
+      let accessed = destination.startAccessingSecurityScopedResource()
+      defer { if accessed { destination.stopAccessingSecurityScopedResource() } }
       do {
         let bytes = try await client.exportSupportBundle(path: destination.path)
         outcome = "Exported \(bytes) safe bytes to \(destination.lastPathComponent)"
