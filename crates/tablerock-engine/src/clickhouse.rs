@@ -15,6 +15,7 @@ use tablerock_core::{
     PageIdentity, PageLimits, PageValidationError, PageWarning, PageWarnings, ResultPage, RowTotal,
     Truncation, ValueKind,
 };
+use tokio::sync::Notify;
 
 use crate::{
     CatalogRequest, CatalogSubtree, ServerDescribe,
@@ -184,7 +185,9 @@ pub struct ClickHouseSession {
 #[derive(Default)]
 struct ClickHouseActiveQuery {
     query_id: Mutex<Option<BoundedText>>,
+    cancel_requested: AtomicBool,
     server_confirmed: AtomicBool,
+    cancel_resolved: Notify,
 }
 
 impl ClickHouseActiveQuery {
@@ -197,6 +200,7 @@ impl ClickHouseActiveQuery {
             return false;
         }
         *active = Some(query_id);
+        self.cancel_requested.store(false, Ordering::Release);
         self.server_confirmed.store(false, Ordering::Release);
         true
     }
@@ -210,10 +214,35 @@ impl ClickHouseActiveQuery {
 
     fn confirm(&self) {
         self.server_confirmed.store(true, Ordering::Release);
+        self.cancel_requested.store(false, Ordering::Release);
+        self.cancel_resolved.notify_waiters();
+    }
+
+    fn request_cancel(&self) {
+        self.cancel_requested.store(true, Ordering::Release);
+    }
+
+    fn reject_cancel(&self) {
+        self.cancel_requested.store(false, Ordering::Release);
+        self.cancel_resolved.notify_waiters();
+    }
+
+    async fn wait_for_cancel_resolution(&self) {
+        while self.cancel_requested.load(Ordering::Acquire) {
+            let resolved = self.cancel_resolved.notified();
+            if !self.cancel_requested.load(Ordering::Acquire) {
+                break;
+            }
+            resolved.await;
+        }
     }
 
     fn is_confirmed(&self) -> bool {
         self.server_confirmed.load(Ordering::Acquire)
+    }
+
+    fn is_cancel_requested(&self) -> bool {
+        self.cancel_requested.load(Ordering::Acquire)
     }
 
     fn clear(&self, query_id: &BoundedText) {
@@ -223,7 +252,9 @@ impl ClickHouseActiveQuery {
             .unwrap_or_else(|error| error.into_inner());
         if active.as_ref() == Some(query_id) {
             active.take();
+            self.cancel_requested.store(false, Ordering::Release);
             self.server_confirmed.store(false, Ordering::Release);
+            self.cancel_resolved.notify_waiters();
         }
     }
 }
@@ -718,24 +749,35 @@ impl ClickHouseSession {
         let Some(query_id) = self.active.query_id() else {
             return Ok(false);
         };
-        let cursor = self
-            .client
-            .query("KILL QUERY WHERE query_id = {target:String} SYNC")
-            .param("target", query_id.as_str())
-            .fetch_bytes("RowBinary")
-            .map_err(|_| ClickHouseError::Query)?;
-        let mut reader = ChunkReader::new(cursor);
-        let status_len = read_leb128(&mut reader).await?;
-        if status_len > 32 {
-            return Err(ClickHouseError::Protocol);
+        self.active.request_cancel();
+        let result = async {
+            let cursor = self
+                .client
+                .query("KILL QUERY WHERE query_id = {target:String} SYNC")
+                .param("target", query_id.as_str())
+                .fetch_bytes("RowBinary")
+                .map_err(|_| ClickHouseError::Query)?;
+            let mut reader = ChunkReader::new(cursor);
+            let status_len = read_leb128(&mut reader).await?;
+            if status_len > 32 {
+                return Err(ClickHouseError::Protocol);
+            }
+            let mut status = vec![0; status_len as usize];
+            reader.read_exact(&mut status).await?;
+            Ok(status == b"finished")
         }
-        let mut status = vec![0; status_len as usize];
-        reader.read_exact(&mut status).await?;
-        if status == b"finished" {
+        .await;
+        if matches!(result, Ok(true)) {
             self.active.confirm();
-            Ok(true)
         } else {
-            Ok(false)
+            self.active.reject_cancel();
+        }
+        result
+    }
+
+    pub(crate) fn mark_cancel_requested(&self) {
+        if self.active.query_id().is_some() {
+            self.active.request_cancel();
         }
     }
 }
@@ -818,6 +860,9 @@ impl ClickHouseRowStream {
         if let Some(label) = summary_label_from_cursor(&self.reader.cursor) {
             self.progress_label = Some(label);
         }
+        if !matches!(result, Ok(Some(_))) {
+            self.active.wait_for_cancel_resolution().await;
+        }
         if self.active.is_confirmed() && !matches!(result, Ok(Some(_))) {
             Err(ClickHouseError::ServerCancelled)
         } else {
@@ -831,12 +876,16 @@ impl ClickHouseRowStream {
         start_row: u64,
     ) -> Result<Option<ResultPage>, ClickHouseError> {
         if self.complete {
-            self.active.clear(&self.query_id);
+            if !self.active.is_cancel_requested() && !self.active.is_confirmed() {
+                self.active.clear(&self.query_id);
+            }
             return Ok(None);
         }
         if !self.reader.has_data().await? {
             self.complete = true;
-            self.active.clear(&self.query_id);
+            if !self.active.is_cancel_requested() && !self.active.is_confirmed() {
+                self.active.clear(&self.query_id);
+            }
             return Ok(None);
         }
         let mut values = Vec::new();
@@ -874,7 +923,7 @@ impl ClickHouseRowStream {
         {
             warnings = warnings.with(PageWarning::UnknownValues);
         }
-        if self.complete {
+        if self.complete && !self.active.is_cancel_requested() && !self.active.is_confirmed() {
             self.active.clear(&self.query_id);
         }
         ResultPage::from_row_major(

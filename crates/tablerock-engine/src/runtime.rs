@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     sync::Arc,
+    time::Duration,
 };
 
 use tablerock_core::{CancelDispatch, OperationId, PageIdentity, ResultPage};
@@ -292,6 +293,8 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
     let mut start_row = 0_u64;
     let mut stop_client = false;
     let mut terminal_error = None;
+    let (cancel_result_tx, mut cancel_results) = mpsc::channel(1);
+    let mut cancel_task = None;
 
     loop {
         if let Some(event) = pending.pop_front() {
@@ -309,13 +312,33 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
                 }
                 cancel = cancels.recv() => {
                     pending.push_front(event);
-                    if cancel.is_some() {
-                        handle_cancel(
-                            operation_id,
-                            session.as_ref(),
-                            &mut pending,
-                            &mut cancel_dispatched,
-                        ).await;
+                    if cancel.is_some() && !cancel_dispatched && cancel_task.is_none() {
+                        if session.cancel_requires_stream_progress() {
+                            cancel_task = Some(spawn_cancel(
+                                operation_id,
+                                Arc::clone(&session),
+                                cancel_result_tx.clone(),
+                            ));
+                        } else {
+                            handle_cancel(
+                                operation_id,
+                                session.as_ref(),
+                                &mut pending,
+                                &mut cancel_dispatched,
+                            ).await;
+                        }
+                    }
+                }
+                dispatch = cancel_results.recv(), if cancel_task.is_some() => {
+                    if let Some(dispatch) = dispatch {
+                        pending.push_front(event);
+                        pending.push_back(DriverOperationEvent::CancelDispatched(dispatch));
+                        cancel_dispatched = true;
+                        if let Some(task) = cancel_task.take() {
+                            let _ = task.await;
+                        }
+                    } else {
+                        pending.push_front(event);
                     }
                 }
             }
@@ -330,13 +353,30 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
                 }
             }
             cancel = cancels.recv() => {
-                if cancel.is_some() {
-                    handle_cancel(
-                        operation_id,
-                        session.as_ref(),
-                        &mut pending,
-                        &mut cancel_dispatched,
-                    ).await;
+                if cancel.is_some() && !cancel_dispatched && cancel_task.is_none() {
+                    if session.cancel_requires_stream_progress() {
+                        cancel_task = Some(spawn_cancel(
+                            operation_id,
+                            Arc::clone(&session),
+                            cancel_result_tx.clone(),
+                        ));
+                    } else {
+                        handle_cancel(
+                            operation_id,
+                            session.as_ref(),
+                            &mut pending,
+                            &mut cancel_dispatched,
+                        ).await;
+                    }
+                }
+            }
+            dispatch = cancel_results.recv(), if cancel_task.is_some() => {
+                if let Some(dispatch) = dispatch {
+                    pending.push_back(DriverOperationEvent::CancelDispatched(dispatch));
+                    cancel_dispatched = true;
+                    if let Some(task) = cancel_task.take() {
+                        let _ = task.await;
+                    }
                 }
             }
             page = stream.next_page(identity, start_row) => {
@@ -366,6 +406,18 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
         }
     }
 
+    if cancel_task.is_some()
+        && !cancel_dispatched
+        && let Ok(Some(dispatch)) =
+            tokio::time::timeout(Duration::from_secs(1), cancel_results.recv()).await
+    {
+        pending.push_back(DriverOperationEvent::CancelDispatched(dispatch));
+    }
+    if let Some(task) = cancel_task.take() {
+        task.abort();
+        let _ = task.await;
+    }
+
     if stop_client {
         let _ = events.try_send(DriverOperationEvent::ClientStopped);
         drop(stream);
@@ -385,6 +437,18 @@ async fn run_operation(input: OperationTaskInput) -> DriverTaskExit {
     };
     let _ = events.send(event).await;
     exit
+}
+
+fn spawn_cancel(
+    operation_id: OperationId,
+    session: Arc<dyn DriverSession>,
+    result: mpsc::Sender<CancelDispatch>,
+) -> JoinHandle<()> {
+    session.prepare_cancel(operation_id);
+    tokio::spawn(async move {
+        let dispatch = session.cancel(operation_id).await;
+        let _ = result.send(dispatch).await;
+    })
 }
 
 struct StreamStartControl<'a> {

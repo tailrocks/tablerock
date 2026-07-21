@@ -50,6 +50,102 @@ struct StartingSession {
     shutdown: Arc<AtomicBool>,
 }
 
+struct CoupledStream {
+    cancel_requested: Arc<Notify>,
+    stream_drained: Arc<Notify>,
+}
+
+impl DriverPageStream for CoupledStream {
+    fn next_page<'a>(
+        &'a mut self,
+        _identity: PageIdentity,
+        _start_row: u64,
+    ) -> DriverFuture<'a, Result<Option<tablerock_core::ResultPage>, AdapterError>> {
+        Box::pin(async move {
+            self.cancel_requested.notified().await;
+            self.stream_drained.notify_one();
+            Ok(None)
+        })
+    }
+}
+
+struct CoupledCancelSession {
+    cancel_requested: Arc<Notify>,
+    stream_drained: Arc<Notify>,
+}
+
+impl DriverSession for CoupledCancelSession {
+    fn engine(&self) -> Engine {
+        Engine::ClickHouse
+    }
+
+    fn start_page_stream<'a>(
+        &'a self,
+        _request: DriverPageRequest,
+    ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
+        let cancel_requested = Arc::clone(&self.cancel_requested);
+        let stream_drained = Arc::clone(&self.stream_drained);
+        Box::pin(async move {
+            Ok(Box::new(CoupledStream {
+                cancel_requested,
+                stream_drained,
+            }) as Box<dyn DriverPageStream>)
+        })
+    }
+
+    fn cancel_requires_stream_progress(&self) -> bool {
+        true
+    }
+
+    fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
+        Box::pin(async move {
+            self.cancel_requested.notify_one();
+            self.stream_drained.notified().await;
+            CancelDispatch::RequestSent
+        })
+    }
+
+    fn health<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::SessionHealth, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::SessionHealth::new(
+                Engine::ClickHouse,
+                true,
+                0,
+            ))
+        })
+    }
+
+    fn catalog<'a>(
+        &'a self,
+        _request: tablerock_engine::CatalogRequest,
+    ) -> DriverFuture<'a, Result<tablerock_engine::CatalogSubtree, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::ClickHouse,
+                AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
+    fn describe<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<tablerock_engine::ServerDescribe, AdapterError>> {
+        Box::pin(async {
+            Ok(tablerock_engine::ServerDescribe::new(
+                Engine::ClickHouse,
+                "test",
+                0,
+            ))
+        })
+    }
+
+    fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
 impl DriverSession for StartingSession {
     fn engine(&self) -> Engine {
         Engine::PostgreSql
@@ -279,6 +375,53 @@ async fn routes_cancel_while_output_is_backpressured() {
     );
     // Runtime no longer shuts the session down at terminal.
     assert!(!shutdown.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn drains_stream_while_cancel_transport_waits_for_it() {
+    let operation_id = operation(6);
+    let mut runtime = DriverRuntime::new(1, 2).unwrap();
+    let mut events = runtime
+        .spawn(
+            operation_id,
+            Arc::new(CoupledCancelSession {
+                cancel_requested: Arc::new(Notify::new()),
+                stream_drained: Arc::new(Notify::new()),
+            }),
+            request(),
+            identity(),
+        )
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap(),
+        Some(DriverOperationEvent::Started)
+    ));
+    assert_eq!(runtime.cancel(operation_id), RuntimeCancelOutcome::Queued);
+    assert!(matches!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap(),
+        Some(DriverOperationEvent::CancelDispatched(
+            CancelDispatch::RequestSent
+        ))
+    ));
+    assert!(matches!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap(),
+        Some(DriverOperationEvent::Completed)
+    ));
+    assert_eq!(
+        timeout(Duration::from_secs(1), runtime.join(operation_id))
+            .await
+            .unwrap()
+            .unwrap(),
+        DriverTaskExit::Completed
+    );
 }
 
 #[tokio::test]

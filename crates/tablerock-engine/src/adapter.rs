@@ -344,6 +344,16 @@ pub trait DriverSession: Send + Sync {
         request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>>;
 
+    /// Marks driver-local stream state before asynchronous cancel transport
+    /// starts. Implementations must not perform I/O here.
+    fn prepare_cancel(&self, _operation_id: OperationId) {}
+
+    /// Whether cancel transport must progress concurrently with the result
+    /// stream to avoid protocol backpressure.
+    fn cancel_requires_stream_progress(&self) -> bool {
+        false
+    }
+
     fn cancel<'a>(&'a self, operation_id: OperationId) -> DriverFuture<'a, CancelDispatch>;
 
     /// Cheap round-trip proving the session can still reach the server.
@@ -822,6 +832,14 @@ impl DriverSession for ClickHouseSession {
                 )),
             }
         })
+    }
+
+    fn prepare_cancel(&self, _operation_id: OperationId) {
+        self.mark_cancel_requested();
+    }
+
+    fn cancel_requires_stream_progress(&self) -> bool {
+        true
     }
 
     fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
