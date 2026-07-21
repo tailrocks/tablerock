@@ -409,7 +409,8 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     if scenario == "stale-event" { throw ScriptedBackendError.staleEvent }
     if scenario == "cursor-resync" { throw ScriptedBackendError.cursorResyncRequired }
     if scenario == "history-failure-after-page" {
-      throw ScriptedBackendError.historyFailedAfterPage
+      return WorkbenchOperation(
+        table: nil, envelope: nil, outcome: "ok", historyFailed: true)
     }
     return WorkbenchOperation(table: nil, envelope: nil, outcome: "ok", historyFailed: false)
   }

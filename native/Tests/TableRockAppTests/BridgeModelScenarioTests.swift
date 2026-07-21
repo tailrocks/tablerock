@@ -42,7 +42,6 @@ final class BridgeModelScenarioTests: XCTestCase {
     let staleEvent = ScriptedWorkbenchBackend(scenario: "stale-event")
     let cursor = ScriptedWorkbenchBackend(scenario: "cursor-resync")
     let columns = ScriptedWorkbenchBackend(scenario: "mismatched-next-page-columns")
-    let history = ScriptedWorkbenchBackend(scenario: "history-failure-after-page")
 
     await XCTAssertThrowsErrorAsync {
       try await connection.openProfile(id: id, secretOverride: nil)
@@ -58,7 +57,28 @@ final class BridgeModelScenarioTests: XCTestCase {
     await XCTAssertThrowsErrorAsync {
       try await columns.fetchPage(resultId: id, startRow: 0, revision: 1)
     }
-    await XCTAssertThrowsErrorAsync { try await history.finish(operationId: id) }
+  }
+
+  func testHistoryFailureRemainsVisibleAfterSuccessfulOperation() async throws {
+    let backend = ScriptedWorkbenchBackend(scenario: "history-failure-after-page")
+    let projection = try await backend.finish(operationId: Data(repeating: 1, count: 16))
+
+    XCTAssertEqual(projection.outcome, "ok")
+    XCTAssertTrue(projection.historyFailed)
+  }
+
+  func testWindowsShareBackendButOwnPresentationState() {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let first = BridgeModel(client: backend)
+    let second = BridgeModel(client: backend)
+
+    first.queryText = "SELECT first;"
+    second.queryText = "SELECT second;"
+
+    XCTAssertNotEqual(first.windowId, second.windowId)
+    XCTAssertEqual(first.queryText, "SELECT first;")
+    XCTAssertEqual(second.queryText, "SELECT second;")
+    XCTAssertFalse(first.queryTabs[0] === second.queryTabs[0])
   }
 }
 
