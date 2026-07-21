@@ -1636,6 +1636,7 @@ final class BridgeModel {
   private var activeQueryTab: NativeQueryTab {
     queryTabs.first(where: { $0.id == selectedQueryTabId }) ?? queryTabs[0]
   }
+  var activeQueryTabForPresentation: NativeQueryTab { activeQueryTab }
   private var activeObjectTab: NativeObjectTab? {
     guard let selectedObjectTabId else { return nil }
     return objectTabs.first(where: { $0.id == selectedObjectTabId })
@@ -4416,12 +4417,10 @@ struct ContentView: View {
 struct QueryWorkbenchView: View {
   @Environment(BridgeModel.self) private var model
 
-  private var queryStatus: String {
-    model.queryError ?? model.cancelOutcome ?? model.querySummary ?? "Idle"
-  }
-
   var body: some View {
     @Bindable var model = model
+    @Bindable var tab = model.activeQueryTabForPresentation
+    let queryStatus = tab.queryError ?? tab.cancelOutcome ?? tab.querySummary ?? "Idle"
     VStack(alignment: .leading, spacing: 6) {
       HStack {
         Text("SQL").font(.headline)
