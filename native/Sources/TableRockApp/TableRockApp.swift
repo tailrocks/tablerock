@@ -2406,24 +2406,8 @@ final class BridgeModel {
         sessionData = session
         sessionHex = session.map { String(format: "%02x", $0) }.joined()
         connectedEngine = formEngine
-        let tab = activeQueryTab
-        let operation = try await client.submit(
-          session: session, intent: "execute", statement: tab.statementText)
-        tab.activeOperationId = operation
-        tab.isRunning = true
         status = "Scripted query running"
-        Task { [weak self] in
-          do {
-            let projection = try await client.finish(operationId: operation)
-            guard self != nil else { return }
-            tab.writeOutcome = projection.outcome
-          } catch {
-            guard self != nil else { return }
-            tab.queryError = "Query failed: \(error)"
-          }
-          tab.activeOperationId = nil
-          tab.isRunning = false
-        }
+        Task { [weak self] in await self?.runQuery() }
       } catch {
         bridgeError = "Scripted query setup failed: \(error)"
         status = "error"
