@@ -131,6 +131,9 @@ pub struct BridgeBrowseFilter {
     pub value: Option<String>,
 }
 
+const MAX_BROWSE_IDENTIFIER_BYTES: usize = 1_024;
+const MAX_BROWSE_VALUE_BYTES: usize = 64 * 1_024;
+
 impl std::fmt::Debug for BridgeBrowseFilter {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -2798,6 +2801,12 @@ impl TableRockBridge {
             let sort = sort
                 .into_iter()
                 .map(|key| {
+                    if key.column.len() > MAX_BROWSE_IDENTIFIER_BYTES {
+                        return Err(BridgeError::rejected(
+                            "catalog-browse-sort",
+                            "sort column must be at most 1024 bytes",
+                        ));
+                    }
                     if !seen.insert(key.column.clone()) {
                         return Err(BridgeError::rejected(
                             "catalog-browse-sort",
@@ -2829,6 +2838,22 @@ impl TableRockBridge {
             let filters = filters
                 .into_iter()
                 .map(|filter| {
+                    if filter.column.len() > MAX_BROWSE_IDENTIFIER_BYTES {
+                        return Err(BridgeError::rejected(
+                            "catalog-browse-filter",
+                            "filter column must be at most 1024 bytes",
+                        ));
+                    }
+                    if filter
+                        .value
+                        .as_ref()
+                        .is_some_and(|value| value.len() > MAX_BROWSE_VALUE_BYTES)
+                    {
+                        return Err(BridgeError::rejected(
+                            "catalog-browse-filter",
+                            "filter value must be at most 65536 bytes",
+                        ));
+                    }
                     let operator = match filter.operator.as_str() {
                         "eq" => FilterOperator::Eq,
                         "ne" => FilterOperator::Ne,

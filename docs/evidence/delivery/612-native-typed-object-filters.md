@@ -24,9 +24,10 @@ syntax. Presentation work alone could not safely close this gap.
   parameters. The pinned official `clickhouse` 0.15.1 client sends each value
   through `Query::param`; PostgreSQL continues through prepared `query_raw`.
 - Added bounded/redacted `BridgeBrowseFilter` intent: 32-filter maximum,
-  allow-listed operators, typed value parsing, identifier validation, and
-  missing/unexpected-value rejection. General arbitrary-query submission still
-  cannot smuggle bridge parameters.
+  1,024-byte identifier ceiling, 64-KiB value ceiling, allow-listed operators,
+  typed value parsing, identifier validation, and missing/unexpected-value
+  rejection. Sort identifiers use the same byte ceiling. General
+  arbitrary-query submission still cannot smuggle bridge parameters.
 - Added per-object-tab filter drafts and active filters with column/operator/
   value controls, explicit remove/clear actions, stable accessibility IDs, and
   isolated reload behavior. Swift owns only presentation intent; Rust owns
@@ -44,6 +45,9 @@ cargo clippy -p tablerock-engine -p tablerock-ffi -p tablerock-cli \
 
 cargo nextest run -p tablerock-engine --lib -p tablerock-ffi --locked
 # 114 passed
+
+cargo nextest run -p tablerock-ffi --test conformance --locked
+# 17 passed, including over-limit sort/filter identifiers and filter values
 
 cargo nextest run -p tablerock-engine --test postgres_real --locked \
   -E 'test(=persistent_session_runs_statement_cancel_health_and_reuses_connection)'

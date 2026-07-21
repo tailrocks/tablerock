@@ -640,6 +640,18 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-sort"
         ));
         assert!(matches!(
+            bridge.submit_catalog_browse_with_sort(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                vec![BridgeBrowseSort {
+                    column: "x".repeat(1_025),
+                    direction: "asc".into(),
+                }],
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-sort"
+        ));
+        assert!(matches!(
             bridge.submit_catalog_browse_with_plan(
                 session_id.clone(),
                 object.id_bytes.clone(),
@@ -648,6 +660,34 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
                     column: "id".into(),
                     operator: "contains_magic".into(),
                     value: Some("1".into()),
+                }],
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-filter"
+        ));
+        assert!(matches!(
+            bridge.submit_catalog_browse_with_plan(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                Vec::new(),
+                vec![BridgeBrowseFilter {
+                    column: "x".repeat(1_025),
+                    operator: "eq".into(),
+                    value: Some("1".into()),
+                }],
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-filter"
+        ));
+        assert!(matches!(
+            bridge.submit_catalog_browse_with_plan(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                Vec::new(),
+                vec![BridgeBrowseFilter {
+                    column: "id".into(),
+                    operator: "eq".into(),
+                    value: Some("x".repeat(65_537)),
                 }],
                 500,
             ),
