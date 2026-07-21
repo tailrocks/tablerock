@@ -6190,7 +6190,7 @@ struct CatalogGrid: NSViewRepresentable {
     final class ResultCellView: NSTableCellView {
       var onActivate: (() -> Void)?
 
-      @objc func activate() {
+      @objc func activate(_ sender: NSClickGestureRecognizer) {
         onActivate?()
       }
 
@@ -6290,7 +6290,7 @@ struct CatalogGrid: NSViewRepresentable {
         cell = ResultCellView()
         cell.identifier = identifier
         cell.addGestureRecognizer(
-          NSClickGestureRecognizer(target: cell, action: #selector(ResultCellView.activate)))
+          NSClickGestureRecognizer(target: cell, action: #selector(ResultCellView.activate(_:))))
         let label = NSTextField(labelWithString: "")
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
