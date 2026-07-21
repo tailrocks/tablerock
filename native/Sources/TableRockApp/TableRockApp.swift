@@ -5917,6 +5917,7 @@ struct SqlTextEditor: NSViewRepresentable {
     editor.drawsBackground = true
     editor.backgroundColor = .textBackgroundColor
     editor.string = text
+    editor.setAccessibilityEnabled(true)
     editor.setAccessibilityLabel("SQL editor")
     editor.setAccessibilityIdentifier("query.editor")
 
