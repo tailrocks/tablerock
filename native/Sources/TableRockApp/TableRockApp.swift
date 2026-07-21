@@ -1745,7 +1745,8 @@ final class BridgeModel {
   }
   var isRunning: Bool {
     get {
-      selectedWorkbenchKind == "object"
+      _ = queryStateRevision
+      return selectedWorkbenchKind == "object"
         ? activeObjectTab?.isRunning == true : activeQueryTab.isRunning
     }
     set {
@@ -1754,11 +1755,18 @@ final class BridgeModel {
       } else {
         activeQueryTab.isRunning = newValue
       }
+      queryStateRevision &+= 1
     }
   }
   var cancelOutcome: String? {
-    get { activeQueryTab.cancelOutcome }
-    set { activeQueryTab.cancelOutcome = newValue }
+    get {
+      _ = queryStateRevision
+      return activeQueryTab.cancelOutcome
+    }
+    set {
+      activeQueryTab.cancelOutcome = newValue
+      queryStateRevision &+= 1
+    }
   }
   // Pagination state for the current result (fetch_page).
   var resultIdData: Data? {
@@ -1823,6 +1831,7 @@ final class BridgeModel {
   private let startupError: String?
   private let dependencies: AppDependencies
   var sessionData: Data?
+  private var queryStateRevision: UInt64 = 0
 
   init(
     client: (any WorkbenchBackend)? = nil,
@@ -3095,6 +3104,7 @@ final class BridgeModel {
     objectTabs = []
     selectedObjectTabId = nil
     selectedWorkbenchKind = "query"
+    queryStateRevision &+= 1
   }
 
   private var hasUnsavedEditorText: Bool { queryText != sqlFileBaseline }
@@ -3756,9 +3766,11 @@ final class BridgeModel {
     tab.activeOperationId = operationId
     tab.isRunning = true
     tab.cancelOutcome = nil
+    queryStateRevision &+= 1
     defer {
       tab.activeOperationId = nil
       tab.isRunning = false
+      queryStateRevision &+= 1
     }
     let projection = try await client.finish(operationId: operationId)
     tab.writeOutcome = projection.outcome
@@ -3780,7 +3792,7 @@ final class BridgeModel {
       guard let client, let operationId = tab.activeOperationId else { return }
       do {
         let outcome = try await client.cancel(operationId: operationId)
-        tab.summary = String(describing: outcome)
+        tab.summary = cancelOutcomeText(outcome)
       } catch { tab.error = "Cancel failed: \(error)" }
       return
     }
@@ -3788,10 +3800,11 @@ final class BridgeModel {
     guard let client, let operationId = tab.activeOperationId else { return }
     do {
       let outcome = try await client.cancel(operationId: operationId)
-      tab.cancelOutcome = String(describing: outcome)
+      tab.cancelOutcome = cancelOutcomeText(outcome)
     } catch {
       tab.cancelOutcome = "Cancel failed: \(error)"
     }
+    queryStateRevision &+= 1
   }
 
   /// Fetch the next page of the current result and append its rows.
@@ -3822,6 +3835,11 @@ final class BridgeModel {
     } catch {
       tab.queryError = "Load more failed: \(error)"
     }
+  }
+
+  private func cancelOutcomeText(_ outcome: WorkbenchCancelOutcome) -> String {
+    guard let runtime = outcome.runtime, !runtime.isEmpty else { return outcome.core }
+    return "\(outcome.core) · \(runtime)"
   }
 
   func browse(expandedNodeKey: String? = nil) async {

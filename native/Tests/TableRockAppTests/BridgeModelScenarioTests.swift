@@ -69,6 +69,24 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertNil(model.connectError)
   }
 
+  func testScriptedCancellationPublishesSemanticOutcome() async throws {
+    let backend = ScriptedWorkbenchBackend(scenario: "slow-until-cancelled")
+    let model = BridgeModel(client: backend)
+    model.sessionData = Data(repeating: 1, count: 16)
+
+    let query = Task { await model.runQuery() }
+    for _ in 0..<100 where !model.isRunning {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertTrue(model.isRunning)
+
+    await model.cancel()
+    await query.value
+
+    XCTAssertEqual(model.cancelOutcome, "Requested")
+    XCTAssertFalse(model.isRunning)
+  }
+
   func testHistoryFailureRemainsVisibleAfterSuccessfulOperation() async throws {
     let backend = ScriptedWorkbenchBackend(scenario: "history-failure-after-page")
     let projection = try await backend.finish(operationId: Data(repeating: 1, count: 16))
