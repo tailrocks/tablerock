@@ -1,8 +1,9 @@
 use std::{error::Error, fmt, future::Future, pin::Pin, time::Instant};
 
 use tablerock_core::{
-    AuthorizedMutationPlan, BoundedBytes, BoundedText, CancelDispatch, Engine, OperationId,
-    PageIdentity, PageLimits, ResultPage, StatementText,
+    ApplicationCode, AuthorizedMutationPlan, BoundedBytes, BoundedText, CancelDispatch, Engine,
+    FailureClass, OperationId, OperationSafety, OperatorAction, OutcomeCertainty, PageIdentity,
+    PageLimits, ResultPage, SafeCode, SafeDiagnostic, Severity, StatementText,
 };
 
 use crate::{
@@ -238,6 +239,71 @@ impl AdapterError {
     #[must_use]
     pub const fn class(self) -> AdapterFailureClass {
         self.class
+    }
+
+    /// Projects only closed adapter facts. No driver/server message survives.
+    #[must_use]
+    pub fn safe_diagnostic(self) -> SafeDiagnostic {
+        let (class, action, application_code) = match self.class {
+            AdapterFailureClass::Authentication => (
+                FailureClass::Authentication,
+                OperatorAction::Reauthenticate,
+                None,
+            ),
+            AdapterFailureClass::PermissionDenied => (
+                FailureClass::Authorization,
+                OperatorAction::ReviewInput,
+                None,
+            ),
+            AdapterFailureClass::Connection | AdapterFailureClass::CancellationTransport => {
+                (FailureClass::Connectivity, OperatorAction::Reconnect, None)
+            }
+            AdapterFailureClass::Timeout => (
+                FailureClass::Timeout,
+                OperatorAction::ReviewOutcome,
+                Some(ApplicationCode::Timeout),
+            ),
+            AdapterFailureClass::InvalidRequest => (
+                FailureClass::InvalidInput,
+                OperatorAction::ReviewInput,
+                None,
+            ),
+            AdapterFailureClass::ResourceLimit => (
+                FailureClass::ResourceLimit,
+                OperatorAction::ReduceScope,
+                Some(ApplicationCode::ResourceLimit),
+            ),
+            AdapterFailureClass::Query | AdapterFailureClass::ServerCancelled => {
+                (FailureClass::Server, OperatorAction::ReviewInput, None)
+            }
+            AdapterFailureClass::WriteOutcomeUnknown => (
+                FailureClass::Connectivity,
+                OperatorAction::ReviewOutcome,
+                None,
+            ),
+            AdapterFailureClass::EngineMismatch
+            | AdapterFailureClass::Protocol
+            | AdapterFailureClass::Decode
+            | AdapterFailureClass::Page
+            | AdapterFailureClass::ClientCancelled => (
+                FailureClass::Internal,
+                OperatorAction::ReportBug,
+                Some(ApplicationCode::Internal),
+            ),
+        };
+        let diagnostic = SafeDiagnostic::new(
+            class,
+            self.engine,
+            Severity::Error,
+            OutcomeCertainty::Unknown,
+            OperationSafety::Unknown,
+        )
+        .with_action(action);
+        application_code.map_or(diagnostic.clone(), |code| {
+            diagnostic
+                .with_code(SafeCode::Application(code))
+                .expect("application codes are valid for every engine")
+        })
     }
 }
 
@@ -1353,6 +1419,24 @@ mod redis_mapping_tests {
         assert_eq!(
             map_redis(RedisError::LogicalDatabaseMismatch).class(),
             AdapterFailureClass::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn adapter_failure_projection_contains_only_closed_safe_facts() {
+        let diagnostic =
+            AdapterError::new(Engine::Redis, AdapterFailureClass::Authentication).safe_diagnostic();
+        assert_eq!(diagnostic.engine(), Engine::Redis);
+        assert_eq!(diagnostic.class(), FailureClass::Authentication);
+        assert_eq!(diagnostic.action(), OperatorAction::Reauthenticate);
+        assert_eq!(diagnostic.code(), None);
+
+        let timeout =
+            AdapterError::new(Engine::PostgreSql, AdapterFailureClass::Timeout).safe_diagnostic();
+        assert_eq!(timeout.class(), FailureClass::Timeout);
+        assert_eq!(
+            timeout.code(),
+            Some(SafeCode::Application(ApplicationCode::Timeout))
         );
     }
 

@@ -4,8 +4,9 @@ use tablerock_core::{
     CancelDispatch, CatalogCursor, CatalogIdentity, CatalogLimits, CatalogNode, CatalogNodeId,
     CatalogSnapshot, CommandEnvelope, CommandIntent, CommandScope, EventSequence, IdParts,
     OperationEvent, OperationId, OperationIdentity, OperationOutcome, OperationPhase,
-    OperationRetireError, PageIdentity, ResultPage, ServiceCoordinator, ServiceError, ServicePhase,
-    SessionId, ShutdownMode, ShutdownOutcome, SubscriptionId, SubscriptionStart,
+    OperationRetireError, PageIdentity, ResultPage, SafeDiagnostic, ServiceCoordinator,
+    ServiceError, ServicePhase, SessionId, ShutdownMode, ShutdownOutcome, SubscriptionId,
+    SubscriptionStart,
 };
 
 use crate::{
@@ -87,6 +88,7 @@ pub struct EngineService {
     runtime: Option<DriverRuntime>,
     sessions: SessionRegistry,
     operations: BTreeMap<OperationId, EngineOperation>,
+    terminal_diagnostics: BTreeMap<OperationId, SafeDiagnostic>,
 }
 
 impl EngineService {
@@ -100,6 +102,7 @@ impl EngineService {
             runtime: Some(runtime),
             sessions: SessionRegistry::new(max_sessions).map_err(EngineServiceError::Session)?,
             operations: BTreeMap::new(),
+            terminal_diagnostics: BTreeMap::new(),
         })
     }
 
@@ -359,6 +362,10 @@ impl EngineService {
             .core
             .operation_phase(operation_id)
             .ok_or(EngineServiceError::TerminalMismatch)?;
+        let diagnostic = match observed {
+            DriverTaskExit::Failed(error) => Some(error.safe_diagnostic()),
+            _ => None,
+        };
         let outcome = match (phase, observed) {
             (OperationPhase::CancelRequested, DriverTaskExit::Completed) => {
                 OperationOutcome::CompletedBeforeCancel
@@ -377,7 +384,18 @@ impl EngineService {
         self.core
             .transition(operation_id, OperationPhase::Terminal(outcome))
             .map_err(EngineServiceError::Core)?;
+        if let Some(diagnostic) = diagnostic {
+            self.terminal_diagnostics.insert(operation_id, diagnostic);
+        }
         Ok(Some(EngineServiceUpdate::Terminal(outcome)))
+    }
+
+    /// Removes the closed failure projection retained for one terminal operation.
+    pub fn take_terminal_diagnostic(
+        &mut self,
+        operation_id: OperationId,
+    ) -> Option<SafeDiagnostic> {
+        self.terminal_diagnostics.remove(&operation_id)
     }
 
     fn transition_unknown(&mut self, operation_id: OperationId) -> Result<(), EngineServiceError> {
@@ -427,7 +445,9 @@ impl EngineService {
     }
 
     pub fn retire(&mut self, operation_id: OperationId) -> Result<(), OperationRetireError> {
-        self.core.retire(operation_id)
+        self.core.retire(operation_id)?;
+        self.terminal_diagnostics.remove(&operation_id);
+        Ok(())
     }
 
     pub fn begin_shutdown(

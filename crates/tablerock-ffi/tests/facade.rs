@@ -224,6 +224,8 @@ fn failed_runtime_outcome_enters_safe_support_bundle() {
         .export_support_bundle(destination.to_string_lossy().into_owned())
         .unwrap();
     let payload = fs::read_to_string(&destination).unwrap();
+    assert!(payload.contains("diagnostics.count=1\n"));
+    assert!(payload.contains("diagnostic.0=PostgreSql|Server|None|Error"));
     assert!(payload.contains("operation_outcome.0=PostgreSql|Failed\n"));
     assert!(!payload.contains("secret statement"));
     fs::remove_dir_all(directory).unwrap();

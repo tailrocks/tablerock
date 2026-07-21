@@ -4486,6 +4486,9 @@ impl BridgeInner {
                 Ok(false)
             }
             EngineServiceUpdate::Terminal(outcome) => {
+                if let Some(diagnostic) = self.service.take_terminal_diagnostic(operation_id) {
+                    let _ = self.support_bundle.push(&diagnostic);
+                }
                 if !matches!(outcome, OperationOutcome::Completed)
                     && let Some(identity) = self.operation_results.get(&operation_id)
                 {
