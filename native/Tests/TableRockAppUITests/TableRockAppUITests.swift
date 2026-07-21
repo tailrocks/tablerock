@@ -100,6 +100,19 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testMarkedTextSurvivesPresentationUpdate() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_IME": "1"])
+
+    let status = app.staticTexts["query.status"]
+    XCTAssertTrue(status.waitForExistence(timeout: 10))
+    let preserved = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == 'IME composition preserved'"), object: status)
+    XCTAssertEqual(XCTWaiter.wait(for: [preserved], timeout: 10), .completed)
+  }
+
+  @MainActor
   private func launch(
     scenario: String,
     environment: [String: String] = [:]

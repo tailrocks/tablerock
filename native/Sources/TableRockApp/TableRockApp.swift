@@ -1940,6 +1940,43 @@ final class BridgeModel {
       runNativeValueInspectorAudit()
       return
     }
+    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_IME"] == "1" {
+      activeQueryTab.statementText = "SELECT "
+      status = "Preparing IME fixture"
+      try? await Task.sleep(for: .milliseconds(500))
+      guard let root = NSApplication.shared.windows.first(where: { $0.isVisible })?.contentView
+      else {
+        status = "IME fixture failed: no window"
+        return
+      }
+      func descendants(of view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap(descendants)
+      }
+      guard let editor = descendants(of: root).compactMap({ $0 as? NSTextView }).first else {
+        status = "IME fixture failed: no editor"
+        return
+      }
+      editor.window?.makeFirstResponder(editor)
+      editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
+      editor.setMarkedText(
+        "かな", selectedRange: NSRange(location: 2, length: 0),
+        replacementRange: NSRange(location: NSNotFound, length: 0))
+      guard editor.hasMarkedText() else {
+        status = "IME fixture failed: no marked text"
+        return
+      }
+      let composed = editor.string
+      activeQueryTab.statementText = "model update must not replace composition"
+      try? await Task.sleep(for: .milliseconds(250))
+      guard editor.hasMarkedText(), editor.string == composed else {
+        status = "IME fixture failed: composition replaced"
+        writePerformanceMetric("IME_PROOF_FAILED composition_replaced=true")
+        return
+      }
+      status = "IME composition preserved"
+      writePerformanceMetric("IME_PROOF_PASSED marked_text_survived_model_update=true")
+      return
+    }
     if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_STRUCTURE"] == "1" {
       guard let client else {
         writePerformanceMetric("STRUCTURE_PROOF_FAILED no bridge")
