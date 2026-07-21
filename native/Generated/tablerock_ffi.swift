@@ -833,7 +833,7 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func setProfileGroupAlphabetical(name: String, alphabetical: Bool) throws
 
     /**
-     * Graceful or cancel-active shutdown. `deadline_ms` reserved for future hard caps.
+     * Graceful or cancel-active shutdown with a hard drain deadline.
      */
     func shutdown(cancelActive: Bool, deadlineMs: UInt64) throws  -> ShutdownOutcome
 
@@ -1576,7 +1576,7 @@ open func setProfileGroupAlphabetical(name: String, alphabetical: Bool)throws   
 }
 
     /**
-     * Graceful or cancel-active shutdown. `deadline_ms` reserved for future hard caps.
+     * Graceful or cancel-active shutdown with a hard drain deadline.
      */
 open func shutdown(cancelActive: Bool, deadlineMs: UInt64)throws  -> ShutdownOutcome  {
     return try  FfiConverterTypeShutdownOutcome_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
@@ -4742,7 +4742,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_set_profile_group_alphabetical() != 29963) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_shutdown() != 28522) {
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_shutdown() != 63265) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_csv_import() != 10017) {
