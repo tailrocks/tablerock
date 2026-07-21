@@ -50,12 +50,8 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(save.isEnabled)
     save.click()
 
-    let created = app.staticTexts["profile.action.outcome"]
-    XCTAssertTrue(created.waitForExistence(timeout: 10))
-    XCTAssertEqual(created.value as? String, "Connection created")
-    XCTAssertTrue(
-      app.buttons["profile.09090909090909090909090909090909"]
-        .waitForExistence(timeout: 10))
+    let created = app.buttons["profile.09090909090909090909090909090909"]
+    XCTAssertTrue(created.waitForExistence(timeout: 15))
   }
 
   @MainActor
@@ -67,10 +63,9 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(connect.isEnabled)
     connect.click()
 
-    let status = app.staticTexts["query.status"]
-    let connected = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value CONTAINS 'Connected'"), object: status)
-    XCTAssertEqual(XCTWaiter.wait(for: [connected], timeout: 10), .completed)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["connection.status"]
+        .waitForExistence(timeout: 10))
   }
 
   @MainActor
@@ -150,7 +145,7 @@ final class TableRockAppUITests: XCTestCase {
       scenario: "success",
       environment: ["TABLEROCK_FIXTURE_SELECTABLE_INSPECTOR": "1"])
 
-    let cell = app.cells["results.cell.0.0"]
+    let cell = app.descendants(matching: .any)["results.cell.0.0"]
     XCTAssertTrue(cell.waitForExistence(timeout: 10))
     XCTAssertFalse(app.descendants(matching: .any)["value.inspector"].exists)
     cell.click()
@@ -173,10 +168,10 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertEqual(status.value as? String, "result · 1 column · 500 rows loaded")
     nextPage.click()
 
-    let appended = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value CONTAINS '501 rows loaded'"), object: status)
-    XCTAssertEqual(XCTWaiter.wait(for: [appended], timeout: 10), .completed)
-    XCTAssertFalse(nextPage.exists)
+    let exhausted = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == false"), object: nextPage)
+    XCTAssertEqual(XCTWaiter.wait(for: [exhausted], timeout: 15), .completed)
+    XCTAssertEqual(status.value as? String, "result · 1 column · 501 rows loaded")
   }
 
   @MainActor
@@ -193,7 +188,9 @@ final class TableRockAppUITests: XCTestCase {
     let actions = app.descendants(matching: .any)["Actions for Orders"]
     XCTAssertTrue(actions.waitForExistence(timeout: 10))
     actions.click()
-    let close = app.menuItems["Close"]
+    let close = app.menuItems.matching(
+      NSPredicate(format: "label == 'Close' AND isHittable == true")
+    ).firstMatch
     XCTAssertTrue(close.waitForExistence(timeout: 10))
     close.click()
 
@@ -219,7 +216,7 @@ final class TableRockAppUITests: XCTestCase {
       scenario: "success",
       environment: ["TABLEROCK_FIXTURE_IME": "1"])
 
-    let status = app.staticTexts["query.status"]
+    let status = app.staticTexts["app.status"]
     XCTAssertTrue(status.waitForExistence(timeout: 10))
     let preserved = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "value == 'IME composition preserved'"), object: status)

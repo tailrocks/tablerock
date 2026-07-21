@@ -4324,7 +4324,10 @@ struct ContentView: View {
     } detail: {
       VStack(alignment: .leading, spacing: 12) {
         Text("TableRock").font(.largeTitle).bold()
-        Text(model.status).foregroundStyle(.secondary)
+        Text(model.status)
+          .foregroundStyle(.secondary)
+          .accessibilityIdentifier("app.status")
+          .accessibilityValue(model.status)
         EnvironmentSafetyBadge(model: model)
         if let outcome = model.profileActionOutcome {
           Text(outcome)
@@ -4388,6 +4391,8 @@ struct ContentView: View {
             systemImage: "checkmark.circle.fill"
           )
           .foregroundStyle(.green)
+          .accessibilityIdentifier("connection.status")
+          .accessibilityValue(connectedSessionLabel(session))
           Button("Browse catalog") { Task { await model.browse() } }
             .buttonStyle(.borderedProminent)
         }
