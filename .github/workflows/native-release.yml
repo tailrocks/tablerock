@@ -125,8 +125,13 @@ jobs:
             --sign "$MACOS_DEVELOPER_IDENTITY" "$app"
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign --display --verbose=4 "$app" 2> artifacts/codesign.txt
-          ! codesign --display --entitlements :- "$app" 2>/dev/null \
-            | grep -q 'com.apple.security.get-task-allow.*true'
+          codesign --display --entitlements - "$app" \
+            > artifacts/entitlements.plist 2>/dev/null || true
+          if [[ -s artifacts/entitlements.plist ]]; then
+            get_task_allow="$(plutil -extract com.apple.security.get-task-allow raw \
+              -o - artifacts/entitlements.plist 2>/dev/null || echo false)"
+            test "$get_task_allow" != "true"
+          fi
           archs="$(lipo -archs "$app/Contents/MacOS/TableRock")"
           [[ "$archs" == "arm64 x86_64" || "$archs" == "x86_64 arm64" ]]
           ! otool -L "$app/Contents/MacOS/TableRock" | grep -E \
@@ -185,6 +190,7 @@ jobs:
             artifacts/TableRock-*-macos-universal.zip.sha256
             artifacts/xcodebuild-release.log
             artifacts/codesign.txt
+            artifacts/entitlements.plist
             artifacts/notary-submission.json
             artifacts/notary-log.json
             artifacts/gatekeeper.txt
