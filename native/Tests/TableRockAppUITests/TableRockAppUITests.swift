@@ -5,6 +5,7 @@ final class TableRockAppUITests: XCTestCase {
     continueAfterFailure = false
   }
 
+  @MainActor
   func testWorkbenchLaunchesWithIsolatedScriptedBackend() throws {
     let app = launch(scenario: "success")
 
@@ -12,6 +13,7 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(app.outlines["sidebar.profiles"].exists)
   }
 
+  @MainActor
   func testSlowQueryCancelsThroughRustBoundary() throws {
     let app = launch(scenario: "slow-until-cancelled")
     XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
@@ -34,6 +36,7 @@ final class TableRockAppUITests: XCTestCase {
     waitForExpectations(timeout: 10)
   }
 
+  @MainActor
   func testProfileEditorFixtureExposesStableControls() throws {
     let app = launch(
       scenario: "success",
@@ -43,6 +46,7 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(app.buttons["profile.editor.save"].exists)
   }
 
+  @MainActor
   func testAccessibilityFixtureExposesCatalogEditorAndGrid() throws {
     let app = launch(
       scenario: "success",
@@ -53,6 +57,7 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(app.tables["results.grid"].exists)
   }
 
+  @MainActor
   func testLargeGridFixtureExposesBoundedNativeTable() throws {
     let app = launch(
       scenario: "success",
@@ -61,6 +66,7 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(app.tables["results.grid"].waitForExistence(timeout: 10))
   }
 
+  @MainActor
   private func launch(
     scenario: String,
     environment: [String: String] = [:]
