@@ -5903,6 +5903,8 @@ struct SqlTextEditor: NSViewRepresentable {
   func makeNSView(context: Context) -> NSScrollView {
     let editor = NSTextView()
     editor.delegate = context.coordinator
+    editor.isEditable = true
+    editor.isSelectable = true
     editor.isRichText = false
     editor.importsGraphics = false
     editor.allowsUndo = true
