@@ -85,6 +85,12 @@ a deterministic key-sorted tree. Tree decoding fails closed above 64 KiB,
 1,024 nodes, or 64 levels; malformed/non-JSON structured values keep the text
 and hex views without presenting a false tree.
 
+Table-like object tabs expose ordered server sorting, typed parameterized
+filters, and an explicitly labeled raw-WHERE editor. Raw fragments are capped
+at 64 KiB and pass unchanged to Rust for validation and parenthesized query
+composition; Swift never constructs SQL. Apply and clear are explicit actions,
+and active raw mode remains visibly announced.
+
 ## Platform evidence gates
 
 The native design is accepted only with the phase 12-14 gates: strict

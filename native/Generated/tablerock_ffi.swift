@@ -857,7 +857,7 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
 
     func submitCatalogBrowse(sessionId: Data, catalogNodeId: Data, rowCount: UInt32) throws  -> Data
 
-    func submitCatalogBrowseWithPlan(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], filters: [BridgeBrowseFilter], rowCount: UInt32) throws  -> Data
+    func submitCatalogBrowseWithPlan(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], filters: [BridgeBrowseFilter], rawWhere: String?, rowCount: UInt32) throws  -> Data
 
     func submitCatalogBrowseWithSort(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], rowCount: UInt32) throws  -> Data
 
@@ -1653,7 +1653,7 @@ open func submitCatalogBrowse(sessionId: Data, catalogNodeId: Data, rowCount: UI
 })
 }
 
-open func submitCatalogBrowseWithPlan(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], filters: [BridgeBrowseFilter], rowCount: UInt32)throws  -> Data  {
+open func submitCatalogBrowseWithPlan(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], filters: [BridgeBrowseFilter], rawWhere: String?, rowCount: UInt32)throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
         uniffiCallStatus in
     uniffi_tablerock_ffi_fn_method_tablerockbridge_submit_catalog_browse_with_plan(
@@ -1662,6 +1662,7 @@ open func submitCatalogBrowseWithPlan(sessionId: Data, catalogNodeId: Data, sort
         FfiConverterData.lower(catalogNodeId),
         FfiConverterSequenceTypeBridgeBrowseSort.lower(sort),
         FfiConverterSequenceTypeBridgeBrowseFilter.lower(filters),
+        FfiConverterOptionString.lower(rawWhere),
         FfiConverterUInt32.lower(rowCount),uniffiCallStatus
     )
 })
@@ -4970,7 +4971,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_catalog_browse() != 61783) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_catalog_browse_with_plan() != 49705) {
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_catalog_browse_with_plan() != 54497) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_catalog_browse_with_sort() != 1474) {

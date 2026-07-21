@@ -181,7 +181,7 @@ final class TableRockAppUITests: XCTestCase {
       scenario: "success",
       environment: ["TABLEROCK_FIXTURE_OBJECT_TABS": "1"])
 
-    let addSort = app.buttons["object.sort.add"]
+    let addSort = app.descendants(matching: .any)["object.sort.add"]
     XCTAssertTrue(addSort.waitForExistence(timeout: 10))
     addSort.click()
     let idColumn = app.menuItems["id"]
@@ -195,17 +195,31 @@ final class TableRockAppUITests: XCTestCase {
     direction.click()
     XCTAssertTrue(app.buttons["id, descending; change direction"].waitForExistence(timeout: 5))
 
-    let value = app.textFields["object.filter.value"]
+    let value = app.descendants(matching: .any)["object.filter.value"]
     XCTAssertTrue(value.waitForExistence(timeout: 5))
     value.click()
     value.typeText("2")
-    let addFilter = app.buttons["object.filter.add"]
+    let addFilter = app.descendants(matching: .any)["object.filter.add"]
     XCTAssertTrue(addFilter.isEnabled)
     addFilter.click()
 
     let filter = app.descendants(matching: .any)["object.filter.active"]
     XCTAssertTrue(filter.waitForExistence(timeout: 5))
     XCTAssertEqual(filter.label, "id Equals 2")
+
+    let rawWhere = app.descendants(matching: .any)["object.raw-where.editor"]
+    XCTAssertTrue(rawWhere.waitForExistence(timeout: 5))
+    rawWhere.click()
+    rawWhere.typeText("id > 1")
+    let applyRawWhere = app.buttons["object.raw-where.apply"]
+    XCTAssertTrue(applyRawWhere.isEnabled)
+    applyRawWhere.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["object.raw-where.active"].waitForExistence(timeout: 5))
+    let clearRawWhere = app.buttons["object.raw-where.clear"]
+    XCTAssertTrue(clearRawWhere.isHittable)
+    clearRawWhere.click()
+    XCTAssertFalse(app.descendants(matching: .any)["object.raw-where.active"].exists)
   }
 
   @MainActor
@@ -288,10 +302,10 @@ final class TableRockAppUITests: XCTestCase {
     open.click()
     XCTAssertTrue(
       app.descendants(matching: .any)["import.csv.sheet"].waitForExistence(timeout: 10))
-    let stage = app.buttons["import.csv.stage"]
+    let stage = app.descendants(matching: .any)["import.csv.stage"]
     XCTAssertTrue(stage.waitForExistence(timeout: 10))
     stage.click()
-    let apply = app.buttons["import.csv.apply"]
+    let apply = app.descendants(matching: .any)["import.csv.apply"]
     XCTAssertTrue(apply.waitForExistence(timeout: 10))
     apply.click()
 

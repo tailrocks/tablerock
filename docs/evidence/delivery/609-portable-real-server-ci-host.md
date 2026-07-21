@@ -53,6 +53,11 @@ nextest correctly rejects an archived workspace whose original `/__w` root is
 absent in the container. The workflow now supplies its explicit portable
 workspace remap instead of depending on runner filesystem coincidence.
 
+Exact-head CI run `29871821771` then passed every job on commit `2a6e06b`,
+including the complete real-server matrix and the archived nextest ENOSPC case
+inside the remapped disposable container. This closes the runner-portability
+regression exposed by the preceding forward-only runs.
+
 ## Provenance
 
 No external product source, test, text, screenshot, layout, measurement, color,

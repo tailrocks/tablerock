@@ -41,7 +41,8 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func reconnect(session: Data, secretOverride: Data?) throws -> WorkbenchReconnectAttempt
   func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [WorkbenchCatalogNode]
   func submitCatalogBrowse(
-    session: Data, nodeId: Data, sort: [WorkbenchBrowseSort], filters: [WorkbenchBrowseFilter]
+    session: Data, nodeId: Data, sort: [WorkbenchBrowseSort], filters: [WorkbenchBrowseFilter],
+    rawWhere: String?
   ) throws -> Data
   func submit(session: Data, intent: String, statement: String?) throws -> Data
   func finish(operationId: Data) async throws -> WorkbenchOperation

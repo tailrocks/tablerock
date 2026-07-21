@@ -33,7 +33,11 @@ apply controls.
 - Hosted run 29864380153 passed loaded-result export and exposed the import
   sheet's Stage action as clipped below the fixed-height sheet viewport. Import
   details now scroll independently while Stage/Apply/Discard remain in a fixed
-  action footer. Exact-main hosted proof remains required.
+  action footer. Run 29872081215 opened the corrected sheet but exposed that
+  SwiftUI did not preserve the assumed `.button` AX query type for the stable
+  Stage identifier. The test now locates Stage/Apply by identifier across the
+  AX tree, matching the stable-identifier contract instead of framework role.
+  Exact-main hosted proof remains required.
 
 ## Provenance
 

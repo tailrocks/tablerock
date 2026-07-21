@@ -33,6 +33,11 @@ cargo nextest run -p tablerock-ffi --test conformance --locked \
 # generated bridge copies synchronized; strict Swift 6 app build passed
 ```
 
+Hosted run `29872081215` reached the object-control case but proved the SwiftUI
+menu did not preserve the test's assumed `.button` AX role. The test now finds
+the real control by stable identifier across the AX tree. Hosted interaction
+proof remains pending; this evidence does not relabel that failure as success.
+
 The named conformance test captures the request below the bridge and proves
 both engines receive exactly ordered, Rust-rendered SQL:
 

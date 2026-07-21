@@ -41,6 +41,9 @@ cargo nextest run -p tablerock-files --lib \
 
 Workflow: `.github/workflows/ci.yml` step `ENOSPC fail-closed on 1MiB tmpfs`.
 
+Hosted CI run `29871821771` passed this exact step on commit `2a6e06b` after
+nextest archive extraction into the explicit `/workspace` remap.
+
 ## Remaining work
 
 - Fixed-spec multi-runner first-paint numbers beyond ubuntu budgets (optional)

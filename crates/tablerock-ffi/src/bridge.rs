@@ -734,6 +734,7 @@ impl TableRockBridge {
                 catalog_node_id,
                 Vec::new(),
                 Vec::new(),
+                None,
                 row_count,
             )
         })
@@ -752,6 +753,7 @@ impl TableRockBridge {
                 catalog_node_id,
                 sort,
                 Vec::new(),
+                None,
                 row_count,
             )
         })
@@ -763,10 +765,18 @@ impl TableRockBridge {
         catalog_node_id: Vec<u8>,
         sort: Vec<BridgeBrowseSort>,
         filters: Vec<BridgeBrowseFilter>,
+        raw_where: Option<String>,
         row_count: u32,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| {
-            self.submit_catalog_browse_inner(session_id, catalog_node_id, sort, filters, row_count)
+            self.submit_catalog_browse_inner(
+                session_id,
+                catalog_node_id,
+                sort,
+                filters,
+                raw_where,
+                row_count,
+            )
         })
     }
 
@@ -2716,6 +2726,7 @@ impl TableRockBridge {
         catalog_node_id_bytes: Vec<u8>,
         sort: Vec<BridgeBrowseSort>,
         filters: Vec<BridgeBrowseFilter>,
+        raw_where: Option<String>,
         row_count: u32,
     ) -> Result<Vec<u8>, BridgeError> {
         if !(1..=1_000).contains(&row_count) {
@@ -2887,12 +2898,21 @@ impl TableRockBridge {
                 Engine::ClickHouse => BrowseDialect::ClickHouse,
                 Engine::Redis => unreachable!("Redis catalog nodes are not browsable tables"),
             };
+            if raw_where
+                .as_ref()
+                .is_some_and(|fragment| fragment.len() > MAX_BROWSE_VALUE_BYTES)
+            {
+                return Err(BridgeError::rejected(
+                    "catalog-browse-raw-where",
+                    "raw WHERE fragment must be at most 65536 bytes",
+                ));
+            }
             let rendered = BrowsePlan {
                 schema: schema.clone(),
                 table: table.clone(),
                 sort,
                 filters,
-                raw_where: None,
+                raw_where,
                 limit: row_count,
                 offset: 0,
             }

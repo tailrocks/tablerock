@@ -312,7 +312,8 @@ extension WorkbenchBackend {
     -> [WorkbenchCatalogNode]
   { [] }
   func submitCatalogBrowse(
-    session: Data, nodeId: Data, sort: [WorkbenchBrowseSort], filters: [WorkbenchBrowseFilter]
+    session: Data, nodeId: Data, sort: [WorkbenchBrowseSort], filters: [WorkbenchBrowseFilter],
+    rawWhere: String?
   ) throws -> Data {
     try scriptedUnavailable("browse")
   }
@@ -715,7 +716,8 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
     try bridge.refreshCatalog(sessionId: session, parentNodeId: parentNodeId).map(\.workbench)
   }
   func submitCatalogBrowse(
-    session: Data, nodeId: Data, sort: [WorkbenchBrowseSort], filters: [WorkbenchBrowseFilter]
+    session: Data, nodeId: Data, sort: [WorkbenchBrowseSort], filters: [WorkbenchBrowseFilter],
+    rawWhere: String?
   ) throws -> Data {
     try bridge.submitCatalogBrowseWithPlan(
       sessionId: session, catalogNodeId: nodeId,
@@ -724,7 +726,7 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
       },
       filters: filters.map {
         BridgeBrowseFilter(column: $0.column, operator: $0.operatorName, value: $0.value)
-      }, rowCount: 500
+      }, rawWhere: rawWhere, rowCount: 500
     )
   }
   func submit(session: Data, intent: String, statement: String?) throws -> Data {
@@ -1696,6 +1698,8 @@ final class NativeObjectTab: Identifiable {
   var filterColumn = ""
   var filterOperator = "eq"
   var filterValue = ""
+  var rawWhere: String?
+  var rawWhereDraft = ""
 
   init(id: UUID, node: WorkbenchCatalogNode, pinned: Bool = false) {
     self.id = id
@@ -3027,7 +3031,8 @@ final class BridgeModel {
         return
       }
       let operation = try await client.submitCatalogBrowse(
-        session: session, nodeId: tab.catalogNodeId, sort: tab.sort, filters: tab.filters
+        session: session, nodeId: tab.catalogNodeId, sort: tab.sort, filters: tab.filters,
+        rawWhere: tab.rawWhere
       )
       tab.activeOperationId = operation
       tab.isRunning = true
@@ -3126,6 +3131,21 @@ final class BridgeModel {
   func clearObjectFilters() async {
     guard let tab = activeObjectTab, !tab.isRunning, !tab.filters.isEmpty else { return }
     tab.filters.removeAll()
+    await loadObjectTab(tab)
+  }
+
+  func applyObjectRawWhere() async {
+    guard let tab = activeObjectTab, !tab.isRunning else { return }
+    let fragment = tab.rawWhereDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !fragment.isEmpty, fragment.utf8.count <= 65_536 else { return }
+    tab.rawWhere = fragment
+    await loadObjectTab(tab)
+  }
+
+  func clearObjectRawWhere() async {
+    guard let tab = activeObjectTab, !tab.isRunning, tab.rawWhere != nil else { return }
+    tab.rawWhere = nil
+    tab.rawWhereDraft = ""
     await loadObjectTab(tab)
   }
 
@@ -5052,6 +5072,35 @@ private struct ObjectFilterBar: View {
         }
         .accessibilityLabel("Active object filters")
       }
+      HStack(alignment: .firstTextBaseline, spacing: 6) {
+        TextField(
+          "Raw WHERE fragment",
+          text: Binding(
+            get: { tab.rawWhereDraft },
+            set: { tab.rawWhereDraft = $0 }), axis: .vertical
+        )
+        .lineLimit(1...4)
+        .accessibilityIdentifier("object.raw-where.editor")
+        Button("Apply raw WHERE") { Task { await model.applyObjectRawWhere() } }
+          .disabled(
+            tab.isRunning
+              || tab.rawWhereDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              || tab.rawWhereDraft.utf8.count > 65_536)
+          .accessibilityIdentifier("object.raw-where.apply")
+        if tab.rawWhere != nil {
+          Button("Clear raw WHERE", role: .destructive) {
+            Task { await model.clearObjectRawWhere() }
+          }
+          .disabled(tab.isRunning)
+          .accessibilityIdentifier("object.raw-where.clear")
+        }
+      }
+      if tab.rawWhere != nil {
+        Label("Raw WHERE active", systemImage: "exclamationmark.triangle")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .accessibilityIdentifier("object.raw-where.active")
+      }
     }
     .task {
       if tab.filterColumn.isEmpty { tab.filterColumn = table.columns.first ?? "" }
@@ -6376,8 +6425,22 @@ struct CatalogGrid: NSViewRepresentable {
 
   func makeCoordinator() -> Coordinator { Coordinator(table, onSelect: onSelect) }
 
+  final class ResultTableView: NSTableView {
+    var onCellActivate: ((Int, Int) -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+      let point = convert(event.locationInWindow, from: nil)
+      let activatedRow = row(at: point)
+      let activatedColumn = column(at: point)
+      super.mouseDown(with: event)
+      if activatedRow >= 0, activatedColumn >= 0 {
+        onCellActivate?(activatedRow, activatedColumn)
+      }
+    }
+  }
+
   func makeNSView(context: Context) -> NSScrollView {
-    let grid = NSTableView()
+    let grid = ResultTableView()
     grid.usesAlternatingRowBackgroundColors = true
     grid.allowsColumnReordering = true
     grid.allowsColumnResizing = true
@@ -6398,6 +6461,10 @@ struct CatalogGrid: NSViewRepresentable {
     grid.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
     grid.delegate = context.coordinator
     grid.dataSource = context.coordinator
+    grid.onCellActivate = { [weak coordinator = context.coordinator, weak grid] row, column in
+      guard let grid else { return }
+      coordinator?.activate(row: row, column: column, in: grid)
+    }
     context.coordinator.startPerformanceScrollIfRequested(on: grid)
     return scroll
   }
@@ -6407,6 +6474,13 @@ struct CatalogGrid: NSViewRepresentable {
     let selectedRows = grid.selectedRowIndexes
     context.coordinator.snapshot = table
     context.coordinator.onSelect = onSelect
+    if let resultGrid = grid as? ResultTableView {
+      resultGrid.onCellActivate = {
+        [weak coordinator = context.coordinator, weak resultGrid] row, column in
+        guard let resultGrid else { return }
+        coordinator?.activate(row: row, column: column, in: resultGrid)
+      }
+    }
     context.coordinator.installColumns(on: grid)
     grid.reloadData()
     context.coordinator.startPerformanceScrollIfRequested(on: grid)
@@ -6447,6 +6521,15 @@ struct CatalogGrid: NSViewRepresentable {
         ? tableView.clickedColumn : lastActivatedColumn
       guard snapshot.columns.indices.contains(column) else { return }
       onSelect(tableView.selectedRow, column)
+    }
+
+    func activate(row: Int, column: Int, in tableView: NSTableView) {
+      guard snapshot.rows.indices.contains(row), snapshot.columns.indices.contains(column) else {
+        return
+      }
+      lastActivatedColumn = column
+      tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+      onSelect(row, column)
     }
 
     func startPerformanceScrollIfRequested(on tableView: NSTableView) {
@@ -6518,8 +6601,6 @@ struct CatalogGrid: NSViewRepresentable {
       } else {
         cell = ResultCellView()
         cell.identifier = identifier
-        cell.addGestureRecognizer(
-          NSClickGestureRecognizer(target: cell, action: #selector(ResultCellView.activate(_:))))
         let label = NSTextField(labelWithString: "")
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -6541,9 +6622,7 @@ struct CatalogGrid: NSViewRepresentable {
       cell.setAccessibilityIdentifier("results.cell.\(row).\(column)")
       cell.onActivate = { [weak self, weak tableView] in
         guard let self, let tableView else { return }
-        self.lastActivatedColumn = column
-        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-        self.onSelect(row, column)
+        self.activate(row: row, column: column, in: tableView)
       }
       return cell
     }

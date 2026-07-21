@@ -36,6 +36,10 @@ syntax. Presentation work alone could not safely close this gap.
   and active-filter controls. Hosted Xcode execution remains the next evidence
   gate; this document does not claim it passed before that run completes.
 
+Hosted run `29872081215` failed before operating sort/filter because the
+SwiftUI menu's AX role differed from the test assumption. Stable identifier
+lookup is now role-agnostic; exact-main hosted control proof remains pending.
+
 ## Verification
 
 ```text

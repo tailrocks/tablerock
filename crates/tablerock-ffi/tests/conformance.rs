@@ -661,9 +661,21 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
                     operator: "contains_magic".into(),
                     value: Some("1".into()),
                 }],
+                None,
                 500,
             ),
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-filter"
+        ));
+        assert!(matches!(
+            bridge.submit_catalog_browse_with_plan(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                Vec::new(),
+                Vec::new(),
+                Some("x".repeat(65_537)),
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-raw-where"
         ));
         assert!(matches!(
             bridge.submit_catalog_browse_with_plan(
@@ -675,6 +687,7 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
                     operator: "eq".into(),
                     value: Some("1".into()),
                 }],
+                None,
                 500,
             ),
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-filter"
@@ -689,6 +702,7 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
                     operator: "eq".into(),
                     value: Some("x".repeat(65_537)),
                 }],
+                None,
                 500,
             ),
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-filter"
@@ -703,6 +717,7 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
                     operator: "eq".into(),
                     value: None,
                 }],
+                None,
                 500,
             ),
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-plan"
@@ -717,6 +732,7 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
                     operator: "is_null".into(),
                     value: Some("1".into()),
                 }],
+                None,
                 500,
             ),
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-plan"
@@ -733,6 +749,7 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
                         value: Some(index.to_string()),
                     })
                     .collect(),
+                None,
                 500,
             ),
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-filter"
@@ -824,6 +841,7 @@ fn catalog_browse_plan_is_rust_rendered_with_typed_values() {
                         value: Some("21".into()),
                     },
                 ],
+                Some("active IS TRUE".into()),
                 500,
             )
             .unwrap();
@@ -835,10 +853,10 @@ fn catalog_browse_plan_is_rust_rendered_with_typed_values() {
             statements[0].0,
             match engine {
                 Engine::PostgreSql => {
-                    "SELECT * FROM \"public\".\"users\" WHERE \"name\" = $1 AND \"age\" >= $2 ORDER BY \"created_at\" DESC, \"id\" ASC LIMIT 500 OFFSET 0"
+                    "SELECT * FROM \"public\".\"users\" WHERE \"name\" = $1 AND \"age\" >= $2 AND (active IS TRUE) ORDER BY \"created_at\" DESC, \"id\" ASC LIMIT 500 OFFSET 0"
                 }
                 Engine::ClickHouse => {
-                    "SELECT * FROM \"default\".\"events\" WHERE \"name\" = {p1:String} AND \"age\" >= {p2:Int64} ORDER BY \"created_at\" DESC, \"id\" ASC LIMIT 500 OFFSET 0"
+                    "SELECT * FROM \"default\".\"events\" WHERE \"name\" = {p1:String} AND \"age\" >= {p2:Int64} AND (active IS TRUE) ORDER BY \"created_at\" DESC, \"id\" ASC LIMIT 500 OFFSET 0"
                 }
                 Engine::Redis => unreachable!(),
             }

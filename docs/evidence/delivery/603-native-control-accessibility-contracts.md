@@ -48,9 +48,12 @@ fixture-only production controls.
   is the follow-up under test.
 - Hosted run 29864380153 proved explicit cell discovery, but an AX-directed
   click stopped at the newly explicit cell instead of invoking selection. The
-  cell now owns one activation path used by pointer gestures and AX press;
-  activation selects the row and reports the exact column through the existing
-  presentation callback. Exact-main hosted proof remains required.
+  first follow-up gesture recognizer was also intercepted by `NSTableView`:
+  run 29872081215 still discovered and clicked the cell without opening the
+  inspector. The grid now subclasses `NSTableView` at the presentation seam,
+  resolves the clicked row and column from the real AppKit mouse event, then
+  routes pointer and AX activation through one coordinator method. Exact-main
+  hosted proof remains required.
 
 ## Provenance
 
