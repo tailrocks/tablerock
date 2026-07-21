@@ -8,6 +8,9 @@ Every executable workflow uses one canonical YAML shape on all Linux lanes:
   `ubuntu-26.04`; never use `ubuntu-latest` or an unpinned Ubuntu label.
 - `both` executes identical jobs and steps on both lanes.
 
+The canonical Sunday parity schedule selects `both`. Other automatic events
+remain Velnor-default.
+
 Use the `lanes` choice input and canonical inline `matrix.config` expression.
 Only `matrix.config.writer` may gate mutating steps; it must guarantee exactly
 one writer. Never branch step semantics by lane.
