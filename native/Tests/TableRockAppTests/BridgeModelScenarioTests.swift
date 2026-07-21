@@ -24,6 +24,22 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertEqual(stored.passwordValue, "")
   }
 
+  func testScriptedConnectionHealthAndCatalogAreDeterministic() async throws {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let session = try await backend.open(
+      params: WorkbenchOpenParams(
+        engine: "postgresql", host: "127.0.0.1", port: 5432,
+        database: "postgres", user: "postgres", password: "", tlsMode: "off"))
+
+    let health = try await backend.checkHealth(session: session)
+    let catalog = try await backend.refreshCatalog(session: session, parentNodeId: nil)
+
+    XCTAssertTrue(health.serverReachable)
+    XCTAssertEqual(health.state, "healthy")
+    XCTAssertEqual(catalog.map(\.name), ["public", "fixture_table"])
+    XCTAssertEqual(catalog[1].parentIdBytes, catalog[0].idBytes)
+  }
+
   func testDirtyAndRunningTabsRequireExplicitResolution() {
     let model = BridgeModel()
     model.addQueryTab()

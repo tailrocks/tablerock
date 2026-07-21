@@ -433,6 +433,34 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     }
   }
 
+  func checkHealth(session: Data) throws -> WorkbenchSessionHealth {
+    guard scenario == "success", session == Data(repeating: 1, count: 16) else {
+      return try scriptedUnavailable("health")
+    }
+    return WorkbenchSessionHealth(
+      state: "healthy", serverReachable: true, elapsedMillis: 1,
+      authenticationStopped: false)
+  }
+
+  func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [WorkbenchCatalogNode] {
+    guard scenario == "success", session == Data(repeating: 1, count: 16) else {
+      return try scriptedUnavailable("catalog")
+    }
+    let root = Data(repeating: 6, count: 16)
+    let table = WorkbenchCatalogNode(
+      idBytes: Data(repeating: 7, count: 16), parentIdBytes: root, depth: 1,
+      name: "fixture_table", kind: "postgresql_table",
+      childrenState: "not_applicable", expandable: false)
+    if parentNodeId == root { return [table] }
+    guard parentNodeId == nil else { return [] }
+    return [
+      WorkbenchCatalogNode(
+        idBytes: root, parentIdBytes: nil, depth: 0, name: "public",
+        kind: "postgresql_schema", childrenState: "loaded_complete", expandable: true),
+      table,
+    ]
+  }
+
   func open(params: WorkbenchOpenParams) throws -> Data {
     switch scenario {
     case "connection-failure": throw ScriptedBackendError.connectionFailed
@@ -4205,6 +4233,7 @@ struct ContentView: View {
             .buttonStyle(.borderless)
             .disabled(model.isRunning || model.isCatalogRefreshing)
             .accessibilityLabel("Refresh catalog")
+            .accessibilityIdentifier("catalog.refresh")
           }
           .padding(.horizontal, 10)
           .padding(.vertical, 6)

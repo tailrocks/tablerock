@@ -74,6 +74,23 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testCatalogRefreshLoadsHierarchyThroughUserControl() throws {
+    let app = launch(scenario: "success")
+
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    connect.click()
+
+    let refresh = app.buttons["catalog.refresh"]
+    XCTAssertTrue(refresh.waitForExistence(timeout: 10))
+    refresh.click()
+
+    XCTAssertTrue(app.outlines["catalog.outline"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["public"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["fixture_table"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
   func testMultiWindowFixtureCreatesIndependentWorkbenchWindow() throws {
     let app = launch(
       scenario: "success",
