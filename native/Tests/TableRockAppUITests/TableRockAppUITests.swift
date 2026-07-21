@@ -145,7 +145,7 @@ final class TableRockAppUITests: XCTestCase {
       scenario: "success",
       environment: ["TABLEROCK_FIXTURE_SELECTABLE_INSPECTOR": "1"])
 
-    let cell = app.textFields["results.cell.0.0"]
+    let cell = app.descendants(matching: .any)["results.cell.0.0"]
     XCTAssertTrue(cell.waitForExistence(timeout: 10))
     XCTAssertFalse(app.descendants(matching: .any)["value.inspector"].exists)
     cell.click()
@@ -166,13 +166,6 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(nextPage.waitForExistence(timeout: 10))
     let status = app.staticTexts["query.status"]
     XCTAssertEqual(status.value as? String, "result · 1 column · 500 rows loaded")
-    let scrollView = app.scrollViews.firstMatch
-    if !nextPage.isHittable {
-      XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
-      for _ in 0..<6 where !nextPage.isHittable {
-        scrollView.swipeUp()
-      }
-    }
     XCTAssertTrue(nextPage.isHittable)
     nextPage.click()
 
@@ -196,11 +189,9 @@ final class TableRockAppUITests: XCTestCase {
     let actions = app.descendants(matching: .any)["Actions for Orders"]
     XCTAssertTrue(actions.waitForExistence(timeout: 10))
     actions.click()
-    let close = app.menuItems.matching(
-      NSPredicate(format: "label == 'Close'")
-    ).allElementsBoundByIndex.first(where: \.isHittable)
-    XCTAssertNotNil(close)
-    close?.click()
+    let close = app.descendants(matching: .any)["query.tab.close"]
+    XCTAssertTrue(close.waitForExistence(timeout: 5))
+    close.click()
 
     XCTAssertTrue(
       app.staticTexts["Close query tab with unsaved changes?"]

@@ -4630,11 +4630,8 @@ struct QueryWorkbenchView: View {
         Text(value).foregroundStyle(.red).font(.callout).textSelection(.enabled)
       }
       if let table = model.resultTable {
-        ResultGridWithInspector(table: table, minimumHeight: 220)
-        if model.nextStartRow != nil {
-          Button("Load more rows") { Task { await model.loadMore() } }
-            .accessibilityIdentifier("results.next-page")
-        }
+        ResultGridWithInspector(
+          table: table, minimumHeight: 220, exposesResultPaging: true)
       }
     }
   }
@@ -5029,12 +5026,17 @@ private struct ResultGridWithInspector: View {
   @Environment(BridgeModel.self) private var model
   let table: WorkbenchTable
   let minimumHeight: CGFloat
+  var exposesResultPaging = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack {
         ResultCopyMenu()
         ResultExportMenu()
+        if exposesResultPaging && model.nextStartRow != nil {
+          Button("Load more rows") { Task { await model.loadMore() } }
+            .accessibilityIdentifier("results.next-page")
+        }
         if let outcome = model.copyOutcome {
           Text(outcome).font(.caption).foregroundStyle(.secondary)
         }
@@ -5232,6 +5234,7 @@ struct QueryTabStrip: View {
               Button("Close", role: .destructive) {
                 model.requestCloseQueryTab(tab)
               }
+              .accessibilityIdentifier("query.tab.close")
               .disabled(model.queryTabs.count == 1 || tab.isRunning)
             } label: {
               Image(systemName: tab.isRunning ? "progress.indicator" : "ellipsis")
