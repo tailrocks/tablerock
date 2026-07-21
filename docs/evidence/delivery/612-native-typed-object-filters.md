@@ -40,6 +40,10 @@ Hosted run `29872081215` failed before operating sort/filter because the
 SwiftUI menu's AX role differed from the test assumption. Stable identifier
 lookup is now role-agnostic; exact-main hosted control proof remains pending.
 
+Hosted run `29874013100` passed the complete object-control XCUITest. It proves
+the typed filter field, Add action, active condition, and reload path are
+operable through the packaged Xcode application.
+
 ## Verification
 
 ```text

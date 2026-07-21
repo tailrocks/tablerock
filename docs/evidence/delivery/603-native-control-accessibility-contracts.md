@@ -49,11 +49,12 @@ fixture-only production controls.
 - Hosted run 29864380153 proved explicit cell discovery, but an AX-directed
   click stopped at the newly explicit cell instead of invoking selection. The
   first follow-up gesture recognizer was also intercepted by `NSTableView`:
-  run 29872081215 still discovered and clicked the cell without opening the
-  inspector. The grid now subclasses `NSTableView` at the presentation seam,
-  resolves the clicked row and column from the real AppKit mouse event, then
-  routes pointer and AX activation through one coordinator method. Exact-main
-  hosted proof remains required.
+  runs 29872081215 and 29874013100 still discovered and clicked the cell
+  without opening the inspector. Subclass interception was therefore not an
+  authoritative AppKit action seam. The grid now also installs the standard
+  `NSTableView` target/action callback, resolves `clickedRow`/`clickedColumn`,
+  and routes pointer, selection, and AX activation through one coordinator
+  method. Exact-main hosted proof remains required.
 
 ## Provenance
 

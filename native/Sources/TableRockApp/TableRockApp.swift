@@ -317,6 +317,12 @@ extension WorkbenchBackend {
   ) throws -> Data {
     try scriptedUnavailable("browse")
   }
+  func listCatalogFilterPresets(session: Data, nodeId: Data) throws
+    -> [WorkbenchSavedFilterPreset]
+  { [] }
+  func saveCatalogFilterPreset(
+    session: Data, nodeId: Data, preset: WorkbenchSavedFilterPreset
+  ) throws { throw ScriptedBackendError.unavailable("saved-filter") }
   func submit(session: Data, intent: String, statement: String?) throws -> Data {
     try scriptedUnavailable("submit")
   }
@@ -368,6 +374,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   private var importReviewActive = false
   private var profiles: [WorkbenchProfileItem] = []
   private var profileDrafts: [Data: WorkbenchProfileDraft] = [:]
+  private var filterPresets: [WorkbenchSavedFilterPreset] = []
 
   init(scenario: String) { self.scenario = scenario }
 
@@ -385,6 +392,16 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   }
   func listProfileGroups() throws -> [WorkbenchProfileGroup] { [] }
   func historyRetention() throws -> String { "full" }
+  func listCatalogFilterPresets(session: Data, nodeId: Data) throws
+    -> [WorkbenchSavedFilterPreset]
+  { filterPresets }
+  func saveCatalogFilterPreset(
+    session: Data, nodeId: Data, preset: WorkbenchSavedFilterPreset
+  ) throws {
+    guard scenario == "success" else { return try scriptedUnavailable("saved-filter") }
+    filterPresets.removeAll(where: { $0.name == preset.name })
+    filterPresets.append(preset)
+  }
 
   func profileDraft(id: Data) throws -> WorkbenchProfileDraft {
     guard let draft = profileDrafts[id] else { return try scriptedUnavailable("draft") }
@@ -728,6 +745,29 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
         BridgeBrowseFilter(column: $0.column, operator: $0.operatorName, value: $0.value)
       }, rawWhere: rawWhere, rowCount: 500
     )
+  }
+  func listCatalogFilterPresets(session: Data, nodeId: Data) throws
+    -> [WorkbenchSavedFilterPreset]
+  {
+    try bridge.listCatalogFilterPresets(sessionId: session, catalogNodeId: nodeId).map {
+      WorkbenchSavedFilterPreset(
+        name: $0.name,
+        filters: $0.filters.map {
+          WorkbenchBrowseFilter(
+            column: $0.column, operatorName: $0.operator, value: $0.value)
+        }, rawWhere: $0.rawWhere)
+    }
+  }
+  func saveCatalogFilterPreset(
+    session: Data, nodeId: Data, preset: WorkbenchSavedFilterPreset
+  ) throws {
+    try bridge.saveCatalogFilterPreset(
+      sessionId: session, catalogNodeId: nodeId,
+      preset: BridgeSavedFilterPreset(
+        name: preset.name,
+        filters: preset.filters.map {
+          BridgeBrowseFilter(column: $0.column, operator: $0.operatorName, value: $0.value)
+        }, rawWhere: preset.rawWhere))
   }
   func submit(session: Data, intent: String, statement: String?) throws -> Data {
     try bridge.submit(
@@ -1700,6 +1740,10 @@ final class NativeObjectTab: Identifiable {
   var filterValue = ""
   var rawWhere: String?
   var rawWhereDraft = ""
+  var filterPresets: [WorkbenchSavedFilterPreset] = []
+  var filterPresetName = ""
+  var filterPresetOutcome: String?
+  var filterPresetError: String?
 
   init(id: UUID, node: WorkbenchCatalogNode, pinned: Bool = false) {
     self.id = id
@@ -2074,7 +2118,8 @@ final class BridgeModel {
       objectTabs = [first, preview]
       selectedObjectTabId = preview.id
       selectedWorkbenchKind = "object"
-      sessionHex = String(repeating: "b", count: 32)
+      sessionData = Data(repeating: 11, count: 16)
+      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
       connectedEngine = "postgresql"
       selectQueryTab(queryTabs[0])
       selectObjectTab(preview)
@@ -2085,6 +2130,7 @@ final class BridgeModel {
         return
       }
       try? await Task.sleep(for: .milliseconds(500))
+      await loadObjectFilterPresets(preview)
       runNativeObjectTabsAudit()
       return
     }
@@ -2979,6 +3025,7 @@ final class BridgeModel {
     selectedObjectTabId = tab.id
     selectedWorkbenchKind = "object"
     await loadObjectTab(tab)
+    await loadObjectFilterPresets(tab)
   }
 
   func selectObjectTab(_ tab: NativeObjectTab) {
@@ -2987,6 +3034,7 @@ final class BridgeModel {
     }
     selectedObjectTabId = tab.id
     selectedWorkbenchKind = "object"
+    Task { await loadObjectFilterPresets(tab) }
   }
 
   func pinObjectTab(_ tab: NativeObjectTab) {
@@ -3016,8 +3064,6 @@ final class BridgeModel {
     guard let client, let session = sessionData else { return }
     tab.error = nil
     tab.summary = nil
-    tab.resultTable = nil
-    tab.redisView = nil
     do {
       if tab.kind.hasPrefix("redis_key_") {
         tab.isRunning = true
@@ -3146,6 +3192,53 @@ final class BridgeModel {
     guard let tab = activeObjectTab, !tab.isRunning, tab.rawWhere != nil else { return }
     tab.rawWhere = nil
     tab.rawWhereDraft = ""
+    await loadObjectTab(tab)
+  }
+
+  private func loadObjectFilterPresets(_ tab: NativeObjectTab) async {
+    guard let client, let session = sessionData, !tab.kind.hasPrefix("redis_key_") else { return }
+    do {
+      tab.filterPresets = try await client.listCatalogFilterPresets(
+        session: session, nodeId: tab.catalogNodeId)
+      tab.filterPresetError = nil
+    } catch {
+      tab.filterPresets = []
+      tab.filterPresetError = "Could not load filter presets: \(error)"
+    }
+  }
+
+  func saveObjectFilterPreset() async {
+    guard let tab = activeObjectTab, let client, let session = sessionData, !tab.isRunning else {
+      return
+    }
+    let name = tab.filterPresetName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty, name.utf8.count <= 64 else { return }
+    do {
+      try await client.saveCatalogFilterPreset(
+        session: session, nodeId: tab.catalogNodeId,
+        preset: WorkbenchSavedFilterPreset(
+          name: name, filters: tab.filters, rawWhere: tab.rawWhere))
+      tab.filterPresetName = ""
+      tab.filterPresetOutcome = "Saved filter preset \(name)"
+      tab.filterPresetError = nil
+      await loadObjectFilterPresets(tab)
+    } catch {
+      tab.filterPresetOutcome = nil
+      tab.filterPresetError = "Could not save filter preset: \(error)"
+    }
+  }
+
+  func applyObjectFilterPreset(_ preset: WorkbenchSavedFilterPreset) async {
+    guard let tab = activeObjectTab, !tab.isRunning else { return }
+    tab.filters = preset.filters.map {
+      WorkbenchBrowseFilter(
+        id: dependencies.identifiers.next(), column: $0.column,
+        operatorName: $0.operatorName, value: $0.value)
+    }
+    tab.rawWhere = preset.rawWhere
+    tab.rawWhereDraft = preset.rawWhere ?? ""
+    tab.filterPresetOutcome = "Loaded filter preset \(preset.name)"
+    tab.filterPresetError = nil
     await loadObjectTab(tab)
   }
 
@@ -5101,6 +5194,37 @@ private struct ObjectFilterBar: View {
           .foregroundStyle(.secondary)
           .accessibilityIdentifier("object.raw-where.active")
       }
+      HStack(spacing: 6) {
+        TextField(
+          "Preset name",
+          text: Binding(
+            get: { tab.filterPresetName },
+            set: { tab.filterPresetName = $0 })
+        )
+        .frame(maxWidth: 180)
+        .accessibilityIdentifier("object.filter-preset.name")
+        Button("Save preset") { Task { await model.saveObjectFilterPreset() } }
+          .disabled(
+            tab.isRunning
+              || tab.filterPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              || tab.filterPresetName.utf8.count > 64)
+          .accessibilityIdentifier("object.filter-preset.save")
+        Menu("Load preset") {
+          ForEach(tab.filterPresets) { preset in
+            Button(preset.name) { Task { await model.applyObjectFilterPreset(preset) } }
+              .accessibilityIdentifier("object.filter-preset.load.\(preset.name)")
+          }
+        }
+        .disabled(tab.isRunning || tab.filterPresets.isEmpty)
+        .accessibilityIdentifier("object.filter-preset.load")
+        if let outcome = tab.filterPresetOutcome {
+          Text(outcome).font(.caption).foregroundStyle(.secondary)
+            .accessibilityIdentifier("object.filter-preset.outcome")
+        }
+      }
+      if let error = tab.filterPresetError {
+        Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+      }
     }
     .task {
       if tab.filterColumn.isEmpty { tab.filterColumn = table.columns.first ?? "" }
@@ -5257,6 +5381,21 @@ private struct CsvImportSheet: View {
         Label("Import CSV", systemImage: "tablecells.badge.ellipsis")
           .font(.title2.bold())
         Spacer()
+        if model.csvImportReview != nil {
+          Button("Apply Import") { Task { await model.applyCsvImport() } }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("import.csv.apply")
+            .disabled(model.csvImportApplying)
+          Button("Discard Review", role: .cancel) {
+            Task { await model.discardCsvImportReview() }
+          }
+          .disabled(model.csvImportApplying)
+        } else if model.csvImportOutcome == nil {
+          Button("Stage Reviewed Import") { Task { await model.stageCsvImport() } }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("import.csv.stage")
+            .disabled(model.csvImportPreview == nil || model.csvImportApplying)
+        }
         Button("Close") { Task { await model.closeCsvImport() } }
           .disabled(model.csvImportApplying)
       }
@@ -5349,27 +5488,6 @@ private struct CsvImportSheet: View {
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      if model.csvImportReview != nil {
-        HStack {
-          Button("Apply Import") { Task { await model.applyCsvImport() } }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("import.csv.apply")
-            .disabled(model.csvImportApplying)
-          Button("Discard Review", role: .cancel) {
-            Task { await model.discardCsvImportReview() }
-          }
-          .disabled(model.csvImportApplying)
-          Text("Review expires in 60 seconds")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .accessibilityHidden(true)
-        }
-      } else if model.csvImportOutcome == nil {
-        Button("Stage Reviewed Import") { Task { await model.stageCsvImport() } }
-          .buttonStyle(.borderedProminent)
-          .accessibilityIdentifier("import.csv.stage")
-          .disabled(model.csvImportPreview == nil || model.csvImportApplying)
       }
       if model.csvImportApplying { ProgressView("Applying reviewed import…") }
       if let outcome = model.csvImportOutcome {
@@ -6461,6 +6579,8 @@ struct CatalogGrid: NSViewRepresentable {
     grid.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
     grid.delegate = context.coordinator
     grid.dataSource = context.coordinator
+    grid.target = context.coordinator
+    grid.action = #selector(Coordinator.tableClicked(_:))
     grid.onCellActivate = { [weak coordinator = context.coordinator, weak grid] row, column in
       guard let grid else { return }
       coordinator?.activate(row: row, column: column, in: grid)
@@ -6521,6 +6641,13 @@ struct CatalogGrid: NSViewRepresentable {
         ? tableView.clickedColumn : lastActivatedColumn
       guard snapshot.columns.indices.contains(column) else { return }
       onSelect(tableView.selectedRow, column)
+    }
+
+    @objc func tableClicked(_ tableView: NSTableView) {
+      let row = tableView.clickedRow
+      let column = tableView.clickedColumn
+      guard row >= 0, column >= 0 else { return }
+      activate(row: row, column: column, in: tableView)
     }
 
     func activate(row: Int, column: Int, in tableView: NSTableView) {

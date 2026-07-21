@@ -216,10 +216,26 @@ final class TableRockAppUITests: XCTestCase {
     applyRawWhere.click()
     XCTAssertTrue(
       app.descendants(matching: .any)["object.raw-where.active"].waitForExistence(timeout: 5))
+    let presetName = app.descendants(matching: .any)["object.filter-preset.name"]
+    XCTAssertTrue(presetName.waitForExistence(timeout: 5))
+    presetName.click()
+    presetName.typeText("active")
+    app.descendants(matching: .any)["object.filter-preset.save"].click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["object.filter-preset.outcome"].waitForExistence(
+        timeout: 5))
     let clearRawWhere = app.buttons["object.raw-where.clear"]
     XCTAssertTrue(clearRawWhere.isHittable)
     clearRawWhere.click()
     XCTAssertFalse(app.descendants(matching: .any)["object.raw-where.active"].exists)
+    let loadPreset = app.descendants(matching: .any)["object.filter-preset.load"]
+    XCTAssertTrue(loadPreset.isEnabled)
+    loadPreset.click()
+    let activePreset = app.menuItems["active"]
+    XCTAssertTrue(activePreset.waitForExistence(timeout: 5))
+    activePreset.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["object.raw-where.active"].waitForExistence(timeout: 5))
   }
 
   @MainActor
@@ -269,10 +285,10 @@ final class TableRockAppUITests: XCTestCase {
         "TABLEROCK_TEST_SAVE_FILE": output.path,
       ])
 
-    let export = app.descendants(matching: .any)["results.export"]
+    let export = app.menuButtons["results.export"]
     XCTAssertTrue(export.waitForExistence(timeout: 10))
     export.click()
-    let csv = app.descendants(matching: .any)["results.export.csv"]
+    let csv = app.menuItems["CSV"]
     XCTAssertTrue(csv.waitForExistence(timeout: 5))
     csv.click()
 

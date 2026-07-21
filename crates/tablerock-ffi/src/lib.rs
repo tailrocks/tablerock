@@ -18,8 +18,8 @@ pub use bridge::{
     ApplyOutcome, BridgeBrowseFilter, BridgeBrowseSort, BridgeConnectionTestReport,
     BridgeEventBatch, BridgeEventRecord, BridgeHistoryItem, BridgeNativeWindowIntent,
     BridgeProfileDraft, BridgeProfileGroup, BridgeProfileItem, BridgeProfileOrderItem,
-    BridgeReconnectAttempt, BridgeReconnectPlan, BridgeSavedQueryItem, BridgeSessionHealth,
-    BridgeSessionIntent, BridgeSqlFile, BridgeWorkspaceTab, CancelOutcome, OpenParams,
-    ShutdownOutcome, SubmitSpec, TableRockBridge,
+    BridgeReconnectAttempt, BridgeReconnectPlan, BridgeSavedFilterPreset, BridgeSavedQueryItem,
+    BridgeSessionHealth, BridgeSessionIntent, BridgeSqlFile, BridgeWorkspaceTab, CancelOutcome,
+    OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
 };
 pub use error::BridgeError;

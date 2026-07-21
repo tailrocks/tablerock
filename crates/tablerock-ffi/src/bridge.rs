@@ -19,9 +19,10 @@ use tablerock_core::{
     ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName, ProfileOrganization,
     ProfilePolicy, ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
     ProfileSafetyMode, ProfileSearchTerm, ProfileTag, ReconnectDecision, ReconnectPreference,
-    RedisKeyKind, ResultStore, ResultStoreLimits, Revision, SecretSource, SecretSourceKind,
-    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText, SupportBundle,
-    SupportPlatform, TlsPolicy, copy_cell_from_page, format_copy_table, reconnect_decision,
+    RedisKeyKind, ResultStore, ResultStoreLimits, Revision, SavedFilterCondition,
+    SavedFilterLibrary, SavedFilterPreset, SecretSource, SecretSourceKind, ServiceCoordinator,
+    ServiceLimits, SessionId, ShutdownMode, StatementText, SupportBundle, SupportPlatform,
+    TlsPolicy, copy_cell_from_page, format_copy_table, is_safe_preset_name, reconnect_decision,
 };
 use tablerock_engine::{
     AdapterFailureClass, BrowseDialect, BrowsePlan, CatalogRequest, ClickHouseCompression,
@@ -141,6 +142,25 @@ impl std::fmt::Debug for BridgeBrowseFilter {
             .field("column", &self.column)
             .field("operator", &self.operator)
             .field("value", &self.value.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
+}
+
+/// One saved filter preset for the catalog object selected by opaque id.
+#[derive(Clone, uniffi::Record)]
+pub struct BridgeSavedFilterPreset {
+    pub name: String,
+    pub filters: Vec<BridgeBrowseFilter>,
+    pub raw_where: Option<String>,
+}
+
+impl std::fmt::Debug for BridgeSavedFilterPreset {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BridgeSavedFilterPreset")
+            .field("name", &self.name)
+            .field("filter_count", &self.filters.len())
+            .field("raw_where", &self.raw_where.as_ref().map(|_| "<redacted>"))
             .finish()
     }
 }
@@ -607,6 +627,23 @@ impl TableRockBridge {
 
     pub fn delete_saved_query(&self, query_id: i64) -> Result<bool, BridgeError> {
         catch_entry(|| self.delete_saved_query_inner(query_id))
+    }
+
+    pub fn list_catalog_filter_presets(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+    ) -> Result<Vec<BridgeSavedFilterPreset>, BridgeError> {
+        catch_entry(|| self.list_catalog_filter_presets_inner(session_id, catalog_node_id))
+    }
+
+    pub fn save_catalog_filter_preset(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+        preset: BridgeSavedFilterPreset,
+    ) -> Result<(), BridgeError> {
+        catch_entry(|| self.save_catalog_filter_preset_inner(session_id, catalog_node_id, preset))
     }
 
     pub fn read_sql_file(&self, path: String) -> Result<BridgeSqlFile, BridgeError> {
@@ -2256,6 +2293,129 @@ impl TableRockBridge {
             .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
             .delete_saved_query(query_id)
             .map_err(|error| BridgeError::rejected("saved-query-delete", error.to_string()))
+    }
+
+    fn list_catalog_filter_presets_inner(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+    ) -> Result<Vec<BridgeSavedFilterPreset>, BridgeError> {
+        let session_id = session_from_bytes(&session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let catalog_node_id = catalog_node_from_bytes(&catalog_node_id).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+        let registered = inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        let node = inner
+            .catalog_nodes
+            .get(&(session_id, catalog_node_id))
+            .ok_or_else(|| {
+                BridgeError::rejected("unknown-catalog-node", "catalog node is stale")
+            })?;
+        let parent = node
+            .parent_id()
+            .and_then(|parent| inner.catalog_nodes.get(&(session_id, parent)))
+            .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+        let actor = inner
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        let Some(record) = actor
+            .get_saved_filter_library(registered.profile_id)
+            .map_err(|error| BridgeError::rejected("saved-filter-list", error.to_string()))?
+        else {
+            return Ok(Vec::new());
+        };
+        let library = SavedFilterLibrary::from_json(&record.library_json).ok_or_else(|| {
+            BridgeError::rejected("saved-filter-library", "saved filter library is invalid")
+        })?;
+        let presets = library
+            .presets
+            .into_iter()
+            .filter(|preset| preset.schema == parent.name() && preset.table == node.name())
+            .map(bridge_saved_filter_preset)
+            .collect::<Vec<_>>();
+        if presets.len() > 256 {
+            return Err(BridgeError::rejected(
+                "saved-filter-list",
+                "saved filter preset list exceeds 256 entries",
+            ));
+        }
+        Ok(presets)
+    }
+
+    fn save_catalog_filter_preset_inner(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+        preset: BridgeSavedFilterPreset,
+    ) -> Result<(), BridgeError> {
+        validate_bridge_saved_filter_preset(&preset)?;
+        let session_id = session_from_bytes(&session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let catalog_node_id = catalog_node_from_bytes(&catalog_node_id).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+        let registered = inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        let node = inner
+            .catalog_nodes
+            .get(&(session_id, catalog_node_id))
+            .ok_or_else(|| {
+                BridgeError::rejected("unknown-catalog-node", "catalog node is stale")
+            })?;
+        let parent = node
+            .parent_id()
+            .and_then(|parent| inner.catalog_nodes.get(&(session_id, parent)))
+            .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+        let actor = inner
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        let record = actor
+            .get_saved_filter_library(registered.profile_id)
+            .map_err(|error| BridgeError::rejected("saved-filter-read", error.to_string()))?;
+        let mut library = match record {
+            Some(record) => {
+                SavedFilterLibrary::from_json(&record.library_json).ok_or_else(|| {
+                    BridgeError::rejected("saved-filter-library", "saved filter library is invalid")
+                })?
+            }
+            None => SavedFilterLibrary::default(),
+        };
+        library.upsert(SavedFilterPreset {
+            name: preset.name,
+            schema: parent.name().to_owned(),
+            table: node.name().to_owned(),
+            filters: preset
+                .filters
+                .into_iter()
+                .map(|filter| SavedFilterCondition {
+                    column: filter.column,
+                    operator: filter.operator,
+                    value: filter.value,
+                })
+                .collect(),
+            raw_where: preset.raw_where,
+        });
+        actor
+            .put_saved_filter_library(registered.profile_id, library.to_json())
+            .map_err(|error| BridgeError::rejected("saved-filter-save", error.to_string()))
     }
 
     fn put_session_intent_inner(
@@ -4502,6 +4662,80 @@ fn bridge_catalog_node(node: &CatalogNode) -> BridgeCatalogNode {
         kind: catalog_kind_label(node.kind()).to_owned(),
         children_state: catalog_children_label(node.children()).to_owned(),
         expandable: catalog_kind_is_expandable(node.kind()),
+    }
+}
+
+fn validate_bridge_saved_filter_preset(
+    preset: &BridgeSavedFilterPreset,
+) -> Result<(), BridgeError> {
+    if !is_safe_preset_name(&preset.name) {
+        return Err(BridgeError::rejected(
+            "saved-filter-name",
+            "preset name must be 1 to 64 ASCII letters, digits, dots, dashes, or underscores",
+        ));
+    }
+    if preset.filters.len() > 32 {
+        return Err(BridgeError::rejected(
+            "saved-filter-bounds",
+            "at most 32 filters are allowed",
+        ));
+    }
+    for filter in &preset.filters {
+        if filter.column.is_empty() || filter.column.len() > MAX_BROWSE_IDENTIFIER_BYTES {
+            return Err(BridgeError::rejected(
+                "saved-filter-bounds",
+                "filter column must be 1 to 1024 bytes",
+            ));
+        }
+        if filter
+            .value
+            .as_ref()
+            .is_some_and(|value| value.len() > MAX_BROWSE_VALUE_BYTES)
+        {
+            return Err(BridgeError::rejected(
+                "saved-filter-bounds",
+                "filter value must be at most 65536 bytes",
+            ));
+        }
+        let nullary = matches!(filter.operator.as_str(), "is_null" | "is_not_null");
+        let valued = matches!(
+            filter.operator.as_str(),
+            "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "like" | "ilike" | "not_like" | "not_ilike"
+        );
+        if (!nullary && !valued)
+            || (nullary && filter.value.is_some())
+            || (valued && filter.value.is_none())
+        {
+            return Err(BridgeError::rejected(
+                "saved-filter-operator",
+                "filter operator or value shape is invalid",
+            ));
+        }
+    }
+    if preset.raw_where.as_ref().is_some_and(|fragment| {
+        fragment.trim().is_empty() || fragment.len() > MAX_BROWSE_VALUE_BYTES
+    }) {
+        return Err(BridgeError::rejected(
+            "saved-filter-bounds",
+            "raw WHERE must be non-empty and at most 65536 bytes",
+        ));
+    }
+    Ok(())
+}
+
+fn bridge_saved_filter_preset(preset: SavedFilterPreset) -> BridgeSavedFilterPreset {
+    BridgeSavedFilterPreset {
+        name: preset.name,
+        filters: preset
+            .filters
+            .into_iter()
+            .map(|filter| BridgeBrowseFilter {
+                column: filter.column,
+                operator: filter.operator,
+                value: filter.value,
+            })
+            .collect(),
+        raw_where: preset.raw_where,
     }
 }
 

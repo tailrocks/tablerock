@@ -45,6 +45,12 @@ current server filters for the active table on the connected profile;
 **LoadFilt** prompts for a name (with known-name hints) and re-browses.
 Libraries load on connect (non-temporary profiles).
 
+The native object filter bar provides equivalent **Save preset** and
+**Load preset** controls. Preset names, typed conditions, raw-WHERE fragments,
+profile ownership, and object identity cross as typed/opaque intent; Rust owns
+validation, JSON round-trip, and Turso persistence. Reload failures preserve
+the previously loaded grid while showing the error.
+
 ## Columns
 
 - Show/hide any column, reorder by drag or keyboard, resize widths.

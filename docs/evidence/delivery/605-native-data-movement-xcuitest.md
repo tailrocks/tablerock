@@ -37,7 +37,10 @@ apply controls.
   SwiftUI did not preserve the assumed `.button` AX query type for the stable
   Stage identifier. The test now locates Stage/Apply by identifier across the
   AX tree, matching the stable-identifier contract instead of framework role.
-  Exact-main hosted proof remains required.
+  Run 29874013100 proved the action was physically absent from the clipped
+  sheet, not merely assigned another role. Stage/Apply/Discard now live in the
+  always-visible sheet header; scrollable details can no longer displace the
+  authority actions. Exact-main hosted proof remains required.
 
 ## Provenance
 

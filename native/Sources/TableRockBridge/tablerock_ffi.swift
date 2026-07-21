@@ -712,6 +712,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
 
     func historyRetention() throws  -> String
 
+    func listCatalogFilterPresets(sessionId: Data, catalogNodeId: Data) throws  -> [BridgeSavedFilterPreset]
+
     /**
      * Lists newest local query-history entries with optional SQL-text search.
      */
@@ -810,6 +812,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Drop a review token without authorizing (operator discard).
      */
     func revokeReviewToken(tokenId: Data) throws  -> Bool
+
+    func saveCatalogFilterPreset(sessionId: Data, catalogNodeId: Data, preset: BridgeSavedFilterPreset) throws
 
     /**
      * Creates or revision-checked replaces one saved profile.
@@ -1207,6 +1211,17 @@ open func historyRetention()throws  -> String  {
 })
 }
 
+open func listCatalogFilterPresets(sessionId: Data, catalogNodeId: Data)throws  -> [BridgeSavedFilterPreset]  {
+    return try  FfiConverterSequenceTypeBridgeSavedFilterPreset.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_list_catalog_filter_presets(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(catalogNodeId),uniffiCallStatus
+    )
+})
+}
+
     /**
      * Lists newest local query-history entries with optional SQL-text search.
      */
@@ -1506,6 +1521,17 @@ open func revokeReviewToken(tokenId: Data)throws  -> Bool  {
         FfiConverterData.lower(tokenId),uniffiCallStatus
     )
 })
+}
+
+open func saveCatalogFilterPreset(sessionId: Data, catalogNodeId: Data, preset: BridgeSavedFilterPreset)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_save_catalog_filter_preset(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(catalogNodeId),
+        FfiConverterTypeBridgeSavedFilterPreset_lower(preset),uniffiCallStatus
+    )
+}
 }
 
     /**
@@ -3456,6 +3482,67 @@ public func FfiConverterTypeBridgeRelationStructure_lower(_ value: BridgeRelatio
 }
 
 
+/**
+ * One saved filter preset for the catalog object selected by opaque id.
+ */
+public struct BridgeSavedFilterPreset: Equatable, Hashable {
+    public var name: String
+    public var filters: [BridgeBrowseFilter]
+    public var rawWhere: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, filters: [BridgeBrowseFilter], rawWhere: String?) {
+        self.name = name
+        self.filters = filters
+        self.rawWhere = rawWhere
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeSavedFilterPreset: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeSavedFilterPreset: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeSavedFilterPreset {
+        return
+            try BridgeSavedFilterPreset(
+                name: FfiConverterString.read(from: &buf),
+                filters: FfiConverterSequenceTypeBridgeBrowseFilter.read(from: &buf),
+                rawWhere: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeSavedFilterPreset, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterSequenceTypeBridgeBrowseFilter.write(value.filters, into: &buf)
+        FfiConverterOptionString.write(value.rawWhere, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeSavedFilterPreset_lift(_ buf: RustBuffer) throws -> BridgeSavedFilterPreset {
+    return try FfiConverterTypeBridgeSavedFilterPreset.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeSavedFilterPreset_lower(_ value: BridgeSavedFilterPreset) -> RustBuffer {
+    return FfiConverterTypeBridgeSavedFilterPreset.lower(value)
+}
+
+
 public struct BridgeSavedQueryItem: Equatable, Hashable {
     public var queryId: Int64
     public var name: String
@@ -4738,6 +4825,31 @@ fileprivate struct FfiConverterSequenceTypeBridgeRelationIndex: FfiConverterRust
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeSavedFilterPreset: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeSavedFilterPreset]
+
+    public static func write(_ value: [BridgeSavedFilterPreset], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeSavedFilterPreset.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeSavedFilterPreset] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeSavedFilterPreset]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeSavedFilterPreset.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeSavedQueryItem: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeSavedQueryItem]
 
@@ -4866,6 +4978,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_history_retention() != 30796) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_catalog_filter_presets() != 22760) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_history() != 19762) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4936,6 +5051,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_review_token() != 712) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_save_catalog_filter_preset() != 34330) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_save_profile() != 18250) {

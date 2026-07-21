@@ -44,6 +44,11 @@ public protocol WorkbenchBackend: Actor, Sendable {
     session: Data, nodeId: Data, sort: [WorkbenchBrowseSort], filters: [WorkbenchBrowseFilter],
     rawWhere: String?
   ) throws -> Data
+  func listCatalogFilterPresets(session: Data, nodeId: Data) throws
+    -> [WorkbenchSavedFilterPreset]
+  func saveCatalogFilterPreset(
+    session: Data, nodeId: Data, preset: WorkbenchSavedFilterPreset
+  ) throws
   func submit(session: Data, intent: String, statement: String?) throws -> Data
   func finish(operationId: Data) async throws -> WorkbenchOperation
   func cancel(operationId: Data) throws -> WorkbenchCancelOutcome
@@ -93,6 +98,18 @@ public struct WorkbenchBrowseFilter: Sendable, Equatable, Identifiable {
     self.column = column
     self.operatorName = operatorName
     self.value = value
+  }
+}
+
+public struct WorkbenchSavedFilterPreset: Sendable, Equatable, Identifiable {
+  public let name: String
+  public let filters: [WorkbenchBrowseFilter]
+  public let rawWhere: String?
+  public var id: String { name }
+  public init(name: String, filters: [WorkbenchBrowseFilter], rawWhere: String?) {
+    self.name = name
+    self.filters = filters
+    self.rawWhere = rawWhere
   }
 }
 

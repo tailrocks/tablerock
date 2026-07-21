@@ -811,12 +811,7 @@ pub struct GridSortKey {
 }
 
 /// Typed filter chip (values as display strings; engine re-types).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GridFilterChip {
-    pub column: String,
-    pub operator: String,
-    pub value: Option<String>,
-}
+pub use tablerock_core::SavedFilterCondition as GridFilterChip;
 
 /// Column visibility/width layout for one grid.
 #[derive(Debug, Clone, PartialEq, Eq)]

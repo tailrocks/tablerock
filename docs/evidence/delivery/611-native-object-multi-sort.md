@@ -38,6 +38,10 @@ menu did not preserve the test's assumed `.button` AX role. The test now finds
 the real control by stable identifier across the AX tree. Hosted interaction
 proof remains pending; this evidence does not relabel that failure as success.
 
+Hosted run `29874013100` then passed the complete object-control XCUITest,
+including add-sort, direction toggle, typed filter, raw-WHERE apply/clear, and
+the resulting reload transitions.
+
 The named conformance test captures the request below the bridge and proves
 both engines receive exactly ordered, Rust-rendered SQL:
 

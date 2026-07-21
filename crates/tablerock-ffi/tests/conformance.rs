@@ -21,8 +21,8 @@ use tablerock_engine::{
     ServerDescribe, SessionHealth,
 };
 use tablerock_ffi::{
-    BridgeBrowseFilter, BridgeBrowseSort, BridgeError, BridgeProfileOrderItem, BridgeSessionIntent,
-    BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
+    BridgeBrowseFilter, BridgeBrowseSort, BridgeError, BridgeProfileOrderItem,
+    BridgeSavedFilterPreset, BridgeSessionIntent, BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
 };
 
 struct OnePageStream(Option<ResultPage>);
@@ -1294,6 +1294,56 @@ fn open_profile_requires_persistence_and_loads_literals() {
     assert!(bridge.delete_saved_query(saved_id).unwrap());
     assert_eq!(bridge.list_saved_queries(None, None).unwrap().len(), 1);
     assert!(bridge.delete_saved_query(redis_id).unwrap());
+    let roots = bridge
+        .refresh_catalog(reconnect_source.clone(), None)
+        .unwrap();
+    let schemas = bridge
+        .refresh_catalog(reconnect_source.clone(), Some(roots[0].id_bytes.clone()))
+        .unwrap();
+    let objects = bridge
+        .refresh_catalog(reconnect_source.clone(), Some(schemas[0].id_bytes.clone()))
+        .unwrap();
+    assert!(
+        bridge
+            .list_catalog_filter_presets(reconnect_source.clone(), objects[0].id_bytes.clone())
+            .unwrap()
+            .is_empty()
+    );
+    bridge
+        .save_catalog_filter_preset(
+            reconnect_source.clone(),
+            objects[0].id_bytes.clone(),
+            BridgeSavedFilterPreset {
+                name: "active".into(),
+                filters: vec![BridgeBrowseFilter {
+                    column: "status".into(),
+                    operator: "eq".into(),
+                    value: Some("private".into()),
+                }],
+                raw_where: Some("deleted_at IS NULL".into()),
+            },
+        )
+        .unwrap();
+    let presets = bridge
+        .list_catalog_filter_presets(reconnect_source.clone(), objects[0].id_bytes.clone())
+        .unwrap();
+    assert_eq!(presets.len(), 1);
+    assert_eq!(presets[0].name, "active");
+    assert_eq!(presets[0].filters[0].column, "status");
+    assert_eq!(presets[0].filters[0].value.as_deref(), Some("private"));
+    assert_eq!(presets[0].raw_where.as_deref(), Some("deleted_at IS NULL"));
+    assert!(matches!(
+        bridge.save_catalog_filter_preset(
+            reconnect_source.clone(),
+            objects[0].id_bytes.clone(),
+            BridgeSavedFilterPreset {
+                name: "bad name".into(),
+                filters: Vec::new(),
+                raw_where: None,
+            },
+        ),
+        Err(BridgeError::Rejected { ref code, .. }) if code == "saved-filter-name"
+    ));
     let intent = BridgeSessionIntent {
         database: "postgres".into(),
         schema: Some("public".into()),

@@ -37,8 +37,8 @@ xcrun swiftc -parse native/Tests/TableRockAppUITests/TableRockAppUITests.swift
 # parsed
 ```
 
-Hosted Xcode UI execution is pending. This checkpoint does not claim that gate
-before its exact-main run completes. Local SwiftPM XCTest cannot run because
+Hosted run `29874013100` passed the object-control XCUITest, including typing,
+applying, observing, and clearing raw-WHERE through real controls. Local SwiftPM XCTest cannot run because
 the selected developer directory exposes CommandLineTools without XCTest; the
 hosted full-Xcode checkpoint remains authoritative.
 

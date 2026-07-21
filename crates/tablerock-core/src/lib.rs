@@ -19,6 +19,7 @@ mod reconnect;
 mod redis_command;
 mod result_store;
 mod revision;
+mod saved_filter;
 mod secret;
 mod service;
 mod sql_analysis;
@@ -105,6 +106,10 @@ pub use result_store::{
     AdmissionOutcome, OpenResultOutcome, PageKey, ResultStore, ResultStoreError, ResultStoreLimits,
 };
 pub use revision::{CounterOverflow, EventSequence, Revision, RevisionRelation, SequenceRelation};
+pub use saved_filter::{
+    SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset, fuzzy_score, is_safe_preset_name,
+    rank_preset_names, resolve_preset_name, should_auto_reconnect,
+};
 pub use secret::{
     DangerousPlaintext, EnvironmentReference, KeychainReference, OnePasswordObjectId,
     OnePasswordReference, OnePasswordSegment, PlaintextAcknowledgement, SecretBuildError,
