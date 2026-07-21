@@ -1,4 +1,8 @@
-use std::{collections::BTreeSet, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::{Arc, Mutex, OnceLock},
+    time::Duration,
+};
 
 use rcgen::ExtendedKeyUsagePurpose;
 use redis::{
@@ -19,6 +23,40 @@ use tablerock_engine::{
     RedisSubscriptionKind, RedisSubscriptionOptions, RedisTlsMaterial, RedisTlsMode,
     RedisTtlApplication,
 };
+
+static CONTAINER_HOSTS: OnceLock<Mutex<HashMap<u16, String>>> = OnceLock::new();
+
+fn record_container_host(port: u16, host: String) {
+    CONTAINER_HOSTS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .insert(port, host);
+}
+
+fn container_host(port: u16) -> String {
+    CONTAINER_HOSTS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .get(&port)
+        .cloned()
+        .unwrap_or_else(|| "127.0.0.1".to_owned())
+}
+
+fn container_text(port: u16) -> BoundedText {
+    text(&container_host(port))
+}
+
+fn redis_url(port: u16, database: i64) -> String {
+    format!("redis://{}:{port}/{database}", container_host(port))
+}
+
+macro_rules! record_host {
+    ($container:expr, $port:expr) => {
+        record_container_host($port, $container.get_host().await.unwrap().to_string())
+    };
+}
 
 struct RedisTlsFixture {
     ca_pem: String,
@@ -313,7 +351,7 @@ async fn resubscribes_with_visible_gap_after_redis_restart() {
                     .unwrap();
                 let session = connect_session_until_ready(
                     &RedisConnectConfig::new(
-                        text("127.0.0.1"),
+                        container_text(port),
                         port,
                         0,
                         protocol,
@@ -462,9 +500,14 @@ async fn verify_tls_subscription_restart(
         Duration::from_millis(500),
     )
     .unwrap();
-    let config =
-        RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Require)
-            .with_runtime_policy(policy);
+    let config = RedisConnectConfig::new(
+        container_text(port),
+        port,
+        0,
+        protocol,
+        RedisTlsMode::Require,
+    )
+    .with_runtime_policy(policy);
     let credentials = RedisCredentials::new(Some(REDIS_TEST_USERNAME), REDIS_TEST_PASSWORD);
     let mut tls = RedisTlsMaterial::custom_roots(fixture.ca_pem.as_bytes());
     if require_client_identity {
@@ -609,9 +652,14 @@ async fn verify_rejected_tls_subscription_replacement(
         Duration::from_millis(500),
     )
     .unwrap();
-    let config =
-        RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Require)
-            .with_runtime_policy(policy);
+    let config = RedisConnectConfig::new(
+        container_text(port),
+        port,
+        0,
+        protocol,
+        RedisTlsMode::Require,
+    )
+    .with_runtime_policy(policy);
     let credentials = RedisCredentials::new(Some(REDIS_TEST_USERNAME), REDIS_TEST_PASSWORD);
     let mut tls = RedisTlsMaterial::custom_roots(fixture.ca_pem.as_bytes());
     if require_client_identity {
@@ -720,7 +768,7 @@ async fn bounds_connection_handshake_timeout() {
     let started = tokio::time::Instant::now();
     let result = RedisSession::connect(
         &RedisConnectConfig::new(
-            text("127.0.0.1"),
+            container_text(port),
             port,
             0,
             RedisProtocol::Resp3,
@@ -756,18 +804,24 @@ async fn verify_tls_auth_version(
     let fixture = RedisTlsFixture::generate();
     let container = start_tls_redis(tag, &fixture, require_client_identity, None).await;
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
-    let config =
-        RedisConnectConfig::new(text("127.0.0.1"), port, 1, protocol, RedisTlsMode::Require)
-            .with_runtime_policy(
-                RedisRuntimePolicy::new(
-                    Duration::from_secs(2),
-                    Duration::from_secs(2),
-                    2,
-                    Duration::from_millis(10),
-                    Duration::from_millis(50),
-                )
-                .unwrap(),
-            );
+    record_host!(container, port);
+    let config = RedisConnectConfig::new(
+        container_text(port),
+        port,
+        1,
+        protocol,
+        RedisTlsMode::Require,
+    )
+    .with_runtime_policy(
+        RedisRuntimePolicy::new(
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+            2,
+            Duration::from_millis(10),
+            Duration::from_millis(50),
+        )
+        .unwrap(),
+    );
     let credentials = RedisCredentials::new(Some(REDIS_TEST_USERNAME), REDIS_TEST_PASSWORD);
     let mut tls = RedisTlsMaterial::custom_roots(fixture.ca_pem.as_bytes());
     if require_client_identity {
@@ -1025,18 +1079,23 @@ async fn verify_tls_auth_version(
         Err(tablerock_engine::RedisError::Connect)
     ));
 
-    let plaintext =
-        RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable)
-            .with_runtime_policy(
-                RedisRuntimePolicy::new(
-                    Duration::from_millis(250),
-                    Duration::from_millis(250),
-                    1,
-                    Duration::from_millis(1),
-                    Duration::from_millis(1),
-                )
-                .unwrap(),
-            );
+    let plaintext = RedisConnectConfig::new(
+        container_text(port),
+        port,
+        0,
+        protocol,
+        RedisTlsMode::Disable,
+    )
+    .with_runtime_policy(
+        RedisRuntimePolicy::new(
+            Duration::from_millis(250),
+            Duration::from_millis(250),
+            1,
+            Duration::from_millis(1),
+            Duration::from_millis(1),
+        )
+        .unwrap(),
+    );
     assert!(
         RedisSession::connect(&plaintext, RedisConnectionSecurity::new())
             .await
@@ -1162,6 +1221,7 @@ async fn verify_timeout_reconnect_version(tag: &str) {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    record_host!(container, port);
     let policy = RedisRuntimePolicy::new(
         Duration::from_millis(250),
         Duration::from_millis(100),
@@ -1180,8 +1240,14 @@ async fn verify_timeout_reconnect_version(tag: &str) {
             .await
             .unwrap();
         let session = RedisSession::connect(
-            &RedisConnectConfig::new(text("127.0.0.1"), port, 1, protocol, RedisTlsMode::Disable)
-                .with_runtime_policy(policy),
+            &RedisConnectConfig::new(
+                container_text(port),
+                port,
+                1,
+                protocol,
+                RedisTlsMode::Disable,
+            )
+            .with_runtime_policy(policy),
             RedisConnectionSecurity::new(),
         )
         .await
@@ -1268,12 +1334,19 @@ async fn verify_scan_mutation_version(tag: &str) {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    record_host!(container, port);
 
     for protocol in [RedisProtocol::Resp2, RedisProtocol::Resp3] {
         let mut mutator = raw_connection(port, protocol).await;
         let stable = seed_scan_race(&mut mutator).await;
         let session = RedisSession::connect(
-            &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable),
+            &RedisConnectConfig::new(
+                container_text(port),
+                port,
+                0,
+                protocol,
+                RedisTlsMode::Disable,
+            ),
             RedisConnectionSecurity::new(),
         )
         .await
@@ -1306,7 +1379,7 @@ async fn raw_connection_in_database(
             RedisProtocol::Resp2 => ProtocolVersion::RESP2,
             RedisProtocol::Resp3 => ProtocolVersion::RESP3,
         });
-    let info = ConnectionAddr::Tcp("127.0.0.1".to_owned(), port)
+    let info = ConnectionAddr::Tcp(container_host(port), port)
         .into_connection_info()
         .unwrap()
         .set_redis_settings(redis);
@@ -1536,11 +1609,18 @@ async fn verify_version(tag: &str) {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    record_host!(container, port);
     seed(port).await;
 
     for protocol in [RedisProtocol::Resp2, RedisProtocol::Resp3] {
         let session = RedisSession::connect(
-            &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable),
+            &RedisConnectConfig::new(
+                container_text(port),
+                port,
+                0,
+                protocol,
+                RedisTlsMode::Disable,
+            ),
             RedisConnectionSecurity::new(),
         )
         .await
@@ -1675,7 +1755,13 @@ async fn verify_version(tag: &str) {
         assert!(stored_bytes <= 4);
 
         let isolated = RedisSession::connect(
-            &RedisConnectConfig::new(text("127.0.0.1"), port, 1, protocol, RedisTlsMode::Disable),
+            &RedisConnectConfig::new(
+                container_text(port),
+                port,
+                1,
+                protocol,
+                RedisTlsMode::Disable,
+            ),
             RedisConnectionSecurity::new(),
         )
         .await
@@ -2144,7 +2230,13 @@ async fn verify_pubsub_isolation(
 
     let cancel_session = Arc::new(
         RedisSession::connect(
-            &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable),
+            &RedisConnectConfig::new(
+                container_text(port),
+                port,
+                0,
+                protocol,
+                RedisTlsMode::Disable,
+            ),
             RedisConnectionSecurity::new(),
         )
         .await
@@ -2189,7 +2281,13 @@ async fn verify_pubsub_isolation(
 
 async fn verify_pubsub_service_cancellation(port: u16, protocol: RedisProtocol) {
     let session = RedisSession::connect(
-        &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable),
+        &RedisConnectConfig::new(
+            container_text(port),
+            port,
+            0,
+            protocol,
+            RedisTlsMode::Disable,
+        ),
         RedisConnectionSecurity::new(),
     )
     .await
@@ -2471,8 +2569,14 @@ async fn verify_ttl_mutations(
     )
     .unwrap();
     let ambiguity_session = RedisSession::connect(
-        &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable)
-            .with_runtime_policy(policy),
+        &RedisConnectConfig::new(
+            container_text(port),
+            port,
+            0,
+            protocol,
+            RedisTlsMode::Disable,
+        )
+        .with_runtime_policy(policy),
         RedisConnectionSecurity::new(),
     )
     .await
@@ -2539,7 +2643,7 @@ async fn verify_pipeline_partial_failure(port: u16, protocol: RedisProtocol, tag
                 RedisProtocol::Resp2 => ProtocolVersion::RESP2,
                 RedisProtocol::Resp3 => ProtocolVersion::RESP3,
             });
-        let info = ConnectionAddr::Tcp("127.0.0.1".to_owned(), port)
+        let info = ConnectionAddr::Tcp(container_host(port), port)
             .into_connection_info()
             .unwrap()
             .set_redis_settings(redis);
@@ -2606,7 +2710,13 @@ async fn verify_service_cancellation(
     wait_for_server_dispatch: bool,
 ) {
     let session = RedisSession::connect(
-        &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable),
+        &RedisConnectConfig::new(
+            container_text(port),
+            port,
+            0,
+            protocol,
+            RedisTlsMode::Disable,
+        ),
         RedisConnectionSecurity::new(),
     )
     .await
@@ -2676,7 +2786,7 @@ async fn verify_service_cancellation(
 }
 
 async fn wait_until_blocked(port: u16, client_id: Option<u64>) {
-    let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+    let client = redis::Client::open(redis_url(port, 0)).unwrap();
     let mut inspector = client.get_multiplexed_async_connection().await.unwrap();
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
@@ -2698,7 +2808,13 @@ async fn wait_until_blocked(port: u16, client_id: Option<u64>) {
 
 async fn verify_blocking_completion(port: u16, protocol: RedisProtocol) {
     let session = RedisSession::connect(
-        &RedisConnectConfig::new(text("127.0.0.1"), port, 0, protocol, RedisTlsMode::Disable),
+        &RedisConnectConfig::new(
+            container_text(port),
+            port,
+            0,
+            protocol,
+            RedisTlsMode::Disable,
+        ),
         RedisConnectionSecurity::new(),
     )
     .await
@@ -2723,7 +2839,7 @@ async fn verify_blocking_completion(port: u16, protocol: RedisProtocol) {
         Err(tablerock_engine::RedisError::SessionBusy)
     ));
     wait_until_blocked(port, Some(client_id)).await;
-    let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+    let client = redis::Client::open(redis_url(port, 0)).unwrap();
     let mut producer = client.get_multiplexed_async_connection().await.unwrap();
     let pushed: u64 = redis::cmd("RPUSH")
         .arg(b"tablerock-blocking-completion")
@@ -2758,7 +2874,7 @@ async fn seed(port: u16) {
         ),
         (1, vec![(b"database-one".to_vec(), b"isolated".to_vec())]),
     ] {
-        let client = redis::Client::open(format!("redis://127.0.0.1:{port}/{database}")).unwrap();
+        let client = redis::Client::open(redis_url(port, database)).unwrap();
         let mut connection = None;
         for _ in 0..50 {
             match client.get_multiplexed_async_connection().await {
@@ -2820,9 +2936,10 @@ async fn executes_sequential_pipeline_without_multi_exec() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    record_host!(container, port);
     let session = connect_session_until_ready(
         &RedisConnectConfig::new(
-            text("127.0.0.1"),
+            container_text(port),
             port,
             0,
             RedisProtocol::Resp3,
@@ -2880,9 +2997,10 @@ async fn collection_page_skip_returns_next_for_large_set() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    record_host!(container, port);
     let session = connect_session_until_ready(
         &RedisConnectConfig::new(
-            text("127.0.0.1"),
+            container_text(port),
             port,
             0,
             RedisProtocol::Resp3,
@@ -2891,7 +3009,7 @@ async fn collection_page_skip_returns_next_for_large_set() {
         RedisConnectionSecurity::new(),
     )
     .await;
-    let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+    let client = redis::Client::open(redis_url(port, 0)).unwrap();
     let mut c = client.get_multiplexed_async_connection().await.unwrap();
     let key = b"tablerock-page-set";
     for i in 0..80u32 {
@@ -2929,9 +3047,10 @@ async fn applies_multi_type_collection_mutations_non_transactionally() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    record_host!(container, port);
     let session = connect_session_until_ready(
         &RedisConnectConfig::new(
-            text("127.0.0.1"),
+            container_text(port),
             port,
             0,
             RedisProtocol::Resp3,
@@ -2965,7 +3084,7 @@ async fn applies_multi_type_collection_mutations_non_transactionally() {
         } if returned.iter().any(|(k, v)| k == "command" && v == "HSET")
     ));
     let hget: Option<Vec<u8>> = {
-        let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+        let client = redis::Client::open(redis_url(port, 0)).unwrap();
         let mut c = client.get_multiplexed_async_connection().await.unwrap();
         redis::cmd("HGET")
             .arg(hash_key)
@@ -3010,7 +3129,7 @@ async fn applies_multi_type_collection_mutations_non_transactionally() {
         } if returned.iter().any(|(k, v)| k == "command" && v == "SADD")
     ));
     let sismember: i64 = {
-        let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+        let client = redis::Client::open(redis_url(port, 0)).unwrap();
         let mut c = client.get_multiplexed_async_connection().await.unwrap();
         redis::cmd("SISMEMBER")
             .arg(set_key)
@@ -3052,7 +3171,7 @@ async fn applies_multi_type_collection_mutations_non_transactionally() {
         } if returned.iter().any(|(k, v)| k == "command" && v == "ZADD")
     ));
     let zscore: Option<f64> = {
-        let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+        let client = redis::Client::open(redis_url(port, 0)).unwrap();
         let mut c = client.get_multiplexed_async_connection().await.unwrap();
         redis::cmd("ZSCORE")
             .arg(zset_key)
@@ -3106,9 +3225,10 @@ async fn lists_catalog_logical_databases() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    record_host!(container, port);
     let session = connect_session_until_ready(
         &RedisConnectConfig::new(
-            text("127.0.0.1"),
+            container_text(port),
             port,
             0,
             RedisProtocol::Resp3,
@@ -3135,7 +3255,7 @@ async fn lists_catalog_logical_databases() {
         subtree.exactness(),
         CatalogExactness::Exact | CatalogExactness::DefaultAssumed
     ));
-    let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+    let client = redis::Client::open(redis_url(port, 0)).unwrap();
     let mut connection = client.get_multiplexed_async_connection().await.unwrap();
     let _: () = redis::cmd("SET")
         .arg(b"catalog-key")
@@ -3177,9 +3297,10 @@ async fn key_type_list_stream_and_info_snapshot() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    record_host!(container, port);
     let session = connect_session_until_ready(
         &RedisConnectConfig::new(
-            text("127.0.0.1"),
+            container_text(port),
             port,
             0,
             RedisProtocol::Resp3,
@@ -3190,7 +3311,7 @@ async fn key_type_list_stream_and_info_snapshot() {
     .await;
 
     // Seed fixture via separate redis-rs connection.
-    let client = redis::Client::open(format!("redis://127.0.0.1:{port}/0")).unwrap();
+    let client = redis::Client::open(redis_url(port, 0)).unwrap();
     let mut con = client.get_multiplexed_async_connection().await.unwrap();
     let _: () = redis::cmd("SET")
         .arg(b"s")
