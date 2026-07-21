@@ -37,6 +37,32 @@ for the same source. No reproducibility claim is made: the rolling release
 replaces timestamped build output. The tap accepted only the current archive
 after independently matching its checksum and GitHub provenance.
 
+## Post-migration reconciliation proof
+
+The consolidated `CI` workflow replaced `Checks` and `Dependencies` without
+weakening delivery gates. It pins Rust 1.97.1 through mise, runs format,
+strict Clippy, check, nextest, real-server suites, `cargo audit`, `cargo deny`,
+direct-dependency freshness, and immutable-action freshness. Compiler-cache
+environment is scoped only to jobs that activate sccache and mold; job-specific
+mise installs prevent audit and preview setup from invoking absent wrappers.
+
+- Hosted CI reconciliation run:
+  [29799951646](https://github.com/tailrocks/tablerock/actions/runs/29799951646),
+  green across Rust, dependency, real-server, bridge, import/export,
+  performance, PostgreSQL tool, and ENOSPC gates.
+- Fresh preview run:
+  [29800823636](https://github.com/tailrocks/tablerock/actions/runs/29800823636),
+  green after both glibc-2.17 Linux lanes, both Apple CLI lanes, and the Xcode
+  26 app lane built from `349a6f4c42f6f6fad9ba9707e64d57c71c37b69d`.
+- The rolling release is `Preview 0.1.0-preview.633+349a6f4`, targets that full
+  source SHA, and exposes exactly the expected ten assets.
+- Fresh tap verifier run:
+  [29801231832](https://github.com/tailrocks/homebrew-tablerock/actions/runs/29801231832),
+  green. It independently verified the new checksums and attestations, then
+  wrote verified GitHub-signed commit `aac0c2735c2a2b91adf42ed3a3647db68782f56b`.
+- Formula and cask now carry the exact full source SHA and version; their five
+  archive SHA values match the current release assets.
+
 ## Tap proof
 
 Repository: [tailrocks/homebrew-tablerock](https://github.com/tailrocks/homebrew-tablerock)

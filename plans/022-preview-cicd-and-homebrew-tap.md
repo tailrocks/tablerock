@@ -16,12 +16,11 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-21): rolling product release, public pull-verified
-  tap, formula/cask delivery, hosted provenance checks, manual and organic
-  workflows, and real arm64 install/launch/uninstall proof are green (evidence
-  554–561); a concurrent uncommitted CI migration replaces the committed
-  dependency freshness workflow and modifies `preview.yml`, so final DONE
-  awaits reconciliation and fresh proof of that resulting tree**
+- **DONE (2026-07-21): rolling product release, public pull-verified tap,
+  formula/cask delivery, hosted provenance checks, manual and organic
+  workflows, real arm64 install/launch/uninstall, reconciled CI migration,
+  fresh five-lane artifact build, and fresh tap verification are green
+  (evidence 554–561)**
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED (new repo, new runner image, Gatekeeper policy on ad-hoc app)
