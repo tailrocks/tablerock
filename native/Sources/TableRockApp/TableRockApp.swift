@@ -6144,6 +6144,7 @@ struct CatalogGrid: NSViewRepresentable {
       }
       let value = snapshot.rows[row][column]
       cell.textField?.stringValue = value
+      cell.textField?.setAccessibilityIdentifier("results.cell.\(row).\(column)")
       cell.setAccessibilityLabel("\(snapshot.columns[column]), row \(row + 1)")
       cell.setAccessibilityValue(value)
       cell.setAccessibilityIdentifier("results.cell.\(row).\(column)")
@@ -6413,6 +6414,7 @@ struct ProfileEditorSheet: View {
             }
           }
           .accessibilityIdentifier("profile.editor.save")
+          .keyboardShortcut(.defaultAction)
           .disabled(!canSave || saving)
         }
       }
