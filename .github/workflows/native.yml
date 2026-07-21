@@ -1,0 +1,102 @@
+name: Native Checkpoint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/native.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "crates/tablerock-core/**"
+      - "crates/tablerock-engine/**"
+      - "crates/tablerock-ffi/**"
+      - "crates/tablerock-files/**"
+      - "crates/tablerock-persistence/**"
+      - "native/**"
+      - "scripts/build-native-app.sh"
+      - "scripts/build-xcframework.sh"
+      - "scripts/generate-swift-bindings.sh"
+  workflow_dispatch:
+  schedule:
+    - cron: "29 4 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-checkpoint-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "false"
+  SCCACHE_CACHE_SIZE: 20G
+
+jobs:
+  native:
+    name: Swift bridge, app, and XCFramework
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
+
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          install_args: rust
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Select stable Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      - name: Record toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          rustc --version
+          cargo --version
+
+      - name: Build Rust bridge
+        run: cargo build -p tablerock-ffi --release --locked
+
+      - name: Regenerate and reject binding drift
+        run: |
+          ./scripts/generate-swift-bindings.sh
+          git diff --exit-code -- native/Generated native/Sources/TableRockBridge/tablerock_ffi.swift
+
+      - name: Run Swift bridge and feature tests
+        env:
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+        run: swift test --package-path native -c release
+
+      - name: Build universal static XCFramework
+        run: ./scripts/build-xcframework.sh
+
+      - name: Build and verify development app
+        run: |
+          ./scripts/build-native-app.sh
+          codesign --verify --deep --strict native/dist/TableRock.app
+          test "$(plutil -extract CFBundleIdentifier raw native/dist/TableRock.app/Contents/Info.plist)" = "app.tablerock.TableRock"
+          test "$(lipo -archs target/xcframework/macos-universal/TableRockFFI.framework/TableRockFFI)" = "x86_64 arm64" \
+            || test "$(lipo -archs target/xcframework/macos-universal/TableRockFFI.framework/TableRockFFI)" = "arm64 x86_64"
+
+      - name: Archive structural artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-checkpoint-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            native/dist/TableRock.app
+            target/xcframework/TableRockFFI.xcframework
+            native/Generated

@@ -1,31 +1,27 @@
 import Foundation
-import Testing
+import XCTest
 @testable import TableRockBridge
 
-@Suite("PageV1 hostile boundaries")
-struct PageV1BoundaryTests {
-    @Test("valid text body decodes column metadata and cell bytes")
-    func validTextBody() throws {
+final class PageV1BoundaryTests: XCTestCase {
+    func testValidTextBody() throws {
         let table = try PageV1.decodeTable(pageBytes())
-        #expect(table.columns == ["value"])
-        #expect(table.columnMetadata[0].engineType == "text")
-        #expect(table.rows == [["abc"]])
-        #expect(table.cells[0][0].bytes == Data("abc".utf8))
+        XCTAssertEqual(table.columns, ["value"])
+        XCTAssertEqual(table.columnMetadata[0].engineType, "text")
+        XCTAssertEqual(table.rows, [["abc"]])
+        XCTAssertEqual(table.cells[0][0].bytes, Data("abc".utf8))
     }
 
-    @Test("bad magic fails before body decode")
-    func badMagic() {
+    func testBadMagic() {
         do {
             _ = try PageV1.decodeEnvelope(Data([0x00, 0x01, 0x02, 0x03]))
-            Issue.record("invalid magic was accepted")
+            XCTFail("invalid magic was accepted")
         } catch PageV1DecodeError.invalidMagic {
         } catch {
-            Issue.record("unexpected error: \(error)")
+            XCTFail("unexpected error: \(error)")
         }
     }
 
-    @Test("oversized arena fails from the fixed header")
-    func oversizedArena() {
+    func testOversizedArena() {
         var bytes = Data()
         bytes.append(contentsOf: [0x54, 0x52, 0x50, 0x31])
         bytes.append(contentsOf: UInt16(1).littleEndianBytes)
@@ -46,55 +42,52 @@ struct PageV1BoundaryTests {
             _ = try PageV1.decodeEnvelope(
                 bytes, limits: PageV1Limits(maxArenaBytes: 1_024)
             )
-            Issue.record("oversized arena was accepted")
+            XCTFail("oversized arena was accepted")
         } catch PageV1DecodeError.arenaLimitExceeded {
         } catch {
-            Issue.record("unexpected error: \(error)")
+            XCTFail("unexpected error: \(error)")
         }
     }
 
-    @Test("unsupported version is rejected")
-    func unsupportedVersion() {
+    func testUnsupportedVersion() {
         var bytes = pageBytes()
         bytes.replaceSubrange(4..<6, with: UInt16(2).littleEndianBytes)
         do {
             _ = try PageV1.decodeEnvelope(bytes)
-            Issue.record("future version was accepted")
+            XCTFail("future version was accepted")
         } catch PageV1DecodeError.unsupportedVersion(2) {
         } catch {
-            Issue.record("unexpected error: \(error)")
+            XCTFail("unexpected error: \(error)")
         }
     }
 
-    @Test("row, column, and column-text limits reject from header")
-    func fixedHeaderLimits() {
+    func testFixedHeaderLimits() {
         let bytes = pageBytes()
         do {
             _ = try PageV1.decodeEnvelope(bytes, limits: PageV1Limits(maxRows: 0))
-            Issue.record("row limit was ignored")
+            XCTFail("row limit was ignored")
         } catch PageV1DecodeError.rowLimitExceeded {
-        } catch { Issue.record("unexpected row error: \(error)") }
+        } catch { XCTFail("unexpected row error: \(error)") }
         do {
             _ = try PageV1.decodeEnvelope(bytes, limits: PageV1Limits(maxColumns: 0))
-            Issue.record("column limit was ignored")
+            XCTFail("column limit was ignored")
         } catch PageV1DecodeError.columnLimitExceeded {
-        } catch { Issue.record("unexpected column error: \(error)") }
+        } catch { XCTFail("unexpected column error: \(error)") }
         do {
             _ = try PageV1.decodeEnvelope(bytes, limits: PageV1Limits(maxColumnTextBytes: 4))
-            Issue.record("column-text limit was ignored")
+            XCTFail("column-text limit was ignored")
         } catch PageV1DecodeError.columnTextLimitExceeded {
-        } catch { Issue.record("unexpected text error: \(error)") }
+        } catch { XCTFail("unexpected text error: \(error)") }
     }
 
-    @Test("nonzero, descending, and out-of-arena offsets are rejected")
-    func invalidOffsets() {
+    func testInvalidOffsets() {
         for offsets in [[1, 3], [2, 1], [0, 4]] as [[UInt64]] {
             do {
                 _ = try PageV1.decodeTable(pageBytes(offsets: offsets))
-                Issue.record("invalid offsets were accepted: \(offsets)")
+                XCTFail("invalid offsets were accepted: \(offsets)")
             } catch PageV1DecodeError.invalidOffsets {
             } catch {
-                Issue.record("unexpected error for \(offsets): \(error)")
+                XCTFail("unexpected error for \(offsets): \(error)")
             }
         }
     }

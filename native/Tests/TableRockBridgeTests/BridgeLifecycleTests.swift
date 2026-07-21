@@ -1,18 +1,28 @@
 import Foundation
-import Testing
+import XCTest
 @testable import TableRockBridge
 
-@Suite("UniFFI bridge lifecycle", .serialized)
-struct BridgeLifecycleTests {
-    @Test("panic is typed and runtime remains usable")
-    func panicContainment() throws {
+final class BridgeLifecycleTests: XCTestCase {
+    private static let lifecycleLock = NSLock()
+
+    override func setUp() {
+        super.setUp()
+        Self.lifecycleLock.lock()
+    }
+
+    override func tearDown() {
+        Self.lifecycleLock.unlock()
+        super.tearDown()
+    }
+
+    func testPanicContainment() throws {
         let bridge = TableRockBridge.create()
         do {
             try bridge.panicProbe()
-            Issue.record("panic probe returned without a typed error")
+            XCTFail("panic probe returned without a typed error")
         } catch let error as BridgeError {
             guard case .ContainedPanic = error else {
-                Issue.record("expected ContainedPanic, got \(error)")
+                XCTFail("expected ContainedPanic, got \(error)")
                 return
             }
         }
@@ -20,8 +30,7 @@ struct BridgeLifecycleTests {
         try bridge.destroyRuntime()
     }
 
-    @Test("runtime ensure and destroy are idempotent")
-    func idempotentRuntimeLifecycle() throws {
+    func testIdempotentRuntimeLifecycle() throws {
         let bridge = TableRockBridge.create()
         try bridge.ensureRuntime()
         try bridge.ensureRuntime()
@@ -29,8 +38,7 @@ struct BridgeLifecycleTests {
         try bridge.destroyRuntime()
     }
 
-    @Test("unreachable server returns typed redacted connection rejection")
-    func unreachableServerIsTypedAndRedacted() throws {
+    func testUnreachableServerIsTypedAndRedacted() throws {
         let bridge = TableRockBridge.create()
         let secret = "bridge-test-secret"
         let params = OpenParams(
@@ -39,50 +47,47 @@ struct BridgeLifecycleTests {
         )
         do {
             _ = try bridge.open(params: params)
-            Issue.record("open unexpectedly succeeded")
+            XCTFail("open unexpectedly succeeded")
         } catch let error as BridgeError {
             guard case let .Rejected(code, message) = error else {
-                Issue.record("expected Rejected, got \(error)")
+                XCTFail("expected Rejected, got \(error)")
                 return
             }
-            #expect(code == "connect")
-            #expect(!message.contains(secret))
-            #expect(!String(describing: error).contains(secret))
+            XCTAssertEqual(code, "connect")
+            XCTAssertFalse(message.contains(secret))
+            XCTAssertFalse(String(describing: error).contains(secret))
         }
     }
 
-    @Test("malformed operation IDs are rejected before lookup")
-    func malformedOperationId() throws {
+    func testMalformedOperationId() throws {
         let bridge = TableRockBridge.create()
         do {
             _ = try bridge.cancel(operationId: Data(repeating: 0, count: 15))
-            Issue.record("malformed operation ID was accepted")
+            XCTFail("malformed operation ID was accepted")
         } catch let error as BridgeError {
             guard case let .Rejected(code, _) = error else {
-                Issue.record("expected Rejected, got \(error)")
+                XCTFail("expected Rejected, got \(error)")
                 return
             }
-            #expect(code == "bad-operation-id")
+            XCTAssertEqual(code, "bad-operation-id")
         }
     }
 
-    @Test("calls after runtime destruction return typed unavailable")
-    func callAfterRuntimeDestruction() throws {
+    func testCallAfterRuntimeDestruction() throws {
         let bridge = TableRockBridge.create()
         try bridge.destroyRuntime()
         do {
             _ = try bridge.nextEvents(cursor: 0, maximum: 1)
-            Issue.record("call after runtime destruction succeeded")
+            XCTFail("call after runtime destruction succeeded")
         } catch let error as BridgeError {
             guard case .RuntimeUnavailable = error else {
-                Issue.record("expected RuntimeUnavailable, got \(error)")
+                XCTFail("expected RuntimeUnavailable, got \(error)")
                 return
             }
         }
     }
 
-    @Test("repeated bridge create and destroy remains usable")
-    func repeatedCreateDestroy() throws {
+    func testRepeatedCreateDestroy() throws {
         for _ in 0..<64 {
             let bridge = TableRockBridge.create()
             try bridge.ensureRuntime()

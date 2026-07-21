@@ -1,38 +1,36 @@
 import Foundation
-import Testing
+import XCTest
 @testable import TableRockBridge
 
-@Suite("Rust-generated PageV1 fixtures")
-struct PageV1FixtureTests {
-    struct Fixture: Sendable {
+final class PageV1FixtureTests: XCTestCase {
+    private struct Fixture: Sendable {
         let file: String
         let engine: UInt8
         let type: String
         let value: String
     }
 
-    @Test(
-        "all engines decode through the same versioned contract",
-        arguments: [
+    func testCrossEngineFixtures() throws {
+        let fixtures = [
             Fixture(file: "postgres-signed-v1", engine: 0, type: "int8", value: "-42"),
             Fixture(file: "clickhouse-signed-v1", engine: 1, type: "Int64", value: "7"),
             Fixture(file: "redis-signed-v1", engine: 2, type: "integer", value: "99"),
         ]
-    )
-    func crossEngineFixture(fixture: Fixture) throws {
-        let data = try fixtureData(named: fixture.file)
-        let envelope = try PageV1.decodeEnvelope(data)
-        let table = try PageV1.decodeTable(data)
+        for fixture in fixtures {
+            let data = try fixtureData(named: fixture.file)
+            let envelope = try PageV1.decodeEnvelope(data)
+            let table = try PageV1.decodeTable(data)
 
-        #expect(envelope.encodingVersion == 1)
-        #expect(envelope.engine == fixture.engine)
-        #expect(table.columns == ["n"])
-        #expect(table.columnMetadata[0].engineType == fixture.type)
-        #expect(table.rows == [[fixture.value]])
+            XCTAssertEqual(envelope.encodingVersion, 1, fixture.file)
+            XCTAssertEqual(envelope.engine, fixture.engine, fixture.file)
+            XCTAssertEqual(table.columns, ["n"], fixture.file)
+            XCTAssertEqual(table.columnMetadata[0].engineType, fixture.type, fixture.file)
+            XCTAssertEqual(table.rows, [[fixture.value]], fixture.file)
+        }
     }
 
     private func fixtureData(named name: String) throws -> Data {
-        let root = try #require(Bundle.module.resourceURL)
+        let root = try XCTUnwrap(Bundle.module.resourceURL)
         let url = root
             .appendingPathComponent("Fixtures/PageV1")
             .appendingPathComponent(name)

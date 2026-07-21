@@ -1,5 +1,5 @@
 import Foundation
-import Testing
+import XCTest
 @testable import TableRockFeature
 
 @MainActor
@@ -63,11 +63,9 @@ private final class RecordingKeychain: AppKeychainPort {
     func remove(reference: Data) throws { removals.append(reference) }
 }
 
-@Suite("Application dependency injection")
 @MainActor
-struct AppDependenciesTests {
-    @Test("clock and identifiers are deterministic ports")
-    func deterministicPorts() {
+final class AppDependenciesTests: XCTestCase {
+    func testDeterministicPorts() {
         let first = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let second = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         let dependencies = AppDependencies(
@@ -75,13 +73,12 @@ struct AppDependenciesTests {
             identifiers: SequenceIdentifiers([first, second])
         )
 
-        #expect(dependencies.clock.nowMilliseconds() == 42)
-        #expect(dependencies.identifiers.next() == first)
-        #expect(dependencies.identifiers.next() == second)
+        XCTAssertEqual(dependencies.clock.nowMilliseconds(), 42)
+        XCTAssertEqual(dependencies.identifiers.next(), first)
+        XCTAssertEqual(dependencies.identifiers.next(), second)
     }
 
-    @Test("file and pasteboard capabilities are isolated ports")
-    func isolatedPlatformPorts() throws {
+    func testIsolatedPlatformPorts() throws {
         let url = URL(fileURLWithPath: "/private/tmp/result.csv")
         let panels = RecordingFilePanels(selected: url)
         let pasteboard = RecordingPasteboard()
@@ -92,25 +89,24 @@ struct AppDependenciesTests {
         )
         let payload = AppPasteboardRepresentation(type: "public.utf8-plain-text", value: "x")
 
-        #expect(dependencies.filePanels.chooseSaveFile(request) == url)
+        XCTAssertEqual(dependencies.filePanels.chooseSaveFile(request), url)
         try dependencies.pasteboard.write([payload])
-        #expect(panels.saveRequests == [request])
-        #expect(pasteboard.writes == [[payload]])
+        XCTAssertEqual(panels.saveRequests, [request])
+        XCTAssertEqual(pasteboard.writes, [[payload]])
     }
 
-    @Test("Keychain capability exposes only opaque references and bytes")
-    func isolatedKeychainPort() throws {
+    func testIsolatedKeychainPort() throws {
         let keychain = RecordingKeychain()
         let dependencies = AppDependencies(keychain: keychain)
         let secret = Data("secret".utf8)
 
         let reference = try dependencies.keychain.store(secret: secret, account: "profile-1")
-        #expect(reference == Data([1, 2, 3]))
-        #expect(try dependencies.keychain.read(reference: reference) == secret)
+        XCTAssertEqual(reference, Data([1, 2, 3]))
+        XCTAssertEqual(try dependencies.keychain.read(reference: reference), secret)
         try dependencies.keychain.remove(reference: reference)
-        #expect(keychain.stored.count == 1)
-        #expect(keychain.stored[0].1 == "profile-1")
-        #expect(keychain.reads == [reference])
-        #expect(keychain.removals == [reference])
+        XCTAssertEqual(keychain.stored.count, 1)
+        XCTAssertEqual(keychain.stored[0].1, "profile-1")
+        XCTAssertEqual(keychain.reads, [reference])
+        XCTAssertEqual(keychain.removals, [reference])
     }
 }
