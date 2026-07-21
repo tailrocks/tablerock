@@ -2115,9 +2115,8 @@ async fn persistent_session_runs_statement_cancel_health_and_reuses_connection()
             support::command(902),
             Arc::clone(&handle),
             DriverPageRequest::PostgreSqlStatement {
-                statement: tablerock_core::StatementText::new("SELECT 'reuse'::text AS label")
-                    .unwrap(),
-                parameters: Vec::new(),
+                statement: tablerock_core::StatementText::new("SELECT $1::text AS label").unwrap(),
+                parameters: vec![tablerock_engine::FilterValue::Text("reuse".into())],
                 limits: PageLimits::new(10, 8, 4096, 256),
                 max_cell_bytes: 64,
             },

@@ -73,6 +73,8 @@ pub enum DriverPageRequest {
     /// Operator-supplied ClickHouse statement. Text is never logged by Debug.
     ClickHouseStatement {
         statement: StatementText,
+        /// Server-side named parameters for `{pN:Type}` placeholders.
+        parameters: Vec<crate::browse_plan::FilterValue>,
         query_id: BoundedText,
         limits: PageLimits,
         max_cell_bytes: u64,
@@ -151,11 +153,13 @@ impl fmt::Debug for DriverPageRequest {
                 .field("max_cell_bytes", max_cell_bytes),
             Self::ClickHouseStatement {
                 statement,
+                parameters,
                 query_id,
                 limits,
                 max_cell_bytes,
             } => debug
                 .field("statement_bytes", &statement.len())
+                .field("parameter_count", &parameters.len())
                 .field("query_id_bytes", &query_id.len())
                 .field("limits", limits)
                 .field("max_cell_bytes", max_cell_bytes),
@@ -818,11 +822,18 @@ impl DriverSession for ClickHouseSession {
                     .map_err(map_clickhouse),
                 DriverPageRequest::ClickHouseStatement {
                     statement,
+                    parameters,
                     query_id,
                     limits,
                     max_cell_bytes,
                 } => self
-                    .stream_statement(statement.as_str(), &query_id, limits, max_cell_bytes)
+                    .stream_statement(
+                        statement.as_str(),
+                        &parameters,
+                        &query_id,
+                        limits,
+                        max_cell_bytes,
+                    )
                     .await
                     .map(|stream| Box::new(stream) as Box<dyn DriverPageStream>)
                     .map_err(map_clickhouse),

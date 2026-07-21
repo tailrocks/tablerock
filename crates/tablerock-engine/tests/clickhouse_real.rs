@@ -489,6 +489,7 @@ async fn persistent_session_runs_statement_health_and_reuses_connection() {
                     "SELECT number AS id FROM numbers(3)",
                 )
                 .unwrap(),
+                parameters: Vec::new(),
                 query_id: text(&format!("tablerock-stmt-1-{port}")),
                 limits: PageLimits::new(10, 8, 4096, 256),
                 max_cell_bytes: 64,
@@ -515,8 +516,14 @@ async fn persistent_session_runs_statement_health_and_reuses_connection() {
             support::command(912),
             Arc::clone(&handle),
             DriverPageRequest::ClickHouseStatement {
-                statement: tablerock_core::StatementText::new("SELECT toUInt8(42) AS answer")
-                    .unwrap(),
+                statement: tablerock_core::StatementText::new(
+                    "SELECT {p1:Int64} AS answer, {p2:Nullable(String)} IS NULL AS missing",
+                )
+                .unwrap(),
+                parameters: vec![
+                    tablerock_engine::FilterValue::Integer(42),
+                    tablerock_engine::FilterValue::Null,
+                ],
                 query_id: text(&format!("tablerock-stmt-2-{port}")),
                 limits: PageLimits::new(10, 8, 4096, 256),
                 max_cell_bytes: 64,
@@ -540,6 +547,7 @@ async fn persistent_session_runs_statement_health_and_reuses_connection() {
     let bad = handle
         .start_page_stream(DriverPageRequest::ClickHouseStatement {
             statement: tablerock_core::StatementText::new("SELEC not_valid").unwrap(),
+            parameters: Vec::new(),
             query_id: text(&format!("tablerock-stmt-bad-{port}")),
             limits: PageLimits::new(10, 8, 4096, 256),
             max_cell_bytes: 64,

@@ -857,6 +857,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
 
     func submitCatalogBrowse(sessionId: Data, catalogNodeId: Data, rowCount: UInt32) throws  -> Data
 
+    func submitCatalogBrowseWithPlan(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], filters: [BridgeBrowseFilter], rowCount: UInt32) throws  -> Data
+
     func submitCatalogBrowseWithSort(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], rowCount: UInt32) throws  -> Data
 
     /**
@@ -1651,6 +1653,20 @@ open func submitCatalogBrowse(sessionId: Data, catalogNodeId: Data, rowCount: UI
 })
 }
 
+open func submitCatalogBrowseWithPlan(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], filters: [BridgeBrowseFilter], rowCount: UInt32)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_submit_catalog_browse_with_plan(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(catalogNodeId),
+        FfiConverterSequenceTypeBridgeBrowseSort.lower(sort),
+        FfiConverterSequenceTypeBridgeBrowseFilter.lower(filters),
+        FfiConverterUInt32.lower(rowCount),uniffiCallStatus
+    )
+})
+}
+
 open func submitCatalogBrowseWithSort(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], rowCount: UInt32)throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
         uniffiCallStatus in
@@ -1817,6 +1833,75 @@ public func FfiConverterTypeApplyOutcome_lift(_ buf: RustBuffer) throws -> Apply
 #endif
 public func FfiConverterTypeApplyOutcome_lower(_ value: ApplyOutcome) -> RustBuffer {
     return FfiConverterTypeApplyOutcome.lower(value)
+}
+
+
+/**
+ * One native object-browse typed filter. Values remain separate from SQL.
+ */
+public struct BridgeBrowseFilter: Equatable, Hashable {
+    public var column: String
+    /**
+     * Stable operator label (`eq`, `ne`, `lt`, `le`, `gt`, `ge`, `like`,
+     * `ilike`, `not_like`, `not_ilike`, `is_null`, or `is_not_null`).
+     */
+    public var `operator`: String
+    public var value: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(column: String,
+        /**
+         * Stable operator label (`eq`, `ne`, `lt`, `le`, `gt`, `ge`, `like`,
+         * `ilike`, `not_like`, `not_ilike`, `is_null`, or `is_not_null`).
+         */`operator`: String, value: String?) {
+        self.column = column
+        self.`operator` = `operator`
+        self.value = value
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeBrowseFilter: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeBrowseFilter: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeBrowseFilter {
+        return
+            try BridgeBrowseFilter(
+                column: FfiConverterString.read(from: &buf),
+                operator: FfiConverterString.read(from: &buf),
+                value: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeBrowseFilter, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.column, into: &buf)
+        FfiConverterString.write(value.`operator`, into: &buf)
+        FfiConverterOptionString.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeBrowseFilter_lift(_ buf: RustBuffer) throws -> BridgeBrowseFilter {
+    return try FfiConverterTypeBridgeBrowseFilter.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeBrowseFilter_lower(_ value: BridgeBrowseFilter) -> RustBuffer {
+    return FfiConverterTypeBridgeBrowseFilter.lower(value)
 }
 
 
@@ -4327,6 +4412,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeBrowseFilter: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeBrowseFilter]
+
+    public static func write(_ value: [BridgeBrowseFilter], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeBrowseFilter.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeBrowseFilter] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeBrowseFilter]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeBrowseFilter.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeBrowseSort: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeBrowseSort]
 
@@ -4858,6 +4968,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_catalog_browse() != 61783) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_catalog_browse_with_plan() != 49705) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_catalog_browse_with_sort() != 1474) {

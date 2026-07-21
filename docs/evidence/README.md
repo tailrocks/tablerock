@@ -485,6 +485,7 @@ How to read an evidence document:
 - 609 — [Portable real-server CI host capabilities](delivery/609-portable-real-server-ci-host.md)
 - 610 — [Redis TLS replacement case isolation](delivery/610-redis-tls-replacement-parallelism.md)
 - 611 — [Native object-tab multi-sort](delivery/611-native-object-multi-sort.md)
+- 612 — [Native typed object filters](delivery/612-native-typed-object-filters.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

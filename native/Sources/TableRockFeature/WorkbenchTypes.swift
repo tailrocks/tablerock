@@ -40,7 +40,9 @@ public protocol WorkbenchBackend: Actor, Sendable {
     -> WorkbenchReconnectPlan
   func reconnect(session: Data, secretOverride: Data?) throws -> WorkbenchReconnectAttempt
   func refreshCatalog(session: Data, parentNodeId: Data?) throws -> [WorkbenchCatalogNode]
-  func submitCatalogBrowse(session: Data, nodeId: Data, sort: [WorkbenchBrowseSort]) throws -> Data
+  func submitCatalogBrowse(
+    session: Data, nodeId: Data, sort: [WorkbenchBrowseSort], filters: [WorkbenchBrowseFilter]
+  ) throws -> Data
   func submit(session: Data, intent: String, statement: String?) throws -> Data
   func finish(operationId: Data) async throws -> WorkbenchOperation
   func cancel(operationId: Data) throws -> WorkbenchCancelOutcome
@@ -77,6 +79,19 @@ public struct WorkbenchBrowseSort: Sendable, Equatable, Identifiable {
   public init(column: String, descending: Bool = false) {
     self.column = column
     self.descending = descending
+  }
+}
+
+public struct WorkbenchBrowseFilter: Sendable, Equatable, Identifiable {
+  public let id: UUID
+  public let column: String
+  public let operatorName: String
+  public let value: String?
+  public init(id: UUID = UUID(), column: String, operatorName: String, value: String?) {
+    self.id = id
+    self.column = column
+    self.operatorName = operatorName
+    self.value = value
   }
 }
 

@@ -176,6 +176,39 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testObjectSortAndFilterControlsOperate() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_OBJECT_TABS": "1"])
+
+    let addSort = app.buttons["object.sort.add"]
+    XCTAssertTrue(addSort.waitForExistence(timeout: 10))
+    addSort.click()
+    let idColumn = app.menuItems["id"]
+    XCTAssertTrue(idColumn.waitForExistence(timeout: 5))
+    idColumn.click()
+
+    let sort = app.descendants(matching: .any)["object.sort.active.id"]
+    XCTAssertTrue(sort.waitForExistence(timeout: 5))
+    let direction = app.buttons["id, ascending; change direction"]
+    XCTAssertTrue(direction.exists)
+    direction.click()
+    XCTAssertTrue(app.buttons["id, descending; change direction"].waitForExistence(timeout: 5))
+
+    let value = app.textFields["object.filter.value"]
+    XCTAssertTrue(value.waitForExistence(timeout: 5))
+    value.click()
+    value.typeText("2")
+    let addFilter = app.buttons["object.filter.add"]
+    XCTAssertTrue(addFilter.isEnabled)
+    addFilter.click()
+
+    let filter = app.descendants(matching: .any)["object.filter.active"]
+    XCTAssertTrue(filter.waitForExistence(timeout: 5))
+    XCTAssertEqual(filter.label, "id Equals 2")
+  }
+
+  @MainActor
   func testDirtyQueryTabRequiresDiscardConfirmation() throws {
     let app = launch(
       scenario: "success",

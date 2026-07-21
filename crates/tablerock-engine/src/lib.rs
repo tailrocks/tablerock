@@ -23,8 +23,8 @@ pub use adapter::{
     DriverSession, SessionHealth,
 };
 pub use browse_plan::{
-    BrowsePlan, BrowsePlanError, FilterOperator, FilterValue, RenderedBrowseSql, SortDirection,
-    SortKey, TypedCondition, parse_bind_text,
+    BrowseDialect, BrowsePlan, BrowsePlanError, FilterOperator, FilterValue, RenderedBrowseSql,
+    SortDirection, SortKey, TypedCondition, parse_bind_text,
 };
 pub use catalog::{
     CatalogExactness, CatalogNodeSeed, CatalogRequest, CatalogSubtree,

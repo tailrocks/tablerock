@@ -318,6 +318,7 @@ impl ClickHouseSession {
     pub async fn stream_statement(
         &self,
         sql: &str,
+        parameters: &[crate::browse_plan::FilterValue],
         query_id: &BoundedText,
         limits: PageLimits,
         max_cell_bytes: u64,
@@ -325,10 +326,22 @@ impl ClickHouseSession {
         if sql.is_empty() {
             return Err(ClickHouseError::InvalidLimits);
         }
-        let request = self
+        let mut request = self
             .client
             .query(sql)
             .with_setting("query_id", query_id.as_str());
+        for (index, parameter) in parameters.iter().enumerate() {
+            let name = format!("p{}", index + 1);
+            request = match parameter {
+                crate::browse_plan::FilterValue::Text(value) => request.param(&name, value),
+                crate::browse_plan::FilterValue::Integer(value) => request.param(&name, value),
+                crate::browse_plan::FilterValue::Float(value) => request.param(&name, value),
+                crate::browse_plan::FilterValue::Boolean(value) => request.param(&name, value),
+                crate::browse_plan::FilterValue::Null => {
+                    request.param(&name, Option::<String>::None)
+                }
+            };
+        }
         self.stream_rowbinary(request, query_id, limits, max_cell_bytes)
             .await
     }

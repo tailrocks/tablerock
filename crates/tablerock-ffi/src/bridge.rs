@@ -24,13 +24,14 @@ use tablerock_core::{
     SupportPlatform, TlsPolicy, copy_cell_from_page, format_copy_table, reconnect_decision,
 };
 use tablerock_engine::{
-    AdapterFailureClass, BrowsePlan, CatalogRequest, ClickHouseCompression,
+    AdapterFailureClass, BrowseDialect, BrowsePlan, CatalogRequest, ClickHouseCompression,
     ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession, ClickHouseTlsMode,
     DriverPageRequest, DriverRuntime, DriverSession, EngineService, EngineServiceUpdate,
-    KeychainReadPort, OpCliReader, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
-    PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol,
-    RedisSession, RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError,
-    SortDirection, SortKey, load_relation_structure as load_structure_snapshot,
+    FilterOperator, KeychainReadPort, OpCliReader, PostgresConnectConfig, PostgresProbeQuery,
+    PostgresSession, PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity,
+    RedisCredentials, RedisProtocol, RedisSession, RedisTlsMode, ResolvedSecret, SecretPromptPort,
+    SecretResolutionError, SortDirection, SortKey, TypedCondition,
+    load_relation_structure as load_structure_snapshot, parse_bind_text,
     resolve_for_connect_with_ports,
 };
 use tablerock_files::{
@@ -118,6 +119,27 @@ pub struct BridgeBrowseSort {
     pub column: String,
     /// `asc` or `desc`.
     pub direction: String,
+}
+
+/// One native object-browse typed filter. Values remain separate from SQL.
+#[derive(Clone, uniffi::Record)]
+pub struct BridgeBrowseFilter {
+    pub column: String,
+    /// Stable operator label (`eq`, `ne`, `lt`, `le`, `gt`, `ge`, `like`,
+    /// `ilike`, `not_like`, `not_ilike`, `is_null`, or `is_not_null`).
+    pub operator: String,
+    pub value: Option<String>,
+}
+
+impl std::fmt::Debug for BridgeBrowseFilter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BridgeBrowseFilter")
+            .field("column", &self.column)
+            .field("operator", &self.operator)
+            .field("value", &self.value.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -704,7 +726,13 @@ impl TableRockBridge {
         row_count: u32,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| {
-            self.submit_catalog_browse_inner(session_id, catalog_node_id, Vec::new(), row_count)
+            self.submit_catalog_browse_inner(
+                session_id,
+                catalog_node_id,
+                Vec::new(),
+                Vec::new(),
+                row_count,
+            )
         })
     }
 
@@ -716,7 +744,26 @@ impl TableRockBridge {
         row_count: u32,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| {
-            self.submit_catalog_browse_inner(session_id, catalog_node_id, sort, row_count)
+            self.submit_catalog_browse_inner(
+                session_id,
+                catalog_node_id,
+                sort,
+                Vec::new(),
+                row_count,
+            )
+        })
+    }
+
+    pub fn submit_catalog_browse_with_plan(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+        sort: Vec<BridgeBrowseSort>,
+        filters: Vec<BridgeBrowseFilter>,
+        row_count: u32,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| {
+            self.submit_catalog_browse_inner(session_id, catalog_node_id, sort, filters, row_count)
         })
     }
 
@@ -2665,6 +2712,7 @@ impl TableRockBridge {
         session_id_bytes: Vec<u8>,
         catalog_node_id_bytes: Vec<u8>,
         sort: Vec<BridgeBrowseSort>,
+        filters: Vec<BridgeBrowseFilter>,
         row_count: u32,
     ) -> Result<Vec<u8>, BridgeError> {
         if !(1..=1_000).contains(&row_count) {
@@ -2678,7 +2726,7 @@ impl TableRockBridge {
         let catalog_node_id = catalog_node_from_bytes(&catalog_node_id_bytes).map_err(|_| {
             BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
         })?;
-        let (statement, copy_identity) = {
+        let (rendered, copy_identity) = {
             let guard = self
                 .inner
                 .lock()
@@ -2772,20 +2820,61 @@ impl TableRockBridge {
                     })
                 })
                 .collect::<Result<Vec<_>, BridgeError>>()?;
-            let statement = BrowsePlan {
+            if filters.len() > 32 {
+                return Err(BridgeError::rejected(
+                    "catalog-browse-filter",
+                    "at most 32 filters are allowed",
+                ));
+            }
+            let filters = filters
+                .into_iter()
+                .map(|filter| {
+                    let operator = match filter.operator.as_str() {
+                        "eq" => FilterOperator::Eq,
+                        "ne" => FilterOperator::Ne,
+                        "lt" => FilterOperator::Lt,
+                        "le" => FilterOperator::Le,
+                        "gt" => FilterOperator::Gt,
+                        "ge" => FilterOperator::Ge,
+                        "like" => FilterOperator::Like,
+                        "ilike" => FilterOperator::ILike,
+                        "not_like" => FilterOperator::NotLike,
+                        "not_ilike" => FilterOperator::NotILike,
+                        "is_null" => FilterOperator::IsNull,
+                        "is_not_null" => FilterOperator::IsNotNull,
+                        _ => {
+                            return Err(BridgeError::rejected(
+                                "catalog-browse-filter",
+                                "unknown filter operator",
+                            ));
+                        }
+                    };
+                    let value = filter.value.as_deref().map(parse_bind_text);
+                    Ok(TypedCondition {
+                        column: filter.column,
+                        operator,
+                        value,
+                    })
+                })
+                .collect::<Result<Vec<_>, BridgeError>>()?;
+            let dialect = match registered.engine {
+                Engine::PostgreSql => BrowseDialect::PostgreSql,
+                Engine::ClickHouse => BrowseDialect::ClickHouse,
+                Engine::Redis => unreachable!("Redis catalog nodes are not browsable tables"),
+            };
+            let rendered = BrowsePlan {
                 schema: schema.clone(),
                 table: table.clone(),
                 sort,
-                filters: Vec::new(),
+                filters,
                 raw_where: None,
                 limit: row_count,
                 offset: 0,
             }
-            .render_sql()
-            .map_err(|error| BridgeError::rejected("catalog-browse-plan", error.to_string()))?
-            .sql;
+            .render_sql_for(dialect)
+            .map_err(|error| BridgeError::rejected("catalog-browse-plan", error.to_string()))?;
             (
-                statement,
+                rendered,
                 CopyIdentity {
                     schema,
                     table,
@@ -2794,15 +2883,18 @@ impl TableRockBridge {
                 },
             )
         };
-        let operation_bytes = self.submit_inner(SubmitSpec {
-            intent: "browse_object".into(),
-            session_id: session_id_bytes,
-            statement: Some(statement),
-            result_id: None,
-            start_row: None,
-            row_count: Some(row_count),
-            expected_revision: 0,
-        })?;
+        let operation_bytes = self.submit_inner_with_parameters(
+            SubmitSpec {
+                intent: "browse_object".into(),
+                session_id: session_id_bytes,
+                statement: Some(rendered.sql),
+                result_id: None,
+                start_row: None,
+                row_count: Some(row_count),
+                expected_revision: 0,
+            },
+            rendered.parameters,
+        )?;
         let operation_id = operation_from_bytes(&operation_bytes).map_err(|_| {
             BridgeError::rejected("operation-id", "bridge generated invalid operation id")
         })?;
@@ -3342,6 +3434,14 @@ impl TableRockBridge {
     }
 
     fn submit_inner(&self, spec: SubmitSpec) -> Result<Vec<u8>, BridgeError> {
+        self.submit_inner_with_parameters(spec, Vec::new())
+    }
+
+    fn submit_inner_with_parameters(
+        &self,
+        spec: SubmitSpec,
+        parameters: Vec<tablerock_engine::FilterValue>,
+    ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let session_id = session_from_bytes(&spec.session_id)
             .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
@@ -3451,7 +3551,7 @@ impl TableRockBridge {
                         (Engine::PostgreSql, "execute" | "browse_object") => {
                             DriverPageRequest::PostgreSqlStatement {
                                 statement: text.clone(),
-                                parameters: Vec::new(),
+                                parameters: parameters.clone(),
                                 limits,
                                 max_cell_bytes,
                             }
@@ -3464,6 +3564,7 @@ impl TableRockBridge {
                         (Engine::ClickHouse, "execute" | "browse_object") => {
                             DriverPageRequest::ClickHouseStatement {
                                 statement: text.clone(),
+                                parameters: parameters.clone(),
                                 query_id: BoundedText::copy_from_str(
                                     &format!("bridge-{}", page_identity.result_id()),
                                     ByteLimit::new(128),

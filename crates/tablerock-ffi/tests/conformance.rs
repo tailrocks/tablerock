@@ -21,8 +21,8 @@ use tablerock_engine::{
     ServerDescribe, SessionHealth,
 };
 use tablerock_ffi::{
-    BridgeBrowseSort, BridgeError, BridgeProfileOrderItem, BridgeSessionIntent, BridgeWorkspaceTab,
-    SubmitSpec, TableRockBridge,
+    BridgeBrowseFilter, BridgeBrowseSort, BridgeError, BridgeProfileOrderItem, BridgeSessionIntent,
+    BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
 };
 
 struct OnePageStream(Option<ResultPage>);
@@ -39,6 +39,8 @@ impl DriverPageStream for OnePageStream {
 
 struct HoldStream;
 
+type StatementLog = Arc<Mutex<Vec<(String, usize)>>>;
+
 impl DriverPageStream for HoldStream {
     fn next_page<'a>(
         &'a mut self,
@@ -53,7 +55,7 @@ struct FixedPageSession {
     engine: Engine,
     page: ResultPage,
     health_failure: Option<AdapterFailureClass>,
-    statements: Arc<Mutex<Vec<String>>>,
+    statements: StatementLog,
 }
 
 impl DriverSession for FixedPageSession {
@@ -65,13 +67,21 @@ impl DriverSession for FixedPageSession {
         &'a self,
         request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
-        if let DriverPageRequest::PostgreSqlStatement { statement, .. }
-        | DriverPageRequest::ClickHouseStatement { statement, .. } = request
+        if let DriverPageRequest::PostgreSqlStatement {
+            statement,
+            parameters,
+            ..
+        }
+        | DriverPageRequest::ClickHouseStatement {
+            statement,
+            parameters,
+            ..
+        } = request
         {
             self.statements
                 .lock()
                 .unwrap()
-                .push(statement.as_str().to_owned());
+                .push((statement.as_str().to_owned(), parameters.len()));
         }
         let page = self.page.clone();
         Box::pin(
@@ -310,7 +320,7 @@ fn open_fixed_observed(
     bridge: &TableRockBridge,
     engine: Engine,
     page: ResultPage,
-) -> (Vec<u8>, Arc<Mutex<Vec<String>>>) {
+) -> (Vec<u8>, StatementLog) {
     let statements = Arc::new(Mutex::new(Vec::new()));
     let observer = Arc::clone(&statements);
     bridge
@@ -630,6 +640,64 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-sort"
         ));
         assert!(matches!(
+            bridge.submit_catalog_browse_with_plan(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                Vec::new(),
+                vec![BridgeBrowseFilter {
+                    column: "id".into(),
+                    operator: "contains_magic".into(),
+                    value: Some("1".into()),
+                }],
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-filter"
+        ));
+        assert!(matches!(
+            bridge.submit_catalog_browse_with_plan(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                Vec::new(),
+                vec![BridgeBrowseFilter {
+                    column: "id".into(),
+                    operator: "eq".into(),
+                    value: None,
+                }],
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-plan"
+        ));
+        assert!(matches!(
+            bridge.submit_catalog_browse_with_plan(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                Vec::new(),
+                vec![BridgeBrowseFilter {
+                    column: "id".into(),
+                    operator: "is_null".into(),
+                    value: Some("1".into()),
+                }],
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-plan"
+        ));
+        assert!(matches!(
+            bridge.submit_catalog_browse_with_plan(
+                session_id.clone(),
+                object.id_bytes.clone(),
+                Vec::new(),
+                (0..33)
+                    .map(|index| BridgeBrowseFilter {
+                        column: format!("column_{index}"),
+                        operator: "eq".into(),
+                        value: Some(index.to_string()),
+                    })
+                    .collect(),
+                500,
+            ),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-filter"
+        ));
+        assert!(matches!(
             bridge.submit_catalog_browse_with_sort(
                 session_id.clone(),
                 object.id_bytes.clone(),
@@ -673,7 +741,7 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
 }
 
 #[test]
-fn catalog_browse_sort_is_rust_rendered_in_operator_order() {
+fn catalog_browse_plan_is_rust_rendered_with_typed_values() {
     for (engine, low) in [(Engine::PostgreSql, 185_u64), (Engine::ClickHouse, 186)] {
         let (_, page) = sample_page(engine, low, &[7]);
         let bridge = TableRockBridge::new_for_test();
@@ -691,7 +759,7 @@ fn catalog_browse_sort_is_rust_rendered_in_operator_order() {
             level_one[0].clone()
         };
         let operation = bridge
-            .submit_catalog_browse_with_sort(
+            .submit_catalog_browse_with_plan(
                 session_id,
                 object.id_bytes,
                 vec![
@@ -704,25 +772,53 @@ fn catalog_browse_sort_is_rust_rendered_in_operator_order() {
                         direction: "asc".into(),
                     },
                 ],
+                vec![
+                    BridgeBrowseFilter {
+                        column: "name".into(),
+                        operator: "eq".into(),
+                        value: Some("private".into()),
+                    },
+                    BridgeBrowseFilter {
+                        column: "age".into(),
+                        operator: "ge".into(),
+                        value: Some("21".into()),
+                    },
+                ],
                 500,
             )
             .unwrap();
         bridge.pump(operation).unwrap();
         let statements = statements.lock().unwrap();
         assert_eq!(statements.len(), 1);
+        assert_eq!(statements[0].1, 2);
         assert_eq!(
-            statements[0],
+            statements[0].0,
             match engine {
                 Engine::PostgreSql => {
-                    "SELECT * FROM \"public\".\"users\" ORDER BY \"created_at\" DESC, \"id\" ASC LIMIT 500 OFFSET 0"
+                    "SELECT * FROM \"public\".\"users\" WHERE \"name\" = $1 AND \"age\" >= $2 ORDER BY \"created_at\" DESC, \"id\" ASC LIMIT 500 OFFSET 0"
                 }
                 Engine::ClickHouse => {
-                    "SELECT * FROM \"default\".\"events\" ORDER BY \"created_at\" DESC, \"id\" ASC LIMIT 500 OFFSET 0"
+                    "SELECT * FROM \"default\".\"events\" WHERE \"name\" = {p1:String} AND \"age\" >= {p2:Int64} ORDER BY \"created_at\" DESC, \"id\" ASC LIMIT 500 OFFSET 0"
                 }
                 Engine::Redis => unreachable!(),
             }
         );
+        assert!(!statements[0].0.contains("private"));
     }
+}
+
+#[test]
+fn catalog_browse_filter_debug_redacts_value() {
+    let debug = format!(
+        "{:?}",
+        BridgeBrowseFilter {
+            column: "secret".into(),
+            operator: "eq".into(),
+            value: Some("never-log-this".into()),
+        }
+    );
+    assert!(!debug.contains("never-log-this"));
+    assert!(debug.contains("<redacted>"));
 }
 
 #[test]

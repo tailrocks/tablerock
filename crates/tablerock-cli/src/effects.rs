@@ -2344,6 +2344,7 @@ async fn execute_sql(
                 });
             DriverPageRequest::ClickHouseStatement {
                 statement,
+                parameters: Vec::new(),
                 query_id,
                 limits,
                 max_cell_bytes: 64 * 1024,
@@ -3521,6 +3522,7 @@ async fn execute_table_op(
             session
                 .start_page_stream(DriverPageRequest::ClickHouseStatement {
                     statement,
+                    parameters: Vec::new(),
                     query_id,
                     limits,
                     max_cell_bytes: 256,
@@ -4407,6 +4409,7 @@ async fn export_stream_query(
                     });
             DriverPageRequest::ClickHouseStatement {
                 statement: sql,
+                parameters: Vec::new(),
                 query_id,
                 limits,
                 max_cell_bytes: 64 * 1024,

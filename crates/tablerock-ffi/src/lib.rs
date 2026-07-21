@@ -15,11 +15,11 @@ mod page_limits;
 mod runtime;
 
 pub use bridge::{
-    ApplyOutcome, BridgeBrowseSort, BridgeConnectionTestReport, BridgeEventBatch,
-    BridgeEventRecord, BridgeHistoryItem, BridgeNativeWindowIntent, BridgeProfileDraft,
-    BridgeProfileGroup, BridgeProfileItem, BridgeProfileOrderItem, BridgeReconnectAttempt,
-    BridgeReconnectPlan, BridgeSavedQueryItem, BridgeSessionHealth, BridgeSessionIntent,
-    BridgeSqlFile, BridgeWorkspaceTab, CancelOutcome, OpenParams, ShutdownOutcome, SubmitSpec,
-    TableRockBridge,
+    ApplyOutcome, BridgeBrowseFilter, BridgeBrowseSort, BridgeConnectionTestReport,
+    BridgeEventBatch, BridgeEventRecord, BridgeHistoryItem, BridgeNativeWindowIntent,
+    BridgeProfileDraft, BridgeProfileGroup, BridgeProfileItem, BridgeProfileOrderItem,
+    BridgeReconnectAttempt, BridgeReconnectPlan, BridgeSavedQueryItem, BridgeSessionHealth,
+    BridgeSessionIntent, BridgeSqlFile, BridgeWorkspaceTab, CancelOutcome, OpenParams,
+    ShutdownOutcome, SubmitSpec, TableRockBridge,
 };
 pub use error::BridgeError;

@@ -14,6 +14,13 @@ pub enum SortDirection {
     Desc,
 }
 
+/// Placeholder dialect for the selected database driver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowseDialect {
+    PostgreSql,
+    ClickHouse,
+}
+
 /// One sort key: column identifier + direction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SortKey {
@@ -208,6 +215,14 @@ impl From<QuoteIdentError> for BrowsePlanError {
 impl BrowsePlan {
     /// Render `SELECT * FROM schema.table [WHERE …] [ORDER BY …] LIMIT/OFFSET`.
     pub fn render_sql(&self) -> Result<RenderedBrowseSql, BrowsePlanError> {
+        self.render_sql_for(BrowseDialect::PostgreSql)
+    }
+
+    /// Render with driver-native placeholders while retaining typed values.
+    pub fn render_sql_for(
+        &self,
+        dialect: BrowseDialect,
+    ) -> Result<RenderedBrowseSql, BrowsePlanError> {
         if self.limit == 0 {
             return Err(BrowsePlanError::InvalidLimit);
         }
@@ -224,7 +239,25 @@ impl BrowsePlan {
                 };
                 parameters.push(value);
                 let n = parameters.len();
-                where_parts.push(format!("{col} {} ${n}", filter.operator.sql()));
+                let placeholder = match (&parameters[n - 1], dialect) {
+                    (_, BrowseDialect::PostgreSql) => format!("${n}"),
+                    (FilterValue::Text(_), BrowseDialect::ClickHouse) => {
+                        format!("{{p{n}:String}}")
+                    }
+                    (FilterValue::Integer(_), BrowseDialect::ClickHouse) => {
+                        format!("{{p{n}:Int64}}")
+                    }
+                    (FilterValue::Float(_), BrowseDialect::ClickHouse) => {
+                        format!("{{p{n}:Float64}}")
+                    }
+                    (FilterValue::Boolean(_), BrowseDialect::ClickHouse) => {
+                        format!("{{p{n}:Bool}}")
+                    }
+                    (FilterValue::Null, BrowseDialect::ClickHouse) => {
+                        format!("{{p{n}:Nullable(String)}}")
+                    }
+                };
+                where_parts.push(format!("{col} {} {placeholder}", filter.operator.sql()));
             } else {
                 if filter.value.is_some() {
                     return Err(BrowsePlanError::UnexpectedValue);
@@ -239,7 +272,9 @@ impl BrowsePlan {
                 return Err(BrowsePlanError::EmptyRawWhere);
             }
             // Fail closed on any $n-like token so we never renumber ambiguously.
-            if contains_dollar_param(trimmed) {
+            if contains_dollar_param(trimmed)
+                || (dialect == BrowseDialect::ClickHouse && contains_clickhouse_plan_param(trimmed))
+            {
                 return Err(BrowsePlanError::RawWhereParameterCollision);
             }
             where_parts.push(format!("({trimmed})"));
@@ -268,6 +303,13 @@ impl BrowsePlan {
         sql.push_str(&format!(" LIMIT {} OFFSET {}", self.limit, self.offset));
         Ok(RenderedBrowseSql { sql, parameters })
     }
+}
+
+fn contains_clickhouse_plan_param(fragment: &str) -> bool {
+    let bytes = fragment.as_bytes();
+    bytes
+        .windows(3)
+        .any(|window| window[0] == b'{' && window[1] == b'p' && window[2].is_ascii_digit())
 }
 
 fn contains_dollar_param(fragment: &str) -> bool {
@@ -380,6 +422,41 @@ mod tests {
     }
 
     #[test]
+    fn clickhouse_filters_use_typed_server_parameters() {
+        let mut plan = base();
+        plan.filters = vec![
+            TypedCondition {
+                column: "name".into(),
+                operator: FilterOperator::Eq,
+                value: Some(FilterValue::Text("private".into())),
+            },
+            TypedCondition {
+                column: "age".into(),
+                operator: FilterOperator::Ge,
+                value: Some(FilterValue::Integer(21)),
+            },
+            TypedCondition {
+                column: "score".into(),
+                operator: FilterOperator::Lt,
+                value: Some(FilterValue::Float(9.5)),
+            },
+            TypedCondition {
+                column: "active".into(),
+                operator: FilterOperator::Eq,
+                value: Some(FilterValue::Boolean(true)),
+            },
+        ];
+        let rendered = plan.render_sql_for(BrowseDialect::ClickHouse).unwrap();
+        assert!(rendered.sql.contains("\"name\" = {p1:String}"));
+        assert!(rendered.sql.contains("\"age\" >= {p2:Int64}"));
+        assert!(rendered.sql.contains("\"score\" < {p3:Float64}"));
+        assert!(rendered.sql.contains("\"active\" = {p4:Bool}"));
+        assert_eq!(rendered.parameters.len(), 4);
+        assert!(!rendered.sql.contains("private"));
+        assert!(!rendered.sql.contains("9.5"));
+    }
+
+    #[test]
     fn not_like_operators_parameterize_patterns() {
         let mut plan = base();
         plan.filters = vec![
@@ -468,6 +545,16 @@ mod tests {
         plan.raw_where = Some("id = $1".into());
         assert_eq!(
             plan.render_sql(),
+            Err(BrowsePlanError::RawWhereParameterCollision)
+        );
+    }
+
+    #[test]
+    fn clickhouse_raw_where_cannot_collide_with_plan_parameters() {
+        let mut plan = base();
+        plan.raw_where = Some("id = {p1:Int64}".into());
+        assert_eq!(
+            plan.render_sql_for(BrowseDialect::ClickHouse),
             Err(BrowsePlanError::RawWhereParameterCollision)
         );
     }
