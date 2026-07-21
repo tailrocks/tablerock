@@ -3039,8 +3039,9 @@ async fn activity_signal_permission_denied_for_restricted_role() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
     let admin = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        text(&host),
         port,
         text("postgres"),
         text("postgres"),
@@ -3062,7 +3063,7 @@ async fn activity_signal_permission_denied_for_restricted_role() {
 
     // Sleeper connection holds a long backend for the limited role to target.
     let sleeper = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        text(&host),
         port,
         text("postgres"),
         text("postgres"),
@@ -3114,7 +3115,7 @@ async fn activity_signal_permission_denied_for_restricted_role() {
     .expect("sleeper pid");
 
     let limited = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        text(&host),
         port,
         text("postgres"),
         text("tr_activity_limited"),
