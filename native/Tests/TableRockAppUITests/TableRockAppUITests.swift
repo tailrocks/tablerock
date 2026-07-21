@@ -23,6 +23,9 @@ final class TableRockAppUITests: XCTestCase {
     connect.click()
     let editor = app.textViews["query.editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    let editorReady = NSPredicate(format: "enabled == true")
+    let connected = XCTNSPredicateExpectation(predicate: editorReady, object: editor)
+    XCTAssertEqual(XCTWaiter.wait(for: [connected], timeout: 10), .completed)
     editor.click()
     editor.typeText("SELECT pg_sleep(30);")
 
