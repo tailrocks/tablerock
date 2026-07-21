@@ -4183,6 +4183,7 @@ struct ContentView: View {
           HStack {
             Button("Connect") { Task { await model.connectByParams() } }
               .buttonStyle(.borderedProminent)
+              .accessibilityIdentifier("connection.direct.connect")
             Spacer()
           }
           .padding(.top, 4)

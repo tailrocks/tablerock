@@ -18,7 +18,9 @@ final class TableRockAppUITests: XCTestCase {
     let app = launch(scenario: "slow-until-cancelled")
     XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
 
-    app.buttons["Connect"].click()
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    connect.click()
     let editor = app.textViews["query.editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     editor.click()
