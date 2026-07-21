@@ -14,6 +14,12 @@ use tablerock_engine::{
 };
 
 mod support;
+
+macro_rules! container_host {
+    ($container:expr) => {
+        text(&$container.get_host().await.unwrap().to_string())
+    };
+}
 mod tls_support;
 use testcontainers::{
     CopyDataSource, CopyTargetOptions, GenericImage, ImageExt,
@@ -150,7 +156,7 @@ async fn verify_tls_matrix(tag: &str) {
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let root_without_override = PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("root_only"),
@@ -182,7 +188,7 @@ async fn verify_tls_matrix(tag: &str) {
     root_session.shutdown().await.unwrap();
 
     let plaintext = PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("root_only"),
@@ -202,7 +208,7 @@ async fn verify_tls_matrix(tag: &str) {
     ));
 
     let mutual_tls = PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -284,7 +290,7 @@ async fn preserves_unknown_mtls_commit_transport_loss_without_downgrade_or_retry
             .unwrap();
         let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
         let config = PostgresConnectConfig::new(
-            text("127.0.0.1"),
+            container_host!(container),
             port,
             text("postgres"),
             text("postgres"),
@@ -334,7 +340,7 @@ async fn preserves_unknown_mtls_commit_transport_loss_without_downgrade_or_retry
         container.start().await.unwrap();
         let recovered_port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
         let recovery_config = PostgresConnectConfig::new(
-            text("127.0.0.1"),
+            container_host!(container),
             recovered_port,
             text("postgres"),
             text("postgres"),
@@ -342,7 +348,7 @@ async fn preserves_unknown_mtls_commit_transport_loss_without_downgrade_or_retry
         )
         .with_tls_server_name(text("database.internal"));
         let plaintext = PostgresConnectConfig::new(
-            text("127.0.0.1"),
+            container_host!(container),
             recovered_port,
             text("postgres"),
             text("postgres"),
@@ -399,7 +405,7 @@ async fn distinguishes_server_confirmed_cancellation_from_request_delivery() {
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -452,7 +458,7 @@ async fn classifies_cancel_transport_loss_before_query_disconnect() {
             .unwrap();
         let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
         let session = PostgresSession::connect(&PostgresConnectConfig::new(
-            text("127.0.0.1"),
+            container_host!(container),
             port,
             text("postgres"),
             text("postgres"),
@@ -489,7 +495,7 @@ async fn streams_bounded_pages_from_real_postgres() {
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let config = PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -600,7 +606,7 @@ async fn browses_2500_row_table_in_500_row_pages_with_result_store_pin() {
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -725,7 +731,7 @@ async fn reports_request_delivery_and_server_confirmed_cancellation_through_serv
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -819,7 +825,7 @@ async fn bounds_postgresql_notices_and_reports_overflow() {
             .unwrap();
         let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
         let session = PostgresSession::connect(&PostgresConnectConfig::new(
-            text("127.0.0.1"),
+            container_host!(container),
             port,
             text("postgres"),
             text("postgres"),
@@ -903,7 +909,7 @@ async fn preserves_ordered_postgresql_statement_outcomes() {
             .unwrap();
         let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
         let session = PostgresSession::connect(&PostgresConnectConfig::new(
-            text("127.0.0.1"),
+            container_host!(container),
             port,
             text("postgres"),
             text("postgres"),
@@ -943,7 +949,7 @@ async fn streams_bounded_postgresql_copy_in_and_out() {
             .unwrap();
         let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
         let session = PostgresSession::connect(&PostgresConnectConfig::new(
-            text("127.0.0.1"),
+            container_host!(container),
             port,
             text("postgres"),
             text("postgres"),
@@ -1025,7 +1031,7 @@ async fn preserves_unknown_postgresql_write_outcome_without_retry() {
             .unwrap();
         let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
         let config = PostgresConnectConfig::new(
-            text("127.0.0.1"),
+            container_host!(container),
             port,
             text("postgres"),
             text("postgres"),
@@ -1061,7 +1067,7 @@ async fn preserves_unknown_postgresql_commit_outcome_without_retry() {
             .unwrap();
         let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
         let config = PostgresConnectConfig::new(
-            text("127.0.0.1"),
+            container_host!(container),
             port,
             text("postgres"),
             text("postgres"),
@@ -1097,7 +1103,7 @@ async fn preserves_unknown_postgresql_commit_transport_loss_without_retry() {
             .unwrap();
         let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
         let config = PostgresConnectConfig::new(
-            text("127.0.0.1"),
+            container_host!(container),
             port,
             text("postgres"),
             text("postgres"),
@@ -1136,7 +1142,7 @@ async fn preserves_unknown_postgresql_commit_transport_loss_without_retry() {
         container.start().await.unwrap();
         let recovered_port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
         let recovery_config = PostgresConnectConfig::new(
-            text("127.0.0.1"),
+            container_host!(container),
             recovered_port,
             text("postgres"),
             text("postgres"),
@@ -1180,7 +1186,7 @@ async fn verify_typed_values(tag: &str) {
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -2054,7 +2060,7 @@ async fn persistent_session_runs_statement_cancel_health_and_reuses_connection()
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -2239,7 +2245,7 @@ async fn lists_catalog_databases_schemas_and_relations_with_hostile_names() {
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -2338,7 +2344,7 @@ async fn applies_authorized_update_in_transaction_and_conflicts_on_zero_rows() {
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -2680,7 +2686,7 @@ async fn mutation_apply_commit_loss_is_unknown_without_retry() {
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -2689,7 +2695,7 @@ async fn mutation_apply_commit_loss_is_unknown_without_retry() {
     .await
     .unwrap();
     let observer = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -2808,7 +2814,7 @@ async fn ddl_add_column_and_list_roles() {
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -2863,7 +2869,7 @@ async fn role_memberships_and_table_privileges() {
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
@@ -2934,7 +2940,7 @@ async fn ddl_index_and_constraint_ops() {
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        text("127.0.0.1"),
+        container_host!(container),
         port,
         text("postgres"),
         text("postgres"),
