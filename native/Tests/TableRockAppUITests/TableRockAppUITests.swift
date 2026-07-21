@@ -34,13 +34,27 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
-  func testProfileEditorFixtureExposesStableControls() throws {
-    let app = launch(
-      scenario: "success",
-      environment: ["TABLEROCK_FIXTURE_PROFILE_EDITOR": "1"])
+  func testProfileCreationOpensEditorThroughUserControl() throws {
+    let app = launch(scenario: "success")
+
+    let add = app.buttons["profile.add"]
+    XCTAssertTrue(add.waitForExistence(timeout: 10))
+    add.click()
 
     XCTAssertTrue(app.textFields["profile.editor.name"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["profile.editor.save"].exists)
+  }
+
+  @MainActor
+  func testMultiWindowFixtureCreatesIndependentWorkbenchWindow() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_MULTI_WINDOW": "1"])
+
+    let windows = app.windows.matching(identifier: "window.workbench")
+    let twoWindows = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "count == 2"), object: windows)
+    XCTAssertEqual(XCTWaiter.wait(for: [twoWindows], timeout: 10), .completed)
   }
 
   @MainActor
