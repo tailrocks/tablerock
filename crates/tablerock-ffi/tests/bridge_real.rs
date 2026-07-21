@@ -13,10 +13,10 @@ use testcontainers::{
     runners::AsyncRunner,
 };
 
-fn open_params(engine: &str, port: u16, database: &str, user: &str) -> OpenParams {
+fn open_params(engine: &str, host: &str, port: u16, database: &str, user: &str) -> OpenParams {
     OpenParams {
         engine: engine.into(),
-        host: "127.0.0.1".into(),
+        host: host.into(),
         port,
         database: database.into(),
         user: user.into(),
@@ -28,13 +28,14 @@ fn open_params(engine: &str, port: u16, database: &str, user: &str) -> OpenParam
 fn open_when_ready(
     bridge: &TableRockBridge,
     engine: &str,
+    host: &str,
     port: u16,
     database: &str,
     user: &str,
 ) -> Vec<u8> {
     let mut last_err = None;
     for attempt in 0..40 {
-        match bridge.open(open_params(engine, port, database, user)) {
+        match bridge.open(open_params(engine, host, port, database, user)) {
             Ok(session) => return session,
             Err(error) => {
                 last_err = Some(error.to_string());
@@ -102,11 +103,17 @@ fn probe_and_fetch(
     (page_bytes, batch.next_cursor)
 }
 
-fn run_bridge_probe(engine: &str, port: u16, database: &str, user: &str) -> (Engine, Vec<u8>) {
+fn run_bridge_probe(
+    engine: &str,
+    host: &str,
+    port: u16,
+    database: &str,
+    user: &str,
+) -> (Engine, Vec<u8>) {
     let bridge = TableRockBridge::new_for_test();
     let mut last_err = None;
     for attempt in 0..40 {
-        match bridge.open(open_params(engine, port, database, user)) {
+        match bridge.open(open_params(engine, host, port, database, user)) {
             Ok(session) => match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 probe_and_fetch(&bridge, session, 0)
             })) {
@@ -147,9 +154,10 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
 
     let (engine, page) = tokio::task::spawn_blocking(move || {
-        run_bridge_probe("postgresql", port, "postgres", "postgres")
+        run_bridge_probe("postgresql", &host, port, "postgres", "postgres")
     })
     .await
     .unwrap();
@@ -170,16 +178,17 @@ async fn bridge_clickhouse_open_probe_fetch() {
     .await
     .unwrap();
     let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
 
     for _ in 0..30 {
-        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+        if std::net::TcpStream::connect((host.as_str(), port)).is_ok() {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
     let (engine, page) = tokio::task::spawn_blocking(move || {
-        run_bridge_probe("clickhouse", port, "default", "default")
+        run_bridge_probe("clickhouse", &host, port, "default", "default")
     })
     .await
     .unwrap();
@@ -200,10 +209,11 @@ async fn bridge_redis_open_probe_fetch() {
     .await
     .unwrap();
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
 
     {
         use redis::AsyncCommands;
-        let client = redis::Client::open(format!("redis://127.0.0.1:{port}")).unwrap();
+        let client = redis::Client::open(format!("redis://{host}:{port}")).unwrap();
         let mut last = None;
         for _ in 0..50 {
             match client.get_multiplexed_async_connection().await {
@@ -224,7 +234,7 @@ async fn bridge_redis_open_probe_fetch() {
     }
 
     let (engine, page) =
-        tokio::task::spawn_blocking(move || run_bridge_probe("redis", port, "0", ""))
+        tokio::task::spawn_blocking(move || run_bridge_probe("redis", &host, port, "0", ""))
             .await
             .unwrap();
     assert_eq!(engine, Engine::Redis);
@@ -244,11 +254,18 @@ async fn bridge_postgres_apply_delete_by_review_token() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
 
     let outcome = tokio::task::spawn_blocking(move || {
         let bridge = TableRockBridge::new_for_test();
         let session = bridge
-            .open(open_params("postgresql", port, "postgres", "postgres"))
+            .open(open_params(
+                "postgresql",
+                &host,
+                port,
+                "postgres",
+                "postgres",
+            ))
             .expect("open");
         for sql in [
             "create table if not exists bridge_apply_probe (id int primary key)",
@@ -333,17 +350,20 @@ async fn bridge_three_engines_sequential_open_probe() {
     let pg_port = postgres.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let ch_port = clickhouse.get_host_port_ipv4(8123.tcp()).await.unwrap();
     let redis_port = redis.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let pg_host = postgres.get_host().await.unwrap().to_string();
+    let ch_host = clickhouse.get_host().await.unwrap().to_string();
+    let redis_host = redis.get_host().await.unwrap().to_string();
 
     {
         use redis::AsyncCommands;
-        let client = redis::Client::open(format!("redis://127.0.0.1:{redis_port}")).unwrap();
+        let client = redis::Client::open(format!("redis://{redis_host}:{redis_port}")).unwrap();
         let mut conn = client.get_multiplexed_async_connection().await.unwrap();
         let _: () = conn.set("bridge:three", "ok").await.unwrap();
     }
 
     // Warm ClickHouse HTTP before bridge probes.
     for attempt in 0..60 {
-        if std::net::TcpStream::connect(("127.0.0.1", ch_port)).is_ok() {
+        if std::net::TcpStream::connect((ch_host.as_str(), ch_port)).is_ok() {
             break;
         }
         assert!(attempt < 59, "clickhouse port never accepted TCP");
@@ -354,12 +374,12 @@ async fn bridge_three_engines_sequential_open_probe() {
         let bridge = TableRockBridge::new_for_test();
         let mut observed = Vec::new();
         let mut cursor = 0_u64;
-        for (engine, port, db, user) in [
-            ("postgresql", pg_port, "postgres", "postgres"),
-            ("clickhouse", ch_port, "default", "default"),
-            ("redis", redis_port, "0", ""),
+        for (engine, host, port, db, user) in [
+            ("postgresql", pg_host, pg_port, "postgres", "postgres"),
+            ("clickhouse", ch_host, ch_port, "default", "default"),
+            ("redis", redis_host, redis_port, "0", ""),
         ] {
-            let session = open_when_ready(&bridge, engine, port, db, user);
+            let session = open_when_ready(&bridge, engine, &host, port, db, user);
             let (page, next) = probe_and_fetch(&bridge, session, cursor);
             cursor = next;
             let decoded =
