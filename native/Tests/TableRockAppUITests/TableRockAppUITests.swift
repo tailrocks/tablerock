@@ -184,13 +184,13 @@ final class TableRockAppUITests: XCTestCase {
     let filter = app.textFields["results.quick-filter"]
     XCTAssertTrue(filter.waitForExistence(timeout: 10))
     let status = app.staticTexts["results.quick-filter.status"]
-    XCTAssertEqual(status.label, "Loaded rows only · 3/3")
+    XCTAssertEqual(status.value as? String, "Loaded rows only · 3/3")
     filter.click()
     filter.typeText("Grace")
     let cell = app.descendants(matching: .any)["results.cell.0.1"]
     XCTAssertTrue(cell.waitForExistence(timeout: 5))
     XCTAssertEqual(cell.value as? String, "Grace")
-    XCTAssertEqual(status.label, "Loaded rows only · 1/3")
+    XCTAssertEqual(status.value as? String, "Loaded rows only · 1/3")
   }
 
   @MainActor
@@ -366,9 +366,10 @@ final class TableRockAppUITests: XCTestCase {
     environment: [String: String] = [:]
   ) -> XCUIApplication {
     let app = XCUIApplication()
-    let root = providedRoot
+    let root =
+      providedRoot
       ?? FileManager.default.temporaryDirectory
-        .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)
     addTeardownBlock { try? FileManager.default.removeItem(at: root) }
     app.launchEnvironment = [
       "TABLEROCK_TEST_MODE": "1",

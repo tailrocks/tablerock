@@ -529,7 +529,8 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
         WorkbenchPageEnvelope(
           encodingVersion: 1, resultId: resultId, revision: revision, engine: 0,
           startRow: startRow, rowCount: 1, columnCount: 1, arenaByteLen: 3,
-          columnTextByteLen: 1, delivery: 1, warnings: 0))
+          columnTextByteLen: 1, delivery: 1, warnings: 0)
+      )
     }
     return try scriptedUnavailable("fetch")
   }
@@ -2218,11 +2219,13 @@ final class BridgeModel {
         columnMetadata: [
           WorkbenchColumn(name: "payload", engine: 0, engineType: "jsonb", nullable: false)
         ],
-        cells: [[
-          WorkbenchCell(
-            display: #"{"selected":true}"#, kind: 8, truncation: 0,
-            originalByteCount: UInt64(raw.count), bytes: raw)
-        ]])
+        cells: [
+          [
+            WorkbenchCell(
+              display: #"{"selected":true}"#, kind: 8, truncation: 0,
+              originalByteCount: UInt64(raw.count), bytes: raw)
+          ]
+        ])
       activeQueryTab.selectedCell = nil
       status = "Selectable inspector fixture"
       return
@@ -3188,7 +3191,8 @@ final class BridgeModel {
     guard let tab = activeObjectTab, !tab.isRunning, tab.filters.count < 32,
       !tab.filterColumn.isEmpty
     else { return }
-    let value = ["is_null", "is_not_null"].contains(tab.filterOperator)
+    let value =
+      ["is_null", "is_not_null"].contains(tab.filterOperator)
       ? nil : tab.filterValue
     tab.filters.append(
       WorkbenchBrowseFilter(
@@ -5208,7 +5212,8 @@ private struct ObjectFilterBar: View {
           .disabled(
             tab.isRunning
               || tab.rawWhereDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-              || tab.rawWhereDraft.utf8.count > 65_536)
+              || tab.rawWhereDraft.utf8.count > 65_536
+          )
           .accessibilityIdentifier("object.raw-where.apply")
         if tab.rawWhere != nil {
           Button("Clear raw WHERE", role: .destructive) {
@@ -5237,7 +5242,8 @@ private struct ObjectFilterBar: View {
           .disabled(
             tab.isRunning
               || tab.filterPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-              || tab.filterPresetName.utf8.count > 64)
+              || tab.filterPresetName.utf8.count > 64
+          )
           .accessibilityIdentifier("object.filter-preset.save")
         Menu("Load preset") {
           ForEach(tab.filterPresets) { preset in
@@ -5415,88 +5421,89 @@ private struct CsvImportSheet: View {
           .disabled(model.csvImportApplying)
       }
       HStack {
-        if model.csvImportReview != nil {
-          Button("Apply Import") { Task { await model.applyCsvImport() } }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("import.csv.apply")
-            .disabled(model.csvImportApplying)
-          Button("Discard Review", role: .cancel) {
-            Task { await model.discardCsvImportReview() }
-          }
-          .disabled(model.csvImportApplying)
-        } else if model.csvImportOutcome == nil {
-          Button("Stage Reviewed Import") { Task { await model.stageCsvImport() } }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("import.csv.stage")
-            .disabled(model.csvImportPreview == nil || model.csvImportApplying)
+        Button("Stage Reviewed Import") { Task { await model.stageCsvImport() } }
+          .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("import.csv.stage")
+          .disabled(
+            model.csvImportPreview == nil || model.csvImportReview != nil
+              || model.csvImportOutcome != nil || model.csvImportApplying)
+        Button("Apply Import") { Task { await model.applyCsvImport() } }
+          .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("import.csv.apply")
+          .disabled(model.csvImportReview == nil || model.csvImportApplying)
+        Button("Discard Review", role: .cancel) {
+          Task { await model.discardCsvImportReview() }
         }
+        .accessibilityIdentifier("import.csv.discard")
+        .disabled(model.csvImportReview == nil || model.csvImportApplying)
         Spacer()
       }
+      .fixedSize(horizontal: false, vertical: true)
       ScrollView {
         VStack(alignment: .leading, spacing: 14) {
           if let preview = model.csvImportPreview {
-        Text(
-          "\(URL(fileURLWithPath: preview.path).lastPathComponent) · \(preview.totalRows) rows · \(preview.headers.count) columns"
-        )
-        .foregroundStyle(.secondary)
-        if preview.formulaLikeCells > 0 {
-          Label(
-            "\(preview.formulaLikeCells) formula-like cells will be inserted as literal text",
-            systemImage: "exclamationmark.triangle.fill"
-          )
-          .foregroundStyle(.orange)
-        }
-        GroupBox("Column mapping") {
-          Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
-            ForEach(preview.headers.indices, id: \.self) { index in
-              GridRow {
-                Text(preview.headers[index]).textSelection(.enabled)
-                Image(systemName: "arrow.right")
-                  .foregroundStyle(.secondary)
-                TextField(
-                  "Target column",
-                  text: $model.csvImportMappedColumns[index]
-                )
-                .disabled(model.csvImportReview != nil)
-                Picker(
-                  "Value type",
-                  selection: $model.csvImportColumnTypes[index]
-                ) {
-                  Text("Text").tag("text")
-                  Text("Integer").tag("signed")
-                  Text("Float").tag("float64")
-                  Text("Boolean").tag("boolean")
-                }
-                .labelsHidden()
-                .disabled(model.csvImportReview != nil)
-              }
+            Text(
+              "\(URL(fileURLWithPath: preview.path).lastPathComponent) · \(preview.totalRows) rows · \(preview.headers.count) columns"
+            )
+            .foregroundStyle(.secondary)
+            if preview.formulaLikeCells > 0 {
+              Label(
+                "\(preview.formulaLikeCells) formula-like cells will be inserted as literal text",
+                systemImage: "exclamationmark.triangle.fill"
+              )
+              .foregroundStyle(.orange)
             }
-          }
-          .padding(6)
-        }
-        GroupBox("Preview — first \(preview.rows.count) rows") {
-          ScrollView([.horizontal, .vertical]) {
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 5) {
-              GridRow {
-                ForEach(preview.headers, id: \.self) { header in
-                  Text(header).bold()
-                }
-              }
-              Divider()
-              ForEach(preview.rows.indices, id: \.self) { rowIndex in
-                GridRow {
-                  ForEach(preview.rows[rowIndex].cells.indices, id: \.self) { column in
-                    Text(preview.rows[rowIndex].cells[column])
-                      .lineLimit(1)
-                      .textSelection(.enabled)
+            GroupBox("Column mapping") {
+              Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+                ForEach(preview.headers.indices, id: \.self) { index in
+                  GridRow {
+                    Text(preview.headers[index]).textSelection(.enabled)
+                    Image(systemName: "arrow.right")
+                      .foregroundStyle(.secondary)
+                    TextField(
+                      "Target column",
+                      text: $model.csvImportMappedColumns[index]
+                    )
+                    .disabled(model.csvImportReview != nil)
+                    Picker(
+                      "Value type",
+                      selection: $model.csvImportColumnTypes[index]
+                    ) {
+                      Text("Text").tag("text")
+                      Text("Integer").tag("signed")
+                      Text("Float").tag("float64")
+                      Text("Boolean").tag("boolean")
+                    }
+                    .labelsHidden()
+                    .disabled(model.csvImportReview != nil)
                   }
                 }
               }
+              .padding(6)
             }
-            .padding(6)
-          }
-          .frame(minHeight: 150, maxHeight: 260)
-        }
+            GroupBox("Preview — first \(preview.rows.count) rows") {
+              ScrollView([.horizontal, .vertical]) {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 5) {
+                  GridRow {
+                    ForEach(preview.headers, id: \.self) { header in
+                      Text(header).bold()
+                    }
+                  }
+                  Divider()
+                  ForEach(preview.rows.indices, id: \.self) { rowIndex in
+                    GridRow {
+                      ForEach(preview.rows[rowIndex].cells.indices, id: \.self) { column in
+                        Text(preview.rows[rowIndex].cells[column])
+                          .lineLimit(1)
+                          .textSelection(.enabled)
+                      }
+                    }
+                  }
+                }
+                .padding(6)
+              }
+              .frame(minHeight: 150, maxHeight: 260)
+            }
           }
           if let review = model.csvImportReview {
             GroupBox("Review required") {
@@ -5612,38 +5619,43 @@ private struct ResultGridWithInspector: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      HStack {
-        ResultCopyMenu()
-        ResultExportMenu()
-        TextField(
-          "Filter loaded rows",
-          text: Binding(
-            get: { model.loadedRowQuickFilter },
-            set: { model.loadedRowQuickFilter = $0 })
-        )
-        .frame(minWidth: 120, maxWidth: 220)
-        .accessibilityIdentifier("results.quick-filter")
-        let loadedRowsStatus =
-          "Loaded rows only · \(visibleRowIndices.count)/\(table.rows.count)"
-        Text(loadedRowsStatus)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .accessibilityIdentifier("results.quick-filter.status")
-          .accessibilityLabel(loadedRowsStatus)
-        if exposesResultPaging && model.nextStartRow != nil {
-          Button("Load more rows") { Task { await model.loadMore() } }
-            .accessibilityIdentifier("results.next-page")
+      VStack(alignment: .leading, spacing: 6) {
+        HStack {
+          ResultCopyMenu()
+          ResultExportMenu()
+          Spacer()
         }
-        if let outcome = model.copyOutcome {
-          Text(outcome)
-            .font(.caption).foregroundStyle(.secondary)
-            .accessibilityIdentifier("results.copy.outcome")
-            .accessibilityValue(outcome)
+        HStack {
+          TextField(
+            "Filter loaded rows",
+            text: Binding(
+              get: { model.loadedRowQuickFilter },
+              set: { model.loadedRowQuickFilter = $0 })
+          )
+          .frame(minWidth: 120, maxWidth: 220)
+          .accessibilityIdentifier("results.quick-filter")
+          let loadedRowsStatus =
+            "Loaded rows only · \(visibleRowIndices.count)/\(table.rows.count)"
+          Text(loadedRowsStatus)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("results.quick-filter.status")
+            .accessibilityValue(loadedRowsStatus)
+          if exposesResultPaging && model.nextStartRow != nil {
+            Button("Load more rows") { Task { await model.loadMore() } }
+              .accessibilityIdentifier("results.next-page")
+          }
+          if let outcome = model.copyOutcome {
+            Text(outcome)
+              .font(.caption).foregroundStyle(.secondary)
+              .accessibilityIdentifier("results.copy.outcome")
+              .accessibilityValue(outcome)
+          }
+          if let error = model.copyError {
+            Text(error).font(.caption).foregroundStyle(.red)
+          }
+          Spacer()
         }
-        if let error = model.copyError {
-          Text(error).font(.caption).foregroundStyle(.red)
-        }
-        Spacer()
       }
       HSplitView {
         CatalogGrid(table: visibleTable, sorts: model.resultSort) { row, column in
@@ -5681,6 +5693,8 @@ private struct ResultExportMenu: View {
       }
       .accessibilityIdentifier("results.export.more")
     }
+    .buttonStyle(.bordered)
+    .fixedSize(horizontal: true, vertical: true)
     .disabled(model.resultIdData == nil)
     .accessibilityHint("Atomically export all rows currently resident in this result")
   }
@@ -6685,16 +6699,13 @@ struct CatalogGrid: NSViewRepresentable {
 
   @MainActor
   final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-    final class ResultCellView: NSTableCellView {
+    final class ResultCellView: NSTableCellView {}
+
+    final class ResultCellButton: NSButton {
       var onActivate: (() -> Void)?
 
-      @objc func activate(_ sender: NSClickGestureRecognizer) {
+      @objc func activate(_ sender: Any?) {
         onActivate?()
-      }
-
-      override func accessibilityPerformPress() -> Bool {
-        onActivate?()
-        return true
       }
     }
 
@@ -6718,7 +6729,8 @@ struct CatalogGrid: NSViewRepresentable {
       guard let tableView = notification.object as? NSTableView,
         tableView.selectedRow >= 0
       else { return }
-      let column = tableView.clickedColumn >= 0
+      let column =
+        tableView.clickedColumn >= 0
         ? tableView.clickedColumn : lastActivatedColumn
       guard snapshot.columns.indices.contains(column) else { return }
       onSelect(tableView.selectedRow, column)
@@ -6809,31 +6821,35 @@ struct CatalogGrid: NSViewRepresentable {
       } else {
         cell = ResultCellView()
         cell.identifier = identifier
-        cell.addGestureRecognizer(
-          NSClickGestureRecognizer(target: cell, action: #selector(ResultCellView.activate(_:))))
-        let label = NSTextField(labelWithString: "")
-        label.lineBreakMode = .byTruncatingTail
-        label.translatesAutoresizingMaskIntoConstraints = false
-        cell.textField = label
-        cell.addSubview(label)
+        let button = ResultCellButton(title: "", target: nil, action: nil)
+        button.identifier = NSUserInterfaceItemIdentifier("result-cell-button")
+        button.target = button
+        button.action = #selector(ResultCellButton.activate(_:))
+        button.isBordered = false
+        button.alignment = .left
+        button.lineBreakMode = .byTruncatingTail
+        button.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(button)
         NSLayoutConstraint.activate([
-          label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
-          label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-          label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+          button.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
+          button.trailingAnchor.constraint(equalTo: cell.trailingAnchor),
+          button.topAnchor.constraint(equalTo: cell.topAnchor),
+          button.bottomAnchor.constraint(equalTo: cell.bottomAnchor),
         ])
       }
       let value = snapshot.rows[row][column]
-      cell.textField?.stringValue = value
-      cell.textField?.setAccessibilityElement(false)
-      cell.setAccessibilityElement(true)
-      cell.setAccessibilityRole(.cell)
-      cell.setAccessibilityLabel("\(snapshot.columns[column]), row \(row + 1)")
-      cell.setAccessibilityValue(value)
-      cell.setAccessibilityIdentifier("results.cell.\(row).\(column)")
-      cell.onActivate = { [weak self, weak tableView] in
+      guard let button = cell.subviews.first as? ResultCellButton else { return nil }
+      button.title = value
+      button.setAccessibilityElement(true)
+      button.setAccessibilityRole(.cell)
+      button.setAccessibilityLabel("\(snapshot.columns[column]), row \(row + 1)")
+      button.setAccessibilityValue(value)
+      button.setAccessibilityIdentifier("results.cell.\(row).\(column)")
+      button.onActivate = { [weak self, weak tableView] in
         guard let self, let tableView else { return }
         self.activate(row: row, column: column, in: tableView)
       }
+      cell.setAccessibilityElement(false)
       return cell
     }
   }
