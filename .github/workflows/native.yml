@@ -128,8 +128,8 @@ jobs:
           ./scripts/build-native-app.sh
           codesign --verify --deep --strict native/dist/TableRock.app
           test "$(plutil -extract CFBundleIdentifier raw native/dist/TableRock.app/Contents/Info.plist)" = "app.tablerock.TableRock"
-          test "$(lipo -archs target/xcframework/macos-universal/TableRockFFI.framework/TableRockFFI)" = "x86_64 arm64" \
-            || test "$(lipo -archs target/xcframework/macos-universal/TableRockFFI.framework/TableRockFFI)" = "arm64 x86_64"
+          test "$(lipo -archs target/xcframework/macos-universal/tablerock_ffiFFI.framework/tablerock_ffiFFI)" = "x86_64 arm64" \
+            || test "$(lipo -archs target/xcframework/macos-universal/tablerock_ffiFFI.framework/tablerock_ffiFFI)" = "arm64 x86_64"
 
       - name: Archive structural artifacts
         if: always()
@@ -140,7 +140,7 @@ jobs:
           retention-days: 14
           path: |
             native/dist/TableRock.app
-            target/xcframework/TableRockFFI.xcframework
+            target/xcframework/tablerock_ffiFFI.xcframework
             native/Generated
             native/App/TableRock.xcodeproj
             native/App/TestPlans

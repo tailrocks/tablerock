@@ -46,7 +46,7 @@ targets:
     sources:
       - path: ../Sources/TableRockBridge
     dependencies:
-      - framework: ../../target/xcframework/TableRockFFI.xcframework
+      - framework: ../../target/xcframework/tablerock_ffiFFI.xcframework
         embed: false
 
   TableRock:
@@ -57,7 +57,7 @@ targets:
     dependencies:
       - target: TableRockFeature
       - target: TableRockBridge
-      - framework: ../../target/xcframework/TableRockFFI.xcframework
+      - framework: ../../target/xcframework/tablerock_ffiFFI.xcframework
         embed: false
     info:
       path: TableRock-Info.plist
@@ -96,7 +96,7 @@ targets:
       - path: ../Tests/TableRockBridgeTests
     dependencies:
       - target: TableRockBridge
-      - framework: ../../target/xcframework/TableRockFFI.xcframework
+      - framework: ../../target/xcframework/tablerock_ffiFFI.xcframework
         embed: false
 
   TableRockAppUITests:

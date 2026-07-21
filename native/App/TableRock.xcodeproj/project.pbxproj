@@ -16,23 +16,23 @@
 		31FD459BCAEED3A74451B50A /* BridgeModelLifetimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9C1E6469A2ACF82CA630D65 /* BridgeModelLifetimeTests.swift */; };
 		3BC1F892B2D11CFFFFA88C3F /* PageV1BoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BD73D03EAEEE2DE99D6F35 /* PageV1BoundaryTests.swift */; };
 		493700EAADCCC3020615EA6F /* clickhouse-signed-v1.hex in Resources */ = {isa = PBXBuildFile; fileRef = 4458632FEA057E87DB3BB33C /* clickhouse-signed-v1.hex */; };
-		56BD819B9325DD917E347A02 /* TableRockFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 93A25D9D6064B1201B1883ED /* TableRockFFI.xcframework */; };
 		6189A683586BD39D3AC5806E /* PageV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D0C1A38F65F28CBDE5C94D7 /* PageV1.swift */; };
 		649DD63D9AC98840E6A86737 /* TableRockBridge.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		66313AB511DC01EA4B5CF447 /* BridgeModelScenarioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B603D771219E813A92103B1 /* BridgeModelScenarioTests.swift */; };
 		686762278D02E5B39276A5D8 /* PageV1FixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74B974D7ED34ED229C8EECD1 /* PageV1FixtureTests.swift */; };
 		8709E0F3395FEEC0940FC670 /* TableRockBridge.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; };
+		88C5E2A0B166D9E394831AEA /* tablerock_ffiFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */; };
 		96A1EC7298B3EF2077A15BE5 /* TableRockFeature.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		A20B0220538674F8FF37A7DB /* TableRockFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 93A25D9D6064B1201B1883ED /* TableRockFFI.xcframework */; };
 		AE5AFDABD4F52A3E036A6A95 /* TableRockAppUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522462239F32BD6A1FA81F2B /* TableRockAppUITests.swift */; };
 		B1E398B44C08B80C28D66530 /* AppConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C51BE56FE33E3F86FAD4A4 /* AppConfigurationTests.swift */; };
 		B5271F793DBA059B179658C0 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A94F4528ED04C3B8016BDA /* AppDependencies.swift */; };
 		B85A1683438F04B41F2AB2F8 /* TableRockBridge.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		BA7227AA4869FE09F72A67E7 /* BridgeLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A34ED7C245BB8AF855C9333 /* BridgeLifecycleTests.swift */; };
+		C1930375B77A3443BC8FC913 /* tablerock_ffiFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */; };
 		C4DF7978A6E7AFC2C4CE963B /* postgres-signed-v1.hex in Resources */ = {isa = PBXBuildFile; fileRef = 474ED5368A7E1345CE774E9D /* postgres-signed-v1.hex */; };
 		CA5CDB5B489020F6BA3BFEFB /* tablerock_ffi.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D29545CBDC6CCC9256FB3C /* tablerock_ffi.swift */; };
 		D1B7CEC71C3AD071161CE23F /* TableRockBridge.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; };
-		D2F104073635FB0F68B3F6CF /* TableRockFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 93A25D9D6064B1201B1883ED /* TableRockFFI.xcframework */; };
+		D796F83A9C02E834BFEDD256 /* tablerock_ffiFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */; };
 		E0946F568BF416413F94CAF8 /* AppDependenciesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 170A6205E293BBDD55598B6C /* AppDependenciesTests.swift */; };
 		F3E6C5EB63188CF0940F0330 /* WorkbenchTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD18301D71E2140043B680F /* WorkbenchTypes.swift */; };
 		F42BEA2AD4B262850D8C3D96 /* TableRockApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */; };
@@ -121,6 +121,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = tablerock_ffiFFI.xcframework; path = ../../target/xcframework/tablerock_ffiFFI.xcframework; sourceTree = "<group>"; };
 		170A6205E293BBDD55598B6C /* AppDependenciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependenciesTests.swift; sourceTree = "<group>"; };
 		389BF5258A746A4D8C3BFA05 /* TableRock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TableRock.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3A34ED7C245BB8AF855C9333 /* BridgeLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeLifecycleTests.swift; sourceTree = "<group>"; };
@@ -137,7 +138,6 @@
 		7F24F1E2FB76DDA5D0255906 /* TableRockAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8C42185AD707FA2A7890B1E5 /* TableRockFeatureTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockFeatureTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableRockApp.swift; sourceTree = "<group>"; };
-		93A25D9D6064B1201B1883ED /* TableRockFFI.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = TableRockFFI.xcframework; path = ../../target/xcframework/TableRockFFI.xcframework; sourceTree = "<group>"; };
 		A2C51BE56FE33E3F86FAD4A4 /* AppConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigurationTests.swift; sourceTree = "<group>"; };
 		A61EA4DB356144BD42272270 /* TableRockBridge.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TableRockBridge.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		A68E1D5D9FB490A8CE2982A6 /* redis-signed-v1.hex */ = {isa = PBXFileReference; path = "redis-signed-v1.hex"; sourceTree = "<group>"; };
@@ -163,7 +163,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8709E0F3395FEEC0940FC670 /* TableRockBridge.framework in Frameworks */,
-				D2F104073635FB0F68B3F6CF /* TableRockFFI.xcframework in Frameworks */,
+				C1930375B77A3443BC8FC913 /* tablerock_ffiFFI.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -171,7 +171,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A20B0220538674F8FF37A7DB /* TableRockFFI.xcframework in Frameworks */,
+				88C5E2A0B166D9E394831AEA /* tablerock_ffiFFI.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -181,7 +181,7 @@
 			files = (
 				14D023A5261B2B5CD80FDC18 /* TableRockFeature.framework in Frameworks */,
 				D1B7CEC71C3AD071161CE23F /* TableRockBridge.framework in Frameworks */,
-				56BD819B9325DD917E347A02 /* TableRockFFI.xcframework in Frameworks */,
+				D796F83A9C02E834BFEDD256 /* tablerock_ffiFFI.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -281,7 +281,7 @@
 		94896E3D027395076B33DEA6 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				93A25D9D6064B1201B1883ED /* TableRockFFI.xcframework */,
+				112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";

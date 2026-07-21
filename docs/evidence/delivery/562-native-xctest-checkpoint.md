@@ -26,7 +26,7 @@ Run: [29801533506](https://github.com/tailrocks/tablerock/actions/runs/298015335
   `AppConfigurationTests`, `AppDependenciesTests`, `BridgeLifecycleTests`,
   `PageV1BoundaryTests`, and `PageV1FixtureTests`.
 - Generated UniFFI bindings: clean after regeneration.
-- Universal `TableRockFFI.xcframework`: arm64 + x86_64, green.
+- Universal `tablerock_ffiFFI.xcframework`: arm64 + x86_64, green.
 - `TableRock.app`: built; `codesign --verify --deep --strict` and exact bundle
   identifier passed.
 - Artifact `native-checkpoint-f660cac6a97a9ff6bb73dbb2cd6bac41ab936a0e`:

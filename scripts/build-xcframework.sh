@@ -5,7 +5,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-$ROOT/target/xcframework}"
-FRAMEWORK_NAME="TableRockFFI"
+# UniFFI-generated Swift imports this exact low-level C module. Framework,
+# binary, and module-map identities must match so canImport() succeeds in Xcode.
+FRAMEWORK_NAME="tablerock_ffiFFI"
 XCFRAMEWORK="$OUT_DIR/$FRAMEWORK_NAME.xcframework"
 
 cd "$ROOT"
@@ -48,7 +50,6 @@ for lib in "$ARM_LIB" "$X86_LIB"; do
 done
 
 HEADER="$ROOT/native/Generated/tablerock_ffiFFI.h"
-MODULEMAP="$ROOT/native/Generated/tablerock_ffiFFI.modulemap"
 if [[ ! -f "$HEADER" ]]; then
   # UniFFI 0.32 may name headers differently; pick the first .h
   HEADER="$(find "$ROOT/native/Generated" -name '*.h' | head -n1)"
@@ -68,17 +69,13 @@ FRAMEWORK="$OUT_DIR/macos-universal/$FRAMEWORK_NAME.framework"
 mkdir -p "$FRAMEWORK/Headers" "$FRAMEWORK/Modules"
 lipo -create "$ARM_LIB" "$X86_LIB" -output "$FRAMEWORK/$FRAMEWORK_NAME"
 cp "$HEADER" "$FRAMEWORK/Headers/"
-if [[ -f "$MODULEMAP" ]]; then
-  cp "$MODULEMAP" "$FRAMEWORK/Modules/module.modulemap"
-else
-  cat >"$FRAMEWORK/Modules/module.modulemap" <<EOF
+cat >"$FRAMEWORK/Modules/module.modulemap" <<EOF
 framework module $FRAMEWORK_NAME {
   umbrella header "$(basename "$HEADER")"
   export *
   module * { export * }
 }
 EOF
-fi
 
 echo "==> creating XCFramework"
 xcodebuild -create-xcframework \
