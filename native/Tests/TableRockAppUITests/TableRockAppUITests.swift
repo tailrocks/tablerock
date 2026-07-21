@@ -180,6 +180,39 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testDirtyQueryTabRequiresDiscardConfirmation() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_QUERY_TABS": "1"])
+
+    let editor = app.textViews["query.editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    editor.click()
+    editor.typeText(" -- dirty")
+
+    let actions = app.buttons["Actions for Orders"]
+    XCTAssertTrue(actions.waitForExistence(timeout: 10))
+    actions.click()
+    let close = app.menuItems["Close"]
+    XCTAssertTrue(close.waitForExistence(timeout: 10))
+    close.click()
+
+    XCTAssertTrue(
+      app.staticTexts["Close query tab with unsaved changes?"]
+        .waitForExistence(timeout: 10))
+    let discard = app.buttons["Discard and Close"]
+    XCTAssertTrue(discard.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["Cancel"].exists)
+    discard.click()
+
+    let removed = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == false"),
+      object: app.buttons["Actions for Orders"])
+    XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 10), .completed)
+    XCTAssertTrue(app.buttons["Actions for Users"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
   func testMarkedTextSurvivesPresentationUpdate() throws {
     let app = launch(
       scenario: "success",
