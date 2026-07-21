@@ -9,6 +9,11 @@ arena and cell/offset/bitmap sizes. Even a caller that deliberately supplies
 maximal decode limits receives typed `sizeOverflow`; malformed page headers can
 no longer trigger a Swift integer trap before bounds validation.
 
+Hosted run 29841286500 exposed that the first implementation placed the cell
+cardinality check after the column metadata loop, allowing a hostile maximum
+column count to terminate as `truncated` first. Evidence 586 moves all derived
+cardinality checks directly after the fixed header and before body loops.
+
 The canonical bridge suite now covers NULL, empty text, non-UTF-8 binary,
 structured JSON, invalid, and truncated cells; row, column, arena, and column-
 text limits; bad offsets; unsupported versions; representational overflow; and
@@ -23,8 +28,9 @@ mise exec github:yonaskolb/XcodeGen@2.46.0 -- xcodegen generate --spec native/Ap
 ```
 
 The strict direct bridge/application compilation and complete app build pass.
-The hosted canonical Xcode plan owns XCTest execution; hosted result is pending
-for this checkpoint. No local XCTest claim is made because the selected Command
+Hosted run 29841286500 failed the intended hostile expectation and directly
+identified the validation-order defect. The corrected hosted canonical Xcode
+rerun is pending. No local XCTest claim is made because the selected Command
 Line Tools SDK lacks XCTest.
 
 ## Remaining boundary

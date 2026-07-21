@@ -292,6 +292,16 @@ extension PageV1 {
         _ = try u8()                     // delivery
         _ = try u16()                    // warnings (u16 bitset)
 
+        // Derive all body cardinalities before any attacker-controlled loop.
+        // Header limits may intentionally be widened by a caller, so their
+        // individual validity does not prove their product is representable.
+        let (cells, cellOverflow) = Int(rowCount).multipliedReportingOverflow(
+            by: Int(columnCount))
+        guard !cellOverflow else { throw PageV1DecodeError.sizeOverflow }
+        let (offsetCount, offsetOverflow) = cells.addingReportingOverflow(1)
+        let (bitmapNumerator, bitmapOverflow) = cells.addingReportingOverflow(7)
+        guard !offsetOverflow, !bitmapOverflow else { throw PageV1DecodeError.sizeOverflow }
+
         // Columns: bounded_str(name) + u8(engine) + bounded_str(engine_name) + u8(nullable).
         var columns: [String] = []
         var columnMetadata: [PageV1Column] = []
@@ -306,12 +316,6 @@ extension PageV1 {
             ))
         }
 
-        let (cells, cellOverflow) = Int(rowCount).multipliedReportingOverflow(
-            by: Int(columnCount))
-        guard !cellOverflow else { throw PageV1DecodeError.sizeOverflow }
-        let (offsetCount, offsetOverflow) = cells.addingReportingOverflow(1)
-        let (bitmapNumerator, bitmapOverflow) = cells.addingReportingOverflow(7)
-        guard !offsetOverflow, !bitmapOverflow else { throw PageV1DecodeError.sizeOverflow }
         var offsets: [UInt64] = []
         for _ in 0..<offsetCount { offsets.append(try u64()) }
         guard offsets.first == 0,
