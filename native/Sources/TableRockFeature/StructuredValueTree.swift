@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 public struct StructuredValueTreeRow: Sendable, Equatable, Identifiable {
   public let id: String
@@ -71,10 +72,12 @@ public enum StructuredValueTree {
       }
     case let value as String:
       rows.append(.init(id: path, depth: depth, label: label, value: value))
-    case let value as Bool:
-      rows.append(.init(id: path, depth: depth, label: label, value: value ? "true" : "false"))
     case let value as NSNumber:
-      rows.append(.init(id: path, depth: depth, label: label, value: value.stringValue))
+      let rendered =
+        CFGetTypeID(value) == CFBooleanGetTypeID()
+        ? (value.boolValue ? "true" : "false")
+        : value.stringValue
+      rows.append(.init(id: path, depth: depth, label: label, value: rendered))
     case is NSNull:
       rows.append(.init(id: path, depth: depth, label: label, value: "NULL"))
     default:

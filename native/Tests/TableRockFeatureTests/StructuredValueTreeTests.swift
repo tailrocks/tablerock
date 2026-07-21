@@ -3,10 +3,12 @@ import Testing
 @testable import TableRockFeature
 
 @Test func structuredTreeIsDeterministicAndTyped() throws {
-  let rows = try StructuredValueTree.decode(Data(#"{"z":[true,null],"a":1}"#.utf8))
-  #expect(rows.map(\.label) == ["root", "a", "z", "[0]", "[1]"])
-  #expect(rows.map(\.value) == ["Object (2)", "1", "Array (2)", "true", "NULL"])
-  #expect(rows.map(\.depth) == [0, 1, 1, 2, 2])
+  let rows = try StructuredValueTree.decode(
+    Data(#"{"z":[true,false,null],"a":1,"b":0}"#.utf8))
+  #expect(rows.map(\.label) == ["root", "a", "b", "z", "[0]", "[1]", "[2]"])
+  #expect(
+    rows.map(\.value) == ["Object (3)", "1", "0", "Array (3)", "true", "false", "NULL"])
+  #expect(rows.map(\.depth) == [0, 1, 1, 1, 2, 2, 2])
 }
 
 @Test func structuredTreeFailsClosedAtInputNodeAndDepthBounds() throws {
