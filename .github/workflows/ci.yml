@@ -118,7 +118,9 @@ jobs:
           restore-keys: |
             cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-
       - name: Real-server integration tests
-        run: cargo nextest run -j 4 -p tablerock-engine --test postgres_real --test clickhouse_real --test redis_real --test three_engine_overlap_real --locked
+        run: |
+          cargo nextest run -j 1 -p tablerock-engine --test clickhouse_real --locked
+          cargo nextest run -j 4 -p tablerock-engine --test postgres_real --test redis_real --test three_engine_overlap_real --locked
       - name: UniFFI bridge real-server conformance
         run: cargo nextest run -p tablerock-ffi --test bridge_real --locked --run-ignored ignored-only
       - name: CSV import apply through mutation seam

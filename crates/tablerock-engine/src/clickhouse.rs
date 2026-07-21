@@ -720,7 +720,7 @@ impl ClickHouseSession {
         };
         let cursor = self
             .client
-            .query("KILL QUERY WHERE query_id = {target:String} ASYNC")
+            .query("KILL QUERY WHERE query_id = {target:String} SYNC")
             .param("target", query_id.as_str())
             .fetch_bytes("RowBinary")
             .map_err(|_| ClickHouseError::Query)?;
@@ -731,17 +731,13 @@ impl ClickHouseSession {
         }
         let mut status = vec![0; status_len as usize];
         reader.read_exact(&mut status).await?;
-        if kill_status_accepts_request(&status) {
+        if status == b"finished" {
             self.active.confirm();
             Ok(true)
         } else {
             Ok(false)
         }
     }
-}
-
-fn kill_status_accepts_request(status: &[u8]) -> bool {
-    matches!(status, b"waiting" | b"finished")
 }
 
 pub struct ClickHouseRowStream {
@@ -1959,15 +1955,8 @@ mod tests {
 
     use super::{
         ClickHouseType, StructuredProjection, apply_decimal_scale, format_clickhouse_progress,
-        integer_decimal, kill_status_accepts_request, split_type_arguments, text_or_binary,
+        integer_decimal, split_type_arguments, text_or_binary,
     };
-
-    #[test]
-    fn asynchronous_kill_status_distinguishes_acceptance() {
-        assert!(kill_status_accepts_request(b"waiting"));
-        assert!(kill_status_accepts_request(b"finished"));
-        assert!(!kill_status_accepts_request(b"unknown"));
-    }
 
     #[test]
     fn format_clickhouse_progress_joins_parts() {
