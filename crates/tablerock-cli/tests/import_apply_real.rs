@@ -33,8 +33,9 @@ async fn applies_csv_insert_rows_through_mutation_seam() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        bt("127.0.0.1"),
+        bt(&host),
         port,
         bt("postgres"),
         bt("postgres"),
@@ -113,13 +114,14 @@ async fn applies_csv_insert_rows_on_clickhouse_progressive() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
 
     // Wait for HTTP readiness.
     let session = {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
         loop {
             let s = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
-                bt("127.0.0.1"),
+                bt(&host),
                 port,
                 bt("default"),
                 bt("default"),

@@ -70,8 +70,9 @@ async fn streaming_requery_export_csv_and_cancel_cleanup() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        bt("127.0.0.1"),
+        bt(&host),
         port,
         bt("postgres"),
         bt("postgres"),

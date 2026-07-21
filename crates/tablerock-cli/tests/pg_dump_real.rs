@@ -81,9 +81,10 @@ async fn pg_dump_and_restore_against_docker_postgres() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
 
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        bt("127.0.0.1"),
+        bt(&host),
         port,
         bt("postgres"),
         bt("postgres"),
@@ -115,14 +116,7 @@ async fn pg_dump_and_restore_against_docker_postgres() {
 
     let (_tx, rx) = cancel_channel();
     let outcome = run_pg_dump(
-        &pg_dump,
-        "127.0.0.1",
-        port,
-        "postgres",
-        "postgres",
-        None,
-        &path,
-        rx,
+        &pg_dump, &host, port, "postgres", "postgres", None, &path, rx,
     )
     .await;
     assert!(
@@ -136,7 +130,7 @@ async fn pg_dump_and_restore_against_docker_postgres() {
 
     // Restore into a fresh database on the same server.
     let session = PostgresSession::connect(&PostgresConnectConfig::new(
-        bt("127.0.0.1"),
+        bt(&host),
         port,
         bt("postgres"),
         bt("postgres"),
@@ -153,7 +147,7 @@ async fn pg_dump_and_restore_against_docker_postgres() {
     let (_tx2, rx2) = cancel_channel();
     let restore = run_pg_restore(
         &pg_restore,
-        "127.0.0.1",
+        &host,
         port,
         "dump_restore_target",
         "postgres",
