@@ -1700,6 +1700,7 @@ final class NativeQueryTab: Identifiable {
   var selectedCell: NativeCellSelection?
   var copyOutcome: String?
   var copyError: String?
+  var quickFilter = ""
 
   init(id: UUID, title: String, statementText: String) {
     self.id = id
@@ -1728,6 +1729,7 @@ final class NativeObjectTab: Identifiable {
   var selectedCell: NativeCellSelection?
   var copyOutcome: String?
   var copyError: String?
+  var quickFilter = ""
   var selectedSection = "data"
   var structure: WorkbenchRelationStructure?
   var structureLoading = false
@@ -1908,6 +1910,20 @@ final class BridgeModel {
       table.cells[selection.row][selection.column],
       selection.row, selection.column
     )
+  }
+  var loadedRowQuickFilter: String {
+    get {
+      selectedWorkbenchKind == "object"
+        ? activeObjectTab?.quickFilter ?? "" : activeQueryTab.quickFilter
+    }
+    set {
+      if selectedWorkbenchKind == "object" {
+        activeObjectTab?.quickFilter = newValue
+      } else {
+        activeQueryTab.quickFilter = newValue
+      }
+      selectedCell = nil
+    }
   }
   var copyOutcome: String? {
     get {
@@ -2219,6 +2235,17 @@ final class BridgeModel {
       activeQueryTab.nextStartRow = 500
       activeQueryTab.querySummary = "result · 1 column · 500 rows loaded"
       status = "Result paging fixture"
+      return
+    }
+    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_QUICK_FILTER"] == "1" {
+      sessionData = Data(repeating: 5, count: 16)
+      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+      connectedEngine = "postgresql"
+      activeQueryTab.resultTable = WorkbenchTable(
+        columns: ["id", "name"],
+        rows: [["1", "Ada"], ["2", "Grace"], ["3", "Linus"]])
+      activeQueryTab.querySummary = "result · 2 columns · 3 rows loaded"
+      status = "Quick filter fixture"
       return
     }
     if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_IME"] == "1" {
@@ -5559,11 +5586,41 @@ private struct ResultGridWithInspector: View {
   let minimumHeight: CGFloat
   var exposesResultPaging = false
 
+  private var visibleRowIndices: [Int] {
+    let term = model.loadedRowQuickFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !term.isEmpty else { return Array(table.rows.indices) }
+    return table.rows.indices.filter { row in
+      table.rows[row].contains { value in
+        value.range(of: term, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+      }
+    }
+  }
+
+  private var visibleTable: WorkbenchTable {
+    WorkbenchTable(
+      columns: table.columns,
+      rows: visibleRowIndices.map { table.rows[$0] },
+      columnMetadata: table.columnMetadata,
+      cells: visibleRowIndices.map { table.cells[$0] })
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack {
         ResultCopyMenu()
         ResultExportMenu()
+        TextField(
+          "Filter loaded rows",
+          text: Binding(
+            get: { model.loadedRowQuickFilter },
+            set: { model.loadedRowQuickFilter = $0 })
+        )
+        .frame(minWidth: 120, maxWidth: 220)
+        .accessibilityIdentifier("results.quick-filter")
+        Text("Loaded rows only · \(visibleRowIndices.count)/\(table.rows.count)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .accessibilityIdentifier("results.quick-filter.status")
         if exposesResultPaging && model.nextStartRow != nil {
           Button("Load more rows") { Task { await model.loadMore() } }
             .accessibilityIdentifier("results.next-page")
@@ -5580,8 +5637,9 @@ private struct ResultGridWithInspector: View {
         Spacer()
       }
       HSplitView {
-        CatalogGrid(table: table) { row, column in
-          model.selectCell(row: row, column: column)
+        CatalogGrid(table: visibleTable) { row, column in
+          guard visibleRowIndices.indices.contains(row) else { return }
+          model.selectCell(row: visibleRowIndices[row], column: column)
         }
         .frame(minWidth: 360, minHeight: minimumHeight)
         if let snapshot = model.selectedCellSnapshot {

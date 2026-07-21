@@ -176,6 +176,24 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testLoadedRowQuickFilterIsExplicitAndOperable() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_QUICK_FILTER": "1"])
+
+    let filter = app.textFields["results.quick-filter"]
+    XCTAssertTrue(filter.waitForExistence(timeout: 10))
+    let status = app.staticTexts["results.quick-filter.status"]
+    XCTAssertEqual(status.label, "Loaded rows only · 3/3")
+    filter.click()
+    filter.typeText("Grace")
+    let cell = app.descendants(matching: .any)["results.cell.0.1"]
+    XCTAssertTrue(cell.waitForExistence(timeout: 5))
+    XCTAssertEqual(cell.value as? String, "Grace")
+    XCTAssertEqual(status.label, "Loaded rows only · 1/3")
+  }
+
+  @MainActor
   func testObjectSortAndFilterControlsOperate() throws {
     let app = launch(
       scenario: "success",

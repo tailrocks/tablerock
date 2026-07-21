@@ -488,6 +488,8 @@ How to read an evidence document:
 - 612 — [Native typed object filters](delivery/612-native-typed-object-filters.md)
 - 613 — [Native raw-WHERE browse intent](delivery/613-native-raw-where.md)
 - 614 — [Native saved filter presets](delivery/614-native-saved-filter-presets.md)
+- 615 — [Native loaded-row quick filter](delivery/615-native-loaded-row-quick-filter.md)
+- 616 — [Velnor Cargo source freshness barrier](delivery/616-velnor-cargo-source-freshness.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
