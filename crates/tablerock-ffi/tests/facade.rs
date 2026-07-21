@@ -19,7 +19,10 @@ use tablerock_engine::{
 };
 use tablerock_ffi::{BridgeError, SubmitSpec, TableRockBridge};
 
-struct OnePageStream(Option<ResultPage>);
+struct OnePageStream {
+    page: Option<ResultPage>,
+    fail: bool,
+}
 
 impl DriverPageStream for OnePageStream {
     fn next_page<'a>(
@@ -27,12 +30,21 @@ impl DriverPageStream for OnePageStream {
         _identity: PageIdentity,
         _start_row: u64,
     ) -> DriverFuture<'a, Result<Option<ResultPage>, AdapterError>> {
-        Box::pin(async move { Ok(self.0.take()) })
+        Box::pin(async move {
+            if self.fail {
+                return Err(AdapterError::new(
+                    Engine::PostgreSql,
+                    AdapterFailureClass::Query,
+                ));
+            }
+            Ok(self.page.take())
+        })
     }
 }
 
 struct FixedPageSession {
     page: ResultPage,
+    fail: bool,
     shutdown: Arc<AtomicBool>,
 }
 
@@ -46,9 +58,13 @@ impl DriverSession for FixedPageSession {
         _request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
         let page = self.page.clone();
-        Box::pin(
-            async move { Ok(Box::new(OnePageStream(Some(page))) as Box<dyn DriverPageStream>) },
-        )
+        let fail = self.fail;
+        Box::pin(async move {
+            Ok(Box::new(OnePageStream {
+                page: Some(page),
+                fail,
+            }) as Box<dyn DriverPageStream>)
+        })
     }
 
     fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
@@ -127,6 +143,7 @@ fn open_submit_pump_fetch_shutdown_round_trip() {
             Engine::PostgreSql,
             Box::new(FixedPageSession {
                 page,
+                fail: false,
                 shutdown: Arc::new(AtomicBool::new(false)),
             }),
         )
@@ -170,6 +187,46 @@ fn open_submit_pump_fetch_shutdown_round_trip() {
 
     let shutdown = bridge.shutdown(false, 1_000).unwrap();
     assert!(shutdown.active_operations == 0 || !shutdown.core.is_empty());
+}
+
+#[test]
+fn failed_runtime_outcome_enters_safe_support_bundle() {
+    let result_id = ResultId::from_parts(IdParts::new(0, 100).unwrap()).unwrap();
+    let bridge = TableRockBridge::new_for_test();
+    let session_id = bridge
+        .open_driver_session(
+            Engine::PostgreSql,
+            Box::new(FixedPageSession {
+                page: sample_page(result_id),
+                fail: true,
+                shutdown: Arc::new(AtomicBool::new(false)),
+            }),
+        )
+        .unwrap();
+    let operation_id = bridge
+        .submit(SubmitSpec {
+            intent: "probe".into(),
+            session_id,
+            statement: Some("secret statement".into()),
+            result_id: Some(result_id.to_bytes().to_vec()),
+            start_row: None,
+            row_count: Some(100),
+            expected_revision: 0,
+        })
+        .unwrap();
+    bridge.pump(operation_id).unwrap();
+
+    let directory =
+        std::env::temp_dir().join(format!("tablerock-support-runtime-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let destination = directory.join("support.txt");
+    bridge
+        .export_support_bundle(destination.to_string_lossy().into_owned())
+        .unwrap();
+    let payload = fs::read_to_string(&destination).unwrap();
+    assert!(payload.contains("operation_outcome.0=PostgreSql|Failed\n"));
+    assert!(!payload.contains("secret statement"));
+    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -247,8 +304,9 @@ fn support_bundle_export_is_atomic_safe_schema() {
         .unwrap();
     let payload = fs::read_to_string(&destination).unwrap();
     assert_eq!(bytes as usize, payload.len());
-    assert!(payload.starts_with("schema=1\nclient.version="));
+    assert!(payload.starts_with("schema=2\nclient.version="));
     assert!(payload.contains("diagnostics.count=0\n"));
+    assert!(payload.contains("operation_outcomes.count=0\n"));
     for forbidden in ["password", "SELECT", "localhost", "cell-value"] {
         assert!(!payload.contains(forbidden));
     }

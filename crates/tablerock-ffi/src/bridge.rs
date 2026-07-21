@@ -354,6 +354,7 @@ struct BridgeInner {
     persistence: Option<PersistenceActor>,
     catalog_nodes: BTreeMap<(SessionId, CatalogNodeId), CatalogNode>,
     copy_identities: BTreeMap<tablerock_core::ResultId, CopyIdentity>,
+    support_bundle: SupportBundle,
 }
 
 #[derive(Clone)]
@@ -774,8 +775,13 @@ impl TableRockBridge {
                     "native support path must be absolute",
                 ));
             }
-            let payload =
-                SupportBundle::new(SupportPlatform::current()).render(env!("CARGO_PKG_VERSION"));
+            self.ensure_runtime_inner()?;
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let payload = inner.support_bundle.render(env!("CARGO_PKG_VERSION"));
             write_atomic(Path::new(&path), payload.as_bytes()).map_err(|error| {
                 BridgeError::rejected(
                     "support-file",
@@ -4398,6 +4404,7 @@ impl BridgeInner {
             persistence: None,
             catalog_nodes: BTreeMap::new(),
             copy_identities: BTreeMap::new(),
+            support_bundle: SupportBundle::new(SupportPlatform::current()),
         })
     }
 
@@ -4479,6 +4486,13 @@ impl BridgeInner {
                 Ok(false)
             }
             EngineServiceUpdate::Terminal(outcome) => {
+                if !matches!(outcome, OperationOutcome::Completed)
+                    && let Some(identity) = self.operation_results.get(&operation_id)
+                {
+                    let _ = self
+                        .support_bundle
+                        .push_operation_outcome(identity.engine(), outcome);
+                }
                 self.operation_results.remove(&operation_id);
                 self.operation_copy_identity.remove(&operation_id);
                 let history_failed =

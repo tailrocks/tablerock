@@ -1,7 +1,7 @@
 use tablerock_core::{
-    Engine, FailureClass, MAX_SUPPORT_DIAGNOSTICS, OperationSafety, OutcomeCertainty,
-    SafeDiagnostic, Severity, SupportArchitecture, SupportBundle, SupportBundleError,
-    SupportOperatingSystem, SupportPlatform,
+    Engine, FailureClass, MAX_SUPPORT_DIAGNOSTICS, OperationOutcome, OperationSafety,
+    OutcomeCertainty, SafeDiagnostic, Severity, SupportArchitecture, SupportBundle,
+    SupportBundleError, SupportOperatingSystem, SupportPlatform,
 };
 
 fn safe_failure() -> SafeDiagnostic {
@@ -15,6 +15,18 @@ fn safe_failure() -> SafeDiagnostic {
 }
 
 #[test]
+fn bundle_retains_only_closed_runtime_outcomes() {
+    let mut bundle = SupportBundle::new(SupportPlatform::current());
+    bundle
+        .push_operation_outcome(Engine::Redis, OperationOutcome::Disconnected)
+        .unwrap();
+
+    let rendered = bundle.render("0.1.0");
+    assert!(rendered.contains("operation_outcomes.count=1\n"));
+    assert!(rendered.contains("operation_outcome.0=Redis|Disconnected\n"));
+}
+
+#[test]
 fn bundle_projects_only_closed_safe_diagnostic_fields() {
     let mut bundle = SupportBundle::new(SupportPlatform::new(
         SupportOperatingSystem::MacOs,
@@ -23,7 +35,7 @@ fn bundle_projects_only_closed_safe_diagnostic_fields() {
     bundle.push(&safe_failure()).unwrap();
 
     let rendered = bundle.render("0.1.0");
-    assert!(rendered.contains("schema=1\n"));
+    assert!(rendered.contains("schema=2\n"));
     assert!(rendered.contains("platform.os=macos\n"));
     assert!(rendered.contains("diagnostic.0=PostgreSql|Authentication|None|Error"));
     for forbidden in ["password", "SELECT", "/Users/", "localhost", "cell-value"] {

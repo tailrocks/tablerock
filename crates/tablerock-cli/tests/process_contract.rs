@@ -53,7 +53,7 @@ fn support_bundle_exits_before_terminal_and_emits_only_safe_schema() {
 
     assert!(output.status.success());
     let bundle = String::from_utf8(output.stdout).expect("UTF-8 support bundle");
-    assert!(bundle.starts_with("schema=1\nclient.version="));
+    assert!(bundle.starts_with("schema=2\nclient.version="));
     assert!(bundle.contains("diagnostics.count=0\n"));
     for forbidden in ["admin", "secret", "private-host", "database"] {
         assert!(!bundle.contains(forbidden));

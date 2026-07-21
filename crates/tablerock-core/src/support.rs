@@ -1,11 +1,11 @@
 use std::{error::Error, fmt};
 
 use crate::{
-    DiagnosticPosition, Engine, FailureClass, OperationSafety, OperatorAction, OutcomeCertainty,
-    RetryAdvice, SafeCode, SafeDiagnostic, Severity,
+    DiagnosticPosition, Engine, FailureClass, OperationOutcome, OperationSafety, OperatorAction,
+    OutcomeCertainty, RetryAdvice, SafeCode, SafeDiagnostic, Severity,
 };
 
-pub const SUPPORT_BUNDLE_SCHEMA_VERSION: u16 = 1;
+pub const SUPPORT_BUNDLE_SCHEMA_VERSION: u16 = 2;
 pub const MAX_SUPPORT_DIAGNOSTICS: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -107,6 +107,8 @@ pub struct SupportBundle {
     platform: SupportPlatform,
     diagnostics: Vec<SupportDiagnostic>,
     omitted_diagnostics: u64,
+    operation_outcomes: Vec<(Engine, OperationOutcome)>,
+    omitted_operation_outcomes: u64,
 }
 
 impl SupportBundle {
@@ -116,7 +118,23 @@ impl SupportBundle {
             platform,
             diagnostics: Vec::new(),
             omitted_diagnostics: 0,
+            operation_outcomes: Vec::new(),
+            omitted_operation_outcomes: 0,
         }
+    }
+
+    /// Retains a closed runtime outcome without server text, SQL, or values.
+    pub fn push_operation_outcome(
+        &mut self,
+        engine: Engine,
+        outcome: OperationOutcome,
+    ) -> Result<(), SupportBundleError> {
+        if self.operation_outcomes.len() == MAX_SUPPORT_DIAGNOSTICS {
+            self.omitted_operation_outcomes = self.omitted_operation_outcomes.saturating_add(1);
+            return Err(SupportBundleError::DiagnosticLimit);
+        }
+        self.operation_outcomes.push((engine, outcome));
+        Ok(())
     }
 
     pub fn push(&mut self, diagnostic: &SafeDiagnostic) -> Result<(), SupportBundleError> {
@@ -146,13 +164,15 @@ impl SupportBundle {
     #[must_use]
     pub fn render(&self, client_version: &str) -> String {
         let mut output = format!(
-            "schema={}\nclient.version={}\nplatform.os={}\nplatform.arch={}\ndiagnostics.count={}\ndiagnostics.omitted={}\n",
+            "schema={}\nclient.version={}\nplatform.os={}\nplatform.arch={}\ndiagnostics.count={}\ndiagnostics.omitted={}\noperation_outcomes.count={}\noperation_outcomes.omitted={}\n",
             SUPPORT_BUNDLE_SCHEMA_VERSION,
             safe_version(client_version),
             os_label(self.platform.operating_system),
             architecture_label(self.platform.architecture),
             self.diagnostics.len(),
             self.omitted_diagnostics,
+            self.operation_outcomes.len(),
+            self.omitted_operation_outcomes,
         );
         for (index, diagnostic) in self.diagnostics.iter().enumerate() {
             use std::fmt::Write as _;
@@ -169,6 +189,10 @@ impl SupportBundle {
                 diagnostic.safety,
                 diagnostic.retry,
             );
+        }
+        for (index, (engine, outcome)) in self.operation_outcomes.iter().enumerate() {
+            use std::fmt::Write as _;
+            let _ = writeln!(output, "operation_outcome.{index}={engine:?}|{outcome:?}");
         }
         output
     }
