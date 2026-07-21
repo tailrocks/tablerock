@@ -23,6 +23,7 @@ use tablerock_engine::{
     RedisSubscriptionKind, RedisSubscriptionOptions, RedisTlsMaterial, RedisTlsMode,
     RedisTtlApplication,
 };
+use tokio::task::{JoinHandle, JoinSet};
 
 static CONTAINER_HOSTS: OnceLock<Mutex<HashMap<u16, String>>> = OnceLock::new();
 
@@ -56,6 +57,61 @@ macro_rules! record_host {
     ($container:expr, $port:expr) => {
         record_container_host($port, $container.get_host().await.unwrap().to_string())
     };
+}
+
+struct LocalTlsEndpoint {
+    port: u16,
+    forward: Option<JoinHandle<()>>,
+}
+
+impl Drop for LocalTlsEndpoint {
+    fn drop(&mut self) {
+        if let Some(forward) = &self.forward {
+            forward.abort();
+        }
+    }
+}
+
+async fn local_tls_endpoint(
+    container: &ContainerAsync<GenericImage>,
+    remote_port: u16,
+    requested_local_port: Option<u16>,
+) -> LocalTlsEndpoint {
+    let host = container.get_host().await.unwrap().to_string();
+    if matches!(host.as_str(), "127.0.0.1" | "localhost") {
+        return LocalTlsEndpoint {
+            port: remote_port,
+            forward: None,
+        };
+    }
+
+    let listener =
+        tokio::net::TcpListener::bind(("127.0.0.1", requested_local_port.unwrap_or_default()))
+            .await
+            .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let target_host = host.trim_matches(['[', ']']).to_owned();
+    let forward = tokio::spawn(async move {
+        let mut connections = JoinSet::new();
+        loop {
+            tokio::select! {
+                accepted = listener.accept() => {
+                    let Ok((mut inbound, _)) = accepted else { break; };
+                    let host = target_host.clone();
+                    connections.spawn(async move {
+                        if let Ok(mut outbound) = tokio::net::TcpStream::connect((host.as_str(), remote_port)).await {
+                            let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
+                        }
+                    });
+                }
+                _ = connections.join_next(), if !connections.is_empty() => {}
+            }
+        }
+    });
+    LocalTlsEndpoint {
+        port,
+        forward: Some(forward),
+    }
 }
 
 struct RedisTlsFixture {
@@ -492,6 +548,8 @@ async fn verify_tls_subscription_restart(
     let port = listener.local_addr().unwrap().port();
     drop(listener);
     let container = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
+    let endpoint = local_tls_endpoint(&container, port, Some(port)).await;
+    let port = endpoint.port;
     let policy = RedisRuntimePolicy::new(
         Duration::from_secs(1),
         Duration::from_secs(1),
@@ -644,6 +702,8 @@ async fn verify_rejected_tls_subscription_replacement(
     let port = listener.local_addr().unwrap().port();
     drop(listener);
     let container = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
+    let endpoint = local_tls_endpoint(&container, port, Some(port)).await;
+    let port = endpoint.port;
     let policy = RedisRuntimePolicy::new(
         Duration::from_secs(1),
         Duration::from_secs(1),
@@ -804,7 +864,8 @@ async fn verify_tls_auth_version(
     let fixture = RedisTlsFixture::generate();
     let container = start_tls_redis(tag, &fixture, require_client_identity, None).await;
     let port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
-    record_host!(container, port);
+    let endpoint = local_tls_endpoint(&container, port, None).await;
+    let port = endpoint.port;
     let config = RedisConnectConfig::new(
         container_text(port),
         port,
