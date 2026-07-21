@@ -10,7 +10,7 @@
 
 ## Status
 
-- **IN PROGRESS (2026-07-21): native connection workflows (evidence 512–518), history/retention (519–520), saved queries (521), SQL files (522), typed intent bridge (523), query tabs (524), read-only preview/pinned object tabs (525), multi-window restoration (526), environment/safety projection (527), typed value inspection (528), shared Rust/native multi-format copy (529), native atomic loaded-result export (530), shared bounded CSV import foundation (531), native reviewed CSV import (532), PostgreSQL/ClickHouse structure (533–534), bounded Redis key catalog projection (535), native Redis key object views (536), native Redis sampled overview (537), SwiftPM bridge regression foundation/boundary expansion (538–539), deterministic cross-engine PageV1 fixtures (540), typed native test-root isolation (541), stable automation identifiers (543), native clock/identity ports (544), isolated file-panel/pasteboard ports (546), native Keychain resolution (549), live backend protocol isolation (552), scripted backend failure seams (553), hosted XCTest/XCFramework/app checkpoint gate (562), and application-owned immutable backend DTOs (563) landed; testing-system checkpoint 12 remains partial pending canonical model behavior/deallocation tests, checkpoint 13 is complete, checkpoint 16 has its unsigned structural foundation, and checkpoints 14–15 remain unimplemented; broader import types/engines, full streaming export, advanced object state, and remaining screens continue**
+- **IN PROGRESS (2026-07-21): native connection workflows (evidence 512–518), history/retention (519–520), saved queries (521), SQL files (522), typed intent bridge (523), query tabs (524), read-only preview/pinned object tabs (525), multi-window restoration (526), environment/safety projection (527), typed value inspection (528), shared Rust/native multi-format copy (529), native atomic loaded-result export (530), shared bounded CSV import foundation (531), native reviewed CSV import (532), PostgreSQL/ClickHouse structure (533–534), bounded Redis key catalog projection (535), native Redis key object views (536), native Redis sampled overview (537), SwiftPM bridge regression foundation/boundary expansion (538–539), deterministic cross-engine PageV1 fixtures (540), typed native test-root isolation (541), stable automation identifiers (543), native clock/identity ports (544), isolated file-panel/pasteboard ports (546), native Keychain resolution (549), live backend protocol isolation (552), scripted backend failure seams (553), hosted XCTest/XCFramework/app checkpoint gate (562), application-owned immutable backend DTOs (563), and canonical hosted Xcode checkpoint/archive proof (564) landed; testing-system checkpoints 12–13 are complete, checkpoint 14's deterministic checkpoint plan is complete while its full nightly matrix remains open, checkpoint 15 has an exact unsigned shipping shape but signed clean-machine proof remains externally blocked, and checkpoint 16 has checkpoint artifacts; broader import types/engines, full streaming export, advanced object state, and remaining screens continue**
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED
@@ -98,7 +98,7 @@ the durable suites below become authoritative.
       containment, malformed IDs, unreachable-server redaction, calls after
       shutdown, repeated create/free, and bounded shutdown with active work.
 
-12. **Injectable native presentation boundary — partial (evidence 541, 544, 546, 549, 552–553, 563)**
+12. **Injectable native presentation boundary — complete (evidence 541, 544, 546, 549, 552–553, 563–564)**
     - Define an application-owned `WorkbenchBackend: Sendable` and
       application-owned immutable DTOs. `LiveWorkbenchBackend` is the sole
       generated-UniFFI adapter; `BridgeModel` depends only on the protocol.
@@ -126,7 +126,7 @@ the durable suites below become authoritative.
       XCUITest becomes the behavioral authority for actual clicks, typing,
       focus, window lifecycle, menus, and VoiceOver-visible state.
 
-14. **Canonical Xcode application and test plans**
+14. **Canonical Xcode application and test plans — deterministic checkpoint complete; nightly partial (evidence 564)**
     - Add one Xcode application project/scheme consuming the importable Swift
       targets and an XCUITest target. `PullRequest.xctestplan` is named
       `Checkpoint.xctestplan` under trunk-only delivery; also add Nightly and

@@ -27,10 +27,12 @@ Strict Swift 6 Release compilation, app bundling, signing, launch, and runtime
 accessibility verification pass locally. Hosted XCTest and universal artifact
 verification follow through `.github/workflows/native.yml` after this commit.
 
-## Remaining checkpoint 12 work
+## Checkpoint 12 closure
 
-- canonical model behavior tests for scripted scenarios, close negotiation,
-  restoration corruption, multi-window ownership, and active-work deallocation.
+Canonical application-model tests now cover scripted scenario selection,
+close negotiation, restoration corruption, multi-window ownership, active-work
+deallocation, and semantic cancellation publication. The hosted Xcode proof is
+recorded in [evidence 564](564-native-xcode-checkpoint.md).
 
 This is dependency inversion, not visual design. TablePro influenced no
 expression. Copied source, tests, identifiers, assets, product text,
