@@ -32,6 +32,32 @@ The SwiftPM regression target links the real generated UniFFI bridge. It owns
 named lifecycle/redaction tests and hostile PageV1 decoder boundaries; app UI
 automation and live database semantics remain separate testing layers.
 
+## Canonical Xcode application
+
+The shipping application project is `App/TableRock.xcodeproj`, generated from
+`App/project.yml` with XcodeGen 2.46.0. Regeneration must be clean:
+
+```bash
+xcodegen generate --spec native/App/project.yml
+git diff --exit-code -- native/App/TableRock.xcodeproj native/App/TableRock-Info.plist
+```
+
+Full Xcode 26.6 runs the shared `TableRock` scheme and committed test plans:
+
+```bash
+xcodebuild test -project native/App/TableRock.xcodeproj -scheme TableRock \
+  -testPlan Checkpoint -destination 'platform=macOS'
+xcodebuild test -project native/App/TableRock.xcodeproj -scheme TableRock \
+  -testPlan Nightly -destination 'platform=macOS'
+```
+
+`Checkpoint` is the every-push deterministic model, bridge, app, and UI gate.
+`Nightly` adds the scheduled full-plan and performance artifact gate. `Release`
+is the signed-release plan. GitHub Actions retains the `.xcresult`, logs,
+crash reports, universal XCFramework, and canonical Release archive. Rust
+real-server semantics remain in the real-server CI matrix; scripted UI tests
+do not make database claims.
+
 `TableRockFeature` owns typed startup configuration, application paths, and
 presentation clock/identity ports.
 Production uses `Application Support/TableRock`; explicit test launches require
@@ -42,15 +68,24 @@ implementations; deterministic tests inject fixed time and ordered identities.
 File selection and pasteboard writes likewise use application-owned ports;
 tests default to unavailable capabilities unless they explicitly inject one.
 
-## XCFramework + notarization (operator)
+## XCFramework + Developer ID release (operator)
 
 Requires **full Xcode.app** (not only CLT) and a **Developer ID Application**
 identity + notary credentials:
 
 ```bash
 ./scripts/build-xcframework.sh
-# then sign, notarytool submit --wait, stapler staple — see plan 019
+# structural development app
+./scripts/build-native-app.sh
 ```
+
+The manual `Native Developer ID Release` workflow is the only signed shipping
+path. It builds the universal static XCFramework, archives the canonical Xcode
+Release app, imports an ephemeral Developer ID identity, enables hardened
+runtime, submits with `notarytool`, staples, validates Gatekeeper, packages the
+stapled app, and records its SHA-256. It fails closed when any signing/notary
+secret is absent. Never use the development dylib/SwiftPM/direct-`swiftc` path
+for a release claim.
 
 Plan 020's locally runnable native vertical slice is complete. Plan 019's
 Developer ID/notarization distribution gate remains blocked and is inherited by
