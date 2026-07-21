@@ -24,9 +24,11 @@
 		66313AB511DC01EA4B5CF447 /* BridgeModelScenarioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B603D771219E813A92103B1 /* BridgeModelScenarioTests.swift */; };
 		686762278D02E5B39276A5D8 /* PageV1FixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74B974D7ED34ED229C8EECD1 /* PageV1FixtureTests.swift */; };
 		6E5877AD1815F7522CD91548 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E25AD0385D015297CBBA9D78 /* CoreFoundation.framework */; };
+		74D336D329848E62EFBF5F33 /* StructuredValueTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2919168F670129A9DE843433 /* StructuredValueTree.swift */; };
 		8709E0F3395FEEC0940FC670 /* TableRockBridge.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; };
 		88C5E2A0B166D9E394831AEA /* tablerock_ffiFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */; };
 		96A1EC7298B3EF2077A15BE5 /* TableRockFeature.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A40F73637B5A9903607565E6 /* StructuredValueTreeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13C717EA88A43EE4A3BD7F62 /* StructuredValueTreeTests.swift */; };
 		AE5AFDABD4F52A3E036A6A95 /* TableRockAppUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522462239F32BD6A1FA81F2B /* TableRockAppUITests.swift */; };
 		B1E398B44C08B80C28D66530 /* AppConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C51BE56FE33E3F86FAD4A4 /* AppConfigurationTests.swift */; };
 		B5271F793DBA059B179658C0 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A94F4528ED04C3B8016BDA /* AppDependencies.swift */; };
@@ -130,7 +132,9 @@
 
 /* Begin PBXFileReference section */
 		112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = tablerock_ffiFFI.xcframework; path = ../../target/xcframework/tablerock_ffiFFI.xcframework; sourceTree = "<group>"; };
+		13C717EA88A43EE4A3BD7F62 /* StructuredValueTreeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredValueTreeTests.swift; sourceTree = "<group>"; };
 		170A6205E293BBDD55598B6C /* AppDependenciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependenciesTests.swift; sourceTree = "<group>"; };
+		2919168F670129A9DE843433 /* StructuredValueTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredValueTree.swift; sourceTree = "<group>"; };
 		389BF5258A746A4D8C3BFA05 /* TableRock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TableRock.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3A34ED7C245BB8AF855C9333 /* BridgeLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeLifecycleTests.swift; sourceTree = "<group>"; };
 		3B603D771219E813A92103B1 /* BridgeModelScenarioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeModelScenarioTests.swift; sourceTree = "<group>"; };
@@ -270,6 +274,7 @@
 			children = (
 				A2C51BE56FE33E3F86FAD4A4 /* AppConfigurationTests.swift */,
 				170A6205E293BBDD55598B6C /* AppDependenciesTests.swift */,
+				13C717EA88A43EE4A3BD7F62 /* StructuredValueTreeTests.swift */,
 			);
 			path = TableRockFeatureTests;
 			sourceTree = "<group>";
@@ -293,6 +298,7 @@
 			children = (
 				7056B74025E206D1A652A30B /* AppConfiguration.swift */,
 				F5A94F4528ED04C3B8016BDA /* AppDependencies.swift */,
+				2919168F670129A9DE843433 /* StructuredValueTree.swift */,
 				DCD18301D71E2140043B680F /* WorkbenchTypes.swift */,
 			);
 			path = TableRockFeature;
@@ -596,6 +602,7 @@
 			files = (
 				08418AD3F194E697CBAEF800 /* AppConfiguration.swift in Sources */,
 				B5271F793DBA059B179658C0 /* AppDependencies.swift in Sources */,
+				74D336D329848E62EFBF5F33 /* StructuredValueTree.swift in Sources */,
 				F3E6C5EB63188CF0940F0330 /* WorkbenchTypes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -633,6 +640,7 @@
 			files = (
 				B1E398B44C08B80C28D66530 /* AppConfigurationTests.swift in Sources */,
 				E0946F568BF416413F94CAF8 /* AppDependenciesTests.swift in Sources */,
+				A40F73637B5A9903607565E6 /* StructuredValueTreeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

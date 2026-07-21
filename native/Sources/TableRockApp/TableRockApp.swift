@@ -1047,14 +1047,16 @@ private func runNativeValueInspectorAudit() {
   let labels = descendants(of: root)
     .compactMap { ($0 as? NSTextField)?.stringValue }
     .joined(separator: "|")
+  let treeRows = try? StructuredValueTree.decode(Data(#"{"ok":true}"#.utf8))
   guard labels.contains(#"{"ok":true}"#),
-    labels.contains("7b 22 6f 6b 22 3a 74 72 75 65 7d")
+    labels.contains("7b 22 6f 6b 22 3a 74 72 75 65 7d"),
+    treeRows?.map(\.label) == ["root", "ok"], treeRows?.map(\.value) == ["Object (1)", "true"]
   else {
     writePerformanceMetric("VALUE_INSPECTOR_PROOF_FAILED labels=\(labels)")
     return
   }
   writePerformanceMetric(
-    "VALUE_INSPECTOR_PROOF_PASSED metadata=column_type_kind_nullability truncation=true text=true hex=true appkit_selection=true"
+    "VALUE_INSPECTOR_PROOF_PASSED metadata=column_type_kind_nullability truncation=true text=true hex=true json_tree_model=true appkit_selection=true"
   )
 }
 
@@ -4979,6 +4981,11 @@ private struct NativeValueInspector: View {
     cell.bytes.map { String(format: "%02x", $0) }.joined(separator: " ")
   }
 
+  private var structuredRows: [StructuredValueTreeRow]? {
+    guard cell.kindLabel == "Structured" else { return nil }
+    return try? StructuredValueTree.decode(cell.bytes)
+  }
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 10) {
@@ -5013,11 +5020,33 @@ private struct NativeValueInspector: View {
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        if let structuredRows {
+          GroupBox("JSON Tree") {
+            VStack(alignment: .leading, spacing: 4) {
+              ForEach(structuredRows) { row in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                  Text(row.label).fontWeight(.medium)
+                  if let value = row.value {
+                    Text(value).foregroundStyle(.secondary)
+                  }
+                }
+                .font(.system(.caption, design: .monospaced))
+                .padding(.leading, CGFloat(row.depth) * 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("value.inspector.tree.\(row.id)")
+              }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .accessibilityIdentifier("value.inspector.tree")
+        }
       }
       .padding(10)
     }
     .background(Color(nsColor: .textBackgroundColor))
     .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("value.inspector")
     .accessibilityLabel("Value inspector for \(column.name)")
   }
 }

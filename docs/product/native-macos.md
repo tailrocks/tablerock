@@ -79,6 +79,12 @@ review → sheet; completion → native popup; password prompt → secure field;
 export → `NSSavePanel`. The [connections](connections.md) screen adds the
 native-only Keychain password source.
 
+The trailing value inspector shows column/type/nullability/truncation facts,
+display text, and raw bytes as hexadecimal. Structured JSON values also expose
+a deterministic key-sorted tree. Tree decoding fails closed above 64 KiB,
+1,024 nodes, or 64 levels; malformed/non-JSON structured values keep the text
+and hex views without presenting a false tree.
+
 ## Platform evidence gates
 
 The native design is accepted only with the phase 12-14 gates: strict

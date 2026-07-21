@@ -88,6 +88,18 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testStructuredValueInspectorExposesJSONTree() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_VALUE_INSPECTOR": "1"])
+
+    XCTAssertTrue(
+      app.descendants(matching: .any)["value.inspector"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["value.inspector.tree"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
   private func launch(
     scenario: String,
     environment: [String: String] = [:]

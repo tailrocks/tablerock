@@ -443,6 +443,7 @@ How to read an evidence document:
 - 566 — [Safe support-bundle contract](delivery/566-safe-support-bundle-contract.md)
 - 567 — [Runtime support-outcome retention](delivery/567-runtime-support-outcome-retention.md)
 - 568 — [Engine safe-diagnostic propagation](delivery/568-engine-safe-diagnostic-propagation.md)
+- 569 — [Native bounded JSON tree](delivery/569-native-bounded-json-tree.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

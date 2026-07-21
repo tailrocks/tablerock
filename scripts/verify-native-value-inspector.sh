@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
 DECODER="$REPO_ROOT/native/Sources/TableRockBridge/PageV1.swift"
+TREE="$REPO_ROOT/native/Sources/TableRockFeature/StructuredValueTree.swift"
 APP="$REPO_ROOT/native/dist/TableRock.app"
 EXECUTABLE="$APP/Contents/MacOS/TableRock"
 APP_PID=""
@@ -30,6 +31,18 @@ do
 done
 
 for pattern in \
+  'maxInputBytes: Int = 64 \* 1024' \
+  'maxNodes: Int = 1_024' \
+  'maxDepth: Int = 64' \
+  'object.keys.sorted()'
+do
+  rg -q "$pattern" "$TREE" || {
+    echo "error: missing bounded JSON tree contract: $pattern" >&2
+    exit 1
+  }
+done
+
+for pattern in \
   'max\(tableView\.clickedColumn, 0\)' \
   'func tableViewSelectionDidChange' \
   'Text\("Value Inspector"\)' \
@@ -37,6 +50,8 @@ for pattern in \
   'LabeledContent\("Value kind"' \
   'GroupBox\("Text"\)' \
   'GroupBox\("Hex"\)' \
+  'GroupBox\("JSON Tree"\)' \
+  'StructuredValueTree.decode\(cell.bytes\)' \
   'cell\.isTruncated'
 do
   rg -q "$pattern" "$SOURCE" || {
