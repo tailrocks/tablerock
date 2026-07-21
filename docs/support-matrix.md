@@ -33,7 +33,7 @@ Mac App Store product.
 
 ## Local persistence
 
-- Current schema: 17.
+- Current schema: 18.
 - Proven: fresh initialization, ordered migration ledger, interrupted-migration
   rollback, crash recovery, group backfill, and rejection of future or gapped
   ledgers.

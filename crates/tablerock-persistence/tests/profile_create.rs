@@ -333,7 +333,7 @@ fn saved_token_creates_complete_rows_atomically_for_every_engine() {
     });
 
     let reopened = PersistenceActor::open(&path).unwrap();
-    assert_eq!(reopened.health().unwrap().schema_version, 17);
+    assert_eq!(reopened.health().unwrap().schema_version, 18);
     for (index, engine) in [Engine::PostgreSql, Engine::ClickHouse, Engine::Redis]
         .into_iter()
         .enumerate()
@@ -391,7 +391,7 @@ fn malformed_saved_value_fails_closed_and_rolls_back_read_transaction() {
     assert_eq!(error, PersistenceError::ProfileDecode);
     assert_eq!(format!("{error:?}"), "ProfileDecode");
     assert_eq!(error.to_string(), "local persistence operation failed");
-    assert_eq!(actor.health().unwrap().schema_version, 17);
+    assert_eq!(actor.health().unwrap().schema_version, 18);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }
@@ -436,7 +436,7 @@ fn malformed_literal_endpoint_fails_closed_in_summary_projection() {
             .unwrap_err(),
         PersistenceError::ProfileDecode
     );
-    assert_eq!(actor.health().unwrap().schema_version, 17);
+    assert_eq!(actor.health().unwrap().schema_version, 18);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }

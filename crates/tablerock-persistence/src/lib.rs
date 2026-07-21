@@ -87,6 +87,10 @@ const MIGRATIONS: &[(u32, &str)] = &[
         17,
         include_str!("../migrations/0017-native-window-session-intent.sql"),
     ),
+    (
+        18,
+        include_str!("../migrations/0018-retire-support-facts.sql"),
+    ),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

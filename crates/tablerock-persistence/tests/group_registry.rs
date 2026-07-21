@@ -88,7 +88,7 @@ fn migration_backfills_groups_from_existing_profiles() {
     });
 
     let reopened = PersistenceActor::open(&path).unwrap();
-    assert_eq!(reopened.health().unwrap().schema_version, 17);
+    assert_eq!(reopened.health().unwrap().schema_version, 18);
     assert_eq!(reopened.list_groups().unwrap(), ["Legacy"]);
     assert!(!reopened.list_group_settings().unwrap()[0].alphabetical);
     reopened.set_group_alphabetical("Legacy", true).unwrap();

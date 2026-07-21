@@ -13,3 +13,4 @@ migration; add the next zero-padded SQL file and matching explanation.
 | 0006 | [Profile group list index](migration-docs/0006-profile-group-list-index.md) |
 | 0007 | [Environment tag](migration-docs/0007-environment-tag.md) |
 | 0017 | [Native window session intent](migration-docs/0017-native-window-session-intent.md) |
+| 0018 | [Retire support facts](migration-docs/0018-retire-support-facts.md) |

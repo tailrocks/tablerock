@@ -47,7 +47,7 @@ fn actor_opens_migrates_checks_and_reopens_one_local_file() {
     let _ = fs::remove_file(&path);
     let actor = PersistenceActor::open(&path).unwrap();
     let health = actor.health().unwrap();
-    assert_eq!(health.schema_version, 17);
+    assert_eq!(health.schema_version, 18);
     assert!(health.foreign_keys_enabled);
     assert!(health.integrity_ok);
     actor.shutdown().unwrap();
@@ -65,6 +65,63 @@ fn actor_opens_migrates_checks_and_reopens_one_local_file() {
     restored.shutdown().unwrap();
     fs::remove_file(path).unwrap();
     fs::remove_file(backup).unwrap();
+}
+
+#[test]
+fn schema_18_retires_arbitrary_support_fact_storage() {
+    let path = temporary_database().with_extension("retire-support.db");
+    let _ = fs::remove_file(&path);
+    let actor = PersistenceActor::open(&path).unwrap();
+    actor.shutdown().unwrap();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let database = turso::Builder::new_local(path.to_str().unwrap())
+            .build()
+            .await
+            .unwrap();
+        let connection = database.connect().unwrap();
+        connection
+            .execute_batch(
+                "DELETE FROM schema_migrations WHERE version = 18;\
+                 CREATE TABLE support_facts(\
+                   fact_key TEXT PRIMARY KEY NOT NULL,\
+                   fact_value TEXT NOT NULL,\
+                   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\
+                 );\
+                 INSERT INTO support_facts(fact_key, fact_value)\
+                   VALUES ('unsafe', 'password=secret');",
+            )
+            .await
+            .unwrap();
+    });
+
+    let upgraded = PersistenceActor::open(&path).unwrap();
+    assert_eq!(upgraded.health().unwrap().schema_version, 18);
+    upgraded.shutdown().unwrap();
+    runtime.block_on(async {
+        let database = turso::Builder::new_local(path.to_str().unwrap())
+            .build()
+            .await
+            .unwrap();
+        let connection = database.connect().unwrap();
+        let mut rows = connection
+            .query(
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type = 'table' AND name = 'support_facts'",
+                (),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            rows.next().await.unwrap().unwrap().get::<u32>(0).unwrap(),
+            0
+        );
+    });
+    fs::remove_file(path).unwrap();
 }
 
 #[test]
@@ -156,7 +213,7 @@ fn restart_rolls_back_an_interrupted_transactional_migration() {
     });
 
     let actor = PersistenceActor::open(&path).unwrap();
-    assert_eq!(actor.health().unwrap().schema_version, 17);
+    assert_eq!(actor.health().unwrap().schema_version, 18);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }

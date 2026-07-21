@@ -448,6 +448,7 @@ How to read an evidence document:
 - 571 — [Bounded bridge shutdown](delivery/571-bounded-bridge-shutdown.md)
 - 572 — [Native IME composition](delivery/572-native-ime-composition.md)
 - 573 — [README support-truth audit](delivery/573-readme-support-truth-audit.md)
+- 574 — [Retire unsafe support facts](delivery/574-retire-unsafe-support-facts.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

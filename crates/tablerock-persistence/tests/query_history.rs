@@ -159,7 +159,7 @@ fn migration_16_defaults_existing_store_to_full_retention() {
     });
 
     let actor = PersistenceActor::open(&db).unwrap();
-    assert_eq!(actor.health().unwrap().schema_version, 17);
+    assert_eq!(actor.health().unwrap().schema_version, 18);
     assert_eq!(actor.history_retention().unwrap(), HistoryRetention::Full);
     actor.shutdown().unwrap();
     let _ = fs::remove_file(&db);
