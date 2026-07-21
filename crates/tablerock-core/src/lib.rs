@@ -24,6 +24,7 @@ mod service;
 mod sql_analysis;
 mod sql_format;
 mod startup_action;
+mod support;
 mod value;
 
 pub use catalog::{
@@ -118,6 +119,10 @@ pub use sql_format::format_sql;
 pub use startup_action::{
     MAX_STARTUP_ACTIONS, MAX_STARTUP_STATEMENT_BYTES, StartupAction, StartupActionError,
     StartupActionOutcome, StartupActionSet, StartupRunReport, StartupSafetyClass,
+};
+pub use support::{
+    MAX_SUPPORT_DIAGNOSTICS, SUPPORT_BUNDLE_SCHEMA_VERSION, SupportArchitecture, SupportBundle,
+    SupportBundleError, SupportDiagnostic, SupportOperatingSystem, SupportPlatform,
 };
 pub use value::{
     Availability, BoundedBytes, BoundedBytesError, BoundedText, BoundedTextError, ByteLimit,

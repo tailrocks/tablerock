@@ -38,6 +38,30 @@ fn version_exits_before_terminal_initialization() {
 }
 
 #[test]
+fn support_bundle_exits_before_terminal_and_emits_only_safe_schema() {
+    let output = Command::new(env!("CARGO_BIN_EXE_tablerock"))
+        .arg("--support-bundle")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env(
+            "DATABASE_URL",
+            "postgres://admin:secret@private-host/database",
+        )
+        .output()
+        .expect("print support bundle without a TTY");
+
+    assert!(output.status.success());
+    let bundle = String::from_utf8(output.stdout).expect("UTF-8 support bundle");
+    assert!(bundle.starts_with("schema=1\nclient.version="));
+    assert!(bundle.contains("diagnostics.count=0\n"));
+    for forbidden in ["admin", "secret", "private-host", "database"] {
+        assert!(!bundle.contains(forbidden));
+    }
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn post_mapping_root_port_uses_the_declared_hard_capacity() {
     let (sender, mut receiver) = root_message_channel();
     for _ in 0..ENGINE_EVENT_CAPACITY {

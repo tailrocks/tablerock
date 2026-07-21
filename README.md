@@ -37,6 +37,21 @@ review before public release.
 
 Details: [roadmap](ROADMAP.md) · [evidence index](docs/evidence/README.md)
 
+## Safe support facts
+
+Generate the local safe-schema support manifest without opening the terminal UI:
+
+```bash
+tablerock --support-bundle > tablerock-support.txt
+```
+
+The command reports only schema version, TableRock version, closed platform
+facts, and bounded projections of typed `SafeDiagnostic` values when supplied
+by a client. It never reads environment variables, logs, profiles, SQL,
+database values, paths, endpoints, hostnames, or credentials. Inspect the text
+before sharing it. Runtime diagnostic collection and native export UI remain
+visible Phase 15 work.
+
 ## Documentation
 
 Start with the [documentation map](docs/README.md): the
