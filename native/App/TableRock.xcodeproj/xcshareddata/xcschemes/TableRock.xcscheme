@@ -29,6 +29,20 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0C67E5685B0ACA4686E8553D"
+               BuildableName = "TableRockAppTests.xctest"
+               BlueprintName = "TableRockAppTests"
+               ReferencedContainer = "container:TableRock.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "DD7B0395A914CDDEFF02F41E"
                BuildableName = "TableRockAppUITests.xctest"
                BlueprintName = "TableRockAppUITests"

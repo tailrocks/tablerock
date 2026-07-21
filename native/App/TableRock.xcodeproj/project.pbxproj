@@ -13,6 +13,7 @@
 		18FAFF073C518B43C8DDCDCA /* redis-signed-v1.hex in Resources */ = {isa = PBXBuildFile; fileRef = A68E1D5D9FB490A8CE2982A6 /* redis-signed-v1.hex */; };
 		2CBE0A9311B7732E3BD27C71 /* TableRockFeature.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; };
 		2F1FCE7D6A6B5A253B35595D /* WorkbenchBridgeConversions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00166DA6649C44AF44DC6CA /* WorkbenchBridgeConversions.swift */; };
+		31FD459BCAEED3A74451B50A /* BridgeModelLifetimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9C1E6469A2ACF82CA630D65 /* BridgeModelLifetimeTests.swift */; };
 		3BC1F892B2D11CFFFFA88C3F /* PageV1BoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BD73D03EAEEE2DE99D6F35 /* PageV1BoundaryTests.swift */; };
 		493700EAADCCC3020615EA6F /* clickhouse-signed-v1.hex in Resources */ = {isa = PBXBuildFile; fileRef = 4458632FEA057E87DB3BB33C /* clickhouse-signed-v1.hex */; };
 		56BD819B9325DD917E347A02 /* TableRockFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 93A25D9D6064B1201B1883ED /* TableRockFFI.xcframework */; };
@@ -38,6 +39,13 @@
 
 /* Begin PBXContainerItemProxy section */
 		0BCB4113DB97D290BF0042BB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 3126D0F4FCF9FB695F7ABEC7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8B9AFC4F2E2F35FE54332C77;
+			remoteInfo = TableRock;
+		};
+		0DE7484AAF4382C203200705 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 3126D0F4FCF9FB695F7ABEC7 /* Project object */;
 			proxyType = 1;
@@ -115,6 +123,7 @@
 		170A6205E293BBDD55598B6C /* AppDependenciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependenciesTests.swift; sourceTree = "<group>"; };
 		389BF5258A746A4D8C3BFA05 /* TableRock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TableRock.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3A34ED7C245BB8AF855C9333 /* BridgeLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeLifecycleTests.swift; sourceTree = "<group>"; };
+		3BD1F73B0512F5C88FF9C25C /* TableRockAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4458632FEA057E87DB3BB33C /* clickhouse-signed-v1.hex */ = {isa = PBXFileReference; path = "clickhouse-signed-v1.hex"; sourceTree = "<group>"; };
 		474ED5368A7E1345CE774E9D /* postgres-signed-v1.hex */ = {isa = PBXFileReference; path = "postgres-signed-v1.hex"; sourceTree = "<group>"; };
 		522462239F32BD6A1FA81F2B /* TableRockAppUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableRockAppUITests.swift; sourceTree = "<group>"; };
@@ -135,6 +144,7 @@
 		F0BD73D03EAEEE2DE99D6F35 /* PageV1BoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1BoundaryTests.swift; sourceTree = "<group>"; };
 		F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TableRockFeature.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5A94F4528ED04C3B8016BDA /* AppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependencies.swift; sourceTree = "<group>"; };
+		F9C1E6469A2ACF82CA630D65 /* BridgeModelLifetimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeModelLifetimeTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -184,6 +194,14 @@
 			path = Fixtures;
 			sourceTree = "<group>";
 		};
+		39400463DF2EE7387E010C41 /* TableRockAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				F9C1E6469A2ACF82CA630D65 /* BridgeModelLifetimeTests.swift */,
+			);
+			path = TableRockAppTests;
+			sourceTree = "<group>";
+		};
 		39C25CC9D5E95F848276105E /* TableRockBridgeTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -198,6 +216,7 @@
 		3FB275ABC0A910717C1D928F /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				39400463DF2EE7387E010C41 /* TableRockAppTests */,
 				7472B70C4B42E6E03DF55A8D /* TableRockAppUITests */,
 				39C25CC9D5E95F848276105E /* TableRockBridgeTests */,
 				80DB598D9955F9EA1AB6378D /* TableRockFeatureTests */,
@@ -236,6 +255,7 @@
 			isa = PBXGroup;
 			children = (
 				389BF5258A746A4D8C3BFA05 /* TableRock.app */,
+				3BD1F73B0512F5C88FF9C25C /* TableRockAppTests.xctest */,
 				7F24F1E2FB76DDA5D0255906 /* TableRockAppUITests.xctest */,
 				A61EA4DB356144BD42272270 /* TableRockBridge.framework */,
 				5ED022E8C15474B31E1F1F6C /* TableRockBridgeTests.xctest */,
@@ -313,6 +333,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0C67E5685B0ACA4686E8553D /* TableRockAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 68C0B03C3334D0EEA6FC6366 /* Build configuration list for PBXNativeTarget "TableRockAppTests" */;
+			buildPhases = (
+				0CE2F2AE085BC89BB31D0A92 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A39B2EDC1D7850F5707D91B3 /* PBXTargetDependency */,
+			);
+			name = TableRockAppTests;
+			packageProductDependencies = (
+			);
+			productName = TableRockAppTests;
+			productReference = 3BD1F73B0512F5C88FF9C25C /* TableRockAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		4D0AA50F4B0CBA53F3870A53 /* TableRockFeature */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 466E4CF3A76B5E4A5C149A88 /* Build configuration list for PBXNativeTarget "TableRockFeature" */;
@@ -437,6 +475,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
+					0C67E5685B0ACA4686E8553D = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
 					4D0AA50F4B0CBA53F3870A53 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
@@ -484,6 +526,7 @@
 				D6F8C508A473DACB04BCEF23 /* TableRockFeatureTests */,
 				F11A8438480CB06F7F49776F /* TableRockBridgeTests */,
 				DD7B0395A914CDDEFF02F41E /* TableRockAppUITests */,
+				0C67E5685B0ACA4686E8553D /* TableRockAppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -502,6 +545,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0CE2F2AE085BC89BB31D0A92 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				31FD459BCAEED3A74451B50A /* BridgeModelLifetimeTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		33FB86FCEF8181BDB50E6DB1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -584,6 +635,11 @@
 			isa = PBXTargetDependency;
 			target = 8B9AFC4F2E2F35FE54332C77 /* TableRock */;
 			targetProxy = 0BCB4113DB97D290BF0042BB /* PBXContainerItemProxy */;
+		};
+		A39B2EDC1D7850F5707D91B3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8B9AFC4F2E2F35FE54332C77 /* TableRock */;
+			targetProxy = 0DE7484AAF4382C203200705 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -902,6 +958,36 @@
 			};
 			name = Release;
 		};
+		BD74EECCCB1143E31BA6B393 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TableRock.app/Contents/MacOS/TableRock";
+			};
+			name = Release;
+		};
+		C5F222A4EA410DB7AE39B034 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TableRock.app/Contents/MacOS/TableRock";
+			};
+			name = Debug;
+		};
 		D37DF846A710D21B7F49FC79 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -967,6 +1053,15 @@
 			buildConfigurations = (
 				4BF11F95794A0C160B0594D1 /* Debug */,
 				72DEF895AE3BF1F2B5B8D4E5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		68C0B03C3334D0EEA6FC6366 /* Build configuration list for PBXNativeTarget "TableRockAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C5F222A4EA410DB7AE39B034 /* Debug */,
+				BD74EECCCB1143E31BA6B393 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -84,6 +84,14 @@ targets:
     dependencies:
       - target: TableRock
 
+  TableRockAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ../Tests/TableRockAppTests
+    dependencies:
+      - target: TableRock
+
 schemes:
   TableRock:
     build:
@@ -91,6 +99,7 @@ schemes:
         TableRock: all
         TableRockFeatureTests: [test]
         TableRockBridgeTests: [test]
+        TableRockAppTests: [test]
         TableRockAppUITests: [test]
     run:
       config: Debug

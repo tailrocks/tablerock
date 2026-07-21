@@ -31,6 +31,13 @@
     {
       "target" : {
         "containerPath" : "container:TableRock.xcodeproj",
+        "identifier" : "0C67E5685B0ACA4686E8553D",
+        "name" : "TableRockAppTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:TableRock.xcodeproj",
         "identifier" : "DD7B0395A914CDDEFF02F41E",
         "name" : "TableRockAppUITests"
       }

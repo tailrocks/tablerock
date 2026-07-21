@@ -356,7 +356,7 @@ extension WorkbenchBackend {
   }
 }
 
-private actor ScriptedWorkbenchBackend: WorkbenchBackend {
+actor ScriptedWorkbenchBackend: WorkbenchBackend {
   let scenario: String
   private var cancelled = false
 
@@ -1793,7 +1793,7 @@ final class BridgeModel {
   private let dependencies: AppDependencies
   var sessionData: Data?
 
-  fileprivate init(
+  init(
     client: (any WorkbenchBackend)? = nil,
     startupError: String? = nil,
     windowId: UUID? = nil,
