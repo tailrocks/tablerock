@@ -130,6 +130,13 @@ jobs:
           test "$(lipo -archs target/xcframework/macos-universal/tablerock_ffiFFI.framework/tablerock_ffiFFI)" = "x86_64 arm64" \
             || test "$(lipo -archs target/xcframework/macos-universal/tablerock_ffiFFI.framework/tablerock_ffiFFI)" = "arm64 x86_64"
 
+      - name: Record canonical artifact metadata
+        run: |
+          ./scripts/record-native-artifact-metadata.sh \
+            artifacts/TableRock.xcarchive \
+            target/xcframework/tablerock_ffiFFI.xcframework \
+            artifacts/native-metadata
+
       - name: Archive structural artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -147,4 +154,5 @@ jobs:
             artifacts/xcodebuild-checkpoint.log
             artifacts/TableRock.xcarchive
             artifacts/xcodebuild-archive.log
+            artifacts/native-metadata
             ~/Library/Logs/DiagnosticReports/TableRock*.crash

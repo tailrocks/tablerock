@@ -101,6 +101,13 @@ jobs:
           test -s artifacts/native-performance/metrics.txt
           test -s artifacts/native-performance/scroll-toc.xml
 
+      - name: Record canonical artifact metadata
+        run: |
+          ./scripts/record-native-artifact-metadata.sh \
+            artifacts/TableRock.xcarchive \
+            target/xcframework/tablerock_ffiFFI.xcframework \
+            artifacts/native-metadata
+
       - name: Archive nightly evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -115,5 +122,6 @@ jobs:
             artifacts/xcodebuild-archive.log
             artifacts/native-performance
             artifacts/native-performance.log
+            artifacts/native-metadata
             ~/Library/Logs/DiagnosticReports/TableRock*.crash
             ~/Library/Developer/Xcode/DerivedData/**/Logs/Test/Attachments
