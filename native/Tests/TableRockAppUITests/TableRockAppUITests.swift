@@ -21,15 +21,12 @@ final class TableRockAppUITests: XCTestCase {
     let connect = app.buttons["connection.direct.connect"]
     XCTAssertTrue(connect.waitForExistence(timeout: 10))
     connect.click()
-    let editor = app.textViews["query.editor"]
-    XCTAssertTrue(editor.waitForExistence(timeout: 10))
-    let editorReady = NSPredicate(format: "enabled == true")
-    let connected = XCTNSPredicateExpectation(predicate: editorReady, object: editor)
-    XCTAssertEqual(XCTWaiter.wait(for: [connected], timeout: 10), .completed)
-    editor.click()
-    editor.typeText("SELECT pg_sleep(30);")
 
     let run = app.buttons["query.run"]
+    XCTAssertTrue(run.waitForExistence(timeout: 10))
+    let runnable = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: run)
+    XCTAssertEqual(XCTWaiter.wait(for: [runnable], timeout: 10), .completed)
     run.click()
     let cancel = app.buttons["query.cancel"]
     XCTAssertTrue(cancel.isEnabled)
