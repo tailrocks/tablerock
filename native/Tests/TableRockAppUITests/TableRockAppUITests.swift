@@ -166,7 +166,14 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(nextPage.waitForExistence(timeout: 10))
     let status = app.staticTexts["query.status"]
     XCTAssertEqual(status.value as? String, "result · 1 column · 500 rows loaded")
-    nextPage.scrollToVisible()
+    let scrollView = app.scrollViews.firstMatch
+    if !nextPage.isHittable {
+      XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
+      for _ in 0..<6 where !nextPage.isHittable {
+        scrollView.swipeUp()
+      }
+    }
+    XCTAssertTrue(nextPage.isHittable)
     nextPage.click()
 
     let exhausted = XCTNSPredicateExpectation(
