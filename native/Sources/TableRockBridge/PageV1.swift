@@ -24,6 +24,7 @@ public enum PageV1DecodeError: Error, Equatable {
     case columnLimitExceeded(actual: UInt32, limit: UInt32)
     case arenaLimitExceeded(actual: UInt64, limit: UInt64)
     case columnTextLimitExceeded(actual: UInt64, limit: UInt64)
+    case sizeOverflow
     case invalidOffsets
 }
 
@@ -239,8 +240,10 @@ public struct PageV1Table: Sendable, Equatable {
 extension PageV1 {
     /// Decode the full page body: header + column names + cell display strings.
     /// Text cells render from the arena; non-text kinds render as a label.
-    public static func decodeTable(_ data: Data) throws -> PageV1Table {
-        _ = try decodeEnvelope(data)
+    public static func decodeTable(
+        _ data: Data, limits: PageV1Limits = PageV1Limits()
+    ) throws -> PageV1Table {
+        _ = try decodeEnvelope(data, limits: limits)
         var pos = 0
         func need(_ n: Int) throws {
             if pos + n > data.count { throw PageV1DecodeError.truncated }
@@ -282,7 +285,9 @@ extension PageV1 {
         let columnCount = try u32()
         _ = try u8()                     // total_tag
         _ = try u64()                    // total_value
-        let arenaByteLen = Int(try u64())
+        guard let arenaByteLen = Int(exactly: try u64()) else {
+            throw PageV1DecodeError.sizeOverflow
+        }
         _ = try u64()                    // column_text_byte_len
         _ = try u8()                     // delivery
         _ = try u16()                    // warnings (u16 bitset)
@@ -301,14 +306,19 @@ extension PageV1 {
             ))
         }
 
-        let cells = Int(rowCount) * Int(columnCount)
+        let (cells, cellOverflow) = Int(rowCount).multipliedReportingOverflow(
+            by: Int(columnCount))
+        guard !cellOverflow else { throw PageV1DecodeError.sizeOverflow }
+        let (offsetCount, offsetOverflow) = cells.addingReportingOverflow(1)
+        let (bitmapNumerator, bitmapOverflow) = cells.addingReportingOverflow(7)
+        guard !offsetOverflow, !bitmapOverflow else { throw PageV1DecodeError.sizeOverflow }
         var offsets: [UInt64] = []
-        for _ in 0..<(cells + 1) { offsets.append(try u64()) }
+        for _ in 0..<offsetCount { offsets.append(try u64()) }
         guard offsets.first == 0,
               offsets.last == UInt64(arenaByteLen),
               zip(offsets, offsets.dropFirst()).allSatisfy({ $0.0 <= $0.1 })
         else { throw PageV1DecodeError.invalidOffsets }
-        let bitmap = try bytes((cells + 7) / 8)
+        let bitmap = try bytes(bitmapNumerator / 8)
         var kinds: [UInt8] = []
         for _ in 0..<cells { kinds.append(try u8()) }
         // Truncations are variable-length (Complete=0, Truncated(None)=1, Truncated(Some)=2+u64).
