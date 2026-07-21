@@ -44,6 +44,9 @@ cleanup sleep.
 - Velnor run 29862169448 passed 36 engine cases before proving the Docker
   published-port reuse race; exact-main proof of the random-port correction
   remains required.
+- After the random-port correction, the TLS restart matrix passed locally in
+  42.85 seconds and all 32 hostile replacement combinations passed in 357.61
+  seconds.
 
 ## Provenance
 
