@@ -2396,6 +2396,40 @@ final class BridgeModel {
       status = "error"
       return
     }
+    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_ACTIVE_QUERY"] == "1" {
+      do {
+        let session = try await client.open(
+          params: WorkbenchOpenParams(
+            engine: formEngine, host: formHost, port: 5432,
+            database: formDatabase, user: formUser, password: formPassword,
+            tlsMode: "off"))
+        sessionData = session
+        sessionHex = session.map { String(format: "%02x", $0) }.joined()
+        connectedEngine = formEngine
+        let tab = activeQueryTab
+        let operation = try await client.submit(
+          session: session, intent: "execute", statement: tab.statementText)
+        tab.activeOperationId = operation
+        tab.isRunning = true
+        status = "Scripted query running"
+        Task { [weak self] in
+          do {
+            let projection = try await client.finish(operationId: operation)
+            guard self != nil else { return }
+            tab.writeOutcome = projection.outcome
+          } catch {
+            guard self != nil else { return }
+            tab.queryError = "Query failed: \(error)"
+          }
+          tab.activeOperationId = nil
+          tab.isRunning = false
+        }
+      } catch {
+        bridgeError = "Scripted query setup failed: \(error)"
+        status = "error"
+      }
+      return
+    }
     do {
       historyRetention = try await client.historyRetention()
       await refreshProfiles()

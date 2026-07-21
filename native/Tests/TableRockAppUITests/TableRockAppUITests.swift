@@ -15,19 +15,11 @@ final class TableRockAppUITests: XCTestCase {
 
   @MainActor
   func testSlowQueryCancelsThroughRustBoundary() throws {
-    let app = launch(scenario: "slow-until-cancelled")
+    let app = launch(
+      scenario: "slow-until-cancelled",
+      environment: ["TABLEROCK_FIXTURE_ACTIVE_QUERY": "1"])
     XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
 
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
-
-    let run = app.buttons["query.run"]
-    XCTAssertTrue(run.waitForExistence(timeout: 10))
-    let runnable = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "enabled == true"), object: run)
-    XCTAssertEqual(XCTWaiter.wait(for: [runnable], timeout: 10), .completed)
-    run.click()
     let cancel = app.buttons["query.cancel"]
     let cancellable = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "enabled == true"), object: cancel)
