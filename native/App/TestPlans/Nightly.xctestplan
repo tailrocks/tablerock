@@ -1,0 +1,40 @@
+{
+  "configurations" : [
+    {
+      "id" : "E4ED1453-4891-4AAC-9726-7BA4DDC9BA37",
+      "name" : "Nightly",
+      "options" : {}
+    }
+  ],
+  "defaultOptions" : {
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:TableRock.xcodeproj",
+      "identifier" : "8B9AFC4F2E2F35FE54332C77",
+      "name" : "TableRock"
+    }
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:TableRock.xcodeproj",
+        "identifier" : "D6F8C508A473DACB04BCEF23",
+        "name" : "TableRockFeatureTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:TableRock.xcodeproj",
+        "identifier" : "F11A8438480CB06F7F49776F",
+        "name" : "TableRockBridgeTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:TableRock.xcodeproj",
+        "identifier" : "DD7B0395A914CDDEFF02F41E",
+        "name" : "TableRockAppUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

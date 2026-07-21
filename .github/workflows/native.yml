@@ -81,6 +81,27 @@ jobs:
       - name: Build universal static XCFramework
         run: ./scripts/build-xcframework.sh
 
+      - name: Regenerate and reject Xcode project drift
+        run: |
+          mise install github:yonaskolb/XcodeGen@2.46.0
+          mise exec github:yonaskolb/XcodeGen@2.46.0 -- \
+            xcodegen generate --spec native/App/project.yml
+          git diff --exit-code -- native/App/TableRock.xcodeproj native/App/TableRock-Info.plist
+
+      - name: Run canonical Xcode checkpoint plan
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          xcodebuild test \
+            -project native/App/TableRock.xcodeproj \
+            -scheme TableRock \
+            -testPlan Checkpoint \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -resultBundlePath artifacts/TableRock-Checkpoint.xcresult \
+            CODE_SIGN_IDENTITY=- \
+            | tee artifacts/xcodebuild-checkpoint.log
+
       - name: Build and verify development app
         run: |
           ./scripts/build-native-app.sh
@@ -100,3 +121,8 @@ jobs:
             native/dist/TableRock.app
             target/xcframework/TableRockFFI.xcframework
             native/Generated
+            native/App/TableRock.xcodeproj
+            native/App/TestPlans
+            artifacts/TableRock-Checkpoint.xcresult
+            artifacts/xcodebuild-checkpoint.log
+            ~/Library/Logs/DiagnosticReports/TableRock*.crash

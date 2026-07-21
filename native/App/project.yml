@@ -1,0 +1,105 @@
+name: TableRock
+options:
+  minimumXcodeGenVersion: 2.46.0
+  xcodeVersion: "26.6"
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  defaultConfig: Debug
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    CLANG_ENABLE_MODULES: YES
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  TableRockFeature:
+    type: framework.static
+    platform: macOS
+    sources:
+      - path: ../Sources/TableRockFeature
+
+  TableRockBridge:
+    type: framework.static
+    platform: macOS
+    sources:
+      - path: ../Sources/TableRockBridge
+    dependencies:
+      - framework: ../../target/xcframework/TableRockFFI.xcframework
+        embed: false
+
+  TableRock:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../Sources/TableRockApp
+    dependencies:
+      - target: TableRockFeature
+      - target: TableRockBridge
+      - framework: ../../target/xcframework/TableRockFFI.xcframework
+        embed: false
+    info:
+      path: TableRock-Info.plist
+      properties:
+        CFBundleDisplayName: TableRock
+        CFBundleIdentifier: app.tablerock.TableRock
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "26.0"
+        NSHighResolutionCapable: true
+        NSHumanReadableCopyright: "Copyright © 2026 Tailrocks"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.tablerock.TableRock
+        PRODUCT_NAME: TableRock
+        ENABLE_HARDENED_RUNTIME: YES
+
+  TableRockFeatureTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ../Tests/TableRockFeatureTests
+    dependencies:
+      - target: TableRockFeature
+
+  TableRockBridgeTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ../Tests/TableRockBridgeTests
+    dependencies:
+      - target: TableRockBridge
+      - framework: ../../target/xcframework/TableRockFFI.xcframework
+        embed: false
+
+  TableRockAppUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: ../Tests/TableRockAppUITests
+    dependencies:
+      - target: TableRock
+
+schemes:
+  TableRock:
+    build:
+      targets:
+        TableRock: all
+        TableRockFeatureTests: [test]
+        TableRockBridgeTests: [test]
+        TableRockAppUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Release
+      testPlans:
+        - path: TestPlans/Checkpoint.xctestplan
+          defaultPlan: true
+        - path: TestPlans/Nightly.xctestplan
+        - path: TestPlans/Release.xctestplan
+    archive:
+      config: Release
