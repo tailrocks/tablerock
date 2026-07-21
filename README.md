@@ -2,8 +2,7 @@
 
 TableRock is a terminal-first, multi-model database workbench for
 PostgreSQL, ClickHouse, and Redis. The first product is a Rust CLI/TUI. A
-future native macOS application will use SwiftUI/AppKit over the same Rust
-core.
+native macOS developer preview uses SwiftUI/AppKit over the same Rust core.
 
 ## Direction
 
@@ -26,11 +25,18 @@ core.
 
 ## Status
 
-Phases 0 and 1 are complete. Phase 2 (Rust service foundation) is in progress:
-core contracts, application services, profiles, and persistence are proven, and
-all three drivers hold real-server evidence — PostgreSQL 17.10/18.4, Redis
-7.4.9/8.8.0, ClickHouse 25.8/26.3 LTS. This repository does not yet claim a
-complete workbench.
+The Rust contracts, services, persistence, three real-server adapters, TUI, and
+a substantial native macOS workflow slice are implemented. Tested server lines
+are PostgreSQL 17.10/18.4, Redis 7.4.9/8.8.0, and ClickHouse 25.8/26.3 LTS.
+Unsigned preview packages and an ad-hoc-signed native app are published through
+the Homebrew tap. The exact tested boundaries are in the
+[support matrix](docs/support-matrix.md).
+
+TableRock does not yet claim complete functional parity or production native
+distribution. Visible gaps remain in the
+[functional parity ledger](docs/architecture/functional-parity-ledger.md).
+Developer ID signing, notarization, stapling, and clean-machine release proof
+remain externally blocked on signing authority.
 
 Product name, package namespace, and legal clearance remain subject to final
 review before public release.
@@ -45,12 +51,13 @@ Generate the local safe-schema support manifest without opening the terminal UI:
 tablerock --support-bundle > tablerock-support.txt
 ```
 
-The command reports only schema version, TableRock version, closed platform
-facts, and bounded projections of typed `SafeDiagnostic` values when supplied
-by a client. It never reads environment variables, logs, profiles, SQL,
-database values, paths, endpoints, hostnames, or credentials. Inspect the text
-before sharing it. Runtime diagnostic collection and native export UI remain
-visible Phase 15 work.
+The command reports only schema version, TableRock version, and closed platform
+facts. The running native bridge additionally retains bounded closed engine
+diagnostics and terminal outcomes, and Settings can export that state through a
+save panel using Rust's atomic writer. Neither path reads logs, profiles,
+history, SQL, database values, endpoints, hostnames, or credentials. Inspect
+the text before sharing it. Engine-specific safe codes, a long-lived TUI
+collector, and crash-report sanitization remain visible Phase 15 work.
 
 ## Documentation
 
