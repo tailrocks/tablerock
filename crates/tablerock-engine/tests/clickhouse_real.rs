@@ -40,10 +40,11 @@ async fn verify_image(image: &str) {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
 
     for compression in [ClickHouseCompression::None, ClickHouseCompression::Lz4] {
         let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
-            text("127.0.0.1"),
+            text(&host),
             port,
             text("default"),
             text("default"),
@@ -75,7 +76,7 @@ async fn verify_image(image: &str) {
         }
         let mut stream = stream
             .unwrap_or_else(|| panic!("ClickHouse fixture accepts HTTP queries: {last_error:?}"));
-        verify_service_cancellation(port, compression, image).await;
+        verify_service_cancellation(&host, port, compression, image).await;
         let first = stream.next_page(identity(), 0).await.unwrap().unwrap();
         assert_eq!(first.envelope().row_count(), 2, "{image} {compression:?}");
         assert_eq!(first.envelope().delivery(), PageDelivery::Partial);
@@ -351,9 +352,14 @@ async fn verify_image(image: &str) {
     }
 }
 
-async fn verify_service_cancellation(port: u16, compression: ClickHouseCompression, image: &str) {
+async fn verify_service_cancellation(
+    host: &str,
+    port: u16,
+    compression: ClickHouseCompression,
+    image: &str,
+) {
     let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
-        text("127.0.0.1"),
+        text(host),
         port,
         text("default"),
         text("default"),
@@ -461,8 +467,9 @@ async fn persistent_session_runs_statement_health_and_reuses_connection() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
     // Wait until HTTP queries answer; container start alone is not enough.
-    let session = ready_clickhouse_session(port, ClickHouseCompression::None).await;
+    let session = ready_clickhouse_session(&host, port, ClickHouseCompression::None).await;
     let session_id =
         tablerock_core::SessionId::from_parts(tablerock_core::IdParts::new(0, 910).unwrap())
             .unwrap();
@@ -547,13 +554,14 @@ async fn persistent_session_runs_statement_health_and_reuses_connection() {
 }
 
 async fn ready_clickhouse_session(
+    host: &str,
     port: u16,
     compression: ClickHouseCompression,
 ) -> ClickHouseSession {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     loop {
         let session = ClickHouseSession::connect(&ClickHouseConnectConfig::new(
-            text("127.0.0.1"),
+            text(host),
             port,
             text("default"),
             text("default"),
@@ -586,7 +594,8 @@ async fn lists_catalog_databases_and_objects() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
-    let session = ready_clickhouse_session(port, ClickHouseCompression::None).await;
+    let host = container.get_host().await.unwrap().to_string();
+    let session = ready_clickhouse_session(&host, port, ClickHouseCompression::None).await;
     session
         .execute_sql("CREATE DATABASE IF NOT EXISTS catalog_fixture")
         .await
@@ -653,7 +662,8 @@ async fn structure_facts_and_progressive_insert() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
-    let session = ready_clickhouse_session(port, ClickHouseCompression::None).await;
+    let host = container.get_host().await.unwrap().to_string();
+    let session = ready_clickhouse_session(&host, port, ClickHouseCompression::None).await;
 
     session
         .execute_sql(
@@ -811,7 +821,8 @@ async fn kill_mutation_accepts_bound_id_and_fail_closed_hostile() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
-    let session = ready_clickhouse_session(port, ClickHouseCompression::None).await;
+    let host = container.get_host().await.unwrap().to_string();
+    let session = ready_clickhouse_session(&host, port, ClickHouseCompression::None).await;
 
     session
         .execute_sql(
@@ -909,7 +920,8 @@ async fn explain_raw_and_structured_with_fallback() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
-    let session = ready_clickhouse_session(port, ClickHouseCompression::None).await;
+    let host = container.get_host().await.unwrap().to_string();
+    let session = ready_clickhouse_session(&host, port, ClickHouseCompression::None).await;
 
     let raw = session.explain_raw("SELECT 1").await.unwrap();
     assert!(!raw.is_empty(), "raw explain should return plan text");
@@ -942,7 +954,8 @@ async fn partial_rows_and_late_error_both_visible_on_one_operation() {
         .await
         .unwrap();
     let port = container.get_host_port_ipv4(8123.tcp()).await.unwrap();
-    let session = ready_clickhouse_session(port, ClickHouseCompression::Lz4).await;
+    let host = container.get_host().await.unwrap().to_string();
+    let session = ready_clickhouse_session(&host, port, ClickHouseCompression::Lz4).await;
 
     let operation_id = support::operation(70);
     let mut service = support::service(1, 4);
