@@ -598,7 +598,7 @@ async fn verify_tls_subscription_restart(
     drop(endpoint);
     tokio::time::sleep(Duration::from_millis(250)).await;
     let replacement = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
-    let endpoint = local_tls_endpoint(&replacement, port, Some(port)).await;
+    let _endpoint = local_tls_endpoint(&replacement, port, Some(port)).await;
     let mut publisher =
         raw_tls_admin_connection(port, protocol, &fixture, require_client_identity).await;
     tokio::time::timeout(Duration::from_secs(5), async {

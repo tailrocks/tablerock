@@ -24,11 +24,11 @@ behavior is unchanged.
 ## Verification
 
 - `cargo fmt --all -- --check`
-- `cargo test -p tablerock-engine --test redis_real resubscribes_with_visible_gap_after_redis_restart -- --exact --nocapture`
+- `cargo nextest run -p tablerock-engine --test redis_real resubscribes_with_visible_gap_after_redis_restart -- --exact --nocapture`
   passed locally across all eight version/protocol/subscription combinations.
-- `cargo test -p tablerock-engine --test redis_real resubscribes_with_visible_gap_after_tls_redis_restart -- --exact --nocapture`
+- `cargo nextest run -p tablerock-engine --test redis_real resubscribes_with_visible_gap_after_tls_redis_restart -- --exact --nocapture`
   passed locally across all 16 TLS restart combinations in 28.81 seconds.
-- `cargo test -p tablerock-engine --test redis_real rejects_untrusted_or_recredentialed_tls_pubsub_replacement -- --exact --nocapture`
+- `cargo nextest run -p tablerock-engine --test redis_real rejects_untrusted_or_recredentialed_tls_pubsub_replacement -- --exact --nocapture`
   passed all 32 hostile replacement combinations in 353.61 seconds.
 - Exact-main Velnor proof remains required after push.
 
