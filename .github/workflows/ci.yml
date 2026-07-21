@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-v2-${{ github.ref }}
   cancel-in-progress: false
 
 env:
