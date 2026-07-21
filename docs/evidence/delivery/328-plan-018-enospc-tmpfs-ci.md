@@ -17,8 +17,8 @@ True ENOSPC is host-specific. CI creates a 1MiB tmpfs, prefills it, and runs
 the AtomicFileWriter fail-closed test under `TABLEROCK_ENOSPC_MNT`. Without
 the env var the test no-ops so developer machines are never filled.
 
-The job builds a nextest archive, resolves the pinned `cargo-nextest`
-executable through mise's installation symlink, copies that executable and the
+The job builds a nextest archive, asks `mise which cargo-nextest` for the
+active installation binary instead of copying its PATH shim, copies that binary and the
 archive into the Ubuntu container, and executes the exact test through nextest
 there. This preserves the real tmpfs boundary without a forbidden
 `cargo test --no-run` build path or direct libtest invocation.
