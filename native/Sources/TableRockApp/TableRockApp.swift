@@ -362,9 +362,31 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
 
   init(scenario: String) { self.scenario = scenario }
 
-  func listProfiles() throws -> [WorkbenchProfileItem] { [] }
+  func listProfiles() throws -> [WorkbenchProfileItem] {
+    guard scenario == "restoration-corrupt" else { return [] }
+    return [
+      WorkbenchProfileItem(
+        idBytes: Data(repeating: 4, count: 16), revision: 1,
+        name: "Restoration fixture", engine: "postgresql", group: nil,
+        favorite: false, savedOrder: 0, host: nil, port: nil,
+        context: nil, safetyMode: "read_only", environment: nil,
+        productionWarning: false, dangerousPlaintext: false, connected: false
+      )
+    ]
+  }
   func listProfileGroups() throws -> [WorkbenchProfileGroup] { [] }
   func historyRetention() throws -> String { "full" }
+
+  func nativeWindowIntent(windowId: String) throws -> WorkbenchNativeWindowIntent? {
+    guard scenario == "restoration-corrupt" else { return nil }
+    return WorkbenchNativeWindowIntent(
+      profileId: Data(repeating: 4, count: 16),
+      intent: WorkbenchSessionIntent(
+        database: "postgres", schema: nil, selectedTab: 99,
+        tabs: [WorkbenchWorkspaceTab(title: "Invalid", statementText: "SELECT 1;")]
+      )
+    )
+  }
 
   func openProfile(id: Data, secretOverride: Data?) throws -> Data {
     switch scenario {
@@ -2988,7 +3010,10 @@ final class BridgeModel {
         selectedQueryTabId = tab.id
         return
       }
-      applySessionIntent(record.intent)
+      guard applySessionIntent(record.intent) else {
+        profileActionError = "Restored workspace intent was invalid"
+        return
+      }
     } catch { profileActionError = "Restore workspace intent failed: \(error)" }
   }
 
@@ -3000,13 +3025,17 @@ final class BridgeModel {
           windowId: windowId.uuidString.lowercased()
         ), let profile = profiles.first(where: { $0.idBytes == record.profileId })
       else { return }
-      applySessionIntent(record.intent)
+      guard applySessionIntent(record.intent) else {
+        profileActionError = "Restored workspace intent was invalid"
+        return
+      }
       activeProfileId = record.profileId
       profileActionOutcome = "Restored \(profile.name) workspace; connect to resume"
     } catch { profileActionError = "Restore window intent failed: \(error)" }
   }
 
-  private func applySessionIntent(_ intent: WorkbenchSessionIntent) {
+  @discardableResult
+  private func applySessionIntent(_ intent: WorkbenchSessionIntent) -> Bool {
     let restored = intent.tabs.map {
       NativeQueryTab(
         id: dependencies.identifiers.next(),
@@ -3014,10 +3043,11 @@ final class BridgeModel {
         statementText: $0.statementText
       )
     }
-    guard !restored.isEmpty, Int(intent.selectedTab) < restored.count else { return }
+    guard !restored.isEmpty, Int(intent.selectedTab) < restored.count else { return false }
     queryTabs = restored
     selectedQueryTabId = restored[Int(intent.selectedTab)].id
     formDatabase = intent.database
+    return true
   }
 
   private func clearVolatileTabState() {
