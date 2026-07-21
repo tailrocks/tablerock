@@ -34,15 +34,28 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
-  func testProfileCreationOpensEditorThroughUserControl() throws {
+  func testProfileCreationSavesAndAppearsThroughUserControls() throws {
     let app = launch(scenario: "success")
 
     let add = app.buttons["profile.add"]
     XCTAssertTrue(add.waitForExistence(timeout: 10))
     add.click()
 
-    XCTAssertTrue(app.textFields["profile.editor.name"].waitForExistence(timeout: 10))
-    XCTAssertTrue(app.buttons["profile.editor.save"].exists)
+    let name = app.textFields["profile.editor.name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    name.click()
+    name.typeText("Created fixture")
+
+    let save = app.buttons["profile.editor.save"]
+    XCTAssertTrue(save.isEnabled)
+    save.click()
+
+    let created = app.staticTexts["profile.action.outcome"]
+    XCTAssertTrue(created.waitForExistence(timeout: 10))
+    XCTAssertEqual(created.value as? String, "Connection created")
+    XCTAssertTrue(
+      app.buttons["profile.09090909090909090909090909090909"]
+        .waitForExistence(timeout: 10))
   }
 
   @MainActor

@@ -452,6 +452,7 @@ How to read an evidence document:
 - 575 — [Complete migration documentation](delivery/575-complete-migration-documentation.md)
 - 576 — [Native metadata fail-closed gate](delivery/576-native-metadata-fail-closed.md)
 - 578 — [1Password CLI compatibility monitor](delivery/578-onepassword-compatibility-monitor.md)
+- 579 — [Native profile-create XCUITest](delivery/579-native-profile-create-xcuitest.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

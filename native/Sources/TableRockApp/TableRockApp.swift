@@ -362,12 +362,14 @@ extension WorkbenchBackend {
 actor ScriptedWorkbenchBackend: WorkbenchBackend {
   let scenario: String
   private var cancelled = false
+  private var profiles: [WorkbenchProfileItem] = []
+  private var profileDrafts: [Data: WorkbenchProfileDraft] = [:]
 
   init(scenario: String) { self.scenario = scenario }
 
   func listProfiles() throws -> [WorkbenchProfileItem] {
-    guard scenario == "restoration-corrupt" else { return [] }
-    return [
+    if scenario != "restoration-corrupt" { return profiles }
+    return profiles + [
       WorkbenchProfileItem(
         idBytes: Data(repeating: 4, count: 16), revision: 1,
         name: "Restoration fixture", engine: "postgresql", group: nil,
@@ -379,6 +381,38 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   }
   func listProfileGroups() throws -> [WorkbenchProfileGroup] { [] }
   func historyRetention() throws -> String { "full" }
+
+  func profileDraft(id: Data) throws -> WorkbenchProfileDraft {
+    guard let draft = profileDrafts[id] else { return try scriptedUnavailable("draft") }
+    return draft
+  }
+
+  func saveProfile(_ draft: WorkbenchProfileDraft) throws -> Data {
+    guard scenario == "success" else { return try scriptedUnavailable("save") }
+    let id = draft.idBytes ?? Data(repeating: 9, count: 16)
+    let revision = draft.idBytes == nil ? 1 : draft.revision + 1
+    let stored = WorkbenchProfileDraft(
+      idBytes: id, revision: revision, engine: draft.engine, name: draft.name,
+      group: draft.group, environment: draft.environment, host: draft.host,
+      port: draft.port, database: draft.database, username: draft.username,
+      passwordSource: draft.passwordSource, passwordValue: "",
+      passwordReference: draft.passwordReference,
+      hasStoredPassword: draft.hasStoredPassword,
+      plaintextAcknowledged: draft.plaintextAcknowledged,
+      tlsMode: draft.tlsMode, safetyMode: draft.safetyMode)
+    profileDrafts[id] = stored
+    profiles.removeAll { $0.idBytes == id }
+    profiles.append(
+      WorkbenchProfileItem(
+        idBytes: id, revision: revision, name: draft.name, engine: draft.engine,
+        group: draft.group.isEmpty ? nil : draft.group, favorite: false,
+        savedOrder: UInt32(profiles.count), host: draft.host, port: draft.port,
+        context: draft.database, safetyMode: draft.safetyMode,
+        environment: draft.environment.isEmpty ? nil : draft.environment,
+        productionWarning: draft.environment == "production",
+        dangerousPlaintext: draft.passwordSource == "dangerous_plaintext", connected: false))
+    return id
+  }
 
   func nativeWindowIntent(windowId: String) throws -> WorkbenchNativeWindowIntent? {
     guard scenario == "restoration-corrupt" else { return nil }
@@ -4222,7 +4256,10 @@ struct ContentView: View {
         Text(model.status).foregroundStyle(.secondary)
         EnvironmentSafetyBadge(model: model)
         if let outcome = model.profileActionOutcome {
-          Text(outcome).foregroundStyle(.secondary).font(.callout)
+          Text(outcome)
+            .foregroundStyle(.secondary)
+            .font(.callout)
+            .accessibilityIdentifier("profile.action.outcome")
         }
         if let bridgeError = model.bridgeError {
           Text(bridgeError)

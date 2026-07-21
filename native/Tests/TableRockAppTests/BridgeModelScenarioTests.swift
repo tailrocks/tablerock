@@ -4,6 +4,26 @@ import XCTest
 
 @MainActor
 final class BridgeModelScenarioTests: XCTestCase {
+  func testScriptedProfileCreatePersistsForInteractionTests() async throws {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let draft = WorkbenchProfileDraft(
+      idBytes: nil, revision: 0, engine: "postgresql", name: "Created fixture",
+      group: "", environment: "testing", host: "127.0.0.1", port: "5432",
+      database: "postgres", username: "postgres", passwordSource: "prompt",
+      passwordValue: "", passwordReference: nil, hasStoredPassword: false,
+      plaintextAcknowledged: false, tlsMode: "verify_full", safetyMode: "confirm_writes")
+
+    let id = try await backend.saveProfile(draft)
+    let profiles = try await backend.listProfiles()
+    let stored = try await backend.profileDraft(id: id)
+
+    XCTAssertEqual(id, Data(repeating: 9, count: 16))
+    XCTAssertEqual(profiles.map(\.name), ["Created fixture"])
+    XCTAssertEqual(stored.idBytes, id)
+    XCTAssertEqual(stored.revision, 1)
+    XCTAssertEqual(stored.passwordValue, "")
+  }
+
   func testDirtyAndRunningTabsRequireExplicitResolution() {
     let model = BridgeModel()
     model.addQueryTab()
