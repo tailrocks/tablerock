@@ -146,15 +146,20 @@ jobs:
       - name: ENOSPC fail-closed on 1MiB tmpfs
         run: |
           set -euo pipefail
-          root=()
-          if (( EUID != 0 )); then root=(sudo); fi
-          MNT="${RUNNER_TEMP}/tablerock-enospc"
-          mkdir -p "$MNT"
-          "${root[@]}" mount -t tmpfs -o size=1M,mode=1777 tmpfs "$MNT"
-          dd if=/dev/zero of="$MNT/prefill.bin" bs=1k count=900 status=none || true
-          export TABLEROCK_ENOSPC_MNT="$MNT"
-          cargo nextest run -p tablerock-files --lib --locked -E 'test(enospc_volume_fails_closed_without_temp_debris)'
-          "${root[@]}" umount "$MNT"
+          cargo test -p tablerock-files --lib --locked --no-run --message-format=json \
+            >"${RUNNER_TEMP}/tablerock-files-test-build.json"
+          test_binary="$(sed -n 's/.*"executable":"\([^"]*\)".*/\1/p' \
+            "${RUNNER_TEMP}/tablerock-files-test-build.json" | tail -n 1)"
+          test -x "$test_binary"
+          container="tablerock-enospc-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker run -d --name "$container" \
+            --tmpfs /enospc:rw,size=1m,mode=1777 ubuntu:26.04 sleep infinity >/dev/null
+          docker cp "$test_binary" "$container:/tablerock-files-tests"
+          docker exec -e TABLEROCK_ENOSPC_MNT=/enospc "$container" \
+            /tablerock-files-tests --exact \
+            tests::enospc_volume_fails_closed_without_temp_debris --nocapture
 
   audit:
     name: Dependency audit (${{ matrix.config.lane }})
