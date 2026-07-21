@@ -436,6 +436,7 @@ How to read an evidence document:
 - 559 — [Preview cross-tool activation](delivery/559-preview-tool-activation.md)
 - 560 — [Bridge real-server readiness](delivery/560-bridge-real-readiness.md)
 - 561 — [Verified preview delivery and Homebrew tap](delivery/561-preview-delivery-homebrew.md)
+- 562 — [Native XCTest and hosted checkpoint gate](delivery/562-native-xctest-checkpoint.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
