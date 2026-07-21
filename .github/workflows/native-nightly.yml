@@ -55,7 +55,11 @@ jobs:
         run: |
           brew update
           brew install ripgrep
+          brew install --cask 1password-cli
           test "$(rg --version | head -n 1)" = "ripgrep 15.2.0"
+          test "$(op --version)" = "2.35.0"
+          op read --help | grep -F -- '--no-newline'
+          op --help | grep -F -- '--account'
 
       - name: Build canonical project and universal bridge
         run: |

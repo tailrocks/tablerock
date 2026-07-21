@@ -24,6 +24,7 @@ an ignored test is not silently treated as proof.
 | CLI release packages | Linux x86_64/arm64 and macOS x86_64/arm64 targets | Cross-build and package validation | Cross-built targets do not establish runtime compatibility |
 | Native macOS runtime | macOS 26.4 arm64, Xcode 26.6, Swift 6.3.3 | Xcode unit/UI suites, accessibility audit, archive, Instruments time/RSS trace, and leak gate | Earlier macOS releases and Intel runtime |
 | Native universal archive | arm64 and x86_64 slices | Both slices compile and the universal archive is inspected | x86_64 execution remains unproven |
+| 1Password CLI | 2.35.0 | Scheduled native gate installs the current stable cask and verifies the `op read --no-newline` plus global `--account` command surface used by TableRock | Authenticated account access is operator-owned and is not exercised in CI |
 
 The native app currently has developer/CI delivery status. Ad-hoc archive and
 local install mechanics are proven. Developer ID signing, notarization,
@@ -42,10 +43,11 @@ Mac App Store product.
 
 ## Maintenance proof
 
-Scheduled workflows exercise the full CI matrix, dependency audit, native
-Xcode suite, accessibility checks, performance/RSS/leak gates, and evidence
-freshness. A passing scheduled run proves only the versions and hosts recorded
-in its artifact metadata.
+Scheduled workflows exercise the full CI matrix, registry and Git dependency
+freshness, action pins, native Xcode/Swift/macOS suite, current 1Password CLI
+surface, server matrix, accessibility checks, performance/RSS/leak gates, and
+artifact metadata. A passing scheduled run proves only the versions and hosts
+recorded in its artifact metadata.
 
 Detailed commands, host metadata, failures, and remaining work live in the
 [evidence index](evidence/README.md).
