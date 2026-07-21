@@ -59,6 +59,10 @@ targets:
       - target: TableRockBridge
       - framework: ../../target/xcframework/tablerock_ffiFFI.xcframework
         embed: false
+      - sdk: SystemConfiguration.framework
+      - sdk: CoreFoundation.framework
+      - sdk: Security.framework
+      - sdk: libiconv.tbd
     info:
       path: TableRock-Info.plist
       properties:
@@ -98,6 +102,10 @@ targets:
       - target: TableRockBridge
       - framework: ../../target/xcframework/tablerock_ffiFFI.xcframework
         embed: false
+      - sdk: SystemConfiguration.framework
+      - sdk: CoreFoundation.framework
+      - sdk: Security.framework
+      - sdk: libiconv.tbd
 
   TableRockAppUITests:
     type: bundle.ui-testing

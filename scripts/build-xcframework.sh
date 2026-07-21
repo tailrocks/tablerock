@@ -3,6 +3,8 @@
 # Does not sign or notarize — those steps need operator Developer ID credentials.
 set -euo pipefail
 
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-26.0}"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-$ROOT/target/xcframework}"
 # UniFFI-generated Swift imports this exact low-level C module. Framework,
