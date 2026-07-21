@@ -29,7 +29,9 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertEqual(XCTWaiter.wait(for: [runnable], timeout: 10), .completed)
     run.click()
     let cancel = app.buttons["query.cancel"]
-    XCTAssertTrue(cancel.isEnabled)
+    let cancellable = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: cancel)
+    XCTAssertEqual(XCTWaiter.wait(for: [cancellable], timeout: 10), .completed)
     cancel.click()
 
     let status = app.staticTexts["query.status"]
