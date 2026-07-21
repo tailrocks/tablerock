@@ -21,6 +21,13 @@ replacement boundary, preventing accepted connections owned by the old
 container from surviving into readiness checks. Production Redis connection
 behavior is unchanged.
 
+Run 29862169448 then proved that asking Docker to reuse the old published host
+port still races daemon-side endpoint cleanup (`port is already allocated`).
+TLS restart fixtures now give every container an independent random Docker
+port and preserve only the job-local forward port across replacement. This
+removes Docker port-reuse timing from the contract instead of extending a
+cleanup sleep.
+
 ## Verification
 
 - `cargo fmt --all -- --check`
@@ -34,6 +41,9 @@ behavior is unchanged.
 - Velnor run 29860746521 exposed the replacement forward's intentionally
   lifetime-only ownership binding under `-D warnings`; it is named as an
   ownership guard so workspace Clippy can verify the test target.
+- Velnor run 29862169448 passed 36 engine cases before proving the Docker
+  published-port reuse race; exact-main proof of the random-port correction
+  remains required.
 
 ## Provenance
 

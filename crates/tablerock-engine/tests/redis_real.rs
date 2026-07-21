@@ -78,13 +78,6 @@ async fn local_tls_endpoint(
     requested_local_port: Option<u16>,
 ) -> LocalTlsEndpoint {
     let host = container.get_host().await.unwrap().to_string();
-    if matches!(host.as_str(), "127.0.0.1" | "localhost") {
-        return LocalTlsEndpoint {
-            port: remote_port,
-            forward: None,
-        };
-    }
-
     let listener =
         tokio::net::TcpListener::bind(("127.0.0.1", requested_local_port.unwrap_or_default()))
             .await
@@ -549,8 +542,9 @@ async fn verify_tls_subscription_restart(
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
-    let container = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
-    let endpoint = local_tls_endpoint(&container, port, Some(port)).await;
+    let container = start_tls_redis(tag, &fixture, require_client_identity, None).await;
+    let remote_port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let endpoint = local_tls_endpoint(&container, remote_port, Some(port)).await;
     let port = endpoint.port;
     let policy = RedisRuntimePolicy::new(
         Duration::from_secs(1),
@@ -596,9 +590,9 @@ async fn verify_tls_subscription_restart(
 
     drop(container);
     drop(endpoint);
-    tokio::time::sleep(Duration::from_millis(250)).await;
-    let replacement = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
-    let _endpoint = local_tls_endpoint(&replacement, port, Some(port)).await;
+    let replacement = start_tls_redis(tag, &fixture, require_client_identity, None).await;
+    let replacement_remote_port = replacement.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let _endpoint = local_tls_endpoint(&replacement, replacement_remote_port, Some(port)).await;
     let mut publisher =
         raw_tls_admin_connection(port, protocol, &fixture, require_client_identity).await;
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -705,8 +699,9 @@ async fn verify_rejected_tls_subscription_replacement(
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
-    let container = start_tls_redis(tag, &fixture, require_client_identity, Some(port)).await;
-    let endpoint = local_tls_endpoint(&container, port, Some(port)).await;
+    let container = start_tls_redis(tag, &fixture, require_client_identity, None).await;
+    let remote_port = container.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let endpoint = local_tls_endpoint(&container, remote_port, Some(port)).await;
     let port = endpoint.port;
     let policy = RedisRuntimePolicy::new(
         Duration::from_secs(1),
@@ -789,11 +784,12 @@ async fn verify_rejected_tls_subscription_replacement(
         tag,
         replacement_fixture,
         require_client_identity,
-        Some(port),
+        None,
         replacement_acl,
     )
     .await;
-    let endpoint = local_tls_endpoint(&replacement, port, Some(port)).await;
+    let replacement_remote_port = replacement.get_host_port_ipv4(6379.tcp()).await.unwrap();
+    let endpoint = local_tls_endpoint(&replacement, replacement_remote_port, Some(port)).await;
     let replacement_ready =
         raw_tls_admin_connection(port, protocol, replacement_fixture, require_client_identity)
             .await;
