@@ -478,6 +478,7 @@ How to read an evidence document:
 - 602 — [Redis TLS local endpoint forward](delivery/602-redis-tls-local-forward.md)
 - 603 — [Native control accessibility contracts](delivery/603-native-control-accessibility-contracts.md)
 - 604 — [Redis restart fixture container host](delivery/604-redis-restart-container-host.md)
+- 605 — [Native data-movement user-control tests](delivery/605-native-data-movement-xcuitest.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

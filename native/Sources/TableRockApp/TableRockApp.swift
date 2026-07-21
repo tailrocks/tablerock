@@ -362,6 +362,7 @@ extension WorkbenchBackend {
 actor ScriptedWorkbenchBackend: WorkbenchBackend {
   let scenario: String
   private var cancelled = false
+  private var importReviewActive = false
   private var profiles: [WorkbenchProfileItem] = []
   private var profileDrafts: [Data: WorkbenchProfileDraft] = [:]
 
@@ -511,6 +512,64 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
           columnTextByteLen: 1, delivery: 1, warnings: 0))
     }
     return try scriptedUnavailable("fetch")
+  }
+
+  func exportLoadedResult(
+    resultId: Data, revision: UInt64, format: String, path: String
+  ) throws -> UInt64 {
+    guard scenario == "success", resultId == Data(repeating: 8, count: 16), revision == 1,
+      format == "csv"
+    else { return try scriptedUnavailable("export") }
+    let payload = Data("id,name\n1,Ada\n".utf8)
+    try payload.write(to: URL(fileURLWithPath: path), options: .atomic)
+    return UInt64(payload.count)
+  }
+
+  func previewCsvImport(path: String) throws -> WorkbenchCSVImportPreview {
+    guard scenario == "success",
+      try String(contentsOfFile: path, encoding: .utf8) == "id,name\n2,Grace\n"
+    else { return try scriptedUnavailable("import-preview") }
+    return WorkbenchCSVImportPreview(
+      path: path, headers: ["id", "name"],
+      rows: [WorkbenchCSVRow(cells: ["2", "Grace"])], totalRows: 1,
+      formulaLikeCells: 0)
+  }
+
+  func stageCsvImport(
+    sessionId: Data, catalogNodeId: Data, path: String,
+    mappedColumns: [String], mappedTypes: [String], nowMs: UInt64
+  ) throws -> WorkbenchCSVImportReview {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16),
+      catalogNodeId == Data(repeating: 7, count: 16), mappedColumns == ["id", "name"],
+      mappedTypes == ["text", "text"], !importReviewActive
+    else { return try scriptedUnavailable("import-stage") }
+    importReviewActive = true
+    return WorkbenchCSVImportReview(
+      tokenId: Data(repeating: 10, count: 16), target: "public.fixture_table",
+      rowCount: 1, columnCount: 2, formulaLikeCells: 0,
+      expiresAtMs: nowMs + 60_000)
+  }
+
+  func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
+    -> WorkbenchApplyOutcome
+  {
+    guard scenario == "success", importReviewActive,
+      tokenId == Data(repeating: 10, count: 16),
+      sessionId == Data(repeating: 1, count: 16)
+    else { return try scriptedUnavailable("apply") }
+    importReviewActive = false
+    return WorkbenchApplyOutcome(
+      transaction: "committed", changeCount: 1, appliedCount: 1,
+      conflictCount: 0, failedCount: 0)
+  }
+
+  func revokeReviewToken(tokenId: Data) throws -> Bool {
+    guard scenario == "success", tokenId == Data(repeating: 10, count: 16) else {
+      return try scriptedUnavailable("revoke")
+    }
+    let wasActive = importReviewActive
+    importReviewActive = false
+    return wasActive
   }
 }
 
@@ -825,6 +884,31 @@ private struct SystemFilePanelPort: AppFilePanelPort {
 }
 
 @MainActor
+struct TestFilePanelPort: AppFilePanelPort {
+  let root: URL
+  let openPath: String?
+  let savePath: String?
+
+  func chooseOpenFile(_ request: AppFilePanelRequest) -> URL? {
+    confined(openPath)
+  }
+
+  func chooseSaveFile(_ request: AppFilePanelRequest) -> URL? {
+    confined(savePath)
+  }
+
+  private func confined(_ path: String?) -> URL? {
+    guard let path else { return nil }
+    let candidate = URL(fileURLWithPath: path).standardizedFileURL
+    let root = root.resolvingSymlinksInPath().standardizedFileURL
+    let parent = candidate.deletingLastPathComponent().resolvingSymlinksInPath()
+    let resolved = parent.appendingPathComponent(candidate.lastPathComponent).standardizedFileURL
+    guard resolved.path.hasPrefix(root.path + "/") else { return nil }
+    return resolved
+  }
+}
+
+@MainActor
 private struct SystemPasteboardPort: AppPasteboardPort {
   func write(_ representations: [AppPasteboardRepresentation]) throws {
     let item = NSPasteboardItem()
@@ -909,8 +993,15 @@ private final class NativeApplicationModel {
         temporaryRoot: FileManager.default.temporaryDirectory,
         processIdentifier: ProcessInfo.processInfo.processIdentifier
       )
+      let filePanels: any AppFilePanelPort =
+        configuration.isTestMode
+        ? TestFilePanelPort(
+          root: configuration.paths.dataRoot,
+          openPath: ProcessInfo.processInfo.environment["TABLEROCK_TEST_OPEN_FILE"],
+          savePath: ProcessInfo.processInfo.environment["TABLEROCK_TEST_SAVE_FILE"]
+        ) : SystemFilePanelPort()
       configuredDependencies = AppDependencies(
-        filePanels: SystemFilePanelPort(),
+        filePanels: filePanels,
         pasteboard: SystemPasteboardPort(),
         keychain: SystemKeychainPort(namespace: configuration.keychainNamespace)
       )
@@ -1976,6 +2067,27 @@ final class BridgeModel {
       }
       try? await Task.sleep(for: .milliseconds(500))
       runNativeObjectTabsAudit()
+      return
+    }
+    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_DATA_MOVEMENT_UI"] == "1" {
+      sessionData = Data(repeating: 1, count: 16)
+      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+      connectedEngine = "postgresql"
+      let node = WorkbenchCatalogNode(
+        idBytes: Data(repeating: 7, count: 16),
+        parentIdBytes: Data(repeating: 6, count: 16), depth: 1,
+        name: "fixture_table", kind: "postgresql_table",
+        childrenState: "not_applicable", expandable: false)
+      let tab = NativeObjectTab(id: dependencies.identifiers.next(), node: node, pinned: true)
+      tab.resultTable = WorkbenchTable(
+        columns: ["id", "name"], rows: [["1", "Ada"]])
+      tab.resultIdData = Data(repeating: 8, count: 16)
+      tab.resultRevision = 1
+      tab.summary = "1 row · 2 columns"
+      objectTabs = [tab]
+      selectedObjectTabId = tab.id
+      selectedWorkbenchKind = "object"
+      status = "Data movement fixture"
       return
     }
     if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_VALUE_INSPECTOR"] == "1" {
@@ -4679,6 +4791,7 @@ struct ObjectWorkbenchView: View {
             .disabled(tab.isRunning)
           if model.sqlInsertCopyAvailable {
             Button("Import CSV") { Task { await model.chooseCsvImport() } }
+              .accessibilityIdentifier("import.csv.open")
               .disabled(tab.isRunning)
           }
           Button("Close", role: .destructive) { model.closeObjectTab(tab) }
@@ -4953,6 +5066,7 @@ private struct CsvImportSheet: View {
             HStack {
               Button("Apply Import") { Task { await model.applyCsvImport() } }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("import.csv.apply")
                 .disabled(model.csvImportApplying)
               Button("Discard Review", role: .cancel) {
                 Task { await model.discardCsvImportReview() }
@@ -4965,11 +5079,15 @@ private struct CsvImportSheet: View {
       } else if model.csvImportOutcome == nil {
         Button("Stage Reviewed Import") { Task { await model.stageCsvImport() } }
           .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("import.csv.stage")
           .disabled(model.csvImportPreview == nil || model.csvImportApplying)
       }
       if model.csvImportApplying { ProgressView("Applying reviewed import…") }
       if let outcome = model.csvImportOutcome {
-        Label(outcome, systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        Label(outcome, systemImage: "checkmark.circle.fill")
+          .foregroundStyle(.green)
+          .accessibilityIdentifier("import.csv.outcome")
+          .accessibilityValue(outcome)
       }
       if let error = model.csvImportError {
         Text(error).foregroundStyle(.red).textSelection(.enabled)
@@ -4977,6 +5095,7 @@ private struct CsvImportSheet: View {
     }
     .padding(20)
     .frame(minWidth: 720, minHeight: 560)
+    .accessibilityIdentifier("import.csv.sheet")
     .interactiveDismissDisabled(model.csvImportReview != nil || model.csvImportApplying)
   }
 }
@@ -5043,7 +5162,10 @@ private struct ResultGridWithInspector: View {
             .accessibilityIdentifier("results.next-page")
         }
         if let outcome = model.copyOutcome {
-          Text(outcome).font(.caption).foregroundStyle(.secondary)
+          Text(outcome)
+            .font(.caption).foregroundStyle(.secondary)
+            .accessibilityIdentifier("results.copy.outcome")
+            .accessibilityValue(outcome)
         }
         if let error = model.copyError {
           Text(error).font(.caption).foregroundStyle(.red)
@@ -5083,11 +5205,13 @@ private struct ResultExportMenu: View {
       Label("Export Loaded", systemImage: "square.and.arrow.down")
     }
     .disabled(model.resultIdData == nil)
+    .accessibilityIdentifier("results.export")
     .accessibilityHint("Atomically export all rows currently resident in this result")
   }
 
   private func exportButton(_ label: String, format: String) -> some View {
     Button(label) { Task { await model.exportLoadedResult(format: format) } }
+      .accessibilityIdentifier("results.export.\(format)")
   }
 }
 
@@ -6152,6 +6276,9 @@ struct CatalogGrid: NSViewRepresentable {
       }
       let value = snapshot.rows[row][column]
       cell.textField?.stringValue = value
+      cell.textField?.setAccessibilityElement(false)
+      cell.setAccessibilityElement(true)
+      cell.setAccessibilityRole(.cell)
       cell.setAccessibilityLabel("\(snapshot.columns[column]), row \(row + 1)")
       cell.setAccessibilityValue(value)
       cell.setAccessibilityIdentifier("results.cell.\(row).\(column)")

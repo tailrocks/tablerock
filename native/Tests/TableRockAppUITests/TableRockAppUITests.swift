@@ -210,6 +210,65 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testLoadedResultExportsThroughUserControls() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let output = root.appendingPathComponent("result.csv")
+    let app = launch(
+      scenario: "success", root: root,
+      environment: [
+        "TABLEROCK_FIXTURE_DATA_MOVEMENT_UI": "1",
+        "TABLEROCK_TEST_SAVE_FILE": output.path,
+      ])
+
+    let export = app.descendants(matching: .any)["results.export"]
+    XCTAssertTrue(export.waitForExistence(timeout: 10))
+    export.click()
+    let csv = app.descendants(matching: .any)["results.export.csv"]
+    XCTAssertTrue(csv.waitForExistence(timeout: 5))
+    csv.click()
+
+    let outcome = app.staticTexts["results.copy.outcome"]
+    let exported = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value CONTAINS 'Exported 14 bytes'"), object: outcome)
+    XCTAssertEqual(XCTWaiter.wait(for: [exported], timeout: 10), .completed)
+    XCTAssertEqual(try String(contentsOf: output, encoding: .utf8), "id,name\n1,Ada\n")
+  }
+
+  @MainActor
+  func testCsvImportReviewsAndAppliesThroughUserControls() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let input = root.appendingPathComponent("input.csv")
+    try "id,name\n2,Grace\n".write(to: input, atomically: true, encoding: .utf8)
+    let app = launch(
+      scenario: "success", root: root,
+      environment: [
+        "TABLEROCK_FIXTURE_DATA_MOVEMENT_UI": "1",
+        "TABLEROCK_TEST_OPEN_FILE": input.path,
+      ])
+
+    let open = app.buttons["import.csv.open"]
+    XCTAssertTrue(open.waitForExistence(timeout: 10))
+    open.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["import.csv.sheet"].waitForExistence(timeout: 10))
+    let stage = app.buttons["import.csv.stage"]
+    XCTAssertTrue(stage.waitForExistence(timeout: 10))
+    stage.click()
+    let apply = app.buttons["import.csv.apply"]
+    XCTAssertTrue(apply.waitForExistence(timeout: 10))
+    apply.click()
+
+    let outcome = app.descendants(matching: .any)["import.csv.outcome"]
+    let applied = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value CONTAINS '1 applied'"), object: outcome)
+    XCTAssertEqual(XCTWaiter.wait(for: [applied], timeout: 10), .completed)
+  }
+
+  @MainActor
   func testMarkedTextSurvivesPresentationUpdate() throws {
     let app = launch(
       scenario: "success",
@@ -225,11 +284,13 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   private func launch(
     scenario: String,
+    root providedRoot: URL? = nil,
     environment: [String: String] = [:]
   ) -> XCUIApplication {
     let app = XCUIApplication()
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)
+    let root = providedRoot
+      ?? FileManager.default.temporaryDirectory
+        .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)
     addTeardownBlock { try? FileManager.default.removeItem(at: root) }
     app.launchEnvironment = [
       "TABLEROCK_TEST_MODE": "1",

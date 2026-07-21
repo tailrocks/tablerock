@@ -20,7 +20,9 @@ hittable and is superseded by this correction.
 - Query-tab `Close` actions expose `query.tab.close`; UI automation now selects
   the semantic identifier without assuming an AppKit menu-item role.
 - Result cells alone own `results.cell.<row>.<column>`; their non-actionable
-  text children no longer duplicate the identifier.
+  text children no longer duplicate the identifier. AppKit cells explicitly
+  expose the accessibility-element and cell-role contract rather than relying
+  on framework defaults.
 - `Load more rows` moved into the always-visible result toolbar. Result paging
   remains adjacent to its result while no longer depending on synthetic scroll
   gestures or viewport dimensions.
@@ -40,6 +42,10 @@ fixture-only production controls.
   appended row 501. It then exposed duplicate AX ownership, a duplicate
   confirmation-label query, and `1 columns`; those follow-up corrections await
   exact-main hosted proof after push.
+- Hosted run 29859429440 passed 13 of 14 XCUITests, including dirty close and
+  paging. Its remaining grid test showed that removing the child identifier
+  also removed the implicit cell from the AX tree; explicit cell-role ownership
+  is the follow-up under test.
 
 ## Provenance
 

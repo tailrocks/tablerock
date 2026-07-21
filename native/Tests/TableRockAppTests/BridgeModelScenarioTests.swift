@@ -5,6 +5,35 @@ import TableRockFeature
 
 @MainActor
 final class BridgeModelScenarioTests: XCTestCase {
+  func testTestFilePanelsConfineOpenAndSavePathsToIsolatedRoot() throws {
+    let base = FileManager.default.temporaryDirectory
+      .appendingPathComponent("TableRock-FilePanels-\(UUID().uuidString)", isDirectory: true)
+    let root = base.appendingPathComponent("root", isDirectory: true)
+    let outside = base.appendingPathComponent("outside", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let insideOpen = root.appendingPathComponent("input.csv")
+    let insideSave = root.appendingPathComponent("output.csv")
+    let escape = root.appendingPathComponent("escape", isDirectory: true)
+    try FileManager.default.createSymbolicLink(at: escape, withDestinationURL: outside)
+    let escapedSave = escape.appendingPathComponent("escaped.csv")
+    let request = AppFilePanelRequest(
+      title: "Fixture", prompt: "Choose", allowedExtensions: ["csv"])
+
+    let allowed = TestFilePanelPort(
+      root: root, openPath: insideOpen.path, savePath: insideSave.path)
+    XCTAssertEqual(allowed.chooseOpenFile(request), insideOpen)
+    XCTAssertEqual(allowed.chooseSaveFile(request), insideSave)
+
+    let rejected = TestFilePanelPort(
+      root: root, openPath: outside.appendingPathComponent("input.csv").path,
+      savePath: escapedSave.path)
+    XCTAssertNil(rejected.chooseOpenFile(request))
+    XCTAssertNil(rejected.chooseSaveFile(request))
+  }
+
   func testScriptedProfileCreatePersistsForInteractionTests() async throws {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
     let draft = WorkbenchProfileDraft(
