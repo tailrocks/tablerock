@@ -26,7 +26,7 @@ otool -L "$EXECUTABLE" > "$OUT/app-linkage.txt"
 codesign --display --verbose=4 "$APP" 2> "$OUT/codesign.txt"
 shasum -a 256 "$EXECUTABLE" "$BRIDGE" > "$OUT/sha256.txt"
 
-if rg -q '/target/|libtablerock_ffi[.]dylib' "$OUT/app-linkage.txt"; then
+if grep -Eq '/target/|libtablerock_ffi[.]dylib' "$OUT/app-linkage.txt"; then
   echo "error: canonical app retains development bridge linkage" >&2
   exit 1
 fi

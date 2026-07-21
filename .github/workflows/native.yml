@@ -16,6 +16,7 @@ on:
       - "scripts/build-native-app.sh"
       - "scripts/build-xcframework.sh"
       - "scripts/generate-swift-bindings.sh"
+      - "scripts/record-native-artifact-metadata.sh"
   workflow_dispatch:
 
 permissions:
