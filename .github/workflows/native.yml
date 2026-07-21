@@ -96,7 +96,6 @@ jobs:
             -project native/App/TableRock.xcodeproj \
             -scheme TableRock \
             -testPlan Checkpoint \
-            -configuration Release \
             -destination 'platform=macOS' \
             -resultBundlePath artifacts/TableRock-Checkpoint.xcresult \
             CODE_SIGN_IDENTITY=- \

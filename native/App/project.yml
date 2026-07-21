@@ -1,4 +1,8 @@
 name: TableRock
+configs:
+  Debug: debug
+  Test Release: release
+  Release: release
 options:
   minimumXcodeGenVersion: 2.46.0
   xcodeVersion: "26.6"
@@ -15,6 +19,9 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "26.0"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""
+  configs:
+    Test Release:
+      ENABLE_TESTABILITY: YES
 
 targets:
   TableRockFeature:
@@ -104,7 +111,7 @@ schemes:
     run:
       config: Debug
     test:
-      config: Release
+      config: Test Release
       testPlans:
         - path: TestPlans/Checkpoint.xctestplan
           defaultPlan: true

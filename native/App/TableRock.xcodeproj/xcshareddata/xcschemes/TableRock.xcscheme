@@ -80,7 +80,7 @@
       </BuildActionEntries>
    </BuildAction>
    <TestAction
-      buildConfiguration = "Release"
+      buildConfiguration = "Test Release"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
