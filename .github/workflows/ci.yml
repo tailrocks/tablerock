@@ -24,15 +24,16 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
-  RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
-  RUSTC_WRAPPER: sccache
-  SCCACHE_GHA_ENABLED: "false"
-  SCCACHE_CACHE_SIZE: 20G
 
 jobs:
   rust:
     name: Format, lint, and test (${{ matrix.config.lane }})
     timeout-minutes: 30
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +82,11 @@ jobs:
   integration:
     name: Real-server integration (${{ matrix.config.lane }})
     timeout-minutes: 45
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_CACHE_SIZE: 20G
     strategy:
       fail-fast: false
       matrix:
