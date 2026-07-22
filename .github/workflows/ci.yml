@@ -52,7 +52,7 @@ jobs:
           disable_annotations: "false"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          install_args: rust github:nextest-rs/nextest
+          install_args: rust aqua:nextest-rs/nextest/cargo-nextest
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache Cargo registry
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -65,6 +65,13 @@ jobs:
           key: cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-
+      - &cargo-target-cache
+        name: Cache Cargo target
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target
+          key: cargo-target-${{ matrix.config.lane }}-${{ runner.os }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: cargo-target-${{ matrix.config.lane }}-${{ runner.os }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -108,7 +115,7 @@ jobs:
           disable_annotations: "false"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          install_args: rust github:nextest-rs/nextest
+          install_args: rust aqua:nextest-rs/nextest/cargo-nextest
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache Cargo registry
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -121,6 +128,7 @@ jobs:
           key: cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-
+      - *cargo-target-cache
       - name: Real-server integration tests
         run: cargo nextest run -j 4 -p tablerock-engine --test postgres_real --test clickhouse_real --test redis_real --test three_engine_overlap_real --locked
       - name: UniFFI bridge real-server conformance
