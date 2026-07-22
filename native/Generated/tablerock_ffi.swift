@@ -639,6 +639,11 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 public protocol TableRockBridgeProtocol: AnyObject, Sendable {
 
     /**
+     * Consumes and applies one reviewed role change. Failed apply is not retryable.
+     */
+    func applyPostgresRoleChange(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool) throws  -> String
+
+    /**
      * Consume-once authorize + apply by review-token handle (never plan bytes).
      *
      * Token is removed before apply; a failed apply cannot be retried with the
@@ -862,6 +867,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func reorderProfiles(group: String?, ordered: [BridgeProfileOrderItem]) throws
 
     /**
+     * Discards an unused role-change review token.
+     */
+    func revokePostgresRoleChange(tokenId: Data) throws  -> Bool
+
+    /**
      * Drop a review token without authorizing (operator discard).
      */
     func revokeReviewToken(tokenId: Data) throws  -> Bool
@@ -903,6 +913,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Freezes a mapped CSV insert plan behind a single-use review token.
      */
     func stageCsvImport(sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String], mappedTypes: [String], nowMs: UInt64) throws  -> BridgeCsvImportReview
+
+    /**
+     * Freezes one typed role change behind a 60-second consume-once token.
+     */
+    func stagePostgresRoleChange(request: BridgeRoleChangeRequest) throws  -> BridgeRoleChangeReview
 
     /**
      * Stage a probe mutation + register a single-use review token for the
@@ -1001,6 +1016,22 @@ public static func create() -> TableRockBridge  {
 }
 
 
+
+    /**
+     * Consumes and applies one reviewed role change. Failed apply is not retryable.
+     */
+open func applyPostgresRoleChange(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_apply_postgres_role_change(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(tokenId),
+        FfiConverterData.lower(sessionId),
+        FfiConverterUInt64.lower(nowMs),
+        FfiConverterBool.lower(confirmed),uniffiCallStatus
+    )
+})
+}
 
     /**
      * Consume-once authorize + apply by review-token handle (never plan bytes).
@@ -1670,6 +1701,19 @@ open func reorderProfiles(group: String?, ordered: [BridgeProfileOrderItem])thro
 }
 
     /**
+     * Discards an unused role-change review token.
+     */
+open func revokePostgresRoleChange(tokenId: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_revoke_postgres_role_change(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(tokenId),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Drop a review token without authorizing (operator discard).
      */
 open func revokeReviewToken(tokenId: Data)throws  -> Bool  {
@@ -1807,6 +1851,19 @@ open func stageCsvImport(sessionId: Data, catalogNodeId: Data, path: String, map
         FfiConverterSequenceString.lower(mappedColumns),
         FfiConverterSequenceString.lower(mappedTypes),
         FfiConverterUInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Freezes one typed role change behind a 60-second consume-once token.
+     */
+open func stagePostgresRoleChange(request: BridgeRoleChangeRequest)throws  -> BridgeRoleChangeReview  {
+    return try  FfiConverterTypeBridgeRoleChangeReview_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_stage_postgres_role_change(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeBridgeRoleChangeRequest_lower(request),uniffiCallStatus
     )
 })
 }
@@ -4127,6 +4184,138 @@ public func FfiConverterTypeBridgeRelationshipSnapshot_lower(_ value: BridgeRela
 }
 
 
+public struct BridgeRoleChangeRequest: Equatable, Hashable {
+    public var sessionId: Data
+    public var catalogNodeId: Data?
+    public var kind: String
+    public var role: String
+    public var memberOrGrantee: String
+    public var privilege: String
+    public var nowMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sessionId: Data, catalogNodeId: Data?, kind: String, role: String, memberOrGrantee: String, privilege: String, nowMs: UInt64) {
+        self.sessionId = sessionId
+        self.catalogNodeId = catalogNodeId
+        self.kind = kind
+        self.role = role
+        self.memberOrGrantee = memberOrGrantee
+        self.privilege = privilege
+        self.nowMs = nowMs
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRoleChangeRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRoleChangeRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRoleChangeRequest {
+        return
+            try BridgeRoleChangeRequest(
+                sessionId: FfiConverterData.read(from: &buf),
+                catalogNodeId: FfiConverterOptionData.read(from: &buf),
+                kind: FfiConverterString.read(from: &buf),
+                role: FfiConverterString.read(from: &buf),
+                memberOrGrantee: FfiConverterString.read(from: &buf),
+                privilege: FfiConverterString.read(from: &buf),
+                nowMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRoleChangeRequest, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.sessionId, into: &buf)
+        FfiConverterOptionData.write(value.catalogNodeId, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.role, into: &buf)
+        FfiConverterString.write(value.memberOrGrantee, into: &buf)
+        FfiConverterString.write(value.privilege, into: &buf)
+        FfiConverterUInt64.write(value.nowMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRoleChangeRequest_lift(_ buf: RustBuffer) throws -> BridgeRoleChangeRequest {
+    return try FfiConverterTypeBridgeRoleChangeRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRoleChangeRequest_lower(_ value: BridgeRoleChangeRequest) -> RustBuffer {
+    return FfiConverterTypeBridgeRoleChangeRequest.lower(value)
+}
+
+
+public struct BridgeRoleChangeReview: Equatable, Hashable {
+    public var tokenId: Data
+    public var summary: String
+    public var expiresAtMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(tokenId: Data, summary: String, expiresAtMs: UInt64) {
+        self.tokenId = tokenId
+        self.summary = summary
+        self.expiresAtMs = expiresAtMs
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRoleChangeReview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRoleChangeReview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRoleChangeReview {
+        return
+            try BridgeRoleChangeReview(
+                tokenId: FfiConverterData.read(from: &buf),
+                summary: FfiConverterString.read(from: &buf),
+                expiresAtMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRoleChangeReview, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.tokenId, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+        FfiConverterUInt64.write(value.expiresAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRoleChangeReview_lift(_ buf: RustBuffer) throws -> BridgeRoleChangeReview {
+    return try FfiConverterTypeBridgeRoleChangeReview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRoleChangeReview_lower(_ value: BridgeRoleChangeReview) -> RustBuffer {
+    return FfiConverterTypeBridgeRoleChangeReview.lower(value)
+}
+
+
 public struct BridgeRoleMembership: Equatable, Hashable {
     public var role: String
     public var member: String
@@ -5867,6 +6056,9 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_apply_postgres_role_change() != 27204) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_apply_review_token() != 161) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6026,6 +6218,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_reorder_profiles() != 8154) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_postgres_role_change() != 38311) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_review_token() != 712) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6057,6 +6252,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_csv_import() != 10017) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_postgres_role_change() != 21204) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_probe_review() != 53434) {

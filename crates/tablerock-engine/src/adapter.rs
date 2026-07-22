@@ -505,6 +505,20 @@ pub trait DriverSession: Send + Sync {
         })
     }
 
+    /// Applies one consume-once reviewed PostgreSQL role change.
+    fn apply_postgres_role_change<'a>(
+        &'a self,
+        authorized: tablerock_core::AuthorizedRoleChangePlan,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        let _ = authorized;
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
     /// PostgreSQL-only bounded `pg_stat_activity` snapshot.
     fn postgres_activity<'a>(
         &'a self,
@@ -906,6 +920,17 @@ impl DriverSession for PostgresSession {
     ) -> DriverFuture<'a, Result<PostgresRoleSnapshot, AdapterError>> {
         Box::pin(async move {
             PostgresSession::role_snapshot(self, schema, table)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
+    fn apply_postgres_role_change<'a>(
+        &'a self,
+        authorized: tablerock_core::AuthorizedRoleChangePlan,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::apply_role_change(self, &authorized)
                 .await
                 .map_err(map_postgres)
         })

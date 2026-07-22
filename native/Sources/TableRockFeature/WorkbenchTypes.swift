@@ -75,6 +75,14 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
     -> WorkbenchRelationshipSnapshot
   func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws -> WorkbenchRoleSnapshot
+  func stagePostgresRoleChange(
+    sessionId: Data, catalogNodeId: Data?, kind: String, role: String,
+    memberOrGrantee: String, privilege: String, nowMs: UInt64
+  ) throws -> WorkbenchRoleChangeReview
+  func applyPostgresRoleChange(
+    tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool
+  ) throws -> String
+  func revokePostgresRoleChange(tokenId: Data) throws -> Bool
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
     -> WorkbenchBackendSignalOutcome
   func probePostgresTool(kind: String, explicitPath: String?) throws -> WorkbenchPostgresToolProbe
@@ -598,6 +606,17 @@ public struct WorkbenchRoleSnapshot: Sendable, Equatable {
     self.privilegeScope = privilegeScope
     self.privilegesUnavailable = privilegesUnavailable
     self.truncated = truncated
+  }
+}
+
+public struct WorkbenchRoleChangeReview: Sendable, Equatable {
+  public let tokenId: Data
+  public let summary: String
+  public let expiresAtMs: UInt64
+  public init(tokenId: Data, summary: String, expiresAtMs: UInt64) {
+    self.tokenId = tokenId
+    self.summary = summary
+    self.expiresAtMs = expiresAtMs
   }
 }
 

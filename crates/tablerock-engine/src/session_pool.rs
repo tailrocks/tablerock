@@ -216,6 +216,22 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn apply_postgres_role_change<'a>(
+        &'a self,
+        authorized: tablerock_core::AuthorizedRoleChangePlan,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => session.apply_postgres_role_change(authorized).await,
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn postgres_activity<'a>(
         &'a self,
     ) -> DriverFuture<'a, Result<Vec<crate::PostgresActivityRow>, AdapterError>> {

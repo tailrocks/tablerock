@@ -165,6 +165,11 @@ extension BridgeRoleSnapshot {
       privilegesUnavailable: privilegesUnavailable, truncated: truncated)
   }
 }
+extension BridgeRoleChangeReview {
+  var workbench: WorkbenchRoleChangeReview {
+    .init(tokenId: tokenId, summary: summary, expiresAtMs: expiresAtMs)
+  }
+}
 extension BridgeBackendSignalOutcome {
   var workbench: WorkbenchBackendSignalOutcome {
     .init(kind: kind, pid: pid, acknowledged: acknowledged)

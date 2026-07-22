@@ -2951,6 +2951,7 @@ async fn role_memberships_and_table_privileges() {
         .execute_sql(
             "CREATE ROLE tr_parent NOLOGIN; \
              CREATE ROLE tr_child NOLOGIN; \
+             CREATE ROLE tr_other NOLOGIN; \
              GRANT tr_parent TO tr_child; \
              CREATE TABLE priv_probe (id int); \
              GRANT SELECT ON priv_probe TO tr_child;",
@@ -3009,6 +3010,40 @@ async fn role_memberships_and_table_privileges() {
     );
     assert!(!snapshot.privileges_unavailable);
     assert!(!snapshot.truncated);
+
+    use tablerock_core::{
+        ContextId, Engine, IdParts, OperationScope, ProfileId, ReviewTokenId, Revision,
+        RoleChangeKind, RoleChangePlan, SessionId,
+    };
+    let scope = OperationScope::new(
+        ProfileId::from_parts(IdParts::new(9, 1).unwrap()).unwrap(),
+        SessionId::from_parts(IdParts::new(9, 2).unwrap()).unwrap(),
+        ContextId::from_parts(IdParts::new(9, 3).unwrap()).unwrap(),
+    );
+    let plan = RoleChangePlan::new(
+        Engine::PostgreSql,
+        scope,
+        Revision::INITIAL,
+        "postgres",
+        RoleChangeKind::GrantMembership {
+            role: "tr_parent".into(),
+            member: "tr_other".into(),
+        },
+    )
+    .unwrap();
+    let token = ReviewTokenId::from_parts(IdParts::new(9, 4).unwrap()).unwrap();
+    let authorized = plan
+        .review(token, 1_000, 61_000)
+        .unwrap()
+        .authorize(2_000, scope, Revision::INITIAL)
+        .unwrap();
+    session.apply_role_change(&authorized).await.unwrap();
+    let changed = session.list_role_memberships(64).await.unwrap();
+    assert!(
+        changed
+            .iter()
+            .any(|(role, member, _, _, _)| { role == "tr_parent" && member == "tr_other" })
+    );
 }
 
 #[tokio::test]

@@ -19,8 +19,9 @@ pub use bridge::{
     BridgeEventBatch, BridgeEventRecord, BridgeHistoryItem, BridgeNativeWindowIntent,
     BridgePostgresToolProbe, BridgePostgresToolRequest, BridgePostgresToolStatus,
     BridgeProfileDraft, BridgeProfileGroup, BridgeProfileItem, BridgeProfileOrderItem,
-    BridgeReconnectAttempt, BridgeReconnectPlan, BridgeSavedFilterPreset, BridgeSavedQueryItem,
-    BridgeSessionHealth, BridgeSessionIntent, BridgeSqlFile, BridgeWorkspaceTab, CancelOutcome,
-    OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
+    BridgeReconnectAttempt, BridgeReconnectPlan, BridgeRoleChangeRequest, BridgeRoleChangeReview,
+    BridgeRoleMembership, BridgeRolePrivilege, BridgeRoleSnapshot, BridgeSavedFilterPreset,
+    BridgeSavedQueryItem, BridgeSessionHealth, BridgeSessionIntent, BridgeSqlFile,
+    BridgeWorkspaceTab, CancelOutcome, OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
 };
 pub use error::BridgeError;

@@ -18,7 +18,7 @@ use tablerock_engine::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
     DriverSession, PostgresActivityRow, PostgresRoleSnapshot, ServerDescribe, SessionHealth,
 };
-use tablerock_ffi::{BridgeError, SubmitSpec, TableRockBridge};
+use tablerock_ffi::{BridgeError, BridgeRoleChangeRequest, SubmitSpec, TableRockBridge};
 
 struct OnePageStream {
     page: Option<ResultPage>,
@@ -28,6 +28,7 @@ struct OnePageStream {
 
 struct ActivitySession {
     signals: Arc<Mutex<Vec<(bool, i32)>>>,
+    role_changes: Arc<Mutex<Vec<String>>>,
 }
 
 impl DriverSession for ActivitySession {
@@ -108,6 +109,17 @@ impl DriverSession for ActivitySession {
                 truncated: false,
             })
         })
+    }
+
+    fn apply_postgres_role_change<'a>(
+        &'a self,
+        authorized: tablerock_core::AuthorizedRoleChangePlan,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        self.role_changes
+            .lock()
+            .unwrap()
+            .push(format!("{:?}", authorized.plan().kind()));
+        Box::pin(async { Ok(()) })
     }
 
     fn signal_postgres_backend<'a>(
@@ -276,11 +288,13 @@ fn connection_url_becomes_unsaved_review_draft() {
 fn postgres_activity_and_signals_use_typed_driver_contract() {
     let bridge = TableRockBridge::new_for_test();
     let signals = Arc::new(Mutex::new(Vec::new()));
+    let role_changes = Arc::new(Mutex::new(Vec::new()));
     let session = bridge
         .open_driver_session(
             Engine::PostgreSql,
             Box::new(ActivitySession {
                 signals: Arc::clone(&signals),
+                role_changes: Arc::clone(&role_changes),
             }),
         )
         .unwrap();
@@ -294,6 +308,28 @@ fn postgres_activity_and_signals_use_typed_driver_contract() {
     assert_eq!(roles.current_user, "fixture");
     assert_eq!(roles.effective_roles, vec!["fixture", "reader"]);
     assert_eq!(roles.memberships[0].role, "reader");
+    let review = bridge
+        .stage_postgres_role_change(BridgeRoleChangeRequest {
+            session_id: session.clone(),
+            catalog_node_id: None,
+            kind: "grant_membership".into(),
+            role: "reader".into(),
+            member_or_grantee: "analyst".into(),
+            privilege: String::new(),
+            now_ms: 1_000,
+        })
+        .unwrap();
+    assert!(review.summary.contains("reader"));
+    bridge
+        .apply_postgres_role_change(review.token_id.clone(), session.clone(), 2_000, true)
+        .unwrap();
+    assert_eq!(role_changes.lock().unwrap().len(), 1);
+    let consumed = bridge
+        .apply_postgres_role_change(review.token_id, session.clone(), 2_001, true)
+        .unwrap_err();
+    assert!(
+        matches!(consumed, BridgeError::Rejected { code, .. } if code == "postgres-role-change-token")
+    );
 
     let cancel = bridge
         .signal_postgres_backend(session.clone(), "cancel".into(), 42)

@@ -118,6 +118,14 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertEqual(model.postgresRoleSnapshot?.effectiveRoles, ["fixture", "reader"])
     XCTAssertEqual(model.postgresRoleSnapshot?.memberships.first?.role, "reader")
     XCTAssertNil(model.postgresRolesError)
+
+    model.postgresRoleChangeRole = "reader"
+    model.postgresRoleChangeSubject = "analyst"
+    await model.stagePostgresRoleChange()
+    XCTAssertNotNil(model.postgresRoleChangeReview)
+    await model.applyPostgresRoleChange()
+    XCTAssertEqual(model.postgresRoleChangeOutcome, "Role change applied")
+    XCTAssertNil(model.postgresRoleChangeReview)
   }
 
   func testPostgresBackupUsesProbeReviewAndSupervisedStatus() async {

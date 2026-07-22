@@ -19,11 +19,11 @@ use tablerock_core::{
     ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName, ProfileOrganization,
     ProfilePolicy, ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
     ProfileSafetyMode, ProfileSearchTerm, ProfileTag, ReconnectDecision, ReconnectPreference,
-    RedisKeyKind, ResultStore, ResultStoreLimits, Revision, SavedFilterCondition,
-    SavedFilterLibrary, SavedFilterPreset, SecretSource, SecretSourceKind, ServiceCoordinator,
-    ServiceLimits, SessionId, ShutdownMode, StatementText, SupportBundle, SupportPlatform,
-    TlsPolicy, copy_cell_from_page, format_copy_table, is_safe_preset_name, parse_connection_url,
-    reconnect_decision,
+    RedisKeyKind, ResultStore, ResultStoreLimits, ReviewTokenId, ReviewedRoleChangePlan, Revision,
+    RoleChangeKind, RoleChangePlan, SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset,
+    SecretSource, SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
+    StatementText, SupportBundle, SupportPlatform, TlsPolicy, copy_cell_from_page,
+    format_copy_table, is_safe_preset_name, parse_connection_url, reconnect_decision,
 };
 use tablerock_engine::{
     AdapterFailureClass, BrowseDialect, BrowsePlan, CatalogRequest, ClickHouseCompression,
@@ -440,6 +440,24 @@ pub struct BridgeRoleSnapshot {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRoleChangeRequest {
+    pub session_id: Vec<u8>,
+    pub catalog_node_id: Option<Vec<u8>>,
+    pub kind: String,
+    pub role: String,
+    pub member_or_grantee: String,
+    pub privilege: String,
+    pub now_ms: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRoleChangeReview {
+    pub token_id: Vec<u8>,
+    pub summary: String,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeBackendSignalOutcome {
     pub kind: String,
     pub pid: i32,
@@ -491,6 +509,12 @@ struct PostgresToolTask {
     cancel: tokio::sync::watch::Sender<bool>,
 }
 
+struct RoleReviewEntry {
+    session_id: SessionId,
+    reviewed: ReviewedRoleChangePlan,
+    expires_at_ms: u64,
+}
+
 #[derive(Clone)]
 struct RegisteredSession {
     profile_id: tablerock_core::ProfileId,
@@ -507,6 +531,7 @@ struct BridgeInner {
     service: EngineService,
     results: ResultStore,
     reviews: MutationReviewRegistry,
+    role_reviews: BTreeMap<ReviewTokenId, RoleReviewEntry>,
     sessions: BTreeMap<SessionId, RegisteredSession>,
     /// Operation -> result identity used when admitting streamed pages.
     operation_results: BTreeMap<OperationId, PageIdentity>,
@@ -1020,6 +1045,32 @@ impl TableRockBridge {
         catalog_node_id: Option<Vec<u8>>,
     ) -> Result<BridgeRoleSnapshot, BridgeError> {
         catch_entry(|| self.postgres_roles_inner(session_id, catalog_node_id))
+    }
+
+    /// Freezes one typed role change behind a 60-second consume-once token.
+    pub fn stage_postgres_role_change(
+        &self,
+        request: BridgeRoleChangeRequest,
+    ) -> Result<BridgeRoleChangeReview, BridgeError> {
+        catch_entry(|| self.stage_postgres_role_change_inner(request))
+    }
+
+    /// Consumes and applies one reviewed role change. Failed apply is not retryable.
+    pub fn apply_postgres_role_change(
+        &self,
+        token_id: Vec<u8>,
+        session_id: Vec<u8>,
+        now_ms: u64,
+        confirmed: bool,
+    ) -> Result<String, BridgeError> {
+        catch_entry(|| {
+            self.apply_postgres_role_change_inner(token_id, session_id, now_ms, confirmed)
+        })
+    }
+
+    /// Discards an unused role-change review token.
+    pub fn revoke_postgres_role_change(&self, token_id: Vec<u8>) -> Result<bool, BridgeError> {
+        catch_entry(|| self.revoke_postgres_role_change_inner(token_id))
     }
 
     /// Signals one PostgreSQL backend. Kind is exactly `cancel` or `terminate`.
@@ -3789,6 +3840,257 @@ impl TableRockBridge {
         })
     }
 
+    fn stage_postgres_role_change_inner(
+        &self,
+        request: BridgeRoleChangeRequest,
+    ) -> Result<BridgeRoleChangeReview, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let session_id = session_from_bytes(&request.session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let (driver, registered, relation_scope) = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?
+                .clone();
+            if registered.engine != Engine::PostgreSql {
+                return Err(BridgeError::rejected(
+                    "postgres-role-change-engine",
+                    "role changes require PostgreSQL",
+                ));
+            }
+            let relation_scope = request
+                .catalog_node_id
+                .as_ref()
+                .map(|bytes| {
+                    let node_id = catalog_node_from_bytes(bytes).map_err(|_| {
+                        BridgeError::rejected(
+                            "bad-catalog-node-id",
+                            "catalog node id must be 16 bytes",
+                        )
+                    })?;
+                    let node =
+                        inner
+                            .catalog_nodes
+                            .get(&(session_id, node_id))
+                            .ok_or_else(|| {
+                                BridgeError::rejected(
+                                    "unknown-catalog-node",
+                                    "catalog node is stale or unknown",
+                                )
+                            })?;
+                    if !matches!(node.kind(), CatalogNodeKind::PostgreSqlObject(_)) {
+                        return Err(BridgeError::rejected(
+                            "postgres-role-change-kind",
+                            "privilege changes require a PostgreSQL relation",
+                        ));
+                    }
+                    let parent = node
+                        .parent_id()
+                        .and_then(|id| inner.catalog_nodes.get(&(session_id, id)))
+                        .ok_or_else(|| {
+                            BridgeError::rejected("catalog-parent", "object parent is stale")
+                        })?;
+                    Ok((parent.name().to_owned(), node.name().to_owned()))
+                })
+                .transpose()?;
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (driver, registered, relation_scope)
+        };
+        let current_user = self
+            .runtime
+            .block_on(driver.postgres_roles(None, None))?
+            .map_err(|error| BridgeError::rejected("postgres-role-change", error.to_string()))?
+            .current_user;
+        let kind = match request.kind.as_str() {
+            "grant_membership" => RoleChangeKind::GrantMembership {
+                role: request.role,
+                member: request.member_or_grantee,
+            },
+            "revoke_membership" => RoleChangeKind::RevokeMembership {
+                role: request.role,
+                member: request.member_or_grantee,
+            },
+            "grant_privilege" | "revoke_privilege" => {
+                let (schema, table) = relation_scope.ok_or_else(|| {
+                    BridgeError::rejected(
+                        "postgres-role-change-scope",
+                        "privilege changes require a selected relation",
+                    )
+                })?;
+                if request.kind == "grant_privilege" {
+                    RoleChangeKind::GrantTablePrivilege {
+                        schema,
+                        table,
+                        grantee: request.member_or_grantee,
+                        privilege: request.privilege,
+                    }
+                } else {
+                    RoleChangeKind::RevokeTablePrivilege {
+                        schema,
+                        table,
+                        grantee: request.member_or_grantee,
+                        privilege: request.privilege,
+                    }
+                }
+            }
+            _ => {
+                return Err(BridgeError::rejected(
+                    "postgres-role-change-kind",
+                    "unknown role change kind",
+                ));
+            }
+        };
+        let scope = OperationScope::new(
+            registered.profile_id,
+            registered.session_id,
+            registered.context_id,
+        );
+        let summary = role_change_summary(&kind);
+        let plan = RoleChangePlan::new(
+            Engine::PostgreSql,
+            scope,
+            registered.context_revision,
+            &current_user,
+            kind,
+        )
+        .map_err(|error| {
+            BridgeError::rejected("postgres-role-change-plan", format!("{error:?}"))
+        })?;
+        let expires_at_ms = request.now_ms.saturating_add(60_000);
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        let current = inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        if current.context_revision != registered.context_revision {
+            return Err(BridgeError::rejected(
+                "postgres-role-change-stale",
+                "session context changed during review staging",
+            ));
+        }
+        inner
+            .role_reviews
+            .retain(|_, entry| request.now_ms < entry.expires_at_ms);
+        if inner.role_reviews.len() >= 256 {
+            return Err(BridgeError::rejected(
+                "postgres-role-change-capacity",
+                "too many active role reviews",
+            ));
+        }
+        let token_id = inner.ids.review_token();
+        let reviewed = plan
+            .review(token_id, request.now_ms, expires_at_ms)
+            .map_err(|error| {
+                BridgeError::rejected("postgres-role-change-review", format!("{error:?}"))
+            })?;
+        inner.role_reviews.insert(
+            token_id,
+            RoleReviewEntry {
+                session_id,
+                reviewed,
+                expires_at_ms,
+            },
+        );
+        Ok(BridgeRoleChangeReview {
+            token_id: review_token_bytes(token_id),
+            summary,
+            expires_at_ms,
+        })
+    }
+
+    fn apply_postgres_role_change_inner(
+        &self,
+        token_id_bytes: Vec<u8>,
+        session_id_bytes: Vec<u8>,
+        now_ms: u64,
+        confirmed: bool,
+    ) -> Result<String, BridgeError> {
+        if !confirmed {
+            return Err(BridgeError::rejected(
+                "postgres-role-change-confirmation",
+                "explicit confirmation is required",
+            ));
+        }
+        let token_id = review_token_from_bytes(&token_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-review-token-id", "review token id must be 16 bytes")
+        })?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let (authorized, driver) = {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+            let entry = inner.role_reviews.remove(&token_id).ok_or_else(|| {
+                BridgeError::rejected(
+                    "postgres-role-change-token",
+                    "role review token is missing or consumed",
+                )
+            })?;
+            if entry.session_id != session_id {
+                return Err(BridgeError::rejected(
+                    "postgres-role-change-session",
+                    "role review belongs to another session",
+                ));
+            }
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let scope = OperationScope::new(
+                registered.profile_id,
+                registered.session_id,
+                registered.context_id,
+            );
+            let authorized = entry
+                .reviewed
+                .authorize(now_ms, scope, registered.context_revision)
+                .map_err(|error| {
+                    BridgeError::rejected("postgres-role-change-authorize", format!("{error:?}"))
+                })?;
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (authorized, driver)
+        };
+        self.runtime
+            .block_on(driver.apply_postgres_role_change(authorized))?
+            .map_err(|error| {
+                BridgeError::rejected("postgres-role-change-apply", error.to_string())
+            })?;
+        Ok("Role change applied".into())
+    }
+
+    fn revoke_postgres_role_change_inner(
+        &self,
+        token_id_bytes: Vec<u8>,
+    ) -> Result<bool, BridgeError> {
+        let token_id = review_token_from_bytes(&token_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-review-token-id", "review token id must be 16 bytes")
+        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        Ok(inner.role_reviews.remove(&token_id).is_some())
+    }
+
     fn signal_postgres_backend_inner(
         &self,
         session_id_bytes: Vec<u8>,
@@ -5673,6 +5975,33 @@ const fn catalog_children_label(state: CatalogChildrenState) -> &'static str {
     }
 }
 
+fn role_change_summary(kind: &RoleChangeKind) -> String {
+    match kind {
+        RoleChangeKind::GrantMembership { role, member } => {
+            format!("Grant role {role} to {member}")
+        }
+        RoleChangeKind::RevokeMembership { role, member } => {
+            format!("Revoke role {role} from {member}")
+        }
+        RoleChangeKind::GrantTablePrivilege {
+            schema,
+            table,
+            grantee,
+            privilege,
+        } => {
+            format!("Grant {privilege} on {schema}.{table} to {grantee}")
+        }
+        RoleChangeKind::RevokeTablePrivilege {
+            schema,
+            table,
+            grantee,
+            privilege,
+        } => {
+            format!("Revoke {privilege} on {schema}.{table} from {grantee}")
+        }
+    }
+}
+
 const fn catalog_kind_label(kind: CatalogNodeKind) -> &'static str {
     match kind {
         CatalogNodeKind::PostgreSqlDatabase => "postgresql_database",
@@ -5734,6 +6063,7 @@ impl BridgeInner {
             service,
             results,
             reviews,
+            role_reviews: BTreeMap::new(),
             sessions: BTreeMap::new(),
             operation_results: BTreeMap::new(),
             operation_history: BTreeMap::new(),

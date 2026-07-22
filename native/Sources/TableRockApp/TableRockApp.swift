@@ -405,6 +405,16 @@ extension WorkbenchBackend {
   func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws -> WorkbenchRoleSnapshot {
     try scriptedUnavailable("postgres-roles")
   }
+  func stagePostgresRoleChange(
+    sessionId: Data, catalogNodeId: Data?, kind: String, role: String,
+    memberOrGrantee: String, privilege: String, nowMs: UInt64
+  ) throws -> WorkbenchRoleChangeReview { try scriptedUnavailable("postgres-role-change-stage") }
+  func applyPostgresRoleChange(
+    tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool
+  ) throws -> String { try scriptedUnavailable("postgres-role-change-apply") }
+  func revokePostgresRoleChange(tokenId: Data) throws -> Bool {
+    try scriptedUnavailable("postgres-role-change-revoke")
+  }
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
     -> WorkbenchBackendSignalOutcome
   { try scriptedUnavailable("postgres-activity-signal") }
@@ -736,6 +746,26 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       ], privilegeScope: catalogNodeId == nil ? nil : "public.fixture_table",
       privilegesUnavailable: false, truncated: false)
   }
+  func stagePostgresRoleChange(
+    sessionId: Data, catalogNodeId: Data?, kind: String, role: String,
+    memberOrGrantee: String, privilege: String, nowMs: UInt64
+  ) throws -> WorkbenchRoleChangeReview {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16),
+      !role.isEmpty, !memberOrGrantee.isEmpty
+    else { return try scriptedUnavailable("postgres-role-change-stage") }
+    return WorkbenchRoleChangeReview(
+      tokenId: Data(repeating: 12, count: 16),
+      summary: "\(kind) \(role) \(memberOrGrantee)", expiresAtMs: nowMs + 60_000)
+  }
+  func applyPostgresRoleChange(
+    tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool
+  ) throws -> String {
+    guard scenario == "success", tokenId == Data(repeating: 12, count: 16), confirmed else {
+      return try scriptedUnavailable("postgres-role-change-apply")
+    }
+    return "Role change applied"
+  }
+  func revokePostgresRoleChange(tokenId: Data) throws -> Bool { true }
 
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
     -> WorkbenchBackendSignalOutcome
@@ -1088,6 +1118,25 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
 
   func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws -> WorkbenchRoleSnapshot {
     try bridge.postgresRoles(sessionId: sessionId, catalogNodeId: catalogNodeId).workbench
+  }
+  func stagePostgresRoleChange(
+    sessionId: Data, catalogNodeId: Data?, kind: String, role: String,
+    memberOrGrantee: String, privilege: String, nowMs: UInt64
+  ) throws -> WorkbenchRoleChangeReview {
+    try bridge.stagePostgresRoleChange(
+      request: BridgeRoleChangeRequest(
+        sessionId: sessionId, catalogNodeId: catalogNodeId, kind: kind, role: role,
+        memberOrGrantee: memberOrGrantee, privilege: privilege, nowMs: nowMs)
+    ).workbench
+  }
+  func applyPostgresRoleChange(
+    tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool
+  ) throws -> String {
+    try bridge.applyPostgresRoleChange(
+      tokenId: tokenId, sessionId: sessionId, nowMs: nowMs, confirmed: confirmed)
+  }
+  func revokePostgresRoleChange(tokenId: Data) throws -> Bool {
+    try bridge.revokePostgresRoleChange(tokenId: tokenId)
   }
 
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
@@ -2142,6 +2191,12 @@ final class BridgeModel {
   var postgresRoleSearch = ""
   private(set) var postgresRolesLoading = false
   private(set) var postgresRolesError: String?
+  var postgresRoleChangeKind = "grant_membership"
+  var postgresRoleChangeRole = ""
+  var postgresRoleChangeSubject = ""
+  var postgresRoleChangePrivilege = "SELECT"
+  var postgresRoleChangeReview: WorkbenchRoleChangeReview?
+  var postgresRoleChangeOutcome: String?
   var postgresToolsPresented = false
   var postgresToolKind = "dump"
   var postgresToolContent = "all"
@@ -3882,6 +3937,46 @@ final class BridgeModel {
       postgresRoleSnapshot = nil
       postgresRolesError = "Roles unavailable: \(error)"
     }
+  }
+
+  func stagePostgresRoleChange() async {
+    guard let client, let session = sessionData else { return }
+    postgresRolesError = nil
+    postgresRoleChangeOutcome = nil
+    do {
+      postgresRoleChangeReview = try await client.stagePostgresRoleChange(
+        sessionId: session, catalogNodeId: activeObjectTab?.catalogNodeId,
+        kind: postgresRoleChangeKind,
+        role: postgresRoleChangeRole.trimmingCharacters(in: .whitespacesAndNewlines),
+        memberOrGrantee: postgresRoleChangeSubject.trimmingCharacters(in: .whitespacesAndNewlines),
+        privilege: postgresRoleChangePrivilege,
+        nowMs: dependencies.clock.nowMilliseconds())
+    } catch {
+      postgresRoleChangeReview = nil
+      postgresRolesError = "Role change rejected: \(error)"
+    }
+  }
+
+  func applyPostgresRoleChange() async {
+    guard let client, let session = sessionData, let review = postgresRoleChangeReview else {
+      return
+    }
+    postgresRoleChangeReview = nil
+    do {
+      postgresRoleChangeOutcome = try await client.applyPostgresRoleChange(
+        tokenId: review.tokenId, sessionId: session,
+        nowMs: dependencies.clock.nowMilliseconds(), confirmed: true)
+      await refreshPostgresRoles()
+    } catch {
+      postgresRolesError = "Role change outcome unknown or failed; review consumed: \(error)"
+    }
+  }
+
+  func discardPostgresRoleChange() async {
+    if let review = postgresRoleChangeReview, let client {
+      _ = try? await client.revokePostgresRoleChange(tokenId: review.tokenId)
+    }
+    postgresRoleChangeReview = nil
   }
 
   func openRelatedRelation(_ edge: WorkbenchRelationshipEdge) async {
@@ -6367,6 +6462,9 @@ private struct PostgresRolesSheet: View {
       ? snapshot.roles
       : snapshot.roles.filter { $0.localizedCaseInsensitiveContains(query) }
   }
+  private var isPrivilegeChange: Bool {
+    model.postgresRoleChangeKind.hasSuffix("privilege")
+  }
 
   var body: some View {
     @Bindable var model = model
@@ -6377,7 +6475,10 @@ private struct PostgresRolesSheet: View {
         Spacer()
         Button("Refresh") { Task { await model.refreshPostgresRoles() } }
           .disabled(model.postgresRolesLoading)
-        Button("Close") { model.postgresRolesPresented = false }
+        Button("Close") {
+          Task { await model.discardPostgresRoleChange() }
+          model.postgresRolesPresented = false
+        }
       }
       TextField("Search roles", text: $model.postgresRoleSearch)
         .textFieldStyle(.roundedBorder)
@@ -6432,8 +6533,52 @@ private struct PostgresRolesSheet: View {
           Label("Snapshot truncated at safety limits", systemImage: "exclamationmark.triangle")
             .foregroundStyle(.orange)
         }
-        Text("Role changes require a separate reviewed authority flow and are unavailable here.")
-          .font(.caption).foregroundStyle(.secondary)
+        GroupBox("Reviewed change") {
+          VStack(alignment: .leading, spacing: 8) {
+            Picker("Action", selection: $model.postgresRoleChangeKind) {
+              Text("Grant membership").tag("grant_membership")
+              Text("Revoke membership").tag("revoke_membership")
+              Text("Grant table privilege").tag("grant_privilege")
+              Text("Revoke table privilege").tag("revoke_privilege")
+            }
+            .pickerStyle(.segmented)
+            if !isPrivilegeChange {
+              TextField("Role", text: $model.postgresRoleChangeRole)
+                .accessibilityIdentifier("postgres.roles.change.role")
+            }
+            TextField(
+              isPrivilegeChange ? "Grantee" : "Member", text: $model.postgresRoleChangeSubject
+            )
+            .accessibilityIdentifier("postgres.roles.change.subject")
+            if isPrivilegeChange {
+              Picker("Privilege", selection: $model.postgresRoleChangePrivilege) {
+                ForEach(
+                  ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"],
+                  id: \.self
+                ) {
+                  Text($0).tag($0)
+                }
+              }
+              Text("Privilege changes use selected relation only.").font(.caption)
+            }
+            Button("Review Change…") { Task { await model.stagePostgresRoleChange() } }
+              .disabled(
+                model.postgresRoleChangeSubject.trimmingCharacters(in: .whitespacesAndNewlines)
+                  .isEmpty
+                  || (!isPrivilegeChange
+                    && model.postgresRoleChangeRole.trimmingCharacters(in: .whitespacesAndNewlines)
+                      .isEmpty)
+                  || (isPrivilegeChange && model.selectedObjectTab == nil)
+              )
+              .accessibilityIdentifier("postgres.roles.change.review")
+            Text("Revoking current-user authority is blocked before review.")
+              .font(.caption).foregroundStyle(.secondary)
+          }
+        }
+        if let outcome = model.postgresRoleChangeOutcome {
+          Text(outcome).foregroundStyle(.green)
+            .accessibilityIdentifier("postgres.roles.change.outcome")
+        }
       }
       if model.postgresRolesLoading { ProgressView("Loading roles…") }
       if let error = model.postgresRolesError {
@@ -6443,6 +6588,21 @@ private struct PostgresRolesSheet: View {
     .padding(18)
     .frame(minWidth: 720, minHeight: 520)
     .accessibilityIdentifier("postgres.roles.sheet")
+    .confirmationDialog(
+      "Apply role change?",
+      isPresented: Binding(
+        get: { model.postgresRoleChangeReview != nil },
+        set: { if !$0 { Task { await model.discardPostgresRoleChange() } } }
+      ),
+      presenting: model.postgresRoleChangeReview
+    ) { _ in
+      Button("Apply Role Change", role: .destructive) {
+        Task { await model.applyPostgresRoleChange() }
+      }
+      Button("Cancel", role: .cancel) { Task { await model.discardPostgresRoleChange() } }
+    } message: { review in
+      Text("\(review.summary). Authority expires in 60 seconds and is consumed on apply.")
+    }
   }
 }
 

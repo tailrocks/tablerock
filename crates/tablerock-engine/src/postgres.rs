@@ -1331,6 +1331,47 @@ impl PostgresSession {
         })
     }
 
+    /// Applies one already-reviewed role change with quoted identifiers.
+    pub async fn apply_role_change(
+        &self,
+        authorized: &tablerock_core::AuthorizedRoleChangePlan,
+    ) -> Result<(), PostgresError> {
+        use crate::ident::quote_ident;
+        use tablerock_core::RoleChangeKind;
+        let quoted = |value: &str| quote_ident(value).map_err(|_| PostgresError::Query);
+        let sql = match authorized.plan().kind() {
+            RoleChangeKind::GrantMembership { role, member } => {
+                format!("GRANT {} TO {}", quoted(role)?, quoted(member)?)
+            }
+            RoleChangeKind::RevokeMembership { role, member } => {
+                format!("REVOKE {} FROM {}", quoted(role)?, quoted(member)?)
+            }
+            RoleChangeKind::GrantTablePrivilege {
+                schema,
+                table,
+                grantee,
+                privilege,
+            } => format!(
+                "GRANT {privilege} ON TABLE {}.{} TO {}",
+                quoted(schema)?,
+                quoted(table)?,
+                quoted(grantee)?
+            ),
+            RoleChangeKind::RevokeTablePrivilege {
+                schema,
+                table,
+                grantee,
+                privilege,
+            } => format!(
+                "REVOKE {privilege} ON TABLE {}.{} FROM {}",
+                quoted(schema)?,
+                quoted(table)?,
+                quoted(grantee)?
+            ),
+        };
+        self.execute_sql(&sql).await
+    }
+
     /// Presentation lines for the terminal roles inspector.
     pub async fn role_inspector_lines(
         &self,

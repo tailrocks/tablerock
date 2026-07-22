@@ -466,6 +466,19 @@ final class TableRockAppUITests: XCTestCase {
     search.typeText("reader")
     XCTAssertTrue(app.staticTexts["reader"].firstMatch.exists)
     XCTAssertTrue(app.staticTexts["Current user: fixture"].exists)
+    let role = app.textFields["postgres.roles.change.role"]
+    role.click()
+    role.typeText("reader")
+    let member = app.textFields["postgres.roles.change.subject"]
+    member.click()
+    member.typeText("analyst")
+    app.buttons["postgres.roles.change.review"].click()
+    let apply = app.buttons["Apply Role Change"].firstMatch
+    XCTAssertTrue(apply.waitForExistence(timeout: 10))
+    apply.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["postgres.roles.change.outcome"]
+        .waitForExistence(timeout: 10))
   }
 
   @MainActor
