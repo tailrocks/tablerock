@@ -21,10 +21,11 @@ use tablerock_engine::{
     ServerDescribe, SessionHealth,
 };
 use tablerock_ffi::{
-    BridgeBrowseFilter, BridgeBrowseSort, BridgeCatalogStreamExportRequest, BridgeCsvImportRequest,
-    BridgeError, BridgeProfileOrderItem, BridgeQueryParameter, BridgeSavedFilterPreset,
-    BridgeSessionIntent, BridgeStartupActionDraft, BridgeStreamExportRequest,
-    BridgeTableOperationRequest, BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
+    BridgeBrowseFilter, BridgeBrowseSort, BridgeCatalogStreamExportRequest, BridgeColumnLayoutItem,
+    BridgeCsvImportRequest, BridgeError, BridgeProfileOrderItem, BridgeQueryParameter,
+    BridgeSavedFilterPreset, BridgeSessionIntent, BridgeStartupActionDraft,
+    BridgeStreamExportRequest, BridgeTableOperationRequest, BridgeWorkspaceTab, SubmitSpec,
+    TableRockBridge,
 };
 
 struct OnePageStream(Option<ResultPage>);
@@ -1291,6 +1292,77 @@ fn table_operation_review_is_target_bound_and_wrong_confirmation_is_retryable() 
         Err(BridgeError::Rejected { ref code, .. }) if code == "table-operation-confirmation"
     ));
     assert!(bridge.revoke_table_operation(review.token_id).unwrap());
+}
+
+#[test]
+fn catalog_column_layout_is_typed_bounded_and_persisted_by_opaque_target() {
+    let path = std::env::temp_dir().join(format!(
+        "tablerock-ffi-column-layout-{}.db",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let (_, page) = sample_page(Engine::PostgreSql, 191, &[7]);
+    let bridge = TableRockBridge::new_for_test();
+    bridge
+        .configure_persistence(path.to_string_lossy().into_owned())
+        .unwrap();
+    let session = open_fixed(&bridge, Engine::PostgreSql, page);
+    let database = bridge
+        .refresh_catalog(session.clone(), None)
+        .unwrap()
+        .remove(0);
+    let schema = bridge
+        .refresh_catalog(session.clone(), Some(database.id_bytes))
+        .unwrap()
+        .remove(0);
+    let table = bridge
+        .refresh_catalog(session.clone(), Some(schema.id_bytes))
+        .unwrap()
+        .remove(0);
+    let layout = vec![
+        BridgeColumnLayoutItem {
+            name: "name".into(),
+            visible: true,
+            width: 18,
+        },
+        BridgeColumnLayoutItem {
+            name: "id".into(),
+            visible: false,
+            width: 8,
+        },
+    ];
+    bridge
+        .save_catalog_column_layout(session.clone(), table.id_bytes.clone(), layout.clone())
+        .unwrap();
+    assert_eq!(
+        bridge
+            .catalog_column_layout(session.clone(), table.id_bytes.clone())
+            .unwrap(),
+        layout
+    );
+    assert!(matches!(
+        bridge.save_catalog_column_layout(
+            session.clone(),
+            table.id_bytes.clone(),
+            vec![BridgeColumnLayoutItem {
+                name: "id".into(),
+                visible: false,
+                width: 8,
+            }]
+        ),
+        Err(BridgeError::Rejected { ref code, .. }) if code == "column-layout-visible"
+    ));
+    bridge
+        .reset_catalog_column_layout(session.clone(), table.id_bytes.clone())
+        .unwrap();
+    assert!(
+        bridge
+            .catalog_column_layout(session, table.id_bytes)
+            .unwrap()
+            .is_empty()
+    );
+    let _ = bridge.shutdown(false, 1_000);
+    let _ = std::fs::remove_file(path);
 }
 
 #[test]

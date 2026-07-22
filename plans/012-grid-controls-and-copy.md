@@ -11,6 +11,10 @@
 ## Status
 
 - **Status**: DONE (evidence 223–226; residuals: visual filter chip bar, VirtualGrid header hit sort/reorder/resize polish)
+
+Maintenance: evidence 657 adds the typed opaque-target column-layout bridge
+for native adoption. Native menu/AppKit source-index repair and persistence
+replay remain open; plan 021 owns that parity closure.
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MED (SQL construction safety)

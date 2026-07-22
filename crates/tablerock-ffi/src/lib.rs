@@ -16,10 +16,10 @@ mod runtime;
 
 pub use bridge::{
     ApplyOutcome, BridgeBrowseFilter, BridgeBrowseSort, BridgeCatalogStreamExportRequest,
-    BridgeConnectionTestReport, BridgeCsvImportPreview, BridgeCsvImportProgress,
-    BridgeCsvImportRequest, BridgeCsvImportReview, BridgeCsvRow, BridgeDdlChangeRequest,
-    BridgeDdlChangeReview, BridgeEventBatch, BridgeEventRecord, BridgeHistoryItem,
-    BridgeNamedParameterPlan, BridgeNativeWindowIntent, BridgePostgresToolProbe,
+    BridgeColumnLayoutItem, BridgeConnectionTestReport, BridgeCsvImportPreview,
+    BridgeCsvImportProgress, BridgeCsvImportRequest, BridgeCsvImportReview, BridgeCsvRow,
+    BridgeDdlChangeRequest, BridgeDdlChangeReview, BridgeEventBatch, BridgeEventRecord,
+    BridgeHistoryItem, BridgeNamedParameterPlan, BridgeNativeWindowIntent, BridgePostgresToolProbe,
     BridgePostgresToolRequest, BridgePostgresToolStatus, BridgeProfileDraft, BridgeProfileGroup,
     BridgeProfileItem, BridgeProfileOrderItem, BridgeQueryParameter, BridgeReconnectAttempt,
     BridgeReconnectPlan, BridgeRedisSubscriptionStatus, BridgeRoleChangeRequest,

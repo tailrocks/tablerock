@@ -689,6 +689,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func cancelStreamExportInner(operationIdBytes: Data) throws  -> Bool
 
     /**
+     * Loads the shared layout for one opaque table-like catalog target.
+     */
+    func catalogColumnLayout(sessionId: Data, catalogNodeId: Data) throws  -> [BridgeColumnLayoutItem]
+
+    /**
      * Executes one explicit driver health probe for a live session.
      */
     func checkSessionHealth(sessionId: Data) throws  -> BridgeSessionHealth
@@ -921,6 +926,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func reorderProfiles(group: String?, ordered: [BridgeProfileOrderItem]) throws
 
     /**
+     * Restores default visibility, order, and widths for one table.
+     */
+    func resetCatalogColumnLayout(sessionId: Data, catalogNodeId: Data) throws
+
+    /**
      * Discards an unused structure-change review token.
      */
     func revokeDdlChange(tokenId: Data) throws  -> Bool
@@ -936,6 +946,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func revokeReviewToken(tokenId: Data) throws  -> Bool
 
     func revokeTableOperation(tokenId: Data) throws  -> Bool
+
+    /**
+     * Replaces one table layout after strict bounds and uniqueness checks.
+     */
+    func saveCatalogColumnLayout(sessionId: Data, catalogNodeId: Data, items: [BridgeColumnLayoutItem]) throws
 
     func saveCatalogFilterPreset(sessionId: Data, catalogNodeId: Data, preset: BridgeSavedFilterPreset) throws
 
@@ -1270,6 +1285,20 @@ open func cancelStreamExportInner(operationIdBytes: Data)throws  -> Bool  {
     uniffi_tablerock_ffi_fn_method_tablerockbridge_cancel_stream_export_inner(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(operationIdBytes),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Loads the shared layout for one opaque table-like catalog target.
+     */
+open func catalogColumnLayout(sessionId: Data, catalogNodeId: Data)throws  -> [BridgeColumnLayoutItem]  {
+    return try  FfiConverterSequenceTypeBridgeColumnLayoutItem.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_catalog_column_layout(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(catalogNodeId),uniffiCallStatus
     )
 })
 }
@@ -1969,6 +1998,19 @@ open func reorderProfiles(group: String?, ordered: [BridgeProfileOrderItem])thro
 }
 
     /**
+     * Restores default visibility, order, and widths for one table.
+     */
+open func resetCatalogColumnLayout(sessionId: Data, catalogNodeId: Data)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_reset_catalog_column_layout(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(catalogNodeId),uniffiCallStatus
+    )
+}
+}
+
+    /**
      * Discards an unused structure-change review token.
      */
 open func revokeDdlChange(tokenId: Data)throws  -> Bool  {
@@ -2015,6 +2057,20 @@ open func revokeTableOperation(tokenId: Data)throws  -> Bool  {
         FfiConverterData.lower(tokenId),uniffiCallStatus
     )
 })
+}
+
+    /**
+     * Replaces one table layout after strict bounds and uniqueness checks.
+     */
+open func saveCatalogColumnLayout(sessionId: Data, catalogNodeId: Data, items: [BridgeColumnLayoutItem])throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_save_catalog_column_layout(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(catalogNodeId),
+        FfiConverterSequenceTypeBridgeColumnLayoutItem.lower(items),uniffiCallStatus
+    )
+}
 }
 
 open func saveCatalogFilterPreset(sessionId: Data, catalogNodeId: Data, preset: BridgeSavedFilterPreset)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
@@ -2885,6 +2941,68 @@ public func FfiConverterTypeBridgeCatalogStreamExportRequest_lift(_ buf: RustBuf
 #endif
 public func FfiConverterTypeBridgeCatalogStreamExportRequest_lower(_ value: BridgeCatalogStreamExportRequest) -> RustBuffer {
     return FfiConverterTypeBridgeCatalogStreamExportRequest.lower(value)
+}
+
+
+/**
+ * Shared per-table grid layout. Width is measured in character cells so TUI
+ * and native clients can project it into their own rendering units.
+ */
+public struct BridgeColumnLayoutItem: Equatable, Hashable {
+    public var name: String
+    public var visible: Bool
+    public var width: UInt16
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, visible: Bool, width: UInt16) {
+        self.name = name
+        self.visible = visible
+        self.width = width
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeColumnLayoutItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeColumnLayoutItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeColumnLayoutItem {
+        return
+            try BridgeColumnLayoutItem(
+                name: FfiConverterString.read(from: &buf),
+                visible: FfiConverterBool.read(from: &buf),
+                width: FfiConverterUInt16.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeColumnLayoutItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterBool.write(value.visible, into: &buf)
+        FfiConverterUInt16.write(value.width, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeColumnLayoutItem_lift(_ buf: RustBuffer) throws -> BridgeColumnLayoutItem {
+    return try FfiConverterTypeBridgeColumnLayoutItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeColumnLayoutItem_lower(_ value: BridgeColumnLayoutItem) -> RustBuffer {
+    return FfiConverterTypeBridgeColumnLayoutItem.lower(value)
 }
 
 
@@ -7120,6 +7238,31 @@ fileprivate struct FfiConverterSequenceTypeBridgeCatalogNode: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeColumnLayoutItem: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeColumnLayoutItem]
+
+    public static func write(_ value: [BridgeColumnLayoutItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeColumnLayoutItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeColumnLayoutItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeColumnLayoutItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeColumnLayoutItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeCsvRow: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeCsvRow]
 
@@ -7637,6 +7780,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel_stream_export_inner() != 41182) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_catalog_column_layout() != 34272) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_check_session_health() != 24923) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7805,6 +7951,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_reorder_profiles() != 8154) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_reset_catalog_column_layout() != 33617) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_ddl_change() != 17460) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7815,6 +7964,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_table_operation() != 38010) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_save_catalog_column_layout() != 40685) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_save_catalog_filter_preset() != 34330) {

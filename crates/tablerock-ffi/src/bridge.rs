@@ -53,8 +53,9 @@ use tablerock_files::{
     csv_to_typed_insert_changes, stream_csv_batches, validate_insert_batch_size, write_atomic,
 };
 use tablerock_persistence::{
-    HistoryAppend, HistoryOutcomeClass, HistoryRetention, PersistenceActor, ProfileOrderUpdate,
-    SavedQueryUpsert, SqlFileFacts, external_change_detected, read_sql_file, write_sql_file_atomic,
+    ColumnLayoutKey, HistoryAppend, HistoryOutcomeClass, HistoryRetention, PersistenceActor,
+    ProfileOrderUpdate, SavedQueryUpsert, SqlFileFacts, external_change_detected, read_sql_file,
+    write_sql_file_atomic,
 };
 use tablerock_tools::{
     PgToolRunOutcome, ToolStatus, cancel_channel, discover_tool, run_pg_dump_configured,
@@ -165,6 +166,15 @@ pub struct BridgeBrowseSort {
     pub column: String,
     /// `asc` or `desc`.
     pub direction: String,
+}
+
+/// Shared per-table grid layout. Width is measured in character cells so TUI
+/// and native clients can project it into their own rendering units.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct BridgeColumnLayoutItem {
+    pub name: String,
+    pub visible: bool,
+    pub width: u16,
 }
 
 /// One native object-browse typed filter. Values remain separate from SQL.
@@ -1392,6 +1402,34 @@ impl TableRockBridge {
         preset: BridgeSavedFilterPreset,
     ) -> Result<(), BridgeError> {
         catch_entry(|| self.save_catalog_filter_preset_inner(session_id, catalog_node_id, preset))
+    }
+
+    /// Loads the shared layout for one opaque table-like catalog target.
+    pub fn catalog_column_layout(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+    ) -> Result<Vec<BridgeColumnLayoutItem>, BridgeError> {
+        catch_entry(|| self.catalog_column_layout_inner(session_id, catalog_node_id))
+    }
+
+    /// Replaces one table layout after strict bounds and uniqueness checks.
+    pub fn save_catalog_column_layout(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+        items: Vec<BridgeColumnLayoutItem>,
+    ) -> Result<(), BridgeError> {
+        catch_entry(|| self.save_catalog_column_layout_inner(session_id, catalog_node_id, items))
+    }
+
+    /// Restores default visibility, order, and widths for one table.
+    pub fn reset_catalog_column_layout(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+    ) -> Result<(), BridgeError> {
+        catch_entry(|| self.reset_catalog_column_layout_inner(session_id, catalog_node_id))
     }
 
     pub fn read_sql_file(&self, path: String) -> Result<BridgeSqlFile, BridgeError> {
@@ -3923,6 +3961,86 @@ impl TableRockBridge {
         actor
             .put_saved_filter_library(registered.profile_id, library.to_json())
             .map_err(|error| BridgeError::rejected("saved-filter-save", error.to_string()))
+    }
+
+    fn catalog_column_layout_inner(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+    ) -> Result<Vec<BridgeColumnLayoutItem>, BridgeError> {
+        let session_id = session_from_bytes(&session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let node_id = catalog_node_from_bytes(&catalog_node_id).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+        let key = catalog_column_layout_key(inner, session_id, node_id)?;
+        let actor = inner
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?;
+        let Some(record) = actor
+            .get_column_layout(key)
+            .map_err(|error| BridgeError::rejected("column-layout-load", error.to_string()))?
+        else {
+            return Ok(Vec::new());
+        };
+        decode_column_layout(&record.layout_json)
+    }
+
+    fn save_catalog_column_layout_inner(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+        items: Vec<BridgeColumnLayoutItem>,
+    ) -> Result<(), BridgeError> {
+        validate_column_layout(&items)?;
+        let session_id = session_from_bytes(&session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let node_id = catalog_node_from_bytes(&catalog_node_id).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let layout_json = encode_column_layout(&items)?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+        let key = catalog_column_layout_key(inner, session_id, node_id)?;
+        inner
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
+            .put_column_layout(key, layout_json)
+            .map_err(|error| BridgeError::rejected("column-layout-save", error.to_string()))
+    }
+
+    fn reset_catalog_column_layout_inner(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+    ) -> Result<(), BridgeError> {
+        let session_id = session_from_bytes(&session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let node_id = catalog_node_from_bytes(&catalog_node_id).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+        let key = catalog_column_layout_key(inner, session_id, node_id)?;
+        inner
+            .persistence
+            .as_ref()
+            .ok_or_else(|| BridgeError::rejected("persistence", "configure_persistence first"))?
+            .delete_column_layout(key)
+            .map_err(|error| BridgeError::rejected("column-layout-reset", error.to_string()))
     }
 
     fn put_session_intent_inner(
@@ -7550,6 +7668,147 @@ impl TableRockBridge {
 fn bounded_catalog_name(name: &str) -> Result<BoundedText, BridgeError> {
     BoundedText::copy_from_str(name, ByteLimit::new(1_024))
         .map_err(|error| BridgeError::rejected("catalog-name", error.to_string()))
+}
+
+fn catalog_column_layout_key(
+    inner: &BridgeInner,
+    session_id: SessionId,
+    node_id: CatalogNodeId,
+) -> Result<ColumnLayoutKey, BridgeError> {
+    let registered = inner
+        .sessions
+        .get(&session_id)
+        .ok_or(BridgeError::UnknownSession)?;
+    let node = inner
+        .catalog_nodes
+        .get(&(session_id, node_id))
+        .ok_or_else(|| BridgeError::rejected("unknown-catalog-node", "catalog node is stale"))?;
+    let parent = node
+        .parent_id()
+        .and_then(|parent| inner.catalog_nodes.get(&(session_id, parent)))
+        .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+    let (database, schema) = match node.kind() {
+        CatalogNodeKind::PostgreSqlObject(
+            PostgreSqlObjectKind::Table
+            | PostgreSqlObjectKind::View
+            | PostgreSqlObjectKind::MaterializedView
+            | PostgreSqlObjectKind::ForeignTable
+            | PostgreSqlObjectKind::PartitionedTable,
+        ) if registered.engine == Engine::PostgreSql => (
+            registered.database.as_str().to_owned(),
+            parent.name().to_owned(),
+        ),
+        CatalogNodeKind::ClickHouseObject(_) if registered.engine == Engine::ClickHouse => {
+            (parent.name().to_owned(), String::new())
+        }
+        _ => {
+            return Err(BridgeError::rejected(
+                "column-layout-capability",
+                "column layout requires a table-like PostgreSQL or ClickHouse target",
+            ));
+        }
+    };
+    Ok(ColumnLayoutKey {
+        profile_id: registered.profile_id,
+        database,
+        schema,
+        table: node.name().to_owned(),
+    })
+}
+
+fn validate_column_layout(items: &[BridgeColumnLayoutItem]) -> Result<(), BridgeError> {
+    if items.is_empty() || items.len() > 512 {
+        return Err(BridgeError::rejected(
+            "column-layout-count",
+            "column layout must contain 1 to 512 columns",
+        ));
+    }
+    if !items.iter().any(|item| item.visible) {
+        return Err(BridgeError::rejected(
+            "column-layout-visible",
+            "column layout must keep at least one column visible",
+        ));
+    }
+    let mut names = BTreeSet::new();
+    let mut total_name_bytes = 0_usize;
+    for item in items {
+        if item.name.is_empty() || item.name.len() > 1_024 || item.name.contains('\0') {
+            return Err(BridgeError::rejected(
+                "column-layout-name",
+                "column names must contain 1 to 1024 safe bytes",
+            ));
+        }
+        total_name_bytes = total_name_bytes.saturating_add(item.name.len());
+        if total_name_bytes > 65_536 || !names.insert(item.name.as_str()) {
+            return Err(BridgeError::rejected(
+                "column-layout-name",
+                "column names must be unique and bounded",
+            ));
+        }
+        if !(4..=80).contains(&item.width) {
+            return Err(BridgeError::rejected(
+                "column-layout-width",
+                "column width must be 4 to 80 character cells",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn encode_column_layout(items: &[BridgeColumnLayoutItem]) -> Result<String, BridgeError> {
+    validate_column_layout(items)?;
+    serde_json::to_string(
+        &items
+            .iter()
+            .map(|item| {
+                serde_json::json!({
+                    "name": item.name,
+                    "visible": item.visible,
+                    "width": item.width,
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .map_err(|_| BridgeError::rejected("column-layout-encode", "column layout encoding failed"))
+}
+
+fn decode_column_layout(raw: &str) -> Result<Vec<BridgeColumnLayoutItem>, BridgeError> {
+    let value: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|_| BridgeError::rejected("column-layout-decode", "column layout is invalid"))?;
+    let array = value
+        .as_array()
+        .ok_or_else(|| BridgeError::rejected("column-layout-decode", "column layout is invalid"))?;
+    let mut items = Vec::with_capacity(array.len().min(512));
+    for value in array {
+        let object = value.as_object().ok_or_else(|| {
+            BridgeError::rejected("column-layout-decode", "column layout item is invalid")
+        })?;
+        let name = object
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| BridgeError::rejected("column-layout-decode", "column name is missing"))?
+            .to_owned();
+        let visible = object
+            .get("visible")
+            .and_then(serde_json::Value::as_bool)
+            .ok_or_else(|| {
+                BridgeError::rejected("column-layout-decode", "column visibility is missing")
+            })?;
+        let width = object
+            .get("width")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|width| u16::try_from(width).ok())
+            .ok_or_else(|| {
+                BridgeError::rejected("column-layout-decode", "column width is invalid")
+            })?;
+        items.push(BridgeColumnLayoutItem {
+            name,
+            visible,
+            width,
+        });
+    }
+    validate_column_layout(&items)?;
+    Ok(items)
 }
 
 fn environment_label(environment: &EnvironmentTag) -> String {
