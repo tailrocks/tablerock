@@ -162,8 +162,31 @@ the durable suites below become authoritative.
       hosted runner cannot provide them.
     - Always archive `.xcresult`, stdout/stderr, crash reports, failure
       screenshots, generated-binding diff, app metadata, checksums, and
-      Instruments summaries. Artifacts and test-plan membership are linked
-      from evidence; a green manifest without coverage inspection is not proof.
+    Instruments summaries. Artifacts and test-plan membership are linked
+    from evidence; a green manifest without coverage inspection is not proof.
+
+17. **Canonical screen manifest and traceability closure**
+    - Add one machine-readable manifest with stable TableRock-owned IDs for
+      every screen, window, tab, sidebar/panel, toolbar, dialog, sheet,
+      popover, command/menu, inspector, editor, browser, settings surface,
+      import/export flow, review flow, and engine-specific view.
+    - Enumerate applicable engines and clients, entry/exit paths, actions,
+      keyboard/focus behavior, and normal, empty, loading, partial, stale,
+      disabled, unsupported, validation, permission, disconnected,
+      reconnecting, error, destructive-confirmation, narrow, large-data, and
+      recovery states. Mark genuinely inapplicable states explicitly.
+    - Link every row to its product requirement, owning plan checkpoint, Rust
+      contract, TUI implementation, native implementation, direct tests,
+      inspected visual/runtime evidence, and honest status.
+    - Run a repository test on every commit that rejects duplicate IDs,
+      missing required fields, stale paths, unrecognized statuses, uncovered
+      product documents, and `DONE` rows without direct test and evidence
+      links.
+    - Replay every row in both applicable clients and every applicable engine.
+      Record two consecutive fresh full audits with no new gaps. The second
+      audit includes a current TablePro public-workflow review under the
+      clean-room rule; public reference material may identify workflow
+      classes only and never supplies expression or test artifacts.
 
 ### Required workflow cases
 
@@ -215,6 +238,8 @@ diff must be empty after regeneration.
 - [ ] Clean-machine Release artifact passes install/update/uninstall/crash-recovery audits
 - [ ] Ledger closure: no silently-open row; release claims exact
 - [ ] Compatibility monitoring running on schedule
+- [ ] Canonical screen manifest complete and traceability verifier green
+- [ ] Two consecutive full manifest replays find no new gap
 - [ ] ROADMAP Phases 14–15 complete; `plans/README.md` updated
 
 ## STOP conditions

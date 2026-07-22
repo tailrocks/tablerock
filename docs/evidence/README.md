@@ -496,6 +496,7 @@ How to read an evidence document:
 - 620 — [Native control ownership](delivery/620-native-control-ownership.md)
 - 621 — [Native safe support export](delivery/621-native-safe-support-export.md)
 - 622 — [Native layout and hit-testing containment](delivery/622-native-layout-hit-testing.md)
+- 623 — [Plan 021 screen-traceability gate](delivery/623-plan-021-screen-traceability-gate.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
