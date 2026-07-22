@@ -87,9 +87,19 @@ pub fn pg_dump_argv(
     file: &Path,
 ) -> Vec<String> {
     vec![
-        tool.display().to_string(), "-h".into(), host.into(), "-p".into(), port.to_string(),
-        "-U".into(), username.into(), "-d".into(), database.into(), "-Fc".into(), "-f".into(),
-        file.display().to_string(), "--no-password".into(),
+        tool.display().to_string(),
+        "-h".into(),
+        host.into(),
+        "-p".into(),
+        port.to_string(),
+        "-U".into(),
+        username.into(),
+        "-d".into(),
+        database.into(),
+        "-Fc".into(),
+        "-f".into(),
+        file.display().to_string(),
+        "--no-password".into(),
     ]
 }
 
@@ -103,18 +113,33 @@ pub fn pg_restore_argv(
     file: &Path,
 ) -> Vec<String> {
     vec![
-        tool.display().to_string(), "-h".into(), host.into(), "-p".into(), port.to_string(),
-        "-U".into(), username.into(), "-d".into(), database.into(), "--no-password".into(),
+        tool.display().to_string(),
+        "-h".into(),
+        host.into(),
+        "-p".into(),
+        port.to_string(),
+        "-U".into(),
+        username.into(),
+        "-d".into(),
+        database.into(),
+        "--no-password".into(),
         file.display().to_string(),
     ]
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PgToolRunOutcome {
-    Succeeded { exit_code: i32 },
-    Failed { exit_code: Option<i32>, detail: String },
+    Succeeded {
+        exit_code: i32,
+    },
+    Failed {
+        exit_code: Option<i32>,
+        detail: String,
+    },
     Cancelled,
-    SpawnFailed { detail: String },
+    SpawnFailed {
+        detail: String,
+    },
 }
 
 pub async fn run_pg_dump(
@@ -152,7 +177,9 @@ async fn run_supervised(
     mut cancel: tokio::sync::watch::Receiver<bool>,
 ) -> PgToolRunOutcome {
     let Some(program) = argv.first() else {
-        return PgToolRunOutcome::SpawnFailed { detail: "empty argv".into() };
+        return PgToolRunOutcome::SpawnFailed {
+            detail: "empty argv".into(),
+        };
     };
     let mut command = Command::new(program);
     command
@@ -168,7 +195,11 @@ async fn run_supervised(
     }
     let mut child = match command.spawn() {
         Ok(child) => child,
-        Err(error) => return PgToolRunOutcome::SpawnFailed { detail: error.to_string() },
+        Err(error) => {
+            return PgToolRunOutcome::SpawnFailed {
+                detail: error.to_string(),
+            };
+        }
     };
     loop {
         tokio::select! {
@@ -206,8 +237,12 @@ pub fn cancel_channel() -> (
 }
 
 pub fn validate_dump_path(path: &Path) -> Result<PathBuf, String> {
-    if path.as_os_str().is_empty() { return Err("dump path is empty".into()); }
-    if path.is_dir() { return Err("dump path is a directory".into()); }
+    if path.as_os_str().is_empty() {
+        return Err("dump path is empty".into());
+    }
+    if path.is_dir() {
+        return Err("dump path is a directory".into());
+    }
     Ok(path.to_path_buf())
 }
 
@@ -218,7 +253,11 @@ mod tests {
     #[test]
     fn argv_never_carries_password_and_dump_is_custom_format() {
         let dump = pg_dump_argv(
-            Path::new("/usr/bin/pg_dump"), "127.0.0.1", 5432, "db", "user",
+            Path::new("/usr/bin/pg_dump"),
+            "127.0.0.1",
+            5432,
+            "db",
+            "user",
             Path::new("/tmp/out.dump"),
         );
         let refs = dump.iter().map(String::as_str).collect::<Vec<_>>();
@@ -229,16 +268,18 @@ mod tests {
 
     #[tokio::test]
     async fn cancellation_removes_partial_dump() {
-        let directory = std::env::temp_dir().join(format!("tablerock-tools-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("tablerock-tools-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let output = directory.join("partial.dump");
         std::fs::write(&output, b"partial").unwrap();
         let (sender, receiver) = cancel_channel();
         let argv = vec!["sleep".into(), "30".into()];
         let task_output = output.clone();
-        let task = tokio::spawn(async move {
-            run_supervised(&argv, None, Some(&task_output), receiver).await
-        });
+        let task =
+            tokio::spawn(
+                async move { run_supervised(&argv, None, Some(&task_output), receiver).await },
+            );
         tokio::time::sleep(Duration::from_millis(50)).await;
         sender.send(true).unwrap();
         assert_eq!(task.await.unwrap(), PgToolRunOutcome::Cancelled);
