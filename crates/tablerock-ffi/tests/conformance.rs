@@ -1265,7 +1265,7 @@ fn table_operation_review_is_target_bound_and_wrong_confirmation_is_retryable() 
     assert_eq!(review.preview, "DROP TABLE \"public\".\"users\";");
     assert!(review.destructive);
     assert!(matches!(
-        bridge.apply_table_operation(
+        bridge.start_table_operation(
             review.token_id.clone(),
             session,
             1_001,

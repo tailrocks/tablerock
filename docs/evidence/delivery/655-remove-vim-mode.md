@@ -16,7 +16,7 @@ the neutral TermRock-backed editor remains the sole editing model.
 rg -n 'Vim|vim_mode|vim mode|vim-mode' crates native docs/product docs/architecture scripts
 cargo test -p tablerock-tui
 swift build --package-path native -c release
-bash scripts/verify-screen-manifest.sh
+cargo test -p tablerock-core --test screen_manifest
 ```
 
 The search returns no active product, architecture, implementation, or script

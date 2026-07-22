@@ -175,6 +175,31 @@ fn wait_stream_export(
         .expect("stream export reaches a terminal state")
 }
 
+fn run_table_operation(
+    bridge: &TableRockBridge,
+    token_id: Vec<u8>,
+    session_id: Vec<u8>,
+    now_ms: u64,
+    confirmation: &str,
+) {
+    let operation_id = bridge
+        .start_table_operation(token_id, session_id, now_ms, confirmation.into())
+        .unwrap();
+    let status = (0..100)
+        .find_map(|_| {
+            let status = bridge.table_operation_status(operation_id.clone()).unwrap();
+            if status.phase == "running" {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                None
+            } else {
+                Some(status)
+            }
+        })
+        .expect("table operation should reach a terminal outcome");
+    assert_eq!(status.phase, "succeeded", "{}", status.summary);
+    assert!(bridge.dismiss_table_operation(operation_id).unwrap());
+}
+
 #[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn bridge_postgres_open_probe_fetch_shutdown() {
@@ -544,7 +569,7 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
         );
         assert!(
             bridge
-                .apply_table_operation(
+                .start_table_operation(
                     analyze.token_id.clone(),
                     session.clone(),
                     7_002,
@@ -554,14 +579,31 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
                 .to_string()
                 .contains("exactly match")
         );
-        bridge
-            .apply_table_operation(
+        let maintenance_id = bridge
+            .start_table_operation(
                 analyze.token_id,
                 session.clone(),
                 7_003,
                 "bridge_table_ops".into(),
             )
             .unwrap();
+        let maintenance = (0..100)
+            .find_map(|_| {
+                let status = bridge
+                    .table_operation_status(maintenance_id.clone())
+                    .unwrap();
+                if status.phase == "running" {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    None
+                } else {
+                    Some(status)
+                }
+            })
+            .expect("ANALYZE should reach a terminal outcome");
+        assert_eq!(maintenance.kind, "analyze");
+        assert_eq!(maintenance.phase, "succeeded");
+        assert!(!maintenance.cancellable);
+        assert!(bridge.dismiss_table_operation(maintenance_id).unwrap());
         let rename = bridge
             .stage_table_operation(BridgeTableOperationRequest {
                 session_id: session.clone(),
@@ -571,14 +613,13 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
                 now_ms: 8_000,
             })
             .unwrap();
-        bridge
-            .apply_table_operation(
-                rename.token_id,
-                session.clone(),
-                8_001,
-                "bridge_table_ops".into(),
-            )
-            .unwrap();
+        run_table_operation(
+            &bridge,
+            rename.token_id,
+            session.clone(),
+            8_001,
+            "bridge_table_ops",
+        );
         let renamed = bridge
             .refresh_catalog(session.clone(), Some(schema.id_bytes.clone()))
             .unwrap()
@@ -595,14 +636,13 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
             })
             .unwrap();
         assert!(drop_review.destructive);
-        bridge
-            .apply_table_operation(
-                drop_review.token_id,
-                session.clone(),
-                9_001,
-                "bridge_table_ops_renamed".into(),
-            )
-            .unwrap();
+        run_table_operation(
+            &bridge,
+            drop_review.token_id,
+            session.clone(),
+            9_001,
+            "bridge_table_ops_renamed",
+        );
         assert!(
             bridge
                 .refresh_catalog(session.clone(), Some(schema.id_bytes))
@@ -735,14 +775,13 @@ async fn bridge_clickhouse_open_probe_fetch() {
             optimize.preview,
             "OPTIMIZE TABLE \"default\".\"bridge_optimize\";"
         );
-        bridge
-            .apply_table_operation(
-                optimize.token_id,
-                session.clone(),
-                1_001,
-                "bridge_optimize".into(),
-            )
-            .unwrap();
+        run_table_operation(
+            &bridge,
+            optimize.token_id,
+            session.clone(),
+            1_001,
+            "bridge_optimize",
+        );
         let import_path = std::env::temp_dir().join(format!(
             "tablerock-clickhouse-stream-import-{}.csv",
             std::process::id()

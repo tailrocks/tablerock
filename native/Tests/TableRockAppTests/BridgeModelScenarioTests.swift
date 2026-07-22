@@ -275,7 +275,9 @@ final class BridgeModelScenarioTests: XCTestCase {
     model.tableOperationConfirmation = review.confirmation
     await model.applyTableOperation()
     XCTAssertNil(model.tableOperationReview)
-    XCTAssertEqual(model.tableOperationOutcome, "Table operation applied")
+    XCTAssertEqual(model.tableOperationStatus?.phase, "succeeded")
+    XCTAssertEqual(model.tableOperationStatus?.cancellable, false)
+    XCTAssertEqual(model.tableOperationOutcome, "truncate completed")
   }
 
   func testPostgresBackupUsesProbeReviewAndSupervisedStatus() async {

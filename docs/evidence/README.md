@@ -528,6 +528,7 @@ How to read an evidence document:
 - 652 — [Native startup-command editor](delivery/652-native-startup-command-editor.md)
 - 653 — [Concurrent SSH fixture identity](delivery/653-ssh-fixture-identity.md)
 - 655 — [Remove Vim mode](delivery/655-remove-vim-mode.md)
+- 656 — [Native PostgreSQL maintenance lifecycle](delivery/656-native-postgresql-maintenance.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

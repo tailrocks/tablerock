@@ -657,11 +657,6 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data, expectedRevision: UInt64) throws  -> ApplyOutcome
 
     /**
-     * Consumes one reviewed table operation before database I/O.
-     */
-    func applyTableOperation(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String) throws  -> String
-
-    /**
      * Consume-once authorize by review-token handle (never plan bytes).
      *
      * Returns the token id bytes on success for correlation; authority is
@@ -744,6 +739,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func dismissStreamExport(operationId: Data) throws  -> Bool
 
     func dismissStreamExportInner(operationIdBytes: Data) throws  -> Bool
+
+    /**
+     * Removes terminal status. Running operations remain observable.
+     */
+    func dismissTableOperation(operationId: Data) throws  -> Bool
 
     /**
      * Ensures the Tokio runtime and service coordinator exist (idempotent).
@@ -1029,6 +1029,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func startStreamExportInner(request: BridgeStreamExportRequest) throws  -> Data
 
     /**
+     * Consumes one reviewed table operation and starts Rust-owned execution.
+     */
+    func startTableOperation(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String) throws  -> Data
+
+    /**
      * Polls one bounded export progress or terminal outcome.
      */
     func streamExportProgress(operationId: Data) throws  -> BridgeStreamExportProgress
@@ -1050,6 +1055,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Rewrites named placeholders and submits separately typed values.
      */
     func submitNamed(spec: SubmitSpec, bindings: [BridgeQueryParameter]) throws  -> Data
+
+    func tableOperationStatus(operationId: Data) throws  -> BridgeTableOperationStatus
 
     /**
      * Connects, describes, and disconnects without changing persistence.
@@ -1172,22 +1179,6 @@ open func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data, expect
         FfiConverterUInt64.lower(nowMs),
         FfiConverterData.lower(sessionId),
         FfiConverterUInt64.lower(expectedRevision),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Consumes one reviewed table operation before database I/O.
-     */
-open func applyTableOperation(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String)throws  -> String  {
-    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
-        uniffiCallStatus in
-    uniffi_tablerock_ffi_fn_method_tablerockbridge_apply_table_operation(
-            self.uniffiCloneHandle(),
-        FfiConverterData.lower(tokenId),
-        FfiConverterData.lower(sessionId),
-        FfiConverterUInt64.lower(nowMs),
-        FfiConverterString.lower(confirmation),uniffiCallStatus
     )
 })
 }
@@ -1436,6 +1427,19 @@ open func dismissStreamExportInner(operationIdBytes: Data)throws  -> Bool  {
     uniffi_tablerock_ffi_fn_method_tablerockbridge_dismiss_stream_export_inner(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(operationIdBytes),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Removes terminal status. Running operations remain observable.
+     */
+open func dismissTableOperation(operationId: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_dismiss_table_operation(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
     )
 })
 }
@@ -2284,6 +2288,22 @@ open func startStreamExportInner(request: BridgeStreamExportRequest)throws  -> D
 }
 
     /**
+     * Consumes one reviewed table operation and starts Rust-owned execution.
+     */
+open func startTableOperation(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_start_table_operation(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(tokenId),
+        FfiConverterData.lower(sessionId),
+        FfiConverterUInt64.lower(nowMs),
+        FfiConverterString.lower(confirmation),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Polls one bounded export progress or terminal outcome.
      */
 open func streamExportProgress(operationId: Data)throws  -> BridgeStreamExportProgress  {
@@ -2369,6 +2389,16 @@ open func submitNamed(spec: SubmitSpec, bindings: [BridgeQueryParameter])throws 
             self.uniffiCloneHandle(),
         FfiConverterTypeSubmitSpec_lower(spec),
         FfiConverterSequenceTypeBridgeQueryParameter.lower(bindings),uniffiCallStatus
+    )
+})
+}
+
+open func tableOperationStatus(operationId: Data)throws  -> BridgeTableOperationStatus  {
+    return try  FfiConverterTypeBridgeTableOperationStatus_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_table_operation_status(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
     )
 })
 }
@@ -6235,6 +6265,84 @@ public func FfiConverterTypeBridgeTableOperationReview_lower(_ value: BridgeTabl
 }
 
 
+public struct BridgeTableOperationStatus: Equatable, Hashable {
+    public var operationId: Data
+    public var kind: String
+    /**
+     * `running`, `succeeded`, `failed`, or `unknown`.
+     */
+    public var phase: String
+    /**
+     * False until the engine adapter exposes cancellation for reviewed DDL.
+     */
+    public var cancellable: Bool
+    public var summary: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(operationId: Data, kind: String,
+        /**
+         * `running`, `succeeded`, `failed`, or `unknown`.
+         */phase: String,
+        /**
+         * False until the engine adapter exposes cancellation for reviewed DDL.
+         */cancellable: Bool, summary: String) {
+        self.operationId = operationId
+        self.kind = kind
+        self.phase = phase
+        self.cancellable = cancellable
+        self.summary = summary
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeTableOperationStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeTableOperationStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeTableOperationStatus {
+        return
+            try BridgeTableOperationStatus(
+                operationId: FfiConverterData.read(from: &buf),
+                kind: FfiConverterString.read(from: &buf),
+                phase: FfiConverterString.read(from: &buf),
+                cancellable: FfiConverterBool.read(from: &buf),
+                summary: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeTableOperationStatus, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.operationId, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.phase, into: &buf)
+        FfiConverterBool.write(value.cancellable, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeTableOperationStatus_lift(_ buf: RustBuffer) throws -> BridgeTableOperationStatus {
+    return try FfiConverterTypeBridgeTableOperationStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeTableOperationStatus_lower(_ value: BridgeTableOperationStatus) -> RustBuffer {
+    return FfiConverterTypeBridgeTableOperationStatus.lower(value)
+}
+
+
 public struct BridgeWorkspaceTab: Equatable, Hashable {
     public var title: String
     public var statementText: String
@@ -7508,9 +7616,6 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_apply_review_token() != 161) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_apply_table_operation() != 14630) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_authorize_review_token() != 34315) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7572,6 +7677,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_dismiss_stream_export_inner() != 21759) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_dismiss_table_operation() != 15829) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_ensure_runtime() != 35672) {
@@ -7772,6 +7880,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_stream_export_inner() != 41584) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_table_operation() != 42788) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stream_export_progress() != 47146) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7791,6 +7902,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_named() != 38432) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_table_operation_status() != 50789) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_test_profile() != 43186) {

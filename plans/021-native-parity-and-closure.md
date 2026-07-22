@@ -267,5 +267,7 @@ diff must be empty after regeneration.
 
 ## Maintenance notes
 
+- Evidence 656 adds Rust-owned native PostgreSQL maintenance progress/outcome;
+  hosted running/permission replay remains before TR-SCR-058 closure.
 - This plan ends the program; what follows is the documented forward-only
   compatibility maintenance loop (group 10).

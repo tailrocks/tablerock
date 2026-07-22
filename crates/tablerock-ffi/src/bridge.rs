@@ -601,6 +601,17 @@ pub struct BridgeTableOperationReview {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeTableOperationStatus {
+    pub operation_id: Vec<u8>,
+    pub kind: String,
+    /// `running`, `succeeded`, `failed`, or `unknown`.
+    pub phase: String,
+    /// False until the engine adapter exposes cancellation for reviewed DDL.
+    pub cancellable: bool,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeBackendSignalOutcome {
     pub kind: String,
     pub pid: i32,
@@ -687,6 +698,13 @@ struct StreamExportTask {
     completed_rows: u64,
     bytes_written: u64,
     destination: String,
+    summary: String,
+}
+
+struct TableOperationTask {
+    session_id: SessionId,
+    kind: String,
+    phase: String,
     summary: String,
 }
 
@@ -889,6 +907,7 @@ pub struct TableRockBridge {
     redis_subscriptions: Arc<Mutex<BTreeMap<OperationId, RedisSubscriptionTask>>>,
     csv_imports: Arc<Mutex<BTreeMap<OperationId, CsvImportTask>>>,
     stream_exports: Arc<Mutex<BTreeMap<OperationId, StreamExportTask>>>,
+    table_operations: Arc<Mutex<BTreeMap<OperationId, TableOperationTask>>>,
 }
 
 #[uniffi::export]
@@ -1171,6 +1190,7 @@ impl TableRockBridge {
             redis_subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
             csv_imports: Arc::new(Mutex::new(BTreeMap::new())),
             stream_exports: Arc::new(Mutex::new(BTreeMap::new())),
+            table_operations: Arc::new(Mutex::new(BTreeMap::new())),
         })
     }
 
@@ -1676,15 +1696,27 @@ impl TableRockBridge {
         catch_entry(|| self.stage_table_operation_inner(request))
     }
 
-    /// Consumes one reviewed table operation before database I/O.
-    pub fn apply_table_operation(
+    /// Consumes one reviewed table operation and starts Rust-owned execution.
+    pub fn start_table_operation(
         &self,
         token_id: Vec<u8>,
         session_id: Vec<u8>,
         now_ms: u64,
         confirmation: String,
-    ) -> Result<String, BridgeError> {
-        catch_entry(|| self.apply_table_operation_inner(token_id, session_id, now_ms, confirmation))
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| self.start_table_operation_inner(token_id, session_id, now_ms, confirmation))
+    }
+
+    pub fn table_operation_status(
+        &self,
+        operation_id: Vec<u8>,
+    ) -> Result<BridgeTableOperationStatus, BridgeError> {
+        catch_entry(|| self.table_operation_status_inner(operation_id))
+    }
+
+    /// Removes terminal status. Running operations remain observable.
+    pub fn dismiss_table_operation(&self, operation_id: Vec<u8>) -> Result<bool, BridgeError> {
+        catch_entry(|| self.dismiss_table_operation_inner(operation_id))
     }
 
     pub fn revoke_table_operation(&self, token_id: Vec<u8>) -> Result<bool, BridgeError> {
@@ -2338,6 +2370,7 @@ impl TableRockBridge {
             redis_subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
             csv_imports: Arc::new(Mutex::new(BTreeMap::new())),
             stream_exports: Arc::new(Mutex::new(BTreeMap::new())),
+            table_operations: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 }
@@ -3053,6 +3086,20 @@ impl TableRockBridge {
             return Err(BridgeError::rejected(
                 "session-busy",
                 "session still has an active streaming export",
+            ));
+        }
+        if self
+            .table_operations
+            .lock()
+            .map_err(|_| {
+                BridgeError::rejected("table-operation-lock", "operation registry poisoned")
+            })?
+            .values()
+            .any(|task| task.session_id == session_id && task.phase == "running")
+        {
+            return Err(BridgeError::rejected(
+                "session-busy",
+                "session still has an active table operation",
             ));
         }
         let mut guard = self
@@ -5947,13 +5994,13 @@ impl TableRockBridge {
         })
     }
 
-    fn apply_table_operation_inner(
+    fn authorize_table_operation(
         &self,
         token_id_bytes: Vec<u8>,
         session_id_bytes: Vec<u8>,
         now_ms: u64,
         confirmation: String,
-    ) -> Result<String, BridgeError> {
+    ) -> Result<(DdlPlan, Arc<dyn DriverSession>), BridgeError> {
         let token_id = review_token_from_bytes(&token_id_bytes).map_err(|_| {
             BridgeError::rejected("bad-review-token-id", "review token id must be 16 bytes")
         })?;
@@ -6019,10 +6066,120 @@ impl TableRockBridge {
                 .ok_or(BridgeError::UnknownSession)?;
             (entry.plan, driver)
         };
-        self.runtime
-            .block_on(driver.execute_ddl_plan(plan))?
-            .map_err(|error| BridgeError::rejected("table-operation-apply", error.to_string()))?;
-        Ok("Table operation applied".into())
+        Ok((plan, driver))
+    }
+
+    fn start_table_operation_inner(
+        &self,
+        token_id_bytes: Vec<u8>,
+        session_id_bytes: Vec<u8>,
+        now_ms: u64,
+        confirmation: String,
+    ) -> Result<Vec<u8>, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let (plan, driver) =
+            self.authorize_table_operation(token_id_bytes, session_id_bytes, now_ms, confirmation)?;
+        let kind = plan.kind.label().to_owned();
+        let operation_id = {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            guard
+                .as_mut()
+                .ok_or(BridgeError::RuntimeUnavailable)?
+                .ids
+                .operation()
+        };
+        let tasks = Arc::clone(&self.table_operations);
+        {
+            let mut registry = tasks.lock().map_err(|_| {
+                BridgeError::rejected("table-operation-lock", "operation registry poisoned")
+            })?;
+            if registry.len() >= 64 {
+                if let Some(terminal) = registry
+                    .iter()
+                    .find_map(|(id, task)| (task.phase != "running").then_some(*id))
+                {
+                    registry.remove(&terminal);
+                } else {
+                    return Err(BridgeError::rejected(
+                        "table-operation-limit",
+                        "too many active table operations",
+                    ));
+                }
+            }
+            registry.insert(
+                operation_id,
+                TableOperationTask {
+                    session_id,
+                    kind: kind.clone(),
+                    phase: "running".into(),
+                    summary: format!("Running {kind} table operation"),
+                },
+            );
+        }
+        self.runtime.spawn(async move {
+            let outcome = driver.execute_ddl_plan(plan).await;
+            let Ok(mut registry) = tasks.lock() else {
+                return;
+            };
+            let Some(task) = registry.get_mut(&operation_id) else {
+                return;
+            };
+            match outcome {
+                Ok(()) => {
+                    task.phase = "succeeded".into();
+                    task.summary = format!("{} completed", task.kind);
+                }
+                Err(error) => {
+                    task.phase = "failed".into();
+                    task.summary = format!("{} failed: {error}", task.kind);
+                }
+            }
+        })?;
+        Ok(operation_bytes(operation_id))
+    }
+
+    fn table_operation_status_inner(
+        &self,
+        operation_id_bytes: Vec<u8>,
+    ) -> Result<BridgeTableOperationStatus, BridgeError> {
+        let operation_id = operation_from_bytes(&operation_id_bytes)
+            .map_err(|_| BridgeError::rejected("operation-id", "invalid operation id"))?;
+        let registry = self.table_operations.lock().map_err(|_| {
+            BridgeError::rejected("table-operation-lock", "operation registry poisoned")
+        })?;
+        let task = registry
+            .get(&operation_id)
+            .ok_or(BridgeError::UnknownOperation)?;
+        Ok(BridgeTableOperationStatus {
+            operation_id: operation_id_bytes,
+            kind: task.kind.clone(),
+            phase: task.phase.clone(),
+            cancellable: false,
+            summary: task.summary.clone(),
+        })
+    }
+
+    fn dismiss_table_operation_inner(
+        &self,
+        operation_id_bytes: Vec<u8>,
+    ) -> Result<bool, BridgeError> {
+        let operation_id = operation_from_bytes(&operation_id_bytes)
+            .map_err(|_| BridgeError::rejected("operation-id", "invalid operation id"))?;
+        let mut registry = self.table_operations.lock().map_err(|_| {
+            BridgeError::rejected("table-operation-lock", "operation registry poisoned")
+        })?;
+        if registry
+            .get(&operation_id)
+            .is_some_and(|task| task.phase == "running")
+        {
+            return Ok(false);
+        }
+        Ok(registry.remove(&operation_id).is_some())
     }
 
     fn signal_postgres_backend_inner(

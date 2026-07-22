@@ -192,6 +192,13 @@ extension BridgeTableOperationReview {
       confirmation: confirmation, expiresAtMs: expiresAtMs)
   }
 }
+extension BridgeTableOperationStatus {
+  var workbench: WorkbenchTableOperationStatus {
+    WorkbenchTableOperationStatus(
+      operationId: operationId, kind: kind, phase: phase, cancellable: cancellable,
+      summary: summary)
+  }
+}
 extension BridgePostgresActivityRow {
   var workbench: WorkbenchPostgresActivityRow {
     .init(

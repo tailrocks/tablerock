@@ -594,6 +594,10 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(apply.isEnabled)
     apply.click()
     XCTAssertTrue(
+      app.descendants(matching: .any)["table-operation.progress"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["table-operation.cancel-unavailable"].exists)
+    XCTAssertTrue(
       app.descendants(matching: .any)["table-operation.outcome"].waitForExistence(timeout: 10))
   }
 

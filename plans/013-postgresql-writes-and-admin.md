@@ -147,6 +147,10 @@ silently discard; ambiguous writes never retry.
   drop, vacuum, and analyze plus ClickHouse optimize through opaque catalog
   targets and expiring consume-once reviews (evidence 643). TUI migration to
   this shared authority and hosted native permission replay remain open.
+- Native vacuum/analyze now execute through a Rust-owned asynchronous lifecycle
+  with observable running/terminal status and honest unavailable-cancellation
+  projection (evidence 656). TUI shared progress authority and hosted native
+  running/permission replay remain open.
 
 ## STOP conditions
 

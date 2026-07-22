@@ -95,6 +95,13 @@ cannot replay it. Wrong confirmation leaves the token available for correction.
 Successful rename/drop refreshes the catalog and closes stale object state;
 truncate reloads the selected table.
 
+PostgreSQL vacuum and analyze execute as Rust-owned background operations.
+Their sheet remains visible while running, reports the terminal success or
+failure outcome, and cannot be dismissed mid-operation. Cancellation is shown
+as unavailable because the reviewed-DDL adapter does not yet expose a truthful
+cancel boundary; the UI must never present a cancel action that only abandons
+observation.
+
 ## Both clients
 
 | | TUI | Native macOS |

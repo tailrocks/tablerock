@@ -99,9 +99,11 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func stageTableOperation(
     sessionId: Data, catalogNodeId: Data, kind: String, newName: String, nowMs: UInt64
   ) throws -> WorkbenchTableOperationReview
-  func applyTableOperation(
+  func startTableOperation(
     tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String
-  ) throws -> String
+  ) throws -> Data
+  func tableOperationStatus(operationId: Data) throws -> WorkbenchTableOperationStatus
+  func dismissTableOperation(operationId: Data) throws -> Bool
   func revokeTableOperation(tokenId: Data) throws -> Bool
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow]
   func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
@@ -161,6 +163,24 @@ public struct WorkbenchTableOperationReview: Sendable, Equatable {
     self.destructive = destructive
     self.confirmation = confirmation
     self.expiresAtMs = expiresAtMs
+  }
+}
+
+public struct WorkbenchTableOperationStatus: Sendable, Equatable {
+  public let operationId: Data
+  public let kind: String
+  public let phase: String
+  public let cancellable: Bool
+  public let summary: String
+
+  public init(
+    operationId: Data, kind: String, phase: String, cancellable: Bool, summary: String
+  ) {
+    self.operationId = operationId
+    self.kind = kind
+    self.phase = phase
+    self.cancellable = cancellable
+    self.summary = summary
   }
 }
 

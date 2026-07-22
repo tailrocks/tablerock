@@ -515,9 +515,15 @@ extension WorkbenchBackend {
   func stageTableOperation(
     sessionId: Data, catalogNodeId: Data, kind: String, newName: String, nowMs: UInt64
   ) throws -> WorkbenchTableOperationReview { try scriptedUnavailable("table-operation-stage") }
-  func applyTableOperation(
+  func startTableOperation(
     tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String
-  ) throws -> String { try scriptedUnavailable("table-operation-apply") }
+  ) throws -> Data { try scriptedUnavailable("table-operation-start") }
+  func tableOperationStatus(operationId: Data) throws -> WorkbenchTableOperationStatus {
+    try scriptedUnavailable("table-operation-status")
+  }
+  func dismissTableOperation(operationId: Data) throws -> Bool {
+    try scriptedUnavailable("table-operation-dismiss")
+  }
   func revokeTableOperation(tokenId: Data) throws -> Bool {
     try scriptedUnavailable("table-operation-revoke")
   }
@@ -586,6 +592,8 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   private var redisSubscriptionActive = false
   private var ddlReviewActive = false
   private var tableOperationReviewActive = false
+  private var scriptedTableOperationKind = "truncate"
+  private var scriptedTableOperationPollCount = 0
 
   init(scenario: String) { self.scenario = scenario }
 
@@ -1037,6 +1045,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       return try scriptedUnavailable("table-operation-stage")
     }
     tableOperationReviewActive = true
+    scriptedTableOperationKind = kind
     return WorkbenchTableOperationReview(
       tokenId: Data(repeating: 16, count: 16), target: "public.fixture_table",
       preview: "\(kind.uppercased()) public.fixture_table\(newName.isEmpty ? "" : " \(newName)");",
@@ -1044,14 +1053,32 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       expiresAtMs: nowMs + 60_000)
   }
 
-  func applyTableOperation(
+  func startTableOperation(
     tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String
-  ) throws -> String {
+  ) throws -> Data {
     guard tableOperationReviewActive, tokenId == Data(repeating: 16, count: 16),
       confirmation == "fixture_table"
-    else { return try scriptedUnavailable("table-operation-apply") }
+    else { return try scriptedUnavailable("table-operation-start") }
     tableOperationReviewActive = false
-    return "Table operation applied"
+    scriptedTableOperationPollCount = 0
+    return Data(repeating: 17, count: 16)
+  }
+
+  func tableOperationStatus(operationId: Data) throws -> WorkbenchTableOperationStatus {
+    guard operationId == Data(repeating: 17, count: 16) else {
+      return try scriptedUnavailable("table-operation-status")
+    }
+    scriptedTableOperationPollCount += 1
+    let running = scriptedTableOperationPollCount == 1
+    return WorkbenchTableOperationStatus(
+      operationId: operationId, kind: scriptedTableOperationKind,
+      phase: running ? "running" : "succeeded", cancellable: false,
+      summary: running
+        ? "Running \(scriptedTableOperationKind)" : "\(scriptedTableOperationKind) completed")
+  }
+
+  func dismissTableOperation(operationId: Data) throws -> Bool {
+    operationId == Data(repeating: 17, count: 16)
   }
 
   func revokeTableOperation(tokenId: Data) throws -> Bool {
@@ -1574,11 +1601,19 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
     ).workbench
   }
 
-  func applyTableOperation(
+  func startTableOperation(
     tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String
-  ) throws -> String {
-    try bridge.applyTableOperation(
+  ) throws -> Data {
+    try bridge.startTableOperation(
       tokenId: tokenId, sessionId: sessionId, nowMs: nowMs, confirmation: confirmation)
+  }
+
+  func tableOperationStatus(operationId: Data) throws -> WorkbenchTableOperationStatus {
+    try bridge.tableOperationStatus(operationId: operationId).workbench
+  }
+
+  func dismissTableOperation(operationId: Data) throws -> Bool {
+    try bridge.dismissTableOperation(operationId: operationId)
   }
 
   func revokeTableOperation(tokenId: Data) throws -> Bool {
@@ -2700,10 +2735,12 @@ final class BridgeModel {
   var tableOperationNewName = ""
   var tableOperationConfirmation = ""
   var tableOperationReview: WorkbenchTableOperationReview?
+  var tableOperationStatus: WorkbenchTableOperationStatus?
   var tableOperationOutcome: String?
   var tableOperationError: String?
   private(set) var tableOperationApplying = false
   private var tableOperationCatalogNodeId: Data?
+  private var tableOperationId: Data?
   var findReplacePresented = false
   var findPattern = ""
   var findReplacement = ""
@@ -4425,6 +4462,7 @@ final class BridgeModel {
     tableOperationNewName = ""
     tableOperationConfirmation = ""
     tableOperationReview = nil
+    tableOperationStatus = nil
     tableOperationOutcome = nil
     tableOperationError = nil
     tableOperationCatalogNodeId = activeObjectTab?.catalogNodeId
@@ -4432,10 +4470,16 @@ final class BridgeModel {
   }
 
   func resetTableOperationReview() async {
+    guard !tableOperationApplying else { return }
     if let review = tableOperationReview, let client {
       _ = try? await client.revokeTableOperation(tokenId: review.tokenId)
     }
+    if let operationId = tableOperationId, let client {
+      _ = try? await client.dismissTableOperation(operationId: operationId)
+    }
     tableOperationReview = nil
+    tableOperationStatus = nil
+    tableOperationId = nil
     tableOperationConfirmation = ""
     tableOperationOutcome = nil
     tableOperationError = nil
@@ -4467,12 +4511,27 @@ final class BridgeModel {
     let nodeId = tableOperationCatalogNodeId
     tableOperationReview = nil
     tableOperationApplying = true
+    tableOperationStatus = nil
     tableOperationError = nil
     defer { tableOperationApplying = false }
     do {
-      tableOperationOutcome = try await client.applyTableOperation(
+      let operationId = try await client.startTableOperation(
         tokenId: review.tokenId, sessionId: session,
         nowMs: dependencies.clock.nowMilliseconds(), confirmation: tableOperationConfirmation)
+      tableOperationId = operationId
+      while true {
+        let status = try await client.tableOperationStatus(operationId: operationId)
+        tableOperationStatus = status
+        if status.phase != "running" { break }
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      guard let status = tableOperationStatus else { return }
+      if status.phase == "succeeded" {
+        tableOperationOutcome = status.summary
+      } else {
+        tableOperationError = "Table operation \(status.phase): \(status.summary)"
+        return
+      }
       if ["rename", "drop"].contains(kind), let nodeId {
         objectTabs.removeAll(where: { $0.catalogNodeId == nodeId })
         selectedObjectTabId = nil
@@ -8099,7 +8158,16 @@ private struct TableOperationSheet: View {
           .padding(6)
         }
       }
-      if model.tableOperationApplying { ProgressView("Applying table operation…") }
+      if model.tableOperationApplying {
+        ProgressView(model.tableOperationStatus?.summary ?? "Starting table operation…")
+          .accessibilityIdentifier("table-operation.progress")
+        if model.tableOperationStatus?.cancellable == false {
+          Text("Cancellation is unavailable for this engine operation.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("table-operation.cancel-unavailable")
+        }
+      }
       if let outcome = model.tableOperationOutcome {
         Label(outcome, systemImage: "checkmark.circle.fill")
           .foregroundStyle(.green)
