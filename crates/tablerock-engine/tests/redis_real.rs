@@ -3563,8 +3563,51 @@ async fn lists_catalog_logical_databases() {
         subtree.exactness(),
         CatalogExactness::Exact | CatalogExactness::DefaultAssumed
     ));
+
     let client = redis::Client::open(redis_url(port, 0)).unwrap();
     let mut connection = client.get_multiplexed_async_connection().await.unwrap();
+    let _: () = redis::cmd("ACL")
+        .arg("SETUSER")
+        .arg("tablerock-catalog-limited")
+        .arg("reset")
+        .arg("on")
+        .arg(">synthetic-catalog-password")
+        .arg("~*")
+        .arg("&*")
+        .arg("+@all")
+        .arg("-config")
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    let limited = connect_session_until_ready(
+        &RedisConnectConfig::new(
+            container_text(port),
+            port,
+            0,
+            RedisProtocol::Resp3,
+            RedisTlsMode::Disable,
+        ),
+        RedisConnectionSecurity::new().with_credentials(RedisCredentials::new(
+            Some("tablerock-catalog-limited"),
+            "synthetic-catalog-password",
+        )),
+    )
+    .await;
+    let assumed = limited
+        .catalog(CatalogRequest::RedisLogicalDatabases {
+            limits: PageLimits::new(64, 1, 1024, 64),
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        assumed.exactness(),
+        CatalogExactness::DefaultAssumed,
+        "CONFIG denial must be visible rather than reported exact"
+    );
+    assert_eq!(
+        assumed.nodes().len(),
+        usize::try_from(REDIS_DEFAULT_LOGICAL_DATABASES).unwrap()
+    );
     let _: () = redis::cmd("SET")
         .arg(b"catalog-key")
         .arg(b"value")

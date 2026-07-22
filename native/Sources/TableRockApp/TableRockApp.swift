@@ -7023,14 +7023,8 @@ struct CatalogGrid: NSViewRepresentable {
     final class ResultCellButton: NSButton {
       var onActivate: (() -> Void)?
 
-      override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
+      @objc func activateCell() {
         onActivate?()
-      }
-
-      override func accessibilityPerformPress() -> Bool {
-        onActivate?()
-        return true
       }
     }
 
@@ -7147,6 +7141,8 @@ struct CatalogGrid: NSViewRepresentable {
         cell = ResultCellView()
         cell.identifier = identifier
         let button = ResultCellButton(title: "", target: nil, action: nil)
+        button.target = button
+        button.action = #selector(ResultCellButton.activateCell)
         button.identifier = NSUserInterfaceItemIdentifier("result-cell-button")
         button.isBordered = false
         button.alignment = .left
@@ -7416,6 +7412,16 @@ struct ExternalUrlConfirmationSheet: View {
             .accessibilityIdentifier("external-url.connect-saved")
           }
         }
+        Section("Choose action") {
+          Button("Connect Temporarily") {
+            Task { await model.connectExternalTemporarily() }
+          }
+          .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("external-url.connect-temporary")
+
+          Button("Review as New") { model.reviewExternalURLAsNewConnection() }
+            .accessibilityIdentifier("external-url.review-new")
+        }
       }
       .formStyle(.grouped)
       .navigationTitle("Open External Connection?")
@@ -7426,15 +7432,6 @@ struct ExternalUrlConfirmationSheet: View {
             dismiss()
           }
           .accessibilityIdentifier("external-url.cancel")
-        }
-        ToolbarItemGroup(placement: .confirmationAction) {
-          Button("Review as New") { model.reviewExternalURLAsNewConnection() }
-            .accessibilityIdentifier("external-url.review-new")
-          Button("Connect Temporarily") {
-            Task { await model.connectExternalTemporarily() }
-          }
-          .buttonStyle(.borderedProminent)
-          .accessibilityIdentifier("external-url.connect-temporary")
         }
       }
     }
@@ -7449,33 +7446,39 @@ struct QuickSwitcherSheet: View {
   var body: some View {
     @Bindable var model = model
     NavigationStack {
-      List(model.quickSwitcherItems) { item in
-        Button {
-          Task { await model.activateQuickSwitcherItem(item) }
-        } label: {
-          HStack(spacing: 10) {
-            Image(systemName: item.favorite ? "star.fill" : "arrow.right.circle")
-              .foregroundStyle(item.favorite ? .yellow : .secondary)
-            VStack(alignment: .leading, spacing: 2) {
-              Text(item.title)
-              Text(item.subtitle).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
+      VStack(spacing: 0) {
+        TextField("Connections, tabs, objects, queries", text: $model.quickSwitcherSearch)
+          .textFieldStyle(.roundedBorder)
+          .accessibilityIdentifier("quick-switch.search")
+          .onSubmit {
+            guard let first = model.quickSwitcherItems.first else { return }
+            Task { await model.activateQuickSwitcherItem(first) }
           }
-          .contentShape(Rectangle())
+          .padding()
+        Divider()
+        List(model.quickSwitcherItems) { item in
+          Button {
+            Task { await model.activateQuickSwitcherItem(item) }
+          } label: {
+            HStack(spacing: 10) {
+              Image(systemName: item.favorite ? "star.fill" : "arrow.right.circle")
+                .foregroundStyle(item.favorite ? .yellow : .secondary)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                Text(item.subtitle).font(.caption).foregroundStyle(.secondary)
+              }
+              Spacer()
+            }
+            .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityIdentifier("quick-switch.item.\(item.id)")
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("quick-switch.item.\(item.id)")
-      }
-      .overlay {
-        if model.quickSwitcherItems.isEmpty {
-          ContentUnavailableView.search(text: model.quickSwitcherSearch)
+        .overlay {
+          if model.quickSwitcherItems.isEmpty {
+            ContentUnavailableView.search(text: model.quickSwitcherSearch)
+          }
         }
-      }
-      .searchable(text: $model.quickSwitcherSearch, prompt: "Connections, tabs, objects, queries")
-      .onSubmit(of: .search) {
-        guard let first = model.quickSwitcherItems.first else { return }
-        Task { await model.activateQuickSwitcherItem(first) }
       }
       .onExitCommand {
         model.quickSwitcherPresented = false

@@ -591,7 +591,7 @@ async fn lists_catalog_databases_and_objects() {
     use tablerock_core::{
         BoundedText, ByteLimit, CatalogNodeKind, ClickHouseObjectKind, PageLimits,
     };
-    use tablerock_engine::{CatalogRequest, DriverSession};
+    use tablerock_engine::{CatalogExactness, CatalogRequest, DriverSession};
 
     let image =
         "26.3.17.4-jammy@sha256:158dcce6f6fdc59309650aad6b79484abf4eed07d4e0bdba31d732e64b5a25fb";
@@ -614,6 +614,28 @@ async fn lists_catalog_databases_and_objects() {
         .unwrap();
     session
         .execute_sql("CREATE VIEW IF NOT EXISTS catalog_fixture.v AS SELECT 1 AS id")
+        .await
+        .unwrap();
+    session
+        .execute_sql(
+            "CREATE TABLE IF NOT EXISTS catalog_fixture.`表;--` (id UInt8) ENGINE = Memory",
+        )
+        .await
+        .unwrap();
+    session
+        .execute_sql(
+            "CREATE TABLE IF NOT EXISTS catalog_fixture.dict_source \
+             (id UInt64, value String) ENGINE = Memory",
+        )
+        .await
+        .unwrap();
+    session
+        .execute_sql(
+            "CREATE DICTIONARY IF NOT EXISTS catalog_fixture.fixture_dictionary \
+             (id UInt64, value String) PRIMARY KEY id \
+             SOURCE(CLICKHOUSE(DB 'catalog_fixture' TABLE 'dict_source')) \
+             LAYOUT(HASHED()) LIFETIME(0)",
+        )
         .await
         .unwrap();
 
@@ -644,12 +666,34 @@ async fn lists_catalog_databases_and_objects() {
         .collect();
     assert!(names.contains(&"t".to_owned()), "{names:?}");
     assert!(names.contains(&"v".to_owned()), "{names:?}");
+    assert!(names.contains(&"表;--".to_owned()), "{names:?}");
+    assert!(
+        names.contains(&"fixture_dictionary".to_owned()),
+        "{names:?}"
+    );
     assert!(objects.nodes().iter().any(|n| {
         matches!(
             n.kind(),
             CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Table)
         )
     }));
+    assert!(objects.nodes().iter().any(|n| {
+        matches!(
+            n.kind(),
+            CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Dictionary)
+        )
+    }));
+
+    let bounded = session
+        .catalog(CatalogRequest::ClickHouseObjects {
+            database: BoundedText::copy_from_str("catalog_fixture", ByteLimit::new(64)).unwrap(),
+            limits: PageLimits::new(2, 8, 64 * 1024, 256),
+        })
+        .await
+        .unwrap();
+    assert_eq!(bounded.nodes().len(), 2);
+    assert!(!bounded.complete());
+    assert_eq!(bounded.exactness(), CatalogExactness::Truncated);
 }
 
 #[tokio::test]

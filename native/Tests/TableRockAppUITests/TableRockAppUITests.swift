@@ -363,7 +363,7 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue((editor.value as? String ?? "").contains("SELECT 2"))
 
     app.typeKey("o", modifierFlags: [.command, .shift])
-    let search = app.searchFields.firstMatch
+    let search = app.textFields["quick-switch.search"]
     XCTAssertTrue(search.waitForExistence(timeout: 10))
     search.click()
     search.typeText("Users")
@@ -385,7 +385,10 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(
       app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
 
-    app.typeKey("e", modifierFlags: [.command, .shift])
+    let explain = app.menuItems["Explain Query"]
+    XCTAssertTrue(explain.waitForExistence(timeout: 10))
+    XCTAssertTrue(explain.isEnabled)
+    explain.click()
     let plan = app.staticTexts["explain.plan"]
     XCTAssertTrue(plan.waitForExistence(timeout: 10))
     XCTAssertTrue((plan.value as? String ?? plan.label).contains("Seq Scan on fixture"))

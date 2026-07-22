@@ -36,9 +36,9 @@ exit 0
 
 The facade test inspects the concrete driver request and proves Rust generated
 the PostgreSQL statement. XCUITest connects through the shipped surface,
-activates `Command-Shift-E`, inspects returned plan text, and verifies Copy is
-available. Hosted Xcode execution and live PostgreSQL/ClickHouse UI replay
-remain required after push.
+activates the enabled Explain Query application-menu command, inspects returned
+plan text, and verifies Copy is available. Hosted Xcode execution and live
+PostgreSQL/ClickHouse UI replay remain required after push.
 
 ## Primary behavior sources
 

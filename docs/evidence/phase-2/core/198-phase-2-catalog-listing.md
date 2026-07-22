@@ -37,6 +37,34 @@ Plan 003. All three engines list lazy catalog levels behind
 - `cargo test -p tablerock-engine --test clickhouse_real lists_catalog`
 - `cargo test -p tablerock-engine --test redis_real lists_catalog`
 
+The current completion audit strengthened the two previously indirect
+real-server claims:
+
+- ClickHouse creates a table, view, Unicode/hostile table name, and an
+  executable dictionary, then proves every object kind is listed and a
+  two-row request reports `CatalogExactness::Truncated` with `complete=false`.
+- Redis creates an ACL user with every command except `CONFIG`, connects as
+  that user, and proves the catalog returns exactly the documented 16 logical
+  databases with `CatalogExactness::DefaultAssumed` rather than claiming an
+  exact server setting.
+
+Local audit commands on 2026-07-22:
+
+- `cargo test -p tablerock-engine --test clickhouse_real lists_catalog_databases_and_objects`
+- `cargo test -p tablerock-engine --test redis_real lists_catalog_logical_databases`
+
+Both passed against pinned real containers.
+
+## External-reference provenance
+
+The ClickHouse dictionary fixture follows the current official
+`ClickHouse/ClickHouse` source documentation for `SOURCE(CLICKHOUSE(...))`
+and the upstream stateless-test form for `CREATE DICTIONARY ...
+LAYOUT(HASHED()) LIFETIME(0)`, inspected at repository revision
+`a5d2f664014de19b835785c4855c6865bfe27198`. Only public SQL syntax informed
+the fixture. No TablePro source, assets, text, measurements, colors, or key
+bindings influenced this checkpoint.
+
 ## Remaining work
 
 - UI tree projection (plan 009).
