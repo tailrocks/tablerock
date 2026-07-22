@@ -101,3 +101,17 @@ unsaved-change policy as staged edits.
 
 Completion candidates, statement boundaries, execution, and result truth are
 Rust-owned in both clients; the native editor never parses SQL for behavior.
+
+## Optional Vim mode
+
+Vim mode is off by default and persists as an isolated application preference.
+Each query tab owns its current Insert or Normal state. Escape enters Normal
+only after active IME marked-text composition has ended; `i` returns to Insert.
+Normal mode supports `h`, `j`, `k`, and `l` motion, `d` for the current line,
+and `u` for native undo. Command, Control, and Option shortcuts pass through to
+the native editor and application. Unmapped plain keys do not insert text.
+
+The current mode is always visible as text and exposed through accessibility,
+never only by cursor shape or color. Disabling Vim mode immediately returns
+every active editor to Insert behavior. TableRock owns this small documented
+keymap; it does not claim full Vim emulation.

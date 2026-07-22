@@ -57,6 +57,32 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testVimModeUsesNormalMotionsWithoutInsertingAndReturnsToInsert() throws {
+    let app = launch(
+      scenario: "success",
+      environment: [
+        "TABLEROCK_FIXTURE_ACTIVE_QUERY": "1",
+        "TABLEROCK_FIXTURE_VIM_MODE": "1",
+      ])
+    let editor = app.textViews["query.editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    editor.click()
+    let before = editor.value as? String ?? ""
+
+    app.typeKey(.escape, modifierFlags: [])
+    let mode = app.staticTexts["query.vim-mode"]
+    XCTAssertTrue(mode.waitForExistence(timeout: 5))
+    XCTAssertEqual(mode.value as? String, "normal")
+    app.typeText("h")
+    XCTAssertEqual(editor.value as? String, before)
+
+    app.typeText("i")
+    XCTAssertEqual(mode.value as? String, "insert")
+    app.typeText("x")
+    XCTAssertNotEqual(editor.value as? String, before)
+  }
+
+  @MainActor
   func testNamedParametersRequireSheetBeforeExecution() throws {
     let app = launch(scenario: "success")
     let connect = app.buttons["connection.direct.connect"]

@@ -26,6 +26,10 @@
   round-trips the shared bounded safety/timeout/reconnect contract; Rust runs
   only read-only actions automatically. Reviewed skipped-action execution and
   native reconnect outcome replay remain open.
+- **Progress note (evidence 654)**: optional native Vim mode now uses an
+  isolated persisted preference, per-tab Insert/Normal state, AppKit motions,
+  delete/undo, visible accessibility status, and IME-safe Escape. Hosted Xcode
+  replay of committed unit/UI tests remains open.
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

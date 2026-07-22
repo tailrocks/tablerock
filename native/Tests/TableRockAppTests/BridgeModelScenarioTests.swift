@@ -1,3 +1,4 @@
+import AppKit
 import TableRockFeature
 import XCTest
 
@@ -5,6 +6,37 @@ import XCTest
 
 @MainActor
 final class BridgeModelScenarioTests: XCTestCase {
+  func testVimTextViewModeTransitionsMotionsDeleteAndUndo() {
+    let editor = VimTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    editor.string = "alpha\nbeta\n"
+    editor.vimEnabled = true
+    editor.setSelectedRange(NSRange(location: 6, length: 0))
+
+    editor.keyDown(with: keyEvent("\u{1b}", keyCode: 53))
+    XCTAssertEqual(editor.vimMode, "normal")
+    editor.keyDown(with: keyEvent("l", keyCode: 37))
+    XCTAssertEqual(editor.selectedRange().location, 7)
+    editor.keyDown(with: keyEvent("d", keyCode: 2))
+    XCTAssertEqual(editor.string, "alpha\n")
+    editor.keyDown(with: keyEvent("u", keyCode: 32))
+    XCTAssertEqual(editor.string, "alpha\nbeta\n")
+    editor.keyDown(with: keyEvent("i", keyCode: 34))
+    XCTAssertEqual(editor.vimMode, "insert")
+  }
+
+  func testVimEscapeDoesNotStealMarkedTextComposition() {
+    let editor = VimTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    editor.vimEnabled = true
+    editor.setMarkedText(
+      "あ", selectedRange: NSRange(location: 1, length: 0),
+      replacementRange: NSRange(location: NSNotFound, length: 0))
+    XCTAssertTrue(editor.hasMarkedText())
+
+    editor.keyDown(with: keyEvent("\u{1b}", keyCode: 53))
+
+    XCTAssertEqual(editor.vimMode, "insert")
+  }
+
   func testImportErrorSummaryCopiesOnlyBoundedSafeRows() {
     let pasteboard = ImportErrorPasteboard()
     let model = BridgeModel(
@@ -400,6 +432,14 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertEqual(second.queryText, "SELECT second;")
     XCTAssertFalse(first.queryTabs[0] === second.queryTabs[0])
   }
+}
+
+@MainActor
+private func keyEvent(_ characters: String, keyCode: UInt16) -> NSEvent {
+  NSEvent.keyEvent(
+    with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+    windowNumber: 0, context: nil, characters: characters,
+    charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode)!
 }
 
 @MainActor
