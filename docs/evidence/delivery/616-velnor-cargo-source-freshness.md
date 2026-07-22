@@ -11,12 +11,21 @@ the core rebuild and clippy linked a stale rlib without the new saved-filter
 exports. The exact source files and commit were present; this was unsafe
 filesystem-time reuse, not a Rust dependency error.
 
-## Correction
+## Temporary correction
 
 Both Velnor compilation jobs refresh Rust source and manifest mtimes after
 checkout and before Cargo runs. This forces Cargo to recompute changed crate
 fingerprints while sccache retains safe content-addressed compiler reuse.
 GitHub-hosted lanes keep their normal clean-workspace behavior.
+
+That lane-specific workflow step violated the estate portability contract and
+was never an acceptable terminal fix. Velnor `v0.1.109` removes the enabling
+condition in the runner: every persistent target generation records its source
+revision; restoring a generation for a different revision refreshes workspace
+mtimes internally, while the same revision remains untouched and warm. The
+TableRock-only steps were removed after the runner regression and complete
+Velnor gate passed at `0146732` (`29883003438`). Signed-apt publication and
+exact-main hosted proof are recorded separately when complete.
 
 ## Verification
 
