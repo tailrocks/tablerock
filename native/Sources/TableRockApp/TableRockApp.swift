@@ -5434,19 +5434,19 @@ private struct CsvImportSheet: View {
       HStack {
         Button("Stage Reviewed Import") { Task { await model.stageCsvImport() } }
           .buttonStyle(.borderedProminent)
-          .accessibilityIdentifier("import.csv.stage")
           .disabled(
             model.csvImportPreview == nil || model.csvImportReview != nil
               || model.csvImportOutcome != nil || model.csvImportApplying)
+          .accessibilityIdentifier("import.csv.stage")
         Button("Apply Import") { Task { await model.applyCsvImport() } }
           .buttonStyle(.borderedProminent)
-          .accessibilityIdentifier("import.csv.apply")
           .disabled(model.csvImportReview == nil || model.csvImportApplying)
+          .accessibilityIdentifier("import.csv.apply")
         Button("Discard Review", role: .cancel) {
           Task { await model.discardCsvImportReview() }
         }
-        .accessibilityIdentifier("import.csv.discard")
         .disabled(model.csvImportReview == nil || model.csvImportApplying)
+        .accessibilityIdentifier("import.csv.discard")
         Spacer()
       }
       .fixedSize(horizontal: false, vertical: true)
@@ -5553,6 +5553,7 @@ private struct CsvImportSheet: View {
     }
     .padding(20)
     .frame(minWidth: 720, idealHeight: 560)
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("import.csv.sheet")
     .interactiveDismissDisabled(model.csvImportReview != nil || model.csvImportApplying)
   }
@@ -5673,13 +5674,13 @@ private struct ResultGridWithInspector: View {
           guard visibleRowIndices.indices.contains(row) else { return }
           model.selectCell(row: visibleRowIndices[row], column: column)
         }
-        .frame(minWidth: 360, minHeight: 100, idealHeight: minimumHeight)
+        .frame(minWidth: 280, minHeight: 100, idealHeight: minimumHeight)
         if let snapshot = model.selectedCellSnapshot {
           NativeValueInspector(
             column: snapshot.0, cell: snapshot.1,
             row: snapshot.2, columnIndex: snapshot.3
           )
-          .frame(minWidth: 220, idealWidth: 280, maxWidth: 380)
+          .frame(minWidth: 180, idealWidth: 280, maxWidth: 380)
         }
       }
     }
@@ -6720,7 +6721,8 @@ struct CatalogGrid: NSViewRepresentable {
     final class ResultCellButton: NSButton {
       var onActivate: (() -> Void)?
 
-      @objc func activate(_ sender: Any?) {
+      override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
         onActivate?()
       }
 
@@ -6844,8 +6846,6 @@ struct CatalogGrid: NSViewRepresentable {
         cell.identifier = identifier
         let button = ResultCellButton(title: "", target: nil, action: nil)
         button.identifier = NSUserInterfaceItemIdentifier("result-cell-button")
-        button.target = button
-        button.action = #selector(ResultCellButton.activate(_:))
         button.isBordered = false
         button.alignment = .left
         button.lineBreakMode = .byTruncatingTail
