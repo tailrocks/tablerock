@@ -411,6 +411,16 @@ extension WorkbenchBackend {
   func cancelRedisSubscription(operationId: Data) throws -> Bool {
     try scriptedUnavailable("redis-subscription-cancel")
   }
+  func stageDdlChange(
+    sessionId: Data, catalogNodeId: Data, kind: String, objectName: String,
+    definition: String, nowMs: UInt64
+  ) throws -> WorkbenchDdlChangeReview { try scriptedUnavailable("ddl-change-stage") }
+  func applyDdlChange(
+    tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool
+  ) throws -> String { try scriptedUnavailable("ddl-change-apply") }
+  func revokeDdlChange(tokenId: Data) throws -> Bool {
+    try scriptedUnavailable("ddl-change-revoke")
+  }
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow] {
     try scriptedUnavailable("postgres-activity")
   }
@@ -468,6 +478,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   private var submittedIntent: String?
   private var postgresToolPhase = "succeeded"
   private var redisSubscriptionActive = false
+  private var ddlReviewActive = false
 
   init(scenario: String) { self.scenario = scenario }
 
@@ -740,6 +751,44 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     }
     let wasActive = redisSubscriptionActive
     redisSubscriptionActive = false
+    return wasActive
+  }
+
+  func stageDdlChange(
+    sessionId: Data, catalogNodeId: Data, kind: String, objectName: String,
+    definition: String, nowMs: UInt64
+  ) throws -> WorkbenchDdlChangeReview {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16), !objectName.isEmpty,
+      !ddlReviewActive
+    else { return try scriptedUnavailable("ddl-change-stage") }
+    ddlReviewActive = true
+    let destructive = kind.hasPrefix("drop_")
+    let suffix = definition.isEmpty ? "" : " \(definition)"
+    return WorkbenchDdlChangeReview(
+      tokenId: Data(repeating: 15, count: 16),
+      preview: "\(kind) public.fixture_table \(objectName)\(suffix);",
+      destructive: destructive,
+      rollbackSummary:
+        "PostgreSQL applies this statement atomically; TableRock does not automatically roll it back after observed success.",
+      expiresAtMs: nowMs + 60_000)
+  }
+
+  func applyDdlChange(
+    tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool
+  ) throws -> String {
+    guard scenario == "success", ddlReviewActive,
+      tokenId == Data(repeating: 15, count: 16), confirmed
+    else { return try scriptedUnavailable("ddl-change-apply") }
+    ddlReviewActive = false
+    return "Structure change applied"
+  }
+
+  func revokeDdlChange(tokenId: Data) throws -> Bool {
+    guard scenario == "success", tokenId == Data(repeating: 15, count: 16) else {
+      return try scriptedUnavailable("ddl-change-revoke")
+    }
+    let wasActive = ddlReviewActive
+    ddlReviewActive = false
     return wasActive
   }
 
@@ -1160,6 +1209,28 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
 
   func cancelRedisSubscription(operationId: Data) throws -> Bool {
     try bridge.cancelRedisSubscription(operationId: operationId)
+  }
+
+  func stageDdlChange(
+    sessionId: Data, catalogNodeId: Data, kind: String, objectName: String,
+    definition: String, nowMs: UInt64
+  ) throws -> WorkbenchDdlChangeReview {
+    try bridge.stageDdlChange(
+      request: BridgeDdlChangeRequest(
+        sessionId: sessionId, catalogNodeId: catalogNodeId, kind: kind,
+        objectName: objectName, definition: definition, nowMs: nowMs)
+    ).workbench
+  }
+
+  func applyDdlChange(
+    tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool
+  ) throws -> String {
+    try bridge.applyDdlChange(
+      tokenId: tokenId, sessionId: sessionId, nowMs: nowMs, confirmed: confirmed)
+  }
+
+  func revokeDdlChange(tokenId: Data) throws -> Bool {
+    try bridge.revokeDdlChange(tokenId: tokenId)
   }
 
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow] {
@@ -2242,6 +2313,15 @@ final class BridgeModel {
   private(set) var redisSubscriptionError: String?
   private(set) var redisSubscriptionStarting = false
   private var redisSubscriptionPollTask: Task<Void, Never>?
+  var ddlChangePresented = false
+  var ddlChangeKind = "add_column"
+  var ddlChangeObjectName = ""
+  var ddlChangeDefinition = ""
+  var ddlChangeReview: WorkbenchDdlChangeReview?
+  var ddlChangeOutcome: String?
+  var ddlChangeError: String?
+  private(set) var ddlChangeApplying = false
+  private var ddlChangeCatalogNodeId: Data?
   var postgresActivityPresented = false
   var postgresActivityRows: [WorkbenchPostgresActivityRow] = []
   private(set) var postgresActivityLoading = false
@@ -2318,6 +2398,12 @@ final class BridgeModel {
       "postgresql_table", "postgresql_foreign_table",
       "postgresql_partitioned_table", "clickhouse_table",
     ].contains(kind)
+  }
+  var canEditSelectedStructure: Bool {
+    guard connectedEngine == "postgresql", activeObjectTab?.structure != nil,
+      let kind = activeObjectTab?.kind
+    else { return false }
+    return ["postgresql_table", "postgresql_partitioned_table"].contains(kind)
   }
   var selectedCell: NativeCellSelection? {
     get {
@@ -3739,6 +3825,71 @@ final class BridgeModel {
       tab.structure = nil
       tab.structureError = "Structure unavailable: \(error)"
     }
+  }
+
+  func showDdlChange() {
+    guard canEditSelectedStructure else { return }
+    ddlChangeKind = "add_column"
+    ddlChangeObjectName = ""
+    ddlChangeDefinition = ""
+    ddlChangeReview = nil
+    ddlChangeOutcome = nil
+    ddlChangeError = nil
+    ddlChangeCatalogNodeId = activeObjectTab?.catalogNodeId
+    ddlChangePresented = true
+  }
+
+  func stageDdlChange() async {
+    guard let client, let session = sessionData, let nodeId = ddlChangeCatalogNodeId,
+      ddlChangeReview == nil, !ddlChangeApplying
+    else { return }
+    ddlChangeError = nil
+    ddlChangeOutcome = nil
+    do {
+      ddlChangeReview = try await client.stageDdlChange(
+        sessionId: session, catalogNodeId: nodeId, kind: ddlChangeKind,
+        objectName: ddlChangeObjectName.trimmingCharacters(in: .whitespacesAndNewlines),
+        definition: ddlChangeDefinition.trimmingCharacters(in: .whitespacesAndNewlines),
+        nowMs: dependencies.clock.nowMilliseconds())
+    } catch {
+      ddlChangeReview = nil
+      ddlChangeError = "Structure review rejected: \(error)"
+    }
+  }
+
+  func applyDdlChange() async {
+    guard let client, let session = sessionData, let review = ddlChangeReview else { return }
+    let nodeId = ddlChangeCatalogNodeId
+    ddlChangeReview = nil
+    ddlChangeApplying = true
+    ddlChangeError = nil
+    defer { ddlChangeApplying = false }
+    do {
+      ddlChangeOutcome = try await client.applyDdlChange(
+        tokenId: review.tokenId, sessionId: session,
+        nowMs: dependencies.clock.nowMilliseconds(), confirmed: true)
+      if let nodeId,
+        let tab = objectTabs.first(where: { $0.catalogNodeId == nodeId })
+      {
+        tab.structure = try await client.relationStructure(
+          sessionId: session, catalogNodeId: nodeId)
+        tab.structureError = nil
+      }
+    } catch {
+      ddlChangeError = "Structure outcome unknown or failed; review consumed: \(error)"
+    }
+  }
+
+  func discardDdlChangeReview() async {
+    if let review = ddlChangeReview, let client {
+      _ = try? await client.revokeDdlChange(tokenId: review.tokenId)
+    }
+    ddlChangeReview = nil
+  }
+
+  func closeDdlChange() async {
+    await discardDdlChangeReview()
+    ddlChangePresented = false
   }
 
   func loadMoreObjectRows() async {
@@ -5779,6 +5930,12 @@ struct ContentView: View {
     ) {
       RedisSubscriptionSheet()
     }
+    .sheet(
+      isPresented: $model.ddlChangePresented,
+      onDismiss: { Task { await model.closeDdlChange() } }
+    ) {
+      DdlChangeSheet()
+    }
     .sheet(isPresented: $model.postgresActivityPresented) {
       PostgresActivitySheet()
     }
@@ -6324,6 +6481,11 @@ private struct ObjectStructureView: View {
             }
             .disabled(structure.ddl.isEmpty)
             .accessibilityHint("Copies database-generated structure SQL")
+            Button("Change Structure…", systemImage: "slider.horizontal.3") {
+              model.showDdlChange()
+            }
+            .disabled(!model.canEditSelectedStructure)
+            .accessibilityIdentifier("structure.change.open")
           }
           GroupBox("Columns") {
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
@@ -6700,6 +6862,125 @@ private struct RedisSubscriptionSheet: View {
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("redis.pubsub.sheet")
     .interactiveDismissDisabled(model.redisSubscriptionIsActive)
+  }
+}
+
+private struct DdlChangeSheet: View {
+  @Environment(BridgeModel.self) private var model
+  @State private var applyConfirmationPresented = false
+
+  private var needsDefinition: Bool {
+    ["add_column", "create_index", "add_constraint"].contains(model.ddlChangeKind)
+  }
+
+  var body: some View {
+    @Bindable var model = model
+    VStack(alignment: .leading, spacing: 14) {
+      HStack {
+        Label("Review Structure Change", systemImage: "tablecells.badge.ellipsis")
+          .font(.title2.bold())
+        Spacer()
+        Button("Close") { Task { await model.closeDdlChange() } }
+          .disabled(model.ddlChangeApplying)
+      }
+      Form {
+        Picker("Operation", selection: $model.ddlChangeKind) {
+          Text("Add column").tag("add_column")
+          Text("Drop column").tag("drop_column")
+          Text("Create index").tag("create_index")
+          Text("Drop index").tag("drop_index")
+          Text("Add constraint").tag("add_constraint")
+          Text("Drop constraint").tag("drop_constraint")
+        }
+        .disabled(model.ddlChangeReview != nil || model.ddlChangeApplying)
+        TextField("Object name", text: $model.ddlChangeObjectName)
+          .disabled(model.ddlChangeReview != nil || model.ddlChangeApplying)
+          .accessibilityIdentifier("structure.change.object")
+        if needsDefinition {
+          TextField(
+            model.ddlChangeKind == "add_column"
+              ? "Column type"
+              : model.ddlChangeKind == "create_index"
+                ? "Comma-separated columns" : "UNIQUE, PRIMARY KEY, or CHECK definition",
+            text: $model.ddlChangeDefinition
+          )
+          .disabled(model.ddlChangeReview != nil || model.ddlChangeApplying)
+          .accessibilityIdentifier("structure.change.definition")
+        }
+      }
+      .formStyle(.grouped)
+      HStack {
+        Button("Review Change…") { Task { await model.stageDdlChange() } }
+          .buttonStyle(.borderedProminent)
+          .disabled(
+            model.ddlChangeReview != nil || model.ddlChangeApplying
+              || model.ddlChangeObjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              || (needsDefinition
+                && model.ddlChangeDefinition.trimmingCharacters(in: .whitespacesAndNewlines)
+                  .isEmpty)
+          )
+          .accessibilityIdentifier("structure.change.review")
+        Button("Discard Review", role: .cancel) {
+          Task { await model.discardDdlChangeReview() }
+        }
+        .disabled(model.ddlChangeReview == nil || model.ddlChangeApplying)
+        Spacer()
+      }
+      if let review = model.ddlChangeReview {
+        GroupBox("Frozen statement preview") {
+          VStack(alignment: .leading, spacing: 8) {
+            Text(review.preview)
+              .font(.system(.body, design: .monospaced))
+              .textSelection(.enabled)
+              .accessibilityIdentifier("structure.change.preview")
+            if review.destructive {
+              Label(
+                "This operation removes structure", systemImage: "exclamationmark.triangle.fill"
+              )
+              .foregroundStyle(.orange)
+            }
+            Text(review.rollbackSummary).font(.callout).foregroundStyle(.secondary)
+            Button("Apply Reviewed Change…") { applyConfirmationPresented = true }
+              .buttonStyle(.borderedProminent)
+              .accessibilityIdentifier("structure.change.apply-review")
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(6)
+        }
+      }
+      if model.ddlChangeApplying { ProgressView("Applying structure change…") }
+      if let outcome = model.ddlChangeOutcome {
+        Label(outcome, systemImage: "checkmark.circle.fill")
+          .foregroundStyle(.green)
+          .accessibilityIdentifier("structure.change.outcome")
+      }
+      if let error = model.ddlChangeError {
+        Text(error).foregroundStyle(.red).textSelection(.enabled)
+      }
+      Spacer()
+    }
+    .padding(20)
+    .frame(minWidth: 680, minHeight: 520)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("structure.change.sheet")
+    .interactiveDismissDisabled(model.ddlChangeReview != nil || model.ddlChangeApplying)
+    .confirmationDialog(
+      model.ddlChangeReview?.destructive == true
+        ? "Apply destructive structure change?" : "Apply structure change?",
+      isPresented: $applyConfirmationPresented,
+      presenting: model.ddlChangeReview
+    ) { review in
+      if review.destructive {
+        Button("Apply Destructive Change", role: .destructive) {
+          Task { await model.applyDdlChange() }
+        }
+      } else {
+        Button("Apply Structure Change") { Task { await model.applyDdlChange() } }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: { review in
+      Text("\(review.preview)\n\n\(review.rollbackSummary)")
+    }
   }
 }
 

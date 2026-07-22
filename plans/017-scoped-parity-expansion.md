@@ -121,6 +121,7 @@ host them, keep those suites local-only and record the gap — same pattern as
 - [x] Role effective-membership TUI projection (evidence 281)
 - [x] Startup Write/Dangerous review UI (evidence 282)
 - [x] DDL structure-panel quick actions (evidence 283)
+- [x] Native PostgreSQL structure review/apply authority (evidence 640)
 - [x] pg_dump/pg_restore real-server matrix + TUI (evidence 284; skips without clients)
 - [x] Vim mode keymap layer unit suite; off by default
 - [x] Relationship graph contract + self-cycle detection

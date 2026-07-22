@@ -475,6 +475,45 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testStructureChangeRequiresFrozenReviewAndConfirmation() throws {
+    let app = launch(scenario: "success")
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    connect.click()
+    let refresh = app.buttons["catalog.refresh"]
+    XCTAssertTrue(refresh.waitForExistence(timeout: 10))
+    refresh.click()
+    let table = app.staticTexts["fixture_table"]
+    XCTAssertTrue(table.waitForExistence(timeout: 10))
+    table.doubleClick()
+    let structure = app.buttons["Structure"]
+    XCTAssertTrue(structure.waitForExistence(timeout: 10))
+    structure.click()
+    let open = app.buttons["structure.change.open"]
+    XCTAssertTrue(open.waitForExistence(timeout: 10))
+    XCTAssertTrue(open.isEnabled)
+    open.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["structure.change.sheet"].waitForExistence(timeout: 10))
+    let object = app.textFields["structure.change.object"]
+    object.click()
+    object.typeText("reviewed_column")
+    let definition = app.textFields["structure.change.definition"]
+    definition.click()
+    definition.typeText("text")
+    app.buttons["structure.change.review"].click()
+    let preview = app.descendants(matching: .any)["structure.change.preview"]
+    XCTAssertTrue(preview.waitForExistence(timeout: 10))
+    XCTAssertTrue((preview.value as? String ?? preview.label).contains("reviewed_column"))
+    app.buttons["structure.change.apply-review"].click()
+    let confirm = app.buttons["Apply Structure Change"]
+    XCTAssertTrue(confirm.waitForExistence(timeout: 10))
+    confirm.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["structure.change.outcome"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
   func testPostgresRolesSearchAndInspectMembership() throws {
     let app = launch(scenario: "success")
     let connect = app.buttons["connection.direct.connect"]

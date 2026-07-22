@@ -149,6 +149,34 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertNil(model.redisSubscriptionError)
   }
 
+  func testStructureChangeFreezesPreviewAndConsumesReview() async throws {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let model = BridgeModel(client: backend)
+
+    await model.connectByParams()
+    let session = Data(repeating: 1, count: 16)
+    model.catalogSnapshot = try await backend.refreshCatalog(session: session, parentNodeId: nil)
+    let table = try XCTUnwrap(model.catalogSnapshot?.last)
+    let nodeKey = table.idBytes.map { String(format: "%02x", $0) }.joined()
+    await model.openCatalogObject(nodeKey: nodeKey)
+    await model.loadObjectStructure()
+    model.showDdlChange()
+    model.ddlChangeKind = "add_column"
+    model.ddlChangeObjectName = "reviewed_column"
+    model.ddlChangeDefinition = "text"
+
+    await model.stageDdlChange()
+
+    XCTAssertTrue(model.ddlChangePresented)
+    XCTAssertTrue(model.ddlChangeReview?.preview.contains("reviewed_column") == true)
+    XCTAssertFalse(model.ddlChangeReview?.destructive ?? true)
+    XCTAssertTrue(model.ddlChangeReview?.rollbackSummary.contains("does not automatically") == true)
+    await model.applyDdlChange()
+    XCTAssertNil(model.ddlChangeReview)
+    XCTAssertEqual(model.ddlChangeOutcome, "Structure change applied")
+    XCTAssertNil(model.ddlChangeError)
+  }
+
   func testPostgresBackupUsesProbeReviewAndSupervisedStatus() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
     let model = BridgeModel(client: backend)

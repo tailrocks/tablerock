@@ -639,6 +639,11 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 public protocol TableRockBridgeProtocol: AnyObject, Sendable {
 
     /**
+     * Consumes and applies one reviewed structure change. Failed apply is not retryable.
+     */
+    func applyDdlChange(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool) throws  -> String
+
+    /**
      * Consumes and applies one reviewed role change. Failed apply is not retryable.
      */
     func applyPostgresRoleChange(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool) throws  -> String
@@ -877,6 +882,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func reorderProfiles(group: String?, ordered: [BridgeProfileOrderItem]) throws
 
     /**
+     * Discards an unused structure-change review token.
+     */
+    func revokeDdlChange(tokenId: Data) throws  -> Bool
+
+    /**
      * Discards an unused role-change review token.
      */
     func revokePostgresRoleChange(tokenId: Data) throws  -> Bool
@@ -923,6 +933,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Freezes a mapped CSV insert plan behind a single-use review token.
      */
     func stageCsvImport(sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String], mappedTypes: [String], nowMs: UInt64) throws  -> BridgeCsvImportReview
+
+    /**
+     * Freezes one typed PostgreSQL structure change behind a 60-second token.
+     */
+    func stageDdlChange(request: BridgeDdlChangeRequest) throws  -> BridgeDdlChangeReview
 
     /**
      * Freezes one typed role change behind a 60-second consume-once token.
@@ -1031,6 +1046,22 @@ public static func create() -> TableRockBridge  {
 }
 
 
+
+    /**
+     * Consumes and applies one reviewed structure change. Failed apply is not retryable.
+     */
+open func applyDdlChange(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_apply_ddl_change(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(tokenId),
+        FfiConverterData.lower(sessionId),
+        FfiConverterUInt64.lower(nowMs),
+        FfiConverterBool.lower(confirmed),uniffiCallStatus
+    )
+})
+}
 
     /**
      * Consumes and applies one reviewed role change. Failed apply is not retryable.
@@ -1742,6 +1773,19 @@ open func reorderProfiles(group: String?, ordered: [BridgeProfileOrderItem])thro
 }
 
     /**
+     * Discards an unused structure-change review token.
+     */
+open func revokeDdlChange(tokenId: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_revoke_ddl_change(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(tokenId),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Discards an unused role-change review token.
      */
 open func revokePostgresRoleChange(tokenId: Data)throws  -> Bool  {
@@ -1892,6 +1936,19 @@ open func stageCsvImport(sessionId: Data, catalogNodeId: Data, path: String, map
         FfiConverterSequenceString.lower(mappedColumns),
         FfiConverterSequenceString.lower(mappedTypes),
         FfiConverterUInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Freezes one typed PostgreSQL structure change behind a 60-second token.
+     */
+open func stageDdlChange(request: BridgeDdlChangeRequest)throws  -> BridgeDdlChangeReview  {
+    return try  FfiConverterTypeBridgeDdlChangeReview_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_stage_ddl_change(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeBridgeDdlChangeRequest_lower(request),uniffiCallStatus
     )
 })
 }
@@ -2671,6 +2728,142 @@ public func FfiConverterTypeBridgeCsvRow_lift(_ buf: RustBuffer) throws -> Bridg
 #endif
 public func FfiConverterTypeBridgeCsvRow_lower(_ value: BridgeCsvRow) -> RustBuffer {
     return FfiConverterTypeBridgeCsvRow.lower(value)
+}
+
+
+public struct BridgeDdlChangeRequest: Equatable, Hashable {
+    public var sessionId: Data
+    public var catalogNodeId: Data
+    public var kind: String
+    public var objectName: String
+    public var definition: String
+    public var nowMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sessionId: Data, catalogNodeId: Data, kind: String, objectName: String, definition: String, nowMs: UInt64) {
+        self.sessionId = sessionId
+        self.catalogNodeId = catalogNodeId
+        self.kind = kind
+        self.objectName = objectName
+        self.definition = definition
+        self.nowMs = nowMs
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeDdlChangeRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeDdlChangeRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeDdlChangeRequest {
+        return
+            try BridgeDdlChangeRequest(
+                sessionId: FfiConverterData.read(from: &buf),
+                catalogNodeId: FfiConverterData.read(from: &buf),
+                kind: FfiConverterString.read(from: &buf),
+                objectName: FfiConverterString.read(from: &buf),
+                definition: FfiConverterString.read(from: &buf),
+                nowMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeDdlChangeRequest, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.sessionId, into: &buf)
+        FfiConverterData.write(value.catalogNodeId, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.objectName, into: &buf)
+        FfiConverterString.write(value.definition, into: &buf)
+        FfiConverterUInt64.write(value.nowMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeDdlChangeRequest_lift(_ buf: RustBuffer) throws -> BridgeDdlChangeRequest {
+    return try FfiConverterTypeBridgeDdlChangeRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeDdlChangeRequest_lower(_ value: BridgeDdlChangeRequest) -> RustBuffer {
+    return FfiConverterTypeBridgeDdlChangeRequest.lower(value)
+}
+
+
+public struct BridgeDdlChangeReview: Equatable, Hashable {
+    public var tokenId: Data
+    public var preview: String
+    public var destructive: Bool
+    public var rollbackSummary: String
+    public var expiresAtMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(tokenId: Data, preview: String, destructive: Bool, rollbackSummary: String, expiresAtMs: UInt64) {
+        self.tokenId = tokenId
+        self.preview = preview
+        self.destructive = destructive
+        self.rollbackSummary = rollbackSummary
+        self.expiresAtMs = expiresAtMs
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeDdlChangeReview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeDdlChangeReview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeDdlChangeReview {
+        return
+            try BridgeDdlChangeReview(
+                tokenId: FfiConverterData.read(from: &buf),
+                preview: FfiConverterString.read(from: &buf),
+                destructive: FfiConverterBool.read(from: &buf),
+                rollbackSummary: FfiConverterString.read(from: &buf),
+                expiresAtMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeDdlChangeReview, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.tokenId, into: &buf)
+        FfiConverterString.write(value.preview, into: &buf)
+        FfiConverterBool.write(value.destructive, into: &buf)
+        FfiConverterString.write(value.rollbackSummary, into: &buf)
+        FfiConverterUInt64.write(value.expiresAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeDdlChangeReview_lift(_ buf: RustBuffer) throws -> BridgeDdlChangeReview {
+    return try FfiConverterTypeBridgeDdlChangeReview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeDdlChangeReview_lower(_ value: BridgeDdlChangeReview) -> RustBuffer {
+    return FfiConverterTypeBridgeDdlChangeReview.lower(value)
 }
 
 
@@ -6193,6 +6386,9 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_apply_ddl_change() != 30185) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_apply_postgres_role_change() != 27204) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6361,6 +6557,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_reorder_profiles() != 8154) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_ddl_change() != 17460) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_postgres_role_change() != 38311) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6395,6 +6594,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_csv_import() != 10017) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_ddl_change() != 29324) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_postgres_role_change() != 21204) {

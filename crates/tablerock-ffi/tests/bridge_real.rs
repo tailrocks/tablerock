@@ -6,7 +6,9 @@
 //! `spawn_blocking` so runtimes never nest.
 
 use tablerock_core::{Engine, PageLimits, ResultPage};
-use tablerock_ffi::{BridgePostgresToolRequest, OpenParams, SubmitSpec, TableRockBridge};
+use tablerock_ffi::{
+    BridgeDdlChangeRequest, BridgePostgresToolRequest, OpenParams, SubmitSpec, TableRockBridge,
+};
 use testcontainers::{
     GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
@@ -173,6 +175,147 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
         let activity = bridge.postgres_activity(session.clone()).unwrap();
         assert!(!activity.is_empty());
         assert!(activity.iter().all(|row| row.pid > 0));
+        let create = bridge
+            .submit(SubmitSpec {
+                intent: "execute".into(),
+                session_id: session.clone(),
+                statement: Some("CREATE TABLE IF NOT EXISTS bridge_ddl_review (id integer)".into()),
+                result_id: None,
+                start_row: None,
+                row_count: Some(16),
+                expected_revision: 0,
+            })
+            .unwrap();
+        bridge.pump(create).unwrap();
+        let database = bridge
+            .refresh_catalog(session.clone(), None)
+            .unwrap()
+            .into_iter()
+            .find(|node| node.name == "postgres")
+            .unwrap();
+        let schema = bridge
+            .refresh_catalog(session.clone(), Some(database.id_bytes))
+            .unwrap()
+            .into_iter()
+            .find(|node| node.name == "public")
+            .unwrap();
+        let relation = bridge
+            .refresh_catalog(session.clone(), Some(schema.id_bytes))
+            .unwrap()
+            .into_iter()
+            .find(|node| node.name == "bridge_ddl_review")
+            .unwrap();
+        let review = bridge
+            .stage_ddl_change(BridgeDdlChangeRequest {
+                session_id: session.clone(),
+                catalog_node_id: relation.id_bytes.clone(),
+                kind: "add_column".into(),
+                object_name: "reviewed_name".into(),
+                definition: "text".into(),
+                now_ms: 1_000,
+            })
+            .unwrap();
+        assert_eq!(
+            review.preview,
+            "ALTER TABLE \"public\".\"bridge_ddl_review\" ADD COLUMN \"reviewed_name\" text;"
+        );
+        assert!(!review.destructive);
+        bridge
+            .apply_ddl_change(review.token_id.clone(), session.clone(), 2_000, true)
+            .unwrap();
+        assert!(
+            bridge
+                .relation_structure(session.clone(), relation.id_bytes.clone())
+                .unwrap()
+                .columns
+                .iter()
+                .any(|column| column.name == "reviewed_name")
+        );
+        let consumed = bridge
+            .apply_ddl_change(review.token_id, session.clone(), 2_001, true)
+            .unwrap_err();
+        assert!(consumed.to_string().contains("missing or consumed"));
+        let drop_review = bridge
+            .stage_ddl_change(BridgeDdlChangeRequest {
+                session_id: session.clone(),
+                catalog_node_id: relation.id_bytes.clone(),
+                kind: "drop_column".into(),
+                object_name: "reviewed_name".into(),
+                definition: String::new(),
+                now_ms: 3_000,
+            })
+            .unwrap();
+        assert!(drop_review.destructive);
+        assert!(bridge.revoke_ddl_change(drop_review.token_id).unwrap());
+        let confirmation_review = bridge
+            .stage_ddl_change(BridgeDdlChangeRequest {
+                session_id: session.clone(),
+                catalog_node_id: relation.id_bytes.clone(),
+                kind: "drop_column".into(),
+                object_name: "reviewed_name".into(),
+                definition: String::new(),
+                now_ms: 4_000,
+            })
+            .unwrap();
+        let confirmation = bridge
+            .apply_ddl_change(
+                confirmation_review.token_id.clone(),
+                session.clone(),
+                4_001,
+                false,
+            )
+            .unwrap_err();
+        assert!(confirmation.to_string().contains("confirmation"));
+        assert!(
+            bridge
+                .revoke_ddl_change(confirmation_review.token_id)
+                .unwrap()
+        );
+        let expired_review = bridge
+            .stage_ddl_change(BridgeDdlChangeRequest {
+                session_id: session.clone(),
+                catalog_node_id: relation.id_bytes.clone(),
+                kind: "add_column".into(),
+                object_name: "expired_column".into(),
+                definition: "text".into(),
+                now_ms: 5_000,
+            })
+            .unwrap();
+        let expired = bridge
+            .apply_ddl_change(expired_review.token_id, session.clone(), 65_000, true)
+            .unwrap_err();
+        assert!(expired.to_string().contains("expired"));
+        assert!(
+            !bridge
+                .relation_structure(session.clone(), relation.id_bytes.clone())
+                .unwrap()
+                .columns
+                .iter()
+                .any(|column| column.name == "expired_column")
+        );
+        let other_session =
+            open_when_ready(&bridge, "postgresql", &host, port, "postgres", "postgres");
+        let scoped_review = bridge
+            .stage_ddl_change(BridgeDdlChangeRequest {
+                session_id: session.clone(),
+                catalog_node_id: relation.id_bytes,
+                kind: "drop_column".into(),
+                object_name: "reviewed_name".into(),
+                definition: String::new(),
+                now_ms: 6_000,
+            })
+            .unwrap();
+        let cross_session = bridge
+            .apply_ddl_change(
+                scoped_review.token_id.clone(),
+                other_session.clone(),
+                6_001,
+                true,
+            )
+            .unwrap_err();
+        assert!(cross_session.to_string().contains("another session"));
+        assert!(!bridge.revoke_ddl_change(scoped_review.token_id).unwrap());
+        bridge.disconnect(other_session).unwrap();
         let signal = bridge
             .signal_postgres_backend(session.clone(), "cancel".into(), i32::MAX)
             .unwrap();

@@ -127,7 +127,9 @@ impl DdlPlan {
         }
         if matches!(
             kind,
-            DdlKind::CreateIndex
+            DdlKind::AddColumn
+                | DdlKind::DropColumn
+                | DdlKind::CreateIndex
                 | DdlKind::DropIndex
                 | DdlKind::AddConstraint
                 | DdlKind::DropConstraint
@@ -430,6 +432,27 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn column_changes_require_a_column_name() {
+        for kind in [DdlKind::AddColumn, DdlKind::DropColumn] {
+            assert!(matches!(
+                DdlPlan::new(
+                    kind,
+                    Engine::PostgreSql,
+                    scope(),
+                    Revision::INITIAL,
+                    DdlTarget::PostgreSqlRelation {
+                        schema: "public".into(),
+                        relation: "t".into(),
+                    },
+                    None,
+                    (kind == DdlKind::AddColumn).then(|| "text".into()),
+                ),
+                Err(DdlBuildError::EmptyIdentifier)
+            ));
+        }
     }
 
     #[test]

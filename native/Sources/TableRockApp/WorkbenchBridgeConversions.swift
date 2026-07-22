@@ -133,6 +133,13 @@ extension BridgeRedisSubscriptionStatus {
       summary: summary)
   }
 }
+extension BridgeDdlChangeReview {
+  var workbench: WorkbenchDdlChangeReview {
+    .init(
+      tokenId: tokenId, preview: preview, destructive: destructive,
+      rollbackSummary: rollbackSummary, expiresAtMs: expiresAtMs)
+  }
+}
 extension BridgePostgresActivityRow {
   var workbench: WorkbenchPostgresActivityRow {
     .init(

@@ -10,21 +10,21 @@ use std::{
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, CatalogChildrenState, CatalogNode, CatalogNodeId,
     CatalogNodeKind, ClickHouseObjectKind, CommandBudget, CommandBudgetLimits, CommandEnvelope,
-    CommandIntent, CommandScope, CopyFormat, CopyTable, DangerousPlaintext, Engine,
-    EnvironmentReference, EnvironmentTag, FieldValue, KeychainReference, MutationChange,
-    MutationPlan, MutationPlanLimits, MutationReviewRegistry, MutationTarget, OnePasswordReference,
-    OperationId, OperationOutcome, OperationScope, OwnedValue, PageIdentity, PageKey, PageLimits,
-    PageRequest, PageWarning, PlaintextAcknowledgement, PostgreSqlObjectKind, ProfileAggregate,
-    ProfileConnectionSnapshot, ProfileDurability, ProfileEndpointPart, ProfileGroupName, ProfileId,
-    ProfileIdentity, ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName,
-    ProfileOrganization, ProfilePolicy, ProfilePreferences, ProfileProperty,
-    ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileSearchTerm, ProfileTag,
-    ReconnectDecision, ReconnectPreference, RedisKeyKind, ResultStore, ResultStoreLimits,
-    ReviewTokenId, ReviewedRoleChangePlan, Revision, RoleChangeKind, RoleChangePlan,
-    SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset, SecretSource, SecretSourceKind,
-    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText, SupportBundle,
-    SupportPlatform, TlsPolicy, copy_cell_from_page, format_copy_table, is_safe_preset_name,
-    parse_connection_url, reconnect_decision,
+    CommandIntent, CommandScope, CopyFormat, CopyTable, DangerousPlaintext, DdlKind, DdlPlan,
+    DdlTarget, Engine, EnvironmentReference, EnvironmentTag, FieldValue, KeychainReference,
+    MutationChange, MutationPlan, MutationPlanLimits, MutationReviewRegistry, MutationTarget,
+    OnePasswordReference, OperationId, OperationOutcome, OperationScope, OwnedValue, PageIdentity,
+    PageKey, PageLimits, PageRequest, PageWarning, PlaintextAcknowledgement, PostgreSqlObjectKind,
+    ProfileAggregate, ProfileConnectionSnapshot, ProfileDurability, ProfileEndpointPart,
+    ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits, ProfileListFilter,
+    ProfileListRequest, ProfileName, ProfileOrganization, ProfilePolicy, ProfilePreferences,
+    ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode,
+    ProfileSearchTerm, ProfileTag, ReconnectDecision, ReconnectPreference, RedisKeyKind,
+    ResultStore, ResultStoreLimits, ReviewTokenId, ReviewedRoleChangePlan, Revision,
+    RoleChangeKind, RoleChangePlan, SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset,
+    SecretSource, SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
+    StatementText, SupportBundle, SupportPlatform, TlsPolicy, copy_cell_from_page,
+    format_copy_table, is_safe_preset_name, parse_connection_url, reconnect_decision,
 };
 use tablerock_engine::{
     AdapterFailureClass, BrowseDialect, BrowsePlan, CatalogRequest, ClickHouseCompression,
@@ -472,6 +472,25 @@ pub struct BridgeRoleChangeReview {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeDdlChangeRequest {
+    pub session_id: Vec<u8>,
+    pub catalog_node_id: Vec<u8>,
+    pub kind: String,
+    pub object_name: String,
+    pub definition: String,
+    pub now_ms: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeDdlChangeReview {
+    pub token_id: Vec<u8>,
+    pub preview: String,
+    pub destructive: bool,
+    pub rollback_summary: String,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeBackendSignalOutcome {
     pub kind: String,
     pub pid: i32,
@@ -541,6 +560,12 @@ struct RoleReviewEntry {
     expires_at_ms: u64,
 }
 
+struct DdlReviewEntry {
+    session_id: SessionId,
+    plan: DdlPlan,
+    expires_at_ms: u64,
+}
+
 #[derive(Clone)]
 struct RegisteredSession {
     profile_id: tablerock_core::ProfileId,
@@ -558,6 +583,7 @@ struct BridgeInner {
     results: ResultStore,
     reviews: MutationReviewRegistry,
     role_reviews: BTreeMap<ReviewTokenId, RoleReviewEntry>,
+    ddl_reviews: BTreeMap<ReviewTokenId, DdlReviewEntry>,
     sessions: BTreeMap<SessionId, RegisteredSession>,
     /// Operation -> result identity used when admitting streamed pages.
     operation_results: BTreeMap<OperationId, PageIdentity>,
@@ -1122,6 +1148,30 @@ impl TableRockBridge {
     /// Discards an unused role-change review token.
     pub fn revoke_postgres_role_change(&self, token_id: Vec<u8>) -> Result<bool, BridgeError> {
         catch_entry(|| self.revoke_postgres_role_change_inner(token_id))
+    }
+
+    /// Freezes one typed PostgreSQL structure change behind a 60-second token.
+    pub fn stage_ddl_change(
+        &self,
+        request: BridgeDdlChangeRequest,
+    ) -> Result<BridgeDdlChangeReview, BridgeError> {
+        catch_entry(|| self.stage_ddl_change_inner(request))
+    }
+
+    /// Consumes and applies one reviewed structure change. Failed apply is not retryable.
+    pub fn apply_ddl_change(
+        &self,
+        token_id: Vec<u8>,
+        session_id: Vec<u8>,
+        now_ms: u64,
+        confirmed: bool,
+    ) -> Result<String, BridgeError> {
+        catch_entry(|| self.apply_ddl_change_inner(token_id, session_id, now_ms, confirmed))
+    }
+
+    /// Discards an unused structure-change review token.
+    pub fn revoke_ddl_change(&self, token_id: Vec<u8>) -> Result<bool, BridgeError> {
+        catch_entry(|| self.revoke_ddl_change_inner(token_id))
     }
 
     /// Signals one PostgreSQL backend. Kind is exactly `cancel` or `terminate`.
@@ -4453,6 +4503,209 @@ impl TableRockBridge {
         Ok(inner.role_reviews.remove(&token_id).is_some())
     }
 
+    fn stage_ddl_change_inner(
+        &self,
+        request: BridgeDdlChangeRequest,
+    ) -> Result<BridgeDdlChangeReview, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let session_id = session_from_bytes(&request.session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let node_id = catalog_node_from_bytes(&request.catalog_node_id).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let kind = match request.kind.as_str() {
+            "add_column" => DdlKind::AddColumn,
+            "drop_column" => DdlKind::DropColumn,
+            "create_index" => DdlKind::CreateIndex,
+            "drop_index" => DdlKind::DropIndex,
+            "add_constraint" => DdlKind::AddConstraint,
+            "drop_constraint" => DdlKind::DropConstraint,
+            _ => {
+                return Err(BridgeError::rejected(
+                    "ddl-change-kind",
+                    "unknown structure change kind",
+                ));
+            }
+        };
+        let destructive = matches!(
+            kind,
+            DdlKind::DropColumn | DdlKind::DropIndex | DdlKind::DropConstraint
+        );
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        if !inner.accepting {
+            return Err(BridgeError::ShuttingDown);
+        }
+        let registered = inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?
+            .clone();
+        if registered.engine != Engine::PostgreSql {
+            return Err(BridgeError::rejected(
+                "ddl-change-engine",
+                "structure changes require PostgreSQL",
+            ));
+        }
+        let node = inner
+            .catalog_nodes
+            .get(&(session_id, node_id))
+            .ok_or_else(|| {
+                BridgeError::rejected("unknown-catalog-node", "catalog node is stale or unknown")
+            })?;
+        if !matches!(
+            node.kind(),
+            CatalogNodeKind::PostgreSqlObject(
+                PostgreSqlObjectKind::Table | PostgreSqlObjectKind::PartitionedTable
+            )
+        ) {
+            return Err(BridgeError::rejected(
+                "ddl-change-target",
+                "structure changes require a PostgreSQL table",
+            ));
+        }
+        let parent = node
+            .parent_id()
+            .and_then(|id| inner.catalog_nodes.get(&(session_id, id)))
+            .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+        let target = DdlTarget::PostgreSqlRelation {
+            schema: parent.name().to_owned(),
+            relation: node.name().to_owned(),
+        };
+        let object_name =
+            (!request.object_name.trim().is_empty()).then(|| request.object_name.trim().to_owned());
+        let definition =
+            (!request.definition.trim().is_empty()).then(|| request.definition.trim().to_owned());
+        let scope = OperationScope::new(
+            registered.profile_id,
+            registered.session_id,
+            registered.context_id,
+        );
+        let plan = DdlPlan::new(
+            kind,
+            Engine::PostgreSql,
+            scope,
+            registered.context_revision,
+            target,
+            object_name,
+            definition,
+        )
+        .map_err(|error| BridgeError::rejected("ddl-change-plan", error.to_string()))?;
+        let preview = preview_postgres_ddl(&plan)?;
+        inner
+            .ddl_reviews
+            .retain(|_, entry| request.now_ms < entry.expires_at_ms);
+        if inner.ddl_reviews.len() >= 256 {
+            return Err(BridgeError::rejected(
+                "ddl-change-capacity",
+                "too many active structure reviews",
+            ));
+        }
+        let token_id = inner.ids.review_token();
+        let expires_at_ms = request.now_ms.saturating_add(60_000);
+        inner.ddl_reviews.insert(
+            token_id,
+            DdlReviewEntry {
+                session_id,
+                plan,
+                expires_at_ms,
+            },
+        );
+        Ok(BridgeDdlChangeReview {
+            token_id: review_token_bytes(token_id),
+            preview,
+            destructive,
+            rollback_summary: "PostgreSQL applies this statement atomically; TableRock does not automatically roll it back after observed success.".into(),
+            expires_at_ms,
+        })
+    }
+
+    fn apply_ddl_change_inner(
+        &self,
+        token_id_bytes: Vec<u8>,
+        session_id_bytes: Vec<u8>,
+        now_ms: u64,
+        confirmed: bool,
+    ) -> Result<String, BridgeError> {
+        if !confirmed {
+            return Err(BridgeError::rejected(
+                "ddl-change-confirmation",
+                "explicit confirmation is required",
+            ));
+        }
+        let token_id = review_token_from_bytes(&token_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-review-token-id", "review token id must be 16 bytes")
+        })?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let (plan, driver) = {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+            let entry = inner.ddl_reviews.remove(&token_id).ok_or_else(|| {
+                BridgeError::rejected(
+                    "ddl-change-token",
+                    "structure review token is missing or consumed",
+                )
+            })?;
+            if entry.session_id != session_id {
+                return Err(BridgeError::rejected(
+                    "ddl-change-session",
+                    "structure review belongs to another session",
+                ));
+            }
+            if now_ms >= entry.expires_at_ms {
+                return Err(BridgeError::rejected(
+                    "ddl-change-expired",
+                    "structure review expired",
+                ));
+            }
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let current_scope = OperationScope::new(
+                registered.profile_id,
+                registered.session_id,
+                registered.context_id,
+            );
+            if entry.plan.scope != current_scope
+                || entry.plan.revision != registered.context_revision
+            {
+                return Err(BridgeError::rejected(
+                    "ddl-change-stale",
+                    "session context changed after review",
+                ));
+            }
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (entry.plan, driver)
+        };
+        self.runtime
+            .block_on(driver.execute_ddl_plan(plan))?
+            .map_err(|error| BridgeError::rejected("ddl-change-apply", error.to_string()))?;
+        Ok("Structure change applied".into())
+    }
+
+    fn revoke_ddl_change_inner(&self, token_id_bytes: Vec<u8>) -> Result<bool, BridgeError> {
+        let token_id = review_token_from_bytes(&token_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-review-token-id", "review token id must be 16 bytes")
+        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        Ok(inner.ddl_reviews.remove(&token_id).is_some())
+    }
+
     fn signal_postgres_backend_inner(
         &self,
         session_id_bytes: Vec<u8>,
@@ -6450,6 +6703,128 @@ fn role_change_summary(kind: &RoleChangeKind) -> String {
     }
 }
 
+fn preview_postgres_ddl(plan: &DdlPlan) -> Result<String, BridgeError> {
+    let DdlTarget::PostgreSqlRelation { schema, relation } = &plan.target else {
+        return Err(BridgeError::rejected(
+            "ddl-change-target",
+            "PostgreSQL relation target required",
+        ));
+    };
+    let quote = |identifier: &str| {
+        tablerock_engine::quote_ident(identifier)
+            .map_err(|error| BridgeError::rejected("ddl-change-identifier", error.to_string()))
+    };
+    let qualified = format!("{}.{}", quote(schema)?, quote(relation)?);
+    let statement =
+        match plan.kind {
+            DdlKind::AddColumn => {
+                let name = plan.object_name.as_deref().ok_or_else(|| {
+                    BridgeError::rejected("ddl-change-object", "column name required")
+                })?;
+                let definition = plan.type_text.as_deref().ok_or_else(|| {
+                    BridgeError::rejected("ddl-change-definition", "column type required")
+                })?;
+                if !definition.chars().all(|character| {
+                    character.is_ascii_alphanumeric()
+                        || matches!(character, '(' | ')' | ',' | ' ' | '"')
+                }) {
+                    return Err(BridgeError::rejected(
+                        "ddl-change-definition",
+                        "column type contains unsupported syntax",
+                    ));
+                }
+                format!(
+                    "ALTER TABLE {qualified} ADD COLUMN {} {definition}",
+                    quote(name)?
+                )
+            }
+            DdlKind::DropColumn => {
+                let name = plan.object_name.as_deref().ok_or_else(|| {
+                    BridgeError::rejected("ddl-change-object", "column name required")
+                })?;
+                format!("ALTER TABLE {qualified} DROP COLUMN {}", quote(name)?)
+            }
+            DdlKind::CreateIndex => {
+                let name = plan.object_name.as_deref().ok_or_else(|| {
+                    BridgeError::rejected("ddl-change-object", "index name required")
+                })?;
+                let columns = plan.type_text.as_deref().ok_or_else(|| {
+                    BridgeError::rejected("ddl-change-definition", "index columns required")
+                })?;
+                if !columns.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '_' | ',' | ' ' | '"')
+                }) {
+                    return Err(BridgeError::rejected(
+                        "ddl-change-definition",
+                        "index columns contain unsupported syntax",
+                    ));
+                }
+                let columns = columns
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|column| !column.is_empty())
+                    .map(quote)
+                    .collect::<Result<Vec<_>, _>>()?;
+                if columns.is_empty() {
+                    return Err(BridgeError::rejected(
+                        "ddl-change-definition",
+                        "at least one index column is required",
+                    ));
+                }
+                format!(
+                    "CREATE INDEX {} ON {qualified} ({})",
+                    quote(name)?,
+                    columns.join(", ")
+                )
+            }
+            DdlKind::DropIndex => {
+                let name = plan.object_name.as_deref().ok_or_else(|| {
+                    BridgeError::rejected("ddl-change-object", "index name required")
+                })?;
+                format!("DROP INDEX {}.{}", quote(schema)?, quote(name)?)
+            }
+            DdlKind::AddConstraint => {
+                let name = plan.object_name.as_deref().ok_or_else(|| {
+                    BridgeError::rejected("ddl-change-object", "constraint name required")
+                })?;
+                let definition = plan.type_text.as_deref().ok_or_else(|| {
+                    BridgeError::rejected("ddl-change-definition", "constraint definition required")
+                })?;
+                let upper = definition.trim().to_ascii_uppercase();
+                if !(upper.starts_with("UNIQUE")
+                    || upper.starts_with("PRIMARY KEY")
+                    || upper.starts_with("CHECK"))
+                    || !definition.chars().all(|character| {
+                        character.is_ascii_alphanumeric() || " _(),.><=!\"'+-*/".contains(character)
+                    })
+                {
+                    return Err(BridgeError::rejected(
+                        "ddl-change-definition",
+                        "constraint must be UNIQUE, PRIMARY KEY, or CHECK with bounded syntax",
+                    ));
+                }
+                format!(
+                    "ALTER TABLE {qualified} ADD CONSTRAINT {} {}",
+                    quote(name)?,
+                    definition.trim()
+                )
+            }
+            DdlKind::DropConstraint => {
+                let name = plan.object_name.as_deref().ok_or_else(|| {
+                    BridgeError::rejected("ddl-change-object", "constraint name required")
+                })?;
+                format!("ALTER TABLE {qualified} DROP CONSTRAINT {}", quote(name)?)
+            }
+            _ => {
+                return Err(BridgeError::rejected(
+                    "ddl-change-kind",
+                    "operation is not a structure change",
+                ));
+            }
+        };
+    Ok(format!("{statement};"))
+}
+
 const fn catalog_kind_label(kind: CatalogNodeKind) -> &'static str {
     match kind {
         CatalogNodeKind::PostgreSqlDatabase => "postgresql_database",
@@ -6512,6 +6887,7 @@ impl BridgeInner {
             results,
             reviews,
             role_reviews: BTreeMap::new(),
+            ddl_reviews: BTreeMap::new(),
             sessions: BTreeMap::new(),
             operation_results: BTreeMap::new(),
             operation_history: BTreeMap::new(),

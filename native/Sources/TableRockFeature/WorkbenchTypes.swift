@@ -74,6 +74,13 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func startRedisSubscription(sessionId: Data, selector: String, pattern: Bool) throws -> Data
   func redisSubscriptionStatus(operationId: Data) throws -> WorkbenchRedisSubscriptionStatus
   func cancelRedisSubscription(operationId: Data) throws -> Bool
+  func stageDdlChange(
+    sessionId: Data, catalogNodeId: Data, kind: String, objectName: String,
+    definition: String, nowMs: UInt64
+  ) throws -> WorkbenchDdlChangeReview
+  func applyDdlChange(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool) throws
+    -> String
+  func revokeDdlChange(tokenId: Data) throws -> Bool
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow]
   func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
     -> WorkbenchRelationshipSnapshot
@@ -519,6 +526,23 @@ public struct WorkbenchRedisSubscriptionStatus: Sendable, Equatable {
     self.totalReceived = totalReceived
     self.discontinuities = discontinuities
     self.summary = summary
+  }
+}
+public struct WorkbenchDdlChangeReview: Sendable, Equatable {
+  public let tokenId: Data
+  public let preview: String
+  public let destructive: Bool
+  public let rollbackSummary: String
+  public let expiresAtMs: UInt64
+  public init(
+    tokenId: Data, preview: String, destructive: Bool, rollbackSummary: String,
+    expiresAtMs: UInt64
+  ) {
+    self.tokenId = tokenId
+    self.preview = preview
+    self.destructive = destructive
+    self.rollbackSummary = rollbackSummary
+    self.expiresAtMs = expiresAtMs
   }
 }
 
