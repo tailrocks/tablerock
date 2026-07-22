@@ -15,9 +15,9 @@ The shared file layer now scans CSV without whole-file buffering:
 - callback cancellation stops before another batch is delivered;
 - no SQL or engine operation exists in the scanner.
 
-This is the structural prerequisite for `TR-SCR-053`; Rust-owned asynchronous
-apply, engine-aware cancellation, native polling, and bounded error summaries
-remain before that screen can be marked proven.
+Evidence 645–646 connects this foundation to Rust-owned asynchronous apply,
+engine-aware cancellation, native polling, bounded error summaries, and frozen
+review authority.
 
 ## Verification
 

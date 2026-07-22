@@ -109,7 +109,7 @@ extension BridgeCsvImportPreview {
   var workbench: WorkbenchCSVImportPreview {
     .init(
       path: path, headers: headers, rows: rows.map(\.workbench), totalRows: totalRows,
-      formulaLikeCells: formulaLikeCells)
+      formulaLikeCells: formulaLikeCells, fingerprint: fingerprint)
   }
 }
 extension BridgeCsvImportReview {

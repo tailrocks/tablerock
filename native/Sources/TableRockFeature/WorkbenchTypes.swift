@@ -69,7 +69,7 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func previewCsvImport(path: String) throws -> WorkbenchCSVImportPreview
   func stageCsvImport(
     sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String],
-    mappedTypes: [String], nowMs: UInt64
+    mappedTypes: [String], expectedFingerprint: String, nowMs: UInt64
   ) throws -> WorkbenchCSVImportReview
   func startCsvImportApply(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> Data
   func csvImportProgress(operationId: Data) throws -> WorkbenchCSVImportProgress
@@ -506,15 +506,17 @@ public struct WorkbenchCSVImportPreview: Sendable, Equatable {
   public let rows: [WorkbenchCSVRow]
   public let totalRows: UInt32
   public let formulaLikeCells: UInt32
+  public let fingerprint: String
   public init(
     path: String, headers: [String], rows: [WorkbenchCSVRow], totalRows: UInt32,
-    formulaLikeCells: UInt32
+    formulaLikeCells: UInt32, fingerprint: String
   ) {
     self.path = path
     self.headers = headers
     self.rows = rows
     self.totalRows = totalRows
     self.formulaLikeCells = formulaLikeCells
+    self.fingerprint = fingerprint
   }
 }
 public struct WorkbenchCSVImportReview: Sendable, Equatable {

@@ -959,7 +959,7 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     /**
      * Freezes a mapped CSV insert plan behind a single-use review token.
      */
-    func stageCsvImport(sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String], mappedTypes: [String], nowMs: UInt64) throws  -> BridgeCsvImportReview
+    func stageCsvImport(request: BridgeCsvImportRequest) throws  -> BridgeCsvImportReview
 
     /**
      * Freezes one typed PostgreSQL structure change behind a 60-second token.
@@ -2045,17 +2045,12 @@ open func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32)throws
     /**
      * Freezes a mapped CSV insert plan behind a single-use review token.
      */
-open func stageCsvImport(sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String], mappedTypes: [String], nowMs: UInt64)throws  -> BridgeCsvImportReview  {
+open func stageCsvImport(request: BridgeCsvImportRequest)throws  -> BridgeCsvImportReview  {
     return try  FfiConverterTypeBridgeCsvImportReview_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
         uniffiCallStatus in
     uniffi_tablerock_ffi_fn_method_tablerockbridge_stage_csv_import(
             self.uniffiCloneHandle(),
-        FfiConverterData.lower(sessionId),
-        FfiConverterData.lower(catalogNodeId),
-        FfiConverterString.lower(path),
-        FfiConverterSequenceString.lower(mappedColumns),
-        FfiConverterSequenceString.lower(mappedTypes),
-        FfiConverterUInt64.lower(nowMs),uniffiCallStatus
+        FfiConverterTypeBridgeCsvImportRequest_lower(request),uniffiCallStatus
     )
 })
 }
@@ -2713,15 +2708,17 @@ public struct BridgeCsvImportPreview: Equatable, Hashable {
     public var rows: [BridgeCsvRow]
     public var totalRows: UInt32
     public var formulaLikeCells: UInt32
+    public var fingerprint: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(path: String, headers: [String], rows: [BridgeCsvRow], totalRows: UInt32, formulaLikeCells: UInt32) {
+    public init(path: String, headers: [String], rows: [BridgeCsvRow], totalRows: UInt32, formulaLikeCells: UInt32, fingerprint: String) {
         self.path = path
         self.headers = headers
         self.rows = rows
         self.totalRows = totalRows
         self.formulaLikeCells = formulaLikeCells
+        self.fingerprint = fingerprint
     }
 
 
@@ -2744,7 +2741,8 @@ public struct FfiConverterTypeBridgeCsvImportPreview: FfiConverterRustBuffer {
                 headers: FfiConverterSequenceString.read(from: &buf),
                 rows: FfiConverterSequenceTypeBridgeCsvRow.read(from: &buf),
                 totalRows: FfiConverterUInt32.read(from: &buf),
-                formulaLikeCells: FfiConverterUInt32.read(from: &buf)
+                formulaLikeCells: FfiConverterUInt32.read(from: &buf),
+                fingerprint: FfiConverterString.read(from: &buf)
         )
     }
 
@@ -2754,6 +2752,7 @@ public struct FfiConverterTypeBridgeCsvImportPreview: FfiConverterRustBuffer {
         FfiConverterSequenceTypeBridgeCsvRow.write(value.rows, into: &buf)
         FfiConverterUInt32.write(value.totalRows, into: &buf)
         FfiConverterUInt32.write(value.formulaLikeCells, into: &buf)
+        FfiConverterString.write(value.fingerprint, into: &buf)
     }
 }
 
@@ -2856,6 +2855,80 @@ public func FfiConverterTypeBridgeCsvImportProgress_lift(_ buf: RustBuffer) thro
 #endif
 public func FfiConverterTypeBridgeCsvImportProgress_lower(_ value: BridgeCsvImportProgress) -> RustBuffer {
     return FfiConverterTypeBridgeCsvImportProgress.lower(value)
+}
+
+
+public struct BridgeCsvImportRequest: Equatable, Hashable {
+    public var sessionId: Data
+    public var catalogNodeId: Data
+    public var path: String
+    public var mappedColumns: [String]
+    public var mappedTypes: [String]
+    public var expectedFingerprint: String
+    public var nowMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String], mappedTypes: [String], expectedFingerprint: String, nowMs: UInt64) {
+        self.sessionId = sessionId
+        self.catalogNodeId = catalogNodeId
+        self.path = path
+        self.mappedColumns = mappedColumns
+        self.mappedTypes = mappedTypes
+        self.expectedFingerprint = expectedFingerprint
+        self.nowMs = nowMs
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeCsvImportRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeCsvImportRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeCsvImportRequest {
+        return
+            try BridgeCsvImportRequest(
+                sessionId: FfiConverterData.read(from: &buf),
+                catalogNodeId: FfiConverterData.read(from: &buf),
+                path: FfiConverterString.read(from: &buf),
+                mappedColumns: FfiConverterSequenceString.read(from: &buf),
+                mappedTypes: FfiConverterSequenceString.read(from: &buf),
+                expectedFingerprint: FfiConverterString.read(from: &buf),
+                nowMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeCsvImportRequest, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.sessionId, into: &buf)
+        FfiConverterData.write(value.catalogNodeId, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterSequenceString.write(value.mappedColumns, into: &buf)
+        FfiConverterSequenceString.write(value.mappedTypes, into: &buf)
+        FfiConverterString.write(value.expectedFingerprint, into: &buf)
+        FfiConverterUInt64.write(value.nowMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeCsvImportRequest_lift(_ buf: RustBuffer) throws -> BridgeCsvImportRequest {
+    return try FfiConverterTypeBridgeCsvImportRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeCsvImportRequest_lower(_ value: BridgeCsvImportRequest) -> RustBuffer {
+    return FfiConverterTypeBridgeCsvImportRequest.lower(value)
 }
 
 
@@ -7146,7 +7219,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_signal_postgres_backend() != 20602) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_csv_import() != 10017) {
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_csv_import() != 56149) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_ddl_change() != 29324) {

@@ -18,9 +18,9 @@ CSV review tokens now fail closed through one progress-aware apply path:
 - disconnect refuses an active import; shutdown drains or requests cancellation;
   terminal snapshots are explicitly retired.
 
-The apply plan is still bounded to 4 MiB and 10,000 rows. Evidence 644's
-constant-memory scanner is not yet connected to frozen-file review and batched
-engine apply, so `TR-SCR-053` remains open rather than being overclaimed.
+Evidence 646 supersedes the former 4 MiB/10,000-row boundary by connecting the
+constant-memory scanner to fingerprint-bound frozen review and batched engine
+apply.
 
 ## Verification
 

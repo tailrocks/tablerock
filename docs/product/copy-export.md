@@ -45,9 +45,12 @@ Reviewed CSV application is a Rust-owned asynchronous operation. The native
 sheet polls bounded row progress, can request cancellation, distinguishes
 PostgreSQL rollback from ClickHouse partial apply, retains at most 100 safe
 row-number errors, and can copy that error summary. Closing or disconnecting
-cannot abandon a running import. The current reviewed native plan remains
-limited to 4 MiB/10,000 rows until the shared streaming scanner is connected
-to batch authorization and apply.
+cannot abandon a running import. Preview scans up to 16 GiB/100 million rows
+with fixed memory and returns a SHA-256 fingerprint. Review rejects file drift,
+copies accepted bytes into a private frozen spool, validates every typed value,
+then consumes one authority into 500-row/8 MiB batches. PostgreSQL commits each
+batch transactionally; ClickHouse reports progressive partial truth. Frozen
+files are removed on reject, expiry, discard, terminal outcome, or teardown.
 
 ## Both clients
 

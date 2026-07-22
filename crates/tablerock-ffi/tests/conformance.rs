@@ -21,8 +21,8 @@ use tablerock_engine::{
     ServerDescribe, SessionHealth,
 };
 use tablerock_ffi::{
-    BridgeBrowseFilter, BridgeBrowseSort, BridgeError, BridgeProfileOrderItem,
-    BridgeQueryParameter, BridgeSavedFilterPreset, BridgeSessionIntent,
+    BridgeBrowseFilter, BridgeBrowseSort, BridgeCsvImportRequest, BridgeError,
+    BridgeProfileOrderItem, BridgeQueryParameter, BridgeSavedFilterPreset, BridgeSessionIntent,
     BridgeTableOperationRequest, BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
 };
 
@@ -574,14 +574,15 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
         assert_eq!(preview.total_rows, 1);
         assert_eq!(preview.formula_like_cells, 1);
         let review = bridge
-            .stage_csv_import(
-                session_id.clone(),
-                object.id_bytes.clone(),
-                csv_path.to_string_lossy().into_owned(),
-                vec!["id".into(), "name".into()],
-                vec!["signed".into(), "text".into()],
-                100,
-            )
+            .stage_csv_import(BridgeCsvImportRequest {
+                session_id: session_id.clone(),
+                catalog_node_id: object.id_bytes.clone(),
+                path: csv_path.to_string_lossy().into_owned(),
+                mapped_columns: vec!["id".into(), "name".into()],
+                mapped_types: vec!["signed".into(), "text".into()],
+                expected_fingerprint: preview.fingerprint.clone(),
+                now_ms: 100,
+            })
             .unwrap();
         assert_eq!(review.row_count, 1);
         assert_eq!(review.column_count, 2);
@@ -593,13 +594,13 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
         let import_operation = bridge
             .start_csv_import_apply(review.token_id, 101, session_id.clone())
             .unwrap();
-        let progress = (0..100)
+        let progress = (0..1_000)
             .find_map(|_| {
                 let progress = bridge
                     .csv_import_progress(import_operation.clone())
                     .unwrap();
                 if progress.phase == "running" {
-                    std::thread::yield_now();
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                     None
                 } else {
                     Some(progress)
@@ -611,6 +612,33 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
         assert_eq!(progress.failed_rows, 1);
         assert_eq!(progress.errors.len(), 1);
         assert!(bridge.dismiss_csv_import(import_operation).unwrap());
+        let discarded = bridge
+            .stage_csv_import(BridgeCsvImportRequest {
+                session_id: session_id.clone(),
+                catalog_node_id: object.id_bytes.clone(),
+                path: csv_path.to_string_lossy().into_owned(),
+                mapped_columns: vec!["id".into(), "name".into()],
+                mapped_types: vec!["signed".into(), "text".into()],
+                expected_fingerprint: preview.fingerprint.clone(),
+                now_ms: 200,
+            })
+            .unwrap();
+        assert!(bridge.revoke_review_token(discarded.token_id).unwrap());
+        let expired = bridge
+            .stage_csv_import(BridgeCsvImportRequest {
+                session_id: session_id.clone(),
+                catalog_node_id: object.id_bytes.clone(),
+                path: csv_path.to_string_lossy().into_owned(),
+                mapped_columns: vec!["id".into(), "name".into()],
+                mapped_types: vec!["signed".into(), "text".into()],
+                expected_fingerprint: preview.fingerprint,
+                now_ms: 300,
+            })
+            .unwrap();
+        assert!(matches!(
+            bridge.start_csv_import_apply(expired.token_id, 60_301, session_id.clone()),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "authorize"
+        ));
         std::fs::remove_file(csv_path).unwrap();
         let json = bridge
             .format_result_copy(
@@ -820,6 +848,89 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-bounds"
         ));
     }
+}
+
+#[test]
+fn csv_import_freezes_and_streams_files_larger_than_legacy_buffer() {
+    use std::fmt::Write as _;
+
+    let (_result_id, page) = sample_page(Engine::PostgreSql, 918, &[7]);
+    let bridge = TableRockBridge::new_for_test();
+    let session_id = open_fixed(&bridge, Engine::PostgreSql, page);
+    let roots = bridge.refresh_catalog(session_id.clone(), None).unwrap();
+    let schemas = bridge
+        .refresh_catalog(session_id.clone(), Some(roots[0].id_bytes.clone()))
+        .unwrap();
+    let object = bridge
+        .refresh_catalog(session_id.clone(), Some(schemas[0].id_bytes.clone()))
+        .unwrap()
+        .remove(0);
+    let path = std::env::temp_dir().join(format!(
+        "tablerock-ffi-large-import-{}.csv",
+        std::process::id()
+    ));
+    let mut csv = String::from("id,payload\n");
+    for row in 0..70_000_u64 {
+        writeln!(
+            csv,
+            "{row},payload-{row:08}-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        )
+        .unwrap();
+    }
+    assert!(csv.len() > 4 * 1024 * 1024);
+    std::fs::write(&path, csv.as_bytes()).unwrap();
+
+    let preview = bridge
+        .preview_csv_import(path.to_string_lossy().into_owned())
+        .unwrap();
+    assert_eq!(preview.total_rows, 70_000);
+    assert_eq!(preview.rows.len(), 100);
+    std::fs::write(&path, format!("{csv}70000,changed\n")).unwrap();
+    assert!(matches!(
+        bridge.stage_csv_import(BridgeCsvImportRequest {
+            session_id: session_id.clone(),
+            catalog_node_id: object.id_bytes.clone(),
+            path: path.to_string_lossy().into_owned(),
+            mapped_columns: vec!["id".into(), "payload".into()],
+            mapped_types: vec!["signed".into(), "text".into()],
+            expected_fingerprint: preview.fingerprint.clone(),
+            now_ms: 99,
+        }),
+        Err(BridgeError::Rejected { ref code, .. }) if code == "csv-import-changed"
+    ));
+    std::fs::write(&path, csv).unwrap();
+    let review = bridge
+        .stage_csv_import(BridgeCsvImportRequest {
+            session_id: session_id.clone(),
+            catalog_node_id: object.id_bytes,
+            path: path.to_string_lossy().into_owned(),
+            mapped_columns: vec!["id".into(), "payload".into()],
+            mapped_types: vec!["signed".into(), "text".into()],
+            expected_fingerprint: preview.fingerprint,
+            now_ms: 100,
+        })
+        .unwrap();
+    assert_eq!(review.row_count, 70_000);
+    std::fs::remove_file(&path).unwrap();
+
+    let operation = bridge
+        .start_csv_import_apply(review.token_id, 101, session_id)
+        .unwrap();
+    let terminal = (0..2_000)
+        .find_map(|_| {
+            let progress = bridge.csv_import_progress(operation.clone()).unwrap();
+            if progress.phase == "running" {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                None
+            } else {
+                Some(progress)
+            }
+        })
+        .expect("large frozen import reaches terminal outcome");
+    assert_eq!(terminal.total_rows, 70_000);
+    assert_eq!(terminal.phase, "failed");
+    assert!(terminal.completed_rows <= 500);
+    assert!(bridge.dismiss_csv_import(operation).unwrap());
 }
 
 #[test]

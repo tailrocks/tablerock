@@ -31,7 +31,9 @@ apply behavior remains on the same shared implementation.
 ## Remaining boundary
 
 Native file selection, preview/mapping, explicit review, transactional apply,
-progress/cancellation, JSON import, and live partial-failure evidence remain.
+JSON import and broader type conversion remain. Evidence 644–646 supersedes
+the former streaming/progress/cancellation residual with frozen-file batches
+and live PostgreSQL/ClickHouse outcomes.
 This foundation alone does not claim a native import screen.
 
 ## Provenance

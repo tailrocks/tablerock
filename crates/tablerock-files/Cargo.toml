@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+sha2.workspace = true
 tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
 
 [lints]

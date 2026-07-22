@@ -5,8 +5,9 @@ Date: 2026-07-19
 ## Native workflow
 
 Writable PostgreSQL and ClickHouse object tabs expose `Import CSV`. The native
-open panel grants balanced security-scoped access, Rust reads at most 4 MiB,
-and the sheet previews up to 100 of at most 10,000 data rows. Operators map
+open panel grants balanced security-scoped access, Rust scans at most 16 GiB
+and 100 million rows with fixed memory, and the sheet previews up to 100 rows.
+Operators map
 every CSV header to a unique target column and explicitly choose Text, Integer,
 Float, or Boolean value typing.
 
@@ -44,10 +45,9 @@ cannot supply a schema, table, database, or mutation plan through UniFFI.
 
 ## Remaining boundary
 
-ClickHouse live apply, nullable/date/decimal/binary/structured mappings, JSON
-import, and streaming files beyond 4 MiB remain. Evidence 645 adds Rust-owned
-progress/cancellation and explicit partial-failure outcomes for the current
-bounded reviewed plan. PostgreSQL CSV import is workable within those bounds.
+Nullable/date/decimal/binary/structured mappings and JSON import remain.
+Evidence 644–646 adds fingerprint-bound frozen streaming, Rust-owned progress/
+cancellation, live ClickHouse apply, and explicit partial-failure outcomes.
 
 ## Provenance
 

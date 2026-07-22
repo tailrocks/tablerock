@@ -403,7 +403,7 @@ extension WorkbenchBackend {
   }
   func stageCsvImport(
     sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String],
-    mappedTypes: [String], nowMs: UInt64
+    mappedTypes: [String], expectedFingerprint: String, nowMs: UInt64
   ) throws -> WorkbenchCSVImportReview { try scriptedUnavailable("import-stage") }
   func startCsvImportApply(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> Data {
     try scriptedUnavailable("import-apply-start")
@@ -746,16 +746,17 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     return WorkbenchCSVImportPreview(
       path: path, headers: ["id", "name"],
       rows: [WorkbenchCSVRow(cells: ["2", "Grace"])], totalRows: 1,
-      formulaLikeCells: 0)
+      formulaLikeCells: 0, fingerprint: "fixture-sha256")
   }
 
   func stageCsvImport(
     sessionId: Data, catalogNodeId: Data, path: String,
-    mappedColumns: [String], mappedTypes: [String], nowMs: UInt64
+    mappedColumns: [String], mappedTypes: [String], expectedFingerprint: String, nowMs: UInt64
   ) throws -> WorkbenchCSVImportReview {
     guard scenario == "success", sessionId == Data(repeating: 1, count: 16),
       catalogNodeId == Data(repeating: 7, count: 16), mappedColumns == ["id", "name"],
-      mappedTypes == ["text", "text"], !importReviewActive
+      mappedTypes == ["text", "text"], expectedFingerprint == "fixture-sha256",
+      !importReviewActive
     else { return try scriptedUnavailable("import-stage") }
     importReviewActive = true
     return WorkbenchCSVImportReview(
@@ -1320,11 +1321,13 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
 
   func stageCsvImport(
     sessionId: Data, catalogNodeId: Data, path: String,
-    mappedColumns: [String], mappedTypes: [String], nowMs: UInt64
+    mappedColumns: [String], mappedTypes: [String], expectedFingerprint: String, nowMs: UInt64
   ) throws -> WorkbenchCSVImportReview {
     try bridge.stageCsvImport(
-      sessionId: sessionId, catalogNodeId: catalogNodeId, path: path,
-      mappedColumns: mappedColumns, mappedTypes: mappedTypes, nowMs: nowMs
+      request: BridgeCsvImportRequest(
+        sessionId: sessionId, catalogNodeId: catalogNodeId, path: path,
+        mappedColumns: mappedColumns, mappedTypes: mappedTypes,
+        expectedFingerprint: expectedFingerprint, nowMs: nowMs)
     ).workbench
   }
 
@@ -4452,6 +4455,7 @@ final class BridgeModel {
         sessionId: session, catalogNodeId: object.catalogNodeId, path: url.path,
         mappedColumns: csvImportMappedColumns,
         mappedTypes: csvImportColumnTypes,
+        expectedFingerprint: csvImportPreview?.fingerprint ?? "",
         nowMs: dependencies.clock.nowMilliseconds()
       )
     } catch { csvImportError = "Stage import failed: \(error)" }

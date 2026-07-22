@@ -1,9 +1,16 @@
 //! Coarse synchronous facade matching the shared-client-contract bridge shape.
 
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
+    fs::{File, OpenOptions},
+    io::{Read, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant, UNIX_EPOCH},
 };
 
@@ -11,16 +18,16 @@ use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, CatalogChildrenState, CatalogNode, CatalogNodeId,
     CatalogNodeKind, ClickHouseObjectKind, CommandBudget, CommandBudgetLimits, CommandEnvelope,
     CommandIntent, CommandScope, CopyFormat, CopyTable, DangerousPlaintext, DdlKind, DdlPlan,
-    DdlTarget, Engine, EnvironmentReference, EnvironmentTag, FieldValue, KeychainReference,
-    MutationChange, MutationPlan, MutationPlanLimits, MutationReviewRegistry, MutationTarget,
-    OnePasswordReference, OperationId, OperationOutcome, OperationScope, OwnedValue, PageIdentity,
-    PageKey, PageLimits, PageRequest, PageWarning, PlaintextAcknowledgement, PostgreSqlObjectKind,
-    ProfileAggregate, ProfileConnectionSnapshot, ProfileDurability, ProfileEndpointPart,
-    ProfileGroupName, ProfileId, ProfileIdentity, ProfileLimits, ProfileListFilter,
-    ProfileListRequest, ProfileName, ProfileOrganization, ProfilePolicy, ProfilePreferences,
-    ProfileProperty, ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode,
-    ProfileSearchTerm, ProfileTag, ReconnectDecision, ReconnectPreference, RedisKeyKind,
-    ResultStore, ResultStoreLimits, ReviewTokenId, ReviewedRoleChangePlan, Revision,
+    DdlTarget, Engine, EnvironmentReference, EnvironmentTag, FieldValue, IdParts,
+    KeychainReference, MutationChange, MutationId, MutationPlan, MutationPlanLimits,
+    MutationReviewRegistry, MutationTarget, OnePasswordReference, OperationId, OperationOutcome,
+    OperationScope, OwnedValue, PageIdentity, PageKey, PageLimits, PageRequest, PageWarning,
+    PlaintextAcknowledgement, PostgreSqlObjectKind, ProfileAggregate, ProfileConnectionSnapshot,
+    ProfileDurability, ProfileEndpointPart, ProfileGroupName, ProfileId, ProfileIdentity,
+    ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName, ProfileOrganization,
+    ProfilePolicy, ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
+    ProfileSafetyMode, ProfileSearchTerm, ProfileTag, ReconnectDecision, ReconnectPreference,
+    RedisKeyKind, ResultStore, ResultStoreLimits, ReviewTokenId, ReviewedRoleChangePlan, Revision,
     RoleChangeKind, RoleChangePlan, SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset,
     SecretSource, SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
     StatementText, SupportBundle, SupportPlatform, TlsPolicy, copy_cell_from_page,
@@ -40,7 +47,7 @@ use tablerock_engine::{
     resolve_for_connect_with_ports,
 };
 use tablerock_files::{
-    CsvValueType, csv_to_typed_insert_changes, is_formula_like, read_csv_bounded,
+    CsvStreamLimits, CsvTable, CsvValueType, csv_to_typed_insert_changes, stream_csv_batches,
     validate_insert_batch_size, write_atomic,
 };
 use tablerock_persistence::{
@@ -64,10 +71,12 @@ use crate::{
     runtime::RuntimeOwner,
 };
 
-const CSV_IMPORT_MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
-const CSV_IMPORT_MAX_ROWS: u32 = 10_001;
+const CSV_IMPORT_MAX_FILE_BYTES: u64 = 16 * 1024 * 1024 * 1024;
+const CSV_IMPORT_MAX_ROWS: u64 = 100_000_000;
 const CSV_IMPORT_MAX_CELL_BYTES: usize = 64 * 1024;
 const CSV_IMPORT_PREVIEW_ROWS: usize = 100;
+const CSV_IMPORT_BATCH_ROWS: usize = 500;
+static CSV_IMPORT_SPOOL_NONCE: AtomicU64 = AtomicU64::new(1);
 
 const MAX_EVENT_LOG: usize = 4_096;
 const MAX_EVENT_BATCH: u32 = 256;
@@ -342,6 +351,18 @@ pub struct BridgeCsvImportPreview {
     pub rows: Vec<BridgeCsvRow>,
     pub total_rows: u32,
     pub formula_like_cells: u32,
+    pub fingerprint: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeCsvImportRequest {
+    pub session_id: Vec<u8>,
+    pub catalog_node_id: Vec<u8>,
+    pub path: String,
+    pub mapped_columns: Vec<String>,
+    pub mapped_types: Vec<String>,
+    pub expected_fingerprint: String,
+    pub now_ms: u64,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -629,6 +650,24 @@ struct CsvImportTask {
     summary: String,
 }
 
+struct CsvImportReviewEntry {
+    session_id: SessionId,
+    scope: OperationScope,
+    revision: Revision,
+    target: MutationTarget,
+    frozen_path: PathBuf,
+    mapped_columns: Vec<String>,
+    value_types: Vec<CsvValueType>,
+    row_count: u64,
+    expires_at_ms: u64,
+}
+
+impl Drop for CsvImportReviewEntry {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.frozen_path);
+    }
+}
+
 struct RoleReviewEntry {
     session_id: SessionId,
     reviewed: ReviewedRoleChangePlan,
@@ -658,7 +697,7 @@ struct BridgeInner {
     service: EngineService,
     results: ResultStore,
     reviews: MutationReviewRegistry,
-    csv_review_tokens: BTreeSet<ReviewTokenId>,
+    csv_import_reviews: BTreeMap<ReviewTokenId, CsvImportReviewEntry>,
     role_reviews: BTreeMap<ReviewTokenId, RoleReviewEntry>,
     ddl_reviews: BTreeMap<ReviewTokenId, DdlReviewEntry>,
     sessions: BTreeMap<SessionId, RegisteredSession>,
@@ -679,6 +718,14 @@ struct BridgeInner {
     catalog_nodes: BTreeMap<(SessionId, CatalogNodeId), CatalogNode>,
     copy_identities: BTreeMap<tablerock_core::ResultId, CopyIdentity>,
     support_bundle: SupportBundle,
+}
+
+impl Drop for BridgeInner {
+    fn drop(&mut self) {
+        for review in self.csv_import_reviews.values() {
+            let _ = std::fs::remove_file(&review.frozen_path);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1394,23 +1441,9 @@ impl TableRockBridge {
     /// Freezes a mapped CSV insert plan behind a single-use review token.
     pub fn stage_csv_import(
         &self,
-        session_id: Vec<u8>,
-        catalog_node_id: Vec<u8>,
-        path: String,
-        mapped_columns: Vec<String>,
-        mapped_types: Vec<String>,
-        now_ms: u64,
+        request: BridgeCsvImportRequest,
     ) -> Result<BridgeCsvImportReview, BridgeError> {
-        catch_entry(|| {
-            self.stage_csv_import_inner(
-                session_id,
-                catalog_node_id,
-                path,
-                mapped_columns,
-                mapped_types,
-                now_ms,
-            )
-        })
+        catch_entry(|| self.stage_csv_import_inner(request))
     }
 
     /// Stage a probe mutation + register a single-use review token for the
@@ -1921,13 +1954,17 @@ impl TableRockBridge {
 
     fn stage_csv_import_inner(
         &self,
-        session_id_bytes: Vec<u8>,
-        catalog_node_id_bytes: Vec<u8>,
-        path: String,
-        mapped_columns: Vec<String>,
-        mapped_types: Vec<String>,
-        now_ms: u64,
+        request: BridgeCsvImportRequest,
     ) -> Result<BridgeCsvImportReview, BridgeError> {
+        let BridgeCsvImportRequest {
+            session_id: session_id_bytes,
+            catalog_node_id: catalog_node_id_bytes,
+            path,
+            mapped_columns,
+            mapped_types,
+            expected_fingerprint,
+            now_ms,
+        } = request;
         self.ensure_runtime_inner()?;
         let path_ref = Path::new(&path);
         if !path_ref.is_absolute() {
@@ -1936,57 +1973,7 @@ impl TableRockBridge {
                 "native CSV import path must be absolute",
             ));
         }
-        let mut table = read_csv_bounded(
-            path_ref,
-            CSV_IMPORT_MAX_FILE_BYTES,
-            CSV_IMPORT_MAX_ROWS,
-            CSV_IMPORT_MAX_CELL_BYTES,
-        )
-        .map_err(|error| BridgeError::rejected("csv-import", error.to_string()))?;
-        if mapped_columns.len() != table.headers.len()
-            || mapped_columns.iter().any(|column| column.is_empty())
-            || mapped_columns.iter().collect::<BTreeSet<_>>().len() != mapped_columns.len()
-        {
-            return Err(BridgeError::rejected(
-                "csv-import-mapping",
-                "mapped columns must be non-empty, unique, and match CSV width",
-            ));
-        }
-        if mapped_types.len() != mapped_columns.len() {
-            return Err(BridgeError::rejected(
-                "csv-import-mapping",
-                "mapped value types must match CSV width",
-            ));
-        }
-        let value_types = mapped_types
-            .iter()
-            .map(|value_type| match value_type.as_str() {
-                "text" => Ok(CsvValueType::Text),
-                "signed" => Ok(CsvValueType::Signed),
-                "float64" => Ok(CsvValueType::Float64),
-                "boolean" => Ok(CsvValueType::Boolean),
-                _ => Err(BridgeError::rejected(
-                    "csv-import-mapping",
-                    "mapped value type must be text, signed, float64, or boolean",
-                )),
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let row_count = u32::try_from(table.rows.len()).unwrap_or(u32::MAX);
-        let column_count = u32::try_from(mapped_columns.len()).unwrap_or(u32::MAX);
-        let formula_like_cells = table
-            .rows
-            .iter()
-            .flatten()
-            .filter(|cell| is_formula_like(cell))
-            .count()
-            .try_into()
-            .unwrap_or(u32::MAX);
-        table.headers = mapped_columns;
-        let changes =
-            csv_to_typed_insert_changes(&table, &value_types, CSV_IMPORT_MAX_CELL_BYTES as u64)
-                .map_err(|error| BridgeError::rejected("csv-import-values", error.to_string()))?;
-        validate_insert_batch_size(&changes, 10_000)
-            .map_err(|error| BridgeError::rejected("csv-import-size", error.to_string()))?;
+        let value_types = parse_csv_value_types(&mapped_types, mapped_columns.len())?;
         let session_id = session_from_bytes(&session_id_bytes)
             .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
         let catalog_node_id = catalog_node_from_bytes(&catalog_node_id_bytes).map_err(|_| {
@@ -1995,92 +1982,194 @@ impl TableRockBridge {
         let expires_at_ms = now_ms
             .checked_add(60_000)
             .ok_or_else(|| BridgeError::rejected("csv-import-review", "review expiry overflow"))?;
-        let mut guard = self
-            .inner
-            .lock()
-            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
-        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
-        let registered = inner
-            .sessions
-            .get(&session_id)
-            .ok_or(BridgeError::UnknownSession)?;
-        let node = inner
-            .catalog_nodes
-            .get(&(session_id, catalog_node_id))
-            .ok_or_else(|| {
-                BridgeError::rejected("unknown-catalog-node", "catalog node is stale or unknown")
-            })?;
-        let parent = node
-            .parent_id()
-            .and_then(|id| inner.catalog_nodes.get(&(session_id, id)))
-            .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
-        let identifier = |value: &str| {
-            BoundedText::copy_from_str(value, ByteLimit::new(256))
-                .map_err(|error| BridgeError::rejected("csv-import-target", error.to_string()))
-        };
-        let (target, target_label) = match (registered.engine, node.kind()) {
-            (
-                Engine::PostgreSql,
-                CatalogNodeKind::PostgreSqlObject(
-                    PostgreSqlObjectKind::Table
-                    | PostgreSqlObjectKind::ForeignTable
-                    | PostgreSqlObjectKind::PartitionedTable,
+        let (target, target_label, scope, revision, token_id) = {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let node = inner
+                .catalog_nodes
+                .get(&(session_id, catalog_node_id))
+                .ok_or_else(|| {
+                    BridgeError::rejected(
+                        "unknown-catalog-node",
+                        "catalog node is stale or unknown",
+                    )
+                })?;
+            let parent = node
+                .parent_id()
+                .and_then(|id| inner.catalog_nodes.get(&(session_id, id)))
+                .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+            let identifier = |value: &str| {
+                BoundedText::copy_from_str(value, ByteLimit::new(256))
+                    .map_err(|error| BridgeError::rejected("csv-import-target", error.to_string()))
+            };
+            let (target, label) = match (registered.engine, node.kind()) {
+                (
+                    Engine::PostgreSql,
+                    CatalogNodeKind::PostgreSqlObject(
+                        PostgreSqlObjectKind::Table
+                        | PostgreSqlObjectKind::ForeignTable
+                        | PostgreSqlObjectKind::PartitionedTable,
+                    ),
+                ) => (
+                    MutationTarget::PostgreSqlRelation {
+                        database: registered.database.clone(),
+                        schema: identifier(parent.name())?,
+                        relation: identifier(node.name())?,
+                    },
+                    format!("{}.{}", parent.name(), node.name()),
                 ),
-            ) => (
-                MutationTarget::PostgreSqlRelation {
-                    database: registered.database.clone(),
-                    schema: identifier(parent.name())?,
-                    relation: identifier(node.name())?,
-                },
-                format!("{}.{}", parent.name(), node.name()),
-            ),
+                (
+                    Engine::ClickHouse,
+                    CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Table),
+                ) => (
+                    MutationTarget::ClickHouseTable {
+                        database: identifier(parent.name())?,
+                        table: identifier(node.name())?,
+                    },
+                    format!("{}.{}", parent.name(), node.name()),
+                ),
+                _ => {
+                    return Err(BridgeError::rejected(
+                        "csv-import-target",
+                        "CSV import requires a cached writable table",
+                    ));
+                }
+            };
             (
-                Engine::ClickHouse,
-                CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Table),
-            ) => (
-                MutationTarget::ClickHouseTable {
-                    database: identifier(parent.name())?,
-                    table: identifier(node.name())?,
-                },
-                format!("{}.{}", parent.name(), node.name()),
-            ),
-            _ => {
+                target,
+                label,
+                OperationScope::new(
+                    registered.profile_id,
+                    registered.session_id,
+                    registered.context_id,
+                ),
+                registered.context_revision,
+                inner.ids.review_token(),
+            )
+        };
+
+        let frozen_path = freeze_csv_source(path_ref, token_id)?;
+        let staged = (|| -> Result<(u64, u64), BridgeError> {
+            let mut validation_error = None;
+            let summary =
+                stream_csv_batches(&frozen_path, csv_stream_limits()?, |headers, rows, _| {
+                    if mapped_columns.len() != headers.len()
+                        || mapped_columns.iter().any(|column| column.is_empty())
+                        || mapped_columns.iter().collect::<BTreeSet<_>>().len()
+                            != mapped_columns.len()
+                    {
+                        validation_error = Some(BridgeError::rejected(
+                            "csv-import-mapping",
+                            "mapped columns must be non-empty, unique, and match CSV width",
+                        ));
+                        return false;
+                    }
+                    if !rows.is_empty() {
+                        let table = CsvTable {
+                            headers: mapped_columns.clone(),
+                            rows: rows.to_vec(),
+                        };
+                        if let Err(error) = csv_to_typed_insert_changes(
+                            &table,
+                            &value_types,
+                            CSV_IMPORT_MAX_CELL_BYTES as u64,
+                        ) {
+                            validation_error = Some(BridgeError::rejected(
+                                "csv-import-values",
+                                error.to_string(),
+                            ));
+                            return false;
+                        }
+                    }
+                    true
+                });
+            if let Some(error) = validation_error {
+                return Err(error);
+            }
+            let summary =
+                summary.map_err(|error| BridgeError::rejected("csv-import", error.to_string()))?;
+            let fingerprint = summary
+                .sha256
+                .map(hex_sha256)
+                .ok_or_else(|| BridgeError::rejected("csv-import", "CSV hash is unavailable"))?;
+            if fingerprint != expected_fingerprint {
                 return Err(BridgeError::rejected(
-                    "csv-import-target",
-                    "CSV import requires a cached writable table",
+                    "csv-import-changed",
+                    "CSV file changed after preview; preview it again before review",
                 ));
             }
+            if summary.rows == 0 {
+                return Err(BridgeError::rejected(
+                    "csv-import-size",
+                    "CSV import requires at least one data row",
+                ));
+            }
+            Ok((summary.rows, summary.formula_like_cells))
+        })();
+        let (row_count, formula_like_cells) = match staged {
+            Ok(value) => value,
+            Err(error) => {
+                let _ = std::fs::remove_file(&frozen_path);
+                return Err(error);
+            }
         };
-        let scope = OperationScope::new(
-            registered.profile_id,
-            registered.session_id,
-            registered.context_id,
-        );
-        let token_id = inner.ids.review_token();
-        let plan = MutationPlan::new(
-            inner.ids.mutation(),
-            scope,
-            registered.context_revision,
-            target,
-            changes,
-            MutationPlanLimits::new(10_000, 1_024, 64 * 1024, 4 * 1024 * 1024, 60_000)
-                .map_err(|error| BridgeError::rejected("mutation-limits", error.to_string()))?,
-        )
-        .map_err(|error| BridgeError::rejected("mutation-plan", error.to_string()))?;
-        let reviewed = plan
-            .review(token_id, now_ms, expires_at_ms)
-            .map_err(|error| BridgeError::rejected("review", error.to_string()))?;
-        inner
-            .reviews
-            .insert(reviewed, now_ms)
-            .map_err(|error| BridgeError::rejected("review-insert", error.to_string()))?;
-        inner.csv_review_tokens.insert(token_id);
+
+        let insert_result = (|| -> Result<(), BridgeError> {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            if registered.context_revision != revision {
+                return Err(BridgeError::rejected(
+                    "csv-import-stale",
+                    "session context changed while staging CSV import",
+                ));
+            }
+            expire_csv_import_reviews(&mut inner.csv_import_reviews, now_ms);
+            if inner.csv_import_reviews.len() >= 256 {
+                return Err(BridgeError::rejected(
+                    "csv-import-review-limit",
+                    "too many pending CSV import reviews",
+                ));
+            }
+            inner.csv_import_reviews.insert(
+                token_id,
+                CsvImportReviewEntry {
+                    session_id,
+                    scope,
+                    revision,
+                    target,
+                    frozen_path: frozen_path.clone(),
+                    mapped_columns,
+                    value_types,
+                    row_count,
+                    expires_at_ms,
+                },
+            );
+            Ok(())
+        })();
+        if let Err(error) = insert_result {
+            let _ = std::fs::remove_file(&frozen_path);
+            return Err(error);
+        }
         Ok(BridgeCsvImportReview {
             token_id: review_token_bytes(token_id),
             target: target_label,
-            row_count,
-            column_count,
-            formula_like_cells,
+            row_count: u32::try_from(row_count).unwrap_or(u32::MAX),
+            column_count: u32::try_from(mapped_types.len()).unwrap_or(u32::MAX),
+            formula_like_cells: u32::try_from(formula_like_cells).unwrap_or(u32::MAX),
             expires_at_ms,
         })
     }
@@ -2135,7 +2224,10 @@ impl TableRockBridge {
             .lock()
             .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
         let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
-        inner.csv_review_tokens.remove(&token_id);
+        if let Some(review) = inner.csv_import_reviews.remove(&token_id) {
+            let _ = std::fs::remove_file(&review.frozen_path);
+            return Ok(true);
+        }
         Ok(inner.reviews.revoke(token_id))
     }
 
@@ -2160,7 +2252,7 @@ impl TableRockBridge {
                 .lock()
                 .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
             let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
-            if inner.csv_review_tokens.contains(&token_id) {
+            if inner.csv_import_reviews.contains_key(&token_id) {
                 return Err(BridgeError::rejected(
                     "csv-import-apply",
                     "CSV reviews require the progress-aware import apply path",
@@ -2230,7 +2322,7 @@ impl TableRockBridge {
         })?;
         let session_id = session_from_bytes(&session_id_bytes)
             .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
-        let (authorized, driver, operation_id, total_rows) = {
+        let (review, driver, operation_id) = {
             let mut guard = self
                 .inner
                 .lock()
@@ -2238,12 +2330,6 @@ impl TableRockBridge {
             let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
             if !inner.accepting {
                 return Err(BridgeError::ShuttingDown);
-            }
-            if !inner.csv_review_tokens.contains(&token_id) {
-                return Err(BridgeError::rejected(
-                    "csv-import-review",
-                    "review token is not a staged CSV import",
-                ));
             }
             let registered = inner
                 .sessions
@@ -2254,25 +2340,31 @@ impl TableRockBridge {
                 registered.session_id,
                 registered.context_id,
             );
-            let authorized =
-                match inner
-                    .reviews
-                    .authorize(token_id, now_ms, scope, registered.context_revision)
-                {
-                    Ok(authorized) => authorized,
-                    Err(error) => {
-                        inner.csv_review_tokens.remove(&token_id);
-                        return Err(BridgeError::rejected("authorize", error.to_string()));
-                    }
-                };
-            inner.csv_review_tokens.remove(&token_id);
-            let total_rows = authorized.plan().changes().len() as u64;
+            let revision = registered.context_revision;
             let driver = inner
                 .service
                 .session(session_id)
                 .ok_or(BridgeError::UnknownSession)?;
-            (authorized, driver, inner.ids.operation(), total_rows)
+            let review = inner.csv_import_reviews.remove(&token_id).ok_or_else(|| {
+                BridgeError::rejected(
+                    "csv-import-review",
+                    "review token is not a staged CSV import",
+                )
+            })?;
+            if review.session_id != session_id
+                || review.scope != scope
+                || review.revision != revision
+                || now_ms > review.expires_at_ms
+            {
+                let _ = std::fs::remove_file(&review.frozen_path);
+                return Err(BridgeError::rejected(
+                    "authorize",
+                    "CSV import review expired or no longer matches the live session context",
+                ));
+            }
+            (review, driver, inner.ids.operation())
         };
+        let total_rows = review.row_count;
 
         let tasks = Arc::clone(&self.csv_imports);
         let progress_tasks = Arc::clone(&tasks);
@@ -2289,10 +2381,9 @@ impl TableRockBridge {
                 BridgeError::rejected("csv-import-lock", "import task registry poisoned")
             })?;
             if registry.len() >= 64 {
-                if let Some(terminal) = registry
-                    .iter()
-                    .find_map(|(id, task)| (task.phase != "running").then_some(*id))
-                {
+                if let Some(terminal) = registry.iter().find_map(|(id, task)| {
+                    (task.phase != "running" && task.phase != "cancel_requested").then_some(*id)
+                }) {
                     registry.remove(&terminal);
                 } else {
                     return Err(BridgeError::rejected(
@@ -2319,9 +2410,8 @@ impl TableRockBridge {
             );
         }
         self.runtime.spawn(async move {
-            let result = driver
-                .apply_authorized_mutation_controlled(authorized, control.clone())
-                .await;
+            let result =
+                apply_streamed_csv_import(driver, review, operation_id, control.clone()).await;
             let Ok(mut registry) = tasks.lock() else {
                 return;
             };
@@ -2330,58 +2420,14 @@ impl TableRockBridge {
             };
             match result {
                 Ok(outcome) => {
-                    let rolled_back = matches!(
-                        outcome.transaction,
-                        tablerock_engine::MutationTransactionState::RolledBack
-                    );
-                    for change in &outcome.changes {
-                        match change {
-                            tablerock_engine::MutationChangeOutcome::Applied { .. } => {
-                                if !rolled_back {
-                                    task.applied_rows = task.applied_rows.saturating_add(1);
-                                }
-                            }
-                            tablerock_engine::MutationChangeOutcome::Conflict { index, .. } => {
-                                task.conflict_rows = task.conflict_rows.saturating_add(1);
-                                if task.errors.len() < 100 {
-                                    task.errors.push(format!("row {}: conflict", index + 2));
-                                } else {
-                                    task.errors_truncated = true;
-                                }
-                            }
-                            tablerock_engine::MutationChangeOutcome::Failed { index, .. } => {
-                                task.failed_rows = task.failed_rows.saturating_add(1);
-                                if task.errors.len() < 100 {
-                                    task.errors.push(format!("row {}: apply failed", index + 2));
-                                } else {
-                                    task.errors_truncated = true;
-                                }
-                            }
-                        }
-                    }
-                    let cancelled =
-                        control.cancel_requested() && task.completed_rows < task.total_rows;
-                    task.phase = if cancelled && task.applied_rows > 0 {
-                        "cancelled_partial"
-                    } else if cancelled {
-                        "cancelled"
-                    } else if task.failed_rows > 0 || task.conflict_rows > 0 {
-                        if task.applied_rows > 0 {
-                            "partial"
-                        } else {
-                            "failed"
-                        }
-                    } else {
-                        "completed"
-                    }
-                    .into();
-                    task.summary = format!(
-                        "{:?} · {} applied · {} conflict · {} failed",
-                        outcome.transaction,
-                        task.applied_rows,
-                        task.conflict_rows,
-                        task.failed_rows
-                    );
+                    task.completed_rows = outcome.completed_rows;
+                    task.applied_rows = outcome.applied_rows;
+                    task.conflict_rows = outcome.conflict_rows;
+                    task.failed_rows = outcome.failed_rows;
+                    task.errors = outcome.errors;
+                    task.errors_truncated = outcome.errors_truncated;
+                    task.phase = outcome.phase;
+                    task.summary = outcome.summary;
                 }
                 Err(_) => {
                     task.phase = if control.cancel_requested() {
@@ -7112,6 +7158,392 @@ fn render_redis_subscription_cell(bytes: &[u8]) -> String {
     }
 }
 
+struct StreamedCsvApplyOutcome {
+    phase: String,
+    completed_rows: u64,
+    applied_rows: u64,
+    conflict_rows: u64,
+    failed_rows: u64,
+    errors: Vec<String>,
+    errors_truncated: bool,
+    summary: String,
+}
+
+async fn apply_streamed_csv_import(
+    driver: Arc<dyn DriverSession>,
+    review: CsvImportReviewEntry,
+    operation_id: OperationId,
+    control: MutationApplyControl,
+) -> Result<StreamedCsvApplyOutcome, ()> {
+    let frozen_path = review.frozen_path.clone();
+    let handle = tokio::runtime::Handle::current();
+    let total_rows = review.row_count;
+    let mut completed_rows = 0_u64;
+    let mut applied_rows = 0_u64;
+    let mut conflict_rows = 0_u64;
+    let mut failed_rows = 0_u64;
+    let mut errors = Vec::new();
+    let mut errors_truncated = false;
+    let mut batch_number = 0_u64;
+    let mut fatal = false;
+    let mut unknown = false;
+
+    let scan = tokio::task::block_in_place(|| {
+        stream_csv_batches(
+            &frozen_path,
+            csv_stream_limits().map_err(|_| ())?,
+            |_, rows, _| {
+                if rows.is_empty() {
+                    return true;
+                }
+                if control.cancel_requested() || fatal || unknown {
+                    return false;
+                }
+                let table = CsvTable {
+                    headers: review.mapped_columns.clone(),
+                    rows: rows.to_vec(),
+                };
+                let changes = match csv_to_typed_insert_changes(
+                    &table,
+                    &review.value_types,
+                    CSV_IMPORT_MAX_CELL_BYTES as u64,
+                ) {
+                    Ok(changes) => changes,
+                    Err(_) => {
+                        fatal = true;
+                        return false;
+                    }
+                };
+                if validate_insert_batch_size(&changes, CSV_IMPORT_BATCH_ROWS as u32).is_err() {
+                    fatal = true;
+                    return false;
+                }
+                let mutation_id =
+                    match derived_import_id::<MutationId>(operation_id, batch_number, 1) {
+                        Ok(id) => id,
+                        Err(()) => {
+                            fatal = true;
+                            return false;
+                        }
+                    };
+                let batch_token =
+                    match derived_import_id::<ReviewTokenId>(operation_id, batch_number, 2) {
+                        Ok(id) => id,
+                        Err(()) => {
+                            fatal = true;
+                            return false;
+                        }
+                    };
+                let limits = match MutationPlanLimits::new(
+                    CSV_IMPORT_BATCH_ROWS as u32,
+                    1_024,
+                    CSV_IMPORT_MAX_CELL_BYTES as u64,
+                    8 * 1024 * 1024,
+                    60_000,
+                ) {
+                    Ok(limits) => limits,
+                    Err(_) => {
+                        fatal = true;
+                        return false;
+                    }
+                };
+                let plan = match MutationPlan::new(
+                    mutation_id,
+                    review.scope,
+                    review.revision,
+                    review.target.clone(),
+                    changes,
+                    limits,
+                ) {
+                    Ok(plan) => plan,
+                    Err(_) => {
+                        fatal = true;
+                        return false;
+                    }
+                };
+                let authorized = match plan
+                    .review(batch_token, 1, 60_001)
+                    .and_then(|reviewed| reviewed.authorize(2, review.scope, review.revision))
+                {
+                    Ok(authorized) => authorized,
+                    Err(_) => {
+                        fatal = true;
+                        return false;
+                    }
+                };
+                let base = completed_rows;
+                let mapped_control = {
+                    let global = control.clone();
+                    control.map_progress(move |completed, _| {
+                        global.report(base.saturating_add(completed), total_rows);
+                    })
+                };
+                let outcome = match handle.block_on(
+                    driver.apply_authorized_mutation_controlled(authorized, mapped_control),
+                ) {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        if matches!(
+                            error.class(),
+                            AdapterFailureClass::Connection
+                                | AdapterFailureClass::Timeout
+                                | AdapterFailureClass::Protocol
+                                | AdapterFailureClass::CancellationTransport
+                                | AdapterFailureClass::ServerCancelled
+                                | AdapterFailureClass::WriteOutcomeUnknown
+                        ) {
+                            unknown = true;
+                        } else {
+                            fatal = true;
+                        }
+                        return false;
+                    }
+                };
+                let rolled_back = matches!(
+                    outcome.transaction,
+                    tablerock_engine::MutationTransactionState::RolledBack
+                );
+                if matches!(
+                    outcome.transaction,
+                    tablerock_engine::MutationTransactionState::Unknown
+                ) {
+                    unknown = true;
+                }
+                for change in &outcome.changes {
+                    match change {
+                        tablerock_engine::MutationChangeOutcome::Applied { .. } => {
+                            if !rolled_back {
+                                applied_rows = applied_rows.saturating_add(1);
+                            }
+                        }
+                        tablerock_engine::MutationChangeOutcome::Conflict { index, .. } => {
+                            conflict_rows = conflict_rows.saturating_add(1);
+                            push_import_error(
+                                &mut errors,
+                                &mut errors_truncated,
+                                base.saturating_add(*index as u64).saturating_add(2),
+                                "conflict",
+                            );
+                        }
+                        tablerock_engine::MutationChangeOutcome::Failed { index, .. } => {
+                            failed_rows = failed_rows.saturating_add(1);
+                            push_import_error(
+                                &mut errors,
+                                &mut errors_truncated,
+                                base.saturating_add(*index as u64).saturating_add(2),
+                                "apply failed",
+                            );
+                        }
+                    }
+                }
+                completed_rows = base.saturating_add(outcome.changes.len() as u64);
+                if !rolled_back && outcome.changes.len() == rows.len() {
+                    completed_rows = base.saturating_add(rows.len() as u64);
+                }
+                control.report(completed_rows, total_rows);
+                batch_number = batch_number.saturating_add(1);
+                !control.cancel_requested()
+                    && !unknown
+                    && failed_rows == 0
+                    && conflict_rows == 0
+                    && outcome.changes.len() == rows.len()
+            },
+        )
+        .map_err(|_| ())
+    });
+    let _ = std::fs::remove_file(&frozen_path);
+    if scan.is_err() && !control.cancel_requested() && !fatal && !unknown {
+        fatal = true;
+    }
+    let cancelled = control.cancel_requested() && completed_rows < total_rows;
+    let phase = if unknown {
+        if cancelled {
+            "unknown_after_cancel"
+        } else {
+            "unknown"
+        }
+    } else if cancelled && applied_rows > 0 {
+        "cancelled_partial"
+    } else if cancelled {
+        "cancelled"
+    } else if fatal || failed_rows > 0 || conflict_rows > 0 || completed_rows < total_rows {
+        if applied_rows > 0 {
+            "partial"
+        } else {
+            "failed"
+        }
+    } else {
+        "completed"
+    };
+    if fatal {
+        failed_rows = failed_rows.saturating_add(1);
+        push_import_error(
+            &mut errors,
+            &mut errors_truncated,
+            completed_rows.saturating_add(2),
+            "stream validation or batch construction failed",
+        );
+    }
+    Ok(StreamedCsvApplyOutcome {
+        phase: phase.into(),
+        completed_rows,
+        applied_rows,
+        conflict_rows,
+        failed_rows,
+        errors,
+        errors_truncated,
+        summary: format!(
+            "{} · {} of {} processed · {} applied · {} conflict · {} failed",
+            phase, completed_rows, total_rows, applied_rows, conflict_rows, failed_rows
+        ),
+    })
+}
+
+trait ImportDerivedId: Sized {
+    fn from_parts(parts: IdParts) -> Result<Self, ()>;
+}
+
+impl ImportDerivedId for MutationId {
+    fn from_parts(parts: IdParts) -> Result<Self, ()> {
+        Self::from_parts(parts).map_err(|_| ())
+    }
+}
+
+impl ImportDerivedId for ReviewTokenId {
+    fn from_parts(parts: IdParts) -> Result<Self, ()> {
+        Self::from_parts(parts).map_err(|_| ())
+    }
+}
+
+fn derived_import_id<T: ImportDerivedId>(
+    operation_id: OperationId,
+    batch: u64,
+    salt: u64,
+) -> Result<T, ()> {
+    let source = operation_id.parts();
+    let high = source.high ^ 0x696d_706f_7274_0000 ^ salt;
+    let mut low = source.low.wrapping_add(batch).wrapping_add(salt);
+    if high == 0 && low == 0 {
+        low = salt.max(1);
+    }
+    T::from_parts(IdParts::new(high, low).map_err(|_| ())?)
+}
+
+fn push_import_error(errors: &mut Vec<String>, truncated: &mut bool, row: u64, message: &str) {
+    if errors.len() < 100 {
+        errors.push(format!("row {row}: {message}"));
+    } else {
+        *truncated = true;
+    }
+}
+
+fn parse_csv_value_types(
+    mapped_types: &[String],
+    column_count: usize,
+) -> Result<Vec<CsvValueType>, BridgeError> {
+    if mapped_types.len() != column_count {
+        return Err(BridgeError::rejected(
+            "csv-import-mapping",
+            "mapped value types must match CSV width",
+        ));
+    }
+    mapped_types
+        .iter()
+        .map(|value_type| match value_type.as_str() {
+            "text" => Ok(CsvValueType::Text),
+            "signed" => Ok(CsvValueType::Signed),
+            "float64" => Ok(CsvValueType::Float64),
+            "boolean" => Ok(CsvValueType::Boolean),
+            _ => Err(BridgeError::rejected(
+                "csv-import-mapping",
+                "mapped value type must be text, signed, float64, or boolean",
+            )),
+        })
+        .collect()
+}
+
+fn freeze_csv_source(path: &Path, token_id: ReviewTokenId) -> Result<PathBuf, BridgeError> {
+    let metadata = path
+        .metadata()
+        .map_err(|error| BridgeError::rejected("csv-import-freeze", error.to_string()))?;
+    if !metadata.is_file() {
+        return Err(BridgeError::rejected(
+            "csv-import-freeze",
+            "CSV import source must be a regular file",
+        ));
+    }
+    if metadata.len() > CSV_IMPORT_MAX_FILE_BYTES {
+        return Err(BridgeError::rejected(
+            "csv-import-size",
+            format!(
+                "CSV import has {} bytes; limit is {}",
+                metadata.len(),
+                CSV_IMPORT_MAX_FILE_BYTES
+            ),
+        ));
+    }
+    let frozen_path = std::env::temp_dir().join(format!(
+        "tablerock-import-{}-{token_id}-{}.csv",
+        std::process::id(),
+        CSV_IMPORT_SPOOL_NONCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut destination = options
+        .open(&frozen_path)
+        .map_err(|error| BridgeError::rejected("csv-import-freeze", error.to_string()))?;
+    let result = (|| -> Result<(), BridgeError> {
+        let mut source = File::open(path)
+            .map_err(|error| BridgeError::rejected("csv-import-freeze", error.to_string()))?;
+        let mut buffer = [0_u8; 64 * 1024];
+        let mut copied = 0_u64;
+        loop {
+            let read = source
+                .read(&mut buffer)
+                .map_err(|error| BridgeError::rejected("csv-import-freeze", error.to_string()))?;
+            if read == 0 {
+                break;
+            }
+            copied = copied.saturating_add(read as u64);
+            if copied > CSV_IMPORT_MAX_FILE_BYTES {
+                return Err(BridgeError::rejected(
+                    "csv-import-size",
+                    "CSV import grew beyond the maximum while being frozen",
+                ));
+            }
+            destination
+                .write_all(&buffer[..read])
+                .map_err(|error| BridgeError::rejected("csv-import-freeze", error.to_string()))?;
+        }
+        destination
+            .sync_all()
+            .map_err(|error| BridgeError::rejected("csv-import-freeze", error.to_string()))
+    })();
+    if let Err(error) = result {
+        drop(destination);
+        let _ = std::fs::remove_file(&frozen_path);
+        return Err(error);
+    }
+    Ok(frozen_path)
+}
+
+fn expire_csv_import_reviews(
+    reviews: &mut BTreeMap<ReviewTokenId, CsvImportReviewEntry>,
+    now_ms: u64,
+) {
+    let expired = reviews
+        .iter()
+        .filter_map(|(token, review)| (review.expires_at_ms < now_ms).then_some(*token))
+        .collect::<Vec<_>>();
+    for token in expired {
+        if let Some(review) = reviews.remove(&token) {
+            let _ = std::fs::remove_file(&review.frozen_path);
+        }
+    }
+}
+
 fn preview_csv_import_inner(path: String) -> Result<BridgeCsvImportPreview, BridgeError> {
     let path_ref = Path::new(&path);
     if !path_ref.is_absolute() {
@@ -7120,34 +7552,53 @@ fn preview_csv_import_inner(path: String) -> Result<BridgeCsvImportPreview, Brid
             "native CSV import path must be absolute",
         ));
     }
-    let table = read_csv_bounded(
-        path_ref,
+    let limits = csv_stream_limits()?;
+    let mut headers = Vec::new();
+    let mut rows = Vec::with_capacity(CSV_IMPORT_PREVIEW_ROWS);
+    let summary = stream_csv_batches(path_ref, limits, |batch_headers, batch, _| {
+        if headers.is_empty() {
+            headers.extend_from_slice(batch_headers);
+        }
+        let remaining = CSV_IMPORT_PREVIEW_ROWS.saturating_sub(rows.len());
+        rows.extend(batch.iter().take(remaining).cloned());
+        true
+    })
+    .map_err(|error| BridgeError::rejected("csv-import", error.to_string()))?;
+    Ok(BridgeCsvImportPreview {
+        path,
+        headers,
+        rows: rows
+            .into_iter()
+            .map(|cells| BridgeCsvRow { cells })
+            .collect(),
+        total_rows: u32::try_from(summary.rows).unwrap_or(u32::MAX),
+        formula_like_cells: u32::try_from(summary.formula_like_cells).unwrap_or(u32::MAX),
+        fingerprint: summary
+            .sha256
+            .map(hex_sha256)
+            .ok_or_else(|| BridgeError::rejected("csv-import", "CSV hash is unavailable"))?,
+    })
+}
+
+fn hex_sha256(bytes: [u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut value = String::with_capacity(64);
+    for byte in bytes {
+        value.push(char::from(HEX[(byte >> 4) as usize]));
+        value.push(char::from(HEX[(byte & 0x0f) as usize]));
+    }
+    value
+}
+
+fn csv_stream_limits() -> Result<CsvStreamLimits, BridgeError> {
+    CsvStreamLimits::new(
         CSV_IMPORT_MAX_FILE_BYTES,
         CSV_IMPORT_MAX_ROWS,
         CSV_IMPORT_MAX_CELL_BYTES,
+        CSV_IMPORT_BATCH_ROWS,
+        8 * 1024 * 1024,
     )
-    .map_err(|error| BridgeError::rejected("csv-import", error.to_string()))?;
-    let total_rows = u32::try_from(table.rows.len()).unwrap_or(u32::MAX);
-    let formula_like_cells = table
-        .rows
-        .iter()
-        .flatten()
-        .filter(|cell| is_formula_like(cell))
-        .count()
-        .try_into()
-        .unwrap_or(u32::MAX);
-    Ok(BridgeCsvImportPreview {
-        path,
-        headers: table.headers,
-        rows: table
-            .rows
-            .into_iter()
-            .take(CSV_IMPORT_PREVIEW_ROWS)
-            .map(|cells| BridgeCsvRow { cells })
-            .collect(),
-        total_rows,
-        formula_like_cells,
-    })
+    .map_err(|error| BridgeError::rejected("csv-import-limits", error.to_string()))
 }
 
 fn read_bridge_sql_file(raw_path: &str) -> Result<BridgeSqlFile, BridgeError> {
@@ -7734,7 +8185,7 @@ impl BridgeInner {
             service,
             results,
             reviews,
-            csv_review_tokens: BTreeSet::new(),
+            csv_import_reviews: BTreeMap::new(),
             role_reviews: BTreeMap::new(),
             ddl_reviews: BTreeMap::new(),
             sessions: BTreeMap::new(),

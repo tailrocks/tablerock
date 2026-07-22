@@ -117,6 +117,10 @@ Standard suites + Docker engine suites; new import/export tests live in
   asynchronous operation; PostgreSQL/ClickHouse report row-boundary progress,
   cancellation truth, bounded safe errors, and terminal/partial summaries.
   Connecting scanner batches to frozen-file review remains open.
+- 646 closes that native residual: SHA-256 preview binding, private frozen
+  spool, constant-memory full typed validation, 500-row/8 MiB apply batches,
+  PostgreSQL transactional and ClickHouse progressive live proof, progress,
+  cancellation, bounded error copy, expiry/discard/terminal cleanup.
 
 ## Residual (non-blocking)
 

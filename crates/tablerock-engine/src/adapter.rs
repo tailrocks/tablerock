@@ -53,6 +53,15 @@ impl MutationApplyControl {
     pub fn report(&self, completed: u64, total: u64) {
         (self.progress)(completed, total);
     }
+
+    /// Derive a progress projection that shares the same cancellation flag.
+    #[must_use]
+    pub fn map_progress(&self, progress: impl Fn(u64, u64) + Send + Sync + 'static) -> Self {
+        Self {
+            cancelled: Arc::clone(&self.cancelled),
+            progress: Arc::new(progress),
+        }
+    }
 }
 
 /// Cheap connectivity fact from `DriverSession::health`. No version strings.
@@ -1732,6 +1741,21 @@ mod redis_mapping_tests {
             map_redis(RedisError::LogicalDatabaseMismatch).class(),
             AdapterFailureClass::InvalidRequest
         );
+    }
+
+    #[test]
+    fn mutation_progress_projection_shares_cancellation_authority() {
+        let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&observed);
+        let root = MutationApplyControl::new(|_, _| {});
+        let child = root.map_progress(move |completed, total| {
+            sink.lock().unwrap().push((completed, total));
+        });
+        child.report(7, 10);
+        root.request_cancel();
+
+        assert_eq!(*observed.lock().unwrap(), [(7, 10)]);
+        assert!(child.cancel_requested());
     }
 
     #[test]

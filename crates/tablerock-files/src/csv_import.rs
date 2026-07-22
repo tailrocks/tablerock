@@ -14,6 +14,7 @@ use std::{
     path::Path,
 };
 
+use sha2::{Digest, Sha256};
 use tablerock_core::{
     BoundedText, ByteLimit, FieldValue, MutationBuildError, MutationChange, OwnedValue, Truncation,
 };
@@ -53,6 +54,7 @@ pub struct CsvStreamLimits {
     pub max_rows: u64,
     pub max_cell_bytes: usize,
     pub batch_rows: usize,
+    pub max_batch_bytes: usize,
 }
 
 impl CsvStreamLimits {
@@ -61,8 +63,14 @@ impl CsvStreamLimits {
         max_rows: u64,
         max_cell_bytes: usize,
         batch_rows: usize,
+        max_batch_bytes: usize,
     ) -> Result<Self, CsvFileError> {
-        if max_file_bytes == 0 || max_rows == 0 || max_cell_bytes == 0 || batch_rows == 0 {
+        if max_file_bytes == 0
+            || max_rows == 0
+            || max_cell_bytes == 0
+            || batch_rows == 0
+            || max_batch_bytes == 0
+        {
             return Err(CsvFileError::InvalidLimit);
         }
         Ok(Self {
@@ -70,6 +78,7 @@ impl CsvStreamLimits {
             max_rows,
             max_cell_bytes,
             batch_rows,
+            max_batch_bytes,
         })
     }
 }
@@ -79,6 +88,7 @@ pub struct CsvStreamSummary {
     pub file_bytes: u64,
     pub rows: u64,
     pub formula_like_cells: u64,
+    pub sha256: Option<[u8; 32]>,
 }
 
 /// Scan CSV with bounded resident memory and deliver complete row batches.
@@ -132,6 +142,8 @@ struct StreamingCsvParser {
     field_start: u64,
     rows: u64,
     formula_like_cells: u64,
+    batch_bytes: usize,
+    hasher: Sha256,
 }
 
 impl StreamingCsvParser {
@@ -149,6 +161,8 @@ impl StreamingCsvParser {
             field_start: 0,
             rows: 0,
             formula_like_cells: 0,
+            batch_bytes: 0,
+            hasher: Sha256::new(),
         }
     }
 
@@ -205,6 +219,19 @@ impl StreamingCsvParser {
             self.formula_like_cells = self
                 .formula_like_cells
                 .saturating_add(row.iter().filter(|cell| is_formula_like(cell)).count() as u64);
+            let row_bytes = row.iter().map(String::len).sum::<usize>();
+            if row_bytes > self.limits.max_batch_bytes {
+                return Err(self.error(format!(
+                    "row exceeds batch byte limit {}",
+                    self.limits.max_batch_bytes
+                )));
+            }
+            if !self.batch.is_empty()
+                && self.batch_bytes.saturating_add(row_bytes) > self.limits.max_batch_bytes
+            {
+                self.flush(on_batch)?;
+            }
+            self.batch_bytes = self.batch_bytes.saturating_add(row_bytes);
             self.batch.push(row);
             if self.batch.len() == self.limits.batch_rows {
                 self.flush(on_batch)?;
@@ -237,6 +264,7 @@ impl StreamingCsvParser {
             return Err(CsvFileError::Cancelled);
         }
         self.batch.clear();
+        self.batch_bytes = 0;
         Ok(())
     }
 
@@ -245,6 +273,7 @@ impl StreamingCsvParser {
             file_bytes: self.bytes,
             rows: self.rows,
             formula_like_cells: self.formula_like_cells,
+            sha256: None,
         }
     }
 
@@ -253,6 +282,7 @@ impl StreamingCsvParser {
         bytes: &[u8],
         on_batch: &mut impl FnMut(&[String], &[Vec<String>], CsvStreamSummary) -> bool,
     ) -> Result<(), CsvFileError> {
+        self.hasher.update(bytes);
         for &byte in bytes {
             self.bytes = self.bytes.saturating_add(1);
             if self.bytes > self.limits.max_file_bytes {
@@ -337,8 +367,19 @@ impl StreamingCsvParser {
         if self.headers.is_none() {
             return Err(self.error("empty csv"));
         }
+        if self.rows == 0
+            && !on_batch(
+                self.headers.as_deref().expect("validated header"),
+                &[],
+                self.summary(),
+            )
+        {
+            return Err(CsvFileError::Cancelled);
+        }
         self.flush(on_batch)?;
-        Ok(self.summary())
+        let mut summary = self.summary();
+        summary.sha256 = Some(self.hasher.finalize().into());
+        Ok(summary)
     }
 }
 
@@ -916,7 +957,7 @@ mod tests {
 
         let mut batches = 0_usize;
         let mut largest = 0_usize;
-        let limits = CsvStreamLimits::new(8 * 1024 * 1024, 100_000, 128, 257).unwrap();
+        let limits = CsvStreamLimits::new(8 * 1024 * 1024, 100_000, 128, 257, 64 * 1024).unwrap();
         let summary = stream_csv_batches(&path, limits, |headers, rows, progress| {
             assert_eq!(headers, ["id", "payload"]);
             assert!(progress.rows > 0);
@@ -942,7 +983,7 @@ mod tests {
         std::fs::create_dir(&dir).unwrap();
         let path = dir.join("cancel.csv");
         std::fs::write(&path, b"id,name\n1,Ada\n2,Grace\n3,Linus\n").unwrap();
-        let limits = CsvStreamLimits::new(1024, 10, 64, 2).unwrap();
+        let limits = CsvStreamLimits::new(1024, 10, 64, 2, 128).unwrap();
         let mut calls = 0;
         assert!(matches!(
             stream_csv_batches(&path, limits, |_, rows, progress| {
@@ -960,6 +1001,14 @@ mod tests {
         assert!(matches!(
             stream_csv_batches(&invalid, limits, |_, _, _| true),
             Err(CsvFileError::InvalidUtf8 { byte_offset: 5 })
+        ));
+        let oversized_batch = dir.join("oversized-batch.csv");
+        std::fs::write(&oversized_batch, b"value\n12345\n").unwrap();
+        let tiny_batch = CsvStreamLimits::new(1024, 10, 64, 10, 4).unwrap();
+        assert!(matches!(
+            stream_csv_batches(&oversized_batch, tiny_batch, |_, _, _| true),
+            Err(CsvFileError::Parse(CsvImportError { ref message, .. }))
+                if message.contains("batch byte limit")
         ));
         std::fs::remove_dir_all(dir).unwrap();
     }

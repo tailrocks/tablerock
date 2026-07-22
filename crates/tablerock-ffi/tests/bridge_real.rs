@@ -7,8 +7,8 @@
 
 use tablerock_core::{Engine, PageLimits, ResultPage};
 use tablerock_ffi::{
-    BridgeDdlChangeRequest, BridgePostgresToolRequest, BridgeQueryParameter,
-    BridgeTableOperationRequest, OpenParams, SubmitSpec, TableRockBridge,
+    BridgeCsvImportRequest, BridgeDdlChangeRequest, BridgePostgresToolRequest,
+    BridgeQueryParameter, BridgeTableOperationRequest, OpenParams, SubmitSpec, TableRockBridge,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -117,6 +117,46 @@ fn probe_and_fetch(
     (page_bytes, batch.next_cursor)
 }
 
+fn execute(bridge: &TableRockBridge, session_id: Vec<u8>, statement: &str) -> Vec<u8> {
+    let operation = bridge
+        .submit(SubmitSpec {
+            intent: "execute".into(),
+            session_id,
+            statement: Some(statement.into()),
+            result_id: None,
+            start_row: None,
+            row_count: Some(64),
+            expected_revision: 0,
+        })
+        .unwrap();
+    bridge.pump(operation.clone()).unwrap();
+    bridge
+        .next_events(0, 256)
+        .unwrap()
+        .events
+        .into_iter()
+        .find(|event| event.operation_id == operation && event.kind == "page")
+        .and_then(|event| event.page_bytes)
+        .unwrap_or_default()
+}
+
+fn wait_csv_import(
+    bridge: &TableRockBridge,
+    operation_id: Vec<u8>,
+) -> tablerock_ffi::BridgeCsvImportProgress {
+    (0..30_000)
+        .find_map(|_| {
+            let progress = bridge.csv_import_progress(operation_id.clone()).unwrap();
+            if progress.phase == "running" || progress.phase == "cancel_requested" {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                None
+            } else {
+                Some(progress)
+            }
+        })
+        .expect("CSV import reaches a terminal state")
+}
+
 #[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn bridge_postgres_open_probe_fetch_shutdown() {
@@ -187,6 +227,11 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
             })
             .unwrap();
         bridge.pump(create).unwrap();
+        execute(
+            &bridge,
+            session.clone(),
+            "CREATE TABLE IF NOT EXISTS bridge_stream_import (id bigint, name text)",
+        );
         let database = bridge
             .refresh_catalog(session.clone(), None)
             .unwrap()
@@ -235,6 +280,63 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
             .apply_ddl_change(review.token_id, session.clone(), 2_001, true)
             .unwrap_err();
         assert!(consumed.to_string().contains("missing or consumed"));
+        let refreshed_relations = bridge
+            .refresh_catalog(session.clone(), Some(schema.id_bytes.clone()))
+            .unwrap();
+        let import_relation = refreshed_relations
+            .iter()
+            .find(|node| node.name == "bridge_stream_import")
+            .unwrap()
+            .clone();
+        let relation = refreshed_relations
+            .into_iter()
+            .find(|node| node.name == "bridge_ddl_review")
+            .unwrap();
+        let import_path = std::env::temp_dir().join(format!(
+            "tablerock-pg-stream-import-{}.csv",
+            std::process::id()
+        ));
+        let mut import_csv = String::from("id,name\n");
+        for row in 0..1_200_u64 {
+            import_csv.push_str(&format!("{row},row-{row}\n"));
+        }
+        std::fs::write(&import_path, import_csv).unwrap();
+        let import_preview = bridge
+            .preview_csv_import(import_path.to_string_lossy().into_owned())
+            .unwrap();
+        let import_review = bridge
+            .stage_csv_import(BridgeCsvImportRequest {
+                session_id: session.clone(),
+                catalog_node_id: import_relation.id_bytes,
+                path: import_path.to_string_lossy().into_owned(),
+                mapped_columns: vec!["id".into(), "name".into()],
+                mapped_types: vec!["signed".into(), "text".into()],
+                expected_fingerprint: import_preview.fingerprint,
+                now_ms: 3_000,
+            })
+            .unwrap();
+        std::fs::remove_file(import_path).unwrap();
+        let import_operation = bridge
+            .start_csv_import_apply(import_review.token_id, 3_001, session.clone())
+            .unwrap();
+        let import_outcome = wait_csv_import(&bridge, import_operation.clone());
+        assert_eq!(import_outcome.phase, "completed", "{import_outcome:?}");
+        assert_eq!(import_outcome.applied_rows, 1_200);
+        assert!(bridge.dismiss_csv_import(import_operation).unwrap());
+        let count_page = execute(
+            &bridge,
+            session.clone(),
+            "SELECT count(*)::bigint FROM bridge_stream_import",
+        );
+        let count_page = ResultPage::decode_v1(
+            &count_page,
+            PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
+        )
+        .unwrap();
+        assert_eq!(
+            count_page.cell(0, 0).unwrap().bytes(),
+            1_200_i64.to_be_bytes()
+        );
         let drop_review = bridge
             .stage_ddl_change(BridgeDdlChangeRequest {
                 session_id: session.clone(),
@@ -508,17 +610,29 @@ async fn bridge_clickhouse_open_probe_fetch() {
             })
             .unwrap();
         bridge.pump(create).unwrap();
+        execute(
+            &bridge,
+            session.clone(),
+            "CREATE TABLE IF NOT EXISTS bridge_stream_import (id Int64, name String) \
+             ENGINE = MergeTree ORDER BY id",
+        );
         let database = bridge
             .refresh_catalog(session.clone(), None)
             .unwrap()
             .into_iter()
             .find(|node| node.name == "default")
             .unwrap();
-        let table = bridge
+        let tables = bridge
             .refresh_catalog(session.clone(), Some(database.id_bytes))
-            .unwrap()
-            .into_iter()
+            .unwrap();
+        let table = tables
+            .iter()
             .find(|node| node.name == "bridge_optimize")
+            .unwrap()
+            .clone();
+        let import_table = tables
+            .into_iter()
+            .find(|node| node.name == "bridge_stream_import")
             .unwrap();
         let optimize = bridge
             .stage_table_operation(BridgeTableOperationRequest {
@@ -541,6 +655,48 @@ async fn bridge_clickhouse_open_probe_fetch() {
                 "bridge_optimize".into(),
             )
             .unwrap();
+        let import_path = std::env::temp_dir().join(format!(
+            "tablerock-clickhouse-stream-import-{}.csv",
+            std::process::id()
+        ));
+        let mut import_csv = String::from("id,name\n");
+        for row in 0..501_u64 {
+            import_csv.push_str(&format!("{row},row-{row}\n"));
+        }
+        std::fs::write(&import_path, import_csv).unwrap();
+        let import_preview = bridge
+            .preview_csv_import(import_path.to_string_lossy().into_owned())
+            .unwrap();
+        let import_review = bridge
+            .stage_csv_import(BridgeCsvImportRequest {
+                session_id: session.clone(),
+                catalog_node_id: import_table.id_bytes,
+                path: import_path.to_string_lossy().into_owned(),
+                mapped_columns: vec!["id".into(), "name".into()],
+                mapped_types: vec!["signed".into(), "text".into()],
+                expected_fingerprint: import_preview.fingerprint,
+                now_ms: 2_000,
+            })
+            .unwrap();
+        std::fs::remove_file(import_path).unwrap();
+        let import_operation = bridge
+            .start_csv_import_apply(import_review.token_id, 2_001, session.clone())
+            .unwrap();
+        let import_outcome = wait_csv_import(&bridge, import_operation.clone());
+        assert_eq!(import_outcome.phase, "completed", "{import_outcome:?}");
+        assert_eq!(import_outcome.applied_rows, 501);
+        assert!(bridge.dismiss_csv_import(import_operation).unwrap());
+        let count_page = execute(
+            &bridge,
+            session.clone(),
+            "SELECT count() FROM bridge_stream_import",
+        );
+        let count_page = ResultPage::decode_v1(
+            &count_page,
+            PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
+        )
+        .unwrap();
+        assert_eq!(count_page.cell(0, 0).unwrap().bytes(), 501_u64.to_be_bytes());
         let (page, _) = probe_and_fetch(&bridge, session, 0);
         let engine = ResultPage::decode_v1(
             &page,

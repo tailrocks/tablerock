@@ -16,15 +16,16 @@ mod runtime;
 
 pub use bridge::{
     ApplyOutcome, BridgeBrowseFilter, BridgeBrowseSort, BridgeConnectionTestReport,
-    BridgeCsvImportPreview, BridgeCsvImportProgress, BridgeCsvImportReview, BridgeCsvRow,
-    BridgeDdlChangeRequest, BridgeDdlChangeReview, BridgeEventBatch, BridgeEventRecord,
-    BridgeHistoryItem, BridgeNamedParameterPlan, BridgeNativeWindowIntent, BridgePostgresToolProbe,
-    BridgePostgresToolRequest, BridgePostgresToolStatus, BridgeProfileDraft, BridgeProfileGroup,
-    BridgeProfileItem, BridgeProfileOrderItem, BridgeQueryParameter, BridgeReconnectAttempt,
-    BridgeReconnectPlan, BridgeRedisSubscriptionStatus, BridgeRoleChangeRequest,
-    BridgeRoleChangeReview, BridgeRoleMembership, BridgeRolePrivilege, BridgeRoleSnapshot,
-    BridgeSavedFilterPreset, BridgeSavedQueryItem, BridgeSessionHealth, BridgeSessionIntent,
-    BridgeSqlFile, BridgeTableOperationRequest, BridgeTableOperationReview, BridgeWorkspaceTab,
-    CancelOutcome, OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
+    BridgeCsvImportPreview, BridgeCsvImportProgress, BridgeCsvImportRequest, BridgeCsvImportReview,
+    BridgeCsvRow, BridgeDdlChangeRequest, BridgeDdlChangeReview, BridgeEventBatch,
+    BridgeEventRecord, BridgeHistoryItem, BridgeNamedParameterPlan, BridgeNativeWindowIntent,
+    BridgePostgresToolProbe, BridgePostgresToolRequest, BridgePostgresToolStatus,
+    BridgeProfileDraft, BridgeProfileGroup, BridgeProfileItem, BridgeProfileOrderItem,
+    BridgeQueryParameter, BridgeReconnectAttempt, BridgeReconnectPlan,
+    BridgeRedisSubscriptionStatus, BridgeRoleChangeRequest, BridgeRoleChangeReview,
+    BridgeRoleMembership, BridgeRolePrivilege, BridgeRoleSnapshot, BridgeSavedFilterPreset,
+    BridgeSavedQueryItem, BridgeSessionHealth, BridgeSessionIntent, BridgeSqlFile,
+    BridgeTableOperationRequest, BridgeTableOperationReview, BridgeWorkspaceTab, CancelOutcome,
+    OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
 };
 pub use error::BridgeError;
