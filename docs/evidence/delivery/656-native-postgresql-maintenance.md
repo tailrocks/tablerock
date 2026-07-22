@@ -17,12 +17,17 @@ operation while implying server cancellation.
 The former synchronous table-operation apply entry point is removed, leaving
 start/status/dismiss as the single execution architecture. Disconnect rejects
 while a table operation is running. A bounded registry evicts terminal entries
-only.
+only. Bridge shutdown also counts running table operations; because reviewed
+DDL has no cancellation seam, cancel-active shutdown drains them until the
+deadline and reports the operation as active instead of falsely claiming the
+runtime stopped.
 
 ## Verification
 
 ```text
 mise exec -- cargo check -p tablerock-ffi --locked
+mise exec -- cargo test -p tablerock-ffi --test conformance \
+  shutdown_counts_uncancellable_table_operations_until_terminal --locked
 mise exec -- cargo test -p tablerock-ffi --test bridge_real \
   bridge_postgres_open_probe_fetch_shutdown --locked -- --ignored --nocapture
 mise exec -- bash scripts/generate-swift-bindings.sh

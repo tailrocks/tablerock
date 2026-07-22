@@ -58,6 +58,7 @@ struct FixedPageSession {
     page: ResultPage,
     health_failure: Option<AdapterFailureClass>,
     statements: StatementLog,
+    ddl_gate: Option<Arc<AtomicBool>>,
 }
 
 impl DriverSession for FixedPageSession {
@@ -166,6 +167,21 @@ impl DriverSession for FixedPageSession {
     fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>> {
         let engine = self.engine;
         Box::pin(async move { Ok(ServerDescribe::new(engine, "test", 0)) })
+    }
+
+    fn execute_ddl_plan<'a>(
+        &'a self,
+        _plan: tablerock_core::DdlPlan,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        let gate = self.ddl_gate.clone();
+        Box::pin(async move {
+            if let Some(gate) = gate {
+                while !gate.load(Ordering::SeqCst) {
+                    tokio::task::yield_now().await;
+                }
+            }
+            Ok(())
+        })
     }
 
     fn clickhouse_relation_columns<'a>(
@@ -333,6 +349,7 @@ fn open_fixed_observed(
                 page,
                 health_failure: None,
                 statements,
+                ddl_gate: None,
             }),
         )
         .map(|session| (session, observer))
@@ -1374,6 +1391,71 @@ fn shutdown_graceful_with_completed_work() {
 }
 
 #[test]
+fn shutdown_counts_uncancellable_table_operations_until_terminal() {
+    let (_, page) = sample_page(Engine::PostgreSql, 182, &[1]);
+    let bridge = TableRockBridge::new_for_test();
+    let gate = Arc::new(AtomicBool::new(false));
+    let session = bridge
+        .open_driver_session(
+            Engine::PostgreSql,
+            Box::new(FixedPageSession {
+                engine: Engine::PostgreSql,
+                page,
+                health_failure: None,
+                statements: Arc::new(Mutex::new(Vec::new())),
+                ddl_gate: Some(Arc::clone(&gate)),
+            }),
+        )
+        .unwrap();
+    let database = bridge
+        .refresh_catalog(session.clone(), None)
+        .unwrap()
+        .remove(0);
+    let schema = bridge
+        .refresh_catalog(session.clone(), Some(database.id_bytes))
+        .unwrap()
+        .remove(0);
+    let table = bridge
+        .refresh_catalog(session.clone(), Some(schema.id_bytes))
+        .unwrap()
+        .remove(0);
+    let review = bridge
+        .stage_table_operation(BridgeTableOperationRequest {
+            session_id: session.clone(),
+            catalog_node_id: table.id_bytes,
+            kind: "analyze".into(),
+            new_name: String::new(),
+            now_ms: 1_000,
+        })
+        .unwrap();
+    let operation_id = bridge
+        .start_table_operation(review.token_id, session, 1_001, "users".into())
+        .unwrap();
+
+    let draining = bridge.shutdown(true, 0).unwrap();
+    assert_eq!(draining.active_operations, 1);
+    assert!(draining.core.contains("Draining"));
+
+    gate.store(true, Ordering::SeqCst);
+    for _ in 0..100 {
+        if bridge
+            .table_operation_status(operation_id.clone())
+            .unwrap()
+            .phase
+            != "running"
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(
+        bridge.table_operation_status(operation_id).unwrap().phase,
+        "succeeded"
+    );
+    assert_eq!(bridge.shutdown(false, 1_000).unwrap().active_operations, 0);
+}
+
+#[test]
 fn open_params_redaction_and_oversized_page_decode() {
     let params = tablerock_ffi::OpenParams {
         engine: "postgresql".into(),
@@ -1532,6 +1614,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
                 page: reconnect_page,
                 health_failure: None,
                 statements: Arc::new(Mutex::new(Vec::new())),
+                ddl_gate: None,
             }),
         )
         .unwrap();
@@ -1614,6 +1697,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
                 page: metadata_page,
                 health_failure: None,
                 statements: Arc::new(Mutex::new(Vec::new())),
+                ddl_gate: None,
             }),
         )
         .unwrap();
@@ -1641,6 +1725,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
                 page: private_page,
                 health_failure: None,
                 statements: Arc::new(Mutex::new(Vec::new())),
+                ddl_gate: None,
             }),
         )
         .unwrap();
@@ -1935,6 +2020,7 @@ fn open_profile_requires_persistence_and_loads_literals() {
                 page: copy_page,
                 health_failure: None,
                 statements: Arc::new(Mutex::new(Vec::new())),
+                ddl_gate: None,
             }),
         )
         .unwrap();
@@ -2157,6 +2243,7 @@ fn session_health_projects_authentication_as_terminal_state() {
                 page,
                 health_failure: Some(AdapterFailureClass::Authentication),
                 statements: Arc::new(Mutex::new(Vec::new())),
+                ddl_gate: None,
             }),
         )
         .unwrap();

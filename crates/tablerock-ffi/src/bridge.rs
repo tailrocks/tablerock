@@ -7346,6 +7346,15 @@ impl TableRockBridge {
                 let _ = driver.cancel(operation_id).await;
             })?;
         }
+        let initial_table_operation_active = self
+            .table_operations
+            .lock()
+            .map_err(|_| {
+                BridgeError::rejected("table-operation-lock", "operation registry poisoned")
+            })?
+            .values()
+            .filter(|task| task.phase == "running")
+            .count() as u32;
         let mut guard = self
             .inner
             .lock()
@@ -7364,7 +7373,8 @@ impl TableRockBridge {
         .saturating_add(initial_tool_active)
         .saturating_add(initial_subscription_active)
         .saturating_add(initial_import_active)
-        .saturating_add(initial_export_active);
+        .saturating_add(initial_export_active)
+        .saturating_add(initial_table_operation_active);
         let deadline = Duration::from_millis(deadline_ms);
         let started = Instant::now();
         while inner.service.core().active_operations() > 0 && started.elapsed() < deadline {
@@ -7434,7 +7444,20 @@ impl TableRockBridge {
                 })?
                 .values()
                 .any(|task| task.phase == "running" || task.phase == "cancel_requested");
-            if !tool_active && !subscription_active && !import_active && !export_active {
+            let table_operation_active = self
+                .table_operations
+                .lock()
+                .map_err(|_| {
+                    BridgeError::rejected("table-operation-lock", "operation registry poisoned")
+                })?
+                .values()
+                .any(|task| task.phase == "running");
+            if !tool_active
+                && !subscription_active
+                && !import_active
+                && !export_active
+                && !table_operation_active
+            {
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -7480,6 +7503,15 @@ impl TableRockBridge {
             .values()
             .filter(|task| task.phase == "running" || task.phase == "cancel_requested")
             .count() as u32;
+        let table_operation_active = self
+            .table_operations
+            .lock()
+            .map_err(|_| {
+                BridgeError::rejected("table-operation-lock", "operation registry poisoned")
+            })?
+            .values()
+            .filter(|task| task.phase == "running")
+            .count() as u32;
         let active = inner
             .service
             .core()
@@ -7487,7 +7519,8 @@ impl TableRockBridge {
             .saturating_add(tool_active)
             .saturating_add(subscription_active)
             .saturating_add(import_active)
-            .saturating_add(export_active);
+            .saturating_add(export_active)
+            .saturating_add(table_operation_active);
         let core = if active == 0 {
             let _ = self.runtime.block_on(inner.service.complete_shutdown());
             "Stopped".to_owned()
