@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/tablerock-cli", "crates/tablerock-core", "crates/tablerock-engine", "crates/tablerock-ffi", "crates/tablerock-files", "crates/tablerock-persistence", "crates/tablerock-tui"]
+members = ["crates/tablerock-cli", "crates/tablerock-core", "crates/tablerock-engine", "crates/tablerock-ffi", "crates/tablerock-files", "crates/tablerock-persistence", "crates/tablerock-tools", "crates/tablerock-tui"]
 resolver = "3"
 
 [workspace.package]

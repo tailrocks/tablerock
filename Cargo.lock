@@ -4648,6 +4648,7 @@ dependencies = [
  "tablerock-engine",
  "tablerock-files",
  "tablerock-persistence",
+ "tablerock-tools",
  "tablerock-tui",
  "termrock",
  "testcontainers",
@@ -4695,6 +4696,7 @@ dependencies = [
  "tablerock-engine",
  "tablerock-files",
  "tablerock-persistence",
+ "tablerock-tools",
  "testcontainers",
  "tokio",
  "uniffi",
@@ -4716,6 +4718,13 @@ dependencies = [
  "tokio",
  "turso",
  "zeroize",
+]
+
+[[package]]
+name = "tablerock-tools"
+version = "0.1.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]
