@@ -84,6 +84,10 @@ display text, and raw bytes as hexadecimal. Structured JSON values also expose
 a deterministic key-sorted tree. Tree decoding fails closed above 64 KiB,
 1,024 nodes, or 64 levels; malformed/non-JSON structured values keep the text
 and hex views without presenting a false tree.
+At the minimum supported workbench width, the result grid and inspector both
+retain operable widths; selecting a cell must never collapse the inspector out
+of the accessibility hierarchy. Sheets contain their independently actionable
+controls rather than replacing those descendants with one container element.
 
 Table-like object tabs expose ordered server sorting, typed parameterized
 filters, and an explicitly labeled raw-WHERE editor. Raw fragments are capped
