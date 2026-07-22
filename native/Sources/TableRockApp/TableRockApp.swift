@@ -238,6 +238,9 @@ extension WorkbenchBackend {
   func profileDraft(id: Data) throws -> WorkbenchProfileDraft {
     try scriptedUnavailable("draft")
   }
+  func parseConnectionUrl(_ input: String) throws -> WorkbenchProfileDraft {
+    try scriptedUnavailable("connection-url")
+  }
   func saveProfile(_ draft: WorkbenchProfileDraft) throws -> Data {
     try scriptedUnavailable("save")
   }
@@ -406,6 +409,17 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   func profileDraft(id: Data) throws -> WorkbenchProfileDraft {
     guard let draft = profileDrafts[id] else { return try scriptedUnavailable("draft") }
     return draft
+  }
+
+  func parseConnectionUrl(_ input: String) throws -> WorkbenchProfileDraft {
+    guard scenario == "success", input == "postgresql://fixture:secret@db.example:5433/app"
+    else { return try scriptedUnavailable("connection-url") }
+    return WorkbenchProfileDraft(
+      idBytes: nil, revision: 0, engine: "postgresql", name: "", group: "",
+      environment: "", host: "db.example", port: "5433", database: "app",
+      username: "fixture", passwordSource: "keychain", passwordValue: "secret",
+      passwordReference: nil, hasStoredPassword: false, plaintextAcknowledged: false,
+      tlsMode: "off", safetyMode: "confirm_writes")
   }
 
   func saveProfile(_ draft: WorkbenchProfileDraft) throws -> Data {
@@ -622,6 +636,9 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
   }
   func profileDraft(id: Data) throws -> WorkbenchProfileDraft {
     try bridge.getProfileDraft(profileId: id).workbench
+  }
+  func parseConnectionUrl(_ input: String) throws -> WorkbenchProfileDraft {
+    try bridge.parseConnectionUrlDraft(input: input).workbench
   }
   func saveProfile(_ draft: WorkbenchProfileDraft) throws -> Data {
     try bridge.saveProfile(draft: draft.bridgeRecord)
@@ -1651,6 +1668,13 @@ struct ProfilePasswordPrompt: Identifiable {
   var id: String { profile.idBytes.base64EncodedString() + ":" + action.rawValue }
 }
 
+struct ConnectionUrlImport: Identifiable {
+  let id = UUID()
+  var input = ""
+  var error: String?
+  var parsing = false
+}
+
 private func catalogNodeKey(_ id: Data) -> String {
   "node:" + id.map { String(format: "%02x", $0) }.joined()
 }
@@ -1785,6 +1809,7 @@ final class BridgeModel {
   var pendingRemoval: WorkbenchProfileItem?
   var groupDialog: ProfileGroupDialog?
   var passwordPrompt: ProfilePasswordPrompt?
+  var connectionUrlImport: ConnectionUrlImport?
   var pendingGroupRemoval: String?
   var profileSections: [ProfileSection] {
     var order = profileGroups.map(\.name)
@@ -3791,6 +3816,26 @@ final class BridgeModel {
       ))
   }
 
+  func beginConnectionUrlImport() {
+    connectionUrlImport = ConnectionUrlImport()
+  }
+
+  func parseConnectionUrl(_ input: String) async -> String? {
+    guard let client else { return "Bridge unavailable" }
+    profileActionError = nil
+    do {
+      var draft = ProfileEditorDraft(try await client.parseConnectionUrl(input))
+      draft.name = draft.database.isEmpty ? draft.host : "\(draft.database) on \(draft.host)"
+      connectionUrlImport = nil
+      editorDraft = draft
+      return nil
+    } catch {
+      let message = "URL rejected: \(error)"
+      connectionUrlImport?.error = message
+      return message
+    }
+  }
+
   func editProfile(_ item: WorkbenchProfileItem) async {
     guard let client else { return }
     profileActionError = nil
@@ -4572,6 +4617,12 @@ struct ContentView: View {
             } label: {
               Label("New group", systemImage: "folder.badge.plus")
             }
+            Button {
+              model.beginConnectionUrlImport()
+            } label: {
+              Label("Import URL", systemImage: "link.badge.plus")
+            }
+            .accessibilityIdentifier("profile.url-import")
             Spacer()
           }
           .padding(8)
@@ -4785,6 +4836,11 @@ struct ContentView: View {
     .sheet(item: $model.passwordPrompt) { prompt in
       ProfilePasswordSheet(profile: prompt.profile) { password in
         await model.submitPasswordPrompt(prompt, password: password)
+      }
+    }
+    .sheet(item: $model.connectionUrlImport) { importState in
+      ConnectionUrlImportSheet(initial: importState) { input in
+        await model.parseConnectionUrl(input)
       }
     }
     .sheet(isPresented: $model.historyPresented) {
@@ -7032,6 +7088,63 @@ struct ProfileGroupEditorSheet: View {
   }
 }
 
+struct ConnectionUrlImportSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  @State private var input: String
+  @State private var error: String?
+  @State private var parsing = false
+  let onReview: (String) async -> String?
+
+  init(initial: ConnectionUrlImport, onReview: @escaping (String) async -> String?) {
+    _input = State(initialValue: initial.input)
+    _error = State(initialValue: initial.error)
+    self.onReview = onReview
+  }
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section("Database URL") {
+          SecureField("postgresql://user:password@host/database", text: $input)
+            .accessibilityIdentifier("profile.url-import.input")
+          Text("Parsed fields are reviewed before saving. Passwords default to macOS Keychain.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        if let error {
+          Section("Validation") {
+            Text(error)
+              .foregroundStyle(.red)
+              .textSelection(.enabled)
+              .accessibilityIdentifier("profile.url-import.error")
+          }
+        }
+      }
+      .formStyle(.grouped)
+      .navigationTitle("Import Connection URL")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Review") {
+            parsing = true
+            Task {
+              error = await onReview(input)
+              parsing = false
+            }
+          }
+          .accessibilityIdentifier("profile.url-import.review")
+          .keyboardShortcut(.defaultAction)
+          .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || parsing)
+        }
+      }
+    }
+    .frame(minWidth: 520, minHeight: 300)
+    .interactiveDismissDisabled(parsing)
+  }
+}
+
 struct ProfileEditorSheet: View {
   @Environment(\.dismiss) private var dismiss
   @State private var draft: ProfileEditorDraft
@@ -7065,6 +7178,7 @@ struct ProfileEditorSheet: View {
             Text("ClickHouse").tag("clickhouse")
             Text("Redis").tag("redis")
           }
+          .accessibilityIdentifier("profile.editor.engine")
           TextField("Name", text: $draft.name)
             .accessibilityIdentifier("profile.editor.name")
           TextField("Group", text: $draft.group)
@@ -7082,12 +7196,16 @@ struct ProfileEditorSheet: View {
         }
         Section("Connection") {
           TextField("Host", text: $draft.host)
+            .accessibilityIdentifier("profile.editor.host")
           TextField("Port", text: $draft.port)
+            .accessibilityIdentifier("profile.editor.port")
           TextField(
             draft.engine == "redis" ? "Logical database" : "Default database",
             text: $draft.database
           )
+          .accessibilityIdentifier("profile.editor.database")
           TextField("Username", text: $draft.username)
+            .accessibilityIdentifier("profile.editor.username")
         }
         Section("Credentials") {
           Picker("Password storage", selection: $draft.passwordSource) {
@@ -7097,6 +7215,7 @@ struct ProfileEditorSheet: View {
             Text("1Password reference").tag("onepassword")
             Text("macOS Keychain").tag("keychain")
           }
+          .accessibilityIdentifier("profile.editor.password-source")
           if draft.passwordSource == "dangerous_plaintext" {
             SecureField(
               draft.hasStoredPassword ? "Re-enter stored password" : "Password",

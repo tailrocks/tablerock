@@ -503,6 +503,7 @@ How to read an evidence document:
 - 627 — [Per-client screen status](delivery/627-screen-client-status.md)
 - 628 — [Screen-manifest workflow expansion](delivery/628-screen-manifest-workflow-expansion.md)
 - 629 — [Native control-dispatch ownership](delivery/629-native-control-dispatch-ownership.md)
+- 630 — [Native connection URL import](delivery/630-native-connection-url-import.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

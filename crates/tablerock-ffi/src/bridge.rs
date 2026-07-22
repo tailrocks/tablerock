@@ -22,7 +22,8 @@ use tablerock_core::{
     RedisKeyKind, ResultStore, ResultStoreLimits, Revision, SavedFilterCondition,
     SavedFilterLibrary, SavedFilterPreset, SecretSource, SecretSourceKind, ServiceCoordinator,
     ServiceLimits, SessionId, ShutdownMode, StatementText, SupportBundle, SupportPlatform,
-    TlsPolicy, copy_cell_from_page, format_copy_table, is_safe_preset_name, reconnect_decision,
+    TlsPolicy, copy_cell_from_page, format_copy_table, is_safe_preset_name, parse_connection_url,
+    reconnect_decision,
 };
 use tablerock_engine::{
     AdapterFailureClass, BrowseDialect, BrowsePlan, CatalogRequest, ClickHouseCompression,
@@ -551,6 +552,43 @@ impl TableRockBridge {
         profile_id: Vec<u8>,
     ) -> Result<BridgeProfileDraft, BridgeError> {
         catch_entry(|| self.get_profile_draft_inner(profile_id))
+    }
+
+    /// Parses a database URL through the shared Rust safety policy and returns
+    /// an unsaved, reviewable profile draft. A URL password is never persisted
+    /// by this operation; native presentation must choose its destination.
+    pub fn parse_connection_url_draft(
+        &self,
+        input: String,
+    ) -> Result<BridgeProfileDraft, BridgeError> {
+        catch_entry(|| {
+            let parsed = parse_connection_url(&input)
+                .map_err(|error| BridgeError::rejected("connection-url", error.to_string()))?;
+            let has_password = parsed.password.is_some();
+            Ok(BridgeProfileDraft {
+                id_bytes: None,
+                revision: 0,
+                engine: engine_label(parsed.engine).to_owned(),
+                name: String::new(),
+                group: String::new(),
+                environment: String::new(),
+                host: parsed.host,
+                port: parsed.port.to_string(),
+                database: parsed.database,
+                username: parsed.username,
+                password_source: if has_password { "keychain" } else { "prompt" }.to_owned(),
+                password_value: parsed.password.unwrap_or_default(),
+                password_reference: None,
+                has_stored_password: false,
+                plaintext_acknowledged: false,
+                tls_mode: match parsed.tls {
+                    tablerock_core::ConnectionUrlTls::Off => "off",
+                    tablerock_core::ConnectionUrlTls::Required => "verify_full",
+                }
+                .to_owned(),
+                safety_mode: "confirm_writes".to_owned(),
+            })
+        })
     }
 
     /// Creates or revision-checked replaces one saved profile.

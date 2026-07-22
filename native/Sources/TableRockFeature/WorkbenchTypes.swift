@@ -4,6 +4,7 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func listProfiles() throws -> [WorkbenchProfileItem]
   func searchProfiles(_ search: String?) throws -> [WorkbenchProfileItem]
   func profileDraft(id: Data) throws -> WorkbenchProfileDraft
+  func parseConnectionUrl(_ input: String) throws -> WorkbenchProfileDraft
   func saveProfile(_ draft: WorkbenchProfileDraft) throws -> Data
   func deleteProfile(id: Data, revision: UInt64) throws
   func testProfile(id: Data, secretOverride: Data?) throws -> WorkbenchConnectionTestReport

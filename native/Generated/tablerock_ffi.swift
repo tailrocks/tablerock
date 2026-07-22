@@ -756,6 +756,13 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func panicProbe() throws
 
     /**
+     * Parses a database URL through the shared Rust safety policy and returns
+     * an unsaved, reviewable profile draft. A URL password is never persisted
+     * by this operation; native presentation must choose its destination.
+     */
+    func parseConnectionUrlDraft(input: String) throws  -> BridgeProfileDraft
+
+    /**
      * Returns the saved profile's shared reconnect decision for one attempt.
      */
     func planSessionReconnect(sessionId: Data, attempt: UInt32, authenticationStopped: Bool) throws  -> BridgeReconnectPlan
@@ -1334,6 +1341,21 @@ open func panicProbe()throws   {try rustCallWithError(FfiConverterTypeBridgeErro
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
+}
+
+    /**
+     * Parses a database URL through the shared Rust safety policy and returns
+     * an unsaved, reviewable profile draft. A URL password is never persisted
+     * by this operation; native presentation must choose its destination.
+     */
+open func parseConnectionUrlDraft(input: String)throws  -> BridgeProfileDraft  {
+    return try  FfiConverterTypeBridgeProfileDraft_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_parse_connection_url_draft(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(input),uniffiCallStatus
+    )
+})
 }
 
     /**
@@ -5006,6 +5028,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_panic_probe() != 16474) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_parse_connection_url_draft() != 53976) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_plan_session_reconnect() != 29748) {

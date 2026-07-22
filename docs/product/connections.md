@@ -85,6 +85,16 @@ saves (or uses a temporary session) and opens the workbench.
 **Temporary connection**: connect without persisting profile or secret;
 nothing durable remains after quit.
 
+### Connection URL import
+
+Both clients accept PostgreSQL, ClickHouse HTTP(S), and Redis URLs only through
+the shared Rust parser. Import never connects or saves immediately. It opens a
+review step containing independently editable connection fields, safety mode,
+TLS intent, and password destination. A password carried by the URL defaults
+to macOS Keychain in the native client; the operator may instead choose any
+supported source before Save. Empty, oversized, malformed, control-character,
+and hostile schemes fail closed without network or persistence access.
+
 ## Both clients
 
 | | TUI | Native macOS |
@@ -105,6 +115,7 @@ nothing durable remains after quit.
 
 ## Deferred to later phases
 
-1Password field mapping, custom CA/mTLS editing UI. URL import, external URL
-open, SSH tunnel, and startup actions landed (see delivery evidence 260–274,
-289, 296). Each extension is tracked in the parity ledger.
+1Password field mapping and custom CA/mTLS editing UI. URL import, external URL
+open, SSH tunnel, and startup actions landed in dependency-ordered checkpoints
+(see delivery evidence 260–274, 289, 296, 630). Each extension is tracked in
+the parity ledger.

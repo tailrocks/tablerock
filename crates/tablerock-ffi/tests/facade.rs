@@ -141,6 +141,31 @@ fn panic_probe_is_contained() {
 }
 
 #[test]
+fn connection_url_becomes_unsaved_review_draft() {
+    let bridge = TableRockBridge::new_for_test();
+    let draft = bridge
+        .parse_connection_url_draft(
+            "postgresql://fixture:secret@db.example:5433/app?sslmode=require".into(),
+        )
+        .unwrap();
+
+    assert_eq!(draft.engine, "postgresql");
+    assert_eq!(draft.host, "db.example");
+    assert_eq!(draft.port, "5433");
+    assert_eq!(draft.database, "app");
+    assert_eq!(draft.username, "fixture");
+    assert_eq!(draft.password_source, "keychain");
+    assert_eq!(draft.password_value, "secret");
+    assert_eq!(draft.tls_mode, "verify_full");
+    assert!(draft.id_bytes.is_none());
+
+    let error = bridge
+        .parse_connection_url_draft("javascript://example.invalid".into())
+        .unwrap_err();
+    assert!(matches!(error, BridgeError::Rejected { code, .. } if code == "connection-url"));
+}
+
+#[test]
 fn open_submit_pump_fetch_shutdown_round_trip() {
     let result_id = ResultId::from_parts(IdParts::new(0, 99).unwrap()).unwrap();
     let page = sample_page(result_id);

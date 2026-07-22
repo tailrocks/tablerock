@@ -55,6 +55,30 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testConnectionUrlImportRequiresReviewBeforeSave() throws {
+    let app = launch(scenario: "success")
+
+    let importButton = app.buttons["profile.url-import"]
+    XCTAssertTrue(importButton.waitForExistence(timeout: 10))
+    importButton.click()
+
+    let input = app.secureTextFields["profile.url-import.input"]
+    XCTAssertTrue(input.waitForExistence(timeout: 10))
+    input.click()
+    input.typeText("postgresql://fixture:secret@db.example:5433/app")
+    app.buttons["profile.url-import.review"].click()
+
+    let name = app.textFields["profile.editor.name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    XCTAssertEqual(name.value as? String, "app on db.example")
+    XCTAssertEqual(app.textFields["profile.editor.host"].value as? String, "db.example")
+    XCTAssertEqual(app.textFields["profile.editor.port"].value as? String, "5433")
+    XCTAssertEqual(app.textFields["profile.editor.database"].value as? String, "app")
+    XCTAssertEqual(app.textFields["profile.editor.username"].value as? String, "fixture")
+    XCTAssertTrue(app.buttons["profile.editor.save"].isEnabled)
+  }
+
+  @MainActor
   func testTemporaryConnectionOpensThroughUserControl() throws {
     let app = launch(scenario: "success")
 

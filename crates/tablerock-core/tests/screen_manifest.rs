@@ -68,7 +68,11 @@ fn canonical_screen_manifest_is_structurally_closed() {
         .skip(1)
         .map(|line| {
             let columns: Vec<_> = line.split('|').collect();
-            assert_eq!(columns.len(), 3, "client-status row must have three columns");
+            assert_eq!(
+                columns.len(),
+                3,
+                "client-status row must have three columns"
+            );
             let statuses = (columns[1], columns[2]);
             for status in [statuses.0, statuses.1] {
                 assert!(
@@ -178,7 +182,10 @@ fn canonical_screen_manifest_is_structurally_closed() {
             }
             "tui" => {
                 assert_ne!(tui_status, "n/a", "{id} marks applicable TUI n/a");
-                assert_eq!(native_status, "n/a", "{id} marks inapplicable native active");
+                assert_eq!(
+                    native_status, "n/a",
+                    "{id} marks inapplicable native active"
+                );
             }
             "native" => {
                 assert_eq!(tui_status, "n/a", "{id} marks inapplicable TUI active");
@@ -260,7 +267,10 @@ fn canonical_screen_manifest_is_structurally_closed() {
         "client-status inventory disagrees with screen manifest"
     );
     for id in client_status.keys() {
-        assert!(ids.contains(id), "client-status row has unknown screen id {id}");
+        assert!(
+            ids.contains(id),
+            "client-status row has unknown screen id {id}"
+        );
     }
     for product_doc in PRODUCT_DOCS {
         assert!(
