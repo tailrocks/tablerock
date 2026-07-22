@@ -44,7 +44,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Isolate Cargo target directory
-        run: echo "CARGO_TARGET_DIR=${RUNNER_TEMP}/tablerock-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}" >> "$GITHUB_ENV"
+        run: echo "CARGO_TARGET_DIR=${RUNNER_TEMP}/tablerock-target-${GITHUB_JOB}" >> "$GITHUB_ENV"
       - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
       - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         with:
@@ -52,7 +52,7 @@ jobs:
           disable_annotations: "false"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          install_args: rust github:nextest-rs/nextest
+          install_args: rust aqua:nextest-rs/nextest/cargo-nextest
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache Cargo registry
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -62,9 +62,16 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/src
             ~/.cargo/git/db
-          key: cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-
+            cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-${{ github.job }}-
+      - &cargo-target-cache
+        name: Cache Cargo target
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/tablerock-target-${{ github.job }}
+          key: cargo-target-v2-${{ matrix.config.lane }}-${{ runner.os }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: cargo-target-v2-${{ matrix.config.lane }}-${{ runner.os }}-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', '**/Cargo.toml', '**/Cargo.lock') }}-
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -100,7 +107,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Isolate Cargo target directory
-        run: echo "CARGO_TARGET_DIR=${RUNNER_TEMP}/tablerock-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}" >> "$GITHUB_ENV"
+        run: echo "CARGO_TARGET_DIR=${RUNNER_TEMP}/tablerock-target-${GITHUB_JOB}" >> "$GITHUB_ENV"
       - uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1.1.0
       - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         with:
@@ -108,7 +115,7 @@ jobs:
           disable_annotations: "false"
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
-          install_args: rust github:nextest-rs/nextest
+          install_args: rust aqua:nextest-rs/nextest/cargo-nextest
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache Cargo registry
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -121,6 +128,7 @@ jobs:
           key: cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ matrix.config.lane }}-${{ runner.os }}-
+      - *cargo-target-cache
       - name: Real-server integration tests
         run: cargo nextest run -j 4 -p tablerock-engine --test postgres_real --test clickhouse_real --test redis_real --test three_engine_overlap_real --locked
       - name: UniFFI bridge real-server conformance

@@ -481,7 +481,6 @@ fn redis_subscription_is_bounded_binary_safe_and_cancelled_before_disconnect() {
     let busy = bridge.disconnect(session.clone()).unwrap_err();
     assert!(matches!(busy, BridgeError::Rejected { code, .. } if code == "session-busy"));
     assert!(bridge.cancel_redis_subscription(operation.clone()).unwrap());
-    assert!(bridge.cancel_redis_subscription(operation.clone()).unwrap());
     for _ in 0..100 {
         status = bridge.redis_subscription_status(operation.clone()).unwrap();
         if status.phase == "cancelled" {

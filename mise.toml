@@ -3,7 +3,7 @@
 "github:kbknapp/cargo-outdated" = "0.19.0"
 "github:rhysd/actionlint" = "v1.7.12"
 "github:rustsec/rustsec" = "cargo-audit/v0.22.2"
-"github:nextest-rs/nextest" = "cargo-nextest-0.9.140"
+"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.140"
 "github:yonaskolb/XcodeGen" = "2.46.0"
 
 [settings]
