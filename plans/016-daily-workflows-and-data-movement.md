@@ -109,6 +109,10 @@ Standard suites + Docker engine suites; new import/export tests live in
 
 - 245 file foundation + loaded export + CSV parse + result sections
 - 246 saved filters + reconnect policy
+- 644 constant-memory CSV batch scanner: 64 KiB read buffer, bounded cells and
+  row batches, exact UTF-8/CSV positions, formula neutrality, and cancellation
+  between batches. Native async apply/progress ownership remains the next
+  checkpoint.
 
 ## Residual (non-blocking)
 

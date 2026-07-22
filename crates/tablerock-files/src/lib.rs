@@ -8,9 +8,9 @@
 mod csv_import;
 
 pub use csv_import::{
-    CsvFileError, CsvImportError, CsvTable, CsvValueType, csv_to_insert_changes,
-    csv_to_typed_insert_changes, is_formula_like, parse_csv, read_csv_bounded,
-    validate_insert_batch_size,
+    CsvFileError, CsvImportError, CsvStreamLimits, CsvStreamSummary, CsvTable, CsvValueType,
+    csv_to_insert_changes, csv_to_typed_insert_changes, is_formula_like, parse_csv,
+    read_csv_bounded, stream_csv_batches, validate_insert_batch_size,
 };
 
 use std::{

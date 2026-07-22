@@ -10,7 +10,7 @@
 use std::{
     fmt,
     fs::File,
-    io::{self, Read},
+    io::{self, BufReader, Read},
     path::Path,
 };
 
@@ -27,6 +27,7 @@ pub enum CsvFileError {
     InvalidUtf8 { byte_offset: usize },
     Io(io::Error),
     Parse(CsvImportError),
+    Cancelled,
 }
 
 impl fmt::Display for CsvFileError {
@@ -41,7 +42,303 @@ impl fmt::Display for CsvFileError {
             }
             Self::Io(error) => write!(formatter, "csv file I/O: {error}"),
             Self::Parse(error) => error.fmt(formatter),
+            Self::Cancelled => formatter.write_str("csv import cancelled"),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CsvStreamLimits {
+    pub max_file_bytes: u64,
+    pub max_rows: u64,
+    pub max_cell_bytes: usize,
+    pub batch_rows: usize,
+}
+
+impl CsvStreamLimits {
+    pub fn new(
+        max_file_bytes: u64,
+        max_rows: u64,
+        max_cell_bytes: usize,
+        batch_rows: usize,
+    ) -> Result<Self, CsvFileError> {
+        if max_file_bytes == 0 || max_rows == 0 || max_cell_bytes == 0 || batch_rows == 0 {
+            return Err(CsvFileError::InvalidLimit);
+        }
+        Ok(Self {
+            max_file_bytes,
+            max_rows,
+            max_cell_bytes,
+            batch_rows,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CsvStreamSummary {
+    pub file_bytes: u64,
+    pub rows: u64,
+    pub formula_like_cells: u64,
+}
+
+/// Scan CSV with bounded resident memory and deliver complete row batches.
+///
+/// The callback sees the validated header once with every batch. Returning
+/// `false` requests cancellation before the next batch. No SQL or engine
+/// behavior exists in this layer.
+pub fn stream_csv_batches(
+    path: &Path,
+    limits: CsvStreamLimits,
+    mut on_batch: impl FnMut(&[String], &[Vec<String>], CsvStreamSummary) -> bool,
+) -> Result<CsvStreamSummary, CsvFileError> {
+    let metadata = path.metadata().map_err(CsvFileError::Io)?;
+    if metadata.len() > limits.max_file_bytes {
+        return Err(CsvFileError::TooLarge {
+            actual: metadata.len(),
+            limit: limits.max_file_bytes,
+        });
+    }
+    let mut reader = BufReader::new(File::open(path).map_err(CsvFileError::Io)?);
+    let mut parser = StreamingCsvParser::new(limits);
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = reader.read(&mut buffer).map_err(CsvFileError::Io)?;
+        if read == 0 {
+            break;
+        }
+        parser.consume(&buffer[..read], &mut on_batch)?;
+    }
+    parser.finish(&mut on_batch)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StreamingFieldState {
+    Start,
+    Unquoted,
+    Quoted,
+    AfterQuote,
+}
+
+struct StreamingCsvParser {
+    limits: CsvStreamLimits,
+    state: StreamingFieldState,
+    field: Vec<u8>,
+    row: Vec<String>,
+    headers: Option<Vec<String>>,
+    batch: Vec<Vec<String>>,
+    line: u64,
+    column: u32,
+    bytes: u64,
+    field_start: u64,
+    rows: u64,
+    formula_like_cells: u64,
+}
+
+impl StreamingCsvParser {
+    fn new(limits: CsvStreamLimits) -> Self {
+        Self {
+            limits,
+            state: StreamingFieldState::Start,
+            field: Vec::new(),
+            row: Vec::new(),
+            headers: None,
+            batch: Vec::with_capacity(limits.batch_rows),
+            line: 1,
+            column: 1,
+            bytes: 0,
+            field_start: 0,
+            rows: 0,
+            formula_like_cells: 0,
+        }
+    }
+
+    fn error(&self, message: impl Into<String>) -> CsvFileError {
+        CsvFileError::Parse(CsvImportError {
+            row: u32::try_from(self.line).unwrap_or(u32::MAX),
+            column: self.column,
+            message: message.into(),
+        })
+    }
+
+    fn push_byte(&mut self, byte: u8) -> Result<(), CsvFileError> {
+        if self.field.len() >= self.limits.max_cell_bytes {
+            return Err(self.error(format!("cell exceeds {} bytes", self.limits.max_cell_bytes)));
+        }
+        self.field.push(byte);
+        Ok(())
+    }
+
+    fn finish_field(&mut self) -> Result<(), CsvFileError> {
+        if self.row.len() >= MAX_CSV_COLUMNS {
+            return Err(self.error(format!("exceeds max columns {MAX_CSV_COLUMNS}")));
+        }
+        let field = String::from_utf8(std::mem::take(&mut self.field)).map_err(|error| {
+            CsvFileError::InvalidUtf8 {
+                byte_offset: usize::try_from(self.field_start)
+                    .unwrap_or(usize::MAX)
+                    .saturating_add(error.utf8_error().valid_up_to()),
+            }
+        })?;
+        self.row.push(field);
+        self.field_start = self.bytes;
+        Ok(())
+    }
+
+    fn finish_row(
+        &mut self,
+        on_batch: &mut impl FnMut(&[String], &[Vec<String>], CsvStreamSummary) -> bool,
+    ) -> Result<(), CsvFileError> {
+        self.finish_field()?;
+        let row = std::mem::take(&mut self.row);
+        if let Some(headers) = &self.headers {
+            if row.len() != headers.len() {
+                return Err(self.error(format!(
+                    "column count {} does not match header count {}",
+                    row.len(),
+                    headers.len()
+                )));
+            }
+            self.rows = self.rows.saturating_add(1);
+            if self.rows > self.limits.max_rows {
+                return Err(self.error(format!("exceeds max_rows {}", self.limits.max_rows)));
+            }
+            self.formula_like_cells = self
+                .formula_like_cells
+                .saturating_add(row.iter().filter(|cell| is_formula_like(cell)).count() as u64);
+            self.batch.push(row);
+            if self.batch.len() == self.limits.batch_rows {
+                self.flush(on_batch)?;
+            }
+        } else {
+            if row.is_empty() || row.iter().any(String::is_empty) {
+                return Err(self.error("headers must be non-empty"));
+            }
+            if row.iter().collect::<std::collections::BTreeSet<_>>().len() != row.len() {
+                return Err(self.error("headers must be unique"));
+            }
+            self.headers = Some(row);
+        }
+        Ok(())
+    }
+
+    fn flush(
+        &mut self,
+        on_batch: &mut impl FnMut(&[String], &[Vec<String>], CsvStreamSummary) -> bool,
+    ) -> Result<(), CsvFileError> {
+        if self.batch.is_empty() {
+            return Ok(());
+        }
+        let summary = self.summary();
+        if !on_batch(
+            self.headers.as_deref().expect("header precedes data rows"),
+            &self.batch,
+            summary,
+        ) {
+            return Err(CsvFileError::Cancelled);
+        }
+        self.batch.clear();
+        Ok(())
+    }
+
+    fn summary(&self) -> CsvStreamSummary {
+        CsvStreamSummary {
+            file_bytes: self.bytes,
+            rows: self.rows,
+            formula_like_cells: self.formula_like_cells,
+        }
+    }
+
+    fn consume(
+        &mut self,
+        bytes: &[u8],
+        on_batch: &mut impl FnMut(&[String], &[Vec<String>], CsvStreamSummary) -> bool,
+    ) -> Result<(), CsvFileError> {
+        for &byte in bytes {
+            self.bytes = self.bytes.saturating_add(1);
+            if self.bytes > self.limits.max_file_bytes {
+                return Err(CsvFileError::TooLarge {
+                    actual: self.bytes,
+                    limit: self.limits.max_file_bytes,
+                });
+            }
+            match (self.state, byte) {
+                (StreamingFieldState::Start, b'"') => self.state = StreamingFieldState::Quoted,
+                (StreamingFieldState::Start, b',') => {
+                    self.finish_field()?;
+                    self.column = self.column.saturating_add(1);
+                }
+                (StreamingFieldState::Start, b'\n') => {
+                    self.finish_row(on_batch)?;
+                    self.line = self.line.saturating_add(1);
+                    self.column = 1;
+                }
+                (StreamingFieldState::Start, b'\r') => {}
+                (StreamingFieldState::Start, value) => {
+                    self.push_byte(value)?;
+                    self.state = StreamingFieldState::Unquoted;
+                }
+                (StreamingFieldState::Unquoted, b'"') => {
+                    return Err(self.error("quote inside unquoted field"));
+                }
+                (StreamingFieldState::Unquoted, b',') => {
+                    self.finish_field()?;
+                    self.column = self.column.saturating_add(1);
+                    self.state = StreamingFieldState::Start;
+                }
+                (StreamingFieldState::Unquoted, b'\n') => {
+                    self.finish_row(on_batch)?;
+                    self.line = self.line.saturating_add(1);
+                    self.column = 1;
+                    self.state = StreamingFieldState::Start;
+                }
+                (StreamingFieldState::Unquoted, b'\r') => {}
+                (StreamingFieldState::Unquoted, value) => self.push_byte(value)?,
+                (StreamingFieldState::Quoted, b'"') => {
+                    self.state = StreamingFieldState::AfterQuote;
+                }
+                (StreamingFieldState::Quoted, value) => self.push_byte(value)?,
+                (StreamingFieldState::AfterQuote, b'"') => {
+                    self.push_byte(b'"')?;
+                    self.state = StreamingFieldState::Quoted;
+                }
+                (StreamingFieldState::AfterQuote, b',') => {
+                    self.finish_field()?;
+                    self.column = self.column.saturating_add(1);
+                    self.state = StreamingFieldState::Start;
+                }
+                (StreamingFieldState::AfterQuote, b'\n') => {
+                    self.finish_row(on_batch)?;
+                    self.line = self.line.saturating_add(1);
+                    self.column = 1;
+                    self.state = StreamingFieldState::Start;
+                }
+                (StreamingFieldState::AfterQuote, b'\r') => {}
+                (StreamingFieldState::AfterQuote, _) => {
+                    return Err(self.error("unexpected content after closing quote"));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(
+        mut self,
+        on_batch: &mut impl FnMut(&[String], &[Vec<String>], CsvStreamSummary) -> bool,
+    ) -> Result<CsvStreamSummary, CsvFileError> {
+        if self.state == StreamingFieldState::Quoted {
+            return Err(self.error("unclosed quote"));
+        }
+        if self.state != StreamingFieldState::Start
+            || !self.field.is_empty()
+            || !self.row.is_empty()
+        {
+            self.finish_row(on_batch)?;
+        }
+        if self.headers.is_none() {
+            return Err(self.error("empty csv"));
+        }
+        self.flush(on_batch)?;
+        Ok(self.summary())
     }
 }
 
@@ -598,5 +895,72 @@ mod tests {
     fn oversized_cell_and_malformed_quote() {
         assert!(parse_csv("a\nhello\n", 10, 3).is_err());
         assert!(parse_csv("a\n\"unclosed\n", 10, 64).is_err());
+    }
+
+    #[test]
+    fn streaming_scanner_bounds_batches_across_large_files() {
+        let dir = std::env::temp_dir().join(format!(
+            "tablerock-csv-stream-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("large.csv");
+        let mut source = String::from("id,payload\n");
+        for index in 0..80_000 {
+            source.push_str(&format!("{index},\"literal,{index}=value\"\n"));
+        }
+        assert!(source.len() > 2 * 1024 * 1024);
+        std::fs::write(&path, source.as_bytes()).unwrap();
+
+        let mut batches = 0_usize;
+        let mut largest = 0_usize;
+        let limits = CsvStreamLimits::new(8 * 1024 * 1024, 100_000, 128, 257).unwrap();
+        let summary = stream_csv_batches(&path, limits, |headers, rows, progress| {
+            assert_eq!(headers, ["id", "payload"]);
+            assert!(progress.rows > 0);
+            batches += 1;
+            largest = largest.max(rows.len());
+            true
+        })
+        .unwrap();
+        assert_eq!(summary.rows, 80_000);
+        assert_eq!(largest, 257);
+        assert!(batches > 300);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn streaming_scanner_cancels_between_batches_and_reports_utf8_offset() {
+        let dir = std::env::temp_dir().join(format!(
+            "tablerock-csv-cancel-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("cancel.csv");
+        std::fs::write(&path, b"id,name\n1,Ada\n2,Grace\n3,Linus\n").unwrap();
+        let limits = CsvStreamLimits::new(1024, 10, 64, 2).unwrap();
+        let mut calls = 0;
+        assert!(matches!(
+            stream_csv_batches(&path, limits, |_, rows, progress| {
+                calls += 1;
+                assert_eq!(rows.len(), 2);
+                assert_eq!(progress.rows, 2);
+                false
+            }),
+            Err(CsvFileError::Cancelled)
+        ));
+        assert_eq!(calls, 1);
+
+        let invalid = dir.join("invalid.csv");
+        std::fs::write(&invalid, b"id\n1\n\xff\n").unwrap();
+        assert!(matches!(
+            stream_csv_batches(&invalid, limits, |_, _, _| true),
+            Err(CsvFileError::InvalidUtf8 { byte_offset: 5 })
+        ));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
