@@ -79,6 +79,16 @@ Loaded rows/bytes, elapsed time, truncation, operation state
 (queued/running/streaming/done/cancelled/failed), pending-change count, and
 focus-aware action hints. Operation states are text, never color alone.
 
+## Quick switcher
+
+The workbench command opens one searchable native surface over current saved
+connections, open query and object tabs, loaded catalog objects, and saved
+queries. Exact and prefix title matches rank before contains matches; favorites
+and pinned objects remain visibly distinguished. Activating a result rechecks
+its stable identity against current model state before navigation, so stale
+results fail closed. Search, list navigation, Return activation, and Escape
+dismissal remain keyboard reachable.
+
 ## Both clients
 
 | | TUI | Native macOS |

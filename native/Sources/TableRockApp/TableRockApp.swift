@@ -177,6 +177,7 @@ private struct WorkbenchActions {
   let run: () -> Void
   let cancel: () -> Void
   let refresh: () -> Void
+  let quickSwitch: () -> Void
 }
 
 private struct WorkbenchActionsKey: FocusedValueKey {
@@ -205,6 +206,9 @@ private struct WorkbenchCommands: Commands {
       Button("Refresh Catalog") { actions?.refresh() }
         .keyboardShortcut("r", modifiers: [.command, .shift])
         .disabled(actions?.canRefresh != true)
+      Divider()
+      Button("Quick Switcher…") { actions?.quickSwitch() }
+        .keyboardShortcut("o", modifiers: [.command, .shift])
     }
   }
 }
@@ -1690,6 +1694,22 @@ struct ExternalUrlReview: Identifiable {
   let matchedProfile: WorkbenchProfileItem?
 }
 
+enum QuickSwitcherTarget {
+  case profile(Data)
+  case queryTab(UUID)
+  case objectTab(UUID)
+  case catalog(String)
+  case savedQuery(Int64)
+}
+
+struct QuickSwitcherItem: Identifiable {
+  let id: String
+  let title: String
+  let subtitle: String
+  let favorite: Bool
+  let target: QuickSwitcherTarget
+}
+
 private func catalogNodeKey(_ id: Data) -> String {
   "node:" + id.map { String(format: "%02x", $0) }.joined()
 }
@@ -1826,6 +1846,8 @@ final class BridgeModel {
   var passwordPrompt: ProfilePasswordPrompt?
   var connectionUrlImport: ConnectionUrlImport?
   var externalUrlReview: ExternalUrlReview?
+  var quickSwitcherPresented = false
+  var quickSwitcherSearch = ""
   private var externalUrlFixtureConsumed = false
   var pendingGroupRemoval: String?
   var profileSections: [ProfileSection] {
@@ -3917,6 +3939,79 @@ final class BridgeModel {
       ))
   }
 
+  func showQuickSwitcher() async {
+    quickSwitcherSearch = ""
+    await refreshSavedQueries()
+    quickSwitcherPresented = true
+  }
+
+  var quickSwitcherItems: [QuickSwitcherItem] {
+    var items: [QuickSwitcherItem] = []
+    items += profiles.map {
+      QuickSwitcherItem(
+        id: "profile:\($0.idBytes.hexEncodedString())", title: $0.name,
+        subtitle: "Connection · \($0.engine) · \($0.host ?? ""):\($0.port ?? "")",
+        favorite: $0.favorite, target: .profile($0.idBytes))
+    }
+    items += queryTabs.map {
+      QuickSwitcherItem(
+        id: "query:\($0.id.uuidString)", title: $0.title, subtitle: "Query tab",
+        favorite: false, target: .queryTab($0.id))
+    }
+    items += objectTabs.map {
+      QuickSwitcherItem(
+        id: "object:\($0.id.uuidString)", title: $0.title,
+        subtitle: $0.pinned ? "Pinned object tab" : "Preview object tab",
+        favorite: $0.pinned, target: .objectTab($0.id))
+    }
+    items += (catalogSnapshot ?? []).filter { !$0.expandable }.map {
+      QuickSwitcherItem(
+        id: "catalog:\($0.idBytes.hexEncodedString())", title: $0.name,
+        subtitle: "Catalog · \($0.kind.replacingOccurrences(of: "_", with: " "))",
+        favorite: false, target: .catalog(catalogNodeKey($0.idBytes)))
+    }
+    items += savedQueries.map {
+      QuickSwitcherItem(
+        id: "saved:\($0.queryId)", title: $0.name, subtitle: "Saved query · \($0.engine)",
+        favorite: false, target: .savedQuery($0.queryId))
+    }
+    let query = quickSwitcherSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return items
+      .filter {
+        query.isEmpty || $0.title.lowercased().contains(query)
+          || $0.subtitle.lowercased().contains(query)
+      }
+      .sorted {
+        if $0.favorite != $1.favorite { return $0.favorite && !$1.favorite }
+        let lhsExact = $0.title.lowercased() == query
+        let rhsExact = $1.title.lowercased() == query
+        if lhsExact != rhsExact { return lhsExact }
+        let lhsPrefix = $0.title.lowercased().hasPrefix(query)
+        let rhsPrefix = $1.title.lowercased().hasPrefix(query)
+        if lhsPrefix != rhsPrefix { return lhsPrefix }
+        return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+      }
+  }
+
+  func activateQuickSwitcherItem(_ item: QuickSwitcherItem) async {
+    quickSwitcherPresented = false
+    switch item.target {
+    case .profile(let id):
+      if let profile = profiles.first(where: { $0.idBytes == id }) { _ = await connect(profile) }
+    case .queryTab(let id):
+      if let tab = queryTabs.first(where: { $0.id == id }) { selectQueryTab(tab) }
+    case .objectTab(let id):
+      if let tab = objectTabs.first(where: { $0.id == id }) { selectObjectTab(tab) }
+    case .catalog(let key):
+      await openCatalogObject(nodeKey: key)
+    case .savedQuery(let id):
+      if let query = savedQueries.first(where: { $0.queryId == id }) {
+        restoreSavedQuery(query)
+        selectedWorkbenchKind = "query"
+      }
+    }
+  }
+
   func editProfile(_ item: WorkbenchProfileItem) async {
     guard let client else { return }
     profileActionError = nil
@@ -4928,6 +5023,9 @@ struct ContentView: View {
     .sheet(item: $model.externalUrlReview) { review in
       ExternalUrlConfirmationSheet(review: review)
     }
+    .sheet(isPresented: $model.quickSwitcherPresented) {
+      QuickSwitcherSheet()
+    }
     .sheet(isPresented: $model.historyPresented) {
       HistorySheet()
     }
@@ -5045,7 +5143,8 @@ struct ContentView: View {
         canRefresh: model.sessionHex != nil && !model.isRunning && !model.isCatalogRefreshing,
         run: { Task { await model.runQuery() } },
         cancel: { Task { await model.cancel() } },
-        refresh: { Task { await model.browse() } }
+        refresh: { Task { await model.browse() } },
+        quickSwitch: { Task { await model.showQuickSwitcher() } }
       )
     )
     .toolbar(id: "workbench") {
@@ -7278,6 +7377,59 @@ struct ExternalUrlConfirmationSheet: View {
       }
     }
     .frame(minWidth: 560, minHeight: 320)
+  }
+}
+
+struct QuickSwitcherSheet: View {
+  @Environment(BridgeModel.self) private var model
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    @Bindable var model = model
+    NavigationStack {
+      List(model.quickSwitcherItems) { item in
+        Button {
+          Task { await model.activateQuickSwitcherItem(item) }
+        } label: {
+          HStack(spacing: 10) {
+            Image(systemName: item.favorite ? "star.fill" : "arrow.right.circle")
+              .foregroundStyle(item.favorite ? .yellow : .secondary)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(item.title)
+              Text(item.subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+          }
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("quick-switch.item.\(item.id)")
+      }
+      .overlay {
+        if model.quickSwitcherItems.isEmpty {
+          ContentUnavailableView.search(text: model.quickSwitcherSearch)
+        }
+      }
+      .searchable(text: $model.quickSwitcherSearch, prompt: "Connections, tabs, objects, queries")
+      .onSubmit(of: .search) {
+        guard let first = model.quickSwitcherItems.first else { return }
+        Task { await model.activateQuickSwitcherItem(first) }
+      }
+      .onExitCommand {
+        model.quickSwitcherPresented = false
+        dismiss()
+      }
+      .navigationTitle("Quick Switcher")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") {
+            model.quickSwitcherPresented = false
+            dismiss()
+          }
+        }
+      }
+    }
+    .frame(minWidth: 560, minHeight: 420)
   }
 }
 

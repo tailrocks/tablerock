@@ -354,6 +354,29 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testQuickSwitcherSearchesAndActivatesCurrentItems() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_QUERY_TABS": "1"])
+    let editor = app.textViews["query.editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    XCTAssertTrue((editor.value as? String ?? "").contains("SELECT 2"))
+
+    app.typeKey("o", modifierFlags: [.command, .shift])
+    let search = app.searchFields.firstMatch
+    XCTAssertTrue(search.waitForExistence(timeout: 10))
+    search.click()
+    search.typeText("Users")
+    let users = app.staticTexts["Users"]
+    XCTAssertTrue(users.waitForExistence(timeout: 5))
+    users.click()
+
+    let switched = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value CONTAINS 'SELECT 1'"), object: editor)
+    XCTAssertEqual(XCTWaiter.wait(for: [switched], timeout: 10), .completed)
+  }
+
+  @MainActor
   func testLoadedResultExportsThroughUserControls() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)
