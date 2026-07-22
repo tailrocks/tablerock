@@ -24,11 +24,10 @@ without unrelated nextest process contention. Test input volume, assertions,
 ## Verification
 
 ```text
-for run_index in $(seq 1 20); do
-  cargo test -p tablerock-cli --test pty_lifecycle \
-    high_rate_mouse_and_resize_do_not_starve_terminal_quit -- --exact
-done
-# 20 repetitions passed
+cargo nextest run -p tablerock-cli --test pty_lifecycle \
+  -E 'test(high_rate_mouse_and_resize_do_not_starve_terminal_quit)' \
+  --stress-count 20
+# Summary: 20/20 stress run iterations passed
 
 cargo nextest list --workspace --locked
 # configuration accepted; PTY binary selected by exact binary_id override
