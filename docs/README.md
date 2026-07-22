@@ -53,7 +53,8 @@ Product and process:
 - [Redis reference analysis (Zedis)](architecture/redis-reference-zedis.md)
 - [Functional parity ledger](architecture/functional-parity-ledger.md) — the
   feature baseline every release is measured against.
-- [Canonical screen manifest](architecture/screen-manifest.tsv) and
+- [Canonical screen manifest](architecture/screen-manifest.tsv),
+  [per-client status](architecture/screen-client-status.tsv), and
   [state profiles](architecture/screen-state-profiles.tsv) — machine-readable
   interface traceability and honest open replay gaps.
 

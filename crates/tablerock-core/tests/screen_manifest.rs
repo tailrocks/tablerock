@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 const MANIFEST: &str = include_str!("../../../docs/architecture/screen-manifest.tsv");
 const STATE_PROFILES: &str = include_str!("../../../docs/architecture/screen-state-profiles.tsv");
+const CLIENT_STATUS: &str = include_str!("../../../docs/architecture/screen-client-status.tsv");
 
 const PRODUCT_DOCS: &[&str] = &[
     "docs/product/clickhouse.md",
@@ -62,6 +63,23 @@ fn links(value: &str) -> BTreeMap<&str, &str> {
 #[test]
 fn canonical_screen_manifest_is_structurally_closed() {
     let root = repository_root();
+    let client_status: BTreeMap<_, _> = CLIENT_STATUS
+        .lines()
+        .skip(1)
+        .map(|line| {
+            let columns: Vec<_> = line.split('|').collect();
+            assert_eq!(columns.len(), 3, "client-status row must have three columns");
+            let statuses = (columns[1], columns[2]);
+            for status in [statuses.0, statuses.1] {
+                assert!(
+                    ["proven", "partial", "missing", "n/a"].contains(&status),
+                    "{} has bad client status {status}",
+                    columns[0]
+                );
+            }
+            (columns[0], statuses)
+        })
+        .collect();
     let profiles: BTreeMap<_, _> = STATE_PROFILES
         .lines()
         .skip(1)
@@ -107,6 +125,10 @@ fn canonical_screen_manifest_is_structurally_closed() {
         };
         assert!(id.starts_with("TR-SCR-"), "unstable screen id {id}");
         assert!(ids.insert(*id), "duplicate screen id {id}");
+        let (tui_status, native_status) = client_status
+            .get(id)
+            .copied()
+            .unwrap_or_else(|| panic!("{id} lacks client-specific status"));
         for (name, value) in [
             ("surface", surface),
             ("kind", kind),
@@ -149,6 +171,57 @@ fn canonical_screen_manifest_is_structurally_closed() {
                 .unwrap_or_else(|| panic!("{id} lacks {owner} test link"));
             assert_path(&root, path, id);
         }
+        match *clients {
+            "both" => {
+                assert_ne!(tui_status, "n/a", "{id} marks applicable TUI n/a");
+                assert_ne!(native_status, "n/a", "{id} marks applicable native n/a");
+            }
+            "tui" => {
+                assert_ne!(tui_status, "n/a", "{id} marks applicable TUI n/a");
+                assert_eq!(native_status, "n/a", "{id} marks inapplicable native active");
+            }
+            "native" => {
+                assert_eq!(tui_status, "n/a", "{id} marks inapplicable TUI active");
+                assert_ne!(native_status, "n/a", "{id} marks applicable native n/a");
+            }
+            _ => unreachable!(),
+        }
+        for (owner, owner_status) in [("tui", tui_status), ("native", native_status)] {
+            if owner_status == "missing" || owner_status == "n/a" {
+                assert_eq!(
+                    implementation[owner], "n/a",
+                    "{id} {owner} status is {owner_status} but implementation is linked"
+                );
+                assert_eq!(
+                    tests[owner], "n/a",
+                    "{id} {owner} status is {owner_status} but test is linked"
+                );
+            } else {
+                assert_ne!(
+                    implementation[owner], "n/a",
+                    "{id} {owner} status is {owner_status} without implementation"
+                );
+                assert_ne!(
+                    tests[owner], "n/a",
+                    "{id} {owner} status is {owner_status} without test"
+                );
+            }
+        }
+        let applicable_statuses: Vec<_> = [tui_status, native_status]
+            .into_iter()
+            .filter(|value| *value != "n/a")
+            .collect();
+        let expected_status = if applicable_statuses.contains(&"missing") {
+            "missing"
+        } else if applicable_statuses.iter().all(|value| *value == "proven") {
+            "proven"
+        } else {
+            "partial"
+        };
+        assert_eq!(
+            *status, expected_status,
+            "{id} aggregate status disagrees with client-specific status"
+        );
         if *clients == "both" && *status != "missing" {
             assert_ne!(
                 implementation["tui"], "n/a",
@@ -181,6 +254,14 @@ fn canonical_screen_manifest_is_structurally_closed() {
         rows >= 38,
         "canonical surface inventory unexpectedly shrank"
     );
+    assert_eq!(
+        client_status.len(),
+        ids.len(),
+        "client-status inventory disagrees with screen manifest"
+    );
+    for id in client_status.keys() {
+        assert!(ids.contains(id), "client-status row has unknown screen id {id}");
+    }
     for product_doc in PRODUCT_DOCS {
         assert!(
             covered_product_docs.contains(product_doc),
