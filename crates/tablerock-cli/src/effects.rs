@@ -3892,11 +3892,6 @@ async fn load_activity(
     session_id_hex: String,
     context_revision: u64,
 ) -> Message {
-    use tablerock_core::{
-        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
-    };
-    use tablerock_engine::DriverPageRequest;
-
     let session_id = match session_id_hex.parse::<SessionId>() {
         Ok(id) => id,
         Err(_) => {
@@ -3918,90 +3913,39 @@ async fn load_activity(
             reason: FailureProjection::Label("session not registered".into()),
         });
     };
-    // Fixed query only; no cancel/terminate in this checkpoint (permission gates next).
-    let sql = "SELECT pid::text, \
-            usename::text, \
-            application_name::text, \
-            state::text, \
-            left(query, 80) \
-     FROM pg_catalog.pg_stat_activity \
-     WHERE backend_type = 'client backend' \
-     ORDER BY backend_start DESC NULLS LAST \
-     LIMIT 32";
-    let statement = match StatementText::new(sql) {
-        Ok(s) => s,
-        Err(e) => {
-            return Message::Engine(tablerock_tui::EngineMsg::ActivityFailed {
-                request_token,
-                context_revision,
-                reason: FailureProjection::Label(e.to_string()),
-            });
-        }
-    };
-    let limits = PageLimits::new(32, 8, 256 * 1024, 8 * 1024);
-    let mut stream = match session
-        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
-            statement,
-            parameters: Vec::new(),
-            limits,
-            max_cell_bytes: 8 * 1024,
-        })
-        .await
-    {
-        Ok(s) => s,
-        Err(e) => {
-            return Message::Engine(tablerock_tui::EngineMsg::ActivityFailed {
-                request_token,
-                context_revision,
-                reason: FailureProjection::Label(project_activity_load_error(&e.to_string())),
-            });
-        }
-    };
-    let identity = PageIdentity::new(
-        ResultId::from_parts(IdParts::new(1, 9_005).unwrap()).unwrap(),
-        Revision::INITIAL,
-        CoreEngine::PostgreSql,
-    );
-    let page = match stream.next_page(identity, 0).await {
-        Ok(Some(p)) => p,
-        Ok(None) => {
-            return Message::Engine(tablerock_tui::EngineMsg::ActivitySnapshot {
-                request_token,
-                context_revision,
-                lines: vec!["(no client backends)".into()],
-            });
-        }
-        Err(e) => {
-            return Message::Engine(tablerock_tui::EngineMsg::ActivityFailed {
-                request_token,
-                context_revision,
-                reason: FailureProjection::Label(project_activity_load_error(&e.to_string())),
-            });
-        }
-    };
-    let mut lines = Vec::new();
-    for row in 0..page.envelope().row_count() {
-        let mut parts = Vec::new();
-        for col in 0..page.envelope().column_count().min(5) {
-            let t = page
-                .cell(row, col)
-                .map(|c| {
-                    if c.is_null() {
-                        "∅".into()
-                    } else {
-                        String::from_utf8_lossy(c.bytes()).into_owned()
-                    }
-                })
-                .unwrap_or_default();
-            parts.push(t);
-        }
-        lines.push(parts.join(" · "));
+    match session.postgres_activity().await {
+        Ok(rows) => Message::Engine(tablerock_tui::EngineMsg::ActivitySnapshot {
+            request_token,
+            context_revision,
+            lines: if rows.is_empty() {
+                vec!["(no client backends)".into()]
+            } else {
+                rows.into_iter()
+                    .map(|row| {
+                        format!(
+                            "{} · {} · {} · {} · {}",
+                            row.pid(),
+                            row.user(),
+                            row.application(),
+                            row.state(),
+                            row.query_preview()
+                        )
+                    })
+                    .collect()
+            },
+        }),
+        Err(error) => Message::Engine(tablerock_tui::EngineMsg::ActivityFailed {
+            request_token,
+            context_revision,
+            reason: FailureProjection::Label(
+                if error.class() == tablerock_engine::AdapterFailureClass::PermissionDenied {
+                    "permission denied: cannot read pg_stat_activity".into()
+                } else {
+                    error.to_string()
+                },
+            ),
+        }),
     }
-    Message::Engine(tablerock_tui::EngineMsg::ActivitySnapshot {
-        request_token,
-        context_revision,
-        lines,
-    })
 }
 
 async fn scan_redis_keys(
@@ -5071,11 +5015,6 @@ async fn signal_backend(
     kind: String,
     pid: i32,
 ) -> Message {
-    use tablerock_core::{
-        Engine as CoreEngine, IdParts, PageIdentity, PageLimits, ResultId, Revision, StatementText,
-    };
-    use tablerock_engine::{DriverPageRequest, FilterValue};
-
     let session_id = match session_id_hex.parse::<SessionId>() {
         Ok(id) => id,
         Err(_) => {
@@ -5097,10 +5036,9 @@ async fn signal_backend(
             reason: FailureProjection::Label("session not registered".into()),
         });
     };
-    // Fixed function vocabulary only; pid is a bound integer parameter.
-    let sql = match kind.as_str() {
-        "cancel" => "SELECT pg_catalog.pg_cancel_backend($1::int4)::text",
-        "terminate" => "SELECT pg_catalog.pg_terminate_backend($1::int4)::text",
+    let terminate = match kind.as_str() {
+        "cancel" => false,
+        "terminate" => true,
         other => {
             return Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
                 request_token,
@@ -5109,101 +5047,28 @@ async fn signal_backend(
             });
         }
     };
-    let statement = match StatementText::new(sql) {
-        Ok(s) => s,
-        Err(e) => {
-            return Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
-                request_token,
-                context_revision,
-                reason: FailureProjection::Label(e.to_string()),
-            });
-        }
-    };
-    let limits = PageLimits::new(1, 1, 1024, 64);
-    let mut stream = match session
-        .start_page_stream(DriverPageRequest::PostgreSqlStatement {
-            statement,
-            parameters: vec![FilterValue::Integer(i64::from(pid))],
-            limits,
-            max_cell_bytes: 64,
-        })
-        .await
-    {
-        Ok(s) => s,
-        Err(e) => {
-            return Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
-                request_token,
-                context_revision,
-                reason: FailureProjection::Label(e.to_string()),
-            });
-        }
-    };
-    let identity = PageIdentity::new(
-        ResultId::from_parts(IdParts::new(1, 9_006).unwrap()).unwrap(),
-        Revision::INITIAL,
-        CoreEngine::PostgreSql,
-    );
-    match stream.next_page(identity, 0).await {
-        Ok(Some(page)) => {
-            let ack = page
-                .cell(0, 0)
-                .map(|c| {
-                    let s = String::from_utf8_lossy(c.bytes());
-                    s == "t" || s == "true"
-                })
-                .unwrap_or(false);
-            Message::Engine(tablerock_tui::EngineMsg::BackendSignalDone {
-                request_token,
-                context_revision,
-                kind,
-                pid,
-                acknowledged: ack,
-            })
-        }
-        Ok(None) => Message::Engine(tablerock_tui::EngineMsg::BackendSignalDone {
+    match session.signal_postgres_backend(terminate, pid).await {
+        Ok(acknowledged) => Message::Engine(tablerock_tui::EngineMsg::BackendSignalDone {
             request_token,
             context_revision,
             kind,
             pid,
-            acknowledged: false,
+            acknowledged,
         }),
-        Err(e) => Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
+        Err(error) => Message::Engine(tablerock_tui::EngineMsg::BackendSignalFailed {
             request_token,
             context_revision,
-            reason: FailureProjection::Label(project_activity_permission_error(
-                &kind,
-                &e.to_string(),
-            )),
+            reason: FailureProjection::Label(
+                if error.class() == tablerock_engine::AdapterFailureClass::PermissionDenied {
+                    match kind.as_str() {
+                        "terminate" => "permission denied: cannot terminate backends".into(),
+                        _ => "permission denied: cannot cancel backends".into(),
+                    }
+                } else {
+                    error.to_string()
+                },
+            ),
         }),
-    }
-}
-
-/// Stable, non-secret label for activity cancel/terminate privilege failures.
-fn project_activity_permission_error(kind: &str, raw: &str) -> String {
-    let lower = raw.to_ascii_lowercase();
-    if lower.contains("permission denied")
-        || lower.contains("insufficient_privilege")
-        || lower.contains("42501")
-        || lower.contains("pg_signal_backend")
-    {
-        match kind {
-            "terminate" => "permission denied: cannot terminate backends".into(),
-            _ => "permission denied: cannot cancel backends".into(),
-        }
-    } else {
-        raw.to_owned()
-    }
-}
-
-fn project_activity_load_error(raw: &str) -> String {
-    let lower = raw.to_ascii_lowercase();
-    if lower.contains("permission denied")
-        || lower.contains("insufficient_privilege")
-        || lower.contains("42501")
-    {
-        "permission denied: cannot read pg_stat_activity".into()
-    } else {
-        raw.to_owned()
     }
 }
 

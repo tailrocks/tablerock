@@ -3,7 +3,7 @@
 use std::{
     fs,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -16,7 +16,7 @@ use tablerock_core::{
 };
 use tablerock_engine::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
-    DriverSession, ServerDescribe, SessionHealth,
+    DriverSession, PostgresActivityRow, ServerDescribe, SessionHealth,
 };
 use tablerock_ffi::{BridgeError, SubmitSpec, TableRockBridge};
 
@@ -24,6 +24,79 @@ struct OnePageStream {
     page: Option<ResultPage>,
     fail: bool,
     hold: bool,
+}
+
+struct ActivitySession {
+    signals: Arc<Mutex<Vec<(bool, i32)>>>,
+}
+
+impl DriverSession for ActivitySession {
+    fn engine(&self) -> Engine {
+        Engine::PostgreSql
+    }
+
+    fn start_page_stream<'a>(
+        &'a self,
+        _request: DriverPageRequest,
+    ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::PostgreSql,
+                AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
+    fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
+        Box::pin(async { CancelDispatch::Unsupported })
+    }
+
+    fn health<'a>(&'a self) -> DriverFuture<'a, Result<SessionHealth, AdapterError>> {
+        Box::pin(async { Ok(SessionHealth::new(Engine::PostgreSql, true, 0)) })
+    }
+
+    fn catalog<'a>(
+        &'a self,
+        _request: tablerock_engine::CatalogRequest,
+    ) -> DriverFuture<'a, Result<tablerock_engine::CatalogSubtree, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::PostgreSql,
+                AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
+    fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>> {
+        Box::pin(async { Ok(ServerDescribe::new(Engine::PostgreSql, "test", 0)) })
+    }
+
+    fn postgres_activity<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<Vec<PostgresActivityRow>, AdapterError>> {
+        Box::pin(async {
+            Ok(vec![PostgresActivityRow::new(
+                42,
+                "fixture".into(),
+                "TableRock".into(),
+                "active".into(),
+                "SELECT bounded preview".into(),
+            )])
+        })
+    }
+
+    fn signal_postgres_backend<'a>(
+        &'a self,
+        terminate: bool,
+        pid: i32,
+    ) -> DriverFuture<'a, Result<bool, AdapterError>> {
+        self.signals.lock().unwrap().push((terminate, pid));
+        Box::pin(async { Ok(true) })
+    }
+
+    fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 impl DriverPageStream for OnePageStream {
@@ -172,6 +245,43 @@ fn connection_url_becomes_unsaved_review_draft() {
         .parse_connection_url_draft("javascript://example.invalid".into())
         .unwrap_err();
     assert!(matches!(error, BridgeError::Rejected { code, .. } if code == "connection-url"));
+}
+
+#[test]
+fn postgres_activity_and_signals_use_typed_driver_contract() {
+    let bridge = TableRockBridge::new_for_test();
+    let signals = Arc::new(Mutex::new(Vec::new()));
+    let session = bridge
+        .open_driver_session(
+            Engine::PostgreSql,
+            Box::new(ActivitySession {
+                signals: Arc::clone(&signals),
+            }),
+        )
+        .unwrap();
+
+    let rows = bridge.postgres_activity(session.clone()).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].pid, 42);
+    assert_eq!(rows[0].user, "fixture");
+    assert_eq!(rows[0].query_preview, "SELECT bounded preview");
+
+    let cancel = bridge
+        .signal_postgres_backend(session.clone(), "cancel".into(), 42)
+        .unwrap();
+    assert_eq!(cancel.kind, "cancel");
+    assert!(cancel.acknowledged);
+    bridge
+        .signal_postgres_backend(session.clone(), "terminate".into(), 43)
+        .unwrap();
+    assert_eq!(*signals.lock().unwrap(), vec![(false, 42), (true, 43)]);
+
+    let invalid = bridge
+        .signal_postgres_backend(session, "kill".into(), 42)
+        .unwrap_err();
+    assert!(
+        matches!(invalid, BridgeError::Rejected { code, .. } if code == "postgres-activity-signal")
+    );
 }
 
 #[test]

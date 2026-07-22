@@ -396,6 +396,32 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testPostgresActivityRefreshAndCancelRequireAuthority() throws {
+    let app = launch(scenario: "success")
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    connect.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
+
+    let command = app.menuItems["PostgreSQL Activity…"]
+    XCTAssertTrue(command.waitForExistence(timeout: 10))
+    XCTAssertTrue(command.isEnabled)
+    command.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["postgres.activity.row.4242"]
+        .waitForExistence(timeout: 10))
+
+    app.buttons["postgres.activity.cancel.4242"].click()
+    let confirm = app.buttons["Cancel PID 4242"]
+    XCTAssertTrue(confirm.waitForExistence(timeout: 10))
+    confirm.click()
+    let outcome = app.descendants(matching: .any)["postgres.activity.outcome"]
+    XCTAssertTrue(outcome.waitForExistence(timeout: 10))
+    XCTAssertTrue((outcome.value as? String ?? outcome.label).contains("acknowledged"))
+  }
+
+  @MainActor
   func testLoadedResultExportsThroughUserControls() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)

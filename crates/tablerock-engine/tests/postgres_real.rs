@@ -3129,34 +3129,32 @@ async fn activity_signal_permission_denied_for_restricted_role() {
     .await
     .unwrap();
 
-    let cancel = limited.signal_backend(false, victim_pid).await;
-    assert_eq!(
-        cancel,
-        Err(PostgresError::PermissionDenied),
-        "restricted role must not cancel foreign backends: {cancel:?}"
-    );
-    let terminate = limited.signal_backend(true, victim_pid).await;
-    assert_eq!(
-        terminate,
-        Err(PostgresError::PermissionDenied),
-        "restricted role must not terminate foreign backends: {terminate:?}"
-    );
+    let cancel = DriverSession::signal_postgres_backend(&limited, false, victim_pid)
+        .await
+        .unwrap_err();
+    assert_eq!(cancel.class(), AdapterFailureClass::PermissionDenied);
+    let terminate = DriverSession::signal_postgres_backend(&limited, true, victim_pid)
+        .await
+        .unwrap_err();
+    assert_eq!(terminate.class(), AdapterFailureClass::PermissionDenied);
 
-    // Own-activity read still works without signal rights.
-    let act = limited
-        .stream_statement(
-            "SELECT pid::text FROM pg_catalog.pg_stat_activity LIMIT 8",
-            &[],
-            PageLimits::new(8, 4, 64 * 1024, 4 * 1024),
-            4 * 1024,
-        )
-        .await;
+    // Typed activity remains readable without signal rights.
+    let activity = DriverSession::postgres_activity(&limited).await;
     assert!(
-        act.is_ok(),
+        activity.is_ok(),
         "activity read should not require signal rights"
     );
+    let activity = activity.unwrap();
+    assert!(
+        activity.iter().all(|row| row.pid() > 0) && !activity.is_empty(),
+        "restricted activity must retain visible positive-PID rows"
+    );
 
-    let _ = admin.signal_backend(true, victim_pid).await;
+    assert!(
+        DriverSession::signal_postgres_backend(&admin, true, victim_pid)
+            .await
+            .unwrap()
+    );
     let _ = sleep_task.await;
     let _ = limited.shutdown().await;
     let _ = admin.shutdown().await;

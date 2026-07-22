@@ -974,6 +974,43 @@ impl PostgresSession {
         row.try_get(0).map_err(|_| PostgresError::Protocol)
     }
 
+    /// Bounded client-backend snapshot for server activity surfaces.
+    pub async fn activity_snapshot(
+        &self,
+    ) -> Result<Vec<crate::PostgresActivityRow>, PostgresError> {
+        let rows = self
+            .client
+            .query(
+                "SELECT pid, usename::text, application_name::text, state::text, left(query, 80) \
+                 FROM pg_catalog.pg_stat_activity \
+                 WHERE backend_type = 'client backend' \
+                 ORDER BY backend_start DESC NULLS LAST \
+                 LIMIT 32",
+                &[],
+            )
+            .await
+            .map_err(|error| map_tokio_postgres_error(&error))?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(crate::PostgresActivityRow::new(
+                    row.try_get(0).map_err(|_| PostgresError::Protocol)?,
+                    row.try_get::<_, Option<String>>(1)
+                        .map_err(|_| PostgresError::Protocol)?
+                        .unwrap_or_default(),
+                    row.try_get::<_, Option<String>>(2)
+                        .map_err(|_| PostgresError::Protocol)?
+                        .unwrap_or_default(),
+                    row.try_get::<_, Option<String>>(3)
+                        .map_err(|_| PostgresError::Protocol)?
+                        .unwrap_or_default(),
+                    row.try_get::<_, Option<String>>(4)
+                        .map_err(|_| PostgresError::Protocol)?
+                        .unwrap_or_default(),
+                ))
+            })
+            .collect()
+    }
+
     /// Execute a reviewed DDL plan (identifiers quoted; never free SQL).
     pub async fn execute_ddl_plan(
         &self,

@@ -377,6 +377,22 @@ pub struct BridgeRedisOverview {
     pub lines: Vec<String>,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgePostgresActivityRow {
+    pub pid: i32,
+    pub user: String,
+    pub application: String,
+    pub state: String,
+    pub query_preview: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeBackendSignalOutcome {
+    pub kind: String,
+    pub pid: i32,
+    pub acknowledged: bool,
+}
+
 #[derive(Clone)]
 struct RegisteredSession {
     profile_id: tablerock_core::ProfileId,
@@ -877,6 +893,24 @@ impl TableRockBridge {
     /// Loads one bounded, sample-timed Redis INFO overview.
     pub fn redis_overview(&self, session_id: Vec<u8>) -> Result<BridgeRedisOverview, BridgeError> {
         catch_entry(|| self.redis_overview_inner(session_id))
+    }
+
+    /// Loads a bounded Rust-owned PostgreSQL activity snapshot.
+    pub fn postgres_activity(
+        &self,
+        session_id: Vec<u8>,
+    ) -> Result<Vec<BridgePostgresActivityRow>, BridgeError> {
+        catch_entry(|| self.postgres_activity_inner(session_id))
+    }
+
+    /// Signals one PostgreSQL backend. Kind is exactly `cancel` or `terminate`.
+    pub fn signal_postgres_backend(
+        &self,
+        session_id: Vec<u8>,
+        kind: String,
+        pid: i32,
+    ) -> Result<BridgeBackendSignalOutcome, BridgeError> {
+        catch_entry(|| self.signal_postgres_backend_inner(session_id, kind, pid))
     }
 
     /// Formats resident Rust-owned result pages for clipboard/export.
@@ -3356,6 +3390,90 @@ impl TableRockBridge {
         })
     }
 
+    fn postgres_driver(
+        &self,
+        session_id_bytes: &[u8],
+    ) -> Result<std::sync::Arc<dyn DriverSession>, BridgeError> {
+        let session_id = session_from_bytes(session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+        let registered = inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        if registered.engine != Engine::PostgreSql {
+            return Err(BridgeError::rejected(
+                "postgres-activity-engine",
+                "PostgreSQL activity requires a PostgreSQL session",
+            ));
+        }
+        inner
+            .service
+            .session(session_id)
+            .ok_or(BridgeError::UnknownSession)
+    }
+
+    fn postgres_activity_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+    ) -> Result<Vec<BridgePostgresActivityRow>, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let driver = self.postgres_driver(&session_id_bytes)?;
+        let rows = self
+            .runtime
+            .block_on(driver.postgres_activity())?
+            .map_err(|error| bridge_activity_error("postgres-activity", error))?;
+        Ok(rows
+            .into_iter()
+            .map(|row| BridgePostgresActivityRow {
+                pid: row.pid(),
+                user: row.user().to_owned(),
+                application: row.application().to_owned(),
+                state: row.state().to_owned(),
+                query_preview: row.query_preview().to_owned(),
+            })
+            .collect())
+    }
+
+    fn signal_postgres_backend_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        kind: String,
+        pid: i32,
+    ) -> Result<BridgeBackendSignalOutcome, BridgeError> {
+        self.ensure_runtime_inner()?;
+        if pid <= 0 {
+            return Err(BridgeError::rejected(
+                "postgres-activity-pid",
+                "backend pid must be positive",
+            ));
+        }
+        let terminate = match kind.as_str() {
+            "cancel" => false,
+            "terminate" => true,
+            _ => {
+                return Err(BridgeError::rejected(
+                    "postgres-activity-signal",
+                    "signal kind must be cancel or terminate",
+                ));
+            }
+        };
+        let driver = self.postgres_driver(&session_id_bytes)?;
+        let acknowledged = self
+            .runtime
+            .block_on(driver.signal_postgres_backend(terminate, pid))?
+            .map_err(|error| bridge_activity_error("postgres-activity-signal", error))?;
+        Ok(BridgeBackendSignalOutcome {
+            kind,
+            pid,
+            acknowledged,
+        })
+    }
+
     fn format_result_copy_inner(
         &self,
         result_id_bytes: Vec<u8>,
@@ -4141,6 +4259,15 @@ fn environment_label(environment: &EnvironmentTag) -> String {
         EnvironmentTag::Testing => "Testing".into(),
         EnvironmentTag::Custom(_) => environment.custom_label().unwrap_or("Custom").to_owned(),
     }
+}
+
+fn bridge_activity_error(code: &str, error: tablerock_engine::AdapterError) -> BridgeError {
+    let message = if error.class() == AdapterFailureClass::PermissionDenied {
+        "permission denied"
+    } else {
+        "PostgreSQL activity operation failed"
+    };
+    BridgeError::rejected(code, message)
 }
 
 fn bridge_profile_item(

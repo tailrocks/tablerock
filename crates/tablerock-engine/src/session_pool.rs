@@ -199,6 +199,40 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn postgres_activity<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<Vec<crate::PostgresActivityRow>, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => session.postgres_activity().await,
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
+    fn signal_postgres_backend<'a>(
+        &'a self,
+        terminate: bool,
+        pid: i32,
+    ) -> DriverFuture<'a, Result<bool, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => {
+                    session.signal_postgres_backend(terminate, pid).await
+                }
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn execute_startup_authorized<'a>(
         &'a self,
         statement: &'a str,

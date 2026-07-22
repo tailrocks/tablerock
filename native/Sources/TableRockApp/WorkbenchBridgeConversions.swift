@@ -125,6 +125,17 @@ extension BridgeRedisKeyView {
 extension BridgeRedisOverview {
   var workbench: WorkbenchRedisOverview { .init(sampledAtMs: sampledAtMs, lines: lines) }
 }
+extension BridgePostgresActivityRow {
+  var workbench: WorkbenchPostgresActivityRow {
+    .init(
+      pid: pid, user: user, application: application, state: state, queryPreview: queryPreview)
+  }
+}
+extension BridgeBackendSignalOutcome {
+  var workbench: WorkbenchBackendSignalOutcome {
+    .init(kind: kind, pid: pid, acknowledged: acknowledged)
+  }
+}
 extension BridgeRelationColumn {
   var workbench: WorkbenchRelationColumn {
     .init(

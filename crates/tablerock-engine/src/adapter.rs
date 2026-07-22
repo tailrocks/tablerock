@@ -340,6 +340,60 @@ pub trait DriverPageStream: Send {
     }
 }
 
+/// One bounded PostgreSQL client-backend activity row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostgresActivityRow {
+    pid: i32,
+    user: String,
+    application: String,
+    state: String,
+    query_preview: String,
+}
+
+impl PostgresActivityRow {
+    #[must_use]
+    pub fn new(
+        pid: i32,
+        user: String,
+        application: String,
+        state: String,
+        query_preview: String,
+    ) -> Self {
+        Self {
+            pid,
+            user,
+            application,
+            state,
+            query_preview,
+        }
+    }
+
+    #[must_use]
+    pub const fn pid(&self) -> i32 {
+        self.pid
+    }
+
+    #[must_use]
+    pub fn user(&self) -> &str {
+        &self.user
+    }
+
+    #[must_use]
+    pub fn application(&self) -> &str {
+        &self.application
+    }
+
+    #[must_use]
+    pub fn state(&self) -> &str {
+        &self.state
+    }
+
+    #[must_use]
+    pub fn query_preview(&self) -> &str {
+        &self.query_preview
+    }
+}
+
 pub trait DriverSession: Send + Sync {
     fn engine(&self) -> Engine;
 
@@ -416,6 +470,33 @@ pub trait DriverSession: Send + Sync {
         table: Option<&'a str>,
     ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
         let _ = (schema, table);
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
+    /// PostgreSQL-only bounded `pg_stat_activity` snapshot.
+    fn postgres_activity<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<Vec<PostgresActivityRow>, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
+    /// PostgreSQL-only backend cancel/terminate using a bound PID.
+    fn signal_postgres_backend<'a>(
+        &'a self,
+        terminate: bool,
+        pid: i32,
+    ) -> DriverFuture<'a, Result<bool, AdapterError>> {
+        let _ = (terminate, pid);
         Box::pin(async {
             Err(AdapterError::new(
                 self.engine(),
@@ -771,6 +852,28 @@ impl DriverSession for PostgresSession {
     ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
         Box::pin(async move {
             PostgresSession::role_inspector_lines(self, schema, table)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
+    fn postgres_activity<'a>(
+        &'a self,
+    ) -> DriverFuture<'a, Result<Vec<PostgresActivityRow>, AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::activity_snapshot(self)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
+    fn signal_postgres_backend<'a>(
+        &'a self,
+        terminate: bool,
+        pid: i32,
+    ) -> DriverFuture<'a, Result<bool, AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::signal_backend(self, terminate, pid)
                 .await
                 .map_err(map_postgres)
         })

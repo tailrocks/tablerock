@@ -156,13 +156,25 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
     let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
     let host = container.get_host().await.unwrap().to_string();
 
-    let (engine, page) = tokio::task::spawn_blocking(move || {
-        run_bridge_probe("postgresql", &host, port, "postgres", "postgres")
+    tokio::task::spawn_blocking(move || {
+        let bridge = TableRockBridge::new_for_test();
+        let session = open_when_ready(&bridge, "postgresql", &host, port, "postgres", "postgres");
+        let activity = bridge.postgres_activity(session.clone()).unwrap();
+        assert!(!activity.is_empty());
+        assert!(activity.iter().all(|row| row.pid > 0));
+        let signal = bridge
+            .signal_postgres_backend(session.clone(), "cancel".into(), i32::MAX)
+            .unwrap();
+        assert!(
+            !signal.acknowledged,
+            "unknown PID must not report authority success"
+        );
+        let (page, _) = probe_and_fetch(&bridge, session, 0);
+        assert!(!page.is_empty());
+        bridge.shutdown(false, 5_000).unwrap();
     })
     .await
     .unwrap();
-    assert_eq!(engine, Engine::PostgreSql);
-    assert!(!page.is_empty());
 }
 
 #[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]

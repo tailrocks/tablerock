@@ -70,6 +70,21 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertEqual(catalog[1].parentIdBytes, catalog[0].idBytes)
   }
 
+  func testPostgresActivityUsesTypedRowsAndConfirmedSignalOutcome() async {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let model = BridgeModel(client: backend)
+
+    await model.connectByParams()
+    await model.showPostgresActivity()
+
+    XCTAssertTrue(model.postgresActivityPresented)
+    XCTAssertEqual(model.postgresActivityRows.map(\.pid), [4242])
+    XCTAssertEqual(model.postgresActivityRows[0].queryPreview, "SELECT pg_sleep(30)")
+    await model.signalPostgresBackend(kind: "cancel", pid: 4242)
+    XCTAssertEqual(model.postgresActivityOutcome, "Cancel acknowledged for PID 4242")
+    XCTAssertNil(model.postgresActivityError)
+  }
+
   func testDirtyAndRunningTabsRequireExplicitResolution() {
     let model = BridgeModel()
     model.addQueryTab()

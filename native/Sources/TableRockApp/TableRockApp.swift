@@ -174,11 +174,13 @@ private struct WorkbenchActions {
   let canRun: Bool
   let canCancel: Bool
   let canRefresh: Bool
+  let canShowActivity: Bool
   let run: () -> Void
   let cancel: () -> Void
   let refresh: () -> Void
   let quickSwitch: () -> Void
   let explain: () -> Void
+  let showActivity: () -> Void
 }
 
 private struct WorkbenchActionsKey: FocusedValueKey {
@@ -213,6 +215,8 @@ private struct WorkbenchCommands: Commands {
       Button("Explain Query") { actions?.explain() }
         .keyboardShortcut("e", modifiers: [.command, .shift])
         .disabled(actions?.canRun != true)
+      Button("PostgreSQL Activity…") { actions?.showActivity() }
+        .disabled(actions?.canShowActivity != true)
     }
   }
 }
@@ -368,6 +372,12 @@ extension WorkbenchBackend {
   func redisOverview(sessionId: Data) throws -> WorkbenchRedisOverview {
     try scriptedUnavailable("redis-overview")
   }
+  func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow] {
+    try scriptedUnavailable("postgres-activity")
+  }
+  func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
+    -> WorkbenchBackendSignalOutcome
+  { try scriptedUnavailable("postgres-activity-signal") }
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
     -> WorkbenchApplyOutcome
   { try scriptedUnavailable("apply") }
@@ -377,6 +387,7 @@ extension WorkbenchBackend {
   func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome {
     try scriptedUnavailable("stage-apply")
   }
+
 }
 
 actor ScriptedWorkbenchBackend: WorkbenchBackend {
@@ -631,6 +642,26 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     let wasActive = importReviewActive
     importReviewActive = false
     return wasActive
+  }
+
+  func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow] {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16) else {
+      return try scriptedUnavailable("postgres-activity")
+    }
+    return [
+      WorkbenchPostgresActivityRow(
+        pid: 4242, user: "fixture", application: "TableRock fixture", state: "active",
+        queryPreview: "SELECT pg_sleep(30)")
+    ]
+  }
+
+  func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
+    -> WorkbenchBackendSignalOutcome
+  {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16), pid == 4242,
+      kind == "cancel" || kind == "terminate"
+    else { return try scriptedUnavailable("postgres-activity-signal") }
+    return WorkbenchBackendSignalOutcome(kind: kind, pid: pid, acknowledged: true)
   }
 }
 
@@ -919,6 +950,16 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
 
   func redisOverview(sessionId: Data) throws -> WorkbenchRedisOverview {
     try bridge.redisOverview(sessionId: sessionId).workbench
+  }
+
+  func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow] {
+    try bridge.postgresActivity(sessionId: sessionId).map(\.workbench)
+  }
+
+  func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
+    -> WorkbenchBackendSignalOutcome
+  {
+    try bridge.signalPostgresBackend(sessionId: sessionId, kind: kind, pid: pid).workbench
   }
 
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
@@ -1931,6 +1972,11 @@ final class BridgeModel {
   var redisOverview: WorkbenchRedisOverview?
   private(set) var redisOverviewLoading = false
   private(set) var redisOverviewError: String?
+  var postgresActivityPresented = false
+  var postgresActivityRows: [WorkbenchPostgresActivityRow] = []
+  private(set) var postgresActivityLoading = false
+  private(set) var postgresActivityError: String?
+  var postgresActivityOutcome: String?
   var queryTabs: [NativeQueryTab]
   var selectedQueryTabId: UUID
   var objectTabs: [NativeObjectTab] = []
@@ -3598,6 +3644,41 @@ final class BridgeModel {
     }
   }
 
+  func showPostgresActivity() async {
+    guard connectedEngine == "postgresql", sessionData != nil else { return }
+    postgresActivityPresented = true
+    await refreshPostgresActivity()
+  }
+
+  func refreshPostgresActivity() async {
+    guard let client, let session = sessionData, !postgresActivityLoading else { return }
+    postgresActivityLoading = true
+    postgresActivityError = nil
+    defer { postgresActivityLoading = false }
+    do {
+      postgresActivityRows = try await client.postgresActivity(sessionId: session)
+    } catch {
+      postgresActivityRows = []
+      postgresActivityError = "PostgreSQL activity failed: \(error)"
+    }
+  }
+
+  func signalPostgresBackend(kind: String, pid: Int32) async {
+    guard let client, let session = sessionData else { return }
+    postgresActivityError = nil
+    postgresActivityOutcome = nil
+    do {
+      let outcome = try await client.signalPostgresBackend(
+        sessionId: session, kind: kind, pid: pid)
+      postgresActivityOutcome = outcome.acknowledged
+        ? "\(kind.capitalized) acknowledged for PID \(pid)"
+        : "PID \(pid) was not signalable"
+      await refreshPostgresActivity()
+    } catch {
+      postgresActivityError = "\(kind.capitalized) failed: \(error)"
+    }
+  }
+
   private func restoreSessionIntent(profileId: Data) async {
     guard let client else { return }
     do {
@@ -5092,6 +5173,9 @@ struct ContentView: View {
     .sheet(isPresented: $model.redisOverviewPresented) {
       RedisOverviewSheet()
     }
+    .sheet(isPresented: $model.postgresActivityPresented) {
+      PostgresActivitySheet()
+    }
     .sheet(
       isPresented: $model.csvImportPresented,
       onDismiss: { Task { await model.closeCsvImport() } }
@@ -5206,11 +5290,13 @@ struct ContentView: View {
         && !model.isRunning && !model.isCatalogRefreshing,
       canCancel: model.isRunning,
       canRefresh: model.sessionHex != nil && !model.isRunning && !model.isCatalogRefreshing,
+      canShowActivity: model.sessionHex != nil && model.connectedEngine == "postgresql",
       run: { Task { await model.runQuery() } },
       cancel: { Task { await model.cancel() } },
       refresh: { Task { await model.browse() } },
       quickSwitch: { Task { await model.showQuickSwitcher() } },
-      explain: { Task { await model.runExplain() } }
+      explain: { Task { await model.runExplain() } },
+      showActivity: { Task { await model.showPostgresActivity() } }
     )
   }
 }
@@ -5904,6 +5990,107 @@ private struct RedisOverviewSheet: View {
     }
     .padding(20)
     .frame(minWidth: 680, minHeight: 520)
+  }
+}
+
+private struct PendingPostgresSignal {
+  let kind: String
+  let pid: Int32
+}
+
+private struct PostgresActivitySheet: View {
+  @Environment(BridgeModel.self) private var model
+  @State private var pendingSignal: PendingPostgresSignal?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack {
+        Label("PostgreSQL Activity", systemImage: "waveform.path.ecg")
+          .font(.title2.bold())
+        Spacer()
+        Button("Refresh") { Task { await model.refreshPostgresActivity() } }
+          .disabled(model.postgresActivityLoading)
+          .accessibilityIdentifier("postgres.activity.refresh")
+        Button("Close") { model.postgresActivityPresented = false }
+          .accessibilityIdentifier("postgres.activity.close")
+      }
+      Text("Current client backends. Cancel stops one query; terminate closes its session.")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+      if model.postgresActivityLoading {
+        ProgressView("Loading bounded pg_stat_activity snapshot…")
+      }
+      if model.postgresActivityRows.isEmpty && !model.postgresActivityLoading
+        && model.postgresActivityError == nil
+      {
+        ContentUnavailableView(
+          "No client backends", systemImage: "server.rack",
+          description: Text("Refresh to inspect current PostgreSQL activity."))
+      } else {
+        List(model.postgresActivityRows) { row in
+          VStack(alignment: .leading, spacing: 6) {
+            HStack {
+              Text("PID \(row.pid)").font(.headline)
+              Text(row.state).foregroundStyle(.secondary)
+              Spacer()
+              Button("Cancel Query") {
+                pendingSignal = PendingPostgresSignal(kind: "cancel", pid: row.pid)
+              }
+              .accessibilityIdentifier("postgres.activity.cancel.\(row.pid)")
+              Button("Terminate Session", role: .destructive) {
+                pendingSignal = PendingPostgresSignal(kind: "terminate", pid: row.pid)
+              }
+              .accessibilityIdentifier("postgres.activity.terminate.\(row.pid)")
+            }
+            Text("\(row.user) · \(row.application.isEmpty ? "unknown application" : row.application)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(row.queryPreview.isEmpty ? "No query text" : row.queryPreview)
+              .font(.system(.body, design: .monospaced))
+              .textSelection(.enabled)
+          }
+          .padding(.vertical, 4)
+          .accessibilityElement(children: .contain)
+          .accessibilityIdentifier("postgres.activity.row.\(row.pid)")
+        }
+      }
+      if let outcome = model.postgresActivityOutcome {
+        Label(outcome, systemImage: "checkmark.circle.fill")
+          .foregroundStyle(.green)
+          .accessibilityIdentifier("postgres.activity.outcome")
+      }
+      if let error = model.postgresActivityError {
+        Text(error).foregroundStyle(.red).textSelection(.enabled)
+          .accessibilityIdentifier("postgres.activity.error")
+      }
+    }
+    .padding(20)
+    .frame(minWidth: 760, minHeight: 520)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("postgres.activity.sheet")
+    .confirmationDialog(
+      pendingSignal?.kind == "terminate" ? "Terminate PostgreSQL session?" : "Cancel query?",
+      isPresented: Binding(
+        get: { pendingSignal != nil },
+        set: { if !$0 { pendingSignal = nil } }
+      ),
+      presenting: pendingSignal
+    ) { pending in
+      Button(
+        pending.kind == "terminate" ? "Terminate PID \(pending.pid)" : "Cancel PID \(pending.pid)",
+        role: pending.kind == "terminate" ? .destructive : nil
+      ) {
+        pendingSignal = nil
+        Task { await model.signalPostgresBackend(kind: pending.kind, pid: pending.pid) }
+      }
+      .accessibilityIdentifier("postgres.activity.confirm")
+      Button("Keep Running", role: .cancel) { pendingSignal = nil }
+    } message: { pending in
+      Text(
+        pending.kind == "terminate"
+          ? "PostgreSQL will close backend PID \(pending.pid)."
+          : "PostgreSQL will request cancellation for PID \(pending.pid).")
+    }
   }
 }
 

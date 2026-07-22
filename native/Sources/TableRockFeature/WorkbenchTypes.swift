@@ -71,6 +71,9 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func redisKeyView(sessionId: Data, catalogNodeId: Data, collectionSkip: UInt64) throws
     -> WorkbenchRedisKeyView
   func redisOverview(sessionId: Data) throws -> WorkbenchRedisOverview
+  func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow]
+  func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
+    -> WorkbenchBackendSignalOutcome
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
     -> WorkbenchApplyOutcome
   func revokeReviewToken(tokenId: Data) throws -> Bool
@@ -472,6 +475,33 @@ public struct WorkbenchRedisOverview: Sendable, Equatable {
   public init(sampledAtMs: UInt64, lines: [String]) {
     self.sampledAtMs = sampledAtMs
     self.lines = lines
+  }
+}
+
+public struct WorkbenchPostgresActivityRow: Sendable, Equatable, Identifiable {
+  public let pid: Int32
+  public let user: String
+  public let application: String
+  public let state: String
+  public let queryPreview: String
+  public var id: Int32 { pid }
+  public init(pid: Int32, user: String, application: String, state: String, queryPreview: String) {
+    self.pid = pid
+    self.user = user
+    self.application = application
+    self.state = state
+    self.queryPreview = queryPreview
+  }
+}
+
+public struct WorkbenchBackendSignalOutcome: Sendable, Equatable {
+  public let kind: String
+  public let pid: Int32
+  public let acknowledged: Bool
+  public init(kind: String, pid: Int32, acknowledged: Bool) {
+    self.kind = kind
+    self.pid = pid
+    self.acknowledged = acknowledged
   }
 }
 

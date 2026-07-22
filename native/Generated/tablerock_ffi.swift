@@ -497,6 +497,22 @@ fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt32: FfiConverterPrimitive {
+    typealias FfiType = Int32
+    typealias SwiftType = Int32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int32, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
     typealias FfiType = UInt64
     typealias SwiftType = UInt64
@@ -768,6 +784,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func planSessionReconnect(sessionId: Data, attempt: UInt32, authenticationStopped: Bool) throws  -> BridgeReconnectPlan
 
     /**
+     * Loads a bounded Rust-owned PostgreSQL activity snapshot.
+     */
+    func postgresActivity(sessionId: Data) throws  -> [BridgePostgresActivityRow]
+
+    /**
      * Reads a bounded UTF-8 CSV file for native mapping and review.
      */
     func previewCsvImport(path: String) throws  -> BridgeCsvImportPreview
@@ -847,6 +868,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Graceful or cancel-active shutdown with a hard drain deadline.
      */
     func shutdown(cancelActive: Bool, deadlineMs: UInt64) throws  -> ShutdownOutcome
+
+    /**
+     * Signals one PostgreSQL backend. Kind is exactly `cancel` or `terminate`.
+     */
+    func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws  -> BridgeBackendSignalOutcome
 
     /**
      * Freezes a mapped CSV insert plan behind a single-use review token.
@@ -1374,6 +1400,19 @@ open func planSessionReconnect(sessionId: Data, attempt: UInt32, authenticationS
 }
 
     /**
+     * Loads a bounded Rust-owned PostgreSQL activity snapshot.
+     */
+open func postgresActivity(sessionId: Data)throws  -> [BridgePostgresActivityRow]  {
+    return try  FfiConverterSequenceTypeBridgePostgresActivityRow.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_postgres_activity(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Reads a bounded UTF-8 CSV file for native mapping and review.
      */
 open func previewCsvImport(path: String)throws  -> BridgeCsvImportPreview  {
@@ -1642,6 +1681,21 @@ open func shutdown(cancelActive: Bool, deadlineMs: UInt64)throws  -> ShutdownOut
 }
 
     /**
+     * Signals one PostgreSQL backend. Kind is exactly `cancel` or `terminate`.
+     */
+open func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32)throws  -> BridgeBackendSignalOutcome  {
+    return try  FfiConverterTypeBridgeBackendSignalOutcome_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_signal_postgres_backend(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterString.lower(kind),
+        FfiConverterInt32.lower(pid),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Freezes a mapped CSV insert plan behind a single-use review token.
      */
 open func stageCsvImport(sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String], mappedTypes: [String], nowMs: UInt64)throws  -> BridgeCsvImportReview  {
@@ -1882,6 +1936,64 @@ public func FfiConverterTypeApplyOutcome_lift(_ buf: RustBuffer) throws -> Apply
 #endif
 public func FfiConverterTypeApplyOutcome_lower(_ value: ApplyOutcome) -> RustBuffer {
     return FfiConverterTypeApplyOutcome.lower(value)
+}
+
+
+public struct BridgeBackendSignalOutcome: Equatable, Hashable {
+    public var kind: String
+    public var pid: Int32
+    public var acknowledged: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: String, pid: Int32, acknowledged: Bool) {
+        self.kind = kind
+        self.pid = pid
+        self.acknowledged = acknowledged
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeBackendSignalOutcome: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeBackendSignalOutcome: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeBackendSignalOutcome {
+        return
+            try BridgeBackendSignalOutcome(
+                kind: FfiConverterString.read(from: &buf),
+                pid: FfiConverterInt32.read(from: &buf),
+                acknowledged: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeBackendSignalOutcome, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterInt32.write(value.pid, into: &buf)
+        FfiConverterBool.write(value.acknowledged, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeBackendSignalOutcome_lift(_ buf: RustBuffer) throws -> BridgeBackendSignalOutcome {
+    return try FfiConverterTypeBridgeBackendSignalOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeBackendSignalOutcome_lower(_ value: BridgeBackendSignalOutcome) -> RustBuffer {
+    return FfiConverterTypeBridgeBackendSignalOutcome.lower(value)
 }
 
 
@@ -2607,6 +2719,72 @@ public func FfiConverterTypeBridgeNativeWindowIntent_lift(_ buf: RustBuffer) thr
 #endif
 public func FfiConverterTypeBridgeNativeWindowIntent_lower(_ value: BridgeNativeWindowIntent) -> RustBuffer {
     return FfiConverterTypeBridgeNativeWindowIntent.lower(value)
+}
+
+
+public struct BridgePostgresActivityRow: Equatable, Hashable {
+    public var pid: Int32
+    public var user: String
+    public var application: String
+    public var state: String
+    public var queryPreview: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(pid: Int32, user: String, application: String, state: String, queryPreview: String) {
+        self.pid = pid
+        self.user = user
+        self.application = application
+        self.state = state
+        self.queryPreview = queryPreview
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgePostgresActivityRow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgePostgresActivityRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgePostgresActivityRow {
+        return
+            try BridgePostgresActivityRow(
+                pid: FfiConverterInt32.read(from: &buf),
+                user: FfiConverterString.read(from: &buf),
+                application: FfiConverterString.read(from: &buf),
+                state: FfiConverterString.read(from: &buf),
+                queryPreview: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgePostgresActivityRow, into buf: inout [UInt8]) {
+        FfiConverterInt32.write(value.pid, into: &buf)
+        FfiConverterString.write(value.user, into: &buf)
+        FfiConverterString.write(value.application, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+        FfiConverterString.write(value.queryPreview, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgePostgresActivityRow_lift(_ buf: RustBuffer) throws -> BridgePostgresActivityRow {
+    return try FfiConverterTypeBridgePostgresActivityRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgePostgresActivityRow_lower(_ value: BridgePostgresActivityRow) -> RustBuffer {
+    return FfiConverterTypeBridgePostgresActivityRow.lower(value)
 }
 
 
@@ -4672,6 +4850,31 @@ fileprivate struct FfiConverterSequenceTypeBridgeHistoryItem: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgePostgresActivityRow: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgePostgresActivityRow]
+
+    public static func write(_ value: [BridgePostgresActivityRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgePostgresActivityRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgePostgresActivityRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgePostgresActivityRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgePostgresActivityRow.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeProfileGroup: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeProfileGroup]
 
@@ -5036,6 +5239,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_plan_session_reconnect() != 29748) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_postgres_activity() != 29507) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_preview_csv_import() != 5325) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5100,6 +5306,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_shutdown() != 63265) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_signal_postgres_backend() != 20602) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_csv_import() != 10017) {
