@@ -657,6 +657,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func cancel(operationId: Data) throws  -> CancelOutcome
 
     /**
+     * Requests cancellation; repeated requests remain safe.
+     */
+    func cancelPostgresTool(operationId: Data) throws  -> Bool
+
+    /**
      * Executes one explicit driver health probe for a live session.
      */
     func checkSessionHealth(sessionId: Data) throws  -> BridgeSessionHealth
@@ -789,9 +794,19 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func postgresActivity(sessionId: Data) throws  -> [BridgePostgresActivityRow]
 
     /**
+     * Returns one bounded process status projection.
+     */
+    func postgresToolStatus(operationId: Data) throws  -> BridgePostgresToolStatus
+
+    /**
      * Reads a bounded UTF-8 CSV file for native mapping and review.
      */
     func previewCsvImport(path: String) throws  -> BridgeCsvImportPreview
+
+    /**
+     * Probes an exact PostgreSQL client tool without invoking a shell.
+     */
+    func probePostgresTool(kind: String, explicitPath: String?) throws  -> BridgePostgresToolProbe
 
     /**
      * Pumps driver updates for `operation_id` until a terminal fact or no pending work.
@@ -886,6 +901,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * defaults (60 s expiry, `public.users`, locator 1).
      */
     func stageProbeReview(sessionId: Data, nowMs: UInt64) throws  -> Data
+
+    /**
+     * Starts a supervised dump or restore against the connected endpoint.
+     */
+    func startPostgresTool(request: BridgePostgresToolRequest) throws  -> Data
 
     /**
      * Submits a command and returns a 16-byte operation id.
@@ -1014,6 +1034,19 @@ open func cancel(operationId: Data)throws  -> CancelOutcome  {
     return try  FfiConverterTypeCancelOutcome_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
         uniffiCallStatus in
     uniffi_tablerock_ffi_fn_method_tablerockbridge_cancel(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Requests cancellation; repeated requests remain safe.
+     */
+open func cancelPostgresTool(operationId: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_cancel_postgres_tool(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(operationId),uniffiCallStatus
     )
@@ -1413,6 +1446,19 @@ open func postgresActivity(sessionId: Data)throws  -> [BridgePostgresActivityRow
 }
 
     /**
+     * Returns one bounded process status projection.
+     */
+open func postgresToolStatus(operationId: Data)throws  -> BridgePostgresToolStatus  {
+    return try  FfiConverterTypeBridgePostgresToolStatus_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_postgres_tool_status(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Reads a bounded UTF-8 CSV file for native mapping and review.
      */
 open func previewCsvImport(path: String)throws  -> BridgeCsvImportPreview  {
@@ -1421,6 +1467,20 @@ open func previewCsvImport(path: String)throws  -> BridgeCsvImportPreview  {
     uniffi_tablerock_ffi_fn_method_tablerockbridge_preview_csv_import(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Probes an exact PostgreSQL client tool without invoking a shell.
+     */
+open func probePostgresTool(kind: String, explicitPath: String?)throws  -> BridgePostgresToolProbe  {
+    return try  FfiConverterTypeBridgePostgresToolProbe_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_probe_postgres_tool(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(kind),
+        FfiConverterOptionString.lower(explicitPath),uniffiCallStatus
     )
 })
 }
@@ -1726,6 +1786,19 @@ open func stageProbeReview(sessionId: Data, nowMs: UInt64)throws  -> Data  {
             self.uniffiCloneHandle(),
         FfiConverterData.lower(sessionId),
         FfiConverterUInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Starts a supervised dump or restore against the connected endpoint.
+     */
+open func startPostgresTool(request: BridgePostgresToolRequest)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_start_postgres_tool(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeBridgePostgresToolRequest_lower(request),uniffiCallStatus
     )
 })
 }
@@ -2785,6 +2858,208 @@ public func FfiConverterTypeBridgePostgresActivityRow_lift(_ buf: RustBuffer) th
 #endif
 public func FfiConverterTypeBridgePostgresActivityRow_lower(_ value: BridgePostgresActivityRow) -> RustBuffer {
     return FfiConverterTypeBridgePostgresActivityRow.lower(value)
+}
+
+
+public struct BridgePostgresToolProbe: Equatable, Hashable {
+    public var kind: String
+    public var available: Bool
+    public var path: String?
+    public var version: String?
+    public var summary: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: String, available: Bool, path: String?, version: String?, summary: String) {
+        self.kind = kind
+        self.available = available
+        self.path = path
+        self.version = version
+        self.summary = summary
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgePostgresToolProbe: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgePostgresToolProbe: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgePostgresToolProbe {
+        return
+            try BridgePostgresToolProbe(
+                kind: FfiConverterString.read(from: &buf),
+                available: FfiConverterBool.read(from: &buf),
+                path: FfiConverterOptionString.read(from: &buf),
+                version: FfiConverterOptionString.read(from: &buf),
+                summary: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgePostgresToolProbe, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterBool.write(value.available, into: &buf)
+        FfiConverterOptionString.write(value.path, into: &buf)
+        FfiConverterOptionString.write(value.version, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgePostgresToolProbe_lift(_ buf: RustBuffer) throws -> BridgePostgresToolProbe {
+    return try FfiConverterTypeBridgePostgresToolProbe.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgePostgresToolProbe_lower(_ value: BridgePostgresToolProbe) -> RustBuffer {
+    return FfiConverterTypeBridgePostgresToolProbe.lower(value)
+}
+
+
+public struct BridgePostgresToolRequest: Equatable, Hashable {
+    public var sessionId: Data
+    public var kind: String
+    public var toolPath: String
+    public var filePath: String
+    public var content: String
+    public var clean: Bool
+    public var noOwner: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sessionId: Data, kind: String, toolPath: String, filePath: String, content: String, clean: Bool, noOwner: Bool) {
+        self.sessionId = sessionId
+        self.kind = kind
+        self.toolPath = toolPath
+        self.filePath = filePath
+        self.content = content
+        self.clean = clean
+        self.noOwner = noOwner
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgePostgresToolRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgePostgresToolRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgePostgresToolRequest {
+        return
+            try BridgePostgresToolRequest(
+                sessionId: FfiConverterData.read(from: &buf),
+                kind: FfiConverterString.read(from: &buf),
+                toolPath: FfiConverterString.read(from: &buf),
+                filePath: FfiConverterString.read(from: &buf),
+                content: FfiConverterString.read(from: &buf),
+                clean: FfiConverterBool.read(from: &buf),
+                noOwner: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgePostgresToolRequest, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.sessionId, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.toolPath, into: &buf)
+        FfiConverterString.write(value.filePath, into: &buf)
+        FfiConverterString.write(value.content, into: &buf)
+        FfiConverterBool.write(value.clean, into: &buf)
+        FfiConverterBool.write(value.noOwner, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgePostgresToolRequest_lift(_ buf: RustBuffer) throws -> BridgePostgresToolRequest {
+    return try FfiConverterTypeBridgePostgresToolRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgePostgresToolRequest_lower(_ value: BridgePostgresToolRequest) -> RustBuffer {
+    return FfiConverterTypeBridgePostgresToolRequest.lower(value)
+}
+
+
+public struct BridgePostgresToolStatus: Equatable, Hashable {
+    public var operationId: Data
+    public var kind: String
+    public var phase: String
+    public var summary: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(operationId: Data, kind: String, phase: String, summary: String) {
+        self.operationId = operationId
+        self.kind = kind
+        self.phase = phase
+        self.summary = summary
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgePostgresToolStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgePostgresToolStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgePostgresToolStatus {
+        return
+            try BridgePostgresToolStatus(
+                operationId: FfiConverterData.read(from: &buf),
+                kind: FfiConverterString.read(from: &buf),
+                phase: FfiConverterString.read(from: &buf),
+                summary: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgePostgresToolStatus, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.operationId, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.phase, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgePostgresToolStatus_lift(_ buf: RustBuffer) throws -> BridgePostgresToolStatus {
+    return try FfiConverterTypeBridgePostgresToolStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgePostgresToolStatus_lower(_ value: BridgePostgresToolStatus) -> RustBuffer {
+    return FfiConverterTypeBridgePostgresToolStatus.lower(value)
 }
 
 
@@ -5146,6 +5421,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel() != 18861) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel_postgres_tool() != 22580) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_check_session_health() != 24923) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5242,7 +5520,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_postgres_activity() != 29507) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_postgres_tool_status() != 6607) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_preview_csv_import() != 5325) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_probe_postgres_tool() != 62606) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_pump() != 15232) {
@@ -5315,6 +5599,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_probe_review() != 53434) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_postgres_tool() != 21198) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit() != 59509) {

@@ -16,6 +16,14 @@ operation now expose deterministic macOS accessibility actions:
 - Explain proof selects the identified application menu command and waits for
   its connected-session enablement before invoking it.
 
+Canonical run 29888579521 then proved the remaining common cause: SwiftUI
+`FocusedValue` retained the command capability booleans from before connection,
+so Explain and PostgreSQL Activity remained disabled and the Quick Switch
+shortcut could resolve without an active scene target. Commands now receive a
+live `BridgeModel` through `focusedSceneValue` and evaluate capability when the
+menu asks. Result buttons additionally implement direct mouse and AX-press
+activation instead of relying on one NSControl dispatch path.
+
 The repeated Velnor PTY timeout came from fleet version 0.1.58 reusing a
 persistent Cargo target whose `tablerock` test binary predated the checked-out
 source. Velnor 0.1.109 fixes this bug structurally by including source revision
@@ -35,6 +43,10 @@ mise exec -- cargo nextest run -p tablerock-cli --test pty_lifecycle --locked
 
 GitHub-hosted CI run 29886270653, Format/lint/test
 success
+
+Canonical Native Checkpoint run 29888579521
+23 XCUITests executed; four failures isolated to stale focused-command state
+and result-cell activation; structural fixes applied in the following checkpoint
 
 mise exec -- cargo clippy -p tablerock-cli -p tablerock-engine --tests -- -D warnings
 green

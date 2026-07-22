@@ -74,6 +74,13 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow]
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
     -> WorkbenchBackendSignalOutcome
+  func probePostgresTool(kind: String, explicitPath: String?) throws -> WorkbenchPostgresToolProbe
+  func startPostgresTool(
+    sessionId: Data, kind: String, toolPath: String, filePath: String, content: String,
+    clean: Bool, noOwner: Bool
+  ) throws -> Data
+  func postgresToolStatus(operationId: Data) throws -> WorkbenchPostgresToolStatus
+  func cancelPostgresTool(operationId: Data) throws -> Bool
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
     -> WorkbenchApplyOutcome
   func revokeReviewToken(tokenId: Data) throws -> Bool
@@ -502,6 +509,34 @@ public struct WorkbenchBackendSignalOutcome: Sendable, Equatable {
     self.kind = kind
     self.pid = pid
     self.acknowledged = acknowledged
+  }
+}
+
+public struct WorkbenchPostgresToolProbe: Sendable, Equatable {
+  public let kind: String
+  public let available: Bool
+  public let path: String?
+  public let version: String?
+  public let summary: String
+  public init(kind: String, available: Bool, path: String?, version: String?, summary: String) {
+    self.kind = kind
+    self.available = available
+    self.path = path
+    self.version = version
+    self.summary = summary
+  }
+}
+
+public struct WorkbenchPostgresToolStatus: Sendable, Equatable {
+  public let operationId: Data
+  public let kind: String
+  public let phase: String
+  public let summary: String
+  public init(operationId: Data, kind: String, phase: String, summary: String) {
+    self.operationId = operationId
+    self.kind = kind
+    self.phase = phase
+    self.summary = summary
   }
 }
 

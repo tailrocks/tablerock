@@ -67,6 +67,21 @@ impl RuntimeOwner {
         }
     }
 
+    pub(crate) fn spawn(
+        &self,
+        future: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> Result<(), BridgeError> {
+        let runtime = {
+            let guard = self
+                .runtime
+                .lock()
+                .map_err(|_| BridgeError::rejected("runtime-lock", "runtime mutex poisoned"))?;
+            Arc::clone(guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?)
+        };
+        runtime.spawn(future);
+        Ok(())
+    }
+
     /// Drops the runtime if present. Idempotent.
     pub(crate) fn shutdown(&self) -> Result<(), BridgeError> {
         let mut guard = self

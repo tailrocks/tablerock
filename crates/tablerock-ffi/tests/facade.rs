@@ -509,6 +509,25 @@ fn open_params_debug_redacts_password() {
 }
 
 #[test]
+fn postgres_tool_probe_is_typed_and_kind_closed() {
+    let bridge = TableRockBridge::new_for_test();
+    let missing = bridge
+        .probe_postgres_tool(
+            "dump".into(),
+            Some("/definitely/not/a/tablerock/tool".into()),
+        )
+        .unwrap();
+    assert_eq!(missing.kind, "dump");
+    assert!(!missing.available);
+    assert!(missing.version.is_none());
+
+    let error = bridge
+        .probe_postgres_tool("vacuum".into(), None)
+        .unwrap_err();
+    assert!(matches!(error, BridgeError::Rejected { code, .. } if code == "postgres-tool-kind"));
+}
+
+#[test]
 fn cancel_unknown_operation_is_typed() {
     let bridge = TableRockBridge::new_for_test();
     bridge.ensure_runtime().unwrap();

@@ -136,6 +136,16 @@ extension BridgeBackendSignalOutcome {
     .init(kind: kind, pid: pid, acknowledged: acknowledged)
   }
 }
+extension BridgePostgresToolProbe {
+  var workbench: WorkbenchPostgresToolProbe {
+    .init(kind: kind, available: available, path: path, version: version, summary: summary)
+  }
+}
+extension BridgePostgresToolStatus {
+  var workbench: WorkbenchPostgresToolStatus {
+    .init(operationId: operationId, kind: kind, phase: phase, summary: summary)
+  }
+}
 extension BridgeRelationColumn {
   var workbench: WorkbenchRelationColumn {
     .init(

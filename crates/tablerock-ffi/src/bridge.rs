@@ -44,6 +44,11 @@ use tablerock_persistence::{
     HistoryAppend, HistoryOutcomeClass, HistoryRetention, PersistenceActor, ProfileOrderUpdate,
     SavedQueryUpsert, SqlFileFacts, external_change_detected, read_sql_file, write_sql_file_atomic,
 };
+use tablerock_tools::{
+    PgToolRunOutcome, ToolStatus, cancel_channel, discover_tool, run_pg_dump_configured,
+    run_pg_restore_configured, validate_dump_path,
+};
+use zeroize::Zeroizing;
 
 use crate::{
     error::{BridgeError, catch_entry},
@@ -393,6 +398,51 @@ pub struct BridgeBackendSignalOutcome {
     pub acknowledged: bool,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgePostgresToolProbe {
+    pub kind: String,
+    pub available: bool,
+    pub path: Option<String>,
+    pub version: Option<String>,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgePostgresToolStatus {
+    pub operation_id: Vec<u8>,
+    pub kind: String,
+    pub phase: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgePostgresToolRequest {
+    pub session_id: Vec<u8>,
+    pub kind: String,
+    pub tool_path: String,
+    pub file_path: String,
+    pub content: String,
+    pub clean: bool,
+    pub no_owner: bool,
+}
+
+#[derive(Clone)]
+struct PostgresToolConnection {
+    host: String,
+    port: u16,
+    database: String,
+    user: String,
+    password: Arc<Zeroizing<String>>,
+}
+
+struct PostgresToolTask {
+    session_id: SessionId,
+    kind: String,
+    phase: String,
+    summary: String,
+    cancel: tokio::sync::watch::Sender<bool>,
+}
+
 #[derive(Clone)]
 struct RegisteredSession {
     profile_id: tablerock_core::ProfileId,
@@ -400,6 +450,7 @@ struct RegisteredSession {
     context_id: tablerock_core::ContextId,
     engine: Engine,
     database: BoundedText,
+    postgres_tool_connection: Option<PostgresToolConnection>,
     /// Expected context revision tracked by the bridge.
     context_revision: Revision,
 }
@@ -499,6 +550,7 @@ pub struct BridgeProfileDraft {
 pub struct TableRockBridge {
     runtime: RuntimeOwner,
     inner: Mutex<Option<BridgeInner>>,
+    postgres_tools: Arc<Mutex<BTreeMap<OperationId, PostgresToolTask>>>,
 }
 
 #[uniffi::export]
@@ -509,6 +561,7 @@ impl TableRockBridge {
         Arc::new(Self {
             runtime: RuntimeOwner::new(),
             inner: Mutex::new(None),
+            postgres_tools: Arc::new(Mutex::new(BTreeMap::new())),
         })
     }
 
@@ -911,6 +964,36 @@ impl TableRockBridge {
         pid: i32,
     ) -> Result<BridgeBackendSignalOutcome, BridgeError> {
         catch_entry(|| self.signal_postgres_backend_inner(session_id, kind, pid))
+    }
+
+    /// Probes an exact PostgreSQL client tool without invoking a shell.
+    pub fn probe_postgres_tool(
+        &self,
+        kind: String,
+        explicit_path: Option<String>,
+    ) -> Result<BridgePostgresToolProbe, BridgeError> {
+        catch_entry(|| probe_postgres_tool_inner(kind, explicit_path))
+    }
+
+    /// Starts a supervised dump or restore against the connected endpoint.
+    pub fn start_postgres_tool(
+        &self,
+        request: BridgePostgresToolRequest,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| self.start_postgres_tool_inner(request))
+    }
+
+    /// Returns one bounded process status projection.
+    pub fn postgres_tool_status(
+        &self,
+        operation_id: Vec<u8>,
+    ) -> Result<BridgePostgresToolStatus, BridgeError> {
+        catch_entry(|| self.postgres_tool_status_inner(operation_id))
+    }
+
+    /// Requests cancellation; repeated requests remain safe.
+    pub fn cancel_postgres_tool(&self, operation_id: Vec<u8>) -> Result<bool, BridgeError> {
+        catch_entry(|| self.cancel_postgres_tool_inner(operation_id))
     }
 
     /// Formats resident Rust-owned result pages for clipboard/export.
@@ -1329,7 +1412,7 @@ impl TableRockBridge {
         engine: Engine,
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
-        catch_entry(|| self.open_driver_session_inner(engine, session, None, None))
+        catch_entry(|| self.open_driver_session_inner(engine, session, None, None, None))
     }
 
     /// Registers a test driver under an existing saved-profile identity.
@@ -1340,7 +1423,9 @@ impl TableRockBridge {
         engine: Engine,
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
-        catch_entry(|| self.open_driver_session_inner(engine, session, Some(profile_id), None))
+        catch_entry(|| {
+            self.open_driver_session_inner(engine, session, Some(profile_id), None, None)
+        })
     }
 
     /// Inserts a minimal reviewed delete plan for the session (test/conformance only).
@@ -1377,6 +1462,7 @@ impl TableRockBridge {
         Self {
             runtime: RuntimeOwner::new(),
             inner: Mutex::new(None),
+            postgres_tools: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 }
@@ -1757,6 +1843,23 @@ impl TableRockBridge {
         self.ensure_runtime_inner()?;
         let session_id = session_from_bytes(&session_id_bytes)
             .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        if self
+            .postgres_tools
+            .lock()
+            .map_err(|_| {
+                BridgeError::rejected("postgres-tool-lock", "tool registry mutex poisoned")
+            })?
+            .values()
+            .any(|task| {
+                task.session_id == session_id
+                    && (task.phase == "running" || task.phase == "cancel_requested")
+            })
+        {
+            return Err(BridgeError::rejected(
+                "session-busy",
+                "session still has an active PostgreSQL tool operation",
+            ));
+        }
         let mut guard = self
             .inner
             .lock()
@@ -3474,6 +3577,227 @@ impl TableRockBridge {
         })
     }
 
+    fn start_postgres_tool_inner(
+        &self,
+        request: BridgePostgresToolRequest,
+    ) -> Result<Vec<u8>, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let BridgePostgresToolRequest {
+            session_id: session_id_bytes,
+            kind,
+            tool_path,
+            file_path,
+            content,
+            clean,
+            no_owner,
+        } = request;
+        let (tool_name, restore) = postgres_tool_kind(&kind)?;
+        if !matches!(content.as_str(), "all" | "schema_only" | "data_only") {
+            return Err(BridgeError::rejected(
+                "postgres-tool-content",
+                "content must be all, schema_only, or data_only",
+            ));
+        }
+        if clean && !restore {
+            return Err(BridgeError::rejected(
+                "postgres-tool-clean",
+                "clean is valid only for restore",
+            ));
+        }
+        let tool = match discover_tool(tool_name, Some(tool_path.as_str())) {
+            ToolStatus::Found { path, .. } => path,
+            ToolStatus::Missing { .. } => {
+                return Err(BridgeError::rejected(
+                    "postgres-tool-missing",
+                    "selected PostgreSQL tool is unavailable",
+                ));
+            }
+            ToolStatus::VersionProbeFailed { .. } => {
+                return Err(BridgeError::rejected(
+                    "postgres-tool-version",
+                    "selected PostgreSQL tool version probe failed",
+                ));
+            }
+        };
+        let file = validate_dump_path(Path::new(&file_path))
+            .map_err(|message| BridgeError::rejected("postgres-tool-file", message))?;
+        if !file.is_absolute() {
+            return Err(BridgeError::rejected(
+                "postgres-tool-file",
+                "backup path must be absolute",
+            ));
+        }
+        if restore && !file.is_file() {
+            return Err(BridgeError::rejected(
+                "postgres-tool-file",
+                "restore archive must be a regular file",
+            ));
+        }
+        if !restore && !file.parent().is_some_and(|parent| parent.is_dir()) {
+            return Err(BridgeError::rejected(
+                "postgres-tool-file",
+                "backup destination parent must exist",
+            ));
+        }
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("session-id", "invalid session id"))?;
+        let (operation_id, connection) = {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+            let connection = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?
+                .postgres_tool_connection
+                .clone()
+                .ok_or_else(|| {
+                    BridgeError::rejected(
+                        "postgres-tool-session",
+                        "backup and restore require a live PostgreSQL connection",
+                    )
+                })?;
+            (inner.ids.operation(), connection)
+        };
+        let (cancel, receiver) = cancel_channel();
+        {
+            let mut tasks = self.postgres_tools.lock().map_err(|_| {
+                BridgeError::rejected("postgres-tool-lock", "tool registry mutex poisoned")
+            })?;
+            if tasks
+                .values()
+                .filter(|task| task.phase == "running" || task.phase == "cancel_requested")
+                .count()
+                >= 4
+            {
+                return Err(BridgeError::rejected(
+                    "postgres-tool-capacity",
+                    "at most four PostgreSQL tool operations may run",
+                ));
+            }
+            while tasks.len() >= 256 {
+                let Some(completed) = tasks
+                    .iter()
+                    .find(|(_, task)| task.phase != "running" && task.phase != "cancel_requested")
+                    .map(|(operation_id, _)| *operation_id)
+                else {
+                    return Err(BridgeError::rejected(
+                        "postgres-tool-capacity",
+                        "PostgreSQL tool status registry is full",
+                    ));
+                };
+                tasks.remove(&completed);
+            }
+            tasks.insert(
+                operation_id,
+                PostgresToolTask {
+                    session_id,
+                    kind: kind.clone(),
+                    phase: "running".into(),
+                    summary: "Process started".into(),
+                    cancel,
+                },
+            );
+        }
+        let tasks = Arc::clone(&self.postgres_tools);
+        self.runtime.spawn(async move {
+            let password =
+                (!connection.password.is_empty()).then_some(connection.password.as_str());
+            let outcome = if restore {
+                run_pg_restore_configured(
+                    &tool,
+                    &connection.host,
+                    connection.port,
+                    &connection.database,
+                    &connection.user,
+                    password,
+                    &file,
+                    &content,
+                    clean,
+                    no_owner,
+                    receiver,
+                )
+                .await
+            } else {
+                run_pg_dump_configured(
+                    &tool,
+                    &connection.host,
+                    connection.port,
+                    &connection.database,
+                    &connection.user,
+                    password,
+                    &file,
+                    &content,
+                    no_owner,
+                    receiver,
+                )
+                .await
+            };
+            if let Ok(mut tasks) = tasks.lock()
+                && let Some(task) = tasks.get_mut(&operation_id)
+            {
+                let (phase, summary) = match outcome {
+                    PgToolRunOutcome::Succeeded { exit_code } => (
+                        "succeeded",
+                        format!("Process completed with exit {exit_code}"),
+                    ),
+                    PgToolRunOutcome::Failed { exit_code, .. } => {
+                        ("failed", format!("Process failed with exit {exit_code:?}"))
+                    }
+                    PgToolRunOutcome::Cancelled => ("cancelled", "Process cancelled".into()),
+                    PgToolRunOutcome::SpawnFailed { .. } => {
+                        ("failed", "Process could not start".into())
+                    }
+                };
+                task.phase = phase.into();
+                task.summary = summary;
+            }
+        })?;
+        Ok(operation_bytes(operation_id))
+    }
+
+    fn postgres_tool_status_inner(
+        &self,
+        operation_id_bytes: Vec<u8>,
+    ) -> Result<BridgePostgresToolStatus, BridgeError> {
+        let operation_id = operation_from_bytes(&operation_id_bytes)
+            .map_err(|_| BridgeError::rejected("operation-id", "invalid operation id"))?;
+        let tasks = self.postgres_tools.lock().map_err(|_| {
+            BridgeError::rejected("postgres-tool-lock", "tool registry mutex poisoned")
+        })?;
+        let task = tasks
+            .get(&operation_id)
+            .ok_or(BridgeError::UnknownOperation)?;
+        Ok(BridgePostgresToolStatus {
+            operation_id: operation_id_bytes,
+            kind: task.kind.clone(),
+            phase: task.phase.clone(),
+            summary: task.summary.clone(),
+        })
+    }
+
+    fn cancel_postgres_tool_inner(&self, operation_id_bytes: Vec<u8>) -> Result<bool, BridgeError> {
+        let operation_id = operation_from_bytes(&operation_id_bytes)
+            .map_err(|_| BridgeError::rejected("operation-id", "invalid operation id"))?;
+        let mut tasks = self.postgres_tools.lock().map_err(|_| {
+            BridgeError::rejected("postgres-tool-lock", "tool registry mutex poisoned")
+        })?;
+        let task = tasks
+            .get_mut(&operation_id)
+            .ok_or(BridgeError::UnknownOperation)?;
+        if task.phase != "running" && task.phase != "cancel_requested" {
+            return Ok(false);
+        }
+        if task.cancel.send(true).is_err() {
+            return Ok(false);
+        }
+        task.phase = "cancel_requested".into();
+        task.summary = "Cancellation requested".into();
+        Ok(true)
+    }
+
     fn format_result_copy_inner(
         &self,
         result_id_bytes: Vec<u8>,
@@ -3629,6 +3953,14 @@ impl TableRockBridge {
         } else {
             Some(password.as_str())
         };
+        let postgres_tool_connection =
+            (engine == Engine::PostgreSql).then(|| PostgresToolConnection {
+                host: host.as_str().to_owned(),
+                port,
+                database: database.as_str().to_owned(),
+                user: user.as_str().to_owned(),
+                password: Arc::new(Zeroizing::new(password.clone())),
+            });
         let tls_required = match params.tls_mode.as_str() {
             "" | "off" => false,
             "verify_ca" | "verify_full" => true,
@@ -3711,7 +4043,13 @@ impl TableRockBridge {
             }
         })??;
 
-        self.open_driver_session_inner(engine, session, saved_profile_id, Some(database))
+        self.open_driver_session_inner(
+            engine,
+            session,
+            saved_profile_id,
+            Some(database),
+            postgres_tool_connection,
+        )
     }
 
     fn open_driver_session_inner(
@@ -3720,6 +4058,7 @@ impl TableRockBridge {
         session: Box<dyn DriverSession>,
         saved_profile_id: Option<ProfileId>,
         database: Option<BoundedText>,
+        postgres_tool_connection: Option<PostgresToolConnection>,
     ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let mut guard = self
@@ -3788,6 +4127,7 @@ impl TableRockBridge {
                     )
                     .expect("default database is bounded")
                 }),
+                postgres_tool_connection,
                 context_revision: Revision::INITIAL,
             },
         );
@@ -4175,6 +4515,23 @@ impl TableRockBridge {
         } else {
             ShutdownMode::Graceful
         };
+        let initial_tool_active = {
+            let mut tasks = self.postgres_tools.lock().map_err(|_| {
+                BridgeError::rejected("postgres-tool-lock", "tool registry mutex poisoned")
+            })?;
+            let mut active = 0_u32;
+            for task in tasks.values_mut() {
+                if task.phase == "running" || task.phase == "cancel_requested" {
+                    active = active.saturating_add(1);
+                    if cancel_active && task.phase == "running" {
+                        let _ = task.cancel.send(true);
+                        task.phase = "cancel_requested".into();
+                        task.summary = "Cancellation requested".into();
+                    }
+                }
+            }
+            active
+        };
         let mut guard = self
             .inner
             .lock()
@@ -4189,7 +4546,8 @@ impl TableRockBridge {
             tablerock_core::ShutdownOutcome::Draining { active_operations } => active_operations,
             tablerock_core::ShutdownOutcome::Stopped
             | tablerock_core::ShutdownOutcome::AlreadyStopped => 0,
-        };
+        }
+        .saturating_add(initial_tool_active);
         let deadline = Duration::from_millis(deadline_ms);
         let started = Instant::now();
         while inner.service.core().active_operations() > 0 && started.elapsed() < deadline {
@@ -4219,7 +4577,34 @@ impl TableRockBridge {
                 }
             }
         }
-        let active = inner.service.core().active_operations();
+        while started.elapsed() < deadline {
+            let tool_active = self
+                .postgres_tools
+                .lock()
+                .map_err(|_| {
+                    BridgeError::rejected("postgres-tool-lock", "tool registry mutex poisoned")
+                })?
+                .values()
+                .any(|task| task.phase == "running" || task.phase == "cancel_requested");
+            if !tool_active {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let tool_active = self
+            .postgres_tools
+            .lock()
+            .map_err(|_| {
+                BridgeError::rejected("postgres-tool-lock", "tool registry mutex poisoned")
+            })?
+            .values()
+            .filter(|task| task.phase == "running" || task.phase == "cancel_requested")
+            .count() as u32;
+        let active = inner
+            .service
+            .core()
+            .active_operations()
+            .saturating_add(tool_active);
         let core = if active == 0 {
             let _ = self.runtime.block_on(inner.service.complete_shutdown());
             "Stopped".to_owned()
@@ -4268,6 +4653,51 @@ fn bridge_activity_error(code: &str, error: tablerock_engine::AdapterError) -> B
         "PostgreSQL activity operation failed"
     };
     BridgeError::rejected(code, message)
+}
+
+fn postgres_tool_kind(kind: &str) -> Result<(&'static str, bool), BridgeError> {
+    match kind {
+        "dump" => Ok(("pg_dump", false)),
+        "restore" => Ok(("pg_restore", true)),
+        _ => Err(BridgeError::rejected(
+            "postgres-tool-kind",
+            "tool kind must be dump or restore",
+        )),
+    }
+}
+
+fn probe_postgres_tool_inner(
+    kind: String,
+    explicit_path: Option<String>,
+) -> Result<BridgePostgresToolProbe, BridgeError> {
+    let (tool_name, _) = postgres_tool_kind(&kind)?;
+    let explicit = explicit_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    Ok(match discover_tool(tool_name, explicit) {
+        ToolStatus::Found { path, version } => BridgePostgresToolProbe {
+            kind,
+            available: true,
+            path: Some(path.display().to_string()),
+            version: Some(version.clone()),
+            summary: version,
+        },
+        ToolStatus::Missing { .. } => BridgePostgresToolProbe {
+            kind,
+            available: false,
+            path: None,
+            version: None,
+            summary: format!("{tool_name} not found"),
+        },
+        ToolStatus::VersionProbeFailed { path, .. } => BridgePostgresToolProbe {
+            kind,
+            available: false,
+            path: Some(path.display().to_string()),
+            version: None,
+            summary: "Version probe failed".into(),
+        },
+    })
 }
 
 fn bridge_profile_item(

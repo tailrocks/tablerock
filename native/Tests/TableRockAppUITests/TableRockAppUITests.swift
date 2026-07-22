@@ -422,6 +422,35 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testPostgresBackupRequiresToolFileAndReview() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("TableRock-PostgresTool-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let output = root.appendingPathComponent("fixture.dump")
+    let app = launch(
+      scenario: "success", root: root,
+      environment: ["TABLEROCK_TEST_SAVE_FILE": output.path])
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    connect.click()
+    XCTAssertTrue(app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
+
+    let command = app.menuItems["PostgreSQL Backup and Restore…"]
+    XCTAssertTrue(command.waitForExistence(timeout: 10))
+    command.click()
+    XCTAssertTrue(app.descendants(matching: .any)["postgres.tools.sheet"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["postgres.tools.probe-result"].exists)
+    app.buttons["postgres.tools.choose-file"].click()
+    app.buttons["postgres.tools.start"].click()
+    let confirm = app.buttons["Create Backup"]
+    XCTAssertTrue(confirm.waitForExistence(timeout: 10))
+    confirm.click()
+    let status = app.descendants(matching: .any)["postgres.tools.status"]
+    XCTAssertTrue(status.waitForExistence(timeout: 10))
+    XCTAssertTrue((status.value as? String ?? status.label).localizedCaseInsensitiveContains("succeeded"))
+  }
+
+  @MainActor
   func testLoadedResultExportsThroughUserControls() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)

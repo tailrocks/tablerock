@@ -17,6 +17,7 @@ mod runtime;
 pub use bridge::{
     ApplyOutcome, BridgeBrowseFilter, BridgeBrowseSort, BridgeConnectionTestReport,
     BridgeEventBatch, BridgeEventRecord, BridgeHistoryItem, BridgeNativeWindowIntent,
+    BridgePostgresToolProbe, BridgePostgresToolRequest, BridgePostgresToolStatus,
     BridgeProfileDraft, BridgeProfileGroup, BridgeProfileItem, BridgeProfileOrderItem,
     BridgeReconnectAttempt, BridgeReconnectPlan, BridgeSavedFilterPreset, BridgeSavedQueryItem,
     BridgeSessionHealth, BridgeSessionIntent, BridgeSqlFile, BridgeWorkspaceTab, CancelOutcome,

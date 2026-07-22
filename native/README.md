@@ -107,6 +107,15 @@ Saved-profile workspaces persist selected tab, titles, text, and database
 intent through Rust. Results, operation handles, and pending writes never
 restore. Switching profiles clears volatile tab state before loading intent.
 
+PostgreSQL sessions expose **Query → PostgreSQL Backup and Restore…**. Check
+the discovered or explicit `pg_dump`/`pg_restore` version, choose an archive
+through the native file panel, configure schema/data scope and ownership, then
+review before starting. Clean restore is destructive and always uses
+`--if-exists`; restore only trusted archives because source superusers can put
+executable code in them. Closing or disconnecting is disabled while the tool
+is active; Cancel requests supervised process termination, and cancelled dumps
+remove their incomplete destination.
+
 Double-click a PostgreSQL or ClickHouse table-like catalog object to open a
 read-only preview tab. Leaving the preview or choosing Pin makes it durable for
 the current connection. The same object can open more than once with independent

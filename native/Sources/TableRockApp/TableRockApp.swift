@@ -171,16 +171,28 @@ private struct NativeAppearanceFixtureModifier: ViewModifier {
 
 @MainActor
 private struct WorkbenchActions {
-  let canRun: Bool
-  let canCancel: Bool
-  let canRefresh: Bool
-  let canShowActivity: Bool
-  let run: () -> Void
-  let cancel: () -> Void
-  let refresh: () -> Void
-  let quickSwitch: () -> Void
-  let explain: () -> Void
-  let showActivity: () -> Void
+  let model: BridgeModel
+
+  var canRun: Bool {
+    model.queryWorkbenchSelected && model.sessionHex != nil
+      && !model.isRunning && !model.isCatalogRefreshing
+  }
+  var canCancel: Bool { model.isRunning }
+  var canRefresh: Bool {
+    model.sessionHex != nil && !model.isRunning && !model.isCatalogRefreshing
+  }
+  var canShowActivity: Bool {
+    model.sessionHex != nil && model.connectedEngine == "postgresql"
+  }
+  var canShowPostgresTools: Bool { canShowActivity }
+
+  func run() { Task { await model.runQuery() } }
+  func cancel() { Task { await model.cancel() } }
+  func refresh() { Task { await model.browse() } }
+  func quickSwitch() { Task { await model.showQuickSwitcher() } }
+  func explain() { Task { await model.runExplain() } }
+  func showActivity() { Task { await model.showPostgresActivity() } }
+  func showPostgresTools() { Task { await model.showPostgresTools() } }
 }
 
 private struct WorkbenchActionsKey: FocusedValueKey {
@@ -217,6 +229,8 @@ private struct WorkbenchCommands: Commands {
         .disabled(actions?.canRun != true)
       Button("PostgreSQL Activity…") { actions?.showActivity() }
         .disabled(actions?.canShowActivity != true)
+      Button("PostgreSQL Backup and Restore…") { actions?.showPostgresTools() }
+        .disabled(actions?.canShowPostgresTools != true)
     }
   }
 }
@@ -378,6 +392,20 @@ extension WorkbenchBackend {
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
     -> WorkbenchBackendSignalOutcome
   { try scriptedUnavailable("postgres-activity-signal") }
+  func probePostgresTool(kind: String, explicitPath: String?) throws
+    -> WorkbenchPostgresToolProbe
+  { try scriptedUnavailable("postgres-tool-probe") }
+  func startPostgresTool(
+    sessionId: Data, kind: String, toolPath: String, filePath: String, content: String,
+    clean: Bool, noOwner: Bool
+  ) throws -> Data
+  { try scriptedUnavailable("postgres-tool-start") }
+  func postgresToolStatus(operationId: Data) throws -> WorkbenchPostgresToolStatus {
+    try scriptedUnavailable("postgres-tool-status")
+  }
+  func cancelPostgresTool(operationId: Data) throws -> Bool {
+    try scriptedUnavailable("postgres-tool-cancel")
+  }
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
     -> WorkbenchApplyOutcome
   { try scriptedUnavailable("apply") }
@@ -398,6 +426,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   private var profileDrafts: [Data: WorkbenchProfileDraft] = [:]
   private var filterPresets: [WorkbenchSavedFilterPreset] = []
   private var submittedIntent: String?
+  private var postgresToolPhase = "succeeded"
 
   init(scenario: String) { self.scenario = scenario }
 
@@ -662,6 +691,47 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       kind == "cancel" || kind == "terminate"
     else { return try scriptedUnavailable("postgres-activity-signal") }
     return WorkbenchBackendSignalOutcome(kind: kind, pid: pid, acknowledged: true)
+  }
+
+  func probePostgresTool(kind: String, explicitPath: String?) throws
+    -> WorkbenchPostgresToolProbe
+  {
+    guard scenario == "success", kind == "dump" || kind == "restore" else {
+      return try scriptedUnavailable("postgres-tool-probe")
+    }
+    return WorkbenchPostgresToolProbe(
+      kind: kind, available: true, path: "/fixture/pg_\(kind)", version: "PostgreSQL 18.4",
+      summary: "PostgreSQL 18.4")
+  }
+
+  func startPostgresTool(
+    sessionId: Data, kind: String, toolPath: String, filePath: String, content: String,
+    clean: Bool, noOwner: Bool
+  ) throws -> Data
+  {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16), !toolPath.isEmpty,
+      !filePath.isEmpty
+    else { return try scriptedUnavailable("postgres-tool-start") }
+    postgresToolPhase = "running"
+    return Data(repeating: kind == "dump" ? 6 : 7, count: 16)
+  }
+
+  func postgresToolStatus(operationId: Data) throws -> WorkbenchPostgresToolStatus {
+    guard scenario == "success", operationId.count == 16 else {
+      return try scriptedUnavailable("postgres-tool-status")
+    }
+    if postgresToolPhase == "running" { postgresToolPhase = "succeeded" }
+    return WorkbenchPostgresToolStatus(
+      operationId: operationId, kind: operationId.first == 6 ? "dump" : "restore",
+      phase: postgresToolPhase, summary: "Process completed with exit 0")
+  }
+
+  func cancelPostgresTool(operationId: Data) throws -> Bool {
+    guard scenario == "success", operationId.count == 16 else {
+      return try scriptedUnavailable("postgres-tool-cancel")
+    }
+    postgresToolPhase = "cancel_requested"
+    return true
   }
 }
 
@@ -960,6 +1030,29 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
     -> WorkbenchBackendSignalOutcome
   {
     try bridge.signalPostgresBackend(sessionId: sessionId, kind: kind, pid: pid).workbench
+  }
+
+  func probePostgresTool(kind: String, explicitPath: String?) throws
+    -> WorkbenchPostgresToolProbe
+  { try bridge.probePostgresTool(kind: kind, explicitPath: explicitPath).workbench }
+
+  func startPostgresTool(
+    sessionId: Data, kind: String, toolPath: String, filePath: String, content: String,
+    clean: Bool, noOwner: Bool
+  ) throws -> Data
+  {
+    try bridge.startPostgresTool(
+      request: BridgePostgresToolRequest(
+        sessionId: sessionId, kind: kind, toolPath: toolPath, filePath: filePath,
+        content: content, clean: clean, noOwner: noOwner))
+  }
+
+  func postgresToolStatus(operationId: Data) throws -> WorkbenchPostgresToolStatus {
+    try bridge.postgresToolStatus(operationId: operationId).workbench
+  }
+
+  func cancelPostgresTool(operationId: Data) throws -> Bool {
+    try bridge.cancelPostgresTool(operationId: operationId)
   }
 
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
@@ -1977,6 +2070,18 @@ final class BridgeModel {
   private(set) var postgresActivityLoading = false
   private(set) var postgresActivityError: String?
   var postgresActivityOutcome: String?
+  var postgresToolsPresented = false
+  var postgresToolKind = "dump"
+  var postgresToolContent = "all"
+  var postgresToolClean = false
+  var postgresToolNoOwner = false
+  var postgresToolExplicitPath = ""
+  var postgresToolProbe: WorkbenchPostgresToolProbe?
+  var postgresToolFileUrl: URL?
+  var postgresToolStatus: WorkbenchPostgresToolStatus?
+  var postgresToolError: String?
+  var postgresToolReviewRequested = false
+  private var postgresToolSecurityScopeActive = false
   var queryTabs: [NativeQueryTab]
   var selectedQueryTabId: UUID
   var objectTabs: [NativeObjectTab] = []
@@ -3679,6 +3784,116 @@ final class BridgeModel {
     }
   }
 
+  func showPostgresTools() async {
+    guard connectedEngine == "postgresql", sessionData != nil else { return }
+    postgresToolsPresented = true
+    postgresToolError = nil
+    await probePostgresTool()
+  }
+
+  func probePostgresTool() async {
+    guard let client else { return }
+    postgresToolError = nil
+    let explicit = postgresToolExplicitPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    do {
+      postgresToolProbe = try await client.probePostgresTool(
+        kind: postgresToolKind,
+        explicitPath: explicit.isEmpty ? nil : explicit)
+    } catch {
+      postgresToolProbe = nil
+      postgresToolError = "Tool probe failed: \(error)"
+    }
+  }
+
+  func choosePostgresToolFile() {
+    let request = AppFilePanelRequest(
+      title: postgresToolKind == "dump" ? "Choose Backup Destination" : "Choose Restore Archive",
+      prompt: postgresToolKind == "dump" ? "Choose" : "Restore",
+      suggestedFilename: postgresToolKind == "dump" ? "tablerock.dump" : nil,
+      allowedExtensions: ["dump", "backup"])
+    postgresToolFileUrl = postgresToolKind == "dump"
+      ? dependencies.filePanels.chooseSaveFile(request)
+      : dependencies.filePanels.chooseOpenFile(request)
+    postgresToolStatus = nil
+    postgresToolError = nil
+  }
+
+  func requestStartPostgresTool() {
+    guard postgresToolProbe?.available == true, postgresToolFileUrl != nil else {
+      postgresToolError = "Choose an available tool and archive file first"
+      return
+    }
+    postgresToolReviewRequested = true
+  }
+
+  func startPostgresTool() async {
+    postgresToolReviewRequested = false
+    guard let client, let session = sessionData, let tool = postgresToolProbe?.path,
+      let file = postgresToolFileUrl
+    else { return }
+    postgresToolError = nil
+    postgresToolStatus = nil
+    postgresToolSecurityScopeActive = file.startAccessingSecurityScopedResource()
+    do {
+      let operation = try await client.startPostgresTool(
+        sessionId: session, kind: postgresToolKind, toolPath: tool, filePath: file.path,
+        content: postgresToolContent, clean: postgresToolKind == "restore" && postgresToolClean,
+        noOwner: postgresToolNoOwner)
+      postgresToolStatus = WorkbenchPostgresToolStatus(
+        operationId: operation, kind: postgresToolKind, phase: "running",
+        summary: "Process started")
+      await pollPostgresTool(operation)
+    } catch {
+      releasePostgresToolSecurityScope()
+      postgresToolError = "PostgreSQL tool failed to start: \(error)"
+    }
+  }
+
+  private func pollPostgresTool(_ operation: Data) async {
+    guard let client else { return }
+    while true {
+      do {
+        let status = try await client.postgresToolStatus(operationId: operation)
+        postgresToolStatus = status
+        if status.phase != "running" && status.phase != "cancel_requested" {
+          releasePostgresToolSecurityScope()
+          return
+        }
+      } catch {
+        releasePostgresToolSecurityScope()
+        postgresToolError = "PostgreSQL tool status failed: \(error)"
+        return
+      }
+      try? await Task.sleep(for: .milliseconds(200))
+    }
+  }
+
+  func cancelPostgresTool() async {
+    guard let client, let operation = postgresToolStatus?.operationId else { return }
+    do {
+      if try await client.cancelPostgresTool(operationId: operation) {
+        postgresToolStatus = WorkbenchPostgresToolStatus(
+          operationId: operation, kind: postgresToolKind, phase: "cancel_requested",
+          summary: "Cancellation requested")
+      }
+    } catch { postgresToolError = "PostgreSQL tool cancellation failed: \(error)" }
+  }
+
+  func closePostgresTools() {
+    guard postgresToolStatus?.phase != "running"
+      && postgresToolStatus?.phase != "cancel_requested"
+    else { return }
+    releasePostgresToolSecurityScope()
+    postgresToolsPresented = false
+  }
+
+  private func releasePostgresToolSecurityScope() {
+    if postgresToolSecurityScopeActive, let file = postgresToolFileUrl {
+      file.stopAccessingSecurityScopedResource()
+    }
+    postgresToolSecurityScopeActive = false
+  }
+
   private func restoreSessionIntent(profileId: Data) async {
     guard let client else { return }
     do {
@@ -5176,6 +5391,9 @@ struct ContentView: View {
     .sheet(isPresented: $model.postgresActivityPresented) {
       PostgresActivitySheet()
     }
+    .sheet(isPresented: $model.postgresToolsPresented) {
+      PostgresToolsSheet()
+    }
     .sheet(
       isPresented: $model.csvImportPresented,
       onDismiss: { Task { await model.closeCsvImport() } }
@@ -5275,7 +5493,7 @@ struct ContentView: View {
       Button("Cancel", role: .cancel) { model.queryTabRename = nil }
     }
     .task { await model.initialize() }
-    .focusedValue(
+    .focusedSceneValue(
       \.workbenchActions,
       focusedWorkbenchActions
     )
@@ -5285,19 +5503,7 @@ struct ContentView: View {
   }
 
   private var focusedWorkbenchActions: WorkbenchActions {
-    WorkbenchActions(
-      canRun: model.queryWorkbenchSelected && model.sessionHex != nil
-        && !model.isRunning && !model.isCatalogRefreshing,
-      canCancel: model.isRunning,
-      canRefresh: model.sessionHex != nil && !model.isRunning && !model.isCatalogRefreshing,
-      canShowActivity: model.sessionHex != nil && model.connectedEngine == "postgresql",
-      run: { Task { await model.runQuery() } },
-      cancel: { Task { await model.cancel() } },
-      refresh: { Task { await model.browse() } },
-      quickSwitch: { Task { await model.showQuickSwitcher() } },
-      explain: { Task { await model.runExplain() } },
-      showActivity: { Task { await model.showPostgresActivity() } }
-    )
+    WorkbenchActions(model: model)
   }
 }
 
@@ -6090,6 +6296,164 @@ private struct PostgresActivitySheet: View {
         pending.kind == "terminate"
           ? "PostgreSQL will close backend PID \(pending.pid)."
           : "PostgreSQL will request cancellation for PID \(pending.pid).")
+    }
+  }
+}
+
+private struct PostgresToolsSheet: View {
+  @Environment(BridgeModel.self) private var model
+
+  private var operationActive: Bool {
+    model.postgresToolStatus?.phase == "running"
+      || model.postgresToolStatus?.phase == "cancel_requested"
+  }
+
+  var body: some View {
+    @Bindable var model = model
+    let target = model.activeProfile.map {
+      "\($0.name) · \($0.host ?? "unknown host"):\($0.port ?? "?")/\($0.context ?? "postgres")"
+    } ?? "Temporary · \(model.formHost):\(model.formPort)/\(model.formDatabase)"
+    VStack(alignment: .leading, spacing: 16) {
+      HStack {
+        Label("PostgreSQL Backup and Restore", systemImage: "externaldrive.badge.timemachine")
+          .font(.title2.bold())
+        Spacer()
+        Button("Close") { model.closePostgresTools() }
+          .disabled(operationActive)
+          .accessibilityIdentifier("postgres.tools.close")
+      }
+      Label(target, systemImage: "server.rack")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .textSelection(.enabled)
+        .accessibilityIdentifier("postgres.tools.target")
+      Picker("Operation", selection: $model.postgresToolKind) {
+        Text("Backup").tag("dump")
+        Text("Restore").tag("restore")
+      }
+      .pickerStyle(.segmented)
+      .disabled(operationActive)
+      .accessibilityIdentifier("postgres.tools.kind")
+      .onChange(of: model.postgresToolKind) {
+        model.postgresToolFileUrl = nil
+        model.postgresToolStatus = nil
+        Task { await model.probePostgresTool() }
+      }
+      GroupBox("Client tool") {
+        VStack(alignment: .leading, spacing: 8) {
+          HStack {
+            TextField("Optional absolute tool path", text: $model.postgresToolExplicitPath)
+              .textFieldStyle(.roundedBorder)
+              .disabled(operationActive)
+              .accessibilityIdentifier("postgres.tools.path")
+            Button("Check Version") { Task { await model.probePostgresTool() } }
+              .disabled(operationActive)
+              .accessibilityIdentifier("postgres.tools.probe")
+          }
+          if let probe = model.postgresToolProbe {
+            Label(
+              probe.summary,
+              systemImage: probe.available ? "checkmark.circle.fill" : "xmark.circle.fill"
+            )
+            .foregroundStyle(probe.available ? .green : .red)
+            .accessibilityIdentifier("postgres.tools.probe-result")
+            if let path = probe.path {
+              Text(path).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+            }
+          }
+        }.padding(6)
+      }
+      GroupBox(model.postgresToolKind == "dump" ? "Backup destination" : "Restore archive") {
+        HStack {
+          Text(model.postgresToolFileUrl?.path ?? "No archive selected")
+            .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+          Spacer()
+          Button("Choose…") { model.choosePostgresToolFile() }
+            .disabled(operationActive)
+            .accessibilityIdentifier("postgres.tools.choose-file")
+        }.padding(6)
+      }
+      GroupBox("Configuration") {
+        VStack(alignment: .leading, spacing: 8) {
+          Picker("Content", selection: $model.postgresToolContent) {
+            Text("Schema and data").tag("all")
+            Text("Schema only").tag("schema_only")
+            Text("Data only").tag("data_only")
+          }
+          .disabled(operationActive)
+          .accessibilityIdentifier("postgres.tools.content")
+          Toggle("Do not restore original ownership", isOn: $model.postgresToolNoOwner)
+            .disabled(operationActive)
+            .accessibilityIdentifier("postgres.tools.no-owner")
+          if model.postgresToolKind == "restore" {
+            Toggle("Drop matching objects before restore", isOn: $model.postgresToolClean)
+              .disabled(operationActive)
+              .accessibilityIdentifier("postgres.tools.clean")
+            if model.postgresToolClean {
+              Text("Uses --clean with --if-exists. Matching objects may be destroyed.")
+                .foregroundStyle(.orange)
+            }
+          }
+        }.padding(6)
+      }
+      GroupBox("Review") {
+        Text(
+          model.postgresToolKind == "dump"
+            ? "Create a \(model.postgresToolContent.replacingOccurrences(of: "_", with: " ")) PostgreSQL custom-format backup at the selected destination. An incomplete archive is removed if cancelled."
+            : "Load \(model.postgresToolContent.replacingOccurrences(of: "_", with: " ")) from the selected archive into the connected database. Restore may execute code chosen by source superusers and overwrite objects or data; use only a trusted archive."
+        )
+        .foregroundStyle(model.postgresToolKind == "restore" ? .orange : .secondary)
+        .padding(6)
+      }
+      if let status = model.postgresToolStatus {
+        HStack {
+          if operationActive { ProgressView() }
+          Text("\(status.phase.replacingOccurrences(of: "_", with: " ").capitalized): \(status.summary)")
+            .accessibilityIdentifier("postgres.tools.status")
+          Spacer()
+          if operationActive {
+            Button("Cancel", role: .destructive) { Task { await model.cancelPostgresTool() } }
+              .disabled(status.phase == "cancel_requested")
+              .accessibilityIdentifier("postgres.tools.cancel")
+          }
+        }
+      }
+      if let error = model.postgresToolError {
+        Text(error).foregroundStyle(.red).textSelection(.enabled)
+          .accessibilityIdentifier("postgres.tools.error")
+      }
+      HStack {
+        Spacer()
+        Button(model.postgresToolKind == "dump" ? "Start Backup…" : "Start Restore…") {
+          model.requestStartPostgresTool()
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(operationActive || model.postgresToolProbe?.available != true
+          || model.postgresToolFileUrl == nil)
+        .accessibilityIdentifier("postgres.tools.start")
+      }
+    }
+    .padding(20)
+    .frame(minWidth: 700, minHeight: 500)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("postgres.tools.sheet")
+    .interactiveDismissDisabled(operationActive)
+    .confirmationDialog(
+      model.postgresToolKind == "dump" ? "Start PostgreSQL backup?" : "Start PostgreSQL restore?",
+      isPresented: $model.postgresToolReviewRequested
+    ) {
+      Button(
+        model.postgresToolKind == "dump" ? "Create Backup" : "Restore Database",
+        role: model.postgresToolKind == "restore" ? .destructive : nil
+      ) { Task { await model.startPostgresTool() } }
+      .accessibilityIdentifier("postgres.tools.confirm")
+      Button("Cancel", role: .cancel) { model.postgresToolReviewRequested = false }
+    } message: {
+      Text(
+        model.postgresToolKind == "dump"
+          ? "Run the checked pg_dump version against the connected PostgreSQL database?"
+          : "Run the checked pg_restore version against the connected PostgreSQL database? This can replace database objects and data."
+      )
     }
   }
 }
@@ -7212,6 +7576,16 @@ struct CatalogGrid: NSViewRepresentable {
 
       @objc func activateCell() {
         onActivate?()
+      }
+
+      override func mouseDown(with event: NSEvent) {
+        onActivate?()
+        super.mouseDown(with: event)
+      }
+
+      override func accessibilityPerformPress() -> Bool {
+        onActivate?()
+        return true
       }
     }
 

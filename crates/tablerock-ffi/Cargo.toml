@@ -28,6 +28,7 @@ tablerock-tools = { version = "=0.1.0", path = "../tablerock-tools" }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 uniffi = { version = "=0.32.0", default-features = false }
 serde_json.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 redis = { workspace = true }

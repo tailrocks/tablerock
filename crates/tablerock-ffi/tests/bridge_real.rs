@@ -6,12 +6,23 @@
 //! `spawn_blocking` so runtimes never nest.
 
 use tablerock_core::{Engine, PageLimits, ResultPage};
-use tablerock_ffi::{OpenParams, SubmitSpec, TableRockBridge};
+use tablerock_ffi::{BridgePostgresToolRequest, OpenParams, SubmitSpec, TableRockBridge};
 use testcontainers::{
     GenericImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
     runners::AsyncRunner,
 };
+
+fn pg_dump_explicit_path() -> Option<String> {
+    [
+        "/opt/homebrew/opt/libpq/bin/pg_dump",
+        "/usr/local/opt/libpq/bin/pg_dump",
+        "/usr/bin/pg_dump",
+    ]
+    .into_iter()
+    .find(|path| std::path::Path::new(path).is_file())
+    .map(str::to_owned)
+}
 
 fn open_params(engine: &str, host: &str, port: u16, database: &str, user: &str) -> OpenParams {
     OpenParams {
@@ -169,6 +180,39 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
             !signal.acknowledged,
             "unknown PID must not report authority success"
         );
+        let probe = bridge
+            .probe_postgres_tool("dump".into(), pg_dump_explicit_path())
+            .unwrap();
+        if probe.available {
+            let archive = std::env::temp_dir().join(format!(
+                "tablerock-bridge-pg-dump-{}.dump",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_file(&archive);
+            let tool_operation = bridge
+                .start_postgres_tool(BridgePostgresToolRequest {
+                    session_id: session.clone(),
+                    kind: "dump".into(),
+                    tool_path: probe.path.unwrap(),
+                    file_path: archive.to_string_lossy().into_owned(),
+                    content: "all".into(),
+                    clean: false,
+                    no_owner: false,
+                })
+                .unwrap();
+            let status = loop {
+                let status = bridge.postgres_tool_status(tool_operation.clone()).unwrap();
+                if status.phase != "running" && status.phase != "cancel_requested" {
+                    break status;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            };
+            assert_eq!(status.phase, "succeeded", "{}", status.summary);
+            assert!(archive.metadata().unwrap().len() > 0);
+            std::fs::remove_file(archive).unwrap();
+        } else {
+            eprintln!("skip bridge pg_dump lifecycle: client tool unavailable");
+        }
         let (page, _) = probe_and_fetch(&bridge, session, 0);
         assert!(!page.is_empty());
         bridge.shutdown(false, 5_000).unwrap();

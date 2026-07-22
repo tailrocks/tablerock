@@ -85,6 +85,24 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertNil(model.postgresActivityError)
   }
 
+  func testPostgresBackupUsesProbeReviewAndSupervisedStatus() async {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let model = BridgeModel(client: backend)
+
+    await model.connectByParams()
+    await model.showPostgresTools()
+    model.postgresToolFileUrl = URL(fileURLWithPath: "/tmp/tablerock-fixture.dump")
+    model.requestStartPostgresTool()
+
+    XCTAssertTrue(model.postgresToolsPresented)
+    XCTAssertEqual(model.postgresToolProbe?.version, "PostgreSQL 18.4")
+    XCTAssertTrue(model.postgresToolReviewRequested)
+    await model.startPostgresTool()
+    XCTAssertEqual(model.postgresToolStatus?.phase, "succeeded")
+    XCTAssertEqual(model.postgresToolStatus?.kind, "dump")
+    XCTAssertNil(model.postgresToolError)
+  }
+
   func testDirtyAndRunningTabsRequireExplicitResolution() {
     let model = BridgeModel()
     model.addQueryTab()

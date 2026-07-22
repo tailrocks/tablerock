@@ -31,13 +31,13 @@ pub fn discover_tool(name: &str, explicit_path: Option<&str>) -> ToolStatus {
     if let Some(value) = explicit_path {
         let path = PathBuf::from(value.trim());
         return if path.is_file() {
-            probe_version(path)
+            probe_version(path, name)
         } else {
             ToolStatus::Missing { name: name.into() }
         };
     }
     match find_on_path(name) {
-        Some(path) => probe_version(path),
+        Some(path) => probe_version(path, name),
         None => ToolStatus::Missing { name: name.into() },
     }
 }
@@ -50,7 +50,7 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
     })
 }
 
-fn probe_version(path: PathBuf) -> ToolStatus {
+fn probe_version(path: PathBuf, expected_name: &str) -> ToolStatus {
     match SyncCommand::new(&path).arg("--version").output() {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
@@ -59,7 +59,15 @@ fn probe_version(path: PathBuf) -> ToolStatus {
             } else {
                 stdout
             };
-            ToolStatus::Found { path, version }
+            if version.starts_with(expected_name) || version.contains(&format!("{expected_name} ("))
+            {
+                ToolStatus::Found { path, version }
+            } else {
+                ToolStatus::VersionProbeFailed {
+                    path,
+                    detail: "tool identity mismatch".into(),
+                }
+            }
         }
         Ok(output) => ToolStatus::VersionProbeFailed {
             path,
@@ -152,7 +160,26 @@ pub async fn run_pg_dump(
     file: &Path,
     cancel: tokio::sync::watch::Receiver<bool>,
 ) -> PgToolRunOutcome {
-    let argv = pg_dump_argv(tool, host, port, database, username, file);
+    run_pg_dump_configured(
+        tool, host, port, database, username, password, file, "all", false, cancel,
+    )
+    .await
+}
+
+pub async fn run_pg_dump_configured(
+    tool: &Path,
+    host: &str,
+    port: u16,
+    database: &str,
+    username: &str,
+    password: Option<&str>,
+    file: &Path,
+    content: &str,
+    no_owner: bool,
+    cancel: tokio::sync::watch::Receiver<bool>,
+) -> PgToolRunOutcome {
+    let mut argv = pg_dump_argv(tool, host, port, database, username, file);
+    add_content_and_owner_options(&mut argv, content, no_owner);
     run_supervised(&argv, password, Some(file), cancel).await
 }
 
@@ -166,8 +193,43 @@ pub async fn run_pg_restore(
     file: &Path,
     cancel: tokio::sync::watch::Receiver<bool>,
 ) -> PgToolRunOutcome {
-    let argv = pg_restore_argv(tool, host, port, database, username, file);
+    run_pg_restore_configured(
+        tool, host, port, database, username, password, file, "all", false, false, cancel,
+    )
+    .await
+}
+
+pub async fn run_pg_restore_configured(
+    tool: &Path,
+    host: &str,
+    port: u16,
+    database: &str,
+    username: &str,
+    password: Option<&str>,
+    file: &Path,
+    content: &str,
+    clean: bool,
+    no_owner: bool,
+    cancel: tokio::sync::watch::Receiver<bool>,
+) -> PgToolRunOutcome {
+    let mut argv = pg_restore_argv(tool, host, port, database, username, file);
+    add_content_and_owner_options(&mut argv, content, no_owner);
+    if clean {
+        argv.push("--clean".into());
+        argv.push("--if-exists".into());
+    }
     run_supervised(&argv, password, None, cancel).await
+}
+
+fn add_content_and_owner_options(argv: &mut Vec<String>, content: &str, no_owner: bool) {
+    match content {
+        "schema_only" => argv.push("--schema-only".into()),
+        "data_only" => argv.push("--data-only".into()),
+        _ => {}
+    }
+    if no_owner {
+        argv.push("--no-owner".into());
+    }
 }
 
 async fn run_supervised(
@@ -185,8 +247,8 @@ async fn run_supervised(
     command
         .args(&argv[1..])
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .kill_on_drop(true);
     if let Some(secret) = password {
         command.env("PGPASSWORD", secret);
@@ -264,6 +326,46 @@ mod tests {
         assert!(!argv_contains_secret(&refs, "secret"));
         assert!(refs.contains(&"-Fc"));
         assert!(refs.contains(&"--no-password"));
+    }
+
+    #[test]
+    fn explicit_path_must_report_expected_tool_identity() {
+        let path = Path::new("/usr/bin/true");
+        if path.is_file() {
+            assert!(matches!(
+                discover_tool("pg_dump", Some("/usr/bin/true")),
+                ToolStatus::VersionProbeFailed { .. }
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_options_are_closed_and_composed() {
+        let mut dump = pg_dump_argv(
+            Path::new("/usr/bin/pg_dump"),
+            "host",
+            5432,
+            "db",
+            "user",
+            Path::new("/tmp/out.dump"),
+        );
+        add_content_and_owner_options(&mut dump, "schema_only", true);
+        assert!(dump.iter().any(|arg| arg == "--schema-only"));
+        assert!(dump.iter().any(|arg| arg == "--no-owner"));
+
+        let mut restore = pg_restore_argv(
+            Path::new("/usr/bin/pg_restore"),
+            "host",
+            5432,
+            "db",
+            "user",
+            Path::new("/tmp/in.dump"),
+        );
+        add_content_and_owner_options(&mut restore, "data_only", false);
+        restore.extend(["--clean".into(), "--if-exists".into()]);
+        assert!(restore.iter().any(|arg| arg == "--data-only"));
+        assert!(restore.iter().any(|arg| arg == "--clean"));
+        assert!(restore.iter().any(|arg| arg == "--if-exists"));
     }
 
     #[tokio::test]
