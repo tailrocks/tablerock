@@ -1117,6 +1117,29 @@ impl PostgresSession {
                     quote_ident(relation).map_err(|_| PostgresError::Query)?,
                 )
             }
+            (DdlKind::RenameTable, DdlTarget::PostgreSqlRelation { schema, relation }) => {
+                let new_name = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
+                format!(
+                    "ALTER TABLE {}.{} RENAME TO {}",
+                    quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                    quote_ident(relation).map_err(|_| PostgresError::Query)?,
+                    quote_ident(new_name).map_err(|_| PostgresError::Query)?,
+                )
+            }
+            (DdlKind::TruncateTable, DdlTarget::PostgreSqlRelation { schema, relation }) => {
+                format!(
+                    "TRUNCATE TABLE {}.{}",
+                    quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                    quote_ident(relation).map_err(|_| PostgresError::Query)?,
+                )
+            }
+            (DdlKind::DropTable, DdlTarget::PostgreSqlRelation { schema, relation }) => {
+                format!(
+                    "DROP TABLE {}.{}",
+                    quote_ident(schema).map_err(|_| PostgresError::Query)?,
+                    quote_ident(relation).map_err(|_| PostgresError::Query)?,
+                )
+            }
             (DdlKind::CreateIndex, DdlTarget::PostgreSqlRelation { schema, relation }) => {
                 let index = plan.object_name.as_deref().ok_or(PostgresError::Query)?;
                 let columns = plan.type_text.as_deref().ok_or(PostgresError::Query)?;

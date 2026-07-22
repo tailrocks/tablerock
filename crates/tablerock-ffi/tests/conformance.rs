@@ -22,8 +22,8 @@ use tablerock_engine::{
 };
 use tablerock_ffi::{
     BridgeBrowseFilter, BridgeBrowseSort, BridgeError, BridgeProfileOrderItem,
-    BridgeQueryParameter, BridgeSavedFilterPreset, BridgeSessionIntent, BridgeWorkspaceTab,
-    SubmitSpec, TableRockBridge,
+    BridgeQueryParameter, BridgeSavedFilterPreset, BridgeSessionIntent,
+    BridgeTableOperationRequest, BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
 };
 
 struct OnePageStream(Option<ResultPage>);
@@ -963,6 +963,47 @@ fn named_parameters_are_typed_and_never_inlined() {
         invalid,
         BridgeError::Rejected { ref code, .. } if code == "named-parameter-integer"
     ));
+}
+
+#[test]
+fn table_operation_review_is_target_bound_and_wrong_confirmation_is_retryable() {
+    let (_, page) = sample_page(Engine::PostgreSql, 190, &[7]);
+    let bridge = TableRockBridge::new_for_test();
+    let session = open_fixed(&bridge, Engine::PostgreSql, page);
+    let database = bridge
+        .refresh_catalog(session.clone(), None)
+        .unwrap()
+        .remove(0);
+    let schema = bridge
+        .refresh_catalog(session.clone(), Some(database.id_bytes))
+        .unwrap()
+        .remove(0);
+    let table = bridge
+        .refresh_catalog(session.clone(), Some(schema.id_bytes))
+        .unwrap()
+        .remove(0);
+    let review = bridge
+        .stage_table_operation(BridgeTableOperationRequest {
+            session_id: session.clone(),
+            catalog_node_id: table.id_bytes,
+            kind: "drop".into(),
+            new_name: String::new(),
+            now_ms: 1_000,
+        })
+        .unwrap();
+    assert_eq!(review.target, "public.users");
+    assert_eq!(review.preview, "DROP TABLE \"public\".\"users\";");
+    assert!(review.destructive);
+    assert!(matches!(
+        bridge.apply_table_operation(
+            review.token_id.clone(),
+            session,
+            1_001,
+            "wrong".into()
+        ),
+        Err(BridgeError::Rejected { ref code, .. }) if code == "table-operation-confirmation"
+    ));
+    assert!(bridge.revoke_table_operation(review.token_id).unwrap());
 }
 
 #[test]

@@ -23,7 +23,7 @@ pub use bridge::{
     BridgeReconnectPlan, BridgeRedisSubscriptionStatus, BridgeRoleChangeRequest,
     BridgeRoleChangeReview, BridgeRoleMembership, BridgeRolePrivilege, BridgeRoleSnapshot,
     BridgeSavedFilterPreset, BridgeSavedQueryItem, BridgeSessionHealth, BridgeSessionIntent,
-    BridgeSqlFile, BridgeWorkspaceTab, CancelOutcome, OpenParams, ShutdownOutcome, SubmitSpec,
-    TableRockBridge,
+    BridgeSqlFile, BridgeTableOperationRequest, BridgeTableOperationReview, BridgeWorkspaceTab,
+    CancelOutcome, OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
 };
 pub use error::BridgeError;

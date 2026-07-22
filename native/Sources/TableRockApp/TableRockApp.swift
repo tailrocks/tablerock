@@ -433,6 +433,15 @@ extension WorkbenchBackend {
   func revokeDdlChange(tokenId: Data) throws -> Bool {
     try scriptedUnavailable("ddl-change-revoke")
   }
+  func stageTableOperation(
+    sessionId: Data, catalogNodeId: Data, kind: String, newName: String, nowMs: UInt64
+  ) throws -> WorkbenchTableOperationReview { try scriptedUnavailable("table-operation-stage") }
+  func applyTableOperation(
+    tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String
+  ) throws -> String { try scriptedUnavailable("table-operation-apply") }
+  func revokeTableOperation(tokenId: Data) throws -> Bool {
+    try scriptedUnavailable("table-operation-revoke")
+  }
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow] {
     try scriptedUnavailable("postgres-activity")
   }
@@ -491,6 +500,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   private var postgresToolPhase = "succeeded"
   private var redisSubscriptionActive = false
   private var ddlReviewActive = false
+  private var tableOperationReviewActive = false
 
   init(scenario: String) { self.scenario = scenario }
 
@@ -826,6 +836,36 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     let wasActive = ddlReviewActive
     ddlReviewActive = false
     return wasActive
+  }
+
+  func stageTableOperation(
+    sessionId: Data, catalogNodeId: Data, kind: String, newName: String, nowMs: UInt64
+  ) throws -> WorkbenchTableOperationReview {
+    guard scenario == "success", !tableOperationReviewActive else {
+      return try scriptedUnavailable("table-operation-stage")
+    }
+    tableOperationReviewActive = true
+    return WorkbenchTableOperationReview(
+      tokenId: Data(repeating: 16, count: 16), target: "public.fixture_table",
+      preview: "\(kind.uppercased()) public.fixture_table\(newName.isEmpty ? "" : " \(newName)");",
+      destructive: ["truncate", "drop"].contains(kind), confirmation: "fixture_table",
+      expiresAtMs: nowMs + 60_000)
+  }
+
+  func applyTableOperation(
+    tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String
+  ) throws -> String {
+    guard tableOperationReviewActive, tokenId == Data(repeating: 16, count: 16),
+      confirmation == "fixture_table"
+    else { return try scriptedUnavailable("table-operation-apply") }
+    tableOperationReviewActive = false
+    return "Table operation applied"
+  }
+
+  func revokeTableOperation(tokenId: Data) throws -> Bool {
+    let active = tableOperationReviewActive
+    tableOperationReviewActive = false
+    return active
   }
 
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow] {
@@ -1284,6 +1324,27 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
 
   func revokeDdlChange(tokenId: Data) throws -> Bool {
     try bridge.revokeDdlChange(tokenId: tokenId)
+  }
+
+  func stageTableOperation(
+    sessionId: Data, catalogNodeId: Data, kind: String, newName: String, nowMs: UInt64
+  ) throws -> WorkbenchTableOperationReview {
+    try bridge.stageTableOperation(
+      request: BridgeTableOperationRequest(
+        sessionId: sessionId, catalogNodeId: catalogNodeId, kind: kind,
+        newName: newName, nowMs: nowMs)
+    ).workbench
+  }
+
+  func applyTableOperation(
+    tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String
+  ) throws -> String {
+    try bridge.applyTableOperation(
+      tokenId: tokenId, sessionId: sessionId, nowMs: nowMs, confirmation: confirmation)
+  }
+
+  func revokeTableOperation(tokenId: Data) throws -> Bool {
+    try bridge.revokeTableOperation(tokenId: tokenId)
   }
 
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow] {
@@ -2379,6 +2440,15 @@ final class BridgeModel {
   var ddlChangeError: String?
   private(set) var ddlChangeApplying = false
   private var ddlChangeCatalogNodeId: Data?
+  var tableOperationPresented = false
+  var tableOperationKind = "truncate"
+  var tableOperationNewName = ""
+  var tableOperationConfirmation = ""
+  var tableOperationReview: WorkbenchTableOperationReview?
+  var tableOperationOutcome: String?
+  var tableOperationError: String?
+  private(set) var tableOperationApplying = false
+  private var tableOperationCatalogNodeId: Data?
   var findReplacePresented = false
   var findPattern = ""
   var findReplacement = ""
@@ -2472,6 +2542,11 @@ final class BridgeModel {
       let kind = activeObjectTab?.kind
     else { return false }
     return ["postgresql_table", "postgresql_partitioned_table"].contains(kind)
+  }
+  var canOperateSelectedTable: Bool {
+    guard let kind = activeObjectTab?.kind else { return false }
+    return ["postgresql_table", "postgresql_partitioned_table", "clickhouse_table"]
+      .contains(kind)
   }
   var selectedCell: NativeCellSelection? {
     get {
@@ -4068,6 +4143,80 @@ final class BridgeModel {
   func closeDdlChange() async {
     await discardDdlChangeReview()
     ddlChangePresented = false
+  }
+
+  func showTableOperation() {
+    guard canOperateSelectedTable else { return }
+    tableOperationKind = connectedEngine == "clickhouse" ? "optimize" : "truncate"
+    tableOperationNewName = ""
+    tableOperationConfirmation = ""
+    tableOperationReview = nil
+    tableOperationOutcome = nil
+    tableOperationError = nil
+    tableOperationCatalogNodeId = activeObjectTab?.catalogNodeId
+    tableOperationPresented = true
+  }
+
+  func resetTableOperationReview() async {
+    if let review = tableOperationReview, let client {
+      _ = try? await client.revokeTableOperation(tokenId: review.tokenId)
+    }
+    tableOperationReview = nil
+    tableOperationConfirmation = ""
+    tableOperationOutcome = nil
+    tableOperationError = nil
+  }
+
+  func stageTableOperation() async {
+    guard let client, let session = sessionData, let nodeId = tableOperationCatalogNodeId,
+      tableOperationReview == nil, !tableOperationApplying
+    else { return }
+    tableOperationError = nil
+    tableOperationOutcome = nil
+    do {
+      tableOperationReview = try await client.stageTableOperation(
+        sessionId: session, catalogNodeId: nodeId, kind: tableOperationKind,
+        newName: tableOperationNewName.trimmingCharacters(in: .whitespacesAndNewlines),
+        nowMs: dependencies.clock.nowMilliseconds())
+    } catch {
+      tableOperationError = "Table operation review rejected: \(error)"
+    }
+  }
+
+  func applyTableOperation() async {
+    guard let client, let session = sessionData, let review = tableOperationReview else { return }
+    guard tableOperationConfirmation == review.confirmation else {
+      tableOperationError = "Type the exact target table name to authorize this operation."
+      return
+    }
+    let kind = tableOperationKind
+    let nodeId = tableOperationCatalogNodeId
+    tableOperationReview = nil
+    tableOperationApplying = true
+    tableOperationError = nil
+    defer { tableOperationApplying = false }
+    do {
+      tableOperationOutcome = try await client.applyTableOperation(
+        tokenId: review.tokenId, sessionId: session,
+        nowMs: dependencies.clock.nowMilliseconds(), confirmation: tableOperationConfirmation)
+      if ["rename", "drop"].contains(kind), let nodeId {
+        objectTabs.removeAll(where: { $0.catalogNodeId == nodeId })
+        selectedObjectTabId = nil
+        selectedWorkbenchKind = "query"
+        await browse()
+      } else if kind == "truncate", let nodeId,
+        let tab = objectTabs.first(where: { $0.catalogNodeId == nodeId })
+      {
+        await loadObjectTab(tab)
+      }
+    } catch {
+      tableOperationError = "Table operation failed or outcome unknown; review consumed: \(error)"
+    }
+  }
+
+  func closeTableOperation() async {
+    await resetTableOperationReview()
+    tableOperationPresented = false
   }
 
   func loadMoreObjectRows() async {
@@ -6170,6 +6319,12 @@ struct ContentView: View {
     ) {
       DdlChangeSheet()
     }
+    .sheet(
+      isPresented: $model.tableOperationPresented,
+      onDismiss: { Task { await model.closeTableOperation() } }
+    ) {
+      TableOperationSheet()
+    }
     .sheet(isPresented: $model.postgresActivityPresented) {
       PostgresActivitySheet()
     }
@@ -6861,6 +7016,11 @@ private struct ObjectStructureView: View {
             }
             .disabled(!model.canEditSelectedStructure)
             .accessibilityIdentifier("structure.change.open")
+            Button("Table Operations…", systemImage: "wrench.and.screwdriver") {
+              model.showTableOperation()
+            }
+            .disabled(!model.canOperateSelectedTable)
+            .accessibilityIdentifier("table-operation.open")
           }
           GroupBox("Columns") {
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
@@ -7356,6 +7516,106 @@ private struct DdlChangeSheet: View {
     } message: { review in
       Text("\(review.preview)\n\n\(review.rollbackSummary)")
     }
+  }
+}
+
+private struct TableOperationSheet: View {
+  @Environment(BridgeModel.self) private var model
+
+  var body: some View {
+    @Bindable var model = model
+    VStack(alignment: .leading, spacing: 14) {
+      HStack {
+        Label("Table Operations", systemImage: "wrench.and.screwdriver")
+          .font(.title2.bold())
+        Spacer()
+        Button("Close") { Task { await model.closeTableOperation() } }
+          .disabled(model.tableOperationApplying)
+          .accessibilityIdentifier("table-operation.close")
+      }
+      Picker("Operation", selection: $model.tableOperationKind) {
+        if model.connectedEngine == "postgresql" {
+          Text("Rename table").tag("rename")
+          Text("Truncate all rows").tag("truncate")
+          Text("Drop table").tag("drop")
+          Text("Vacuum").tag("vacuum")
+          Text("Analyze").tag("analyze")
+        } else if model.connectedEngine == "clickhouse" {
+          Text("Optimize table").tag("optimize")
+        }
+      }
+      .disabled(model.tableOperationReview != nil || model.tableOperationApplying)
+      .accessibilityIdentifier("table-operation.kind")
+      .onChange(of: model.tableOperationKind) {
+        Task { await model.resetTableOperationReview() }
+      }
+      if model.tableOperationKind == "rename" {
+        TextField("New table name", text: $model.tableOperationNewName)
+          .disabled(model.tableOperationReview != nil || model.tableOperationApplying)
+          .accessibilityIdentifier("table-operation.new-name")
+      }
+      Button("Review Operation…") { Task { await model.stageTableOperation() } }
+        .buttonStyle(.borderedProminent)
+        .disabled(
+          model.tableOperationReview != nil || model.tableOperationApplying
+            || (model.tableOperationKind == "rename"
+              && model.tableOperationNewName.trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty)
+        )
+        .accessibilityIdentifier("table-operation.review")
+      if let review = model.tableOperationReview {
+        GroupBox("Frozen operation") {
+          VStack(alignment: .leading, spacing: 8) {
+            Text(review.target).font(.headline).textSelection(.enabled)
+            Text(review.preview)
+              .font(.system(.body, design: .monospaced))
+              .textSelection(.enabled)
+              .accessibilityIdentifier("table-operation.preview")
+            if review.destructive {
+              Label(
+                "This operation destroys table data", systemImage: "exclamationmark.triangle.fill"
+              )
+              .foregroundStyle(.orange)
+            }
+            Text("Type \(review.confirmation) to authorize this exact target.")
+              .foregroundStyle(.secondary)
+            TextField("Exact table name", text: $model.tableOperationConfirmation)
+              .accessibilityIdentifier("table-operation.confirmation")
+            HStack {
+              Button("Discard Review", role: .cancel) {
+                Task { await model.resetTableOperationReview() }
+              }
+              Spacer()
+              Button(review.destructive ? "Apply Destructive Operation" : "Apply Operation") {
+                Task { await model.applyTableOperation() }
+              }
+              .buttonStyle(.borderedProminent)
+              .tint(review.destructive ? .red : .accentColor)
+              .disabled(model.tableOperationConfirmation != review.confirmation)
+              .accessibilityIdentifier("table-operation.apply")
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(6)
+        }
+      }
+      if model.tableOperationApplying { ProgressView("Applying table operation…") }
+      if let outcome = model.tableOperationOutcome {
+        Label(outcome, systemImage: "checkmark.circle.fill")
+          .foregroundStyle(.green)
+          .accessibilityIdentifier("table-operation.outcome")
+      }
+      if let error = model.tableOperationError {
+        Text(error).foregroundStyle(.red).textSelection(.enabled)
+          .accessibilityIdentifier("table-operation.error")
+      }
+      Spacer()
+    }
+    .padding(20)
+    .frame(minWidth: 680, minHeight: 500)
+    .interactiveDismissDisabled(model.tableOperationReview != nil || model.tableOperationApplying)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("table-operation.sheet")
   }
 }
 

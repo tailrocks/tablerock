@@ -140,6 +140,14 @@ extension BridgeDdlChangeReview {
       rollbackSummary: rollbackSummary, expiresAtMs: expiresAtMs)
   }
 }
+
+extension BridgeTableOperationReview {
+  var workbench: WorkbenchTableOperationReview {
+    WorkbenchTableOperationReview(
+      tokenId: tokenId, target: target, preview: preview, destructive: destructive,
+      confirmation: confirmation, expiresAtMs: expiresAtMs)
+  }
+}
 extension BridgePostgresActivityRow {
   var workbench: WorkbenchPostgresActivityRow {
     .init(

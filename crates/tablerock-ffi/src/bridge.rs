@@ -517,6 +517,26 @@ pub struct BridgeDdlChangeReview {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeTableOperationRequest {
+    pub session_id: Vec<u8>,
+    pub catalog_node_id: Vec<u8>,
+    /// `rename`, `truncate`, `drop`, `vacuum`, `analyze`, or `optimize`.
+    pub kind: String,
+    pub new_name: String,
+    pub now_ms: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeTableOperationReview {
+    pub token_id: Vec<u8>,
+    pub target: String,
+    pub preview: String,
+    pub destructive: bool,
+    pub confirmation: String,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeBackendSignalOutcome {
     pub kind: String,
     pub pid: i32,
@@ -590,6 +610,7 @@ struct DdlReviewEntry {
     session_id: SessionId,
     plan: DdlPlan,
     expires_at_ms: u64,
+    confirmation: Option<String>,
 }
 
 #[derive(Clone)]
@@ -1197,6 +1218,29 @@ impl TableRockBridge {
 
     /// Discards an unused structure-change review token.
     pub fn revoke_ddl_change(&self, token_id: Vec<u8>) -> Result<bool, BridgeError> {
+        catch_entry(|| self.revoke_ddl_change_inner(token_id))
+    }
+
+    /// Freezes one typed table operation behind target-specific confirmation.
+    pub fn stage_table_operation(
+        &self,
+        request: BridgeTableOperationRequest,
+    ) -> Result<BridgeTableOperationReview, BridgeError> {
+        catch_entry(|| self.stage_table_operation_inner(request))
+    }
+
+    /// Consumes one reviewed table operation before database I/O.
+    pub fn apply_table_operation(
+        &self,
+        token_id: Vec<u8>,
+        session_id: Vec<u8>,
+        now_ms: u64,
+        confirmation: String,
+    ) -> Result<String, BridgeError> {
+        catch_entry(|| self.apply_table_operation_inner(token_id, session_id, now_ms, confirmation))
+    }
+
+    pub fn revoke_table_operation(&self, token_id: Vec<u8>) -> Result<bool, BridgeError> {
         catch_entry(|| self.revoke_ddl_change_inner(token_id))
     }
 
@@ -4659,6 +4703,7 @@ impl TableRockBridge {
                 session_id,
                 plan,
                 expires_at_ms,
+                confirmation: None,
             },
         );
         Ok(BridgeDdlChangeReview {
@@ -4694,6 +4739,16 @@ impl TableRockBridge {
                 .lock()
                 .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
             let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+            if inner
+                .ddl_reviews
+                .get(&token_id)
+                .is_some_and(|entry| entry.confirmation.is_some())
+            {
+                return Err(BridgeError::rejected(
+                    "ddl-change-token-kind",
+                    "table-operation token requires its specific apply path",
+                ));
+            }
             let entry = inner.ddl_reviews.remove(&token_id).ok_or_else(|| {
                 BridgeError::rejected(
                     "ddl-change-token",
@@ -4751,6 +4806,253 @@ impl TableRockBridge {
             .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
         let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
         Ok(inner.ddl_reviews.remove(&token_id).is_some())
+    }
+
+    fn stage_table_operation_inner(
+        &self,
+        request: BridgeTableOperationRequest,
+    ) -> Result<BridgeTableOperationReview, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let session_id = session_from_bytes(&request.session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let node_id = catalog_node_from_bytes(&request.catalog_node_id).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        if !inner.accepting {
+            return Err(BridgeError::ShuttingDown);
+        }
+        let registered = inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?
+            .clone();
+        let node = inner
+            .catalog_nodes
+            .get(&(session_id, node_id))
+            .ok_or_else(|| {
+                BridgeError::rejected("unknown-catalog-node", "catalog node is stale or unknown")
+            })?;
+        let parent = node
+            .parent_id()
+            .and_then(|id| inner.catalog_nodes.get(&(session_id, id)))
+            .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+        let (kind, target) = match (registered.engine, request.kind.as_str(), node.kind()) {
+            (
+                Engine::PostgreSql,
+                "rename",
+                CatalogNodeKind::PostgreSqlObject(
+                    PostgreSqlObjectKind::Table | PostgreSqlObjectKind::PartitionedTable,
+                ),
+            ) => (
+                DdlKind::RenameTable,
+                DdlTarget::PostgreSqlRelation {
+                    schema: parent.name().to_owned(),
+                    relation: node.name().to_owned(),
+                },
+            ),
+            (
+                Engine::PostgreSql,
+                "truncate",
+                CatalogNodeKind::PostgreSqlObject(
+                    PostgreSqlObjectKind::Table | PostgreSqlObjectKind::PartitionedTable,
+                ),
+            ) => (
+                DdlKind::TruncateTable,
+                DdlTarget::PostgreSqlRelation {
+                    schema: parent.name().to_owned(),
+                    relation: node.name().to_owned(),
+                },
+            ),
+            (
+                Engine::PostgreSql,
+                "drop",
+                CatalogNodeKind::PostgreSqlObject(
+                    PostgreSqlObjectKind::Table | PostgreSqlObjectKind::PartitionedTable,
+                ),
+            ) => (
+                DdlKind::DropTable,
+                DdlTarget::PostgreSqlRelation {
+                    schema: parent.name().to_owned(),
+                    relation: node.name().to_owned(),
+                },
+            ),
+            (
+                Engine::PostgreSql,
+                "vacuum",
+                CatalogNodeKind::PostgreSqlObject(
+                    PostgreSqlObjectKind::Table | PostgreSqlObjectKind::PartitionedTable,
+                ),
+            ) => (
+                DdlKind::Vacuum,
+                DdlTarget::PostgreSqlRelation {
+                    schema: parent.name().to_owned(),
+                    relation: node.name().to_owned(),
+                },
+            ),
+            (
+                Engine::PostgreSql,
+                "analyze",
+                CatalogNodeKind::PostgreSqlObject(
+                    PostgreSqlObjectKind::Table | PostgreSqlObjectKind::PartitionedTable,
+                ),
+            ) => (
+                DdlKind::Analyze,
+                DdlTarget::PostgreSqlRelation {
+                    schema: parent.name().to_owned(),
+                    relation: node.name().to_owned(),
+                },
+            ),
+            (
+                Engine::ClickHouse,
+                "optimize",
+                CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Table),
+            ) => (
+                DdlKind::Optimize,
+                DdlTarget::ClickHouseTable {
+                    database: parent.name().to_owned(),
+                    table: node.name().to_owned(),
+                },
+            ),
+            _ => {
+                return Err(BridgeError::rejected(
+                    "table-operation-capability",
+                    "operation is unavailable for this engine or target",
+                ));
+            }
+        };
+        let new_name = (kind == DdlKind::RenameTable)
+            .then(|| request.new_name.trim().to_owned())
+            .filter(|name| !name.is_empty());
+        let scope = OperationScope::new(
+            registered.profile_id,
+            registered.session_id,
+            registered.context_id,
+        );
+        let plan = DdlPlan::new(
+            kind,
+            registered.engine,
+            scope,
+            registered.context_revision,
+            target,
+            new_name,
+            None,
+        )
+        .map_err(|error| BridgeError::rejected("table-operation-plan", error.to_string()))?;
+        let preview = preview_table_operation(&plan)?;
+        let target = format!("{}.{}", parent.name(), node.name());
+        let confirmation = node.name().to_owned();
+        let destructive = matches!(kind, DdlKind::TruncateTable | DdlKind::DropTable);
+        inner
+            .ddl_reviews
+            .retain(|_, entry| request.now_ms < entry.expires_at_ms);
+        if inner.ddl_reviews.len() >= 256 {
+            return Err(BridgeError::rejected(
+                "table-operation-capacity",
+                "too many active table-operation reviews",
+            ));
+        }
+        let token_id = inner.ids.review_token();
+        let expires_at_ms = request.now_ms.saturating_add(60_000);
+        inner.ddl_reviews.insert(
+            token_id,
+            DdlReviewEntry {
+                session_id,
+                plan,
+                expires_at_ms,
+                confirmation: Some(confirmation.clone()),
+            },
+        );
+        Ok(BridgeTableOperationReview {
+            token_id: review_token_bytes(token_id),
+            target,
+            preview,
+            destructive,
+            confirmation,
+            expires_at_ms,
+        })
+    }
+
+    fn apply_table_operation_inner(
+        &self,
+        token_id_bytes: Vec<u8>,
+        session_id_bytes: Vec<u8>,
+        now_ms: u64,
+        confirmation: String,
+    ) -> Result<String, BridgeError> {
+        let token_id = review_token_from_bytes(&token_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-review-token-id", "review token id must be 16 bytes")
+        })?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let (plan, driver) = {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+            let expected = inner
+                .ddl_reviews
+                .get(&token_id)
+                .and_then(|entry| entry.confirmation.as_deref())
+                .ok_or_else(|| {
+                    BridgeError::rejected(
+                        "table-operation-token",
+                        "table-operation token is missing, consumed, or wrong kind",
+                    )
+                })?;
+            if confirmation != expected {
+                return Err(BridgeError::rejected(
+                    "table-operation-confirmation",
+                    "confirmation must exactly match the target table name",
+                ));
+            }
+            let entry = inner.ddl_reviews.remove(&token_id).ok_or_else(|| {
+                BridgeError::rejected("table-operation-token", "table-operation token is missing")
+            })?;
+            if entry.session_id != session_id {
+                return Err(BridgeError::rejected(
+                    "table-operation-session",
+                    "table-operation review belongs to another session",
+                ));
+            }
+            if now_ms >= entry.expires_at_ms {
+                return Err(BridgeError::rejected(
+                    "table-operation-expired",
+                    "table-operation review expired",
+                ));
+            }
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let current_scope = OperationScope::new(
+                registered.profile_id,
+                registered.session_id,
+                registered.context_id,
+            );
+            if entry.plan.scope != current_scope
+                || entry.plan.revision != registered.context_revision
+            {
+                return Err(BridgeError::rejected(
+                    "table-operation-stale",
+                    "session context changed after review",
+                ));
+            }
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (entry.plan, driver)
+        };
+        self.runtime
+            .block_on(driver.execute_ddl_plan(plan))?
+            .map_err(|error| BridgeError::rejected("table-operation-apply", error.to_string()))?;
+        Ok("Table operation applied".into())
     }
 
     fn signal_postgres_backend_inner(
@@ -6841,6 +7143,48 @@ fn role_change_summary(kind: &RoleChangeKind) -> String {
             format!("Revoke {privilege} on {schema}.{table} from {grantee}")
         }
     }
+}
+
+fn preview_table_operation(plan: &DdlPlan) -> Result<String, BridgeError> {
+    let quote = |identifier: &str| {
+        tablerock_engine::quote_ident(identifier)
+            .map_err(|error| BridgeError::rejected("table-operation-identifier", error.to_string()))
+    };
+    let statement = match (&plan.kind, &plan.target) {
+        (DdlKind::RenameTable, DdlTarget::PostgreSqlRelation { schema, relation }) => {
+            let new_name = plan.object_name.as_deref().ok_or_else(|| {
+                BridgeError::rejected("table-operation-name", "new table name required")
+            })?;
+            format!(
+                "ALTER TABLE {}.{} RENAME TO {}",
+                quote(schema)?,
+                quote(relation)?,
+                quote(new_name)?
+            )
+        }
+        (DdlKind::TruncateTable, DdlTarget::PostgreSqlRelation { schema, relation }) => {
+            format!("TRUNCATE TABLE {}.{}", quote(schema)?, quote(relation)?)
+        }
+        (DdlKind::DropTable, DdlTarget::PostgreSqlRelation { schema, relation }) => {
+            format!("DROP TABLE {}.{}", quote(schema)?, quote(relation)?)
+        }
+        (DdlKind::Vacuum, DdlTarget::PostgreSqlRelation { schema, relation }) => {
+            format!("VACUUM {}.{}", quote(schema)?, quote(relation)?)
+        }
+        (DdlKind::Analyze, DdlTarget::PostgreSqlRelation { schema, relation }) => {
+            format!("ANALYZE {}.{}", quote(schema)?, quote(relation)?)
+        }
+        (DdlKind::Optimize, DdlTarget::ClickHouseTable { database, table }) => {
+            format!("OPTIMIZE TABLE {}.{}", quote(database)?, quote(table)?)
+        }
+        _ => {
+            return Err(BridgeError::rejected(
+                "table-operation-plan",
+                "plan is not a supported table operation",
+            ));
+        }
+    };
+    Ok(format!("{statement};"))
 }
 
 fn preview_postgres_ddl(plan: &DdlPlan) -> Result<String, BridgeError> {

@@ -143,6 +143,10 @@ silently discard; ambiguous writes never retry.
 - ~~Multi-column FK follow polish~~ (closed: evidence 326)
 - ~~indexes/constraints raw DDL in structure~~ (closed: evidence 324)
 - ~~Permission-denied activity signal fixtures~~ (closed: evidence 327)
+- Native table-operation authority now covers PostgreSQL rename, truncate,
+  drop, vacuum, and analyze plus ClickHouse optimize through opaque catalog
+  targets and expiring consume-once reviews (evidence 643). TUI migration to
+  this shared authority and hosted native permission replay remain open.
 
 ## STOP conditions
 

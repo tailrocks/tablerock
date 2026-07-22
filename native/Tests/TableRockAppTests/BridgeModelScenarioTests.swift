@@ -233,6 +233,34 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertEqual(model.querySummary, "write ok · ok")
   }
 
+  func testTableOperationRequiresFrozenTargetAndExactConfirmation() async throws {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let model = BridgeModel(client: backend)
+    await model.connectByParams()
+    let session = Data(repeating: 1, count: 16)
+    model.catalogSnapshot = try await backend.refreshCatalog(session: session, parentNodeId: nil)
+    let table = try XCTUnwrap(model.catalogSnapshot?.last)
+    let nodeKey = table.idBytes.map { String(format: "%02x", $0) }.joined()
+    await model.openCatalogObject(nodeKey: nodeKey)
+    model.showTableOperation()
+
+    await model.stageTableOperation()
+
+    let review = try XCTUnwrap(model.tableOperationReview)
+    XCTAssertTrue(review.destructive)
+    XCTAssertEqual(review.confirmation, "fixture_table")
+    XCTAssertTrue(review.preview.contains("fixture_table"))
+    model.tableOperationConfirmation = "wrong"
+    await model.applyTableOperation()
+    XCTAssertNotNil(model.tableOperationReview)
+    XCTAssertNotNil(model.tableOperationError)
+
+    model.tableOperationConfirmation = review.confirmation
+    await model.applyTableOperation()
+    XCTAssertNil(model.tableOperationReview)
+    XCTAssertEqual(model.tableOperationOutcome, "Table operation applied")
+  }
+
   func testPostgresBackupUsesProbeReviewAndSupervisedStatus() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
     let model = BridgeModel(client: backend)

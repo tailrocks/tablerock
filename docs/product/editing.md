@@ -80,6 +80,21 @@ action. No path silently drops staged work.
 - Destructive operations (drop, truncate) are separate reviewed gates, not
   part of cell editing.
 
+## Table operation authority
+
+Table operations start from an opaque catalog selection, not editable SQL or
+presentation text. PostgreSQL tables offer rename, truncate, drop, vacuum, and
+analyze; ClickHouse tables offer optimize. Unsupported engine/object pairs do
+not expose an operation.
+
+Review freezes the target and exact quoted statement for 60 seconds. Rename
+requires a non-empty new name. Every operation requires the exact target name;
+truncate and drop are additionally marked destructive. Apply consumes the
+review token before database I/O, so expiry, cancellation, or a second apply
+cannot replay it. Wrong confirmation leaves the token available for correction.
+Successful rename/drop refreshes the catalog and closes stale object state;
+truncate reloads the selected table.
+
 ## Both clients
 
 | | TUI | Native macOS |

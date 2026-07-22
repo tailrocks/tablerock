@@ -413,6 +413,29 @@ impl ClickHouseSession {
             .map_err(|_| ClickHouseError::Query)
     }
 
+    /// Execute one reviewed ClickHouse DDL plan.
+    pub async fn execute_ddl_plan(
+        &self,
+        plan: &tablerock_core::DdlPlan,
+    ) -> Result<(), ClickHouseError> {
+        use crate::ident::quote_ident;
+        use tablerock_core::{DdlKind, DdlTarget, Engine};
+        let (database, table) = match (&plan.kind, &plan.target) {
+            (DdlKind::Optimize, DdlTarget::ClickHouseTable { database, table })
+                if plan.engine == Engine::ClickHouse =>
+            {
+                (database, table)
+            }
+            _ => return Err(ClickHouseError::Query),
+        };
+        let sql = format!(
+            "OPTIMIZE TABLE {}.{}",
+            quote_ident(database).map_err(|_| ClickHouseError::Query)?,
+            quote_ident(table).map_err(|_| ClickHouseError::Query)?,
+        );
+        self.execute_sql(&sql).await
+    }
+
     /// Execute SQL with named string parameters (`{name:String}`).
     pub(crate) async fn execute_sql_named(
         &self,

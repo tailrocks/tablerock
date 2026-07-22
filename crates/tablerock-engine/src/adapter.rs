@@ -1085,6 +1085,17 @@ impl DriverSession for ClickHouseSession {
         })
     }
 
+    fn execute_ddl_plan<'a>(
+        &'a self,
+        plan: tablerock_core::DdlPlan,
+    ) -> DriverFuture<'a, Result<(), AdapterError>> {
+        Box::pin(async move {
+            ClickHouseSession::execute_ddl_plan(self, &plan)
+                .await
+                .map_err(map_clickhouse)
+        })
+    }
+
     fn kill_clickhouse_mutation<'a>(
         &'a self,
         database: &'a str,

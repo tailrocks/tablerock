@@ -7,8 +7,8 @@
 
 use tablerock_core::{Engine, PageLimits, ResultPage};
 use tablerock_ffi::{
-    BridgeDdlChangeRequest, BridgePostgresToolRequest, BridgeQueryParameter, OpenParams,
-    SubmitSpec, TableRockBridge,
+    BridgeDdlChangeRequest, BridgePostgresToolRequest, BridgeQueryParameter,
+    BridgeTableOperationRequest, OpenParams, SubmitSpec, TableRockBridge,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -117,44 +117,6 @@ fn probe_and_fetch(
     (page_bytes, batch.next_cursor)
 }
 
-fn run_bridge_probe(
-    engine: &str,
-    host: &str,
-    port: u16,
-    database: &str,
-    user: &str,
-) -> (Engine, Vec<u8>) {
-    let bridge = TableRockBridge::new_for_test();
-    let mut last_err = None;
-    for attempt in 0..40 {
-        match bridge.open(open_params(engine, host, port, database, user)) {
-            Ok(session) => match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                probe_and_fetch(&bridge, session, 0)
-            })) {
-                Ok((page, _)) => {
-                    let decoded = ResultPage::decode_v1(
-                        &page,
-                        PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
-                    )
-                    .unwrap();
-                    let observed = decoded.envelope().engine();
-                    bridge.shutdown(false, 5_000).expect("shutdown");
-                    return (observed, page);
-                }
-                Err(payload) => {
-                    last_err = Some(format!("probe panic attempt {attempt}: {payload:?}"));
-                    std::thread::sleep(std::time::Duration::from_millis(200));
-                }
-            },
-            Err(error) => {
-                last_err = Some(format!("open attempt {attempt}: {error}"));
-                std::thread::sleep(std::time::Duration::from_millis(200));
-            }
-        }
-    }
-    panic!("bridge probe failed for {engine}: {last_err:?}");
-}
-
 #[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
 #[tokio::test]
 async fn bridge_postgres_open_probe_fetch_shutdown() {
@@ -238,7 +200,7 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
             .find(|node| node.name == "public")
             .unwrap();
         let relation = bridge
-            .refresh_catalog(session.clone(), Some(schema.id_bytes))
+            .refresh_catalog(session.clone(), Some(schema.id_bytes.clone()))
             .unwrap()
             .into_iter()
             .find(|node| node.name == "bridge_ddl_review")
@@ -354,6 +316,110 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
         assert!(cross_session.to_string().contains("another session"));
         assert!(!bridge.revoke_ddl_change(scoped_review.token_id).unwrap());
         bridge.disconnect(other_session).unwrap();
+        let create_ops = bridge
+            .submit(SubmitSpec {
+                intent: "execute".into(),
+                session_id: session.clone(),
+                statement: Some("CREATE TABLE IF NOT EXISTS bridge_table_ops (id integer)".into()),
+                result_id: None,
+                start_row: None,
+                row_count: Some(16),
+                expected_revision: 0,
+            })
+            .unwrap();
+        bridge.pump(create_ops).unwrap();
+        let ops_relation = bridge
+            .refresh_catalog(session.clone(), Some(schema.id_bytes.clone()))
+            .unwrap()
+            .into_iter()
+            .find(|node| node.name == "bridge_table_ops")
+            .unwrap();
+        let analyze = bridge
+            .stage_table_operation(BridgeTableOperationRequest {
+                session_id: session.clone(),
+                catalog_node_id: ops_relation.id_bytes.clone(),
+                kind: "analyze".into(),
+                new_name: String::new(),
+                now_ms: 7_000,
+            })
+            .unwrap();
+        assert_eq!(analyze.preview, "ANALYZE \"public\".\"bridge_table_ops\";");
+        assert!(!analyze.destructive);
+        assert!(
+            bridge
+                .apply_ddl_change(analyze.token_id.clone(), session.clone(), 7_001, true)
+                .unwrap_err()
+                .to_string()
+                .contains("specific apply path")
+        );
+        assert!(
+            bridge
+                .apply_table_operation(
+                    analyze.token_id.clone(),
+                    session.clone(),
+                    7_002,
+                    "wrong".into(),
+                )
+                .unwrap_err()
+                .to_string()
+                .contains("exactly match")
+        );
+        bridge
+            .apply_table_operation(
+                analyze.token_id,
+                session.clone(),
+                7_003,
+                "bridge_table_ops".into(),
+            )
+            .unwrap();
+        let rename = bridge
+            .stage_table_operation(BridgeTableOperationRequest {
+                session_id: session.clone(),
+                catalog_node_id: ops_relation.id_bytes,
+                kind: "rename".into(),
+                new_name: "bridge_table_ops_renamed".into(),
+                now_ms: 8_000,
+            })
+            .unwrap();
+        bridge
+            .apply_table_operation(
+                rename.token_id,
+                session.clone(),
+                8_001,
+                "bridge_table_ops".into(),
+            )
+            .unwrap();
+        let renamed = bridge
+            .refresh_catalog(session.clone(), Some(schema.id_bytes.clone()))
+            .unwrap()
+            .into_iter()
+            .find(|node| node.name == "bridge_table_ops_renamed")
+            .unwrap();
+        let drop_review = bridge
+            .stage_table_operation(BridgeTableOperationRequest {
+                session_id: session.clone(),
+                catalog_node_id: renamed.id_bytes,
+                kind: "drop".into(),
+                new_name: String::new(),
+                now_ms: 9_000,
+            })
+            .unwrap();
+        assert!(drop_review.destructive);
+        bridge
+            .apply_table_operation(
+                drop_review.token_id,
+                session.clone(),
+                9_001,
+                "bridge_table_ops_renamed".into(),
+            )
+            .unwrap();
+        assert!(
+            bridge
+                .refresh_catalog(session.clone(), Some(schema.id_bytes))
+                .unwrap()
+                .iter()
+                .all(|node| node.name != "bridge_table_ops_renamed")
+        );
         let signal = bridge
             .signal_postgres_backend(session.clone(), "cancel".into(), i32::MAX)
             .unwrap();
@@ -425,7 +491,66 @@ async fn bridge_clickhouse_open_probe_fetch() {
     }
 
     let (engine, page) = tokio::task::spawn_blocking(move || {
-        run_bridge_probe("clickhouse", &host, port, "default", "default")
+        let bridge = TableRockBridge::new_for_test();
+        let session = open_when_ready(&bridge, "clickhouse", &host, port, "default", "default");
+        let create = bridge
+            .submit(SubmitSpec {
+                intent: "execute".into(),
+                session_id: session.clone(),
+                statement: Some(
+                    "CREATE TABLE IF NOT EXISTS bridge_optimize (id UInt64) ENGINE = MergeTree ORDER BY id"
+                        .into(),
+                ),
+                result_id: None,
+                start_row: None,
+                row_count: Some(16),
+                expected_revision: 0,
+            })
+            .unwrap();
+        bridge.pump(create).unwrap();
+        let database = bridge
+            .refresh_catalog(session.clone(), None)
+            .unwrap()
+            .into_iter()
+            .find(|node| node.name == "default")
+            .unwrap();
+        let table = bridge
+            .refresh_catalog(session.clone(), Some(database.id_bytes))
+            .unwrap()
+            .into_iter()
+            .find(|node| node.name == "bridge_optimize")
+            .unwrap();
+        let optimize = bridge
+            .stage_table_operation(BridgeTableOperationRequest {
+                session_id: session.clone(),
+                catalog_node_id: table.id_bytes,
+                kind: "optimize".into(),
+                new_name: String::new(),
+                now_ms: 1_000,
+            })
+            .unwrap();
+        assert_eq!(
+            optimize.preview,
+            "OPTIMIZE TABLE \"default\".\"bridge_optimize\";"
+        );
+        bridge
+            .apply_table_operation(
+                optimize.token_id,
+                session.clone(),
+                1_001,
+                "bridge_optimize".into(),
+            )
+            .unwrap();
+        let (page, _) = probe_and_fetch(&bridge, session, 0);
+        let engine = ResultPage::decode_v1(
+            &page,
+            PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
+        )
+        .unwrap()
+        .envelope()
+        .engine();
+        bridge.shutdown(false, 5_000).unwrap();
+        (engine, page)
     })
     .await
     .unwrap();

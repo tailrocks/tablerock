@@ -564,6 +564,40 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testTableOperationRequiresExactTargetConfirmation() throws {
+    let app = launch(scenario: "success")
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    connect.click()
+    let refresh = app.buttons["catalog.refresh"]
+    XCTAssertTrue(refresh.waitForExistence(timeout: 10))
+    refresh.click()
+    let table = app.staticTexts["fixture_table"]
+    XCTAssertTrue(table.waitForExistence(timeout: 10))
+    table.doubleClick()
+    let structure = app.buttons["Structure"]
+    XCTAssertTrue(structure.waitForExistence(timeout: 10))
+    structure.click()
+    let open = app.buttons["table-operation.open"]
+    XCTAssertTrue(open.waitForExistence(timeout: 10))
+    open.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["table-operation.sheet"].waitForExistence(timeout: 10))
+    app.buttons["table-operation.review"].click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["table-operation.preview"].waitForExistence(timeout: 10))
+    let apply = app.buttons["table-operation.apply"]
+    XCTAssertFalse(apply.isEnabled)
+    let confirmation = app.textFields["table-operation.confirmation"]
+    confirmation.click()
+    confirmation.typeText("fixture_table")
+    XCTAssertTrue(apply.isEnabled)
+    apply.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["table-operation.outcome"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
   func testPostgresRolesSearchAndInspectMembership() throws {
     let app = launch(scenario: "success")
     let connect = app.buttons["connection.direct.connect"]

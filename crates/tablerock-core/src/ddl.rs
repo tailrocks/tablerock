@@ -20,6 +20,9 @@ pub enum DdlKind {
     Vacuum,
     Analyze,
     Reindex,
+    RenameTable,
+    TruncateTable,
+    DropTable,
     Optimize, // ClickHouse
 }
 
@@ -36,6 +39,9 @@ impl DdlKind {
             Self::Vacuum => "vacuum",
             Self::Analyze => "analyze",
             Self::Reindex => "reindex",
+            Self::RenameTable => "rename_table",
+            Self::TruncateTable => "truncate_table",
+            Self::DropTable => "drop_table",
             Self::Optimize => "optimize",
         }
     }
@@ -52,7 +58,10 @@ impl DdlKind {
             | Self::DropConstraint
             | Self::Vacuum
             | Self::Analyze
-            | Self::Reindex => &[Engine::PostgreSql],
+            | Self::Reindex
+            | Self::RenameTable
+            | Self::TruncateTable
+            | Self::DropTable => &[Engine::PostgreSql],
             Self::Optimize => &[Engine::ClickHouse],
         }
     }
@@ -133,6 +142,7 @@ impl DdlPlan {
                 | DdlKind::DropIndex
                 | DdlKind::AddConstraint
                 | DdlKind::DropConstraint
+                | DdlKind::RenameTable
         ) && object_name
             .as_ref()
             .map(|n| n.trim().is_empty())
@@ -453,6 +463,40 @@ mod tests {
                 Err(DdlBuildError::EmptyIdentifier)
             ));
         }
+    }
+
+    #[test]
+    fn table_operations_are_engine_gated_and_rename_requires_name() {
+        assert!(matches!(
+            DdlPlan::new(
+                DdlKind::RenameTable,
+                Engine::PostgreSql,
+                scope(),
+                Revision::INITIAL,
+                DdlTarget::PostgreSqlRelation {
+                    schema: "public".into(),
+                    relation: "users".into(),
+                },
+                None,
+                None,
+            ),
+            Err(DdlBuildError::EmptyIdentifier)
+        ));
+        assert!(matches!(
+            DdlPlan::new(
+                DdlKind::Optimize,
+                Engine::PostgreSql,
+                scope(),
+                Revision::INITIAL,
+                DdlTarget::PostgreSqlRelation {
+                    schema: "public".into(),
+                    relation: "users".into(),
+                },
+                None,
+                None,
+            ),
+            Err(DdlBuildError::UnsupportedEngine)
+        ));
     }
 
     #[test]

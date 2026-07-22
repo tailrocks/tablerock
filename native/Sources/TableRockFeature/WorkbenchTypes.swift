@@ -85,6 +85,13 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func applyDdlChange(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmed: Bool) throws
     -> String
   func revokeDdlChange(tokenId: Data) throws -> Bool
+  func stageTableOperation(
+    sessionId: Data, catalogNodeId: Data, kind: String, newName: String, nowMs: UInt64
+  ) throws -> WorkbenchTableOperationReview
+  func applyTableOperation(
+    tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String
+  ) throws -> String
+  func revokeTableOperation(tokenId: Data) throws -> Bool
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow]
   func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
     -> WorkbenchRelationshipSnapshot
@@ -122,6 +129,27 @@ public struct WorkbenchQueryParameter: Sendable, Equatable, Identifiable {
     self.name = name
     self.kind = kind
     self.value = value
+  }
+}
+
+public struct WorkbenchTableOperationReview: Sendable, Equatable {
+  public let tokenId: Data
+  public let target: String
+  public let preview: String
+  public let destructive: Bool
+  public let confirmation: String
+  public let expiresAtMs: UInt64
+
+  public init(
+    tokenId: Data, target: String, preview: String, destructive: Bool,
+    confirmation: String, expiresAtMs: UInt64
+  ) {
+    self.tokenId = tokenId
+    self.target = target
+    self.preview = preview
+    self.destructive = destructive
+    self.confirmation = confirmation
+    self.expiresAtMs = expiresAtMs
   }
 }
 

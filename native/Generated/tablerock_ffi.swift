@@ -657,6 +657,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data, expectedRevision: UInt64) throws  -> ApplyOutcome
 
     /**
+     * Consumes one reviewed table operation before database I/O.
+     */
+    func applyTableOperation(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String) throws  -> String
+
+    /**
      * Consume-once authorize by review-token handle (never plan bytes).
      *
      * Returns the token id bytes on success for correlation; authority is
@@ -901,6 +906,8 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      */
     func revokeReviewToken(tokenId: Data) throws  -> Bool
 
+    func revokeTableOperation(tokenId: Data) throws  -> Bool
+
     func saveCatalogFilterPreset(sessionId: Data, catalogNodeId: Data, preset: BridgeSavedFilterPreset) throws
 
     /**
@@ -956,6 +963,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * defaults (60 s expiry, `public.users`, locator 1).
      */
     func stageProbeReview(sessionId: Data, nowMs: UInt64) throws  -> Data
+
+    /**
+     * Freezes one typed table operation behind target-specific confirmation.
+     */
+    func stageTableOperation(request: BridgeTableOperationRequest) throws  -> BridgeTableOperationReview
 
     /**
      * Starts a supervised dump or restore against the connected endpoint.
@@ -1104,6 +1116,22 @@ open func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data, expect
         FfiConverterUInt64.lower(nowMs),
         FfiConverterData.lower(sessionId),
         FfiConverterUInt64.lower(expectedRevision),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Consumes one reviewed table operation before database I/O.
+     */
+open func applyTableOperation(tokenId: Data, sessionId: Data, nowMs: UInt64, confirmation: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_apply_table_operation(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(tokenId),
+        FfiConverterData.lower(sessionId),
+        FfiConverterUInt64.lower(nowMs),
+        FfiConverterString.lower(confirmation),uniffiCallStatus
     )
 })
 }
@@ -1834,6 +1862,16 @@ open func revokeReviewToken(tokenId: Data)throws  -> Bool  {
 })
 }
 
+open func revokeTableOperation(tokenId: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_revoke_table_operation(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(tokenId),uniffiCallStatus
+    )
+})
+}
+
 open func saveCatalogFilterPreset(sessionId: Data, catalogNodeId: Data, preset: BridgeSavedFilterPreset)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
         uniffiCallStatus in
     uniffi_tablerock_ffi_fn_method_tablerockbridge_save_catalog_filter_preset(
@@ -2002,6 +2040,19 @@ open func stageProbeReview(sessionId: Data, nowMs: UInt64)throws  -> Data  {
             self.uniffiCloneHandle(),
         FfiConverterData.lower(sessionId),
         FfiConverterUInt64.lower(nowMs),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Freezes one typed table operation behind target-specific confirmation.
+     */
+open func stageTableOperation(request: BridgeTableOperationRequest)throws  -> BridgeTableOperationReview  {
+    return try  FfiConverterTypeBridgeTableOperationReview_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_stage_table_operation(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeBridgeTableOperationRequest_lower(request),uniffiCallStatus
     )
 })
 }
@@ -5329,6 +5380,148 @@ public func FfiConverterTypeBridgeSqlFile_lower(_ value: BridgeSqlFile) -> RustB
 }
 
 
+public struct BridgeTableOperationRequest: Equatable, Hashable {
+    public var sessionId: Data
+    public var catalogNodeId: Data
+    /**
+     * `rename`, `truncate`, `drop`, `vacuum`, `analyze`, or `optimize`.
+     */
+    public var kind: String
+    public var newName: String
+    public var nowMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sessionId: Data, catalogNodeId: Data,
+        /**
+         * `rename`, `truncate`, `drop`, `vacuum`, `analyze`, or `optimize`.
+         */kind: String, newName: String, nowMs: UInt64) {
+        self.sessionId = sessionId
+        self.catalogNodeId = catalogNodeId
+        self.kind = kind
+        self.newName = newName
+        self.nowMs = nowMs
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeTableOperationRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeTableOperationRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeTableOperationRequest {
+        return
+            try BridgeTableOperationRequest(
+                sessionId: FfiConverterData.read(from: &buf),
+                catalogNodeId: FfiConverterData.read(from: &buf),
+                kind: FfiConverterString.read(from: &buf),
+                newName: FfiConverterString.read(from: &buf),
+                nowMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeTableOperationRequest, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.sessionId, into: &buf)
+        FfiConverterData.write(value.catalogNodeId, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.newName, into: &buf)
+        FfiConverterUInt64.write(value.nowMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeTableOperationRequest_lift(_ buf: RustBuffer) throws -> BridgeTableOperationRequest {
+    return try FfiConverterTypeBridgeTableOperationRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeTableOperationRequest_lower(_ value: BridgeTableOperationRequest) -> RustBuffer {
+    return FfiConverterTypeBridgeTableOperationRequest.lower(value)
+}
+
+
+public struct BridgeTableOperationReview: Equatable, Hashable {
+    public var tokenId: Data
+    public var target: String
+    public var preview: String
+    public var destructive: Bool
+    public var confirmation: String
+    public var expiresAtMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(tokenId: Data, target: String, preview: String, destructive: Bool, confirmation: String, expiresAtMs: UInt64) {
+        self.tokenId = tokenId
+        self.target = target
+        self.preview = preview
+        self.destructive = destructive
+        self.confirmation = confirmation
+        self.expiresAtMs = expiresAtMs
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeTableOperationReview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeTableOperationReview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeTableOperationReview {
+        return
+            try BridgeTableOperationReview(
+                tokenId: FfiConverterData.read(from: &buf),
+                target: FfiConverterString.read(from: &buf),
+                preview: FfiConverterString.read(from: &buf),
+                destructive: FfiConverterBool.read(from: &buf),
+                confirmation: FfiConverterString.read(from: &buf),
+                expiresAtMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeTableOperationReview, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.tokenId, into: &buf)
+        FfiConverterString.write(value.target, into: &buf)
+        FfiConverterString.write(value.preview, into: &buf)
+        FfiConverterBool.write(value.destructive, into: &buf)
+        FfiConverterString.write(value.confirmation, into: &buf)
+        FfiConverterUInt64.write(value.expiresAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeTableOperationReview_lift(_ buf: RustBuffer) throws -> BridgeTableOperationReview {
+    return try FfiConverterTypeBridgeTableOperationReview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeTableOperationReview_lower(_ value: BridgeTableOperationReview) -> RustBuffer {
+    return FfiConverterTypeBridgeTableOperationReview.lower(value)
+}
+
+
 public struct BridgeWorkspaceTab: Equatable, Hashable {
     public var title: String
     public var statementText: String
@@ -6577,6 +6770,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_apply_review_token() != 161) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_apply_table_operation() != 14630) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_authorize_review_token() != 34315) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6751,6 +6947,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_review_token() != 712) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_revoke_table_operation() != 38010) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_save_catalog_filter_preset() != 34330) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6788,6 +6987,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_probe_review() != 53434) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_table_operation() != 20721) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_postgres_tool() != 21198) {
