@@ -3756,42 +3756,65 @@ impl TableRockBridge {
                 return Ok(op_bytes);
             }
 
-            let pending_history = (intent_name == "execute").then(|| {
-                let database_name = inner
-                    .persistence
-                    .as_ref()
-                    .and_then(|actor| actor.get_profile(registered.profile_id).ok().flatten())
-                    .and_then(|profile| {
-                        profile
-                            .connection()
-                            .properties()
-                            .literal(ProfileProperty::DefaultContext)
-                            .map(str::to_owned)
-                    })
-                    .unwrap_or_else(|| match engine {
-                        Engine::PostgreSql => "postgres".into(),
-                        Engine::ClickHouse => "default".into(),
-                        Engine::Redis => "0".into(),
-                    });
-                HistoryAppend {
-                    engine,
-                    database_name,
-                    schema_name: None,
-                    statement_text: spec.statement.clone().unwrap_or_else(|| "select 1".into()),
-                    outcome: HistoryOutcomeClass::Unknown,
-                    retention: inner.history_retention,
-                }
-            });
+            let pending_history =
+                matches!(intent_name.as_str(), "execute" | "explain").then(|| {
+                    let database_name = inner
+                        .persistence
+                        .as_ref()
+                        .and_then(|actor| actor.get_profile(registered.profile_id).ok().flatten())
+                        .and_then(|profile| {
+                            profile
+                                .connection()
+                                .properties()
+                                .literal(ProfileProperty::DefaultContext)
+                                .map(str::to_owned)
+                        })
+                        .unwrap_or_else(|| match engine {
+                            Engine::PostgreSql => "postgres".into(),
+                            Engine::ClickHouse => "default".into(),
+                            Engine::Redis => "0".into(),
+                        });
+                    HistoryAppend {
+                        engine,
+                        database_name,
+                        schema_name: None,
+                        statement_text: spec.statement.clone().unwrap_or_else(|| "select 1".into()),
+                        outcome: HistoryOutcomeClass::Unknown,
+                        retention: inner.history_retention,
+                    }
+                });
 
             let (intent, request) = match intent_name.as_str() {
-                "probe" | "execute" | "browse_object" => {
-                    let statement = spec.statement.clone().unwrap_or_else(|| "select 1".into());
+                "probe" | "execute" | "browse_object" | "explain" => {
+                    let mut statement = spec.statement.clone().unwrap_or_else(|| "select 1".into());
+                    if intent_name == "explain" {
+                        let body = statement.trim();
+                        if body.is_empty() {
+                            return Err(BridgeError::rejected(
+                                "explain-empty",
+                                "EXPLAIN needs SQL in the active editor",
+                            ));
+                        }
+                        if engine == Engine::Redis {
+                            return Err(BridgeError::rejected(
+                                "explain-unsupported",
+                                "EXPLAIN is unsupported for Redis",
+                            ));
+                        }
+                        statement = if starts_with_explain_keyword(body) {
+                            body.to_owned()
+                        } else if engine == Engine::ClickHouse {
+                            format!("EXPLAIN {body}")
+                        } else {
+                            format!("EXPLAIN (FORMAT TEXT) {body}")
+                        };
+                    }
                     let text = StatementText::new(statement)
                         .map_err(|error| BridgeError::rejected("statement", error.to_string()))?;
                     let limits = default_page_limits();
                     let max_cell_bytes = 64 * 1024;
                     let request = match (engine, intent_name.as_str()) {
-                        (Engine::PostgreSql, "execute" | "browse_object") => {
+                        (Engine::PostgreSql, "execute" | "browse_object" | "explain") => {
                             DriverPageRequest::PostgreSqlStatement {
                                 statement: text.clone(),
                                 parameters: parameters.clone(),
@@ -3804,7 +3827,7 @@ impl TableRockBridge {
                             limits,
                             max_cell_bytes,
                         },
-                        (Engine::ClickHouse, "execute" | "browse_object") => {
+                        (Engine::ClickHouse, "execute" | "browse_object" | "explain") => {
                             DriverPageRequest::ClickHouseStatement {
                                 statement: text.clone(),
                                 parameters: parameters.clone(),
@@ -5093,4 +5116,15 @@ fn parse_engine(name: &str) -> Result<Engine, BridgeError> {
             "engine must be postgresql, clickhouse, or redis",
         )),
     }
+}
+
+fn starts_with_explain_keyword(statement: &str) -> bool {
+    let Some(rest) = statement.get("EXPLAIN".len()..) else {
+        return false;
+    };
+    statement[.."EXPLAIN".len()].eq_ignore_ascii_case("EXPLAIN")
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|next| next.is_ascii_whitespace() || next == '(')
 }

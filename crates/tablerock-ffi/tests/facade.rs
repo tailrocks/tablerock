@@ -52,6 +52,7 @@ struct FixedPageSession {
     fail: bool,
     hold: bool,
     shutdown: Arc<AtomicBool>,
+    expected_statement: Option<&'static str>,
 }
 
 impl DriverSession for FixedPageSession {
@@ -61,8 +62,16 @@ impl DriverSession for FixedPageSession {
 
     fn start_page_stream<'a>(
         &'a self,
-        _request: DriverPageRequest,
+        request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
+        if let Some(expected) = self.expected_statement {
+            match request {
+                DriverPageRequest::PostgreSqlStatement { statement, .. } => {
+                    assert_eq!(statement.as_str(), expected);
+                }
+                other => panic!("expected PostgreSQL statement request, got {other:?}"),
+            }
+        }
         let page = self.page.clone();
         let fail = self.fail;
         let hold = self.hold;
@@ -179,6 +188,7 @@ fn open_submit_pump_fetch_shutdown_round_trip() {
                 fail: false,
                 hold: false,
                 shutdown: Arc::new(AtomicBool::new(false)),
+                expected_statement: None,
             }),
         )
         .unwrap();
@@ -224,6 +234,37 @@ fn open_submit_pump_fetch_shutdown_round_trip() {
 }
 
 #[test]
+fn explain_intent_builds_safe_postgresql_statement() {
+    let result_id = ResultId::from_parts(IdParts::new(0, 199).unwrap()).unwrap();
+    let bridge = TableRockBridge::new_for_test();
+    let session_id = bridge
+        .open_driver_session(
+            Engine::PostgreSql,
+            Box::new(FixedPageSession {
+                page: sample_page(result_id),
+                fail: false,
+                hold: false,
+                shutdown: Arc::new(AtomicBool::new(false)),
+                expected_statement: Some("EXPLAIN (FORMAT TEXT) explainable_table"),
+            }),
+        )
+        .unwrap();
+
+    let operation_id = bridge
+        .submit(SubmitSpec {
+            intent: "explain".into(),
+            session_id,
+            statement: Some("explainable_table".into()),
+            result_id: Some(result_id.to_bytes().to_vec()),
+            start_row: None,
+            row_count: Some(100),
+            expected_revision: 0,
+        })
+        .unwrap();
+    bridge.pump(operation_id).unwrap();
+}
+
+#[test]
 fn failed_runtime_outcome_enters_safe_support_bundle() {
     let result_id = ResultId::from_parts(IdParts::new(0, 100).unwrap()).unwrap();
     let bridge = TableRockBridge::new_for_test();
@@ -235,6 +276,7 @@ fn failed_runtime_outcome_enters_safe_support_bundle() {
                 fail: true,
                 hold: false,
                 shutdown: Arc::new(AtomicBool::new(false)),
+                expected_statement: None,
             }),
         )
         .unwrap();
@@ -278,6 +320,7 @@ fn cancel_active_shutdown_drains_within_deadline() {
                 fail: false,
                 hold: true,
                 shutdown: Arc::new(AtomicBool::new(false)),
+                expected_statement: None,
             }),
         )
         .unwrap();
@@ -312,6 +355,7 @@ fn graceful_shutdown_reports_active_work_at_deadline() {
                 fail: false,
                 hold: true,
                 shutdown: Arc::new(AtomicBool::new(false)),
+                expected_statement: None,
             }),
         )
         .unwrap();

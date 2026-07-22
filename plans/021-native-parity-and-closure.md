@@ -14,6 +14,8 @@
 - **Latest checkpoint**: native external URL authority and stable-ID quick
   switcher landed (evidence 631–632); both remain partial until hosted UI and
   full state-matrix replay completes.
+- **Current checkpoint**: Rust-owned native Explain intent and text-plan viewer
+  landed (evidence 633); structured node selection and live engine replay remain.
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

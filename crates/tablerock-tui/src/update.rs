@@ -7826,8 +7826,7 @@ fn explain_active_sql(model: &mut Model) -> Update {
         return Update::render();
     }
     // Fail closed: never wrap statements that already start with EXPLAIN.
-    let lower = body.to_ascii_lowercase();
-    let explained = if lower.starts_with("explain") {
+    let explained = if starts_with_explain_keyword(body) {
         body.to_owned()
     } else if engine.eq_ignore_ascii_case("ClickHouse") {
         format!("EXPLAIN {body}")
@@ -7836,6 +7835,17 @@ fn explain_active_sql(model: &mut Model) -> Update {
         format!("EXPLAIN (FORMAT TEXT) {body}")
     };
     emit_execute_sql(model, session_id_hex, explained, Vec::new())
+}
+
+fn starts_with_explain_keyword(statement: &str) -> bool {
+    let Some(rest) = statement.get("EXPLAIN".len()..) else {
+        return false;
+    };
+    statement[.."EXPLAIN".len()].eq_ignore_ascii_case("EXPLAIN")
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|next| next.is_ascii_whitespace() || next == '(')
 }
 
 fn export_stream_query(model: &mut Model, format: &str, default_path: &str) -> Update {
@@ -15110,6 +15120,33 @@ CREATE TABLE \"public\".\"users\" (
                 .and_then(|g| g.error_label.as_ref())
                 .is_some_and(|e| e.contains("unsupported"))
         );
+    }
+
+    #[test]
+    fn explain_prefix_requires_a_keyword_boundary() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().open_sql_tab();
+        model
+            .workbench_mut()
+            .active_editor_mut()
+            .unwrap()
+            .set_text("explainable_table");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::Explain);
+        let out = update(&mut model, Message::Activate);
+        assert!(matches!(
+            out.effects().next(),
+            Some(Effect::ExecuteSql { statement, .. })
+                if statement == "EXPLAIN (FORMAT TEXT) explainable_table"
+        ));
     }
 
     #[test]

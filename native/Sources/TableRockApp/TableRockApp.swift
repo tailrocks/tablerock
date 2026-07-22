@@ -178,6 +178,7 @@ private struct WorkbenchActions {
   let cancel: () -> Void
   let refresh: () -> Void
   let quickSwitch: () -> Void
+  let explain: () -> Void
 }
 
 private struct WorkbenchActionsKey: FocusedValueKey {
@@ -209,6 +210,9 @@ private struct WorkbenchCommands: Commands {
       Divider()
       Button("Quick Switcher…") { actions?.quickSwitch() }
         .keyboardShortcut("o", modifiers: [.command, .shift])
+      Button("Explain Query") { actions?.explain() }
+        .keyboardShortcut("e", modifiers: [.command, .shift])
+        .disabled(actions?.canRun != true)
     }
   }
 }
@@ -382,6 +386,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   private var profiles: [WorkbenchProfileItem] = []
   private var profileDrafts: [Data: WorkbenchProfileDraft] = [:]
   private var filterPresets: [WorkbenchSavedFilterPreset] = []
+  private var submittedIntent: String?
 
   init(scenario: String) { self.scenario = scenario }
 
@@ -509,7 +514,8 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   }
 
   func submit(session: Data, intent: String, statement: String?) throws -> Data {
-    Data(repeating: 2, count: 16)
+    submittedIntent = intent
+    return Data(repeating: 2, count: 16)
   }
 
   func finish(operationId: Data) async throws -> WorkbenchOperation {
@@ -523,6 +529,13 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     if scenario == "history-failure-after-page" {
       return WorkbenchOperation(
         table: nil, envelope: nil, outcome: "ok", historyFailed: true)
+    }
+    if scenario == "success", submittedIntent == "explain" {
+      return WorkbenchOperation(
+        table: WorkbenchTable(
+          columns: ["QUERY PLAN"],
+          rows: [["Seq Scan on fixture"], ["  Filter: (id > 0)"]]),
+        envelope: nil, outcome: "completed", historyFailed: false)
     }
     return WorkbenchOperation(table: nil, envelope: nil, outcome: "ok", historyFailed: false)
   }
@@ -1770,6 +1783,7 @@ final class NativeQueryTab: Identifiable {
   var copyOutcome: String?
   var copyError: String?
   var quickFilter = ""
+  var explainPlan: String?
 
   init(id: UUID, title: String, statementText: String) {
     self.id = id
@@ -1848,6 +1862,7 @@ final class BridgeModel {
   var externalUrlReview: ExternalUrlReview?
   var quickSwitcherPresented = false
   var quickSwitcherSearch = ""
+  var explainPresented = false
   private var externalUrlFixtureConsumed = false
   var pendingGroupRemoval: String?
   var profileSections: [ProfileSection] {
@@ -1947,6 +1962,7 @@ final class BridgeModel {
   private var activeQueryTab: NativeQueryTab {
     queryTabs.first(where: { $0.id == selectedQueryTabId }) ?? queryTabs[0]
   }
+  var activeExplainPlan: String? { activeQueryTab.explainPlan }
   var activeQueryTabForPresentation: NativeQueryTab { activeQueryTab }
   private var activeObjectTab: NativeObjectTab? {
     guard let selectedObjectTabId else { return nil }
@@ -4609,6 +4625,32 @@ final class BridgeModel {
     }
   }
 
+  func runExplain() async {
+    let tab = activeQueryTab
+    let sql = tab.statementText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !sql.isEmpty else {
+      tab.queryError = "EXPLAIN needs SQL in the active editor"
+      return
+    }
+    tab.querySummary = nil
+    tab.queryError = nil
+    tab.explainPlan = nil
+    do {
+      guard let table = try await fetchPage(intent: "explain", statement: sql, tab: tab),
+        !table.rows.isEmpty
+      else {
+        tab.queryError = "EXPLAIN returned no plan"
+        return
+      }
+      tab.resultTable = table
+      tab.explainPlan = table.rows.compactMap(\.first).joined(separator: "\n")
+      tab.querySummary = "explain · \(counted(table.rows.count, "line"))"
+      explainPresented = true
+    } catch {
+      tab.queryError = "Explain failed: \(error)"
+    }
+  }
+
   /// Stage a probe mutation, authorize it, and apply it through the single-use
   /// review-token safety gate. Demonstrates the edit/review flow.
   func applyProbeEdit() async {
@@ -4634,6 +4676,18 @@ final class BridgeModel {
       copyOutcome = "Copied structure DDL"
     } catch {
       copyError = "Copy DDL failed: \(error)"
+    }
+  }
+
+  func copyExplainPlan() {
+    guard let plan = activeQueryTab.explainPlan else { return }
+    do {
+      try dependencies.pasteboard.write([
+        AppPasteboardRepresentation(type: "public.utf8-plain-text", value: plan)
+      ])
+      copyOutcome = "Copied explain plan"
+    } catch {
+      copyError = "Copy explain plan failed: \(error)"
     }
   }
 }
@@ -5026,6 +5080,9 @@ struct ContentView: View {
     .sheet(isPresented: $model.quickSwitcherPresented) {
       QuickSwitcherSheet()
     }
+    .sheet(isPresented: $model.explainPresented) {
+      ExplainPlanSheet()
+    }
     .sheet(isPresented: $model.historyPresented) {
       HistorySheet()
     }
@@ -5136,20 +5193,25 @@ struct ContentView: View {
     .task { await model.initialize() }
     .focusedValue(
       \.workbenchActions,
-      WorkbenchActions(
-        canRun: model.queryWorkbenchSelected && model.sessionHex != nil
-          && !model.isRunning && !model.isCatalogRefreshing,
-        canCancel: model.isRunning,
-        canRefresh: model.sessionHex != nil && !model.isRunning && !model.isCatalogRefreshing,
-        run: { Task { await model.runQuery() } },
-        cancel: { Task { await model.cancel() } },
-        refresh: { Task { await model.browse() } },
-        quickSwitch: { Task { await model.showQuickSwitcher() } }
-      )
+      focusedWorkbenchActions
     )
     .toolbar(id: "workbench") {
       WorkbenchToolbar(model: model)
     }
+  }
+
+  private var focusedWorkbenchActions: WorkbenchActions {
+    WorkbenchActions(
+      canRun: model.queryWorkbenchSelected && model.sessionHex != nil
+        && !model.isRunning && !model.isCatalogRefreshing,
+      canCancel: model.isRunning,
+      canRefresh: model.sessionHex != nil && !model.isRunning && !model.isCatalogRefreshing,
+      run: { Task { await model.runQuery() } },
+      cancel: { Task { await model.cancel() } },
+      refresh: { Task { await model.browse() } },
+      quickSwitch: { Task { await model.showQuickSwitcher() } },
+      explain: { Task { await model.runExplain() } }
+    )
   }
 }
 
@@ -7430,6 +7492,40 @@ struct QuickSwitcherSheet: View {
       }
     }
     .frame(minWidth: 560, minHeight: 420)
+  }
+}
+
+struct ExplainPlanSheet: View {
+  @Environment(BridgeModel.self) private var model
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    NavigationStack {
+      ScrollView {
+        Text(model.activeExplainPlan ?? "No plan")
+          .font(.system(.body, design: .monospaced))
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding()
+          .accessibilityIdentifier("explain.plan")
+      }
+      .navigationTitle("Explain Plan")
+      .toolbar {
+        ToolbarItem(placement: .primaryAction) {
+          Button("Copy") {
+            model.copyExplainPlan()
+          }
+          .accessibilityIdentifier("explain.copy")
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done") {
+            model.explainPresented = false
+            dismiss()
+          }
+        }
+      }
+    }
+    .frame(minWidth: 640, minHeight: 480)
   }
 }
 

@@ -377,6 +377,22 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testExplainRunsThroughRustIntentAndOpensPlanViewer() throws {
+    let app = launch(scenario: "success")
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    connect.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
+
+    app.typeKey("e", modifierFlags: [.command, .shift])
+    let plan = app.staticTexts["explain.plan"]
+    XCTAssertTrue(plan.waitForExistence(timeout: 10))
+    XCTAssertTrue((plan.value as? String ?? plan.label).contains("Seq Scan on fixture"))
+    XCTAssertTrue(app.buttons["explain.copy"].exists)
+  }
+
+  @MainActor
   func testLoadedResultExportsThroughUserControls() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)

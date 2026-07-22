@@ -506,6 +506,7 @@ How to read an evidence document:
 - 630 — [Native connection URL import](delivery/630-native-connection-url-import.md)
 - 631 — [Native external URL authority](delivery/631-native-external-url-authority.md)
 - 632 — [Native quick switcher](delivery/632-native-quick-switcher.md)
+- 633 — [Native Explain intent and viewer](delivery/633-native-explain-intent-viewer.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

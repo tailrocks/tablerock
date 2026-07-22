@@ -56,6 +56,11 @@ Typing opens a completion popup anchored at the cursor:
   follows the rules in [Editing and review](editing.md).
 - Engine errors show redacted message plus severity/position where the
   engine provides it, mapped back into the editor.
+- Explain runs the active SQL through a Rust-owned engine intent. PostgreSQL
+  uses text-plan `EXPLAIN` without `ANALYZE`; ClickHouse uses its plain
+  `EXPLAIN`; Redis is explicitly unsupported. Returned plan lines open in a
+  selectable, copyable native viewer and remain available as ordinary result
+  data. Already-explained SQL is never double-prefixed.
 
 ## History
 
