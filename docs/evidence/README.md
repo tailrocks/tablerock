@@ -498,6 +498,8 @@ How to read an evidence document:
 - 622 — [Native layout and hit-testing containment](delivery/622-native-layout-hit-testing.md)
 - 623 — [Plan 021 screen-traceability gate](delivery/623-plan-021-screen-traceability-gate.md)
 - 624 — [Canonical screen-manifest foundation](delivery/624-screen-manifest-foundation.md)
+- 625 — [Screen-manifest gap expansion](delivery/625-screen-manifest-gap-expansion.md)
+- 626 — [Native connected-workbench containment](delivery/626-native-connected-workbench-containment.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

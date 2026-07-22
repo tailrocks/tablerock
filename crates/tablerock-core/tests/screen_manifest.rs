@@ -149,7 +149,7 @@ fn canonical_screen_manifest_is_structurally_closed() {
                 .unwrap_or_else(|| panic!("{id} lacks {owner} test link"));
             assert_path(&root, path, id);
         }
-        if *clients == "both" {
+        if *clients == "both" && *status != "missing" {
             assert_ne!(
                 implementation["tui"], "n/a",
                 "{id} lacks TUI implementation"
@@ -160,6 +160,13 @@ fn canonical_screen_manifest_is_structurally_closed() {
             );
             assert_ne!(tests["tui"], "n/a", "{id} lacks TUI test");
             assert_ne!(tests["native"], "n/a", "{id} lacks native test");
+        }
+        if *status == "missing" {
+            assert!(
+                implementation.values().any(|path| *path == "n/a")
+                    || tests.values().any(|path| *path == "n/a"),
+                "{id} claims missing without an explicit missing implementation or test"
+            );
         }
         if *status == "proven" {
             assert_eq!(*gap, "none", "{id} claims proven with an open gap");
