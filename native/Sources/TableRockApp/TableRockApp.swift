@@ -188,6 +188,7 @@ private struct WorkbenchActions {
   var canShowRelationships: Bool {
     canShowActivity && model.selectedObjectTab != nil
   }
+  var canShowRoles: Bool { canShowActivity }
 
   func run() { Task { await model.runQuery() } }
   func cancel() { Task { await model.cancel() } }
@@ -197,6 +198,7 @@ private struct WorkbenchActions {
   func showActivity() { Task { await model.showPostgresActivity() } }
   func showPostgresTools() { Task { await model.showPostgresTools() } }
   func showRelationships() { Task { await model.showPostgresRelationships() } }
+  func showRoles() { Task { await model.showPostgresRoles() } }
 }
 
 private struct WorkbenchActionsKey: FocusedValueKey {
@@ -237,6 +239,8 @@ private struct WorkbenchCommands: Commands {
         .disabled(actions?.canShowPostgresTools != true)
       Button("Relationships…") { actions?.showRelationships() }
         .disabled(actions?.canShowRelationships != true)
+      Button("PostgreSQL Roles and Privileges…") { actions?.showRoles() }
+        .disabled(actions?.canShowRoles != true)
     }
   }
 }
@@ -398,6 +402,9 @@ extension WorkbenchBackend {
   func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
     -> WorkbenchRelationshipSnapshot
   { try scriptedUnavailable("postgres-relationships") }
+  func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws -> WorkbenchRoleSnapshot {
+    try scriptedUnavailable("postgres-roles")
+  }
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
     -> WorkbenchBackendSignalOutcome
   { try scriptedUnavailable("postgres-activity-signal") }
@@ -708,6 +715,26 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
           fromSchema: "public", fromTable: "fixture_table", fromColumn: "parent_id",
           toSchema: "public", toTable: "fixture_table", toColumn: "id"),
       ], truncated: false)
+  }
+
+  func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws -> WorkbenchRoleSnapshot {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16) else {
+      return try scriptedUnavailable("postgres-roles")
+    }
+    return WorkbenchRoleSnapshot(
+      currentUser: "fixture", roles: ["fixture", "reader"],
+      memberships: [
+        WorkbenchRoleMembership(
+          role: "reader", member: "fixture", inheritOption: true, adminOption: false,
+          setOption: true)
+      ],
+      effectiveRoles: ["fixture", "reader"], cycleEdges: [],
+      privileges: [
+        WorkbenchRolePrivilege(
+          grantee: "reader", privilege: "SELECT", object: "public.fixture_table",
+          grantable: false)
+      ], privilegeScope: catalogNodeId == nil ? nil : "public.fixture_table",
+      privilegesUnavailable: false, truncated: false)
   }
 
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
@@ -1057,6 +1084,10 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
     try bridge.postgresRelationships(
       sessionId: sessionId, catalogNodeId: catalogNodeId
     ).workbench
+  }
+
+  func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws -> WorkbenchRoleSnapshot {
+    try bridge.postgresRoles(sessionId: sessionId, catalogNodeId: catalogNodeId).workbench
   }
 
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
@@ -2106,6 +2137,11 @@ final class BridgeModel {
   var postgresRelationshipSnapshot: WorkbenchRelationshipSnapshot?
   private(set) var postgresRelationshipsLoading = false
   private(set) var postgresRelationshipsError: String?
+  var postgresRolesPresented = false
+  var postgresRoleSnapshot: WorkbenchRoleSnapshot?
+  var postgresRoleSearch = ""
+  private(set) var postgresRolesLoading = false
+  private(set) var postgresRolesError: String?
   var postgresToolsPresented = false
   var postgresToolKind = "dump"
   var postgresToolContent = "all"
@@ -3826,6 +3862,26 @@ final class BridgeModel {
     }
   }
 
+  func showPostgresRoles() async {
+    guard connectedEngine == "postgresql", sessionData != nil else { return }
+    postgresRolesPresented = true
+    await refreshPostgresRoles()
+  }
+
+  func refreshPostgresRoles() async {
+    guard let client, let session = sessionData, !postgresRolesLoading else { return }
+    postgresRolesLoading = true
+    postgresRolesError = nil
+    defer { postgresRolesLoading = false }
+    do {
+      postgresRoleSnapshot = try await client.postgresRoles(
+        sessionId: session, catalogNodeId: activeObjectTab?.catalogNodeId)
+    } catch {
+      postgresRoleSnapshot = nil
+      postgresRolesError = "Roles unavailable: \(error)"
+    }
+  }
+
   func openRelatedRelation(_ edge: WorkbenchRelationshipEdge) async {
     guard let snapshot = postgresRelationshipSnapshot, let nodes = catalogSnapshot else { return }
     let selectedIsSource =
@@ -5474,6 +5530,9 @@ struct ContentView: View {
     .sheet(isPresented: $model.postgresRelationshipsPresented) {
       PostgresRelationshipsSheet()
     }
+    .sheet(isPresented: $model.postgresRolesPresented) {
+      PostgresRolesSheet()
+    }
     .sheet(isPresented: $model.postgresToolsPresented) {
       PostgresToolsSheet()
     }
@@ -6286,6 +6345,95 @@ private struct RedisOverviewSheet: View {
 private struct PendingPostgresSignal {
   let kind: String
   let pid: Int32
+}
+
+private struct PostgresRolesSheet: View {
+  @Environment(BridgeModel.self) private var model
+
+  private var matchingRoles: [String] {
+    guard let snapshot = model.postgresRoleSnapshot else { return [] }
+    let query = model.postgresRoleSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+    return query.isEmpty
+      ? snapshot.roles
+      : snapshot.roles.filter { $0.localizedCaseInsensitiveContains(query) }
+  }
+
+  var body: some View {
+    @Bindable var model = model
+    VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        Label("PostgreSQL Roles and Privileges", systemImage: "person.2")
+          .font(.headline)
+        Spacer()
+        Button("Refresh") { Task { await model.refreshPostgresRoles() } }
+          .disabled(model.postgresRolesLoading)
+        Button("Close") { model.postgresRolesPresented = false }
+      }
+      TextField("Search roles", text: $model.postgresRoleSearch)
+        .textFieldStyle(.roundedBorder)
+        .accessibilityIdentifier("postgres.roles.search")
+      if let snapshot = model.postgresRoleSnapshot {
+        Text("Current user: \(snapshot.currentUser)").font(.subheadline)
+        HStack(alignment: .top, spacing: 16) {
+          GroupBox("Roles") {
+            List(matchingRoles, id: \.self) { role in Text(role) }
+          }
+          GroupBox("Effective membership") {
+            List(snapshot.effectiveRoles, id: \.self) { role in Text(role) }
+          }
+          GroupBox("Direct memberships") {
+            List(snapshot.memberships) { membership in
+              VStack(alignment: .leading) {
+                Text("\(membership.member) in \(membership.role)")
+                Text(
+                  "inherit \(membership.inheritOption ? "yes" : "no") · admin \(membership.adminOption ? "yes" : "no") · set \(membership.setOption ? "yes" : "no")"
+                )
+                .font(.caption).foregroundStyle(.secondary)
+              }
+            }
+          }
+        }
+        .frame(minHeight: 150)
+        GroupBox(snapshot.privilegeScope.map { "Privileges · \($0)" } ?? "Privileges") {
+          if snapshot.privilegesUnavailable {
+            Text("Privileges unavailable for this relation.")
+          } else if snapshot.privileges.isEmpty {
+            Text(
+              snapshot.privilegeScope == nil
+                ? "Select a relation to inspect grants." : "No grants found.")
+          } else {
+            List(snapshot.privileges) { privilege in
+              HStack {
+                Text(privilege.grantee)
+                Text(privilege.privilege).fontWeight(.medium)
+                Spacer()
+                Text(privilege.grantable ? "Grantable" : "Not grantable")
+                  .foregroundStyle(.secondary)
+              }
+            }
+            .frame(minHeight: 100)
+          }
+        }
+        if !snapshot.cycleEdges.isEmpty {
+          Label("Membership cycle detected", systemImage: "exclamationmark.triangle")
+            .foregroundStyle(.orange)
+        }
+        if snapshot.truncated {
+          Label("Snapshot truncated at safety limits", systemImage: "exclamationmark.triangle")
+            .foregroundStyle(.orange)
+        }
+        Text("Role changes require a separate reviewed authority flow and are unavailable here.")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+      if model.postgresRolesLoading { ProgressView("Loading roles…") }
+      if let error = model.postgresRolesError {
+        Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+      }
+    }
+    .padding(18)
+    .frame(minWidth: 720, minHeight: 520)
+    .accessibilityIdentifier("postgres.roles.sheet")
+  }
 }
 
 private struct PostgresRelationshipsSheet: View {

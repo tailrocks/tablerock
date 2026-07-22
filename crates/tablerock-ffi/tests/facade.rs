@@ -16,7 +16,7 @@ use tablerock_core::{
 };
 use tablerock_engine::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
-    DriverSession, PostgresActivityRow, ServerDescribe, SessionHealth,
+    DriverSession, PostgresActivityRow, PostgresRoleSnapshot, ServerDescribe, SessionHealth,
 };
 use tablerock_ffi::{BridgeError, SubmitSpec, TableRockBridge};
 
@@ -82,6 +82,31 @@ impl DriverSession for ActivitySession {
                 "active".into(),
                 "SELECT bounded preview".into(),
             )])
+        })
+    }
+
+    fn postgres_roles<'a>(
+        &'a self,
+        _schema: Option<&'a str>,
+        _table: Option<&'a str>,
+    ) -> DriverFuture<'a, Result<PostgresRoleSnapshot, AdapterError>> {
+        Box::pin(async {
+            Ok(PostgresRoleSnapshot {
+                current_user: "fixture".into(),
+                roles: vec!["fixture".into(), "reader".into()],
+                memberships: vec![tablerock_core::RoleMembershipEdge {
+                    role: "reader".into(),
+                    member: "fixture".into(),
+                    inherit_option: true,
+                    admin_option: false,
+                    set_option: true,
+                }],
+                effective_roles: vec!["fixture".into(), "reader".into()],
+                cycle_edges: Vec::new(),
+                privileges: Vec::new(),
+                privileges_unavailable: false,
+                truncated: false,
+            })
         })
     }
 
@@ -265,6 +290,10 @@ fn postgres_activity_and_signals_use_typed_driver_contract() {
     assert_eq!(rows[0].pid, 42);
     assert_eq!(rows[0].user, "fixture");
     assert_eq!(rows[0].query_preview, "SELECT bounded preview");
+    let roles = bridge.postgres_roles(session.clone(), None).unwrap();
+    assert_eq!(roles.current_user, "fixture");
+    assert_eq!(roles.effective_roles, vec!["fixture", "reader"]);
+    assert_eq!(roles.memberships[0].role, "reader");
 
     let cancel = bridge
         .signal_postgres_backend(session.clone(), "cancel".into(), 42)

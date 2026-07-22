@@ -199,6 +199,23 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn postgres_roles<'a>(
+        &'a self,
+        schema: Option<&'a str>,
+        table: Option<&'a str>,
+    ) -> DriverFuture<'a, Result<crate::PostgresRoleSnapshot, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => session.postgres_roles(schema, table).await,
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn postgres_activity<'a>(
         &'a self,
     ) -> DriverFuture<'a, Result<Vec<crate::PostgresActivityRow>, AdapterError>> {

@@ -2960,9 +2960,9 @@ async fn role_memberships_and_table_privileges() {
 
     let memberships = session.list_role_memberships(64).await.unwrap();
     assert!(
-        memberships
-            .iter()
-            .any(|(role, member)| role == "tr_parent" && member == "tr_child"),
+        memberships.iter().any(|(role, member, inherit, _, _)| {
+            role == "tr_parent" && member == "tr_child" && *inherit
+        }),
         "expected tr_parent → tr_child membership, got {memberships:?}"
     );
 
@@ -2989,6 +2989,26 @@ async fn role_memberships_and_table_privileges() {
     assert!(effective.iter().any(|r| r == "tr_child"));
     assert!(effective.iter().any(|r| r == "tr_parent"));
     assert!(!self_cycle);
+
+    let snapshot = session
+        .role_snapshot(Some("public"), Some("priv_probe"))
+        .await
+        .unwrap();
+    assert_eq!(snapshot.current_user, "postgres");
+    assert!(snapshot.roles.iter().any(|role| role == "tr_child"));
+    assert!(
+        snapshot
+            .memberships
+            .iter()
+            .any(|edge| { edge.role == "tr_parent" && edge.member == "tr_child" })
+    );
+    assert!(
+        snapshot.privileges.iter().any(|row| {
+            row.grantee == "tr_child" && row.privilege.eq_ignore_ascii_case("SELECT")
+        })
+    );
+    assert!(!snapshot.privileges_unavailable);
+    assert!(!snapshot.truncated);
 }
 
 #[tokio::test]

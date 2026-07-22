@@ -799,6 +799,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws  -> BridgeRelationshipSnapshot
 
     /**
+     * Loads a bounded PostgreSQL role snapshot, optionally scoped to one relation.
+     */
+    func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws  -> BridgeRoleSnapshot
+
+    /**
      * Returns one bounded process status projection.
      */
     func postgresToolStatus(operationId: Data) throws  -> BridgePostgresToolStatus
@@ -1460,6 +1465,20 @@ open func postgresRelationships(sessionId: Data, catalogNodeId: Data)throws  -> 
             self.uniffiCloneHandle(),
         FfiConverterData.lower(sessionId),
         FfiConverterData.lower(catalogNodeId),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Loads a bounded PostgreSQL role snapshot, optionally scoped to one relation.
+     */
+open func postgresRoles(sessionId: Data, catalogNodeId: Data?)throws  -> BridgeRoleSnapshot  {
+    return try  FfiConverterTypeBridgeRoleSnapshot_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_postgres_roles(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterOptionData.lower(catalogNodeId),uniffiCallStatus
     )
 })
 }
@@ -4108,6 +4127,216 @@ public func FfiConverterTypeBridgeRelationshipSnapshot_lower(_ value: BridgeRela
 }
 
 
+public struct BridgeRoleMembership: Equatable, Hashable {
+    public var role: String
+    public var member: String
+    public var inheritOption: Bool
+    public var adminOption: Bool
+    public var setOption: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(role: String, member: String, inheritOption: Bool, adminOption: Bool, setOption: Bool) {
+        self.role = role
+        self.member = member
+        self.inheritOption = inheritOption
+        self.adminOption = adminOption
+        self.setOption = setOption
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRoleMembership: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRoleMembership: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRoleMembership {
+        return
+            try BridgeRoleMembership(
+                role: FfiConverterString.read(from: &buf),
+                member: FfiConverterString.read(from: &buf),
+                inheritOption: FfiConverterBool.read(from: &buf),
+                adminOption: FfiConverterBool.read(from: &buf),
+                setOption: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRoleMembership, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.role, into: &buf)
+        FfiConverterString.write(value.member, into: &buf)
+        FfiConverterBool.write(value.inheritOption, into: &buf)
+        FfiConverterBool.write(value.adminOption, into: &buf)
+        FfiConverterBool.write(value.setOption, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRoleMembership_lift(_ buf: RustBuffer) throws -> BridgeRoleMembership {
+    return try FfiConverterTypeBridgeRoleMembership.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRoleMembership_lower(_ value: BridgeRoleMembership) -> RustBuffer {
+    return FfiConverterTypeBridgeRoleMembership.lower(value)
+}
+
+
+public struct BridgeRolePrivilege: Equatable, Hashable {
+    public var grantee: String
+    public var privilege: String
+    public var object: String
+    public var grantable: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(grantee: String, privilege: String, object: String, grantable: Bool) {
+        self.grantee = grantee
+        self.privilege = privilege
+        self.object = object
+        self.grantable = grantable
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRolePrivilege: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRolePrivilege: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRolePrivilege {
+        return
+            try BridgeRolePrivilege(
+                grantee: FfiConverterString.read(from: &buf),
+                privilege: FfiConverterString.read(from: &buf),
+                object: FfiConverterString.read(from: &buf),
+                grantable: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRolePrivilege, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.grantee, into: &buf)
+        FfiConverterString.write(value.privilege, into: &buf)
+        FfiConverterString.write(value.object, into: &buf)
+        FfiConverterBool.write(value.grantable, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRolePrivilege_lift(_ buf: RustBuffer) throws -> BridgeRolePrivilege {
+    return try FfiConverterTypeBridgeRolePrivilege.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRolePrivilege_lower(_ value: BridgeRolePrivilege) -> RustBuffer {
+    return FfiConverterTypeBridgeRolePrivilege.lower(value)
+}
+
+
+public struct BridgeRoleSnapshot: Equatable, Hashable {
+    public var currentUser: String
+    public var roles: [String]
+    public var memberships: [BridgeRoleMembership]
+    public var effectiveRoles: [String]
+    public var cycleEdges: [String]
+    public var privileges: [BridgeRolePrivilege]
+    public var privilegeScope: String?
+    public var privilegesUnavailable: Bool
+    public var truncated: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(currentUser: String, roles: [String], memberships: [BridgeRoleMembership], effectiveRoles: [String], cycleEdges: [String], privileges: [BridgeRolePrivilege], privilegeScope: String?, privilegesUnavailable: Bool, truncated: Bool) {
+        self.currentUser = currentUser
+        self.roles = roles
+        self.memberships = memberships
+        self.effectiveRoles = effectiveRoles
+        self.cycleEdges = cycleEdges
+        self.privileges = privileges
+        self.privilegeScope = privilegeScope
+        self.privilegesUnavailable = privilegesUnavailable
+        self.truncated = truncated
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRoleSnapshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRoleSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRoleSnapshot {
+        return
+            try BridgeRoleSnapshot(
+                currentUser: FfiConverterString.read(from: &buf),
+                roles: FfiConverterSequenceString.read(from: &buf),
+                memberships: FfiConverterSequenceTypeBridgeRoleMembership.read(from: &buf),
+                effectiveRoles: FfiConverterSequenceString.read(from: &buf),
+                cycleEdges: FfiConverterSequenceString.read(from: &buf),
+                privileges: FfiConverterSequenceTypeBridgeRolePrivilege.read(from: &buf),
+                privilegeScope: FfiConverterOptionString.read(from: &buf),
+                privilegesUnavailable: FfiConverterBool.read(from: &buf),
+                truncated: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRoleSnapshot, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.currentUser, into: &buf)
+        FfiConverterSequenceString.write(value.roles, into: &buf)
+        FfiConverterSequenceTypeBridgeRoleMembership.write(value.memberships, into: &buf)
+        FfiConverterSequenceString.write(value.effectiveRoles, into: &buf)
+        FfiConverterSequenceString.write(value.cycleEdges, into: &buf)
+        FfiConverterSequenceTypeBridgeRolePrivilege.write(value.privileges, into: &buf)
+        FfiConverterOptionString.write(value.privilegeScope, into: &buf)
+        FfiConverterBool.write(value.privilegesUnavailable, into: &buf)
+        FfiConverterBool.write(value.truncated, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRoleSnapshot_lift(_ buf: RustBuffer) throws -> BridgeRoleSnapshot {
+    return try FfiConverterTypeBridgeRoleSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRoleSnapshot_lower(_ value: BridgeRoleSnapshot) -> RustBuffer {
+    return FfiConverterTypeBridgeRoleSnapshot.lower(value)
+}
+
+
 /**
  * One saved filter preset for the catalog object selected by opaque id.
  */
@@ -5501,6 +5730,56 @@ fileprivate struct FfiConverterSequenceTypeBridgeRelationshipEdge: FfiConverterR
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeRoleMembership: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeRoleMembership]
+
+    public static func write(_ value: [BridgeRoleMembership], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeRoleMembership.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeRoleMembership] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeRoleMembership]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeRoleMembership.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeBridgeRolePrivilege: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeRolePrivilege]
+
+    public static func write(_ value: [BridgeRolePrivilege], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeRolePrivilege.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeRolePrivilege] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeRolePrivilege]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeRolePrivilege.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeSavedFilterPreset: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeSavedFilterPreset]
 
@@ -5697,6 +5976,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_postgres_relationships() != 822) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_postgres_roles() != 60055) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_postgres_tool_status() != 6607) {

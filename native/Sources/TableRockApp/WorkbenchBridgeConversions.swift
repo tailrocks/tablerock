@@ -144,6 +144,27 @@ extension BridgeRelationshipSnapshot {
       namespace: namespace, relation: relation, edges: edges.map(\.workbench), truncated: truncated)
   }
 }
+extension BridgeRoleMembership {
+  var workbench: WorkbenchRoleMembership {
+    .init(
+      role: role, member: member, inheritOption: inheritOption, adminOption: adminOption,
+      setOption: setOption)
+  }
+}
+extension BridgeRolePrivilege {
+  var workbench: WorkbenchRolePrivilege {
+    .init(grantee: grantee, privilege: privilege, object: object, grantable: grantable)
+  }
+}
+extension BridgeRoleSnapshot {
+  var workbench: WorkbenchRoleSnapshot {
+    .init(
+      currentUser: currentUser, roles: roles, memberships: memberships.map(\.workbench),
+      effectiveRoles: effectiveRoles, cycleEdges: cycleEdges,
+      privileges: privileges.map(\.workbench), privilegeScope: privilegeScope,
+      privilegesUnavailable: privilegesUnavailable, truncated: truncated)
+  }
+}
 extension BridgeBackendSignalOutcome {
   var workbench: WorkbenchBackendSignalOutcome {
     .init(kind: kind, pid: pid, acknowledged: acknowledged)

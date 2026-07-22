@@ -133,7 +133,7 @@ architecture decisions.
 | Backup/restore | Later | PostgreSQL tool integration with version checks, progress, cancel, and secret-safe process invocation | Shared shell-free Rust process authority serves TUI and native; native chooses/probes tools and files, configures content/ownership/clean restore, reviews risk, polls bounded status, and cancels (evidence 636); hosted live native dump/restore/cancel replay remains |
 | ER relationships | Later | PostgreSQL relationship graph; terminal tree/list first, native diagram later | Shared typed bounded inbound/outbound snapshot; composite keys, self-cycles, empty relations, 4,096-node replay, truncation, native refresh/open-related/close states, model and XCUITest coverage (evidence 637). Terminal browser beyond existing cell-follow remains |
 | Server dashboard | Parity | Current bounded health/activity snapshots, cancel/kill only through explicit capability and confirmation | PostgreSQL activity snapshot (232); cancel/terminate + permission-denied (evidence 327); native Redis sample-timed bounded INFO overview with curated required facts and explicit unavailable values (evidence 537) |
-| Users and roles | Later | PostgreSQL-only role/privilege inspection before reviewed mutation support | Effective-privilege and self-lockout tests |
+| Users and roles | Later | PostgreSQL-only role/privilege inspection before reviewed mutation support | Typed bounded roles, membership, effective-role/cycle, optional relation grants, unavailable/truncated states, native search/refresh/close, and real PostgreSQL proof (evidence 638); reviewed mutation and self-lockout gate remain |
 
 ## Engine-specific parity
 

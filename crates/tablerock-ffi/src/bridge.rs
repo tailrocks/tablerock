@@ -410,6 +410,36 @@ pub struct BridgeRelationshipSnapshot {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRoleMembership {
+    pub role: String,
+    pub member: String,
+    pub inherit_option: bool,
+    pub admin_option: bool,
+    pub set_option: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRolePrivilege {
+    pub grantee: String,
+    pub privilege: String,
+    pub object: String,
+    pub grantable: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRoleSnapshot {
+    pub current_user: String,
+    pub roles: Vec<String>,
+    pub memberships: Vec<BridgeRoleMembership>,
+    pub effective_roles: Vec<String>,
+    pub cycle_edges: Vec<String>,
+    pub privileges: Vec<BridgeRolePrivilege>,
+    pub privilege_scope: Option<String>,
+    pub privileges_unavailable: bool,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeBackendSignalOutcome {
     pub kind: String,
     pub pid: i32,
@@ -981,6 +1011,15 @@ impl TableRockBridge {
         catalog_node_id: Vec<u8>,
     ) -> Result<BridgeRelationshipSnapshot, BridgeError> {
         catch_entry(|| self.postgres_relationships_inner(session_id, catalog_node_id))
+    }
+
+    /// Loads a bounded PostgreSQL role snapshot, optionally scoped to one relation.
+    pub fn postgres_roles(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Option<Vec<u8>>,
+    ) -> Result<BridgeRoleSnapshot, BridgeError> {
+        catch_entry(|| self.postgres_roles_inner(session_id, catalog_node_id))
     }
 
     /// Signals one PostgreSQL backend. Kind is exactly `cancel` or `terminate`.
@@ -3641,6 +3680,112 @@ impl TableRockBridge {
                 })
                 .collect(),
             truncated,
+        })
+    }
+
+    fn postgres_roles_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        catalog_node_id_bytes: Option<Vec<u8>>,
+    ) -> Result<BridgeRoleSnapshot, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let (driver, scope) = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            if registered.engine != Engine::PostgreSql {
+                return Err(BridgeError::rejected(
+                    "postgres-roles-engine",
+                    "roles require a PostgreSQL session",
+                ));
+            }
+            let scope = catalog_node_id_bytes
+                .map(|bytes| {
+                    let node_id = catalog_node_from_bytes(&bytes).map_err(|_| {
+                        BridgeError::rejected(
+                            "bad-catalog-node-id",
+                            "catalog node id must be 16 bytes",
+                        )
+                    })?;
+                    let node =
+                        inner
+                            .catalog_nodes
+                            .get(&(session_id, node_id))
+                            .ok_or_else(|| {
+                                BridgeError::rejected(
+                                    "unknown-catalog-node",
+                                    "catalog node is stale or unknown",
+                                )
+                            })?;
+                    if !matches!(node.kind(), CatalogNodeKind::PostgreSqlObject(_)) {
+                        return Err(BridgeError::rejected(
+                            "postgres-roles-kind",
+                            "privilege scope requires a PostgreSQL relation",
+                        ));
+                    }
+                    let parent = node
+                        .parent_id()
+                        .and_then(|id| inner.catalog_nodes.get(&(session_id, id)))
+                        .ok_or_else(|| {
+                            BridgeError::rejected("catalog-parent", "object parent is stale")
+                        })?;
+                    Ok((parent.name().to_owned(), node.name().to_owned()))
+                })
+                .transpose()?;
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (driver, scope)
+        };
+        let snapshot = self
+            .runtime
+            .block_on(driver.postgres_roles(
+                scope.as_ref().map(|value| value.0.as_str()),
+                scope.as_ref().map(|value| value.1.as_str()),
+            ))?
+            .map_err(|error| BridgeError::rejected("postgres-roles", error.to_string()))?;
+        Ok(BridgeRoleSnapshot {
+            current_user: snapshot.current_user,
+            roles: snapshot.roles,
+            memberships: snapshot
+                .memberships
+                .into_iter()
+                .map(|edge| BridgeRoleMembership {
+                    role: edge.role,
+                    member: edge.member,
+                    inherit_option: edge.inherit_option,
+                    admin_option: edge.admin_option,
+                    set_option: edge.set_option,
+                })
+                .collect(),
+            effective_roles: snapshot.effective_roles,
+            cycle_edges: snapshot
+                .cycle_edges
+                .into_iter()
+                .map(|(from, to)| format!("{from} -> {to}"))
+                .collect(),
+            privileges: snapshot
+                .privileges
+                .into_iter()
+                .map(|row| BridgeRolePrivilege {
+                    grantee: row.grantee,
+                    privilege: row.privilege,
+                    object: row.object,
+                    grantable: row.is_grantable,
+                })
+                .collect(),
+            privilege_scope: scope.map(|(schema, relation)| format!("{schema}.{relation}")),
+            privileges_unavailable: snapshot.privileges_unavailable,
+            truncated: snapshot.truncated,
         })
     }
 

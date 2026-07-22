@@ -446,6 +446,28 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testPostgresRolesSearchAndInspectMembership() throws {
+    let app = launch(scenario: "success")
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    connect.click()
+
+    let command = app.menuItems["PostgreSQL Roles and Privileges…"]
+    XCTAssertTrue(command.waitForExistence(timeout: 10))
+    XCTAssertTrue(command.isEnabled)
+    command.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["postgres.roles.sheet"]
+        .waitForExistence(timeout: 10))
+    let search = app.textFields["postgres.roles.search"]
+    XCTAssertTrue(search.exists)
+    search.click()
+    search.typeText("reader")
+    XCTAssertTrue(app.staticTexts["reader"].firstMatch.exists)
+    XCTAssertTrue(app.staticTexts["Current user: fixture"].exists)
+  }
+
+  @MainActor
   func testPostgresBackupRequiresToolFileAndReview() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("TableRock-PostgresTool-\(UUID().uuidString)", isDirectory: true)

@@ -74,6 +74,7 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow]
   func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
     -> WorkbenchRelationshipSnapshot
+  func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws -> WorkbenchRoleSnapshot
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
     -> WorkbenchBackendSignalOutcome
   func probePostgresTool(kind: String, explicitPath: String?) throws -> WorkbenchPostgresToolProbe
@@ -537,6 +538,65 @@ public struct WorkbenchRelationshipSnapshot: Sendable, Equatable {
     self.namespace = namespace
     self.relation = relation
     self.edges = edges
+    self.truncated = truncated
+  }
+}
+
+public struct WorkbenchRoleMembership: Sendable, Equatable, Identifiable {
+  public let role: String
+  public let member: String
+  public let inheritOption: Bool
+  public let adminOption: Bool
+  public let setOption: Bool
+  public var id: String { "\(role)<-\(member)" }
+  public init(
+    role: String, member: String, inheritOption: Bool, adminOption: Bool, setOption: Bool
+  ) {
+    self.role = role
+    self.member = member
+    self.inheritOption = inheritOption
+    self.adminOption = adminOption
+    self.setOption = setOption
+  }
+}
+
+public struct WorkbenchRolePrivilege: Sendable, Equatable, Identifiable {
+  public let grantee: String
+  public let privilege: String
+  public let object: String
+  public let grantable: Bool
+  public var id: String { "\(grantee):\(privilege):\(object)" }
+  public init(grantee: String, privilege: String, object: String, grantable: Bool) {
+    self.grantee = grantee
+    self.privilege = privilege
+    self.object = object
+    self.grantable = grantable
+  }
+}
+
+public struct WorkbenchRoleSnapshot: Sendable, Equatable {
+  public let currentUser: String
+  public let roles: [String]
+  public let memberships: [WorkbenchRoleMembership]
+  public let effectiveRoles: [String]
+  public let cycleEdges: [String]
+  public let privileges: [WorkbenchRolePrivilege]
+  public let privilegeScope: String?
+  public let privilegesUnavailable: Bool
+  public let truncated: Bool
+  public init(
+    currentUser: String, roles: [String], memberships: [WorkbenchRoleMembership],
+    effectiveRoles: [String], cycleEdges: [String], privileges: [WorkbenchRolePrivilege],
+    privilegeScope: String?, privilegesUnavailable: Bool, truncated: Bool
+  ) {
+    self.currentUser = currentUser
+    self.roles = roles
+    self.memberships = memberships
+    self.effectiveRoles = effectiveRoles
+    self.cycleEdges = cycleEdges
+    self.privileges = privileges
+    self.privilegeScope = privilegeScope
+    self.privilegesUnavailable = privilegesUnavailable
     self.truncated = truncated
   }
 }

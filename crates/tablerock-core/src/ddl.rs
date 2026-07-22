@@ -242,6 +242,9 @@ pub struct RolePrivilegeRow {
 pub struct RoleMembershipEdge {
     pub role: String,
     pub member: String,
+    pub inherit_option: bool,
+    pub admin_option: bool,
+    pub set_option: bool,
 }
 
 /// Bounded role membership graph for effective-privilege expansion.
@@ -260,7 +263,7 @@ impl RoleMembershipGraph {
     pub fn direct_roles_of(&self, member: &str) -> Vec<&str> {
         self.edges
             .iter()
-            .filter(|e| e.member == member)
+            .filter(|e| e.member == member && e.inherit_option)
             .map(|e| e.role.as_str())
             .collect()
     }
@@ -436,20 +439,37 @@ mod tests {
         g.push(RoleMembershipEdge {
             role: "parent".into(),
             member: "child".into(),
+            inherit_option: true,
+            admin_option: false,
+            set_option: true,
         });
         g.push(RoleMembershipEdge {
             role: "grand".into(),
             member: "parent".into(),
+            inherit_option: true,
+            admin_option: false,
+            set_option: true,
         });
         // cycle: grand also member of child
         g.push(RoleMembershipEdge {
             role: "child".into(),
             member: "grand".into(),
+            inherit_option: true,
+            admin_option: false,
+            set_option: true,
+        });
+        g.push(RoleMembershipEdge {
+            role: "manual".into(),
+            member: "child".into(),
+            inherit_option: false,
+            admin_option: false,
+            set_option: true,
         });
         let (roles, _cycles) = g.effective_roles("child", 16);
         assert!(roles.contains(&"child".into()));
         assert!(roles.contains(&"parent".into()));
         assert!(roles.contains(&"grand".into()));
+        assert!(!roles.contains(&"manual".into()));
         assert!(g.has_self_cycle_through("child"));
         assert!(!g.has_self_cycle_through("lonely"));
         let (bounded, _) = g.effective_roles("child", 2);

@@ -20,7 +20,7 @@ mod temporal;
 
 pub use adapter::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
-    DriverSession, PostgresActivityRow, SessionHealth,
+    DriverSession, PostgresActivityRow, PostgresRoleSnapshot, SessionHealth,
 };
 pub use browse_plan::{
     BrowseDialect, BrowsePlan, BrowsePlanError, FilterOperator, FilterValue, RenderedBrowseSql,

@@ -1216,14 +1216,15 @@ impl PostgresSession {
     pub async fn list_role_memberships(
         &self,
         limit: u32,
-    ) -> Result<Vec<(String, String)>, PostgresError> {
+    ) -> Result<Vec<(String, String, bool, bool, bool)>, PostgresError> {
         if limit == 0 {
             return Err(PostgresError::InvalidLimits);
         }
         let rows = self
             .client
             .query(
-                "SELECT r.rolname::text AS role_name, m.rolname::text AS member_name \
+                "SELECT r.rolname::text AS role_name, m.rolname::text AS member_name, \
+                        am.inherit_option, am.admin_option, am.set_option \
                  FROM pg_catalog.pg_auth_members am \
                  JOIN pg_catalog.pg_roles r ON r.oid = am.roleid \
                  JOIN pg_catalog.pg_roles m ON m.oid = am.member \
@@ -1232,7 +1233,10 @@ impl PostgresSession {
             )
             .await
             .map_err(|_| PostgresError::Query)?;
-        Ok(rows.into_iter().map(|r| (r.get(0), r.get(1))).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.get(0), r.get(1), r.get(2), r.get(3), r.get(4)))
+            .collect())
     }
 
     /// Load membership graph and expand effective roles for `member`.
@@ -1247,76 +1251,150 @@ impl PostgresSession {
         }
         let edges = self.list_role_memberships(edge_limit).await?;
         let mut graph = tablerock_core::RoleMembershipGraph::default();
-        for (role, m) in edges {
-            graph.push(tablerock_core::RoleMembershipEdge { role, member: m });
+        for (role, member, inherit_option, admin_option, set_option) in edges {
+            graph.push(tablerock_core::RoleMembershipEdge {
+                role,
+                member,
+                inherit_option,
+                admin_option,
+                set_option,
+            });
         }
         let (roles, cycles) = graph.effective_roles(member, max_roles);
         let self_cycle = graph.has_self_cycle_through(member);
         Ok((roles, cycles, self_cycle))
     }
 
-    /// Presentation lines for the roles inspector (list + effective + grants).
-    pub async fn role_inspector_lines(
+    /// Typed bounded role, membership, effective-role, and privilege snapshot.
+    pub async fn role_snapshot(
         &self,
         schema: Option<&str>,
         table: Option<&str>,
-    ) -> Result<Vec<String>, PostgresError> {
+    ) -> Result<crate::PostgresRoleSnapshot, PostgresError> {
         let member: String = self
             .client
             .query_one("SELECT current_user::text", &[])
             .await
             .map_err(|_| PostgresError::Query)?
             .get(0);
-        let roles = self.list_roles(64).await?;
-        let memberships = self.list_role_memberships(128).await?;
-        let (effective, _cycle_edges, self_cycle) =
-            self.effective_roles_for(&member, 128, 32).await?;
+        let mut roles = self.list_roles(65).await?;
+        let mut membership_pairs = self.list_role_memberships(129).await?;
+        let roles_truncated = roles.len() > 64;
+        let memberships_truncated = membership_pairs.len() > 128;
+        roles.truncate(64);
+        membership_pairs.truncate(128);
+        let memberships: Vec<_> = membership_pairs
+            .into_iter()
+            .map(|(role, member, inherit_option, admin_option, set_option)| {
+                tablerock_core::RoleMembershipEdge {
+                    role,
+                    member,
+                    inherit_option,
+                    admin_option,
+                    set_option,
+                }
+            })
+            .collect();
+        let graph = tablerock_core::RoleMembershipGraph {
+            edges: memberships.clone(),
+        };
+        let (effective_roles, cycle_edges) = graph.effective_roles(&member, 32);
+        let effective_truncated = effective_roles.len() == 32;
+        let mut privileges = Vec::new();
+        let mut privileges_unavailable = false;
+        let mut privileges_truncated = false;
+        if let (Some(schema), Some(table)) = (schema, table)
+            && !schema.is_empty()
+            && !table.is_empty()
+        {
+            match self.list_table_privileges(schema, table, 65).await {
+                Ok(mut rows) => {
+                    privileges_truncated = rows.len() > 64;
+                    rows.truncate(64);
+                    privileges = rows;
+                }
+                Err(_) => privileges_unavailable = true,
+            }
+        }
+        Ok(crate::PostgresRoleSnapshot {
+            current_user: member,
+            roles,
+            memberships,
+            effective_roles,
+            cycle_edges,
+            privileges,
+            privileges_unavailable,
+            truncated: roles_truncated
+                || memberships_truncated
+                || effective_truncated
+                || privileges_truncated,
+        })
+    }
+
+    /// Presentation lines for the terminal roles inspector.
+    pub async fn role_inspector_lines(
+        &self,
+        schema: Option<&str>,
+        table: Option<&str>,
+    ) -> Result<Vec<String>, PostgresError> {
+        let snapshot = self.role_snapshot(schema, table).await?;
 
         let mut lines = Vec::new();
-        lines.push(format!("member: {member}"));
+        lines.push(format!("member: {}", snapshot.current_user));
         lines.push(format!(
             "effective: {}",
-            if effective.is_empty() {
+            if snapshot.effective_roles.is_empty() {
                 "(self only)".into()
             } else {
-                effective.join(", ")
+                snapshot.effective_roles.join(", ")
             }
         ));
         lines.push(format!(
             "self-cycle: {}",
-            if self_cycle { "yes" } else { "no" }
+            if snapshot
+                .memberships
+                .iter()
+                .any(|edge| edge.role == edge.member)
+            {
+                "yes"
+            } else {
+                "no"
+            }
         ));
-        lines.push(format!("--- roles ({}) ---", roles.len()));
-        for r in &roles {
+        lines.push(format!("--- roles ({}) ---", snapshot.roles.len()));
+        for r in &snapshot.roles {
             lines.push(r.clone());
         }
-        lines.push(format!("--- memberships ({}) ---", memberships.len()));
-        for (role, m) in &memberships {
-            lines.push(format!("{role} <- {m}"));
+        lines.push(format!(
+            "--- memberships ({}) ---",
+            snapshot.memberships.len()
+        ));
+        for edge in &snapshot.memberships {
+            lines.push(format!("{} <- {}", edge.role, edge.member));
         }
         if let (Some(schema), Some(table)) = (schema, table)
             && !schema.is_empty()
             && !table.is_empty()
         {
-            match self.list_table_privileges(schema, table, 64).await {
-                Ok(privs) => {
+            if snapshot.privileges_unavailable {
+                lines.push(format!(
+                    "--- table privileges {schema}.{table}: unavailable ---"
+                ));
+            } else {
+                lines.push(format!(
+                    "--- table privileges {schema}.{table} ({}) ---",
+                    snapshot.privileges.len()
+                ));
+                for privilege in snapshot.privileges {
                     lines.push(format!(
-                        "--- table privileges {schema}.{table} ({}) ---",
-                        privs.len()
-                    ));
-                    for p in privs {
-                        lines.push(format!(
-                            "{} {} grantable={}",
-                            p.grantee, p.privilege, p.is_grantable
-                        ));
-                    }
-                }
-                Err(_) => {
-                    lines.push(format!(
-                        "--- table privileges {schema}.{table}: unavailable ---"
+                        "{} {} grantable={}",
+                        privilege.grantee, privilege.privilege, privilege.is_grantable
                     ));
                 }
             }
+        }
+        if snapshot.truncated {
+            lines.push("--- snapshot truncated ---".into());
         }
         Ok(lines)
     }

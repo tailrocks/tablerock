@@ -350,6 +350,18 @@ pub struct PostgresActivityRow {
     query_preview: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostgresRoleSnapshot {
+    pub current_user: String,
+    pub roles: Vec<String>,
+    pub memberships: Vec<tablerock_core::RoleMembershipEdge>,
+    pub effective_roles: Vec<String>,
+    pub cycle_edges: Vec<(String, String)>,
+    pub privileges: Vec<tablerock_core::RolePrivilegeRow>,
+    pub privileges_unavailable: bool,
+    pub truncated: bool,
+}
+
 impl PostgresActivityRow {
     #[must_use]
     pub fn new(
@@ -469,6 +481,21 @@ pub trait DriverSession: Send + Sync {
         schema: Option<&'a str>,
         table: Option<&'a str>,
     ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
+        let _ = (schema, table);
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
+    /// PostgreSQL-only typed role, membership, and optional relation privilege snapshot.
+    fn postgres_roles<'a>(
+        &'a self,
+        schema: Option<&'a str>,
+        table: Option<&'a str>,
+    ) -> DriverFuture<'a, Result<PostgresRoleSnapshot, AdapterError>> {
         let _ = (schema, table);
         Box::pin(async {
             Err(AdapterError::new(
@@ -867,6 +894,18 @@ impl DriverSession for PostgresSession {
     ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
         Box::pin(async move {
             PostgresSession::role_inspector_lines(self, schema, table)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
+    fn postgres_roles<'a>(
+        &'a self,
+        schema: Option<&'a str>,
+        table: Option<&'a str>,
+    ) -> DriverFuture<'a, Result<PostgresRoleSnapshot, AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::role_snapshot(self, schema, table)
                 .await
                 .map_err(map_postgres)
         })

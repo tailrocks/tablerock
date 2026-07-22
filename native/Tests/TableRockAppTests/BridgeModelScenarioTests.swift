@@ -106,6 +106,20 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertNil(model.postgresRelationshipsError)
   }
 
+  func testPostgresRolesUseTypedMembershipAndPrivilegeSnapshot() async {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let model = BridgeModel(client: backend)
+
+    await model.connectByParams()
+    await model.showPostgresRoles()
+
+    XCTAssertTrue(model.postgresRolesPresented)
+    XCTAssertEqual(model.postgresRoleSnapshot?.currentUser, "fixture")
+    XCTAssertEqual(model.postgresRoleSnapshot?.effectiveRoles, ["fixture", "reader"])
+    XCTAssertEqual(model.postgresRoleSnapshot?.memberships.first?.role, "reader")
+    XCTAssertNil(model.postgresRolesError)
+  }
+
   func testPostgresBackupUsesProbeReviewAndSupervisedStatus() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
     let model = BridgeModel(client: backend)
