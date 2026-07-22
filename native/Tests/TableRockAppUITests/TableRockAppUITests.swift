@@ -118,13 +118,31 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
-  func testSettingsExposeSafeSupportExport() throws {
-    let app = launch(scenario: "success")
+  func testSettingsExportsSafeSupportBundle() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let output = root.appendingPathComponent("support.txt")
+    let app = launch(
+      scenario: "success", root: root,
+      environment: ["TABLEROCK_TEST_SAVE_FILE": output.path])
     XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
 
     app.typeKey(",", modifierFlags: .command)
 
-    XCTAssertTrue(app.buttons["settings.support.export"].waitForExistence(timeout: 10))
+    let export = app.buttons["settings.support.export"]
+    XCTAssertTrue(export.waitForExistence(timeout: 10))
+    export.click()
+    let outcome = app.staticTexts["settings.support.outcome"]
+    let exported = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value CONTAINS 'Exported'"), object: outcome)
+    XCTAssertEqual(XCTWaiter.wait(for: [exported], timeout: 10), .completed)
+
+    let payload = try String(contentsOf: output, encoding: .utf8)
+    XCTAssertTrue(payload.contains("schema=1\n"))
+    XCTAssertTrue(payload.contains("diagnostics.count=0\n"))
+    XCTAssertFalse(payload.localizedCaseInsensitiveContains("password"))
+    XCTAssertFalse(payload.localizedCaseInsensitiveContains("statement"))
   }
 
   @MainActor

@@ -546,6 +546,15 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     return UInt64(payload.count)
   }
 
+  func exportSupportBundle(path: String) throws -> UInt64 {
+    guard scenario == "success" else { return try scriptedUnavailable("support-export") }
+    let payload = Data(
+      "schema=1\nclient.version=scripted\nplatform.os=macos\nplatform.arch=test\ndiagnostics.count=0\ndiagnostics.omitted=0\n"
+        .utf8)
+    try payload.write(to: URL(fileURLWithPath: path), options: .atomic)
+    return UInt64(payload.count)
+  }
+
   func previewCsvImport(path: String) throws -> WorkbenchCSVImportPreview {
     guard scenario == "success",
       try String(contentsOfFile: path, encoding: .utf8) == "id,name\n2,Grace\n"
@@ -6327,7 +6336,12 @@ private struct NativeSettingsView: View {
         Text("Contains version, platform, and closed redacted diagnostic facts only.")
           .font(.caption)
           .foregroundStyle(.secondary)
-        if let outcome { Text(outcome).font(.caption) }
+        if let outcome {
+          Text(outcome)
+            .font(.caption)
+            .accessibilityIdentifier("settings.support.outcome")
+            .accessibilityValue(outcome)
+        }
       }
     }
     .formStyle(.grouped)
