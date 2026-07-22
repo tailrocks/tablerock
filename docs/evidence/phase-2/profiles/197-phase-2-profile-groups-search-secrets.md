@@ -36,6 +36,18 @@ the search projection (`source_kind = 1` only).
 - `cargo test -p tablerock-engine --lib secret_resolution`
 - `cargo clippy -p tablerock-engine -p tablerock-persistence --all-targets`
 
+Completion audit on 2026-07-22 replaced an indirect shared-name search check
+with isolated assertions for every Plan 004 search requirement. The persisted
+fixture now proves:
+
+- a literal host matches case-insensitively;
+- a full-width host spelling matches through NFKC normalization;
+- a literal DefaultContext/database matches independently;
+- the same host property's secret-reference storage text cannot match.
+
+`cargo test -p tablerock-persistence --test profile_create \
+bounded_profile_list_uses_stable_keyset_order_without_secret_payloads` passed.
+
 ## Remaining work
 
 - Plan 006 connection screens consume tags, groups, and resolution.

@@ -499,6 +499,24 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
             )
             .await
             .unwrap();
+        connection
+            .execute(
+                "UPDATE saved_profile_properties \
+                 SET text_value = 'ＤＡＴＡＢＡＳＥ.internal' \
+                 WHERE profile_id = ?1 AND property = 1 AND source_kind = 1",
+                (profile_id(60).to_bytes().as_slice(),),
+            )
+            .await
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE saved_profile_properties \
+                 SET source_kind = 1, source_schema = NULL, text_value = 'warehouse_catalog' \
+                 WHERE profile_id = ?1 AND property = 3",
+                (profile_id(61).to_bytes().as_slice(),),
+            )
+            .await
+            .unwrap();
         let mut plan = connection
             .query(
                 "EXPLAIN QUERY PLAN SELECT profile_id FROM saved_profiles \
@@ -754,6 +772,52 @@ fn bounded_profile_list_uses_stable_keyset_order_without_secret_payloads() {
         .unwrap();
     assert_eq!(search_final.items()[0].id(), profile_id(60));
     assert_eq!(search_final.next(), None);
+
+    let host_search = actor
+        .list_profiles(
+            ProfileListRequest::new(
+                ProfileListFilter::default().with_search(Some(search("DATABASE.INTERNAL"))),
+                None,
+                10,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        host_search
+            .items()
+            .iter()
+            .map(|item| item.id())
+            .collect::<Vec<_>>(),
+        vec![profile_id(61), profile_id(60)],
+        "literal hosts must match with case/NFKC folding; secret-backed host must not"
+    );
+    let database_search = actor
+        .list_profiles(
+            ProfileListRequest::new(
+                ProfileListFilter::default().with_search(Some(search("WAREHOUSE_CATALOG"))),
+                None,
+                10,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(database_search.items().len(), 1);
+    assert_eq!(database_search.items()[0].id(), profile_id(61));
+    let secret_host_search = actor
+        .list_profiles(
+            ProfileListRequest::new(
+                ProfileListFilter::default().with_search(Some(search("SECRET_HOST_REFERENCE"))),
+                None,
+                10,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert!(
+        secret_host_search.items().is_empty(),
+        "secret-source storage metadata must never enter profile search"
+    );
 
     let group_search = actor
         .list_profiles(
