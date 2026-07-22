@@ -114,6 +114,7 @@ extended; CI updated.
 - 241 namespace + INFO + sequential apply + KEYS policy
 - 242 key_type/list/stream, command tokenizer, key view models, Docker types
 - 243 SCAN/OpenKey/INFO effects + DriverSession redis_key_view/info
+- 651 restart-sensitive real Pub/Sub fixture removes fixed-host-port bind race
 
 ## Residual (non-blocking)
 

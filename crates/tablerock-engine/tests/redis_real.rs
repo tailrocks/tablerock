@@ -26,6 +26,7 @@ use tablerock_engine::{
 use tokio::task::{JoinHandle, JoinSet};
 
 static CONTAINER_HOSTS: OnceLock<Mutex<HashMap<u16, String>>> = OnceLock::new();
+static TLS_REPLACEMENT_PERMITS: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
 
 fn record_container_host(port: u16, host: String) {
     CONTAINER_HOSTS
@@ -282,6 +283,46 @@ async fn connect_session_until_ready(
     support::connect_redis_until_ready(config, security).await
 }
 
+/// Starts restart-sensitive Redis on a stable host port without trusting the
+/// racy bind-then-drop probe. Initial starts choose a new candidate after a
+/// Docker bind collision; restarts retry the same endpoint until Docker has
+/// released the previous container's mapping.
+async fn start_restartable_redis(
+    tag: &str,
+    fixed_port: Option<u16>,
+) -> (ContainerAsync<GenericImage>, u16) {
+    let mut last_error = String::new();
+    for _ in 0..20 {
+        let port = match fixed_port {
+            Some(port) => port,
+            None => {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                    .await
+                    .expect("reserve Redis fixture port");
+                let port = listener
+                    .local_addr()
+                    .expect("Redis fixture listener address")
+                    .port();
+                drop(listener);
+                port
+            }
+        };
+        match GenericImage::new("redis", tag)
+            .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+            .with_mapped_port(port, 6379.tcp())
+            .start()
+            .await
+        {
+            Ok(container) => return (container, port),
+            Err(error) => {
+                last_error = error.to_string();
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    }
+    panic!("Redis restart fixture could not bind its host port: {last_error}");
+}
+
 async fn start_tls_redis(
     tag: &str,
     fixture: &RedisTlsFixture,
@@ -389,15 +430,7 @@ async fn resubscribes_with_visible_gap_after_redis_restart() {
                 RedisSubscriptionKind::Channel,
                 RedisSubscriptionKind::Pattern,
             ] {
-                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-                let port = listener.local_addr().unwrap().port();
-                drop(listener);
-                let container = GenericImage::new("redis", tag)
-                    .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
-                    .with_mapped_port(port, 6379.tcp())
-                    .start()
-                    .await
-                    .unwrap();
+                let (container, port) = start_restartable_redis(tag, None).await;
                 record_host!(container, port);
                 let session = connect_session_until_ready(
                     &RedisConnectConfig::new(
@@ -433,12 +466,9 @@ async fn resubscribes_with_visible_gap_after_redis_restart() {
 
                 drop(container);
                 tokio::time::sleep(Duration::from_millis(250)).await;
-                let replacement = GenericImage::new("redis", tag)
-                    .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
-                    .with_mapped_port(port, 6379.tcp())
-                    .start()
-                    .await
-                    .unwrap();
+                let (replacement, replacement_port) =
+                    start_restartable_redis(tag, Some(port)).await;
+                assert_eq!(replacement_port, port);
                 record_host!(replacement, port);
 
                 let mut publisher = raw_connection_in_database(port, protocol, 0).await;
@@ -938,6 +968,11 @@ async fn verify_rejected_tls_subscription_replacement(
     kind: RedisSubscriptionKind,
     invalid_trust: bool,
 ) {
+    let _permit = TLS_REPLACEMENT_PERMITS
+        .get_or_init(|| tokio::sync::Semaphore::new(4))
+        .acquire()
+        .await
+        .expect("TLS replacement fixture semaphore remains open");
     let fixture = RedisTlsFixture::generate();
     let invalid_fixture = RedisTlsFixture::generate();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
