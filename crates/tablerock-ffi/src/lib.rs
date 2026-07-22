@@ -16,6 +16,7 @@ mod runtime;
 
 pub use bridge::{
     ApplyOutcome, BridgeBrowseFilter, BridgeBrowseSort, BridgeConnectionTestReport,
+    BridgeCsvImportPreview, BridgeCsvImportProgress, BridgeCsvImportReview, BridgeCsvRow,
     BridgeDdlChangeRequest, BridgeDdlChangeReview, BridgeEventBatch, BridgeEventRecord,
     BridgeHistoryItem, BridgeNamedParameterPlan, BridgeNativeWindowIntent, BridgePostgresToolProbe,
     BridgePostgresToolRequest, BridgePostgresToolStatus, BridgeProfileDraft, BridgeProfileGroup,

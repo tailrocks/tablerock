@@ -518,6 +518,7 @@ How to read an evidence document:
 - 642 — [Native typed query parameters](delivery/642-native-query-parameters.md)
 - 643 — [Native table-operation authority](delivery/643-native-table-operation-authority.md)
 - 644 — [Streaming CSV import foundation](delivery/644-streaming-csv-import-foundation.md)
+- 645 — [Progress-aware native CSV apply](delivery/645-native-csv-import-progress.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

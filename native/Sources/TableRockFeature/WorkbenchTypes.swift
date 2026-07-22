@@ -71,6 +71,10 @@ public protocol WorkbenchBackend: Actor, Sendable {
     sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String],
     mappedTypes: [String], nowMs: UInt64
   ) throws -> WorkbenchCSVImportReview
+  func startCsvImportApply(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> Data
+  func csvImportProgress(operationId: Data) throws -> WorkbenchCSVImportProgress
+  func cancelCsvImport(operationId: Data) throws -> Bool
+  func dismissCsvImport(operationId: Data) throws -> Bool
   func relationStructure(sessionId: Data, catalogNodeId: Data) throws -> WorkbenchRelationStructure
   func redisKeyView(sessionId: Data, catalogNodeId: Data, collectionSkip: UInt64) throws
     -> WorkbenchRedisKeyView
@@ -530,6 +534,34 @@ public struct WorkbenchCSVImportReview: Sendable, Equatable {
     self.columnCount = columnCount
     self.formulaLikeCells = formulaLikeCells
     self.expiresAtMs = expiresAtMs
+  }
+}
+public struct WorkbenchCSVImportProgress: Sendable, Equatable {
+  public let operationId: Data
+  public let phase: String
+  public let completedRows: UInt64
+  public let totalRows: UInt64
+  public let appliedRows: UInt64
+  public let conflictRows: UInt64
+  public let failedRows: UInt64
+  public let errors: [String]
+  public let errorsTruncated: Bool
+  public let summary: String
+  public init(
+    operationId: Data, phase: String, completedRows: UInt64, totalRows: UInt64,
+    appliedRows: UInt64, conflictRows: UInt64, failedRows: UInt64, errors: [String],
+    errorsTruncated: Bool, summary: String
+  ) {
+    self.operationId = operationId
+    self.phase = phase
+    self.completedRows = completedRows
+    self.totalRows = totalRows
+    self.appliedRows = appliedRows
+    self.conflictRows = conflictRows
+    self.failedRows = failedRows
+    self.errors = errors
+    self.errorsTruncated = errorsTruncated
+    self.summary = summary
   }
 }
 public struct WorkbenchRedisKeyView: Sendable, Equatable {

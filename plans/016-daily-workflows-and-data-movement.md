@@ -113,6 +113,10 @@ Standard suites + Docker engine suites; new import/export tests live in
   row batches, exact UTF-8/CSV positions, formula neutrality, and cancellation
   between batches. Native async apply/progress ownership remains the next
   checkpoint.
+- 645 progress-aware native apply: CSV review tokens can only enter a Rust
+  asynchronous operation; PostgreSQL/ClickHouse report row-boundary progress,
+  cancellation truth, bounded safe errors, and terminal/partial summaries.
+  Connecting scanner batches to frozen-file review remains open.
 
 ## Residual (non-blocking)
 

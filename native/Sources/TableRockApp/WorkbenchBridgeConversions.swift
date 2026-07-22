@@ -119,6 +119,15 @@ extension BridgeCsvImportReview {
       formulaLikeCells: formulaLikeCells, expiresAtMs: expiresAtMs)
   }
 }
+extension BridgeCsvImportProgress {
+  var workbench: WorkbenchCSVImportProgress {
+    .init(
+      operationId: operationId, phase: phase, completedRows: completedRows,
+      totalRows: totalRows, appliedRows: appliedRows, conflictRows: conflictRows,
+      failedRows: failedRows, errors: errors, errorsTruncated: errorsTruncated,
+      summary: summary)
+  }
+}
 extension BridgeRedisKeyView {
   var workbench: WorkbenchRedisKeyView { .init(kind: kind, lines: lines, nextSkip: nextSkip) }
 }

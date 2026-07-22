@@ -714,10 +714,45 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(apply.waitForExistence(timeout: 10))
     apply.click()
 
+    let progress = app.descendants(matching: .any)["import.csv.progress"]
+    XCTAssertTrue(progress.waitForExistence(timeout: 10))
+
     let outcome = app.descendants(matching: .any)["import.csv.outcome"]
     let applied = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "value CONTAINS '1 applied'"), object: outcome)
     XCTAssertEqual(XCTWaiter.wait(for: [applied], timeout: 10), .completed)
+  }
+
+  @MainActor
+  func testCsvImportCanCancelFromProgressState() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("TableRock-XCUITest-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let input = root.appendingPathComponent("cancel.csv")
+    try "id,name\n2,Grace\n".write(to: input, atomically: true, encoding: .utf8)
+    let app = launch(
+      scenario: "success", root: root,
+      environment: [
+        "TABLEROCK_FIXTURE_DATA_MOVEMENT_UI": "1",
+        "TABLEROCK_TEST_OPEN_FILE": input.path,
+      ])
+
+    XCTAssertTrue(app.buttons["import.csv.open"].waitForExistence(timeout: 10))
+    app.buttons["import.csv.open"].click()
+    let sheet = app.descendants(matching: .any)["import.csv.sheet"]
+    XCTAssertTrue(sheet.waitForExistence(timeout: 10))
+    sheet.descendants(matching: .any)["import.csv.stage"].click()
+    let apply = sheet.descendants(matching: .any)["import.csv.apply"]
+    XCTAssertTrue(apply.waitForExistence(timeout: 10))
+    apply.click()
+    let cancel = sheet.descendants(matching: .any)["import.csv.cancel"]
+    XCTAssertTrue(cancel.waitForExistence(timeout: 10))
+    cancel.click()
+
+    let outcome = sheet.descendants(matching: .any)["import.csv.outcome"]
+    let cancelled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value CONTAINS[c] 'cancelled'"), object: outcome)
+    XCTAssertEqual(XCTWaiter.wait(for: [cancelled], timeout: 10), .completed)
   }
 
   @MainActor

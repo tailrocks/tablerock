@@ -41,6 +41,14 @@ column mapping, encoding handling, progress, cancellation, and explicit
 partial-import outcomes. Formula-like cell content is treated as data, never
 evaluated.
 
+Reviewed CSV application is a Rust-owned asynchronous operation. The native
+sheet polls bounded row progress, can request cancellation, distinguishes
+PostgreSQL rollback from ClickHouse partial apply, retains at most 100 safe
+row-number errors, and can copy that error summary. Closing or disconnecting
+cannot abandon a running import. The current reviewed native plan remains
+limited to 4 MiB/10,000 rows until the shared streaming scanner is connected
+to batch authorization and apply.
+
 ## Both clients
 
 | | TUI | Native macOS |

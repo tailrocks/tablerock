@@ -98,6 +98,16 @@ impl ClickHouseSession {
         &self,
         authorized: AuthorizedMutationPlan,
     ) -> Result<MutationApplyOutcome, ClickHouseError> {
+        let control = crate::MutationApplyControl::new(|_, _| {});
+        self.apply_authorized_mutation_controlled(authorized, &control)
+            .await
+    }
+
+    pub async fn apply_authorized_mutation_controlled(
+        &self,
+        authorized: AuthorizedMutationPlan,
+        control: &crate::MutationApplyControl,
+    ) -> Result<MutationApplyOutcome, ClickHouseError> {
         let plan = authorized.plan();
         let MutationTarget::ClickHouseTable { database, table } = plan.target() else {
             return Err(ClickHouseError::Query);
@@ -110,11 +120,22 @@ impl ClickHouseSession {
             quote_ident(table).map_err(|_| ClickHouseError::Query)?
         );
 
+        let total = plan.changes().len() as u64;
+        control.report(0, total);
         let mut outcomes = Vec::with_capacity(plan.changes().len());
         for (index, change) in plan.changes().iter().enumerate() {
+            if control.cancel_requested() {
+                return Ok(MutationApplyOutcome {
+                    mutation_id: plan.mutation_id(),
+                    review_token_id: authorized.token_id(),
+                    transaction: MutationTransactionState::Committed,
+                    changes: outcomes,
+                });
+            }
             match apply_one_change(self, &qualified, index, change).await {
                 Ok(outcome @ MutationChangeOutcome::Applied { .. }) => {
                     outcomes.push(outcome);
+                    control.report(outcomes.len() as u64, total);
                 }
                 Ok(failed @ MutationChangeOutcome::Failed { .. }) => {
                     outcomes.push(failed);

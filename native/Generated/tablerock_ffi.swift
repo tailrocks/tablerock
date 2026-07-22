@@ -672,6 +672,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func cancel(operationId: Data) throws  -> CancelOutcome
 
     /**
+     * Request cancellation. The engine observes it at the next safe row boundary.
+     */
+    func cancelCsvImport(operationId: Data) throws  -> Bool
+
+    /**
      * Requests cancellation; repeated requests remain safe.
      */
     func cancelPostgresTool(operationId: Data) throws  -> Bool
@@ -692,6 +697,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func configurePersistence(path: String) throws
 
     func createProfileGroup(name: String) throws
+
+    /**
+     * Poll one bounded CSV import progress/outcome snapshot.
+     */
+    func csvImportProgress(operationId: Data) throws  -> BridgeCsvImportProgress
 
     func deleteNativeWindowIntent(windowId: String) throws
 
@@ -715,6 +725,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Disconnect a session once no operation still holds it.
      */
     func disconnect(sessionId: Data) throws
+
+    /**
+     * Remove one terminal import snapshot after the client closes it.
+     */
+    func dismissCsvImport(operationId: Data) throws  -> Bool
 
     /**
      * Ensures the Tokio runtime and service coordinator exist (idempotent).
@@ -970,6 +985,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func stageTableOperation(request: BridgeTableOperationRequest) throws  -> BridgeTableOperationReview
 
     /**
+     * Consume a CSV review and start Rust-owned asynchronous application.
+     */
+    func startCsvImportApply(tokenId: Data, nowMs: UInt64, sessionId: Data) throws  -> Data
+
+    /**
      * Starts a supervised dump or restore against the connected endpoint.
      */
     func startPostgresTool(request: BridgePostgresToolRequest) throws  -> Data
@@ -1166,6 +1186,19 @@ open func cancel(operationId: Data)throws  -> CancelOutcome  {
 }
 
     /**
+     * Request cancellation. The engine observes it at the next safe row boundary.
+     */
+open func cancelCsvImport(operationId: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_cancel_csv_import(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Requests cancellation; repeated requests remain safe.
      */
 open func cancelPostgresTool(operationId: Data)throws  -> Bool  {
@@ -1223,6 +1256,19 @@ open func createProfileGroup(name: String)throws   {try rustCallWithError(FfiCon
         FfiConverterString.lower(name),uniffiCallStatus
     )
 }
+}
+
+    /**
+     * Poll one bounded CSV import progress/outcome snapshot.
+     */
+open func csvImportProgress(operationId: Data)throws  -> BridgeCsvImportProgress  {
+    return try  FfiConverterTypeBridgeCsvImportProgress_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_csv_import_progress(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
 }
 
 open func deleteNativeWindowIntent(windowId: String)throws   {try rustCallWithError(FfiConverterTypeBridgeError_lift) {
@@ -1297,6 +1343,19 @@ open func disconnect(sessionId: Data)throws   {try rustCallWithError(FfiConverte
         FfiConverterData.lower(sessionId),uniffiCallStatus
     )
 }
+}
+
+    /**
+     * Remove one terminal import snapshot after the client closes it.
+     */
+open func dismissCsvImport(operationId: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_dismiss_csv_import(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
 }
 
     /**
@@ -2058,6 +2117,21 @@ open func stageTableOperation(request: BridgeTableOperationRequest)throws  -> Br
 }
 
     /**
+     * Consume a CSV review and start Rust-owned asynchronous application.
+     */
+open func startCsvImportApply(tokenId: Data, nowMs: UInt64, sessionId: Data)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_start_csv_import_apply(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(tokenId),
+        FfiConverterUInt64.lower(nowMs),
+        FfiConverterData.lower(sessionId),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Starts a supervised dump or restore against the connected endpoint.
      */
 open func startPostgresTool(request: BridgePostgresToolRequest)throws  -> Data  {
@@ -2696,6 +2770,92 @@ public func FfiConverterTypeBridgeCsvImportPreview_lift(_ buf: RustBuffer) throw
 #endif
 public func FfiConverterTypeBridgeCsvImportPreview_lower(_ value: BridgeCsvImportPreview) -> RustBuffer {
     return FfiConverterTypeBridgeCsvImportPreview.lower(value)
+}
+
+
+public struct BridgeCsvImportProgress: Equatable, Hashable {
+    public var operationId: Data
+    public var phase: String
+    public var completedRows: UInt64
+    public var totalRows: UInt64
+    public var appliedRows: UInt64
+    public var conflictRows: UInt64
+    public var failedRows: UInt64
+    public var errors: [String]
+    public var errorsTruncated: Bool
+    public var summary: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(operationId: Data, phase: String, completedRows: UInt64, totalRows: UInt64, appliedRows: UInt64, conflictRows: UInt64, failedRows: UInt64, errors: [String], errorsTruncated: Bool, summary: String) {
+        self.operationId = operationId
+        self.phase = phase
+        self.completedRows = completedRows
+        self.totalRows = totalRows
+        self.appliedRows = appliedRows
+        self.conflictRows = conflictRows
+        self.failedRows = failedRows
+        self.errors = errors
+        self.errorsTruncated = errorsTruncated
+        self.summary = summary
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeCsvImportProgress: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeCsvImportProgress: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeCsvImportProgress {
+        return
+            try BridgeCsvImportProgress(
+                operationId: FfiConverterData.read(from: &buf),
+                phase: FfiConverterString.read(from: &buf),
+                completedRows: FfiConverterUInt64.read(from: &buf),
+                totalRows: FfiConverterUInt64.read(from: &buf),
+                appliedRows: FfiConverterUInt64.read(from: &buf),
+                conflictRows: FfiConverterUInt64.read(from: &buf),
+                failedRows: FfiConverterUInt64.read(from: &buf),
+                errors: FfiConverterSequenceString.read(from: &buf),
+                errorsTruncated: FfiConverterBool.read(from: &buf),
+                summary: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeCsvImportProgress, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.operationId, into: &buf)
+        FfiConverterString.write(value.phase, into: &buf)
+        FfiConverterUInt64.write(value.completedRows, into: &buf)
+        FfiConverterUInt64.write(value.totalRows, into: &buf)
+        FfiConverterUInt64.write(value.appliedRows, into: &buf)
+        FfiConverterUInt64.write(value.conflictRows, into: &buf)
+        FfiConverterUInt64.write(value.failedRows, into: &buf)
+        FfiConverterSequenceString.write(value.errors, into: &buf)
+        FfiConverterBool.write(value.errorsTruncated, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeCsvImportProgress_lift(_ buf: RustBuffer) throws -> BridgeCsvImportProgress {
+    return try FfiConverterTypeBridgeCsvImportProgress.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeCsvImportProgress_lower(_ value: BridgeCsvImportProgress) -> RustBuffer {
+    return FfiConverterTypeBridgeCsvImportProgress.lower(value)
 }
 
 
@@ -6779,6 +6939,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel() != 18861) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel_csv_import() != 60936) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel_postgres_tool() != 22580) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6792,6 +6955,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_create_profile_group() != 43110) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_csv_import_progress() != 26825) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_delete_native_window_intent() != 23067) {
@@ -6813,6 +6979,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_disconnect() != 49103) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_dismiss_csv_import() != 5678) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_ensure_runtime() != 35672) {
@@ -6990,6 +7159,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_table_operation() != 20721) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_csv_import_apply() != 22083) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_postgres_tool() != 21198) {

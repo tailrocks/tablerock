@@ -1,4 +1,14 @@
-use std::{error::Error, fmt, future::Future, pin::Pin, time::Instant};
+use std::{
+    error::Error,
+    fmt,
+    future::Future,
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Instant,
+};
 
 use tablerock_core::{
     ApplicationCode, AuthorizedMutationPlan, BoundedBytes, BoundedText, CancelDispatch, Engine,
@@ -15,6 +25,35 @@ use crate::{
 };
 
 pub type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+#[derive(Clone)]
+pub struct MutationApplyControl {
+    cancelled: Arc<AtomicBool>,
+    progress: Arc<dyn Fn(u64, u64) + Send + Sync>,
+}
+
+impl MutationApplyControl {
+    #[must_use]
+    pub fn new(progress: impl Fn(u64, u64) + Send + Sync + 'static) -> Self {
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+            progress: Arc::new(progress),
+        }
+    }
+
+    pub fn request_cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+
+    #[must_use]
+    pub fn cancel_requested(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    pub fn report(&self, completed: u64, total: u64) {
+        (self.progress)(completed, total);
+    }
+}
 
 /// Cheap connectivity fact from `DriverSession::health`. No version strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -458,6 +497,21 @@ pub trait DriverSession: Send + Sync {
         })
     }
 
+    /// Apply while publishing row-boundary progress and observing cancellation.
+    fn apply_authorized_mutation_controlled<'a>(
+        &'a self,
+        authorized: AuthorizedMutationPlan,
+        control: MutationApplyControl,
+    ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
+        Box::pin(async move {
+            let total = authorized.plan().changes().len() as u64;
+            control.report(0, total);
+            let outcome = self.apply_authorized_mutation(authorized).await?;
+            control.report(outcome.changes.len() as u64, total);
+            Ok(outcome)
+        })
+    }
+
     /// Execute a reviewed typed DDL plan (identifiers quoted at the engine).
     fn execute_ddl_plan<'a>(
         &'a self,
@@ -890,6 +944,18 @@ impl DriverSession for PostgresSession {
         })
     }
 
+    fn apply_authorized_mutation_controlled<'a>(
+        &'a self,
+        authorized: AuthorizedMutationPlan,
+        control: MutationApplyControl,
+    ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::apply_authorized_mutation_controlled(self, authorized, &control)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
     fn execute_ddl_plan<'a>(
         &'a self,
         plan: tablerock_core::DdlPlan,
@@ -1080,6 +1146,18 @@ impl DriverSession for ClickHouseSession {
     ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
         Box::pin(async move {
             ClickHouseSession::apply_authorized_mutation(self, authorized)
+                .await
+                .map_err(map_clickhouse)
+        })
+    }
+
+    fn apply_authorized_mutation_controlled<'a>(
+        &'a self,
+        authorized: AuthorizedMutationPlan,
+        control: MutationApplyControl,
+    ) -> DriverFuture<'a, Result<MutationApplyOutcome, AdapterError>> {
+        Box::pin(async move {
+            ClickHouseSession::apply_authorized_mutation_controlled(self, authorized, &control)
                 .await
                 .map_err(map_clickhouse)
         })

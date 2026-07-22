@@ -45,8 +45,9 @@ cannot supply a schema, table, database, or mutation plan through UniFFI.
 ## Remaining boundary
 
 ClickHouse live apply, nullable/date/decimal/binary/structured mappings, JSON
-import, streaming files beyond 4 MiB, progress/cancellation, and partial-failure
-policy remain. PostgreSQL CSV import is workable within the stated bounds.
+import, and streaming files beyond 4 MiB remain. Evidence 645 adds Rust-owned
+progress/cancellation and explicit partial-failure outcomes for the current
+bounded reviewed plan. PostgreSQL CSV import is workable within those bounds.
 
 ## Provenance
 

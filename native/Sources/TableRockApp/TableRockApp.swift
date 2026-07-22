@@ -405,6 +405,18 @@ extension WorkbenchBackend {
     sessionId: Data, catalogNodeId: Data, path: String, mappedColumns: [String],
     mappedTypes: [String], nowMs: UInt64
   ) throws -> WorkbenchCSVImportReview { try scriptedUnavailable("import-stage") }
+  func startCsvImportApply(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> Data {
+    try scriptedUnavailable("import-apply-start")
+  }
+  func csvImportProgress(operationId: Data) throws -> WorkbenchCSVImportProgress {
+    try scriptedUnavailable("import-progress")
+  }
+  func cancelCsvImport(operationId: Data) throws -> Bool {
+    try scriptedUnavailable("import-cancel")
+  }
+  func dismissCsvImport(operationId: Data) throws -> Bool {
+    try scriptedUnavailable("import-dismiss")
+  }
   func relationStructure(sessionId: Data, catalogNodeId: Data) throws
     -> WorkbenchRelationStructure
   { try scriptedUnavailable("structure") }
@@ -493,6 +505,9 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   let scenario: String
   private var cancelled = false
   private var importReviewActive = false
+  private var importApplyActive = false
+  private var importApplyCancelled = false
+  private var importApplyPollCount = 0
   private var profiles: [WorkbenchProfileItem] = []
   private var profileDrafts: [Data: WorkbenchProfileDraft] = [:]
   private var filterPresets: [WorkbenchSavedFilterPreset] = []
@@ -747,6 +762,48 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       tokenId: Data(repeating: 10, count: 16), target: "public.fixture_table",
       rowCount: 1, columnCount: 2, formulaLikeCells: 0,
       expiresAtMs: nowMs + 60_000)
+  }
+
+  func startCsvImportApply(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> Data {
+    guard scenario == "success", importReviewActive,
+      tokenId == Data(repeating: 10, count: 16), sessionId == Data(repeating: 1, count: 16)
+    else { return try scriptedUnavailable("import-apply-start") }
+    importReviewActive = false
+    importApplyActive = true
+    importApplyCancelled = false
+    importApplyPollCount = 0
+    return Data(repeating: 15, count: 16)
+  }
+
+  func csvImportProgress(operationId: Data) throws -> WorkbenchCSVImportProgress {
+    guard scenario == "success", operationId == Data(repeating: 15, count: 16), importApplyActive
+    else { return try scriptedUnavailable("import-progress") }
+    importApplyPollCount += 1
+    let phase = importApplyCancelled
+      ? "cancelled" : (importApplyPollCount < 4 ? "running" : "completed")
+    let complete = phase == "completed"
+    return WorkbenchCSVImportProgress(
+      operationId: operationId, phase: phase,
+      completedRows: complete ? 1 : 0, totalRows: 1,
+      appliedRows: complete ? 1 : 0, conflictRows: 0, failedRows: 0,
+      errors: [], errorsTruncated: false,
+      summary: importApplyCancelled
+        ? "Cancelled before apply"
+        : (complete ? "Committed · 1 applied" : "Applying reviewed import"))
+  }
+
+  func cancelCsvImport(operationId: Data) throws -> Bool {
+    guard scenario == "success", operationId == Data(repeating: 15, count: 16), importApplyActive
+    else { return try scriptedUnavailable("import-cancel") }
+    importApplyCancelled = true
+    return true
+  }
+
+  func dismissCsvImport(operationId: Data) throws -> Bool {
+    guard scenario == "success", operationId == Data(repeating: 15, count: 16), importApplyActive
+    else { return try scriptedUnavailable("import-dismiss") }
+    importApplyActive = false
+    return true
   }
 
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
@@ -1269,6 +1326,22 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
       sessionId: sessionId, catalogNodeId: catalogNodeId, path: path,
       mappedColumns: mappedColumns, mappedTypes: mappedTypes, nowMs: nowMs
     ).workbench
+  }
+
+  func startCsvImportApply(tokenId: Data, nowMs: UInt64, sessionId: Data) throws -> Data {
+    try bridge.startCsvImportApply(tokenId: tokenId, nowMs: nowMs, sessionId: sessionId)
+  }
+
+  func csvImportProgress(operationId: Data) throws -> WorkbenchCSVImportProgress {
+    try bridge.csvImportProgress(operationId: operationId).workbench
+  }
+
+  func cancelCsvImport(operationId: Data) throws -> Bool {
+    try bridge.cancelCsvImport(operationId: operationId)
+  }
+
+  func dismissCsvImport(operationId: Data) throws -> Bool {
+    try bridge.dismissCsvImport(operationId: operationId)
   }
 
   func relationStructure(sessionId: Data, catalogNodeId: Data) throws
@@ -2418,8 +2491,11 @@ final class BridgeModel {
   var csvImportReview: WorkbenchCSVImportReview?
   var csvImportError: String?
   var csvImportOutcome: String?
+  var csvImportProgress: WorkbenchCSVImportProgress?
+  var csvImportErrorCopyOutcome: String?
   var csvImportApplying = false
   private var csvImportUrl: URL?
+  private var csvImportOperationId: Data?
   var redisOverviewPresented = false
   var redisOverview: WorkbenchRedisOverview?
   private(set) var redisOverviewLoading = false
@@ -4358,6 +4434,8 @@ final class BridgeModel {
       csvImportReview = nil
       csvImportError = nil
       csvImportOutcome = nil
+      csvImportProgress = nil
+      csvImportErrorCopyOutcome = nil
       csvImportPresented = true
     } catch { csvImportError = "CSV preview failed: \(error)" }
   }
@@ -4385,21 +4463,51 @@ final class BridgeModel {
     csvImportError = nil
     defer { csvImportApplying = false }
     do {
-      let outcome = try await client.applyReviewToken(
+      let operationId = try await client.startCsvImportApply(
         tokenId: review.tokenId,
         nowMs: dependencies.clock.nowMilliseconds(),
         sessionId: session
       )
       csvImportReview = nil
-      csvImportOutcome =
-        "\(outcome.transaction) · \(outcome.appliedCount) applied · \(outcome.conflictCount) conflict · \(outcome.failedCount) failed"
-      if outcome.failedCount == 0 && outcome.conflictCount == 0 {
-        await reloadObjectTab()
+      csvImportOperationId = operationId
+      while csvImportOperationId == operationId {
+        let progress = try await client.csvImportProgress(operationId: operationId)
+        csvImportProgress = progress
+        if !["running", "cancel_requested"].contains(progress.phase) {
+          csvImportOutcome = progress.summary
+          _ = try? await client.dismissCsvImport(operationId: operationId)
+          csvImportOperationId = nil
+          if progress.phase == "completed" { await reloadObjectTab() }
+          break
+        }
+        try await Task.sleep(for: .milliseconds(100))
       }
     } catch {
       csvImportReview = nil
-      csvImportError = "Import apply failed; review authority consumed: \(error)"
+      csvImportOperationId = nil
+      csvImportError = "Import progress failed after authority was consumed: \(error)"
     }
+  }
+
+  func cancelCsvImport() async {
+    guard let client, let operationId = csvImportOperationId else { return }
+    do {
+      if try await client.cancelCsvImport(operationId: operationId) {
+        csvImportProgress = try await client.csvImportProgress(operationId: operationId)
+      }
+    } catch { csvImportError = "Cancel import failed: \(error)" }
+  }
+
+  func copyCsvImportErrors() {
+    guard let progress = csvImportProgress, !progress.errors.isEmpty else { return }
+    var text = progress.errors.joined(separator: "\n")
+    if progress.errorsTruncated { text += "\n… additional errors omitted" }
+    do {
+      try dependencies.pasteboard.write([
+        AppPasteboardRepresentation(type: "public.utf8-plain-text", value: text)
+      ])
+      csvImportErrorCopyOutcome = "Copied \(progress.errors.count) import errors"
+    } catch { csvImportErrorCopyOutcome = "Copy errors failed: \(error)" }
   }
 
   func discardCsvImportReview() async {
@@ -4416,6 +4524,8 @@ final class BridgeModel {
     csvImportMappedColumns = []
     csvImportColumnTypes = []
     csvImportUrl = nil
+    csvImportProgress = nil
+    csvImportErrorCopyOutcome = nil
   }
 
   func showRedisOverview() async {
@@ -7237,10 +7347,57 @@ private struct CsvImportSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
       }
-      if model.csvImportApplying { ProgressView("Applying reviewed import…") }
+      if let progress = model.csvImportProgress {
+        VStack(alignment: .leading, spacing: 6) {
+          ProgressView(
+            value: Double(progress.completedRows),
+            total: Double(max(progress.totalRows, 1))
+          ) {
+            Text("\(progress.completedRows) of \(progress.totalRows) rows")
+          }
+          .accessibilityIdentifier("import.csv.progress")
+          .accessibilityValue(
+            "\(progress.phase), \(progress.completedRows) of \(progress.totalRows) rows")
+          HStack {
+            Text(progress.phase.replacingOccurrences(of: "_", with: " ").capitalized)
+              .foregroundStyle(.secondary)
+            Spacer()
+            if ["running", "cancel_requested"].contains(progress.phase) {
+              Button("Cancel Import", role: .destructive) {
+                Task { await model.cancelCsvImport() }
+              }
+              .disabled(progress.phase == "cancel_requested")
+              .accessibilityIdentifier("import.csv.cancel")
+            }
+          }
+          if !progress.errors.isEmpty {
+            GroupBox("Import errors") {
+              VStack(alignment: .leading, spacing: 5) {
+                ForEach(progress.errors.indices, id: \.self) { index in
+                  Text(progress.errors[index]).textSelection(.enabled)
+                }
+                if progress.errorsTruncated { Text("Additional errors omitted").italic() }
+                Button("Copy Errors") { model.copyCsvImportErrors() }
+                  .accessibilityIdentifier("import.csv.copy-errors")
+                if let copied = model.csvImportErrorCopyOutcome {
+                  Text(copied).foregroundStyle(.secondary)
+                }
+              }
+              .padding(6)
+            }
+            .accessibilityIdentifier("import.csv.errors")
+          }
+        }
+      } else if model.csvImportApplying {
+        ProgressView("Starting reviewed import…")
+      }
       if let outcome = model.csvImportOutcome {
-        Label(outcome, systemImage: "checkmark.circle.fill")
-          .foregroundStyle(.green)
+        Label(
+          outcome,
+          systemImage: model.csvImportProgress?.phase == "completed"
+            ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
+        )
+          .foregroundStyle(model.csvImportProgress?.phase == "completed" ? .green : .orange)
           .accessibilityIdentifier("import.csv.outcome")
           .accessibilityValue(outcome)
       }

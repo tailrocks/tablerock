@@ -5,6 +5,23 @@ import XCTest
 
 @MainActor
 final class BridgeModelScenarioTests: XCTestCase {
+  func testImportErrorSummaryCopiesOnlyBoundedSafeRows() {
+    let pasteboard = ImportErrorPasteboard()
+    let model = BridgeModel(
+      client: ScriptedWorkbenchBackend(scenario: "success"),
+      dependencies: AppDependencies(pasteboard: pasteboard))
+    model.csvImportProgress = WorkbenchCSVImportProgress(
+      operationId: Data(repeating: 1, count: 16), phase: "partial",
+      completedRows: 5, totalRows: 10, appliedRows: 4, conflictRows: 0,
+      failedRows: 1, errors: ["row 6: apply failed"], errorsTruncated: true,
+      summary: "4 applied · 1 failed")
+
+    model.copyCsvImportErrors()
+
+    XCTAssertEqual(pasteboard.values, ["row 6: apply failed\n… additional errors omitted"])
+    XCTAssertEqual(model.csvImportErrorCopyOutcome, "Copied 1 import errors")
+  }
+
   func testTestFilePanelsConfineOpenAndSavePathsToIsolatedRoot() throws {
     let base = FileManager.default.temporaryDirectory
       .appendingPathComponent("TableRock-FilePanels-\(UUID().uuidString)", isDirectory: true)
@@ -382,6 +399,14 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertEqual(first.queryText, "SELECT first;")
     XCTAssertEqual(second.queryText, "SELECT second;")
     XCTAssertFalse(first.queryTabs[0] === second.queryTabs[0])
+  }
+}
+
+@MainActor
+private final class ImportErrorPasteboard: AppPasteboardPort {
+  var values: [String] = []
+  func write(_ representations: [AppPasteboardRepresentation]) throws {
+    values.append(contentsOf: representations.map(\.value))
   }
 }
 

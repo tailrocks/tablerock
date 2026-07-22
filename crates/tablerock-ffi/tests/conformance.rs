@@ -586,7 +586,31 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
         assert_eq!(review.row_count, 1);
         assert_eq!(review.column_count, 2);
         assert_eq!(review.formula_like_cells, 1);
-        assert!(bridge.revoke_review_token(review.token_id).unwrap());
+        assert!(matches!(
+            bridge.apply_review_token(review.token_id.clone(), 101, session_id.clone(), 0),
+            Err(BridgeError::Rejected { ref code, .. }) if code == "csv-import-apply"
+        ));
+        let import_operation = bridge
+            .start_csv_import_apply(review.token_id, 101, session_id.clone())
+            .unwrap();
+        let progress = (0..100)
+            .find_map(|_| {
+                let progress = bridge
+                    .csv_import_progress(import_operation.clone())
+                    .unwrap();
+                if progress.phase == "running" {
+                    std::thread::yield_now();
+                    None
+                } else {
+                    Some(progress)
+                }
+            })
+            .expect("import reaches bounded terminal outcome");
+        assert_eq!(progress.total_rows, 1);
+        assert_eq!(progress.phase, "failed");
+        assert_eq!(progress.failed_rows, 1);
+        assert_eq!(progress.errors.len(), 1);
+        assert!(bridge.dismiss_csv_import(import_operation).unwrap());
         std::fs::remove_file(csv_path).unwrap();
         let json = bridge
             .format_result_copy(
