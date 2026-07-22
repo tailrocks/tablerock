@@ -526,6 +526,7 @@ How to read an evidence document:
 - 650 — [Native SSH configuration and session tunnel](delivery/650-native-ssh-configuration.md)
 - 651 — [Redis restart fixture port-race removal](delivery/651-redis-restart-port-race.md)
 - 652 — [Native startup-command editor](delivery/652-native-startup-command-editor.md)
+- 653 — [Concurrent SSH fixture identity](delivery/653-ssh-fixture-identity.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

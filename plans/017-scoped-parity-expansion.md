@@ -143,6 +143,9 @@ host them, keep those suites local-only and record the gap — same pattern as
 
 ## Maintenance notes
 
+- Evidence 653 makes concurrent real SSH fixture identity independent of wall-
+  clock resolution; retain the atomic nonce when extending the bastion matrix.
+
 - Sub-packages are independently shippable; do not hold SSH hostage to Vim.
 - Reviewer per package: A) host-key + secret hygiene; B) process/argv
   hygiene; C) review-gate completeness; D) privilege correctness; E) safety

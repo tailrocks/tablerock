@@ -4,7 +4,10 @@
 //! Bastion is alpine+openssh with AllowTcpForwarding (linuxserver image
 //! hard-disables TCP forwarding).
 
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use tablerock_core::{BoundedText, ByteLimit};
 use tablerock_engine::{
@@ -42,10 +45,13 @@ CFG
 exec /usr/sbin/sshd -D -e
 "#;
 
+static FIXTURE_NONCE: AtomicU64 = AtomicU64::new(1);
+
 fn unique_tag() -> String {
     format!(
-        "{}-{}",
+        "{}-{}-{}",
         std::process::id(),
+        FIXTURE_NONCE.fetch_add(1, Ordering::Relaxed),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
