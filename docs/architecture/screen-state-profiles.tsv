@@ -1,0 +1,6 @@
+id|states
+collection|normal,empty,loading,partial,stale,disabled,unsupported,validation,permission,disconnected,reconnecting,error,destructive-confirmation,narrow,large-data,recovery
+workspace|normal,empty,loading,partial,stale,disabled,unsupported,validation,permission,disconnected,reconnecting,error,destructive-confirmation,narrow,large-data,recovery
+editor|normal,empty,loading,partial,stale,disabled,unsupported,validation,permission,disconnected,reconnecting,error,destructive-confirmation,narrow,large-data,recovery
+transient|normal,empty,loading,partial,stale,disabled,unsupported,validation,permission,disconnected,reconnecting,error,destructive-confirmation,narrow,large-data,recovery
+action|normal,empty,loading,partial,stale,disabled,unsupported,validation,permission,disconnected,reconnecting,error,destructive-confirmation,narrow,large-data,recovery
