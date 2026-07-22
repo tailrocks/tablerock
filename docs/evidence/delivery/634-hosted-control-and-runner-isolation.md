@@ -16,13 +16,13 @@ operation now expose deterministic macOS accessibility actions:
 - Explain proof selects the identified application menu command and waits for
   its connected-session enablement before invoking it.
 
-The repeated Velnor PTY timeout was isolated to overlap between the Rust job
-and the real-server integration job on the same self-hosted machine. The same
-SHA passed the complete GitHub-hosted Rust job, and the exact stress test passed
-both macOS and a clean Linux Rust 1.97.1 container. CI now makes integration
-depend on the Rust job. This removes cross-job server/container load from the
-30-second terminal-starvation proof without reducing its event flood, changing
-its timeout, or adding retries.
+The repeated Velnor PTY timeout came from fleet version 0.1.58 reusing a
+persistent Cargo target whose `tablerock` test binary predated the checked-out
+source. Velnor 0.1.109 fixes this bug structurally by including source revision
+in persistent-target identity. Serializing real-server integration after the
+Rust job would only hide stale executable reuse and reduce valid parallelism,
+so both jobs remain independent. The exact stress test passed 20 consecutive
+nextest runs on the current source.
 
 ## Verification
 
@@ -30,12 +30,8 @@ its timeout, or adding retries.
 mise exec -- swift build --package-path native -c release
 Build complete
 
-mise exec -- cargo test -p tablerock-cli --test pty_lifecycle -- --nocapture
-4 passed
-
-docker run ... rust:1.97.1-bookworm cargo test -p tablerock-cli \
-  --test pty_lifecycle high_rate_mouse_and_resize_do_not_starve_terminal_quit
-1 passed
+mise exec -- cargo nextest run -p tablerock-cli --test pty_lifecycle --locked
+20 consecutive runs passed; 4 tests per run
 
 GitHub-hosted CI run 29886270653, Format/lint/test
 success
@@ -54,13 +50,11 @@ green
 ```
 
 Local Swift XCTest remains unavailable because this host's Command Line Tools
-SDK does not provide `XCTest`. Canonical Xcode/XCUITest and the serialized
-Velnor lane remain required after push.
+SDK does not provide `XCTest`. Canonical Xcode/XCUITest and the upgraded Velnor
+lane remain required after push.
 
 ## Primary sources
 
-- GitHub Actions workflow syntax for `jobs.<job_id>.needs`:
-  <https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds>
 - Apple controls and XCUITest behavior are verified by the repository's
   canonical hosted Xcode project rather than inferred from local SDK behavior.
 

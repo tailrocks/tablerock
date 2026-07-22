@@ -82,9 +82,6 @@ jobs:
 
   integration:
     name: Real-server integration (${{ matrix.config.lane }})
-    # Self-hosted lanes may schedule both jobs on one physical runner. Keep the
-    # PTY wall-clock starvation proof isolated from container/server load.
-    needs: rust
     timeout-minutes: 45
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
