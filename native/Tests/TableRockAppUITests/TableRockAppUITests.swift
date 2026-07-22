@@ -367,7 +367,8 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(search.waitForExistence(timeout: 10))
     search.click()
     search.typeText("Users")
-    let users = app.staticTexts["Users"]
+    let users = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Users'"))
+      .firstMatch
     XCTAssertTrue(users.waitForExistence(timeout: 5))
     users.click()
 
@@ -490,7 +491,7 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(app.descendants(matching: .any)["postgres.tools.probe-result"].exists)
     app.buttons["postgres.tools.choose-file"].click()
     app.buttons["postgres.tools.start"].click()
-    let confirm = app.buttons["Create Backup"]
+    let confirm = app.buttons["Create Backup"].firstMatch
     XCTAssertTrue(confirm.waitForExistence(timeout: 10))
     confirm.click()
     let status = app.descendants(matching: .any)["postgres.tools.status"]

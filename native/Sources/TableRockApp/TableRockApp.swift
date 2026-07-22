@@ -2213,6 +2213,7 @@ final class BridgeModel {
     }
   }
   var selectedCellSnapshot: (WorkbenchColumn, WorkbenchCell, Int, Int)? {
+    _ = queryStateRevision
     guard let table = resultTable, let selection = selectedCell,
       table.columnMetadata.indices.contains(selection.column),
       table.cells.indices.contains(selection.row),
@@ -2267,6 +2268,7 @@ final class BridgeModel {
   }
   func selectCell(row: Int, column: Int) {
     selectedCell = NativeCellSelection(row: row, column: column)
+    queryStateRevision &+= 1
   }
   var queryWorkbenchSelected: Bool { selectedWorkbenchKind == "query" }
   private var hasRunningWorkbench: Bool {
@@ -5645,7 +5647,15 @@ struct ContentView: View {
   }
 
   private var focusedWorkbenchActions: WorkbenchActions {
-    WorkbenchActions(model: model)
+    // Focused scene values carry a reference. Explicit reads make Observation
+    // invalidate this value when command capabilities change.
+    _ = model.sessionHex
+    _ = model.connectedEngine
+    _ = model.queryWorkbenchSelected
+    _ = model.isRunning
+    _ = model.isCatalogRefreshing
+    _ = model.selectedObjectTabId
+    return WorkbenchActions(model: model)
   }
 }
 
