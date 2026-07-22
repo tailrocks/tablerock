@@ -4678,49 +4678,51 @@ struct ContentView: View {
             .font(.callout)
             .textSelection(.enabled)
         }
-        // Direct-connect form (no saved profile required).
-        GroupBox("New connection") {
-          Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
-            GridRow {
-              Text("Engine")
-              Picker("", selection: $model.formEngine) {
-                Text("PostgreSQL").tag("postgresql")
-                Text("ClickHouse").tag("clickhouse")
-                Text("Redis").tag("redis")
+        if model.sessionHex == nil {
+          // Direct-connect form (no saved profile required).
+          GroupBox("New connection") {
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+              GridRow {
+                Text("Engine")
+                Picker("", selection: $model.formEngine) {
+                  Text("PostgreSQL").tag("postgresql")
+                  Text("ClickHouse").tag("clickhouse")
+                  Text("Redis").tag("redis")
+                }
+                .labelsHidden()
               }
-              .labelsHidden()
+              GridRow {
+                Text("Host")
+                TextField("127.0.0.1", text: $model.formHost)
+              }
+              GridRow {
+                Text("Port")
+                TextField("5432", text: $model.formPort)
+              }
+              GridRow {
+                Text("Database")
+                TextField("postgres", text: $model.formDatabase)
+              }
+              GridRow {
+                Text("User")
+                TextField("postgres", text: $model.formUser)
+              }
+              GridRow {
+                Text("Password")
+                SecureField("", text: $model.formPassword)
+              }
             }
-            GridRow {
-              Text("Host")
-              TextField("127.0.0.1", text: $model.formHost)
+            HStack {
+              Button("Connect") { Task { await model.connectByParams() } }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("connection.direct.connect")
+              Spacer()
             }
-            GridRow {
-              Text("Port")
-              TextField("5432", text: $model.formPort)
-            }
-            GridRow {
-              Text("Database")
-              TextField("postgres", text: $model.formDatabase)
-            }
-            GridRow {
-              Text("User")
-              TextField("postgres", text: $model.formUser)
-            }
-            GridRow {
-              Text("Password")
-              SecureField("", text: $model.formPassword)
-            }
+            .padding(.top, 4)
           }
-          HStack {
-            Button("Connect") { Task { await model.connectByParams() } }
-              .buttonStyle(.borderedProminent)
-              .accessibilityIdentifier("connection.direct.connect")
-            Spacer()
+          if let name = model.connectingName {
+            Text("Connecting to \(name)…").foregroundStyle(.secondary)
           }
-          .padding(.top, 4)
-        }
-        if let name = model.connectingName {
-          Text("Connecting to \(name)…").foregroundStyle(.secondary)
         }
         if let session = model.sessionHex {
           Label(
@@ -5431,14 +5433,14 @@ private struct CsvImportSheet: View {
       }
       HStack {
         Button("Stage Reviewed Import") { Task { await model.stageCsvImport() } }
-          .accessibilityIdentifier("import.csv.stage")
           .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("import.csv.stage")
           .disabled(
             model.csvImportPreview == nil || model.csvImportReview != nil
               || model.csvImportOutcome != nil || model.csvImportApplying)
         Button("Apply Import") { Task { await model.applyCsvImport() } }
-          .accessibilityIdentifier("import.csv.apply")
           .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("import.csv.apply")
           .disabled(model.csvImportReview == nil || model.csvImportApplying)
         Button("Discard Review", role: .cancel) {
           Task { await model.discardCsvImportReview() }
@@ -5709,8 +5711,8 @@ private struct ResultExportMenu: View {
 
   private func exportButton(_ label: String, format: String) -> some View {
     Button(label) { Task { await model.exportLoadedResult(format: format) } }
-      .accessibilityIdentifier("results.export.\(format)")
       .buttonStyle(.bordered)
+      .accessibilityIdentifier("results.export.\(format)")
   }
 }
 
