@@ -21,10 +21,10 @@ use tablerock_engine::{
     ServerDescribe, SessionHealth,
 };
 use tablerock_ffi::{
-    BridgeBrowseFilter, BridgeBrowseSort, BridgeCsvImportRequest, BridgeError,
-    BridgeProfileOrderItem, BridgeQueryParameter, BridgeSavedFilterPreset, BridgeSessionIntent,
-    BridgeStreamExportRequest, BridgeTableOperationRequest, BridgeWorkspaceTab, SubmitSpec,
-    TableRockBridge,
+    BridgeBrowseFilter, BridgeBrowseSort, BridgeCatalogStreamExportRequest, BridgeCsvImportRequest,
+    BridgeError, BridgeProfileOrderItem, BridgeQueryParameter, BridgeSavedFilterPreset,
+    BridgeSessionIntent, BridgeStreamExportRequest, BridgeTableOperationRequest,
+    BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
 };
 
 struct OnePageStream(Option<ResultPage>);
@@ -493,7 +493,7 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
     for (engine, low) in [(Engine::PostgreSql, 183_u64), (Engine::ClickHouse, 184)] {
         let (_result_id, page) = sample_page(engine, low, &[7]);
         let bridge = TableRockBridge::new_for_test();
-        let session_id = open_fixed(&bridge, engine, page);
+        let (session_id, statements) = open_fixed_observed(&bridge, engine, page);
         let roots = bridge.refresh_catalog(session_id.clone(), None).unwrap();
         let level_one = bridge
             .refresh_catalog(session_id.clone(), Some(roots[0].id_bytes.clone()))
@@ -595,6 +595,50 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
         );
         assert!(bridge.dismiss_stream_export(stream_operation).unwrap());
         std::fs::remove_file(stream_path).unwrap();
+        let catalog_export_path = std::env::temp_dir().join(format!(
+            "tablerock-ffi-catalog-export-{}-{low}.csv",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&catalog_export_path);
+        let catalog_operation = bridge
+            .start_catalog_stream_export(BridgeCatalogStreamExportRequest {
+                result_id: result_id.clone(),
+                revision: 0,
+                format: "csv".into(),
+                path: catalog_export_path.to_string_lossy().into_owned(),
+            })
+            .unwrap();
+        let catalog_progress = (0..1_000)
+            .find_map(|_| {
+                let progress = bridge
+                    .stream_export_progress(catalog_operation.clone())
+                    .unwrap();
+                if progress.phase == "running" {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    None
+                } else {
+                    Some(progress)
+                }
+            })
+            .expect("catalog export reaches terminal outcome");
+        assert_eq!(catalog_progress.phase, "completed");
+        assert_eq!(catalog_progress.completed_rows, 1);
+        assert!(
+            std::fs::read_to_string(&catalog_export_path)
+                .unwrap()
+                .contains("7\n")
+        );
+        assert!(bridge.dismiss_stream_export(catalog_operation).unwrap());
+        std::fs::remove_file(catalog_export_path).unwrap();
+        assert!(
+            statements
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(statement, _)| statement.starts_with("SELECT * FROM")
+                    && !statement.contains(" LIMIT ")),
+            "full catalog export must remove UI paging while retaining typed replay"
+        );
         assert!(matches!(
             bridge.export_loaded_result(
                 result_id.clone(),

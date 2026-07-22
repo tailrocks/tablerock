@@ -4,7 +4,14 @@
     reason = "effect handlers expose complete typed message payloads at the async boundary"
 )]
 
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::{
+        Arc, Mutex as StdMutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use tablerock_core::{
     BoundedText, ByteLimit, DangerousPlaintext, Engine, EnvironmentTag, IdParts, PageKey,
@@ -36,6 +43,11 @@ const MAX_QUERY_ROWS: u64 = 10_000;
 /// Default page size for browse/SQL streams.
 const PAGE_ROWS: u32 = 500;
 
+struct StreamExportControl {
+    cancel: Arc<AtomicBool>,
+    signal: tokio::sync::watch::Sender<bool>,
+}
+
 fn default_result_store() -> ResultStore {
     // Enough slots for multi-page pumps (10k/500 ≈ 20 pages) with pin room.
     ResultStore::new(
@@ -50,6 +62,7 @@ pub struct EffectExecutor {
     results: Arc<Mutex<ResultStore>>,
     /// Consume-once reviewed mutation authority (handle-based apply).
     mutation_reviews: Arc<Mutex<tablerock_core::MutationReviewRegistry>>,
+    stream_exports: Arc<StdMutex<BTreeMap<RequestToken, StreamExportControl>>>,
     ingress: RootMessageSender,
 }
 
@@ -66,6 +79,7 @@ impl EffectExecutor {
                 tablerock_core::MutationReviewRegistry::new(256)
                     .expect("valid mutation review registry"),
             )),
+            stream_exports: Arc::new(StdMutex::new(BTreeMap::new())),
             ingress,
         }
     }
@@ -788,19 +802,45 @@ impl EffectExecutor {
             } => {
                 let sessions = Arc::clone(&self.sessions);
                 let ingress = self.ingress.clone();
+                let exports = Arc::clone(&self.stream_exports);
+                let cancel = Arc::new(AtomicBool::new(false));
+                let (cancel_signal, cancel_receiver) = tokio::sync::watch::channel(false);
+                if let Ok(mut registry) = exports.lock() {
+                    registry.insert(
+                        request_token,
+                        StreamExportControl {
+                            cancel: Arc::clone(&cancel),
+                            signal: cancel_signal,
+                        },
+                    );
+                }
                 tokio::task::spawn_local(async move {
                     let message = export_stream_query(
                         sessions,
+                        ingress.clone(),
                         request_token,
                         session_id_hex,
                         context_revision,
                         statement,
                         path,
                         format,
+                        cancel,
+                        cancel_receiver,
                     )
                     .await;
+                    if let Ok(mut registry) = exports.lock() {
+                        registry.remove(&request_token);
+                    }
                     let _ = ingress.try_send_event(message);
                 });
+            }
+            Effect::CancelStreamExport { request_token } => {
+                if let Ok(registry) = self.stream_exports.lock()
+                    && let Some(control) = registry.get(&request_token)
+                {
+                    control.cancel.store(true, Ordering::SeqCst);
+                    let _ = control.signal.send(true);
+                }
             }
             Effect::ImportCsvApply {
                 request_token,
@@ -4285,18 +4325,19 @@ async fn export_result(request_token: RequestToken, path: String, body: String) 
 /// Streaming full re-query export: SELECT pages → encoder → atomic file.
 async fn export_stream_query(
     sessions: Arc<Mutex<SessionRegistry>>,
+    ingress: RootMessageSender,
     request_token: RequestToken,
     session_id_hex: String,
     context_revision: u64,
     statement: String,
     path: String,
     format: String,
+    cancel: Arc<AtomicBool>,
+    mut cancel_receiver: tokio::sync::watch::Receiver<bool>,
 ) -> Message {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
     use tablerock_core::{
-        BoundedText, ByteLimit, Engine, IdParts, PageIdentity, PageLimits, ResultId, Revision,
-        StatementText,
+        BoundedText, ByteLimit, Engine, IdParts, OperationId, PageIdentity, PageLimits, ResultId,
+        Revision, StatementText,
     };
     use tablerock_engine::DriverPageRequest;
 
@@ -4382,7 +4423,7 @@ async fn export_stream_query(
     };
 
     let fmt = StreamExportFormat::parse(&format);
-    let mut exporter = match StreamExporter::create(&path, fmt, None) {
+    let mut exporter = match StreamExporter::create(&path, fmt, Some(Arc::clone(&cancel))) {
         Ok(e) => e,
         Err(e) => {
             return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
@@ -4397,11 +4438,9 @@ async fn export_stream_query(
     let result_id =
         ResultId::from_parts(IdParts::new(0, low).expect("nonzero token")).expect("result id");
     let identity = PageIdentity::new(result_id, Revision::INITIAL, engine);
+    let operation_id = OperationId::from_parts(IdParts::new(0, low).expect("nonzero token"))
+        .expect("operation id");
     let mut start_row = 0_u64;
-    let cancel = AtomicBool::new(false);
-    // Best-effort: if session cancel is requested externally, mid-page loops still finish;
-    // Drop of exporter on failure aborts the temp file.
-    let _ = &cancel;
 
     loop {
         if cancel.load(Ordering::SeqCst) {
@@ -4412,7 +4451,24 @@ async fn export_stream_query(
                 partial_removed: true,
             });
         }
-        match stream.next_page(identity, start_row).await {
+        let next = tokio::select! {
+            page = stream.next_page(identity, start_row) => Some(page),
+            changed = cancel_receiver.changed() => {
+                let _ = changed;
+                None
+            }
+        };
+        let Some(next) = next else {
+            session.prepare_cancel(operation_id);
+            let _ = session.cancel(operation_id).await;
+            exporter.abort();
+            return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
+                request_token,
+                reason: FailureProjection::Label("export cancelled".into()),
+                partial_removed: true,
+            });
+        };
+        match next {
             Ok(Some(page)) => {
                 let (columns, rows) = tablerock_core::page_to_export_strings(&page);
                 if let Err(e) = exporter.write_page(&columns, &rows) {
@@ -4425,9 +4481,14 @@ async fn export_stream_query(
                 }
                 let count = u64::from(page.envelope().row_count());
                 start_row = start_row.saturating_add(count);
-                if start_row >= MAX_QUERY_ROWS {
-                    break;
-                }
+                let _ = ingress.try_send_event(Message::Engine(
+                    tablerock_tui::EngineMsg::ExportProgress {
+                        request_token,
+                        rows: start_row,
+                        bytes: exporter.bytes_written(),
+                        path: path.clone(),
+                    },
+                ));
                 if page.envelope().delivery() == tablerock_core::PageDelivery::Final {
                     break;
                 }

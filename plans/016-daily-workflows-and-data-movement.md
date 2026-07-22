@@ -130,6 +130,13 @@ Standard suites + Docker engine suites; new import/export tests live in
   byte progress, server cancel dispatch, pending-page interruption, atomic
   publish/removal truth, native progress sheet, and direct live/runtime proof.
   Typed object-browse replay and the TUI progress dialog remain open.
+- 649 retains each object result's Rust-rendered typed browse replay, removes
+  only UI paging for full export, and exposes it to native through the opaque
+  result handle. TUI streaming export now has a stateful progress/outcome
+  dialog, per-page rows/bytes, real cancellation signalling including pending
+  page interruption and driver cancel dispatch, terminal cleanup truth, and no
+  interactive 10,000-row cap. Hosted native sheet replay remains an evidence
+  gap, not an implementation gap.
 
 ## Residual (non-blocking)
 

@@ -85,6 +85,16 @@ pub struct WorkbenchStatus {
     pub pending_changes: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportProgressDialog {
+    pub request_token: u64,
+    pub phase: String,
+    pub rows: u64,
+    pub bytes: u64,
+    pub path: String,
+    pub summary: String,
+}
+
 impl WorkbenchStatus {
     #[must_use]
     pub fn summary(&self) -> String {
@@ -132,6 +142,8 @@ pub struct WorkbenchModel {
     pub redis_staged: Vec<crate::effect::MutationChangeSpec>,
     /// Next collection skip for RMore (hash/set/zset pagination).
     pub redis_collection_skip: Option<u64>,
+    /// Full-result export progress/outcome. Rust effects own file and cancel I/O.
+    pub export_progress: Option<ExportProgressDialog>,
 }
 
 impl Default for WorkbenchModel {
@@ -182,6 +194,7 @@ impl Default for WorkbenchModel {
             redis_stage_target: None,
             redis_staged: Vec::new(),
             redis_collection_skip: None,
+            export_progress: None,
         }
     }
 }

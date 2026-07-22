@@ -1746,18 +1746,76 @@ pub fn update(model: &mut Model, message: Message) -> Update {
             }
             Update::render()
         }
-        Message::Engine(EngineMsg::ExportDone { path, bytes, .. }) => {
+        Message::Engine(EngineMsg::ExportDone {
+            request_token,
+            path,
+            bytes,
+        }) => {
+            let mut matched = false;
+            if let Some(export) = model.workbench_mut().export_progress.as_mut()
+                && export.request_token == request_token
+            {
+                matched = true;
+                export.phase = "completed".into();
+                export.bytes = bytes;
+                export.path = path.clone();
+                export.summary =
+                    format!("Exported {} rows ({} bytes) atomically", export.rows, bytes);
+            }
+            if matched {
+                model.set_action(ActionId::CloseExport);
+            }
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.error_label = Some(format!("exported {bytes} B → {path}"));
             }
             Update::render()
         }
+        Message::Engine(EngineMsg::ExportProgress {
+            request_token,
+            rows,
+            bytes,
+            path,
+        }) => {
+            if let Some(export) = model.workbench_mut().export_progress.as_mut()
+                && export.request_token == request_token
+            {
+                export.rows = rows;
+                export.bytes = bytes;
+                export.path = path;
+                export.summary = format!("Exported {rows} rows");
+            }
+            Update::render()
+        }
         Message::Engine(EngineMsg::ExportFailed {
+            request_token,
             reason,
             partial_removed,
-            ..
         }) => {
             let FailureProjection::Label(label) = reason;
+            let mut matched = false;
+            if let Some(export) = model.workbench_mut().export_progress.as_mut()
+                && export.request_token == request_token
+            {
+                matched = true;
+                export.phase = if label.contains("cancel") {
+                    "cancelled".into()
+                } else {
+                    "failed".into()
+                };
+                export.summary = format!(
+                    "{} after {} rows; incomplete output {}",
+                    export.phase,
+                    export.rows,
+                    if partial_removed {
+                        "removed"
+                    } else {
+                        "not created"
+                    }
+                );
+            }
+            if matched {
+                model.set_action(ActionId::CloseExport);
+            }
             if let Some(grid) = model.workbench_mut().active_grid_mut() {
                 grid.mark_failed(format!(
                     "export failed: {label} (partial_removed={partial_removed})"
@@ -6916,6 +6974,37 @@ fn activate_selected_action(model: &mut Model) -> Update {
         ActionId::ExportStreamTsv if model.screen() == Screen::Workbench => {
             export_stream_query(model, "tsv", "export-stream.tsv")
         }
+        ActionId::CancelExport if model.screen() == Screen::Workbench => {
+            let Some(export) = model.workbench_mut().export_progress.as_mut() else {
+                return Update::unchanged();
+            };
+            if export.phase != "running" {
+                return Update::unchanged();
+            }
+            export.phase = "cancel_requested".into();
+            export.summary = "Cancellation requested; removing incomplete output".into();
+            Update {
+                render: true,
+                effect: Some(Effect::CancelStreamExport {
+                    request_token: export.request_token,
+                }),
+            }
+        }
+        ActionId::CloseExport if model.screen() == Screen::Workbench => {
+            if model
+                .workbench()
+                .export_progress
+                .as_ref()
+                .is_some_and(|export| {
+                    export.phase != "running" && export.phase != "cancel_requested"
+                })
+            {
+                model.workbench_mut().export_progress = None;
+                Update::render()
+            } else {
+                Update::unchanged()
+            }
+        }
         ActionId::ImportCsv if model.screen() == Screen::Workbench => import_csv_apply(model),
         ActionId::Explain if model.screen() == Screen::Workbench => explain_active_sql(model),
         ActionId::QuickSwitch
@@ -7381,6 +7470,8 @@ fn activate_selected_action(model: &mut Model) -> Update {
         | ActionId::ExportStreamCsv
         | ActionId::ExportStreamJson
         | ActionId::ExportStreamTsv
+        | ActionId::CancelExport
+        | ActionId::CloseExport
         | ActionId::ImportCsv
         | ActionId::PgDump
         | ActionId::PgRestore
@@ -7866,6 +7957,15 @@ fn export_stream_query(model: &mut Model, format: &str, default_path: &str) -> U
     }
     let token = model.mint_request_token();
     let context_revision = model.workbench().context_revision;
+    model.workbench_mut().export_progress = Some(crate::model::workbench::ExportProgressDialog {
+        request_token: token,
+        phase: "running".into(),
+        rows: 0,
+        bytes: 0,
+        path: default_path.into(),
+        summary: "Exporting full result".into(),
+    });
+    model.set_action(ActionId::CancelExport);
     Update {
         render: true,
         effect: Some(Effect::ExportStreamQuery {
@@ -15515,6 +15615,46 @@ CREATE TABLE \"public\".\"users\" (
                 && format == "csv"
                 && path == "export-stream.csv"
         ));
+        let token = model
+            .workbench()
+            .export_progress
+            .as_ref()
+            .expect("export dialog")
+            .request_token;
+        assert_eq!(model.selected_action(), ActionId::CancelExport);
+        let _ = update(
+            &mut model,
+            Message::Engine(EngineMsg::ExportProgress {
+                request_token: token,
+                rows: 500,
+                bytes: 4_096,
+                path: "export-stream.csv".into(),
+            }),
+        );
+        assert_eq!(
+            model.workbench().export_progress.as_ref().unwrap().rows,
+            500
+        );
+        let cancel = update(&mut model, Message::Activate);
+        assert!(matches!(
+            cancel.effects().next(),
+            Some(Effect::CancelStreamExport { request_token }) if *request_token == token
+        ));
+        let _ = update(
+            &mut model,
+            Message::Engine(EngineMsg::ExportFailed {
+                request_token: token,
+                reason: FailureProjection::Label("export cancelled".into()),
+                partial_removed: true,
+            }),
+        );
+        assert_eq!(
+            model.workbench().export_progress.as_ref().unwrap().phase,
+            "cancelled"
+        );
+        assert_eq!(model.selected_action(), ActionId::CloseExport);
+        let _ = update(&mut model, Message::Activate);
+        assert!(model.workbench().export_progress.is_none());
     }
 
     #[test]

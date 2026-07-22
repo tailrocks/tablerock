@@ -67,6 +67,8 @@ public protocol WorkbenchBackend: Actor, Sendable {
     -> UInt64
   func startStreamExport(sessionId: Data, statement: String, format: String, path: String) throws
     -> Data
+  func startCatalogStreamExport(resultId: Data, revision: UInt64, format: String, path: String)
+    throws -> Data
   func streamExportProgress(operationId: Data) throws -> WorkbenchStreamExportProgress
   func cancelStreamExport(operationId: Data) throws -> Bool
   func dismissStreamExport(operationId: Data) throws -> Bool

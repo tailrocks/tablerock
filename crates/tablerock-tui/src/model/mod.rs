@@ -642,6 +642,8 @@ pub enum ActionId {
     ExportStreamCsv,
     ExportStreamJson,
     ExportStreamTsv,
+    CancelExport,
+    CloseExport,
     /// Import CSV into active base table via mutation write seam (default import.csv).
     ImportCsv,
     /// Supervised pg_dump of the active connection endpoint (PostgreSQL only).

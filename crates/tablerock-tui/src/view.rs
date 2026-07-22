@@ -115,8 +115,52 @@ impl ShellView {
             render_password_prompt_overlay(model, frame, rows[2]);
         } else if model.confirm().is_some() {
             render_confirm_overlay(model, frame, rows[2]);
+        } else if model.workbench().export_progress.is_some() {
+            render_export_progress_overlay(model, frame, rows[2]);
         }
         geometry
+    }
+}
+
+fn render_export_progress_overlay(model: &Model, frame: &mut Frame<'_>, area: Rect) {
+    use ratatui_core::widgets::Widget;
+    let Some(export) = model.workbench().export_progress.as_ref() else {
+        return;
+    };
+    let popup = area;
+    let action = if export.phase == "running" {
+        "[Enter] Cancel Export"
+    } else if export.phase == "cancel_requested" {
+        "Cancellation requested…"
+    } else {
+        "[Enter] Close"
+    };
+    let panel = Panel::new(&model.theme)
+        .title("Export progress and outcome")
+        .emphasis(PanelEmphasis::Focused);
+    frame.render_widget(&panel, popup);
+    if popup.width > 2 && popup.height > 2 {
+        let lines = [
+            export.phase.replace('_', " "),
+            format!("{} rows · {} B", export.rows, export.bytes),
+            export.summary.clone(),
+            action.into(),
+        ];
+        for (index, line) in lines.into_iter().enumerate() {
+            let y = popup.y.saturating_add(1 + index as u16);
+            if y >= popup.bottom().saturating_sub(1) {
+                break;
+            }
+            Line::from(line).render(
+                Rect::new(
+                    popup.x.saturating_add(1),
+                    y,
+                    popup.width.saturating_sub(2),
+                    1,
+                ),
+                frame.buffer_mut(),
+            );
+        }
     }
 }
 
@@ -3642,4 +3686,41 @@ fn render_data_grid(
         .gutter(true)
         .header(true);
     frame.render_stateful_widget(&widget, area, &mut state);
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui_core::{backend::TestBackend, terminal::Terminal};
+
+    use super::*;
+    use crate::model::workbench::ExportProgressDialog;
+
+    #[test]
+    fn export_overlay_renders_progress_outcome_and_cancel_action() {
+        let mut model = Model::default();
+        model.resize(80, 24);
+        model.set_screen(Screen::Workbench);
+        model.workbench_mut().export_progress = Some(ExportProgressDialog {
+            request_token: 7,
+            phase: "running".into(),
+            rows: 500,
+            bytes: 4_096,
+            path: "export.csv".into(),
+            summary: "Exported 500 rows".into(),
+        });
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| ShellView.render(&model, frame, Rect::new(0, 0, 80, 24)))
+            .unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(rendered.contains("Export progress and outcome"));
+        assert!(rendered.contains("500 rows"));
+        assert!(rendered.contains("Cancel Export"));
+    }
 }

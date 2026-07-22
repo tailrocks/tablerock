@@ -39,9 +39,16 @@ session in 500-row pages capped at 8 MiB and 64 KiB per cell. CSV, TSV, and
 JSON use the shared atomic streaming encoder. The progress sheet reports rows
 and bytes, permits cancellation while the server stream is pending, and states
 whether the destination was published or incomplete output was removed.
-Loaded-result export remains a separate resident-page action. Full object-
-browse replay remains open until the typed browse plan is retained as a Rust-
-owned replay handle; Swift must not reconstruct SQL for that path.
+Loaded-result export remains a separate resident-page action. Object results
+retain the exact Rust-rendered typed browse intent by opaque result identity.
+Full export removes only UI paging `LIMIT/OFFSET`; filters, typed parameters,
+raw-WHERE validation, and sort stay frozen. Swift never reconstructs SQL.
+
+The TUI full-result dialog reports rows and bytes, shows running,
+cancel-requested, completed, cancelled, and failed outcomes, and binds Enter to
+Cancel or Close as appropriate. Cancellation interrupts a pending driver page,
+dispatches server cancellation, and removes incomplete output. Full exports do
+not inherit the interactive 10,000-row resident-result cap.
 
 ## Import
 

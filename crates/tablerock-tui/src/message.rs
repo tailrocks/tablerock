@@ -510,6 +510,12 @@ pub enum EngineMsg {
         path: String,
         bytes: u64,
     },
+    ExportProgress {
+        request_token: u64,
+        rows: u64,
+        bytes: u64,
+        path: String,
+    },
     ExportFailed {
         request_token: u64,
         reason: FailureProjection,

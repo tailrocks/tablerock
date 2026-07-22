@@ -398,6 +398,14 @@ pub struct BridgeStreamExportRequest {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeCatalogStreamExportRequest {
+    pub result_id: Vec<u8>,
+    pub revision: u64,
+    pub format: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeStreamExportProgress {
     pub operation_id: Vec<u8>,
     pub phase: String,
@@ -680,6 +688,24 @@ struct StreamExportTask {
     summary: String,
 }
 
+struct StreamExportStart {
+    session_id: SessionId,
+    driver: Arc<dyn DriverSession>,
+    operation_id: OperationId,
+    identity: PageIdentity,
+    page_request: DriverPageRequest,
+    destination: String,
+    format: StreamExportFormat,
+}
+
+#[derive(Clone)]
+struct CatalogExportReplay {
+    session_id: SessionId,
+    engine: Engine,
+    statement: String,
+    parameters: Vec<tablerock_engine::FilterValue>,
+}
+
 struct CsvImportReviewEntry {
     session_id: SessionId,
     scope: OperationScope,
@@ -735,6 +761,7 @@ struct BridgeInner {
     operation_results: BTreeMap<OperationId, PageIdentity>,
     operation_history: BTreeMap<OperationId, HistoryAppend>,
     operation_copy_identity: BTreeMap<OperationId, CopyIdentity>,
+    operation_catalog_export_replay: BTreeMap<OperationId, CatalogExportReplay>,
     history_retention: HistoryRetention,
     ids: IdFactory,
     events: VecDeque<BridgeEventRecord>,
@@ -747,6 +774,7 @@ struct BridgeInner {
     persistence: Option<PersistenceActor>,
     catalog_nodes: BTreeMap<(SessionId, CatalogNodeId), CatalogNode>,
     copy_identities: BTreeMap<tablerock_core::ResultId, CopyIdentity>,
+    catalog_export_replays: BTreeMap<tablerock_core::ResultId, CatalogExportReplay>,
     support_bundle: SupportBundle,
 }
 
@@ -912,62 +940,122 @@ impl TableRockBridge {
             };
             (driver, operation_id, identity, page_request)
         };
-        let cancel = Arc::new(AtomicBool::new(false));
-        let (cancel_signal, cancel_receiver) = tokio::sync::watch::channel(false);
-        let tasks = Arc::clone(&self.stream_exports);
-        {
-            let mut registry = tasks.lock().map_err(|_| {
-                BridgeError::rejected("stream-export-lock", "export task registry poisoned")
-            })?;
-            if registry.len() >= 64 {
-                if let Some(terminal) = registry.iter().find_map(|(id, task)| {
-                    (task.phase != "running" && task.phase != "cancel_requested").then_some(*id)
-                }) {
-                    registry.remove(&terminal);
-                } else {
-                    return Err(BridgeError::rejected(
-                        "stream-export-limit",
-                        "too many active streaming exports",
-                    ));
-                }
-            }
-            registry.insert(
-                operation_id,
-                StreamExportTask {
-                    session_id,
-                    driver: Arc::clone(&driver),
-                    cancel: Arc::clone(&cancel),
-                    cancel_signal,
-                    phase: "running".into(),
-                    completed_rows: 0,
-                    bytes_written: 0,
-                    destination: request.path.clone(),
-                    summary: "Exporting full result".into(),
-                },
-            );
+        self.spawn_stream_export(StreamExportStart {
+            session_id,
+            driver,
+            operation_id,
+            identity,
+            page_request,
+            destination: request.path,
+            format,
+        })
+    }
+
+    fn start_catalog_stream_export_inner(
+        &self,
+        request: BridgeCatalogStreamExportRequest,
+    ) -> Result<Vec<u8>, BridgeError> {
+        self.ensure_runtime_inner()?;
+        if !Path::new(&request.path).is_absolute() {
+            return Err(BridgeError::rejected(
+                "export-path",
+                "native export path must be absolute",
+            ));
         }
-        let destination = request.path;
-        let spawn_result = self.runtime.spawn(async move {
-            run_bridge_stream_export(StreamExportRun {
-                driver,
-                request: page_request,
-                identity,
-                operation_id,
-                destination,
-                format,
-                cancel,
-                cancel_receiver,
-                tasks,
-            })
-            .await;
-        });
-        if let Err(error) = spawn_result {
-            if let Ok(mut registry) = self.stream_exports.lock() {
-                registry.remove(&operation_id);
+        let format = match request.format.as_str() {
+            "csv" => StreamExportFormat::Csv,
+            "tsv" => StreamExportFormat::Tsv,
+            "json" => StreamExportFormat::Json,
+            _ => {
+                return Err(BridgeError::rejected(
+                    "export-format",
+                    "streaming export supports csv, tsv, or json",
+                ));
             }
-            return Err(error);
-        }
-        Ok(operation_bytes(operation_id))
+        };
+        let result_id = result_from_bytes(&request.result_id)
+            .map_err(|_| BridgeError::rejected("bad-result-id", "result id must be 16 bytes"))?;
+        let revision = Revision::from_wire_u64(request.revision);
+        let (replay, driver, operation_id, identity) = {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+            if !inner.accepting {
+                return Err(BridgeError::ShuttingDown);
+            }
+            if inner.results.resident_pages(result_id, revision).is_none() {
+                return Err(BridgeError::rejected(
+                    "export-replay-stale",
+                    "object result is no longer resident; reload it before full export",
+                ));
+            }
+            let replay = inner
+                .catalog_export_replays
+                .get(&result_id)
+                .cloned()
+                .ok_or_else(|| {
+                    BridgeError::rejected(
+                        "export-replay",
+                        "result has no typed catalog browse replay",
+                    )
+                })?;
+            let registered = inner
+                .sessions
+                .get(&replay.session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            if registered.engine != replay.engine {
+                return Err(BridgeError::rejected(
+                    "export-replay-engine",
+                    "catalog browse replay engine no longer matches session",
+                ));
+            }
+            let driver = inner
+                .service
+                .session(replay.session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let operation_id = inner.ids.operation();
+            let identity = PageIdentity::new(inner.ids.result(), Revision::INITIAL, replay.engine);
+            (replay, driver, operation_id, identity)
+        };
+        let statement = StatementText::new(replay.statement)
+            .map_err(|error| BridgeError::rejected("export-statement", error.to_string()))?;
+        let limits = PageLimits::new(500, 256, 8 * 1024 * 1024, 64 * 1024);
+        let page_request = match replay.engine {
+            Engine::PostgreSql => DriverPageRequest::PostgreSqlStatement {
+                statement,
+                parameters: replay.parameters,
+                limits,
+                max_cell_bytes: 64 * 1024,
+            },
+            Engine::ClickHouse => DriverPageRequest::ClickHouseStatement {
+                statement,
+                parameters: replay.parameters,
+                query_id: BoundedText::copy_from_str(
+                    &format!("native-export-{}", operation_id),
+                    ByteLimit::new(128),
+                )
+                .map_err(|error| BridgeError::rejected("export-query-id", error.to_string()))?,
+                limits,
+                max_cell_bytes: 64 * 1024,
+            },
+            Engine::Redis => {
+                return Err(BridgeError::rejected(
+                    "export-engine",
+                    "full-result re-query export is unsupported for Redis",
+                ));
+            }
+        };
+        self.spawn_stream_export(StreamExportStart {
+            session_id: replay.session_id,
+            driver,
+            operation_id,
+            identity,
+            page_request,
+            destination: request.path,
+            format,
+        })
     }
 
     fn stream_export_progress_inner(
@@ -1656,6 +1744,15 @@ impl TableRockBridge {
         catch_entry(|| self.start_stream_export_inner(request))
     }
 
+    /// Starts export from the exact Rust-rendered typed browse plan that
+    /// produced a resident object result. Swift passes only the opaque result.
+    pub fn start_catalog_stream_export(
+        &self,
+        request: BridgeCatalogStreamExportRequest,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| self.start_catalog_stream_export_inner(request))
+    }
+
     /// Polls one bounded export progress or terminal outcome.
     pub fn stream_export_progress(
         &self,
@@ -1921,6 +2018,73 @@ impl TableRockBridge {
 }
 
 impl TableRockBridge {
+    fn spawn_stream_export(&self, start: StreamExportStart) -> Result<Vec<u8>, BridgeError> {
+        let StreamExportStart {
+            session_id,
+            driver,
+            operation_id,
+            identity,
+            page_request,
+            destination,
+            format,
+        } = start;
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (cancel_signal, cancel_receiver) = tokio::sync::watch::channel(false);
+        let tasks = Arc::clone(&self.stream_exports);
+        {
+            let mut registry = tasks.lock().map_err(|_| {
+                BridgeError::rejected("stream-export-lock", "export task registry poisoned")
+            })?;
+            if registry.len() >= 64 {
+                if let Some(terminal) = registry.iter().find_map(|(id, task)| {
+                    (task.phase != "running" && task.phase != "cancel_requested").then_some(*id)
+                }) {
+                    registry.remove(&terminal);
+                } else {
+                    return Err(BridgeError::rejected(
+                        "stream-export-limit",
+                        "too many active streaming exports",
+                    ));
+                }
+            }
+            registry.insert(
+                operation_id,
+                StreamExportTask {
+                    session_id,
+                    driver: Arc::clone(&driver),
+                    cancel: Arc::clone(&cancel),
+                    cancel_signal,
+                    phase: "running".into(),
+                    completed_rows: 0,
+                    bytes_written: 0,
+                    destination: destination.clone(),
+                    summary: "Exporting full result".into(),
+                },
+            );
+        }
+        let spawn_result = self.runtime.spawn(async move {
+            run_bridge_stream_export(StreamExportRun {
+                driver,
+                request: page_request,
+                identity,
+                operation_id,
+                destination,
+                format,
+                cancel,
+                cancel_receiver,
+                tasks,
+            })
+            .await;
+        });
+        if let Err(error) = spawn_result {
+            if let Ok(mut registry) = self.stream_exports.lock() {
+                registry.remove(&operation_id);
+            }
+            return Err(error);
+        }
+        Ok(operation_bytes(operation_id))
+    }
+
     fn plan_session_reconnect_inner(
         &self,
         session_id_bytes: Vec<u8>,
@@ -4066,7 +4230,7 @@ impl TableRockBridge {
         let catalog_node_id = catalog_node_from_bytes(&catalog_node_id_bytes).map_err(|_| {
             BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
         })?;
-        let (rendered, copy_identity) = {
+        let (rendered, export_replay, copy_identity, engine) = {
             let guard = self
                 .inner
                 .lock()
@@ -4233,7 +4397,7 @@ impl TableRockBridge {
                     "raw WHERE fragment must be at most 65536 bytes",
                 ));
             }
-            let rendered = BrowsePlan {
+            let plan = BrowsePlan {
                 schema: schema.clone(),
                 table: table.clone(),
                 sort,
@@ -4241,19 +4405,27 @@ impl TableRockBridge {
                 raw_where,
                 limit: row_count,
                 offset: 0,
-            }
-            .render_sql_for(dialect)
-            .map_err(|error| BridgeError::rejected("catalog-browse-plan", error.to_string()))?;
+            };
+            let rendered = plan
+                .render_sql_for(dialect)
+                .map_err(|error| BridgeError::rejected("catalog-browse-plan", error.to_string()))?;
+            let export_replay = plan
+                .render_sql_unbounded_for(dialect)
+                .map_err(|error| BridgeError::rejected("catalog-export-plan", error.to_string()))?;
             (
                 rendered,
+                export_replay,
                 CopyIdentity {
                     schema,
                     table,
                     identity_columns: Vec::new(),
                     insertable,
                 },
+                registered.engine,
             )
         };
+        let replay_statement = export_replay.sql;
+        let replay_parameters = export_replay.parameters;
         let operation_bytes = self.submit_inner_with_parameters(
             SubmitSpec {
                 intent: "browse_object".into(),
@@ -4277,6 +4449,15 @@ impl TableRockBridge {
         inner
             .operation_copy_identity
             .insert(operation_id, copy_identity);
+        inner.operation_catalog_export_replay.insert(
+            operation_id,
+            CatalogExportReplay {
+                session_id,
+                engine,
+                statement: replay_statement,
+                parameters: replay_parameters,
+            },
+        );
         Ok(operation_bytes)
     }
 
@@ -8647,6 +8828,7 @@ impl BridgeInner {
             operation_results: BTreeMap::new(),
             operation_history: BTreeMap::new(),
             operation_copy_identity: BTreeMap::new(),
+            operation_catalog_export_replay: BTreeMap::new(),
             history_retention: HistoryRetention::Full,
             ids: IdFactory::new(),
             events: VecDeque::new(),
@@ -8656,6 +8838,7 @@ impl BridgeInner {
             persistence: None,
             catalog_nodes: BTreeMap::new(),
             copy_identities: BTreeMap::new(),
+            catalog_export_replays: BTreeMap::new(),
             support_bundle: SupportBundle::new(SupportPlatform::current()),
         })
     }
@@ -8702,6 +8885,21 @@ impl BridgeInner {
                     }
                     self.copy_identities
                         .insert(page.envelope().result_id(), copy_identity);
+                }
+                if let Some(replay) = self
+                    .operation_catalog_export_replay
+                    .get(&operation_id)
+                    .cloned()
+                {
+                    while self.catalog_export_replays.len() >= 256 {
+                        let Some(oldest) = self.catalog_export_replays.keys().next().copied()
+                        else {
+                            break;
+                        };
+                        self.catalog_export_replays.remove(&oldest);
+                    }
+                    self.catalog_export_replays
+                        .insert(page.envelope().result_id(), replay);
                 }
                 let identity = PageIdentity::new(
                     page.envelope().result_id(),
@@ -8750,6 +8948,7 @@ impl BridgeInner {
                 }
                 self.operation_results.remove(&operation_id);
                 self.operation_copy_identity.remove(&operation_id);
+                self.operation_catalog_export_replay.remove(&operation_id);
                 let history_failed =
                     self.operation_history
                         .remove(&operation_id)

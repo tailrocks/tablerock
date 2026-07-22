@@ -449,6 +449,9 @@ pub enum Effect {
         /// "csv" | "json" | "tsv"
         format: String,
     },
+    CancelStreamExport {
+        request_token: RequestToken,
+    },
     /// Import a CSV file into a relation through the typed mutation write seam.
     ImportCsvApply {
         request_token: RequestToken,

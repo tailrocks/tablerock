@@ -999,6 +999,14 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func stageTableOperation(request: BridgeTableOperationRequest) throws  -> BridgeTableOperationReview
 
     /**
+     * Starts export from the exact Rust-rendered typed browse plan that
+     * produced a resident object result. Swift passes only the opaque result.
+     */
+    func startCatalogStreamExport(request: BridgeCatalogStreamExportRequest) throws  -> Data
+
+    func startCatalogStreamExportInner(request: BridgeCatalogStreamExportRequest) throws  -> Data
+
+    /**
      * Consume a CSV review and start Rust-owned asynchronous application.
      */
     func startCsvImportApply(tokenId: Data, nowMs: UInt64, sessionId: Data) throws  -> Data
@@ -2186,6 +2194,30 @@ open func stageTableOperation(request: BridgeTableOperationRequest)throws  -> Br
 }
 
     /**
+     * Starts export from the exact Rust-rendered typed browse plan that
+     * produced a resident object result. Swift passes only the opaque result.
+     */
+open func startCatalogStreamExport(request: BridgeCatalogStreamExportRequest)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_start_catalog_stream_export(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeBridgeCatalogStreamExportRequest_lower(request),uniffiCallStatus
+    )
+})
+}
+
+open func startCatalogStreamExportInner(request: BridgeCatalogStreamExportRequest)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_start_catalog_stream_export_inner(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeBridgeCatalogStreamExportRequest_lower(request),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Consume a CSV review and start Rust-owned asynchronous application.
      */
 open func startCsvImportApply(tokenId: Data, nowMs: UInt64, sessionId: Data)throws  -> Data  {
@@ -2761,6 +2793,68 @@ public func FfiConverterTypeBridgeCatalogNode_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeBridgeCatalogNode_lower(_ value: BridgeCatalogNode) -> RustBuffer {
     return FfiConverterTypeBridgeCatalogNode.lower(value)
+}
+
+
+public struct BridgeCatalogStreamExportRequest: Equatable, Hashable {
+    public var resultId: Data
+    public var revision: UInt64
+    public var format: String
+    public var path: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(resultId: Data, revision: UInt64, format: String, path: String) {
+        self.resultId = resultId
+        self.revision = revision
+        self.format = format
+        self.path = path
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeCatalogStreamExportRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeCatalogStreamExportRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeCatalogStreamExportRequest {
+        return
+            try BridgeCatalogStreamExportRequest(
+                resultId: FfiConverterData.read(from: &buf),
+                revision: FfiConverterUInt64.read(from: &buf),
+                format: FfiConverterString.read(from: &buf),
+                path: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeCatalogStreamExportRequest, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.resultId, into: &buf)
+        FfiConverterUInt64.write(value.revision, into: &buf)
+        FfiConverterString.write(value.format, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeCatalogStreamExportRequest_lift(_ buf: RustBuffer) throws -> BridgeCatalogStreamExportRequest {
+    return try FfiConverterTypeBridgeCatalogStreamExportRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeCatalogStreamExportRequest_lower(_ value: BridgeCatalogStreamExportRequest) -> RustBuffer {
+    return FfiConverterTypeBridgeCatalogStreamExportRequest.lower(value)
 }
 
 
@@ -7496,6 +7590,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_table_operation() != 20721) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_catalog_stream_export() != 53475) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_catalog_stream_export_inner() != 4368) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_csv_import_apply() != 22083) {

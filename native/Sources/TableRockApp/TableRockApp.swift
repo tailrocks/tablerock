@@ -401,6 +401,9 @@ extension WorkbenchBackend {
   func startStreamExport(sessionId: Data, statement: String, format: String, path: String) throws
     -> Data
   { try scriptedUnavailable("stream-export-start") }
+  func startCatalogStreamExport(
+    resultId: Data, revision: UInt64, format: String, path: String
+  ) throws -> Data { try scriptedUnavailable("catalog-stream-export-start") }
   func streamExportProgress(operationId: Data) throws -> WorkbenchStreamExportProgress {
     try scriptedUnavailable("stream-export-progress")
   }
@@ -751,6 +754,18 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     guard scenario == "success", sessionId == Data(repeating: 1, count: 16), !statement.isEmpty,
       ["csv", "tsv", "json"].contains(format), !path.isEmpty
     else { return try scriptedUnavailable("stream-export-start") }
+    streamExportActive = true
+    streamExportCancelled = false
+    streamExportPollCount = 0
+    return Data(repeating: 16, count: 16)
+  }
+
+  func startCatalogStreamExport(
+    resultId: Data, revision: UInt64, format: String, path: String
+  ) throws -> Data {
+    guard resultId == Data(repeating: 8, count: 16), ["csv", "tsv", "json"].contains(format),
+      !path.isEmpty
+    else { return try scriptedUnavailable("catalog-stream-export-start") }
     streamExportActive = true
     streamExportCancelled = false
     streamExportPollCount = 0
@@ -1377,6 +1392,14 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
     try bridge.startStreamExport(
       request: BridgeStreamExportRequest(
         sessionId: sessionId, statement: statement, format: format, path: path))
+  }
+
+  func startCatalogStreamExport(
+    resultId: Data, revision: UInt64, format: String, path: String
+  ) throws -> Data {
+    try bridge.startCatalogStreamExport(
+      request: BridgeCatalogStreamExportRequest(
+        resultId: resultId, revision: revision, format: format, path: path))
   }
 
   func streamExportProgress(operationId: Data) throws -> WorkbenchStreamExportProgress {
@@ -4521,13 +4544,13 @@ final class BridgeModel {
     } catch { copyError = "Export failed: \(error)" }
   }
 
-  func exportFullQueryResult(format: String) async {
-    guard let client, let session = sessionData, selectedWorkbenchKind == "query" else {
-      copyError = "Full-result export requires a query result"
+  func exportFullResult(format: String) async {
+    guard let client, let resultId = resultIdData else {
+      copyError = "Full-result export requires a resident result"
       return
     }
     let statement = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !statement.isEmpty else {
+    if selectedWorkbenchKind == "query" && statement.isEmpty {
       copyError = "Query is empty"
       return
     }
@@ -4535,7 +4558,7 @@ final class BridgeModel {
     guard
       let selected = dependencies.filePanels.chooseSaveFile(
         AppFilePanelRequest(
-          title: "Export Full Query Result", prompt: "Export",
+          title: "Export Full Result", prompt: "Export",
           suggestedFilename: "result.\(fileExtension)", allowedExtensions: [fileExtension]
         ))
     else { return }
@@ -4550,8 +4573,17 @@ final class BridgeModel {
     streamExportProgress = nil
     streamExportPresented = true
     do {
-      let operationId = try await client.startStreamExport(
-        sessionId: session, statement: statement, format: format, path: url.path)
+      let operationId: Data
+      if selectedWorkbenchKind == "object" {
+        operationId = try await client.startCatalogStreamExport(
+          resultId: resultId, revision: resultRevision, format: format, path: url.path)
+      } else {
+        guard let session = sessionData else {
+          throw ScriptedBackendError.unavailable("stream-export-session")
+        }
+        operationId = try await client.startStreamExport(
+          sessionId: session, statement: statement, format: format, path: url.path)
+      }
       streamExportOperationId = operationId
       while streamExportOperationId == operationId {
         let progress = try await client.streamExportProgress(operationId: operationId)
@@ -7416,8 +7448,8 @@ private struct StreamExportSheet: View {
     VStack(alignment: .leading, spacing: 14) {
       HStack {
         VStack(alignment: .leading, spacing: 3) {
-          Text("Export Full Query Result").font(.title2).bold()
-          Text("Rust re-runs the query in bounded pages and publishes the destination atomically.")
+          Text("Export Full Result").font(.title2).bold()
+          Text("Rust replays the exact query or typed object browse in bounded pages and publishes atomically.")
             .foregroundStyle(.secondary)
         }
         Spacer()
@@ -8592,9 +8624,9 @@ private struct ResultExportMenu: View {
           exportButton("SQL INSERT", format: "sql_insert")
         }
         Divider()
-        fullExportButton("Full Query CSV", format: "csv")
-        fullExportButton("Full Query TSV", format: "tsv")
-        fullExportButton("Full Query JSON", format: "json")
+        fullExportButton("Full Result CSV", format: "csv")
+        fullExportButton("Full Result TSV", format: "tsv")
+        fullExportButton("Full Result JSON", format: "json")
       } label: {
         Label("More Export Formats", systemImage: "ellipsis.circle")
       }
@@ -8612,8 +8644,7 @@ private struct ResultExportMenu: View {
   }
 
   private func fullExportButton(_ label: String, format: String) -> some View {
-    Button(label) { Task { await model.exportFullQueryResult(format: format) } }
-      .disabled(model.selectedWorkbenchKind != "query")
+    Button(label) { Task { await model.exportFullResult(format: format) } }
       .accessibilityIdentifier("results.export.full.\(format)")
   }
 }

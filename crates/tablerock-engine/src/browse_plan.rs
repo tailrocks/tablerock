@@ -223,7 +223,24 @@ impl BrowsePlan {
         &self,
         dialect: BrowseDialect,
     ) -> Result<RenderedBrowseSql, BrowsePlanError> {
-        if self.limit == 0 {
+        self.render_sql_mode(dialect, true)
+    }
+
+    /// Render the same typed browse intent without UI paging LIMIT/OFFSET.
+    /// Driver page limits remain the bounded-memory authority for full export.
+    pub fn render_sql_unbounded_for(
+        &self,
+        dialect: BrowseDialect,
+    ) -> Result<RenderedBrowseSql, BrowsePlanError> {
+        self.render_sql_mode(dialect, false)
+    }
+
+    fn render_sql_mode(
+        &self,
+        dialect: BrowseDialect,
+        paged: bool,
+    ) -> Result<RenderedBrowseSql, BrowsePlanError> {
+        if paged && self.limit == 0 {
             return Err(BrowsePlanError::InvalidLimit);
         }
         let qualified = qualify_table(&self.schema, &self.table)?;
@@ -300,7 +317,9 @@ impl BrowsePlan {
         }
 
         // LIMIT/OFFSET are plan integers, not user strings.
-        sql.push_str(&format!(" LIMIT {} OFFSET {}", self.limit, self.offset));
+        if paged {
+            sql.push_str(&format!(" LIMIT {} OFFSET {}", self.limit, self.offset));
+        }
         Ok(RenderedBrowseSql { sql, parameters })
     }
 }
