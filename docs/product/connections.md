@@ -95,6 +95,14 @@ to macOS Keychain in the native client; the operator may instead choose any
 supported source before Save. Empty, oversized, malformed, control-character,
 and hostile schemes fail closed without network or persistence access.
 
+External applications may request the same review through
+`tablerock://open?url=<percent-encoded database URL>`. TableRock rejects every
+other route, duplicate or absent `url` parameters, oversized envelopes, and
+any database URL rejected by Rust. The confirmation shows only a redacted
+target summary. Operator may cancel, review as a new profile, connect a matching
+saved profile, or create a temporary connection; no incoming URL may save or
+connect automatically.
+
 ## Both clients
 
 | | TUI | Native macOS |

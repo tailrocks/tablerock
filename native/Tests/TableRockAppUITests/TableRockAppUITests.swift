@@ -79,6 +79,27 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testExternalUrlRequiresAuthorityBeforeTemporaryConnect() throws {
+    let encoded =
+      "postgresql%3A%2F%2Ffixture%3Asecret%40db.example%3A5433%2Fapp"
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_EXTERNAL_URL": "tablerock://open?url=\(encoded)"])
+
+    let summary = app.staticTexts["external-url.summary"]
+    XCTAssertTrue(summary.waitForExistence(timeout: 10))
+    XCTAssertFalse((summary.value as? String ?? summary.label).contains("secret"))
+    XCTAssertFalse(app.descendants(matching: .any)["connection.status"].exists)
+
+    let connect = app.buttons["external-url.connect-temporary"]
+    XCTAssertTrue(connect.exists)
+    connect.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["connection.status"]
+        .waitForExistence(timeout: 10))
+  }
+
+  @MainActor
   func testTemporaryConnectionOpensThroughUserControl() throws {
     let app = launch(scenario: "success")
 

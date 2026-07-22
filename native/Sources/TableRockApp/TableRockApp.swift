@@ -1180,8 +1180,16 @@ private struct WorkbenchWindowRoot: View {
           )
         )
         .frame(minWidth: 760, minHeight: 520)
-        .task { await openFixtureWindowIfNeeded() }
+        .task { await launchFixturesIfNeeded() }
+        .onOpenURL { url in
+          Task { await model.receiveExternalURL(url) }
+        }
     }
+  }
+
+  private func launchFixturesIfNeeded() async {
+    await model.receiveExternalUrlFixtureIfNeeded()
+    await openFixtureWindowIfNeeded()
   }
 
   private func openFixtureWindowIfNeeded() async {
@@ -1675,6 +1683,13 @@ struct ConnectionUrlImport: Identifiable {
   var parsing = false
 }
 
+struct ExternalUrlReview: Identifiable {
+  let id = UUID()
+  let draft: ProfileEditorDraft
+  let summary: String
+  let matchedProfile: WorkbenchProfileItem?
+}
+
 private func catalogNodeKey(_ id: Data) -> String {
   "node:" + id.map { String(format: "%02x", $0) }.joined()
 }
@@ -1810,6 +1825,8 @@ final class BridgeModel {
   var groupDialog: ProfileGroupDialog?
   var passwordPrompt: ProfilePasswordPrompt?
   var connectionUrlImport: ConnectionUrlImport?
+  var externalUrlReview: ExternalUrlReview?
+  private var externalUrlFixtureConsumed = false
   var pendingGroupRemoval: String?
   var profileSections: [ProfileSection] {
     var order = profileGroups.map(\.name)
@@ -3836,6 +3853,70 @@ final class BridgeModel {
     }
   }
 
+  func receiveExternalUrlFixtureIfNeeded() async {
+    guard !externalUrlFixtureConsumed,
+      let raw = ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_EXTERNAL_URL"],
+      let url = URL(string: raw)
+    else { return }
+    externalUrlFixtureConsumed = true
+    await receiveExternalURL(url)
+  }
+
+  func receiveExternalURL(_ externalUrl: URL) async {
+    let input: String
+    do {
+      input = try externalConnectionUrlPayload(externalUrl)
+    } catch {
+      profileActionError = "External URL rejected before database parsing: \(error)"
+      return
+    }
+    guard let client else {
+      profileActionError = "External URL rejected: bridge unavailable"
+      return
+    }
+    do {
+      let draft = ProfileEditorDraft(try await client.parseConnectionUrl(input))
+      let matched = profiles.first {
+        $0.engine == draft.engine && $0.host == draft.host && $0.port == draft.port
+          && ($0.context ?? "") == draft.database
+      }
+      let user = draft.username.isEmpty ? "(none)" : draft.username
+      let secret = draft.passwordValue.isEmpty ? "absent" : "present"
+      externalUrlReview = ExternalUrlReview(
+        draft: draft,
+        summary:
+          "\(draft.engine) · \(draft.host):\(draft.port)/\(draft.database) · user \(user) · password \(secret) · TLS \(draft.tlsMode)",
+        matchedProfile: matched
+      )
+      profileActionError = nil
+    } catch {
+      profileActionError = "External URL rejected: \(error)"
+    }
+  }
+
+  func reviewExternalURLAsNewConnection() {
+    guard var draft = externalUrlReview?.draft else { return }
+    draft.name = draft.database.isEmpty ? draft.host : "\(draft.database) on \(draft.host)"
+    externalUrlReview = nil
+    editorDraft = draft
+  }
+
+  func connectExternalSavedProfile() async {
+    guard let profile = externalUrlReview?.matchedProfile else { return }
+    externalUrlReview = nil
+    _ = await connect(profile)
+  }
+
+  func connectExternalTemporarily() async {
+    guard let draft = externalUrlReview?.draft, let port = UInt16(draft.port) else { return }
+    externalUrlReview = nil
+    await connectTemporary(
+      WorkbenchOpenParams(
+        engine: draft.engine, host: draft.host, port: port, database: draft.database,
+        user: draft.username, password: draft.passwordValue, tlsMode: draft.tlsMode
+      ))
+  }
+
   func editProfile(_ item: WorkbenchProfileItem) async {
     guard let client else { return }
     profileActionError = nil
@@ -3953,32 +4034,33 @@ final class BridgeModel {
 
   /// Connect directly from form params (temporary session, no saved profile).
   func connectByParams() async {
+    guard let port = UInt16(formPort), !formHost.isEmpty
+    else {
+      connectError = "Invalid host or port"
+      return
+    }
+    await connectTemporary(
+      WorkbenchOpenParams(
+        engine: formEngine, host: formHost, port: port, database: formDatabase,
+        user: formUser, password: formPassword, tlsMode: "off"
+      ))
+  }
+
+  private func connectTemporary(_ params: WorkbenchOpenParams) async {
     guard !hasRunningWorkbench else {
       connectError = "Cancel running queries before replacing the connection"
       return
     }
-    guard let client,
-      let port = UInt16(formPort),
-      !formHost.isEmpty
-    else {
-      connectError = "Invalid host or port"
+    guard let client else {
+      connectError = "Bridge unavailable"
       return
     }
     let previousSession = sessionData
     await persistSessionIntent()
     connectError = nil
     do {
-      let session = try await client.open(
-        params: WorkbenchOpenParams(
-          engine: formEngine,
-          host: formHost,
-          port: port,
-          database: formDatabase,
-          user: formUser,
-          password: formPassword,
-          tlsMode: "off"
-        ))
-      connectedEngine = formEngine
+      let session = try await client.open(params: params)
+      connectedEngine = params.engine
       activeProfileId = nil
       sessionData = session
       sessionHex = session.map { String(format: "%02x", $0) }.joined()
@@ -4842,6 +4924,9 @@ struct ContentView: View {
       ConnectionUrlImportSheet(initial: importState) { input in
         await model.parseConnectionUrl(input)
       }
+    }
+    .sheet(item: $model.externalUrlReview) { review in
+      ExternalUrlConfirmationSheet(review: review)
     }
     .sheet(isPresented: $model.historyPresented) {
       HistorySheet()
@@ -7142,6 +7227,57 @@ struct ConnectionUrlImportSheet: View {
     }
     .frame(minWidth: 520, minHeight: 300)
     .interactiveDismissDisabled(parsing)
+  }
+}
+
+struct ExternalUrlConfirmationSheet: View {
+  @Environment(BridgeModel.self) private var model
+  @Environment(\.dismiss) private var dismiss
+  let review: ExternalUrlReview
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section("Requested target") {
+          Text(review.summary)
+            .textSelection(.enabled)
+            .accessibilityIdentifier("external-url.summary")
+          Text("No connection or profile change occurs until you choose an action.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        if let profile = review.matchedProfile {
+          Section("Saved match") {
+            Text(profile.name)
+            Button("Connect saved profile") {
+              Task { await model.connectExternalSavedProfile() }
+            }
+            .accessibilityIdentifier("external-url.connect-saved")
+          }
+        }
+      }
+      .formStyle(.grouped)
+      .navigationTitle("Open External Connection?")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") {
+            model.externalUrlReview = nil
+            dismiss()
+          }
+          .accessibilityIdentifier("external-url.cancel")
+        }
+        ToolbarItemGroup(placement: .confirmationAction) {
+          Button("Review as New") { model.reviewExternalURLAsNewConnection() }
+            .accessibilityIdentifier("external-url.review-new")
+          Button("Connect Temporarily") {
+            Task { await model.connectExternalTemporarily() }
+          }
+          .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("external-url.connect-temporary")
+        }
+      }
+    }
+    .frame(minWidth: 560, minHeight: 320)
   }
 }
 

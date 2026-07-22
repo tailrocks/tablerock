@@ -73,6 +73,11 @@ targets:
         LSMinimumSystemVersion: "26.0"
         NSHighResolutionCapable: true
         NSHumanReadableCopyright: "Copyright © 2026 Tailrocks"
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Viewer
+            CFBundleURLName: app.tablerock.connection
+            CFBundleURLSchemes:
+              - tablerock
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.tablerock.TableRock

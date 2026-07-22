@@ -17,6 +17,7 @@
 		31FD459BCAEED3A74451B50A /* BridgeModelLifetimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9C1E6469A2ACF82CA630D65 /* BridgeModelLifetimeTests.swift */; };
 		3BC1F892B2D11CFFFFA88C3F /* PageV1BoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BD73D03EAEEE2DE99D6F35 /* PageV1BoundaryTests.swift */; };
 		411EB8166C56FC0EBE4C8394 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4593C9F33EA2B77A8CB555A4 /* Security.framework */; };
+		44AA1BFAFD6E6CC7BF238C6C /* ExternalConnectionRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6849571B55F5705D4B99DF75 /* ExternalConnectionRoute.swift */; };
 		493700EAADCCC3020615EA6F /* clickhouse-signed-v1.hex in Resources */ = {isa = PBXBuildFile; fileRef = 4458632FEA057E87DB3BB33C /* clickhouse-signed-v1.hex */; };
 		56C50F51ED5EB75093D80EAB /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E25AD0385D015297CBBA9D78 /* CoreFoundation.framework */; };
 		6189A683586BD39D3AC5806E /* PageV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D0C1A38F65F28CBDE5C94D7 /* PageV1.swift */; };
@@ -36,6 +37,7 @@
 		B85A1683438F04B41F2AB2F8 /* TableRockBridge.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		BA7227AA4869FE09F72A67E7 /* BridgeLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A34ED7C245BB8AF855C9333 /* BridgeLifecycleTests.swift */; };
 		C1930375B77A3443BC8FC913 /* tablerock_ffiFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */; };
+		C1CCB79759E762DE2B1BD2EB /* ExternalConnectionRouteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 639CD75DC96C036A1A245DF6 /* ExternalConnectionRouteTests.swift */; };
 		C4DF7978A6E7AFC2C4CE963B /* postgres-signed-v1.hex in Resources */ = {isa = PBXBuildFile; fileRef = 474ED5368A7E1345CE774E9D /* postgres-signed-v1.hex */; };
 		CA5CDB5B489020F6BA3BFEFB /* tablerock_ffi.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D29545CBDC6CCC9256FB3C /* tablerock_ffi.swift */; };
 		CAFEA2165C108D50B1189555 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50BA7DBEE0A6F285A3CE9CC5 /* SystemConfiguration.framework */; };
@@ -149,6 +151,8 @@
 		522462239F32BD6A1FA81F2B /* TableRockAppUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableRockAppUITests.swift; sourceTree = "<group>"; };
 		52D29545CBDC6CCC9256FB3C /* tablerock_ffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = tablerock_ffi.swift; sourceTree = "<group>"; };
 		5ED022E8C15474B31E1F1F6C /* TableRockBridgeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockBridgeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		639CD75DC96C036A1A245DF6 /* ExternalConnectionRouteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalConnectionRouteTests.swift; sourceTree = "<group>"; };
+		6849571B55F5705D4B99DF75 /* ExternalConnectionRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalConnectionRoute.swift; sourceTree = "<group>"; };
 		6D0C1A38F65F28CBDE5C94D7 /* PageV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1.swift; sourceTree = "<group>"; };
 		7056B74025E206D1A652A30B /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
 		74B974D7ED34ED229C8EECD1 /* PageV1FixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1FixtureTests.swift; sourceTree = "<group>"; };
@@ -280,6 +284,7 @@
 				A2C51BE56FE33E3F86FAD4A4 /* AppConfigurationTests.swift */,
 				170A6205E293BBDD55598B6C /* AppDependenciesTests.swift */,
 				EC6AFA7C53FF20F48FF62523 /* ColumnHeaderPresentationTests.swift */,
+				639CD75DC96C036A1A245DF6 /* ExternalConnectionRouteTests.swift */,
 				13C717EA88A43EE4A3BD7F62 /* StructuredValueTreeTests.swift */,
 			);
 			path = TableRockFeatureTests;
@@ -304,6 +309,7 @@
 			children = (
 				7056B74025E206D1A652A30B /* AppConfiguration.swift */,
 				F5A94F4528ED04C3B8016BDA /* AppDependencies.swift */,
+				6849571B55F5705D4B99DF75 /* ExternalConnectionRoute.swift */,
 				2919168F670129A9DE843433 /* StructuredValueTree.swift */,
 				DCD18301D71E2140043B680F /* WorkbenchTypes.swift */,
 			);
@@ -608,6 +614,7 @@
 			files = (
 				08418AD3F194E697CBAEF800 /* AppConfiguration.swift in Sources */,
 				B5271F793DBA059B179658C0 /* AppDependencies.swift in Sources */,
+				44AA1BFAFD6E6CC7BF238C6C /* ExternalConnectionRoute.swift in Sources */,
 				74D336D329848E62EFBF5F33 /* StructuredValueTree.swift in Sources */,
 				F3E6C5EB63188CF0940F0330 /* WorkbenchTypes.swift in Sources */,
 			);
@@ -648,6 +655,7 @@
 				B1E398B44C08B80C28D66530 /* AppConfigurationTests.swift in Sources */,
 				E0946F568BF416413F94CAF8 /* AppDependenciesTests.swift in Sources */,
 				F212B359F604BAA292F4664F /* ColumnHeaderPresentationTests.swift in Sources */,
+				C1CCB79759E762DE2B1BD2EB /* ExternalConnectionRouteTests.swift in Sources */,
 				A40F73637B5A9903607565E6 /* StructuredValueTreeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
