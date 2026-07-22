@@ -23,8 +23,8 @@ use tablerock_engine::{
 use tablerock_ffi::{
     BridgeBrowseFilter, BridgeBrowseSort, BridgeCatalogStreamExportRequest, BridgeCsvImportRequest,
     BridgeError, BridgeProfileOrderItem, BridgeQueryParameter, BridgeSavedFilterPreset,
-    BridgeSessionIntent, BridgeStreamExportRequest, BridgeTableOperationRequest,
-    BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
+    BridgeSessionIntent, BridgeStartupActionDraft, BridgeStreamExportRequest,
+    BridgeTableOperationRequest, BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
 };
 
 struct OnePageStream(Option<ResultPage>);
@@ -1878,6 +1878,20 @@ fn open_profile_requires_persistence_and_loads_literals() {
     ssh.ssh_password = "passphrase-fixture".into();
     ssh.ssh_known_hosts_path = "/tmp/tablerock-known-hosts".into();
     ssh.ssh_plaintext_acknowledged = true;
+    ssh.startup_actions = vec![
+        BridgeStartupActionDraft {
+            statement: "SELECT current_user".into(),
+            safety: "read_only".into(),
+            timeout_ms: 5_000,
+            run_on_reconnect: true,
+        },
+        BridgeStartupActionDraft {
+            statement: "DELETE FROM audit_queue".into(),
+            safety: "write".into(),
+            timeout_ms: 10_000,
+            run_on_reconnect: false,
+        },
+    ];
     let ssh_id = bridge.save_profile(ssh).unwrap();
     let mut projected_ssh = bridge.get_profile_draft(ssh_id.clone()).unwrap();
     assert!(projected_ssh.ssh_enabled);
@@ -1888,6 +1902,14 @@ fn open_profile_requires_persistence_and_loads_literals() {
     assert!(projected_ssh.ssh_has_stored_password);
     assert!(projected_ssh.ssh_private_key.is_empty());
     assert!(projected_ssh.ssh_password.is_empty());
+    assert_eq!(projected_ssh.startup_actions.len(), 2);
+    assert_eq!(
+        projected_ssh.startup_actions[0].statement,
+        "SELECT current_user"
+    );
+    assert_eq!(projected_ssh.startup_actions[0].safety, "read_only");
+    assert!(projected_ssh.startup_actions[0].run_on_reconnect);
+    assert_eq!(projected_ssh.startup_actions[1].safety, "write");
     projected_ssh.name = "bridge-ssh-edited".into();
     bridge.save_profile(projected_ssh).unwrap();
     let projected_ssh = bridge.get_profile_draft(ssh_id.clone()).unwrap();

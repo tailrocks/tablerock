@@ -22,6 +22,10 @@
   persists typed bastion/auth/known-hosts intent through UniFFI, keeps SSH
   secrets write-only, and routes all engines through a session-owned shared
   Rust tunnel. Hosted native test-action and live failure-matrix replay remain.
+- **Progress note (evidence 652)**: native ordered startup-command editing now
+  round-trips the shared bounded safety/timeout/reconnect contract; Rust runs
+  only read-only actions automatically. Reviewed skipped-action execution and
+  native reconnect outcome replay remain open.
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

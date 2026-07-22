@@ -309,6 +309,18 @@ public struct WorkbenchProfileItem: Sendable, Equatable, Hashable {
     self.connected = connected
   }
 }
+public struct WorkbenchStartupActionDraft: Sendable, Equatable {
+  public let statement: String
+  public let safety: String
+  public let timeoutMs: UInt32
+  public let runOnReconnect: Bool
+  public init(statement: String, safety: String, timeoutMs: UInt32, runOnReconnect: Bool) {
+    self.statement = statement
+    self.safety = safety
+    self.timeoutMs = timeoutMs
+    self.runOnReconnect = runOnReconnect
+  }
+}
 public struct WorkbenchProfileDraft: Sendable, Equatable {
   public let idBytes: Data?
   public let revision: UInt64
@@ -338,6 +350,7 @@ public struct WorkbenchProfileDraft: Sendable, Equatable {
   public let sshHasStoredPassword: Bool
   public let sshHasStoredPrivateKey: Bool
   public let sshPlaintextAcknowledged: Bool
+  public let startupActions: [WorkbenchStartupActionDraft]
   public init(
     idBytes: Data?, revision: UInt64, engine: String, name: String, group: String,
     environment: String, host: String, port: String, database: String, username: String,
@@ -347,7 +360,8 @@ public struct WorkbenchProfileDraft: Sendable, Equatable {
     sshUsername: String = "", sshAuthMode: String = "agent", sshPassword: String = "",
     sshPrivateKey: String = "", sshKnownHostsPath: String = "",
     sshHasStoredPassword: Bool = false, sshHasStoredPrivateKey: Bool = false,
-    sshPlaintextAcknowledged: Bool = false
+    sshPlaintextAcknowledged: Bool = false,
+    startupActions: [WorkbenchStartupActionDraft] = []
   ) {
     self.idBytes = idBytes
     self.revision = revision
@@ -377,6 +391,7 @@ public struct WorkbenchProfileDraft: Sendable, Equatable {
     self.sshHasStoredPassword = sshHasStoredPassword
     self.sshHasStoredPrivateKey = sshHasStoredPrivateKey
     self.sshPlaintextAcknowledged = sshPlaintextAcknowledged
+    self.startupActions = startupActions
   }
 }
 public struct WorkbenchProfileGroup: Sendable, Equatable {

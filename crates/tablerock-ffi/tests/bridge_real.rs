@@ -8,8 +8,8 @@
 use tablerock_core::{Engine, PageLimits, ResultPage};
 use tablerock_ffi::{
     BridgeCsvImportRequest, BridgeDdlChangeRequest, BridgePostgresToolRequest,
-    BridgeQueryParameter, BridgeStreamExportRequest, BridgeTableOperationRequest, OpenParams,
-    SubmitSpec, TableRockBridge,
+    BridgeQueryParameter, BridgeStartupActionDraft, BridgeStreamExportRequest,
+    BridgeTableOperationRequest, OpenParams, SubmitSpec, TableRockBridge,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -192,6 +192,55 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
 
     tokio::task::spawn_blocking(move || {
         let bridge = TableRockBridge::new_for_test();
+        let profile_path = std::env::temp_dir().join(format!(
+            "tablerock-native-startup-{}-{}.db",
+            std::process::id(),
+            port
+        ));
+        bridge
+            .configure_persistence(profile_path.to_string_lossy().into_owned())
+            .unwrap();
+        let mut startup_profile = bridge
+            .parse_connection_url_draft(format!("postgresql://postgres@{}:{port}/postgres", host))
+            .unwrap();
+        startup_profile.name = "startup-live".into();
+        startup_profile.startup_actions = vec![
+            BridgeStartupActionDraft {
+                statement: "SET application_name = 'tablerock_startup_live'".into(),
+                safety: "read_only".into(),
+                timeout_ms: 5_000,
+                run_on_reconnect: true,
+            },
+            BridgeStartupActionDraft {
+                statement: "CREATE TABLE startup_must_not_run(id integer)".into(),
+                safety: "write".into(),
+                timeout_ms: 5_000,
+                run_on_reconnect: true,
+            },
+        ];
+        let profile_id = bridge.save_profile(startup_profile).unwrap();
+        let startup_session = bridge
+            .open_profile_with_secret(profile_id, Some(b"unused".to_vec()))
+            .unwrap();
+        let startup_page = execute(
+            &bridge,
+            startup_session.clone(),
+            "SELECT current_setting('application_name'), to_regclass('startup_must_not_run')",
+        );
+        let startup_page = ResultPage::decode_v1(
+            &startup_page,
+            PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
+        )
+        .unwrap();
+        assert_eq!(
+            startup_page.cell(0, 0).unwrap().bytes(),
+            b"tablerock_startup_live"
+        );
+        assert!(startup_page.cell(0, 1).unwrap().is_null());
+        bridge.disconnect(startup_session).unwrap();
+        let _ = std::fs::remove_file(&profile_path);
+        let _ = std::fs::remove_file(format!("{}-wal", profile_path.display()));
+        let _ = std::fs::remove_file(format!("{}-shm", profile_path.display()));
         let session = open_when_ready(&bridge, "postgresql", &host, port, "postgres", "postgres");
         let activity = bridge.postgres_activity(session.clone()).unwrap();
         assert!(!activity.is_empty());

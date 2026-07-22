@@ -33,6 +33,27 @@ extension Data {
 
 /// Mutable presentation form. The backend boundary receives a fresh immutable
 /// value only when the operator saves or tests the form.
+struct StartupActionEditorDraft: Identifiable {
+  let id = UUID()
+  var statement: String
+  var safety: String
+  var timeoutMs: UInt32
+  var runOnReconnect: Bool
+
+  init(_ value: WorkbenchStartupActionDraft) {
+    statement = value.statement
+    safety = value.safety
+    timeoutMs = value.timeoutMs
+    runOnReconnect = value.runOnReconnect
+  }
+
+  var workbench: WorkbenchStartupActionDraft {
+    .init(
+      statement: statement, safety: safety, timeoutMs: timeoutMs,
+      runOnReconnect: runOnReconnect)
+  }
+}
+
 struct ProfileEditorDraft {
   var idBytes: Data?
   var revision: UInt64
@@ -62,6 +83,7 @@ struct ProfileEditorDraft {
   var sshHasStoredPassword: Bool
   var sshHasStoredPrivateKey: Bool
   var sshPlaintextAcknowledged: Bool
+  var startupActions: [StartupActionEditorDraft]
 
   init(_ value: WorkbenchProfileDraft) {
     idBytes = value.idBytes
@@ -92,6 +114,7 @@ struct ProfileEditorDraft {
     sshHasStoredPassword = value.sshHasStoredPassword
     sshHasStoredPrivateKey = value.sshHasStoredPrivateKey
     sshPlaintextAcknowledged = value.sshPlaintextAcknowledged
+    startupActions = value.startupActions.map(StartupActionEditorDraft.init)
   }
 
   var workbench: WorkbenchProfileDraft {
@@ -108,7 +131,8 @@ struct ProfileEditorDraft {
       sshPrivateKey: sshPrivateKey, sshKnownHostsPath: sshKnownHostsPath,
       sshHasStoredPassword: sshHasStoredPassword,
       sshHasStoredPrivateKey: sshHasStoredPrivateKey,
-      sshPlaintextAcknowledged: sshPlaintextAcknowledged
+      sshPlaintextAcknowledged: sshPlaintextAcknowledged,
+      startupActions: startupActions.map(\.workbench)
     )
   }
 }
@@ -624,7 +648,8 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       sshKnownHostsPath: draft.sshKnownHostsPath,
       sshHasStoredPassword: draft.sshHasStoredPassword || !draft.sshPassword.isEmpty,
       sshHasStoredPrivateKey: draft.sshHasStoredPrivateKey || !draft.sshPrivateKey.isEmpty,
-      sshPlaintextAcknowledged: draft.sshPlaintextAcknowledged)
+      sshPlaintextAcknowledged: draft.sshPlaintextAcknowledged,
+      startupActions: draft.startupActions)
     profileDrafts[id] = stored
     profiles.removeAll { $0.idBytes == id }
     profiles.append(
@@ -1947,7 +1972,12 @@ private struct NativeProfileEditorFixtureView: View {
       tlsMode: "verify_full", safetyMode: "read_only",
       sshEnabled: true, sshHost: "bastion.example.internal", sshPort: "22",
       sshUsername: "operator", sshAuthMode: "agent",
-      sshKnownHostsPath: "/Users/operator/.ssh/known_hosts"
+      sshKnownHostsPath: "/Users/operator/.ssh/known_hosts",
+      startupActions: [
+        WorkbenchStartupActionDraft(
+          statement: "SELECT current_user", safety: "read_only", timeoutMs: 5_000,
+          runOnReconnect: true)
+      ]
     ))
 
   var body: some View {
@@ -1982,7 +2012,8 @@ private func runNativeProfileEditorAudit() {
     titles.contains("Prompt on connect"),
     titles.contains("Read only"),
     titles.contains("Verify full"),
-    titles.contains("SSH agent")
+    titles.contains("SSH agent"),
+    titles.contains("Read only · auto-run")
   else {
     writePerformanceMetric(
       "PROFILE_EDITOR_PROOF_FAILED title=\(window.title) fields=\(textFields.count) buttons=\(titles.sorted())"
@@ -1990,7 +2021,7 @@ private func runNativeProfileEditorAudit() {
     return
   }
   writePerformanceMetric(
-    "PROFILE_EDITOR_PROOF_PASSED title=Edit_Connection fields=\(textFields.count) pickers=engine_environment_password_safety_tls_ssh host_key=known_hosts_fail_closed"
+    "PROFILE_EDITOR_PROOF_PASSED title=Edit_Connection fields=\(textFields.count) pickers=engine_environment_password_safety_tls_ssh_startup host_key=known_hosts_fail_closed startup=ordered_reviewed"
   )
 }
 
@@ -10414,6 +10445,11 @@ struct ProfileEditorSheet: View {
               && (draft.sshAuthMode == "password"
                 ? (!draft.sshPassword.isEmpty || draft.sshHasStoredPassword)
                 : (!draft.sshPrivateKey.isEmpty || draft.sshHasStoredPrivateKey))))))
+      && draft.startupActions.count <= 16
+      && draft.startupActions.allSatisfy {
+        !$0.statement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          && (100...120_000).contains($0.timeoutMs)
+      }
   }
 
   var body: some View {
@@ -10534,6 +10570,64 @@ struct ProfileEditorSheet: View {
                 .foregroundStyle(.secondary)
             }
           }
+        }
+        Section("Startup Commands") {
+          ForEach($draft.startupActions) { $action in
+            VStack(alignment: .leading, spacing: 8) {
+              TextEditor(text: $action.statement)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 60)
+                .accessibilityLabel("Startup command")
+                .accessibilityIdentifier("profile.editor.startup.statement")
+              HStack {
+                Picker("Safety", selection: $action.safety) {
+                  Text("Read only · auto-run").tag("read_only")
+                  Text("Write · review required").tag("write")
+                  Text("Dangerous · review required").tag("dangerous")
+                }
+                TextField("Timeout ms", value: $action.timeoutMs, format: .number)
+                  .frame(width: 150)
+              }
+              Toggle("Run again after reconnect", isOn: $action.runOnReconnect)
+              HStack {
+                Button("Move Up") {
+                  guard let index = draft.startupActions.firstIndex(where: { $0.id == action.id }),
+                    index > 0
+                  else { return }
+                  draft.startupActions.swapAt(index, index - 1)
+                }
+                Button("Move Down") {
+                  guard let index = draft.startupActions.firstIndex(where: { $0.id == action.id }),
+                    index + 1 < draft.startupActions.count
+                  else { return }
+                  draft.startupActions.swapAt(index, index + 1)
+                }
+                Button("Remove", role: .destructive) {
+                  draft.startupActions.removeAll { $0.id == action.id }
+                }
+              }
+              if action.safety != "read_only" {
+                Label("Never auto-runs; explicit review required", systemImage: "hand.raised.fill")
+                  .font(.caption)
+                  .foregroundStyle(.orange)
+              }
+            }
+            .padding(.vertical, 4)
+          }
+          Button("Add Startup Command", systemImage: "plus") {
+            guard draft.startupActions.count < 16 else { return }
+            draft.startupActions.append(
+              StartupActionEditorDraft(
+                WorkbenchStartupActionDraft(
+                  statement: draft.engine == "redis" ? "PING" : "SELECT 1",
+                  safety: "read_only", timeoutMs: 5_000, runOnReconnect: false)))
+          }
+          .accessibilityIdentifier("profile.editor.startup.add")
+          Text(
+            "Commands run in listed order. Read-only commands may auto-run. Write and dangerous commands always wait for separate review."
+          )
+          .font(.caption)
+          .foregroundStyle(.secondary)
         }
       }
       .formStyle(.grouped)

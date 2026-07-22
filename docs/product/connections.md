@@ -143,3 +143,16 @@ values. Existing values never cross UniFFI on profile reads. Agent auth is the
 preferred native choice. Until SSH-specific Keychain mapping lands, non-agent
 SSH secrets use the existing acknowledged local-plaintext policy and show an
 explicit warning; they never appear in logs, errors, profile lists, or history.
+
+### Startup command extension
+
+Profiles may hold at most 16 ordered startup commands. Each command records its
+statement, safety class, timeout from 100 through 120,000 milliseconds, and
+whether it runs again after reconnect. PostgreSQL and ClickHouse use SQL;
+Redis uses its command syntax. Rust validates and persists this typed intent.
+
+Only commands classified Read only may auto-run during connection. Write and
+Dangerous commands are retained in order but skipped until a separate explicit
+review authorizes them; changing profile safety mode never bypasses this rule.
+Failures and timeouts do not silently reorder or convert later actions. Native
+editor labels auto-run versus review-required state without relying on color.

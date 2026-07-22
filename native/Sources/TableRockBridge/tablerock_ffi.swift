@@ -4035,6 +4035,7 @@ public struct BridgeProfileDraft: Equatable, Hashable {
     public var sshHasStoredPassword: Bool
     public var sshHasStoredPrivateKey: Bool
     public var sshPlaintextAcknowledged: Bool
+    public var startupActions: [BridgeStartupActionDraft]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -4047,7 +4048,7 @@ public struct BridgeProfileDraft: Equatable, Hashable {
          */sshPassword: String,
         /**
          * Write-only OpenSSH private key. Existing values never cross UniFFI.
-         */sshPrivateKey: String, sshKnownHostsPath: String, sshHasStoredPassword: Bool, sshHasStoredPrivateKey: Bool, sshPlaintextAcknowledged: Bool) {
+         */sshPrivateKey: String, sshKnownHostsPath: String, sshHasStoredPassword: Bool, sshHasStoredPrivateKey: Bool, sshPlaintextAcknowledged: Bool, startupActions: [BridgeStartupActionDraft]) {
         self.idBytes = idBytes
         self.revision = revision
         self.engine = engine
@@ -4076,6 +4077,7 @@ public struct BridgeProfileDraft: Equatable, Hashable {
         self.sshHasStoredPassword = sshHasStoredPassword
         self.sshHasStoredPrivateKey = sshHasStoredPrivateKey
         self.sshPlaintextAcknowledged = sshPlaintextAcknowledged
+        self.startupActions = startupActions
     }
 
 
@@ -4121,7 +4123,8 @@ public struct FfiConverterTypeBridgeProfileDraft: FfiConverterRustBuffer {
                 sshKnownHostsPath: FfiConverterString.read(from: &buf),
                 sshHasStoredPassword: FfiConverterBool.read(from: &buf),
                 sshHasStoredPrivateKey: FfiConverterBool.read(from: &buf),
-                sshPlaintextAcknowledged: FfiConverterBool.read(from: &buf)
+                sshPlaintextAcknowledged: FfiConverterBool.read(from: &buf),
+                startupActions: FfiConverterSequenceTypeBridgeStartupActionDraft.read(from: &buf)
         )
     }
 
@@ -4154,6 +4157,7 @@ public struct FfiConverterTypeBridgeProfileDraft: FfiConverterRustBuffer {
         FfiConverterBool.write(value.sshHasStoredPassword, into: &buf)
         FfiConverterBool.write(value.sshHasStoredPrivateKey, into: &buf)
         FfiConverterBool.write(value.sshPlaintextAcknowledged, into: &buf)
+        FfiConverterSequenceTypeBridgeStartupActionDraft.write(value.startupActions, into: &buf)
     }
 }
 
@@ -5889,6 +5893,74 @@ public func FfiConverterTypeBridgeSqlFile_lower(_ value: BridgeSqlFile) -> RustB
 }
 
 
+public struct BridgeStartupActionDraft: Equatable, Hashable {
+    public var statement: String
+    /**
+     * `read_only`, `write`, or `dangerous`.
+     */
+    public var safety: String
+    public var timeoutMs: UInt32
+    public var runOnReconnect: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(statement: String,
+        /**
+         * `read_only`, `write`, or `dangerous`.
+         */safety: String, timeoutMs: UInt32, runOnReconnect: Bool) {
+        self.statement = statement
+        self.safety = safety
+        self.timeoutMs = timeoutMs
+        self.runOnReconnect = runOnReconnect
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeStartupActionDraft: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeStartupActionDraft: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeStartupActionDraft {
+        return
+            try BridgeStartupActionDraft(
+                statement: FfiConverterString.read(from: &buf),
+                safety: FfiConverterString.read(from: &buf),
+                timeoutMs: FfiConverterUInt32.read(from: &buf),
+                runOnReconnect: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeStartupActionDraft, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.statement, into: &buf)
+        FfiConverterString.write(value.safety, into: &buf)
+        FfiConverterUInt32.write(value.timeoutMs, into: &buf)
+        FfiConverterBool.write(value.runOnReconnect, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeStartupActionDraft_lift(_ buf: RustBuffer) throws -> BridgeStartupActionDraft {
+    return try FfiConverterTypeBridgeStartupActionDraft.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeStartupActionDraft_lower(_ value: BridgeStartupActionDraft) -> RustBuffer {
+    return FfiConverterTypeBridgeStartupActionDraft.lower(value)
+}
+
+
 public struct BridgeStreamExportProgress: Equatable, Hashable {
     public var operationId: Data
     public var phase: String
@@ -7357,6 +7429,31 @@ fileprivate struct FfiConverterSequenceTypeBridgeSavedQueryItem: FfiConverterRus
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeBridgeSavedQueryItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeBridgeStartupActionDraft: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeStartupActionDraft]
+
+    public static func write(_ value: [BridgeStartupActionDraft], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeStartupActionDraft.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeStartupActionDraft] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeStartupActionDraft]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeStartupActionDraft.read(from: &buf))
         }
         return seq
     }

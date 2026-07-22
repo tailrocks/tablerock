@@ -26,7 +26,8 @@ extension BridgeProfileDraft {
       sshPrivateKey: sshPrivateKey, sshKnownHostsPath: sshKnownHostsPath,
       sshHasStoredPassword: sshHasStoredPassword,
       sshHasStoredPrivateKey: sshHasStoredPrivateKey,
-      sshPlaintextAcknowledged: sshPlaintextAcknowledged)
+      sshPlaintextAcknowledged: sshPlaintextAcknowledged,
+      startupActions: startupActions.map(\.workbench))
   }
 }
 extension WorkbenchProfileDraft {
@@ -42,7 +43,22 @@ extension WorkbenchProfileDraft {
       sshPrivateKey: sshPrivateKey, sshKnownHostsPath: sshKnownHostsPath,
       sshHasStoredPassword: sshHasStoredPassword,
       sshHasStoredPrivateKey: sshHasStoredPrivateKey,
-      sshPlaintextAcknowledged: sshPlaintextAcknowledged)
+      sshPlaintextAcknowledged: sshPlaintextAcknowledged,
+      startupActions: startupActions.map(\.bridgeRecord))
+  }
+}
+extension BridgeStartupActionDraft {
+  var workbench: WorkbenchStartupActionDraft {
+    .init(
+      statement: statement, safety: safety, timeoutMs: timeoutMs,
+      runOnReconnect: runOnReconnect)
+  }
+}
+extension WorkbenchStartupActionDraft {
+  var bridgeRecord: BridgeStartupActionDraft {
+    .init(
+      statement: statement, safety: safety, timeoutMs: timeoutMs,
+      runOnReconnect: runOnReconnect)
   }
 }
 extension BridgeProfileGroup {

@@ -31,7 +31,11 @@ for pattern in \
   'I understand this stores the password as plaintext locally' \
   'Connect through SSH bastion' \
   'OpenSSH known_hosts · fail closed' \
-  'profile.editor.ssh.authentication'
+  'profile.editor.ssh.authentication' \
+  'Add Startup Command' \
+  'Write · review required' \
+  'Dangerous · review required' \
+  'profile.editor.startup.statement'
 do
   rg -q "$pattern" "$SOURCE" || {
     echo "error: missing native profile action/editor contract: $pattern" >&2

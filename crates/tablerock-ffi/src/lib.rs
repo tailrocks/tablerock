@@ -25,7 +25,7 @@ pub use bridge::{
     BridgeReconnectPlan, BridgeRedisSubscriptionStatus, BridgeRoleChangeRequest,
     BridgeRoleChangeReview, BridgeRoleMembership, BridgeRolePrivilege, BridgeRoleSnapshot,
     BridgeSavedFilterPreset, BridgeSavedQueryItem, BridgeSessionHealth, BridgeSessionIntent,
-    BridgeSqlFile, BridgeStreamExportProgress, BridgeStreamExportRequest,
+    BridgeSqlFile, BridgeStartupActionDraft, BridgeStreamExportProgress, BridgeStreamExportRequest,
     BridgeTableOperationRequest, BridgeTableOperationReview, BridgeWorkspaceTab, CancelOutcome,
     OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
 };

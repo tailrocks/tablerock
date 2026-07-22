@@ -30,9 +30,9 @@ use tablerock_core::{
     RedisKeyKind, ResultStore, ResultStoreLimits, ReviewTokenId, ReviewedRoleChangePlan, Revision,
     RoleChangeKind, RoleChangePlan, SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset,
     SecretSource, SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
-    StatementText, SupportBundle, SupportPlatform, TlsPolicy, copy_cell_from_page,
-    format_copy_table, is_safe_preset_name, page_to_export_strings, parse_connection_url,
-    reconnect_decision, rewrite_named_params,
+    StartupAction, StartupActionSet, StartupSafetyClass, StatementText, SupportBundle,
+    SupportPlatform, TlsPolicy, copy_cell_from_page, format_copy_table, is_safe_preset_name,
+    page_to_export_strings, parse_connection_url, reconnect_decision, rewrite_named_params,
 };
 use tablerock_engine::{
     AdapterFailureClass, BrowseDialect, BrowsePlan, CatalogRequest, ClickHouseCompression,
@@ -45,7 +45,8 @@ use tablerock_engine::{
     SecretResolutionError, SortDirection, SortKey, SshAgentAuth, SshAuthMaterial, SshHostKeyPolicy,
     SshPasswordAuth, SshPublicKeyAuth, SshTunnelConfig, TypedCondition,
     load_relation_structure as load_structure_snapshot, open_local_forward_tunnel, parse_bind_text,
-    resolve_for_connect_with_ports,
+    resolve_for_connect_with_ports, run_clickhouse_startup_actions, run_postgres_startup_actions,
+    run_redis_startup_actions,
 };
 use tablerock_files::{
     CsvStreamLimits, CsvTable, CsvValueType, StreamExportFormat, StreamExporter,
@@ -831,6 +832,15 @@ pub struct BridgeProfileOrderItem {
     pub expected_revision: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct BridgeStartupActionDraft {
+    pub statement: String,
+    /// `read_only`, `write`, or `dangerous`.
+    pub safety: String,
+    pub timeout_ms: u32,
+    pub run_on_reconnect: bool,
+}
+
 /// Editable saved-profile projection. Secret references are IDs only; resolved
 /// values never cross the bridge. Existing plaintext is represented by
 /// `has_stored_password`, not returned.
@@ -867,6 +877,7 @@ pub struct BridgeProfileDraft {
     pub ssh_has_stored_password: bool,
     pub ssh_has_stored_private_key: bool,
     pub ssh_plaintext_acknowledged: bool,
+    pub startup_actions: Vec<BridgeStartupActionDraft>,
 }
 
 /// Process-scoped UniFFI facade. One instance owns the multi-thread runtime.
@@ -1265,6 +1276,7 @@ impl TableRockBridge {
                 ssh_has_stored_password: false,
                 ssh_has_stored_private_key: false,
                 ssh_plaintext_acknowledged: false,
+                startup_actions: Vec::new(),
             })
         })
     }
@@ -3128,7 +3140,7 @@ impl TableRockBridge {
                 |_| BridgeError::rejected("bad-profile-id", "profile id must be 16 bytes"),
             )?)
             .map_err(|error| BridgeError::rejected("bad-profile-id", error.to_string()))?;
-        let (mut params, ssh_config) = {
+        let (mut params, ssh_config, startup_actions) = {
             let guard = self
                 .inner
                 .lock()
@@ -3317,6 +3329,7 @@ impl TableRockBridge {
                     .into(),
                 },
                 ssh_config,
+                aggregate.startup_actions().clone(),
             )
         };
         let tunnel = if let Some(config) = ssh_config {
@@ -3334,7 +3347,7 @@ impl TableRockBridge {
         } else {
             None
         };
-        self.open_inner_for_profile(params, Some(profile_id), tunnel)
+        self.open_inner_for_profile(params, Some(profile_id), tunnel, Some(startup_actions))
     }
 
     fn get_profile_draft_inner(
@@ -6377,7 +6390,7 @@ impl TableRockBridge {
     }
 
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
-        self.open_inner_for_profile(params, None, None)
+        self.open_inner_for_profile(params, None, None, None)
     }
 
     fn open_inner_for_profile(
@@ -6385,6 +6398,7 @@ impl TableRockBridge {
         params: OpenParams,
         saved_profile_id: Option<ProfileId>,
         ssh_tunnel: Option<tablerock_engine::LocalForwardTunnel>,
+        startup_actions: Option<StartupActionSet>,
     ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let engine = parse_engine(&params.engine)?;
@@ -6457,6 +6471,9 @@ impl TableRockBridge {
                     )
                     .await
                     .map_err(|error| BridgeError::rejected("connect", error.to_string()))?;
+                    if let Some(actions) = startup_actions.as_ref() {
+                        let _ = run_postgres_startup_actions(&session, actions, false).await;
+                    }
                     Ok(Box::new(session) as Box<dyn DriverSession>)
                 }
                 Engine::ClickHouse => {
@@ -6479,6 +6496,9 @@ impl TableRockBridge {
                         .health_check()
                         .await
                         .map_err(|error| BridgeError::rejected("connect", error.to_string()))?;
+                    if let Some(actions) = startup_actions.as_ref() {
+                        let _ = run_clickhouse_startup_actions(&session, actions, false).await;
+                    }
                     Ok(Box::new(session) as Box<dyn DriverSession>)
                 }
                 Engine::Redis => {
@@ -6509,6 +6529,9 @@ impl TableRockBridge {
                     )
                     .await
                     .map_err(|error| BridgeError::rejected("connect", error.to_string()))?;
+                    if let Some(actions) = startup_actions.as_ref() {
+                        let _ = run_redis_startup_actions(&session, actions, false).await;
+                    }
                     Ok(Box::new(session) as Box<dyn DriverSession>)
                 }
             }
@@ -7546,6 +7569,22 @@ fn profile_to_bridge_draft(profile: &ProfileAggregate) -> Result<BridgeProfileDr
         ssh_has_stored_password: has_ssh_password,
         ssh_has_stored_private_key: has_ssh_private_key,
         ssh_plaintext_acknowledged: has_ssh_password || has_ssh_private_key,
+        startup_actions: profile
+            .startup_actions()
+            .actions()
+            .iter()
+            .map(|action| BridgeStartupActionDraft {
+                statement: action.statement().to_owned(),
+                safety: match action.safety() {
+                    StartupSafetyClass::ReadOnly => "read_only",
+                    StartupSafetyClass::Write => "write",
+                    StartupSafetyClass::Dangerous => "dangerous",
+                }
+                .to_owned(),
+                timeout_ms: action.timeout_ms(),
+                run_on_reconnect: action.run_on_reconnect(),
+            })
+            .collect(),
     })
 }
 
@@ -7814,16 +7853,40 @@ fn bridge_draft_to_profile(
     let preferences = existing.map(ProfileAggregate::preferences).unwrap_or(
         ProfilePreferences::new(ReconnectPreference::BoundedAutomatic, true, 250).unwrap(),
     );
+    let startup_actions = StartupActionSet::new(
+        draft
+            .startup_actions
+            .iter()
+            .map(|action| {
+                let safety = match action.safety.as_str() {
+                    "read_only" => StartupSafetyClass::ReadOnly,
+                    "write" => StartupSafetyClass::Write,
+                    "dangerous" => StartupSafetyClass::Dangerous,
+                    _ => {
+                        return Err(BridgeError::rejected(
+                            "profile-startup",
+                            "unknown startup action safety class",
+                        ));
+                    }
+                };
+                StartupAction::from_str(
+                    action.statement.trim(),
+                    safety,
+                    action.timeout_ms,
+                    action.run_on_reconnect,
+                )
+                .map_err(|error| BridgeError::rejected("profile-startup", error.to_string()))
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    )
+    .map_err(|error| BridgeError::rejected("profile-startup", error.to_string()))?;
     ProfileAggregate::new(
         connection,
         ProfileDurability::Saved,
         organization,
         preferences.with_ssh_use_agent(draft.ssh_enabled && draft.ssh_auth_mode == "agent"),
     )
-    .map(|profile| match existing {
-        Some(old) => profile.with_startup_actions(old.startup_actions().clone()),
-        None => profile,
-    })
+    .map(|profile| profile.with_startup_actions(startup_actions))
     .map_err(|error| rejected("profile", error.to_string()))
 }
 
