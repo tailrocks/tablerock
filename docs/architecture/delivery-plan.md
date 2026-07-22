@@ -367,7 +367,6 @@ or resurrect results/edits.
 - PostgreSQL relationship exploration and native-diagram-ready graph contract;
 - PostgreSQL role/privilege inspection, then only separately reviewed changes;
 - reviewed bounded startup SQL/commands;
-- optional Vim behavior over the neutral editor state machine;
 - applicable maintenance/optimization, explain, and engine-administration rows;
 - SSH tunneling through the selected Rust `russh` adapter, with host-key,
   known-hosts, agent/key/password, keepalive, reconnect, and secret tests;

@@ -95,7 +95,7 @@ CI green after each push.
 
 **Out of scope**: find/replace, formatting, explain, parameters (all
 Phase 5 ledger rows deliverable AFTER this plan as small follow-ups —
-record as visible gaps), Vim mode (Phase 10), Redis command editor (plan
+   record as visible gaps), Redis command editor (plan
 015), multi-statement result sections beyond what plan 009's grid already
 shows sequentially (full multi-result tabs land in plan 016).
 

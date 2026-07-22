@@ -15,7 +15,6 @@ manifest rows now have stable IDs and per-client status:
 - export progress/outcome;
 - SSH configuration;
 - startup-command editor;
-- Vim-mode state;
 - PostgreSQL maintenance outcome.
 
 PostgreSQL structure is `partial` in both clients. Remaining rows are TUI

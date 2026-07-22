@@ -64,13 +64,10 @@ reviewed changes only as a separate later checkpoint. Ledger acceptance:
 cycles/large-graph/missing-FK tests; effective-privilege and self-lockout
 tests before any mutation support.
 
-### E. Startup actions + Vim mode
+### E. Startup actions
 
 Reviewed bounded startup SQL/commands per profile (safety classification,
-timeout, partial-failure states; explicit reconnect behavior). Optional Vim
-behavior over the neutral editor state machine (TermRock TextArea must not
-be forked — keymap layer in TableRock; independent keymap/mode-transition
-suite per ledger).
+timeout, partial-failure states; explicit reconnect behavior).
 
 ### F. Maintenance/optimize + engine administration rows
 
@@ -123,7 +120,6 @@ host them, keep those suites local-only and record the gap — same pattern as
 - [x] DDL structure-panel quick actions (evidence 283)
 - [x] Native PostgreSQL structure review/apply authority (evidence 640)
 - [x] pg_dump/pg_restore real-server matrix + TUI (evidence 284; skips without clients)
-- [x] Vim mode keymap layer unit suite; off by default
 - [x] Relationship graph contract + self-cycle detection
 - [x] Plan index DONE with residual SSH/full dump matrix
 
@@ -143,10 +139,11 @@ host them, keep those suites local-only and record the gap — same pattern as
 
 ## Maintenance notes
 
+- Evidence 655 removes the optional Vim keymap from product scope and deletes
+  its implementation and active contracts.
 - Evidence 653 makes concurrent real SSH fixture identity independent of wall-
   clock resolution; retain the atomic nonce when extending the bastion matrix.
 
-- Sub-packages are independently shippable; do not hold SSH hostage to Vim.
 - Reviewer per package: A) host-key + secret hygiene; B) process/argv
   hygiene; C) review-gate completeness; D) privilege correctness; E) safety
   classification; F) unsupported-state honesty.

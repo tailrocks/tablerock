@@ -60,7 +60,7 @@ The required plan inventory is:
 16. `016-daily-workflows-and-data-movement.md` — result tabs, import/export,
     preferences, files, and resilience.
 17. `017-scoped-parity-expansion.md` — SSH, pg_dump/restore, DDL, roles, and
-    editor/Vim polish.
+    editor polish.
 18. `018-tui-hardening-release-gate.md` — complete TUI hardening and parity
     release gate.
 19. `019-uniffi-bridge-proof.md` — UniFFI bridge, XCFramework, Developer ID,

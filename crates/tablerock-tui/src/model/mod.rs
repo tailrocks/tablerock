@@ -19,7 +19,6 @@ pub mod result_sections;
 pub mod saved_filter;
 pub mod saved_query;
 pub mod structure_ddl;
-pub mod vim_mode;
 pub mod workbench;
 
 use termrock::{

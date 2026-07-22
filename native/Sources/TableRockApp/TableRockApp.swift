@@ -1798,27 +1798,10 @@ private struct SystemKeychainPort: AppKeychainPort {
 }
 
 @MainActor
-private final class SystemPreferencesPort: AppPreferencesPort {
-  private let defaults: UserDefaults
-  private static let vimKey = "editor.vim.enabled"
-
-  init(namespace: String) {
-    defaults = UserDefaults(suiteName: namespace) ?? .standard
-  }
-
-  func vimModeEnabled() -> Bool { defaults.bool(forKey: Self.vimKey) }
-  func setVimModeEnabled(_ enabled: Bool) { defaults.set(enabled, forKey: Self.vimKey) }
-}
-
-@MainActor
-@Observable
 private final class NativeApplicationModel {
   let client: (any WorkbenchBackend)?
   let bridgeError: String?
   let dependencies: AppDependencies
-  var vimModeEnabled: Bool {
-    didSet { dependencies.preferences.setVimModeEnabled(vimModeEnabled) }
-  }
   private var fixtureWindowOpened = false
 
   init() {
@@ -1843,13 +1826,8 @@ private final class NativeApplicationModel {
       configuredDependencies = AppDependencies(
         filePanels: filePanels,
         pasteboard: SystemPasteboardPort(),
-        keychain: SystemKeychainPort(namespace: configuration.keychainNamespace),
-        preferences: SystemPreferencesPort(
-          namespace: "\(configuration.keychainNamespace).preferences")
+        keychain: SystemKeychainPort(namespace: configuration.keychainNamespace)
       )
-      if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_VIM_MODE"] == "1" {
-        configuredDependencies.preferences.setVimModeEnabled(true)
-      }
       try configuration.paths.prepare()
       let configuredClient: any WorkbenchBackend
       switch configuration.backend {
@@ -1861,12 +1839,10 @@ private final class NativeApplicationModel {
         configuredClient = ScriptedWorkbenchBackend(scenario: scenario)
       }
       dependencies = configuredDependencies
-      vimModeEnabled = configuredDependencies.preferences.vimModeEnabled()
       client = configuredClient
       bridgeError = nil
     } catch {
       dependencies = configuredDependencies
-      vimModeEnabled = configuredDependencies.preferences.vimModeEnabled()
       client = nil
       bridgeError = "Bridge init failed: \(error)"
     }
@@ -1892,8 +1868,6 @@ struct TableRockApp: App {
       if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_ACCESSIBILITY_AUDIT"] == "1" {
         NativeAccessibilityFixtureView()
           .frame(minWidth: 760, minHeight: 520)
-      } else if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_VIM_MODE_AUDIT"] == "1" {
-        NativeVimModeFixtureView()
       } else if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_PROFILE_EDITOR"] == "1" {
         NativeProfileEditorFixtureView()
       } else if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"] != nil {
@@ -1916,74 +1890,6 @@ struct TableRockApp: App {
       NativeSettingsView(application: application)
     }
   }
-}
-
-private struct NativeVimModeFixtureView: View {
-  @State private var text = "alpha\nbeta\n"
-  @State private var selection = NSRange(location: 6, length: 0)
-  @State private var mode = "insert"
-
-  var body: some View {
-    VStack(alignment: .leading) {
-      Text("Vim · \(mode.uppercased())")
-        .accessibilityIdentifier("query.vim-mode")
-        .accessibilityValue(mode)
-      SqlTextEditor(
-        text: $text, selection: $selection, vimEnabled: true, vimMode: $mode)
-    }
-    .frame(minWidth: 640, minHeight: 320)
-    .task {
-      try? await Task.sleep(for: .milliseconds(500))
-      runNativeVimModeAudit()
-    }
-  }
-}
-
-@MainActor
-private func runNativeVimModeAudit() {
-  guard let root = NSApplication.shared.windows.first(where: { $0.isVisible })?.contentView else {
-    writePerformanceMetric("VIM_MODE_PROOF_FAILED no_visible_window")
-    return
-  }
-  func descendants(of view: NSView) -> [NSView] {
-    [view] + view.subviews.flatMap(descendants)
-  }
-  guard let editor = descendants(of: root).compactMap({ $0 as? VimTextView }).first else {
-    writePerformanceMetric("VIM_MODE_PROOF_FAILED no_editor")
-    return
-  }
-  editor.setSelectedRange(NSRange(location: 6, length: 0))
-  editor.keyDown(with: nativeKeyEvent("\u{1b}", keyCode: 53))
-  let enteredNormal = editor.vimMode == "normal"
-  editor.keyDown(with: nativeKeyEvent("l", keyCode: 37))
-  let moved = editor.selectedRange().location == 7
-  editor.keyDown(with: nativeKeyEvent("d", keyCode: 2))
-  let deleted = editor.string == "alpha\n"
-  editor.keyDown(with: nativeKeyEvent("u", keyCode: 32))
-  let undone = editor.string == "alpha\nbeta\n"
-  editor.keyDown(with: nativeKeyEvent("i", keyCode: 34))
-  editor.setMarkedText(
-    "あ", selectedRange: NSRange(location: 1, length: 0),
-    replacementRange: NSRange(location: NSNotFound, length: 0))
-  editor.keyDown(with: nativeKeyEvent("\u{1b}", keyCode: 53))
-  let preservedComposition = editor.vimMode == "insert"
-  guard enteredNormal, moved, deleted, undone, preservedComposition else {
-    writePerformanceMetric(
-      "VIM_MODE_PROOF_FAILED normal=\(enteredNormal) moved=\(moved) deleted=\(deleted) undo=\(undone) ime=\(preservedComposition)"
-    )
-    return
-  }
-  writePerformanceMetric(
-    "VIM_MODE_PROOF_PASSED default_off=true transitions=insert_normal motions=h_l_j_k delete_line=true undo=true ime_escape_preserved=true setting_isolated=true"
-  )
-}
-
-@MainActor
-private func nativeKeyEvent(_ characters: String, keyCode: UInt16) -> NSEvent {
-  NSEvent.keyEvent(
-    with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-    windowNumber: 0, context: nil, characters: characters,
-    charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode)!
 }
 
 private struct WorkbenchWindowRoot: View {
@@ -2010,7 +1916,6 @@ private struct WorkbenchWindowRoot: View {
     } else {
       ContentView()
         .environment(model)
-        .environment(application)
         .accessibilityIdentifier("window.workbench")
         .background(NativeWindowConfiguration())
         .modifier(
@@ -2361,7 +2266,6 @@ private struct NativeAccessibilityFixtureView: View {
   @State private var catalogSelection: String?
   @State private var query = "SELECT 1;"
   @State private var querySelection = NSRange(location: 0, length: 0)
-  @State private var vimMode = "insert"
   @State private var refreshState: CatalogRefreshState = .loaded
 
   private let catalog = [
@@ -2412,8 +2316,7 @@ private struct NativeAccessibilityFixtureView: View {
       )
       .frame(minWidth: 220)
       VStack {
-        SqlTextEditor(
-          text: $query, selection: $querySelection, vimEnabled: false, vimMode: $vimMode)
+        SqlTextEditor(text: $query, selection: $querySelection)
           .frame(height: 120)
         CatalogGrid(table: result)
       }
@@ -2620,7 +2523,6 @@ final class NativeQueryTab: Identifiable {
   var quickFilter = ""
   var explainPlan: String?
   var editorSelection = NSRange(location: 0, length: 0)
-  var vimMode = "insert"
   var findScopeRange: NSRange?
   var lastFindMatch: NSRange?
 
@@ -3084,10 +2986,6 @@ final class BridgeModel {
   var queryEditorSelection: NSRange {
     get { activeQueryTab.editorSelection }
     set { activeQueryTab.editorSelection = newValue }
-  }
-  var queryVimMode: String {
-    get { activeQueryTab.vimMode }
-    set { activeQueryTab.vimMode = newValue }
   }
   var reviewOutcome: String? {
     get { activeQueryTab.reviewOutcome }
@@ -6395,7 +6293,6 @@ final class BridgeModel {
 
 struct ContentView: View {
   @Environment(BridgeModel.self) private var model
-  @Environment(NativeApplicationModel.self) private var application
 
   var body: some View {
     @Bindable var model = model
@@ -6729,7 +6626,7 @@ struct ContentView: View {
           VStack(alignment: .leading, spacing: 6) {
             QueryTabStrip()
             if model.queryWorkbenchSelected {
-              QueryWorkbenchView(vimModeEnabled: application.vimModeEnabled)
+              QueryWorkbenchView()
             } else {
               ObjectWorkbenchView()
             }
@@ -6959,7 +6856,6 @@ struct ContentView: View {
 
 struct QueryWorkbenchView: View {
   @Environment(BridgeModel.self) private var model
-  let vimModeEnabled: Bool
 
   var body: some View {
     @Bindable var model = model
@@ -6974,9 +6870,7 @@ struct QueryWorkbenchView: View {
             .foregroundStyle(.secondary)
         }
       }
-      SqlTextEditor(
-        text: $model.queryText, selection: $model.queryEditorSelection,
-        vimEnabled: vimModeEnabled, vimMode: $model.queryVimMode)
+      SqlTextEditor(text: $model.queryText, selection: $model.queryEditorSelection)
         .frame(minHeight: 56, maxHeight: 80)
         .task(id: model.queryText) {
           try? await Task.sleep(for: .milliseconds(300))
@@ -6984,12 +6878,6 @@ struct QueryWorkbenchView: View {
           await model.persistSessionIntent()
         }
       HStack {
-        if vimModeEnabled {
-          Text("Vim · \(model.queryVimMode.uppercased())")
-            .font(.caption.monospaced().weight(.semibold))
-            .accessibilityIdentifier("query.vim-mode")
-            .accessibilityValue(model.queryVimMode)
-        }
         Button("Run query") { Task { await model.runQuery() } }
           .accessibilityIdentifier("query.run")
           .buttonStyle(.borderedProminent)
@@ -9443,17 +9331,9 @@ private struct NativeSettingsView: View {
   @State private var outcome: String?
 
   var body: some View {
-    @Bindable var application = application
     Form {
       LabeledContent("Storage", value: "Local only")
       LabeledContent("Telemetry", value: "Off by default")
-      Section("Editor") {
-        Toggle("Enable Vim mode", isOn: $application.vimModeEnabled)
-          .accessibilityIdentifier("settings.editor.vim-mode")
-        Text("Off by default. Escape enters Normal mode after IME composition ends; i returns to Insert mode.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
       Section("Support") {
         Button("Export Safe Support Bundle…") { exportSupportBundle() }
           .accessibilityIdentifier("settings.support.export")
@@ -10163,77 +10043,14 @@ private enum NativeFindReplaceEngine {
   }
 }
 
-@MainActor
-final class VimTextView: NSTextView {
-  var vimEnabled = false {
-    didSet {
-      if !vimEnabled { setVimMode("insert") }
-    }
-  }
-  private(set) var vimMode = "insert"
-  var onVimModeChange: ((String) -> Void)?
-
-  func setVimMode(_ mode: String) {
-    let normalized = mode == "normal" && vimEnabled ? "normal" : "insert"
-    guard normalized != vimMode else { return }
-    vimMode = normalized
-    onVimModeChange?(normalized)
-  }
-
-  override func keyDown(with event: NSEvent) {
-    guard vimEnabled else {
-      super.keyDown(with: event)
-      return
-    }
-    if vimMode == "insert" {
-      guard event.keyCode == 53, !hasMarkedText() else {
-        super.keyDown(with: event)
-        return
-      }
-      setVimMode("normal")
-      return
-    }
-    if !event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
-      super.keyDown(with: event)
-      return
-    }
-    switch event.charactersIgnoringModifiers {
-    case "i": setVimMode("insert")
-    case "h": moveLeft(nil)
-    case "l": moveRight(nil)
-    case "k": moveUp(nil)
-    case "j": moveDown(nil)
-    case "d": deleteCurrentLine()
-    case "u": undoManager?.undo()
-    default: NSSound.beep()
-    }
-  }
-
-  private func deleteCurrentLine() {
-    guard !string.isEmpty else { return }
-    let source = string as NSString
-    let cursor = min(selectedRange().location, source.length)
-    let probe = NSRange(location: min(cursor, max(0, source.length - 1)), length: 0)
-    let line = source.lineRange(for: probe)
-    guard shouldChangeText(in: line, replacementString: "") else { return }
-    textStorage?.replaceCharacters(in: line, with: "")
-    didChangeText()
-    setSelectedRange(NSRange(location: min(line.location, (string as NSString).length), length: 0))
-  }
-}
-
 struct SqlTextEditor: NSViewRepresentable {
   @Binding var text: String
   @Binding var selection: NSRange
-  let vimEnabled: Bool
-  @Binding var vimMode: String
 
-  func makeCoordinator() -> Coordinator {
-    Coordinator(text: $text, selection: $selection, vimMode: $vimMode)
-  }
+  func makeCoordinator() -> Coordinator { Coordinator(text: $text, selection: $selection) }
 
   func makeNSView(context: Context) -> NSScrollView {
-    let editor = VimTextView()
+    let editor = NSTextView()
     editor.delegate = context.coordinator
     editor.isEditable = true
     editor.isSelectable = true
@@ -10252,9 +10069,6 @@ struct SqlTextEditor: NSViewRepresentable {
     editor.setAccessibilityEnabled(true)
     editor.setAccessibilityLabel("SQL editor")
     editor.setAccessibilityIdentifier("query.editor")
-    editor.vimEnabled = vimEnabled
-    editor.setVimMode(vimMode)
-    editor.onVimModeChange = context.coordinator.didChangeVimMode
 
     let scroll = NSScrollView()
     scroll.documentView = editor
@@ -10267,13 +10081,9 @@ struct SqlTextEditor: NSViewRepresentable {
   }
 
   func updateNSView(_ scroll: NSScrollView, context: Context) {
-    guard let editor = scroll.documentView as? VimTextView else { return }
+    guard let editor = scroll.documentView as? NSTextView else { return }
     context.coordinator.text = $text
     context.coordinator.selection = $selection
-    context.coordinator.vimMode = $vimMode
-    editor.onVimModeChange = context.coordinator.didChangeVimMode
-    editor.vimEnabled = vimEnabled
-    editor.setVimMode(vimMode)
     // Never replace storage while an input method owns marked text.
     guard !editor.hasMarkedText() else { return }
     if editor.string != text {
@@ -10303,20 +10113,16 @@ struct SqlTextEditor: NSViewRepresentable {
   final class Coordinator: NSObject, NSTextViewDelegate {
     var text: Binding<String>
     var selection: Binding<NSRange>
-    var vimMode: Binding<String>
 
-    init(text: Binding<String>, selection: Binding<NSRange>, vimMode: Binding<String>) {
+    init(text: Binding<String>, selection: Binding<NSRange>) {
       self.text = text
       self.selection = selection
-      self.vimMode = vimMode
     }
 
     func textDidChange(_ notification: Notification) {
       guard let editor = notification.object as? NSTextView else { return }
       text.wrappedValue = editor.string
     }
-
-    func didChangeVimMode(_ mode: String) { vimMode.wrappedValue = mode }
 
     func textViewDidChangeSelection(_ notification: Notification) {
       guard let editor = notification.object as? NSTextView else { return }

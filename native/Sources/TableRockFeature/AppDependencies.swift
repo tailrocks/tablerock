@@ -73,12 +73,6 @@ public protocol AppKeychainPort {
     func remove(reference: Data) throws
 }
 
-@MainActor
-public protocol AppPreferencesPort {
-    func vimModeEnabled() -> Bool
-    func setVimModeEnabled(_ enabled: Bool)
-}
-
 public enum AppCapabilityError: Error, Equatable {
     case unavailable(String)
     case rejected(String)
@@ -110,14 +104,6 @@ public struct UnavailableKeychainPort: AppKeychainPort {
     }
 }
 
-public final class MemoryAppPreferencesPort: AppPreferencesPort {
-    private var vimEnabled: Bool
-
-    public init(vimModeEnabled: Bool = false) { self.vimEnabled = vimModeEnabled }
-    public func vimModeEnabled() -> Bool { vimEnabled }
-    public func setVimModeEnabled(_ enabled: Bool) { vimEnabled = enabled }
-}
-
 @MainActor
 public struct AppDependencies {
     public let clock: any AppClock
@@ -125,21 +111,18 @@ public struct AppDependencies {
     public let filePanels: any AppFilePanelPort
     public let pasteboard: any AppPasteboardPort
     public let keychain: any AppKeychainPort
-    public let preferences: any AppPreferencesPort
 
     public init(
         clock: any AppClock = SystemAppClock(),
         identifiers: any AppIdentifierGenerator = SystemAppIdentifierGenerator(),
         filePanels: any AppFilePanelPort = UnavailableFilePanelPort(),
         pasteboard: any AppPasteboardPort = UnavailablePasteboardPort(),
-        keychain: any AppKeychainPort = UnavailableKeychainPort(),
-        preferences: any AppPreferencesPort = MemoryAppPreferencesPort()
+        keychain: any AppKeychainPort = UnavailableKeychainPort()
     ) {
         self.clock = clock
         self.identifiers = identifiers
         self.filePanels = filePanels
         self.pasteboard = pasteboard
         self.keychain = keychain
-        self.preferences = preferences
     }
 }

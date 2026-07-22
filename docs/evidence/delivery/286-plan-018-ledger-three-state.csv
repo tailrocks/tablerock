@@ -31,7 +31,6 @@ Editor,Find/replace,Parity,implemented,literal find/replace + all/ci flags,evide
 Editor,Formatting,Parity,implemented,format_sql keyword/whitespace + Format action,evidence 294
 Editor,Query limits,Core,implemented,PageLimits + result store,plans 002 009
 Editor,Explain,Parity,implemented,EXPLAIN wrap action PG/CH; Redis unsupported,evidence 290
-Editor,Vim mode,Later,implemented,keymap layer off by default,plan 017
 Editor,SQL files,Parity,implemented,atomic open/save/external change,plan 011
 Editor,Query history,Core,implemented,bounded searchable history,plan 011
 Grid,Virtualized grid,Core,implemented,VirtualGrid + DataGridModel,plans 008 009 012

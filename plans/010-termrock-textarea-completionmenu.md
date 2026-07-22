@@ -66,8 +66,6 @@ termrock; pin-bump check/test in tablerock).
 
 **Out of scope**:
 - SQL parsing, candidate ranking, dialect logic (TableRock, plan 011).
-- Vim mode (Phase 10; the neutral editor state machine must merely not
-  preclude it).
 - Rewriting `edit_core` architecture.
 
 ## Git workflow

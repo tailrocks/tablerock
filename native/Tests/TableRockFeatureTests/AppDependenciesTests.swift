@@ -109,16 +109,4 @@ final class AppDependenciesTests: XCTestCase {
         XCTAssertEqual(keychain.reads, [reference])
         XCTAssertEqual(keychain.removals, [reference])
     }
-
-    func testIsolatedVimPreferenceDefaultsOffAndPersistsInPort() {
-        let preferences = MemoryAppPreferencesPort()
-        let dependencies = AppDependencies(preferences: preferences)
-
-        XCTAssertFalse(dependencies.preferences.vimModeEnabled())
-        dependencies.preferences.setVimModeEnabled(true)
-        XCTAssertTrue(dependencies.preferences.vimModeEnabled())
-
-        let independent = MemoryAppPreferencesPort()
-        XCTAssertFalse(independent.vimModeEnabled())
-    }
 }
