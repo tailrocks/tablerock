@@ -398,6 +398,18 @@ extension WorkbenchBackend {
   func exportLoadedResult(
     resultId: Data, revision: UInt64, format: String, path: String
   ) throws -> UInt64 { try scriptedUnavailable("export") }
+  func startStreamExport(sessionId: Data, statement: String, format: String, path: String) throws
+    -> Data
+  { try scriptedUnavailable("stream-export-start") }
+  func streamExportProgress(operationId: Data) throws -> WorkbenchStreamExportProgress {
+    try scriptedUnavailable("stream-export-progress")
+  }
+  func cancelStreamExport(operationId: Data) throws -> Bool {
+    try scriptedUnavailable("stream-export-cancel")
+  }
+  func dismissStreamExport(operationId: Data) throws -> Bool {
+    try scriptedUnavailable("stream-export-dismiss")
+  }
   func previewCsvImport(path: String) throws -> WorkbenchCSVImportPreview {
     try scriptedUnavailable("import-preview")
   }
@@ -508,6 +520,9 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   private var importApplyActive = false
   private var importApplyCancelled = false
   private var importApplyPollCount = 0
+  private var streamExportActive = false
+  private var streamExportCancelled = false
+  private var streamExportPollCount = 0
   private var profiles: [WorkbenchProfileItem] = []
   private var profileDrafts: [Data: WorkbenchProfileDraft] = [:]
   private var filterPresets: [WorkbenchSavedFilterPreset] = []
@@ -728,6 +743,51 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     let payload = Data("id,name\n1,Ada\n".utf8)
     try payload.write(to: URL(fileURLWithPath: path), options: .atomic)
     return UInt64(payload.count)
+  }
+
+  func startStreamExport(sessionId: Data, statement: String, format: String, path: String) throws
+    -> Data
+  {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16), !statement.isEmpty,
+      ["csv", "tsv", "json"].contains(format), !path.isEmpty
+    else { return try scriptedUnavailable("stream-export-start") }
+    streamExportActive = true
+    streamExportCancelled = false
+    streamExportPollCount = 0
+    return Data(repeating: 16, count: 16)
+  }
+
+  func streamExportProgress(operationId: Data) throws -> WorkbenchStreamExportProgress {
+    guard scenario == "success", operationId == Data(repeating: 16, count: 16), streamExportActive
+    else { return try scriptedUnavailable("stream-export-progress") }
+    streamExportPollCount += 1
+    let phase = streamExportCancelled
+      ? "cancelled" : (streamExportPollCount < 4 ? "running" : "completed")
+    return WorkbenchStreamExportProgress(
+      operationId: operationId, phase: phase,
+      completedRows: phase == "completed" ? 2 : UInt64(streamExportPollCount),
+      bytesWritten: phase == "completed" ? 24 : UInt64(streamExportPollCount * 6),
+      destination: "/tmp/result.csv",
+      summary: phase == "completed"
+        ? "Exported 2 rows (24 bytes) atomically"
+        : (phase == "cancelled"
+          ? "Cancelled; incomplete output removed" : "Exporting full result"))
+  }
+
+  func cancelStreamExport(operationId: Data) throws -> Bool {
+    guard operationId == Data(repeating: 16, count: 16), streamExportActive else {
+      return false
+    }
+    streamExportCancelled = true
+    return true
+  }
+
+  func dismissStreamExport(operationId: Data) throws -> Bool {
+    guard operationId == Data(repeating: 16, count: 16), streamExportActive else {
+      return false
+    }
+    streamExportActive = false
+    return true
   }
 
   func exportSupportBundle(path: String) throws -> UInt64 {
@@ -1309,6 +1369,26 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
     try bridge.exportLoadedResult(
       resultId: resultId, revision: revision, format: format, path: path
     )
+  }
+
+  func startStreamExport(sessionId: Data, statement: String, format: String, path: String) throws
+    -> Data
+  {
+    try bridge.startStreamExport(
+      request: BridgeStreamExportRequest(
+        sessionId: sessionId, statement: statement, format: format, path: path))
+  }
+
+  func streamExportProgress(operationId: Data) throws -> WorkbenchStreamExportProgress {
+    try bridge.streamExportProgress(operationId: operationId).workbench
+  }
+
+  func cancelStreamExport(operationId: Data) throws -> Bool {
+    try bridge.cancelStreamExport(operationId: operationId)
+  }
+
+  func dismissStreamExport(operationId: Data) throws -> Bool {
+    try bridge.dismissStreamExport(operationId: operationId)
   }
 
   func exportSupportBundle(path: String) throws -> UInt64 {
@@ -2499,6 +2579,10 @@ final class BridgeModel {
   var csvImportApplying = false
   private var csvImportUrl: URL?
   private var csvImportOperationId: Data?
+  var streamExportPresented = false
+  var streamExportProgress: WorkbenchStreamExportProgress?
+  var streamExportError: String?
+  private var streamExportOperationId: Data?
   var redisOverviewPresented = false
   var redisOverview: WorkbenchRedisOverview?
   private(set) var redisOverviewLoading = false
@@ -3371,6 +3455,25 @@ final class BridgeModel {
             writePerformanceMetric("RESULT_EXPORT_PROOF_FAILED payload mismatch")
             return
           }
+        }
+        if let streamPath = ProcessInfo.processInfo.environment[
+          "TABLEROCK_FIXTURE_STREAM_EXPORT_PATH"
+        ] {
+          let operationId = try await client.startStreamExport(
+            sessionId: session,
+            statement: "SELECT generate_series(1, 1200)::bigint AS id",
+            format: "csv", path: streamPath)
+          let outcome = try await pollStreamExport(client: client, operationId: operationId)
+          let exported = try String(contentsOfFile: streamPath, encoding: .utf8)
+          guard outcome.phase == "completed", outcome.completedRows == 1_200,
+            exported.hasPrefix("id\n"), exported.contains("1200\n")
+          else {
+            writePerformanceMetric(
+              "RESULT_EXPORT_PROOF_FAILED stream phase=\(outcome.phase) rows=\(outcome.completedRows)"
+            )
+            return
+          }
+          _ = try await client.dismissStreamExport(operationId: operationId)
         }
         runNativeResultCopyAudit()
       } catch {
@@ -4416,6 +4519,81 @@ final class BridgeModel {
       )
       copyOutcome = "Exported \(bytes) bytes to \(url.lastPathComponent)"
     } catch { copyError = "Export failed: \(error)" }
+  }
+
+  func exportFullQueryResult(format: String) async {
+    guard let client, let session = sessionData, selectedWorkbenchKind == "query" else {
+      copyError = "Full-result export requires a query result"
+      return
+    }
+    let statement = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !statement.isEmpty else {
+      copyError = "Query is empty"
+      return
+    }
+    let fileExtension = format
+    guard
+      let selected = dependencies.filePanels.chooseSaveFile(
+        AppFilePanelRequest(
+          title: "Export Full Query Result", prompt: "Export",
+          suggestedFilename: "result.\(fileExtension)", allowedExtensions: [fileExtension]
+        ))
+    else { return }
+    let url =
+      selected.pathExtension.lowercased() == fileExtension
+      ? selected : selected.appendingPathExtension(fileExtension)
+    let accessed = url.startAccessingSecurityScopedResource()
+    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+    copyOutcome = nil
+    copyError = nil
+    streamExportError = nil
+    streamExportProgress = nil
+    streamExportPresented = true
+    do {
+      let operationId = try await client.startStreamExport(
+        sessionId: session, statement: statement, format: format, path: url.path)
+      streamExportOperationId = operationId
+      while streamExportOperationId == operationId {
+        let progress = try await client.streamExportProgress(operationId: operationId)
+        streamExportProgress = progress
+        if !["running", "cancel_requested"].contains(progress.phase) {
+          copyOutcome = progress.summary
+          _ = try? await client.dismissStreamExport(operationId: operationId)
+          streamExportOperationId = nil
+          break
+        }
+        try await Task.sleep(for: .milliseconds(100))
+      }
+    } catch {
+      streamExportOperationId = nil
+      streamExportError = "Full-result export failed: \(error)"
+    }
+  }
+
+  private func pollStreamExport(
+    client: any WorkbenchBackend, operationId: Data
+  ) async throws -> WorkbenchStreamExportProgress {
+    while true {
+      let progress = try await client.streamExportProgress(operationId: operationId)
+      if !["running", "cancel_requested"].contains(progress.phase) { return progress }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+  }
+
+  func cancelStreamExport() async {
+    guard let client, let operationId = streamExportOperationId else { return }
+    do {
+      if try await client.cancelStreamExport(operationId: operationId) {
+        streamExportProgress = try await client.streamExportProgress(operationId: operationId)
+      }
+    } catch { streamExportError = "Cancel export failed: \(error)" }
+  }
+
+  func closeStreamExport() {
+    guard streamExportOperationId == nil else { return }
+    streamExportPresented = false
+    streamExportProgress = nil
+    streamExportError = nil
   }
 
   func chooseCsvImport() async {
@@ -6457,6 +6635,9 @@ struct ContentView: View {
     ) {
       CsvImportSheet()
     }
+    .sheet(isPresented: $model.streamExportPresented) {
+      StreamExportSheet()
+    }
     .alert("Save Query", isPresented: $model.saveQueryDialog) {
       TextField("Name", text: $model.savedQueryName)
       Button("Save") { Task { await model.saveCurrentQuery() } }
@@ -7225,6 +7406,63 @@ private struct ObjectStructureView: View {
         .padding(6)
       }
     }
+  }
+}
+
+private struct StreamExportSheet: View {
+  @Environment(BridgeModel.self) private var model
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack {
+        VStack(alignment: .leading, spacing: 3) {
+          Text("Export Full Query Result").font(.title2).bold()
+          Text("Rust re-runs the query in bounded pages and publishes the destination atomically.")
+            .foregroundStyle(.secondary)
+        }
+        Spacer()
+        Button("Close") { model.closeStreamExport() }
+          .disabled(model.streamExportProgress.map {
+            ["running", "cancel_requested"].contains($0.phase)
+          } ?? true)
+          .accessibilityIdentifier("export.stream.close")
+      }
+      if let progress = model.streamExportProgress {
+        ProgressView(value: progress.phase == "completed" ? 1 : nil) {
+          Text("\(progress.completedRows) rows · \(progress.bytesWritten) bytes")
+        }
+        .accessibilityIdentifier("export.stream.progress")
+        .accessibilityValue(
+          "\(progress.phase), \(progress.completedRows) rows, \(progress.bytesWritten) bytes")
+        Text(progress.summary)
+          .textSelection(.enabled)
+          .accessibilityIdentifier("export.stream.outcome")
+        Text(URL(fileURLWithPath: progress.destination).lastPathComponent)
+          .font(.caption).foregroundStyle(.secondary)
+        if ["running", "cancel_requested"].contains(progress.phase) {
+          Button("Cancel Export", role: .destructive) {
+            Task { await model.cancelStreamExport() }
+          }
+          .disabled(progress.phase == "cancel_requested")
+          .accessibilityIdentifier("export.stream.cancel")
+        }
+      } else {
+        ProgressView("Starting full-result export…")
+          .accessibilityIdentifier("export.stream.starting")
+      }
+      if let error = model.streamExportError {
+        Text(error).foregroundStyle(.red).textSelection(.enabled)
+          .accessibilityIdentifier("export.stream.error")
+      }
+    }
+    .padding(20)
+    .frame(minWidth: 520, idealHeight: 260)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("export.stream.sheet")
+    .interactiveDismissDisabled(
+      model.streamExportProgress.map {
+        ["running", "cancel_requested"].contains($0.phase)
+      } ?? true)
   }
 }
 
@@ -8353,6 +8591,10 @@ private struct ResultExportMenu: View {
         if model.sqlInsertCopyAvailable {
           exportButton("SQL INSERT", format: "sql_insert")
         }
+        Divider()
+        fullExportButton("Full Query CSV", format: "csv")
+        fullExportButton("Full Query TSV", format: "tsv")
+        fullExportButton("Full Query JSON", format: "json")
       } label: {
         Label("More Export Formats", systemImage: "ellipsis.circle")
       }
@@ -8367,6 +8609,12 @@ private struct ResultExportMenu: View {
     Button(label) { Task { await model.exportLoadedResult(format: format) } }
       .buttonStyle(.bordered)
       .accessibilityIdentifier("results.export.\(format)")
+  }
+
+  private func fullExportButton(_ label: String, format: String) -> some View {
+    Button(label) { Task { await model.exportFullQueryResult(format: format) } }
+      .disabled(model.selectedWorkbenchKind != "query")
+      .accessibilityIdentifier("results.export.full.\(format)")
   }
 }
 

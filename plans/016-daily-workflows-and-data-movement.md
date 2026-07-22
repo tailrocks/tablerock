@@ -125,6 +125,11 @@ Standard suites + Docker engine suites; new import/export tests live in
   into `tablerock-files`. CLI behavior stays source-compatible while native
   can now use the same CSV/TSV/JSON writer, cancellation cleanup, and atomic
   destination contract. Native full-result operation/UI wiring remains open.
+- 648 adds Rust-owned asynchronous native full-query export for PostgreSQL and
+  ClickHouse: bounded re-query pages, shared typed projection/encoder, row and
+  byte progress, server cancel dispatch, pending-page interruption, atomic
+  publish/removal truth, native progress sheet, and direct live/runtime proof.
+  Typed object-browse replay and the TUI progress dialog remain open.
 
 ## Residual (non-blocking)
 

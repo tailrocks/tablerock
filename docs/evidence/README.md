@@ -521,6 +521,7 @@ How to read an evidence document:
 - 645 — [Progress-aware native CSV apply](delivery/645-native-csv-import-progress.md)
 - 646 — [Native streaming CSV import](delivery/646-native-streaming-csv-import.md)
 - 647 — [Shared streaming export service](delivery/647-shared-streaming-export-service.md)
+- 648 — [Native full-query streaming export](delivery/648-native-full-query-streaming-export.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

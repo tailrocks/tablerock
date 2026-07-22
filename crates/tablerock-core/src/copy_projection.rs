@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{CellRef, Truncation, ValueKind};
+use crate::{CellRef, ResultPage, Truncation, ValueKind};
 
 const MAX_COPY_BYTES: usize = 16 * 1024 * 1024;
 const MAX_COPY_ROWS: usize = 10_000;
@@ -109,6 +109,31 @@ pub fn copy_cell_from_page(cell: CellRef<'_>) -> CopyCell {
             original_bytes: original_byte_len,
         },
     }
+}
+
+/// Projects one bounded result page into display-safe strings for incremental
+/// file encoders. All clients therefore share one typed value projection.
+#[must_use]
+pub fn page_to_export_strings(page: &ResultPage) -> (Vec<String>, Vec<Vec<String>>) {
+    let columns = page
+        .columns()
+        .iter()
+        .map(|column| column.name().to_owned())
+        .collect::<Vec<_>>();
+    let envelope = page.envelope();
+    let mut rows = Vec::with_capacity(envelope.row_count() as usize);
+    for row in 0..envelope.row_count() {
+        let mut values = Vec::with_capacity(envelope.column_count() as usize);
+        for column in 0..envelope.column_count() {
+            let value = page
+                .cell(row, column)
+                .map(copy_cell_from_page)
+                .map_or_else(|_| "<invalid-cell>".to_owned(), |cell| display(&cell));
+            values.push(value);
+        }
+        rows.push(values);
+    }
+    (columns, rows)
 }
 
 fn decode_unsigned(bytes: &[u8]) -> u64 {

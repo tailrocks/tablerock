@@ -687,6 +687,13 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func cancelRedisSubscription(operationId: Data) throws  -> Bool
 
     /**
+     * Requests server-stream and file-writer cancellation.
+     */
+    func cancelStreamExport(operationId: Data) throws  -> Bool
+
+    func cancelStreamExportInner(operationIdBytes: Data) throws  -> Bool
+
+    /**
      * Executes one explicit driver health probe for a live session.
      */
     func checkSessionHealth(sessionId: Data) throws  -> BridgeSessionHealth
@@ -730,6 +737,13 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Remove one terminal import snapshot after the client closes it.
      */
     func dismissCsvImport(operationId: Data) throws  -> Bool
+
+    /**
+     * Removes one terminal export snapshot.
+     */
+    func dismissStreamExport(operationId: Data) throws  -> Bool
+
+    func dismissStreamExportInner(operationIdBytes: Data) throws  -> Bool
 
     /**
      * Ensures the Tokio runtime and service coordinator exist (idempotent).
@@ -1000,6 +1014,20 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func startRedisSubscription(sessionId: Data, selector: String, pattern: Bool) throws  -> Data
 
     /**
+     * Starts a bounded full-result re-query export owned by Rust.
+     */
+    func startStreamExport(request: BridgeStreamExportRequest) throws  -> Data
+
+    func startStreamExportInner(request: BridgeStreamExportRequest) throws  -> Data
+
+    /**
+     * Polls one bounded export progress or terminal outcome.
+     */
+    func streamExportProgress(operationId: Data) throws  -> BridgeStreamExportProgress
+
+    func streamExportProgressInner(operationIdBytes: Data) throws  -> BridgeStreamExportProgress
+
+    /**
      * Submits a command and returns a 16-byte operation id.
      */
     func submit(spec: SubmitSpec) throws  -> Data
@@ -1225,6 +1253,29 @@ open func cancelRedisSubscription(operationId: Data)throws  -> Bool  {
 }
 
     /**
+     * Requests server-stream and file-writer cancellation.
+     */
+open func cancelStreamExport(operationId: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_cancel_stream_export(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
+}
+
+open func cancelStreamExportInner(operationIdBytes: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_cancel_stream_export_inner(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationIdBytes),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Executes one explicit driver health probe for a live session.
      */
 open func checkSessionHealth(sessionId: Data)throws  -> BridgeSessionHealth  {
@@ -1354,6 +1405,29 @@ open func dismissCsvImport(operationId: Data)throws  -> Bool  {
     uniffi_tablerock_ffi_fn_method_tablerockbridge_dismiss_csv_import(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Removes one terminal export snapshot.
+     */
+open func dismissStreamExport(operationId: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_dismiss_stream_export(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
+}
+
+open func dismissStreamExportInner(operationIdBytes: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_dismiss_stream_export_inner(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationIdBytes),uniffiCallStatus
     )
 })
 }
@@ -2150,6 +2224,52 @@ open func startRedisSubscription(sessionId: Data, selector: String, pattern: Boo
         FfiConverterData.lower(sessionId),
         FfiConverterString.lower(selector),
         FfiConverterBool.lower(pattern),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Starts a bounded full-result re-query export owned by Rust.
+     */
+open func startStreamExport(request: BridgeStreamExportRequest)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_start_stream_export(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeBridgeStreamExportRequest_lower(request),uniffiCallStatus
+    )
+})
+}
+
+open func startStreamExportInner(request: BridgeStreamExportRequest)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_start_stream_export_inner(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeBridgeStreamExportRequest_lower(request),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Polls one bounded export progress or terminal outcome.
+     */
+open func streamExportProgress(operationId: Data)throws  -> BridgeStreamExportProgress  {
+    return try  FfiConverterTypeBridgeStreamExportProgress_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_stream_export_progress(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
+}
+
+open func streamExportProgressInner(operationIdBytes: Data)throws  -> BridgeStreamExportProgress  {
+    return try  FfiConverterTypeBridgeStreamExportProgress_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_stream_export_progress_inner(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationIdBytes),uniffiCallStatus
     )
 })
 }
@@ -5613,6 +5733,138 @@ public func FfiConverterTypeBridgeSqlFile_lower(_ value: BridgeSqlFile) -> RustB
 }
 
 
+public struct BridgeStreamExportProgress: Equatable, Hashable {
+    public var operationId: Data
+    public var phase: String
+    public var completedRows: UInt64
+    public var bytesWritten: UInt64
+    public var destination: String
+    public var summary: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(operationId: Data, phase: String, completedRows: UInt64, bytesWritten: UInt64, destination: String, summary: String) {
+        self.operationId = operationId
+        self.phase = phase
+        self.completedRows = completedRows
+        self.bytesWritten = bytesWritten
+        self.destination = destination
+        self.summary = summary
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeStreamExportProgress: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeStreamExportProgress: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeStreamExportProgress {
+        return
+            try BridgeStreamExportProgress(
+                operationId: FfiConverterData.read(from: &buf),
+                phase: FfiConverterString.read(from: &buf),
+                completedRows: FfiConverterUInt64.read(from: &buf),
+                bytesWritten: FfiConverterUInt64.read(from: &buf),
+                destination: FfiConverterString.read(from: &buf),
+                summary: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeStreamExportProgress, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.operationId, into: &buf)
+        FfiConverterString.write(value.phase, into: &buf)
+        FfiConverterUInt64.write(value.completedRows, into: &buf)
+        FfiConverterUInt64.write(value.bytesWritten, into: &buf)
+        FfiConverterString.write(value.destination, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeStreamExportProgress_lift(_ buf: RustBuffer) throws -> BridgeStreamExportProgress {
+    return try FfiConverterTypeBridgeStreamExportProgress.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeStreamExportProgress_lower(_ value: BridgeStreamExportProgress) -> RustBuffer {
+    return FfiConverterTypeBridgeStreamExportProgress.lower(value)
+}
+
+
+public struct BridgeStreamExportRequest: Equatable, Hashable {
+    public var sessionId: Data
+    public var statement: String
+    public var format: String
+    public var path: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sessionId: Data, statement: String, format: String, path: String) {
+        self.sessionId = sessionId
+        self.statement = statement
+        self.format = format
+        self.path = path
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeStreamExportRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeStreamExportRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeStreamExportRequest {
+        return
+            try BridgeStreamExportRequest(
+                sessionId: FfiConverterData.read(from: &buf),
+                statement: FfiConverterString.read(from: &buf),
+                format: FfiConverterString.read(from: &buf),
+                path: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeStreamExportRequest, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.sessionId, into: &buf)
+        FfiConverterString.write(value.statement, into: &buf)
+        FfiConverterString.write(value.format, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeStreamExportRequest_lift(_ buf: RustBuffer) throws -> BridgeStreamExportRequest {
+    return try FfiConverterTypeBridgeStreamExportRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeStreamExportRequest_lower(_ value: BridgeStreamExportRequest) -> RustBuffer {
+    return FfiConverterTypeBridgeStreamExportRequest.lower(value)
+}
+
+
 public struct BridgeTableOperationRequest: Equatable, Hashable {
     public var sessionId: Data
     public var catalogNodeId: Data
@@ -7021,6 +7273,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel_redis_subscription() != 4093) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel_stream_export() != 28561) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel_stream_export_inner() != 41182) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_check_session_health() != 24923) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7055,6 +7313,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_dismiss_csv_import() != 5678) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_dismiss_stream_export() != 15034) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_dismiss_stream_export_inner() != 21759) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_ensure_runtime() != 35672) {
@@ -7241,6 +7505,18 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_redis_subscription() != 11543) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_stream_export() != 1995) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_stream_export_inner() != 41584) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stream_export_progress() != 47146) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stream_export_progress_inner() != 60620) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit() != 59509) {

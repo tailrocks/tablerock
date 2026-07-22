@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant, UNIX_EPOCH},
 };
@@ -31,8 +31,8 @@ use tablerock_core::{
     RoleChangeKind, RoleChangePlan, SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset,
     SecretSource, SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
     StatementText, SupportBundle, SupportPlatform, TlsPolicy, copy_cell_from_page,
-    format_copy_table, is_safe_preset_name, parse_connection_url, reconnect_decision,
-    rewrite_named_params,
+    format_copy_table, is_safe_preset_name, page_to_export_strings, parse_connection_url,
+    reconnect_decision, rewrite_named_params,
 };
 use tablerock_engine::{
     AdapterFailureClass, BrowseDialect, BrowsePlan, CatalogRequest, ClickHouseCompression,
@@ -47,8 +47,8 @@ use tablerock_engine::{
     resolve_for_connect_with_ports,
 };
 use tablerock_files::{
-    CsvStreamLimits, CsvTable, CsvValueType, csv_to_typed_insert_changes, stream_csv_batches,
-    validate_insert_batch_size, write_atomic,
+    CsvStreamLimits, CsvTable, CsvValueType, StreamExportFormat, StreamExporter,
+    csv_to_typed_insert_changes, stream_csv_batches, validate_insert_batch_size, write_atomic,
 };
 use tablerock_persistence::{
     HistoryAppend, HistoryOutcomeClass, HistoryRetention, PersistenceActor, ProfileOrderUpdate,
@@ -390,6 +390,24 @@ pub struct BridgeCsvImportProgress {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeStreamExportRequest {
+    pub session_id: Vec<u8>,
+    pub statement: String,
+    pub format: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeStreamExportProgress {
+    pub operation_id: Vec<u8>,
+    pub phase: String,
+    pub completed_rows: u64,
+    pub bytes_written: u64,
+    pub destination: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeRelationColumn {
     pub name: String,
     pub data_type: String,
@@ -650,6 +668,18 @@ struct CsvImportTask {
     summary: String,
 }
 
+struct StreamExportTask {
+    session_id: SessionId,
+    driver: Arc<dyn DriverSession>,
+    cancel: Arc<AtomicBool>,
+    cancel_signal: tokio::sync::watch::Sender<bool>,
+    phase: String,
+    completed_rows: u64,
+    bytes_written: u64,
+    destination: String,
+    summary: String,
+}
+
 struct CsvImportReviewEntry {
     session_id: SessionId,
     scope: OperationScope,
@@ -802,10 +832,219 @@ pub struct TableRockBridge {
     postgres_tools: Arc<Mutex<BTreeMap<OperationId, PostgresToolTask>>>,
     redis_subscriptions: Arc<Mutex<BTreeMap<OperationId, RedisSubscriptionTask>>>,
     csv_imports: Arc<Mutex<BTreeMap<OperationId, CsvImportTask>>>,
+    stream_exports: Arc<Mutex<BTreeMap<OperationId, StreamExportTask>>>,
 }
 
 #[uniffi::export]
 impl TableRockBridge {
+    fn start_stream_export_inner(
+        &self,
+        request: BridgeStreamExportRequest,
+    ) -> Result<Vec<u8>, BridgeError> {
+        self.ensure_runtime_inner()?;
+        if !Path::new(&request.path).is_absolute() {
+            return Err(BridgeError::rejected(
+                "export-path",
+                "native export path must be absolute",
+            ));
+        }
+        let format = match request.format.as_str() {
+            "csv" => StreamExportFormat::Csv,
+            "tsv" => StreamExportFormat::Tsv,
+            "json" => StreamExportFormat::Json,
+            _ => {
+                return Err(BridgeError::rejected(
+                    "export-format",
+                    "streaming export supports csv, tsv, or json",
+                ));
+            }
+        };
+        let statement = StatementText::new(request.statement)
+            .map_err(|error| BridgeError::rejected("export-statement", error.to_string()))?;
+        let session_id = session_from_bytes(&request.session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let (driver, operation_id, identity, page_request) = {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+            if !inner.accepting {
+                return Err(BridgeError::ShuttingDown);
+            }
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let engine = registered.engine;
+            if engine == Engine::Redis {
+                return Err(BridgeError::rejected(
+                    "export-engine",
+                    "full-result re-query export is unsupported for Redis",
+                ));
+            }
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            let operation_id = inner.ids.operation();
+            let identity = PageIdentity::new(inner.ids.result(), Revision::INITIAL, engine);
+            let limits = PageLimits::new(500, 256, 8 * 1024 * 1024, 64 * 1024);
+            let page_request = match engine {
+                Engine::PostgreSql => DriverPageRequest::PostgreSqlStatement {
+                    statement,
+                    parameters: Vec::new(),
+                    limits,
+                    max_cell_bytes: 64 * 1024,
+                },
+                Engine::ClickHouse => DriverPageRequest::ClickHouseStatement {
+                    statement,
+                    parameters: Vec::new(),
+                    query_id: BoundedText::copy_from_str(
+                        &format!("native-export-{}", operation_id),
+                        ByteLimit::new(128),
+                    )
+                    .map_err(|error| BridgeError::rejected("export-query-id", error.to_string()))?,
+                    limits,
+                    max_cell_bytes: 64 * 1024,
+                },
+                Engine::Redis => unreachable!("Redis rejected above"),
+            };
+            (driver, operation_id, identity, page_request)
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (cancel_signal, cancel_receiver) = tokio::sync::watch::channel(false);
+        let tasks = Arc::clone(&self.stream_exports);
+        {
+            let mut registry = tasks.lock().map_err(|_| {
+                BridgeError::rejected("stream-export-lock", "export task registry poisoned")
+            })?;
+            if registry.len() >= 64 {
+                if let Some(terminal) = registry.iter().find_map(|(id, task)| {
+                    (task.phase != "running" && task.phase != "cancel_requested").then_some(*id)
+                }) {
+                    registry.remove(&terminal);
+                } else {
+                    return Err(BridgeError::rejected(
+                        "stream-export-limit",
+                        "too many active streaming exports",
+                    ));
+                }
+            }
+            registry.insert(
+                operation_id,
+                StreamExportTask {
+                    session_id,
+                    driver: Arc::clone(&driver),
+                    cancel: Arc::clone(&cancel),
+                    cancel_signal,
+                    phase: "running".into(),
+                    completed_rows: 0,
+                    bytes_written: 0,
+                    destination: request.path.clone(),
+                    summary: "Exporting full result".into(),
+                },
+            );
+        }
+        let destination = request.path;
+        let spawn_result = self.runtime.spawn(async move {
+            run_bridge_stream_export(StreamExportRun {
+                driver,
+                request: page_request,
+                identity,
+                operation_id,
+                destination,
+                format,
+                cancel,
+                cancel_receiver,
+                tasks,
+            })
+            .await;
+        });
+        if let Err(error) = spawn_result {
+            if let Ok(mut registry) = self.stream_exports.lock() {
+                registry.remove(&operation_id);
+            }
+            return Err(error);
+        }
+        Ok(operation_bytes(operation_id))
+    }
+
+    fn stream_export_progress_inner(
+        &self,
+        operation_id_bytes: Vec<u8>,
+    ) -> Result<BridgeStreamExportProgress, BridgeError> {
+        let operation_id = operation_from_bytes(&operation_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-operation-id", "operation id must be 16 bytes")
+        })?;
+        let registry = self.stream_exports.lock().map_err(|_| {
+            BridgeError::rejected("stream-export-lock", "export task registry poisoned")
+        })?;
+        let task = registry.get(&operation_id).ok_or_else(|| {
+            BridgeError::rejected(
+                "stream-export-operation",
+                "stream export operation is unknown",
+            )
+        })?;
+        Ok(BridgeStreamExportProgress {
+            operation_id: operation_bytes(operation_id),
+            phase: task.phase.clone(),
+            completed_rows: task.completed_rows,
+            bytes_written: task.bytes_written,
+            destination: task.destination.clone(),
+            summary: task.summary.clone(),
+        })
+    }
+
+    fn cancel_stream_export_inner(&self, operation_id_bytes: Vec<u8>) -> Result<bool, BridgeError> {
+        let operation_id = operation_from_bytes(&operation_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-operation-id", "operation id must be 16 bytes")
+        })?;
+        let driver = {
+            let mut registry = self.stream_exports.lock().map_err(|_| {
+                BridgeError::rejected("stream-export-lock", "export task registry poisoned")
+            })?;
+            let task = registry.get_mut(&operation_id).ok_or_else(|| {
+                BridgeError::rejected(
+                    "stream-export-operation",
+                    "stream export operation is unknown",
+                )
+            })?;
+            if task.phase != "running" && task.phase != "cancel_requested" {
+                return Ok(false);
+            }
+            task.cancel.store(true, Ordering::SeqCst);
+            let _ = task.cancel_signal.send(true);
+            task.phase = "cancel_requested".into();
+            task.summary = "Cancellation requested; removing incomplete output".into();
+            Arc::clone(&task.driver)
+        };
+        driver.prepare_cancel(operation_id);
+        self.runtime.spawn(async move {
+            let _ = driver.cancel(operation_id).await;
+        })?;
+        Ok(true)
+    }
+
+    fn dismiss_stream_export_inner(
+        &self,
+        operation_id_bytes: Vec<u8>,
+    ) -> Result<bool, BridgeError> {
+        let operation_id = operation_from_bytes(&operation_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-operation-id", "operation id must be 16 bytes")
+        })?;
+        let mut registry = self.stream_exports.lock().map_err(|_| {
+            BridgeError::rejected("stream-export-lock", "export task registry poisoned")
+        })?;
+        if registry
+            .get(&operation_id)
+            .is_some_and(|task| task.phase == "running" || task.phase == "cancel_requested")
+        {
+            return Ok(false);
+        }
+        Ok(registry.remove(&operation_id).is_some())
+    }
+
     #[uniffi::constructor]
     #[must_use]
     pub fn create() -> Arc<Self> {
@@ -815,6 +1054,7 @@ impl TableRockBridge {
             postgres_tools: Arc::new(Mutex::new(BTreeMap::new())),
             redis_subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
             csv_imports: Arc::new(Mutex::new(BTreeMap::new())),
+            stream_exports: Arc::new(Mutex::new(BTreeMap::new())),
         })
     }
 
@@ -1408,6 +1648,32 @@ impl TableRockBridge {
         })
     }
 
+    /// Starts a bounded full-result re-query export owned by Rust.
+    pub fn start_stream_export(
+        &self,
+        request: BridgeStreamExportRequest,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| self.start_stream_export_inner(request))
+    }
+
+    /// Polls one bounded export progress or terminal outcome.
+    pub fn stream_export_progress(
+        &self,
+        operation_id: Vec<u8>,
+    ) -> Result<BridgeStreamExportProgress, BridgeError> {
+        catch_entry(|| self.stream_export_progress_inner(operation_id))
+    }
+
+    /// Requests server-stream and file-writer cancellation.
+    pub fn cancel_stream_export(&self, operation_id: Vec<u8>) -> Result<bool, BridgeError> {
+        catch_entry(|| self.cancel_stream_export_inner(operation_id))
+    }
+
+    /// Removes one terminal export snapshot.
+    pub fn dismiss_stream_export(&self, operation_id: Vec<u8>) -> Result<bool, BridgeError> {
+        catch_entry(|| self.dismiss_stream_export_inner(operation_id))
+    }
+
     /// Atomically exports the closed safe-schema support manifest.
     pub fn export_support_bundle(&self, path: String) -> Result<u64, BridgeError> {
         catch_entry(|| {
@@ -1867,6 +2133,7 @@ impl TableRockBridge {
             postgres_tools: Arc::new(Mutex::new(BTreeMap::new())),
             redis_subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
             csv_imports: Arc::new(Mutex::new(BTreeMap::new())),
+            stream_exports: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 }
@@ -2565,6 +2832,23 @@ impl TableRockBridge {
             return Err(BridgeError::rejected(
                 "session-busy",
                 "session still has an active CSV import",
+            ));
+        }
+        if self
+            .stream_exports
+            .lock()
+            .map_err(|_| {
+                BridgeError::rejected("stream-export-lock", "export task registry poisoned")
+            })?
+            .values()
+            .any(|task| {
+                task.session_id == session_id
+                    && (task.phase == "running" || task.phase == "cancel_requested")
+            })
+        {
+            return Err(BridgeError::rejected(
+                "session-busy",
+                "session still has an active streaming export",
             ));
         }
         let mut guard = self
@@ -6554,6 +6838,32 @@ impl TableRockBridge {
             }
             active
         };
+        let (initial_export_active, export_cancels) = {
+            let mut tasks = self.stream_exports.lock().map_err(|_| {
+                BridgeError::rejected("stream-export-lock", "export task registry poisoned")
+            })?;
+            let mut active = 0_u32;
+            let mut cancels = Vec::new();
+            for (operation_id, task) in tasks.iter_mut() {
+                if task.phase == "running" || task.phase == "cancel_requested" {
+                    active = active.saturating_add(1);
+                    if cancel_active && task.phase == "running" {
+                        task.cancel.store(true, Ordering::SeqCst);
+                        let _ = task.cancel_signal.send(true);
+                        task.driver.prepare_cancel(*operation_id);
+                        cancels.push((*operation_id, Arc::clone(&task.driver)));
+                        task.phase = "cancel_requested".into();
+                        task.summary = "Cancellation requested; removing incomplete output".into();
+                    }
+                }
+            }
+            (active, cancels)
+        };
+        for (operation_id, driver) in export_cancels {
+            self.runtime.spawn(async move {
+                let _ = driver.cancel(operation_id).await;
+            })?;
+        }
         let mut guard = self
             .inner
             .lock()
@@ -6571,7 +6881,8 @@ impl TableRockBridge {
         }
         .saturating_add(initial_tool_active)
         .saturating_add(initial_subscription_active)
-        .saturating_add(initial_import_active);
+        .saturating_add(initial_import_active)
+        .saturating_add(initial_export_active);
         let deadline = Duration::from_millis(deadline_ms);
         let started = Instant::now();
         while inner.service.core().active_operations() > 0 && started.elapsed() < deadline {
@@ -6633,7 +6944,15 @@ impl TableRockBridge {
                 })?
                 .values()
                 .any(|task| task.phase == "running" || task.phase == "cancel_requested");
-            if !tool_active && !subscription_active && !import_active {
+            let export_active = self
+                .stream_exports
+                .lock()
+                .map_err(|_| {
+                    BridgeError::rejected("stream-export-lock", "export task registry poisoned")
+                })?
+                .values()
+                .any(|task| task.phase == "running" || task.phase == "cancel_requested");
+            if !tool_active && !subscription_active && !import_active && !export_active {
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -6670,13 +6989,23 @@ impl TableRockBridge {
             .values()
             .filter(|task| task.phase == "running" || task.phase == "cancel_requested")
             .count() as u32;
+        let export_active = self
+            .stream_exports
+            .lock()
+            .map_err(|_| {
+                BridgeError::rejected("stream-export-lock", "export task registry poisoned")
+            })?
+            .values()
+            .filter(|task| task.phase == "running" || task.phase == "cancel_requested")
+            .count() as u32;
         let active = inner
             .service
             .core()
             .active_operations()
             .saturating_add(tool_active)
             .saturating_add(subscription_active)
-            .saturating_add(import_active);
+            .saturating_add(import_active)
+            .saturating_add(export_active);
         let core = if active == 0 {
             let _ = self.runtime.block_on(inner.service.complete_shutdown());
             "Stopped".to_owned()
@@ -7167,6 +7496,132 @@ struct StreamedCsvApplyOutcome {
     errors: Vec<String>,
     errors_truncated: bool,
     summary: String,
+}
+
+struct StreamExportRun {
+    driver: Arc<dyn DriverSession>,
+    request: DriverPageRequest,
+    identity: PageIdentity,
+    operation_id: OperationId,
+    destination: String,
+    format: StreamExportFormat,
+    cancel: Arc<AtomicBool>,
+    cancel_receiver: tokio::sync::watch::Receiver<bool>,
+    tasks: Arc<Mutex<BTreeMap<OperationId, StreamExportTask>>>,
+}
+
+async fn run_bridge_stream_export(run: StreamExportRun) {
+    let StreamExportRun {
+        driver,
+        request,
+        identity,
+        operation_id,
+        destination,
+        format,
+        cancel,
+        mut cancel_receiver,
+        tasks,
+    } = run;
+    let result = async {
+        let mut stream = driver
+            .start_page_stream(request)
+            .await
+            .map_err(|_| "failed")?;
+        let mut exporter = StreamExporter::create(&destination, format, Some(Arc::clone(&cancel)))
+            .map_err(|_| "failed")?;
+        let mut start_row = 0_u64;
+        loop {
+            if cancel.load(Ordering::SeqCst) {
+                exporter.abort();
+                return Err("cancelled");
+            }
+            let next = tokio::select! {
+                page = stream.next_page(identity, start_row) => Some(page),
+                changed = cancel_receiver.changed() => {
+                    let _ = changed;
+                    None
+                }
+            };
+            let Some(next) = next else {
+                exporter.abort();
+                return Err("cancelled");
+            };
+            let page = match next {
+                Ok(Some(page)) => page,
+                Ok(None) => break,
+                Err(_) => {
+                    exporter.abort();
+                    return Err(if cancel.load(Ordering::SeqCst) {
+                        "cancelled"
+                    } else {
+                        "failed"
+                    });
+                }
+            };
+            let delivery = page.envelope().delivery();
+            let row_count = u64::from(page.envelope().row_count());
+            let (columns, rows) = page_to_export_strings(&page);
+            if exporter.write_page(&columns, &rows).is_err() {
+                exporter.abort();
+                return Err(if cancel.load(Ordering::SeqCst) {
+                    "cancelled"
+                } else {
+                    "failed"
+                });
+            }
+            start_row = start_row.saturating_add(row_count);
+            if let Ok(mut registry) = tasks.lock()
+                && let Some(task) = registry.get_mut(&operation_id)
+            {
+                task.completed_rows = start_row;
+                task.bytes_written = exporter.bytes_written();
+                task.summary = format!("Exported {start_row} rows");
+            }
+            if delivery == tablerock_core::PageDelivery::Final {
+                break;
+            }
+        }
+        match exporter.finish() {
+            Ok(outcome) => Ok(outcome),
+            Err(_) => Err(if cancel.load(Ordering::SeqCst) {
+                "cancelled"
+            } else {
+                "failed"
+            }),
+        }
+    }
+    .await;
+    let Ok(mut registry) = tasks.lock() else {
+        return;
+    };
+    let Some(task) = registry.get_mut(&operation_id) else {
+        return;
+    };
+    match result {
+        Ok(outcome) => {
+            task.phase = "completed".into();
+            task.completed_rows = outcome.rows;
+            task.bytes_written = outcome.bytes;
+            task.summary = format!(
+                "Exported {} rows ({} bytes) atomically",
+                outcome.rows, outcome.bytes
+            );
+        }
+        Err("cancelled") => {
+            task.phase = "cancelled".into();
+            task.summary = format!(
+                "Cancelled after {} rows; incomplete output removed",
+                task.completed_rows
+            );
+        }
+        Err(_) => {
+            task.phase = "failed".into();
+            task.summary = format!(
+                "Export failed after {} rows; incomplete output removed",
+                task.completed_rows
+            );
+        }
+    }
 }
 
 async fn apply_streamed_csv_import(

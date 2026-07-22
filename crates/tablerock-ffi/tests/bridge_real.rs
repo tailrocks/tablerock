@@ -8,7 +8,8 @@
 use tablerock_core::{Engine, PageLimits, ResultPage};
 use tablerock_ffi::{
     BridgeCsvImportRequest, BridgeDdlChangeRequest, BridgePostgresToolRequest,
-    BridgeQueryParameter, BridgeTableOperationRequest, OpenParams, SubmitSpec, TableRockBridge,
+    BridgeQueryParameter, BridgeStreamExportRequest, BridgeTableOperationRequest, OpenParams,
+    SubmitSpec, TableRockBridge,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -155,6 +156,23 @@ fn wait_csv_import(
             }
         })
         .expect("CSV import reaches a terminal state")
+}
+
+fn wait_stream_export(
+    bridge: &TableRockBridge,
+    operation_id: Vec<u8>,
+) -> tablerock_ffi::BridgeStreamExportProgress {
+    (0..30_000)
+        .find_map(|_| {
+            let progress = bridge.stream_export_progress(operation_id.clone()).unwrap();
+            if progress.phase == "running" || progress.phase == "cancel_requested" {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                None
+            } else {
+                Some(progress)
+            }
+        })
+        .expect("stream export reaches a terminal state")
 }
 
 #[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
@@ -337,6 +355,27 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
             count_page.cell(0, 0).unwrap().bytes(),
             1_200_i64.to_be_bytes()
         );
+        let export_path = std::env::temp_dir().join(format!(
+            "tablerock-pg-full-export-{}.csv",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&export_path);
+        let export_operation = bridge
+            .start_stream_export(BridgeStreamExportRequest {
+                session_id: session.clone(),
+                statement: "SELECT id, name FROM bridge_stream_import ORDER BY id".into(),
+                format: "csv".into(),
+                path: export_path.to_string_lossy().into_owned(),
+            })
+            .unwrap();
+        let export_outcome = wait_stream_export(&bridge, export_operation.clone());
+        assert_eq!(export_outcome.phase, "completed", "{export_outcome:?}");
+        assert_eq!(export_outcome.completed_rows, 1_200);
+        let export_body = std::fs::read_to_string(&export_path).unwrap();
+        assert!(export_body.starts_with("id,name\n"));
+        assert!(export_body.contains("1199,row-1199\n"));
+        assert!(bridge.dismiss_stream_export(export_operation).unwrap());
+        std::fs::remove_file(export_path).unwrap();
         let drop_review = bridge
             .stage_ddl_change(BridgeDdlChangeRequest {
                 session_id: session.clone(),
@@ -697,6 +736,26 @@ async fn bridge_clickhouse_open_probe_fetch() {
         )
         .unwrap();
         assert_eq!(count_page.cell(0, 0).unwrap().bytes(), 501_u64.to_be_bytes());
+        let export_path = std::env::temp_dir().join(format!(
+            "tablerock-clickhouse-full-export-{}.json",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&export_path);
+        let export_operation = bridge
+            .start_stream_export(BridgeStreamExportRequest {
+                session_id: session.clone(),
+                statement: "SELECT id, name FROM bridge_stream_import ORDER BY id".into(),
+                format: "json".into(),
+                path: export_path.to_string_lossy().into_owned(),
+            })
+            .unwrap();
+        let export_outcome = wait_stream_export(&bridge, export_operation.clone());
+        assert_eq!(export_outcome.phase, "completed", "{export_outcome:?}");
+        assert_eq!(export_outcome.completed_rows, 501);
+        let export_body = std::fs::read_to_string(&export_path).unwrap();
+        assert!(export_body.contains("\"id\":500"));
+        assert!(bridge.dismiss_stream_export(export_operation).unwrap());
+        std::fs::remove_file(export_path).unwrap();
         let (page, _) = probe_and_fetch(&bridge, session, 0);
         let engine = ResultPage::decode_v1(
             &page,

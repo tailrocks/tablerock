@@ -23,7 +23,8 @@ use tablerock_engine::{
 use tablerock_ffi::{
     BridgeBrowseFilter, BridgeBrowseSort, BridgeCsvImportRequest, BridgeError,
     BridgeProfileOrderItem, BridgeQueryParameter, BridgeSavedFilterPreset, BridgeSessionIntent,
-    BridgeTableOperationRequest, BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
+    BridgeStreamExportRequest, BridgeTableOperationRequest, BridgeWorkspaceTab, SubmitSpec,
+    TableRockBridge,
 };
 
 struct OnePageStream(Option<ResultPage>);
@@ -553,6 +554,47 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
         assert_eq!(bytes, csv.len() as u64);
         assert_eq!(std::fs::read_to_string(&export_path).unwrap(), csv);
         std::fs::remove_file(export_path).unwrap();
+        let stream_path = std::env::temp_dir().join(format!(
+            "tablerock-ffi-stream-export-{}-{low}.json",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&stream_path);
+        let stream_operation = bridge
+            .start_stream_export(BridgeStreamExportRequest {
+                session_id: session_id.clone(),
+                statement: "SELECT n FROM export_probe".into(),
+                format: "json".into(),
+                path: stream_path.to_string_lossy().into_owned(),
+            })
+            .unwrap();
+        let stream_progress = (0..1_000)
+            .find_map(|_| {
+                let progress = bridge
+                    .stream_export_progress(stream_operation.clone())
+                    .unwrap();
+                if progress.phase == "running" {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    None
+                } else {
+                    Some(progress)
+                }
+            })
+            .expect("stream export reaches terminal outcome");
+        assert_eq!(stream_progress.phase, "completed");
+        assert_eq!(stream_progress.completed_rows, 1);
+        assert!(stream_progress.bytes_written > 0);
+        assert!(
+            std::fs::read_to_string(&stream_path)
+                .unwrap()
+                .contains("\"n\":7")
+        );
+        assert!(
+            !bridge
+                .cancel_stream_export(stream_operation.clone())
+                .unwrap()
+        );
+        assert!(bridge.dismiss_stream_export(stream_operation).unwrap());
+        std::fs::remove_file(stream_path).unwrap();
         assert!(matches!(
             bridge.export_loaded_result(
                 result_id.clone(),
@@ -848,6 +890,55 @@ fn catalog_browse_accepts_only_cached_table_like_nodes() {
             Err(BridgeError::Rejected { ref code, .. }) if code == "catalog-browse-bounds"
         ));
     }
+}
+
+#[test]
+fn streaming_export_cancel_interrupts_pending_page_and_removes_partial_output() {
+    let bridge = TableRockBridge::new_for_test();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let session = bridge
+        .open_driver_session(
+            Engine::PostgreSql,
+            Box::new(HoldSession {
+                engine: Engine::PostgreSql,
+                cancelled: Arc::clone(&cancelled),
+            }),
+        )
+        .unwrap();
+    let path = std::env::temp_dir().join(format!(
+        "tablerock-ffi-stream-cancel-{}.csv",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let operation = bridge
+        .start_stream_export(BridgeStreamExportRequest {
+            session_id: session.clone(),
+            statement: "SELECT pg_sleep(60)".into(),
+            format: "csv".into(),
+            path: path.to_string_lossy().into_owned(),
+        })
+        .unwrap();
+    assert!(matches!(
+        bridge.disconnect(session),
+        Err(BridgeError::Rejected { ref code, .. }) if code == "session-busy"
+    ));
+    assert!(bridge.cancel_stream_export(operation.clone()).unwrap());
+    let progress = (0..1_000)
+        .find_map(|_| {
+            let progress = bridge.stream_export_progress(operation.clone()).unwrap();
+            if progress.phase == "cancel_requested" || progress.phase == "running" {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                None
+            } else {
+                Some(progress)
+            }
+        })
+        .expect("cancel reaches terminal outcome");
+    assert_eq!(progress.phase, "cancelled");
+    assert!(progress.summary.contains("incomplete output removed"));
+    assert!(cancelled.load(Ordering::SeqCst));
+    assert!(!path.exists());
+    assert!(bridge.dismiss_stream_export(operation).unwrap());
 }
 
 #[test]

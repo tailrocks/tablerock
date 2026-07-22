@@ -45,6 +45,7 @@ pub use connection_url::{
 };
 pub use copy_projection::{
     CopyCell, CopyFormat, CopyProjectionError, CopyTable, copy_cell_from_page, format_copy_table,
+    page_to_export_strings,
 };
 pub use ddl::{
     DdlBuildError, DdlKind, DdlPlan, DdlTarget, RelationshipEdge, RelationshipGraph,

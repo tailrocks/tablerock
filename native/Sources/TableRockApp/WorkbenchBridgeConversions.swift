@@ -128,6 +128,13 @@ extension BridgeCsvImportProgress {
       summary: summary)
   }
 }
+extension BridgeStreamExportProgress {
+  var workbench: WorkbenchStreamExportProgress {
+    .init(
+      operationId: operationId, phase: phase, completedRows: completedRows,
+      bytesWritten: bytesWritten, destination: destination, summary: summary)
+  }
+}
 extension BridgeRedisKeyView {
   var workbench: WorkbenchRedisKeyView { .init(kind: kind, lines: lines, nextSkip: nextSkip) }
 }

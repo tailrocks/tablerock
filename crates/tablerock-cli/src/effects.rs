@@ -4414,7 +4414,7 @@ async fn export_stream_query(
         }
         match stream.next_page(identity, start_row).await {
             Ok(Some(page)) => {
-                let (columns, rows) = page_to_string_table(&page);
+                let (columns, rows) = tablerock_core::page_to_export_strings(&page);
                 if let Err(e) = exporter.write_page(&columns, &rows) {
                     exporter.abort();
                     return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
@@ -4463,76 +4463,6 @@ async fn export_stream_query(
             partial_removed: true,
         }),
     }
-}
-
-fn page_to_string_table(page: &tablerock_core::ResultPage) -> (Vec<String>, Vec<Vec<String>>) {
-    use tablerock_core::{Truncation, ValueKind};
-    let envelope = page.envelope();
-    let columns: Vec<String> = page.columns().iter().map(|c| c.name().to_owned()).collect();
-    let col_count = envelope.column_count();
-    let row_count = envelope.row_count();
-    let mut rows = Vec::with_capacity(row_count as usize);
-    for row in 0..row_count {
-        let mut cells = Vec::with_capacity(col_count as usize);
-        for col in 0..col_count {
-            let cell = page.cell(row, col).expect("in-range cell");
-            let text = if cell.is_null() {
-                "NULL".into()
-            } else {
-                match cell.kind() {
-                    ValueKind::Boolean => {
-                        if cell.bytes().first() == Some(&1) {
-                            "true".into()
-                        } else {
-                            "false".into()
-                        }
-                    }
-                    ValueKind::Signed => {
-                        let mut buf = [0u8; 8];
-                        let b = cell.bytes();
-                        let n = b.len().min(8);
-                        buf[8 - n..].copy_from_slice(&b[..n]);
-                        i64::from_be_bytes(buf).to_string()
-                    }
-                    ValueKind::Unsigned | ValueKind::Float64 => {
-                        let mut buf = [0u8; 8];
-                        let b = cell.bytes();
-                        let n = b.len().min(8);
-                        buf[8 - n..].copy_from_slice(&b[..n]);
-                        if cell.kind() == ValueKind::Float64 {
-                            f64::from_bits(u64::from_be_bytes(buf)).to_string()
-                        } else {
-                            u64::from_be_bytes(buf).to_string()
-                        }
-                    }
-                    ValueKind::Binary | ValueKind::Unknown | ValueKind::Invalid => {
-                        let b = cell.bytes();
-                        let take = b.len().min(16);
-                        let hex: String = b[..take]
-                            .iter()
-                            .map(|x| format!("{x:02x}"))
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        if b.len() > take {
-                            format!("{hex} …")
-                        } else {
-                            hex
-                        }
-                    }
-                    _ => {
-                        let mut s = String::from_utf8_lossy(cell.bytes()).into_owned();
-                        if matches!(cell.truncation(), Truncation::Truncated { .. }) {
-                            s.push('…');
-                        }
-                        s
-                    }
-                }
-            };
-            cells.push(text);
-        }
-        rows.push(cells);
-    }
-    (columns, rows)
 }
 
 async fn open_redis_key(

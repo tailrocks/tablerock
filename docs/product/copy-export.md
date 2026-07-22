@@ -34,6 +34,15 @@ complete.
 - SQL-form export (INSERT dumps) ships with the import/export phase, using
   bounded streaming.
 
+Native full-query export re-runs the editor statement through the live Rust
+session in 500-row pages capped at 8 MiB and 64 KiB per cell. CSV, TSV, and
+JSON use the shared atomic streaming encoder. The progress sheet reports rows
+and bytes, permits cancellation while the server stream is pending, and states
+whether the destination was published or incomplete output was removed.
+Loaded-result export remains a separate resident-page action. Full object-
+browse replay remains open until the typed browse plan is retained as a Rust-
+owned replay handle; Swift must not reconstruct SQL for that path.
+
 ## Import
 
 CSV/JSON import into a chosen table arrives in the data-movement phase:

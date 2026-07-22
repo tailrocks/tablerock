@@ -25,7 +25,8 @@ pub use bridge::{
     BridgeRedisSubscriptionStatus, BridgeRoleChangeRequest, BridgeRoleChangeReview,
     BridgeRoleMembership, BridgeRolePrivilege, BridgeRoleSnapshot, BridgeSavedFilterPreset,
     BridgeSavedQueryItem, BridgeSessionHealth, BridgeSessionIntent, BridgeSqlFile,
-    BridgeTableOperationRequest, BridgeTableOperationReview, BridgeWorkspaceTab, CancelOutcome,
-    OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
+    BridgeStreamExportProgress, BridgeStreamExportRequest, BridgeTableOperationRequest,
+    BridgeTableOperationReview, BridgeWorkspaceTab, CancelOutcome, OpenParams, ShutdownOutcome,
+    SubmitSpec, TableRockBridge,
 };
 pub use error::BridgeError;

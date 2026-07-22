@@ -12,6 +12,7 @@ CONTAINER="tablerock-native-copy-pg"
 APP_PID=""
 EXPORT_DIR=""
 EXPORT_PATH=""
+STREAM_EXPORT_PATH=""
 
 cleanup() {
   if [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
@@ -20,6 +21,7 @@ cleanup() {
   fi
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   if [[ -n "$EXPORT_PATH" ]]; then rm -f "$EXPORT_PATH"; fi
+  if [[ -n "$STREAM_EXPORT_PATH" ]]; then rm -f "$STREAM_EXPORT_PATH"; fi
   if [[ -n "$EXPORT_DIR" ]]; then rmdir "$EXPORT_DIR" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
@@ -40,6 +42,9 @@ rg -q 'pub fn format_result_copy' "$FFI" || {
 }
 rg -q 'pub fn export_loaded_result' "$FFI" || {
   echo "error: FFI atomic result export missing" >&2; exit 1;
+}
+rg -q 'pub fn start_stream_export' "$FFI" || {
+  echo "error: FFI streaming result export missing" >&2; exit 1;
 }
 for pattern in \
   'NSPasteboardItem\(\)' \
@@ -75,8 +80,10 @@ pgrep -f "^$EXECUTABLE$" >/dev/null && {
 audit_log="$(mktemp "$REPO_ROOT/target/native-result-copy.XXXXXX")"
 EXPORT_DIR="$(mktemp -d "$REPO_ROOT/target/native-result-export.XXXXXX")"
 EXPORT_PATH="$EXPORT_DIR/result.json"
+STREAM_EXPORT_PATH="$EXPORT_DIR/full.csv"
 open -n -F --env TABLEROCK_FIXTURE_RESULT_COPY=1 \
   --env TABLEROCK_FIXTURE_RESULT_EXPORT_PATH="$EXPORT_PATH" \
+  --env TABLEROCK_FIXTURE_STREAM_EXPORT_PATH="$STREAM_EXPORT_PATH" \
   --stdout "$audit_log" --stderr "$audit_log" "$APP"
 for _ in $(seq 1 50); do
   APP_PID="$(pgrep -n -f "^$EXECUTABLE$" || true)"
@@ -92,6 +99,11 @@ if ! rg -q '^RESULT_COPY_PROOF_PASSED ' "$audit_log"; then
   echo "error: native result-copy runtime proof failed" >&2
   exit 1
 fi
+if [[ ! -f "$STREAM_EXPORT_PATH" ]] || ! rg -q '^1200$' "$STREAM_EXPORT_PATH"; then
+  cat "$audit_log" >&2
+  echo "error: native full-result streaming export missing or invalid" >&2
+  exit 1
+fi
 if [[ ! -f "$EXPORT_PATH" ]] || ! rg -q '"id":7' "$EXPORT_PATH"; then
   cat "$audit_log" >&2
   echo "error: native result export file missing or invalid" >&2
@@ -102,4 +114,4 @@ if find "$EXPORT_DIR" -name '*.tablerock-tmp-*' -print -quit | rg -q .; then
   exit 1
 fi
 
-echo "shared Rust formatter, native copy, and atomic loaded export gate passed"
+echo "shared Rust formatter, native copy, loaded export, and full streaming export gate passed"

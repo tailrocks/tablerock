@@ -65,6 +65,11 @@ public protocol WorkbenchBackend: Actor, Sendable {
   ) throws -> String
   func exportLoadedResult(resultId: Data, revision: UInt64, format: String, path: String) throws
     -> UInt64
+  func startStreamExport(sessionId: Data, statement: String, format: String, path: String) throws
+    -> Data
+  func streamExportProgress(operationId: Data) throws -> WorkbenchStreamExportProgress
+  func cancelStreamExport(operationId: Data) throws -> Bool
+  func dismissStreamExport(operationId: Data) throws -> Bool
   func exportSupportBundle(path: String) throws -> UInt64
   func previewCsvImport(path: String) throws -> WorkbenchCSVImportPreview
   func stageCsvImport(
@@ -563,6 +568,25 @@ public struct WorkbenchCSVImportProgress: Sendable, Equatable {
     self.failedRows = failedRows
     self.errors = errors
     self.errorsTruncated = errorsTruncated
+    self.summary = summary
+  }
+}
+public struct WorkbenchStreamExportProgress: Sendable, Equatable {
+  public let operationId: Data
+  public let phase: String
+  public let completedRows: UInt64
+  public let bytesWritten: UInt64
+  public let destination: String
+  public let summary: String
+  public init(
+    operationId: Data, phase: String, completedRows: UInt64, bytesWritten: UInt64,
+    destination: String, summary: String
+  ) {
+    self.operationId = operationId
+    self.phase = phase
+    self.completedRows = completedRows
+    self.bytesWritten = bytesWritten
+    self.destination = destination
     self.summary = summary
   }
 }
