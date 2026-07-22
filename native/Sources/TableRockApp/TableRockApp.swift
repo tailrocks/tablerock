@@ -5431,14 +5431,14 @@ private struct CsvImportSheet: View {
       }
       HStack {
         Button("Stage Reviewed Import") { Task { await model.stageCsvImport() } }
-          .buttonStyle(.borderedProminent)
           .accessibilityIdentifier("import.csv.stage")
+          .buttonStyle(.borderedProminent)
           .disabled(
             model.csvImportPreview == nil || model.csvImportReview != nil
               || model.csvImportOutcome != nil || model.csvImportApplying)
         Button("Apply Import") { Task { await model.applyCsvImport() } }
-          .buttonStyle(.borderedProminent)
           .accessibilityIdentifier("import.csv.apply")
+          .buttonStyle(.borderedProminent)
           .disabled(model.csvImportReview == nil || model.csvImportApplying)
         Button("Discard Review", role: .cancel) {
           Task { await model.discardCsvImportReview() }
@@ -5550,7 +5550,7 @@ private struct CsvImportSheet: View {
       }
     }
     .padding(20)
-    .frame(minWidth: 720, minHeight: 560)
+    .frame(minWidth: 720, idealHeight: 560)
     .accessibilityIdentifier("import.csv.sheet")
     .interactiveDismissDisabled(model.csvImportReview != nil || model.csvImportApplying)
   }
@@ -5671,7 +5671,7 @@ private struct ResultGridWithInspector: View {
           guard visibleRowIndices.indices.contains(row) else { return }
           model.selectCell(row: visibleRowIndices[row], column: column)
         }
-        .frame(minWidth: 360, minHeight: minimumHeight)
+        .frame(minWidth: 360, minHeight: 100, idealHeight: minimumHeight)
         if let snapshot = model.selectedCellSnapshot {
           NativeValueInspector(
             column: snapshot.0, cell: snapshot.1,
@@ -5702,7 +5702,6 @@ private struct ResultExportMenu: View {
       }
       .accessibilityIdentifier("results.export.more")
     }
-    .buttonStyle(.bordered)
     .fixedSize(horizontal: true, vertical: true)
     .disabled(model.resultIdData == nil)
     .accessibilityHint("Atomically export all rows currently resident in this result")
@@ -5711,6 +5710,7 @@ private struct ResultExportMenu: View {
   private func exportButton(_ label: String, format: String) -> some View {
     Button(label) { Task { await model.exportLoadedResult(format: format) } }
       .accessibilityIdentifier("results.export.\(format)")
+      .buttonStyle(.bordered)
   }
 }
 
@@ -6721,6 +6721,11 @@ struct CatalogGrid: NSViewRepresentable {
       @objc func activate(_ sender: Any?) {
         onActivate?()
       }
+
+      override func accessibilityPerformPress() -> Bool {
+        onActivate?()
+        return true
+      }
     }
 
     var snapshot: WorkbenchTable
@@ -6855,7 +6860,7 @@ struct CatalogGrid: NSViewRepresentable {
       guard let button = cell.subviews.first as? ResultCellButton else { return nil }
       button.title = value
       button.setAccessibilityElement(true)
-      button.setAccessibilityRole(.cell)
+      button.setAccessibilityRole(.button)
       button.setAccessibilityLabel("\(snapshot.columns[column]), row \(row + 1)")
       button.setAccessibilityValue(value)
       button.setAccessibilityIdentifier("results.cell.\(row).\(column)")
