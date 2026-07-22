@@ -177,6 +177,40 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertNil(model.ddlChangeError)
   }
 
+  func testFindReplaceHonorsModesScopeAndZeroWidthRegex() {
+    let model = BridgeModel(client: ScriptedWorkbenchBackend(scenario: "success"))
+
+    model.queryText = "cat scatter CAT"
+    model.queryEditorSelection = NSRange(location: 0, length: 3)
+    model.showFindReplace()
+    model.findPattern = "cat"
+    model.findReplacement = "dog"
+    model.findMode = "whole_word"
+    model.replaceAllEditorMatches()
+    XCTAssertEqual(model.queryText, "dog scatter dog")
+    XCTAssertEqual(model.findStatus, "Replaced 2 matches")
+
+    model.queryText = "one one one"
+    model.queryEditorSelection = NSRange(location: 4, length: 3)
+    model.showFindReplace()
+    model.setFindScope("selection")
+    model.findPattern = "one"
+    model.findReplacement = "two"
+    model.replaceAllEditorMatches()
+    XCTAssertEqual(model.queryText, "one two one")
+    XCTAssertEqual(model.queryEditorSelection, NSRange(location: 4, length: 3))
+
+    model.queryText = "café"
+    model.queryEditorSelection = NSRange(location: 0, length: 0)
+    model.showFindReplace()
+    model.findMode = "regular_expression"
+    model.findPattern = "(?=é)"
+    model.findReplacement = "!"
+    model.replaceAllEditorMatches()
+    XCTAssertEqual(model.queryText, "caf!é")
+    XCTAssertEqual(model.findStatus, "Replaced 1 match")
+  }
+
   func testPostgresBackupUsesProbeReviewAndSupervisedStatus() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
     let model = BridgeModel(client: backend)

@@ -34,6 +34,29 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testFindReplaceRunsThroughEditorSheet() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_ACTIVE_QUERY": "1"])
+    let editor = app.textViews["query.editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+
+    app.typeKey("f", modifierFlags: [.command, .option])
+    let pattern = app.textFields["find-replace.pattern"]
+    XCTAssertTrue(pattern.waitForExistence(timeout: 10))
+    pattern.click()
+    pattern.typeText("SELECT")
+    let replacement = app.textFields["find-replace.replacement"]
+    replacement.click()
+    replacement.typeText("VALUES")
+    app.buttons["find-replace.replace-all"].click()
+
+    XCTAssertTrue(app.staticTexts["find-replace.status"].waitForExistence(timeout: 5))
+    XCTAssertTrue((editor.value as? String ?? "").contains("VALUES"))
+    app.buttons["find-replace.dismiss"].click()
+  }
+
+  @MainActor
   func testProfileCreationSavesAndAppearsThroughUserControls() throws {
     let app = launch(scenario: "success")
 

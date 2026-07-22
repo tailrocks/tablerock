@@ -94,7 +94,7 @@ architecture decisions.
 | Statement selection | Core | Execute selection or current statement without naive semicolon splitting | Procedures, comments, strings, and multi-statement fixtures |
 | Revisioned completion | Core | Keywords, catalogs, aliases, types, functions, and Redis commands; old results cannot apply | Race tests over edits and context changes |
 | Query parameters | Parity | Named parameters become prepared/bound values where the engine supports them; never string substitution | Injection and type-conversion tests |
-| Find/replace | Parity | Literal, case, word, and regular-expression modes with explicit scope | Unicode and zero-width-match tests |
+| Find/replace | Parity | Literal, case, word, and regular-expression modes with explicit scope | TUI literal flow (evidence 293); native document/selection scopes, four modes, Unicode and zero-width replay (evidence 641); TUI word/regex parity remains |
 | Formatting | Parity | Dialect-aware formatting preserves comments, literals, identifier quoting, and cursor intent | Golden corpus owned by TableRock |
 | Query limits | Core | Enforce server-side limits only after parser proof; otherwise bound result consumption below presentation | Clause-order and misleading-limit tests |
 | Explain | Parity | Raw and structured plans; engine-specific modes stay explicit | Versioned plan parsers with unknown-node fallback |

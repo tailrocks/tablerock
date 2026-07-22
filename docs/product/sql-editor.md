@@ -29,6 +29,13 @@ Editor above results by default; the split is resizable and remembered.
 - The current statement is visibly marked; **Run** executes the selection
   when one exists, else the current statement.
 
+Find and Replace is explicit editor authority. Both clients expose previous,
+next, replace, and bounded replace-all actions over either the whole document
+or a frozen current-selection scope. Modes are case-insensitive literal,
+case-sensitive literal, Unicode word, and regular expression. Invalid patterns
+and empty selection scopes remain visible errors. Zero-width regular-expression
+matches advance without looping; replace-all stops above 10,000 matches.
+
 ## Autocomplete
 
 Typing opens a completion popup anchored at the cursor:

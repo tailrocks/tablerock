@@ -83,6 +83,9 @@ freshness-checked per repo convention).
 
 - ~~True ENOSPC volume-image CI job~~ (closed: evidence 328, 1MiB tmpfs on ubuntu)
 - Fixed-spec runner perf budgets + TUI first-paint / first-row numbers (optional polish)
+- Native Find and Replace now covers explicit document/selection scope,
+  literal/case/word/regex modes, and zero-width safety (evidence 641). TUI
+  word/regex/scope parity remains open.
 
 ## STOP conditions
 
