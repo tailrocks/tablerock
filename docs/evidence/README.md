@@ -510,6 +510,7 @@ How to read an evidence document:
 - 634 — [Hosted control and runner isolation](delivery/634-hosted-control-and-runner-isolation.md)
 - 635 — [Native PostgreSQL activity](delivery/635-native-postgresql-activity.md)
 - 636 — [Native PostgreSQL backup and restore](delivery/636-native-postgresql-backup-restore.md)
+- 637 — [Native PostgreSQL relationships](delivery/637-native-postgresql-relationships.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

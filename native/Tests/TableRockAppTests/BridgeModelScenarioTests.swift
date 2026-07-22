@@ -1,5 +1,5 @@
-import XCTest
 import TableRockFeature
+import XCTest
 
 @testable import TableRock
 
@@ -83,6 +83,27 @@ final class BridgeModelScenarioTests: XCTestCase {
     await model.signalPostgresBackend(kind: "cancel", pid: 4242)
     XCTAssertEqual(model.postgresActivityOutcome, "Cancel acknowledged for PID 4242")
     XCTAssertNil(model.postgresActivityError)
+  }
+
+  func testPostgresRelationshipsShowCycleAndOpenRelatedTarget() async throws {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let model = BridgeModel(client: backend)
+
+    await model.connectByParams()
+    let session = Data(repeating: 1, count: 16)
+    model.catalogSnapshot = try await backend.refreshCatalog(session: session, parentNodeId: nil)
+    let table = try XCTUnwrap(model.catalogSnapshot?.last)
+    let nodeKey = table.idBytes.map { String(format: "%02x", $0) }.joined()
+    await model.openCatalogObject(nodeKey: nodeKey)
+    await model.showPostgresRelationships()
+
+    XCTAssertTrue(model.postgresRelationshipsPresented)
+    XCTAssertEqual(model.postgresRelationshipSnapshot?.edges.count, 2)
+    XCTAssertEqual(
+      model.postgresRelationshipSnapshot?.edges.filter {
+        $0.fromTable == $0.toTable
+      }.count, 1)
+    XCTAssertNil(model.postgresRelationshipsError)
   }
 
   func testPostgresBackupUsesProbeReviewAndSupervisedStatus() async {

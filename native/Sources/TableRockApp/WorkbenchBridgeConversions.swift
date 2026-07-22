@@ -131,6 +131,19 @@ extension BridgePostgresActivityRow {
       pid: pid, user: user, application: application, state: state, queryPreview: queryPreview)
   }
 }
+extension BridgeRelationshipEdge {
+  var workbench: WorkbenchRelationshipEdge {
+    .init(
+      fromSchema: fromSchema, fromTable: fromTable, fromColumn: fromColumn,
+      toSchema: toSchema, toTable: toTable, toColumn: toColumn)
+  }
+}
+extension BridgeRelationshipSnapshot {
+  var workbench: WorkbenchRelationshipSnapshot {
+    .init(
+      namespace: namespace, relation: relation, edges: edges.map(\.workbench), truncated: truncated)
+  }
+}
 extension BridgeBackendSignalOutcome {
   var workbench: WorkbenchBackendSignalOutcome {
     .init(kind: kind, pid: pid, acknowledged: acknowledged)

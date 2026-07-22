@@ -214,6 +214,25 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn postgres_relationships<'a>(
+        &'a self,
+        schema: &'a str,
+        relation: &'a str,
+    ) -> DriverFuture<'a, Result<(tablerock_core::RelationshipGraph, bool), AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => {
+                    session.postgres_relationships(schema, relation).await
+                }
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn signal_postgres_backend<'a>(
         &'a self,
         terminate: bool,

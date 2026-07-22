@@ -1011,6 +1011,56 @@ impl PostgresSession {
             .collect()
     }
 
+    /// Bounded inbound and outbound foreign-key graph around one relation.
+    pub async fn relationship_snapshot(
+        &self,
+        schema: &str,
+        relation: &str,
+    ) -> Result<(tablerock_core::RelationshipGraph, bool), PostgresError> {
+        if schema.is_empty() || relation.is_empty() {
+            return Err(PostgresError::InvalidLimits);
+        }
+        const LIMIT: i64 = 512;
+        let rows = self
+            .client
+            .query(
+                "SELECT sn.nspname::text, sc.relname::text, sa.attname::text, \
+                        tn.nspname::text, tc.relname::text, ta.attname::text \
+                 FROM pg_catalog.pg_constraint con \
+                 JOIN pg_catalog.pg_class sc ON sc.oid = con.conrelid \
+                 JOIN pg_catalog.pg_namespace sn ON sn.oid = sc.relnamespace \
+                 JOIN pg_catalog.pg_class tc ON tc.oid = con.confrelid \
+                 JOIN pg_catalog.pg_namespace tn ON tn.oid = tc.relnamespace \
+                 JOIN LATERAL unnest(con.conkey, con.confkey) \
+                   WITH ORDINALITY AS keys(source_attnum, target_attnum, ordinal) ON true \
+                 JOIN pg_catalog.pg_attribute sa \
+                   ON sa.attrelid = sc.oid AND sa.attnum = keys.source_attnum \
+                 JOIN pg_catalog.pg_attribute ta \
+                   ON ta.attrelid = tc.oid AND ta.attnum = keys.target_attnum \
+                 WHERE con.contype = 'f' AND ( \
+                   (sn.nspname = $1 AND sc.relname = $2) OR \
+                   (tn.nspname = $1 AND tc.relname = $2)) \
+                 ORDER BY sn.nspname, sc.relname, con.conname, keys.ordinal \
+                 LIMIT $3",
+                &[&schema, &relation, &(LIMIT + 1)],
+            )
+            .await
+            .map_err(|error| map_tokio_postgres_error(&error))?;
+        let truncated = rows.len() > LIMIT as usize;
+        let mut graph = tablerock_core::RelationshipGraph::default();
+        for row in rows.into_iter().take(LIMIT as usize) {
+            graph.push(tablerock_core::RelationshipEdge {
+                from_schema: row.try_get(0).map_err(|_| PostgresError::Protocol)?,
+                from_table: row.try_get(1).map_err(|_| PostgresError::Protocol)?,
+                from_column: row.try_get(2).map_err(|_| PostgresError::Protocol)?,
+                to_schema: row.try_get(3).map_err(|_| PostgresError::Protocol)?,
+                to_table: row.try_get(4).map_err(|_| PostgresError::Protocol)?,
+                to_column: row.try_get(5).map_err(|_| PostgresError::Protocol)?,
+            });
+        }
+        Ok((graph, truncated))
+    }
+
     /// Execute a reviewed DDL plan (identifiers quoted; never free SQL).
     pub async fn execute_ddl_plan(
         &self,

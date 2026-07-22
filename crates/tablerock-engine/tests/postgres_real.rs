@@ -2856,6 +2856,76 @@ async fn ddl_add_column_and_list_roles() {
 }
 
 #[tokio::test]
+async fn relationship_snapshot_covers_inbound_outbound_composite_and_cycle() {
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let session = PostgresSession::connect(&PostgresConnectConfig::new(
+        container_host!(container),
+        port,
+        text("postgres"),
+        text("postgres"),
+        PostgresTlsMode::Disabled,
+    ))
+    .await
+    .unwrap();
+    session
+        .execute_sql(
+            "CREATE TABLE graph_parent (a int, b int, PRIMARY KEY (a, b));
+             CREATE TABLE graph_child (
+               id int PRIMARY KEY,
+               parent_a int,
+               parent_b int,
+               previous_id int REFERENCES graph_child(id),
+               FOREIGN KEY (parent_a, parent_b) REFERENCES graph_parent(a, b)
+             );
+             CREATE TABLE graph_leaf (
+               child_id int REFERENCES graph_child(id)
+             );",
+        )
+        .await
+        .unwrap();
+
+    let (graph, truncated) = session
+        .relationship_snapshot("public", "graph_child")
+        .await
+        .unwrap();
+    assert!(!truncated);
+    assert_eq!(graph.edges.len(), 4);
+    assert_eq!(graph.self_cycles().len(), 1);
+    assert_eq!(graph.outbound("public", "graph_child").len(), 3);
+    assert!(graph.edges.iter().any(|edge| {
+        edge.from_table == "graph_leaf"
+            && edge.from_column == "child_id"
+            && edge.to_table == "graph_child"
+            && edge.to_column == "id"
+    }));
+    let (missing, missing_truncated) = session
+        .relationship_snapshot("public", "graph_parent")
+        .await
+        .unwrap();
+    assert!(!missing_truncated);
+    assert_eq!(
+        missing.edges.len(),
+        2,
+        "composite inbound FK remains two edges"
+    );
+    let (none, none_truncated) = session
+        .relationship_snapshot("public", "no_such_relation")
+        .await
+        .unwrap();
+    assert!(none.edges.is_empty());
+    assert!(!none_truncated);
+}
+
+#[tokio::test]
 async fn role_memberships_and_table_privileges() {
     let container = GenericImage::new("postgres", "18.4-alpine")
         .with_exposed_port(5432.tcp())

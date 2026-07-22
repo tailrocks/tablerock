@@ -478,4 +478,30 @@ mod tests {
         assert_eq!(g.self_cycles().len(), 1);
         assert_eq!(g.outbound("public", "orders").len(), 1);
     }
+
+    #[test]
+    fn relationship_graph_replays_large_cycles_without_recursion() {
+        let mut graph = RelationshipGraph::default();
+        for index in 0..4_096 {
+            graph.push(RelationshipEdge {
+                from_schema: "public".into(),
+                from_table: format!("node_{index}"),
+                from_column: "parent_id".into(),
+                to_schema: "public".into(),
+                to_table: format!("node_{}", (index + 1) % 4_096),
+                to_column: "id".into(),
+            });
+        }
+        graph.push(RelationshipEdge {
+            from_schema: "public".into(),
+            from_table: "node_0".into(),
+            from_column: "self_id".into(),
+            to_schema: "public".into(),
+            to_table: "node_0".into(),
+            to_column: "id".into(),
+        });
+        assert_eq!(graph.edges.len(), 4_097);
+        assert_eq!(graph.self_cycles().len(), 1);
+        assert_eq!(graph.outbound("public", "node_0").len(), 2);
+    }
 }

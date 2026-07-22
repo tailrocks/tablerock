@@ -490,6 +490,21 @@ pub trait DriverSession: Send + Sync {
         })
     }
 
+    /// PostgreSQL-only bounded foreign-key graph around one relation.
+    fn postgres_relationships<'a>(
+        &'a self,
+        schema: &'a str,
+        relation: &'a str,
+    ) -> DriverFuture<'a, Result<(tablerock_core::RelationshipGraph, bool), AdapterError>> {
+        let _ = (schema, relation);
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
     /// PostgreSQL-only backend cancel/terminate using a bound PID.
     fn signal_postgres_backend<'a>(
         &'a self,
@@ -862,6 +877,18 @@ impl DriverSession for PostgresSession {
     ) -> DriverFuture<'a, Result<Vec<PostgresActivityRow>, AdapterError>> {
         Box::pin(async move {
             PostgresSession::activity_snapshot(self)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
+    fn postgres_relationships<'a>(
+        &'a self,
+        schema: &'a str,
+        relation: &'a str,
+    ) -> DriverFuture<'a, Result<(tablerock_core::RelationshipGraph, bool), AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::relationship_snapshot(self, schema, relation)
                 .await
                 .map_err(map_postgres)
         })

@@ -794,6 +794,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func postgresActivity(sessionId: Data) throws  -> [BridgePostgresActivityRow]
 
     /**
+     * Loads a bounded inbound/outbound PostgreSQL FK graph for one catalog object.
+     */
+    func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws  -> BridgeRelationshipSnapshot
+
+    /**
      * Returns one bounded process status projection.
      */
     func postgresToolStatus(operationId: Data) throws  -> BridgePostgresToolStatus
@@ -1441,6 +1446,20 @@ open func postgresActivity(sessionId: Data)throws  -> [BridgePostgresActivityRow
     uniffi_tablerock_ffi_fn_method_tablerockbridge_postgres_activity(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(sessionId),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Loads a bounded inbound/outbound PostgreSQL FK graph for one catalog object.
+     */
+open func postgresRelationships(sessionId: Data, catalogNodeId: Data)throws  -> BridgeRelationshipSnapshot  {
+    return try  FfiConverterTypeBridgeRelationshipSnapshot_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_postgres_relationships(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(catalogNodeId),uniffiCallStatus
     )
 })
 }
@@ -3957,6 +3976,138 @@ public func FfiConverterTypeBridgeRelationStructure_lower(_ value: BridgeRelatio
 }
 
 
+public struct BridgeRelationshipEdge: Equatable, Hashable {
+    public var fromSchema: String
+    public var fromTable: String
+    public var fromColumn: String
+    public var toSchema: String
+    public var toTable: String
+    public var toColumn: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(fromSchema: String, fromTable: String, fromColumn: String, toSchema: String, toTable: String, toColumn: String) {
+        self.fromSchema = fromSchema
+        self.fromTable = fromTable
+        self.fromColumn = fromColumn
+        self.toSchema = toSchema
+        self.toTable = toTable
+        self.toColumn = toColumn
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRelationshipEdge: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRelationshipEdge: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRelationshipEdge {
+        return
+            try BridgeRelationshipEdge(
+                fromSchema: FfiConverterString.read(from: &buf),
+                fromTable: FfiConverterString.read(from: &buf),
+                fromColumn: FfiConverterString.read(from: &buf),
+                toSchema: FfiConverterString.read(from: &buf),
+                toTable: FfiConverterString.read(from: &buf),
+                toColumn: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRelationshipEdge, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.fromSchema, into: &buf)
+        FfiConverterString.write(value.fromTable, into: &buf)
+        FfiConverterString.write(value.fromColumn, into: &buf)
+        FfiConverterString.write(value.toSchema, into: &buf)
+        FfiConverterString.write(value.toTable, into: &buf)
+        FfiConverterString.write(value.toColumn, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationshipEdge_lift(_ buf: RustBuffer) throws -> BridgeRelationshipEdge {
+    return try FfiConverterTypeBridgeRelationshipEdge.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationshipEdge_lower(_ value: BridgeRelationshipEdge) -> RustBuffer {
+    return FfiConverterTypeBridgeRelationshipEdge.lower(value)
+}
+
+
+public struct BridgeRelationshipSnapshot: Equatable, Hashable {
+    public var namespace: String
+    public var relation: String
+    public var edges: [BridgeRelationshipEdge]
+    public var truncated: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(namespace: String, relation: String, edges: [BridgeRelationshipEdge], truncated: Bool) {
+        self.namespace = namespace
+        self.relation = relation
+        self.edges = edges
+        self.truncated = truncated
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRelationshipSnapshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRelationshipSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRelationshipSnapshot {
+        return
+            try BridgeRelationshipSnapshot(
+                namespace: FfiConverterString.read(from: &buf),
+                relation: FfiConverterString.read(from: &buf),
+                edges: FfiConverterSequenceTypeBridgeRelationshipEdge.read(from: &buf),
+                truncated: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRelationshipSnapshot, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.namespace, into: &buf)
+        FfiConverterString.write(value.relation, into: &buf)
+        FfiConverterSequenceTypeBridgeRelationshipEdge.write(value.edges, into: &buf)
+        FfiConverterBool.write(value.truncated, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationshipSnapshot_lift(_ buf: RustBuffer) throws -> BridgeRelationshipSnapshot {
+    return try FfiConverterTypeBridgeRelationshipSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationshipSnapshot_lower(_ value: BridgeRelationshipSnapshot) -> RustBuffer {
+    return FfiConverterTypeBridgeRelationshipSnapshot.lower(value)
+}
+
+
 /**
  * One saved filter preset for the catalog object selected by opaque id.
  */
@@ -5325,6 +5476,31 @@ fileprivate struct FfiConverterSequenceTypeBridgeRelationIndex: FfiConverterRust
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeRelationshipEdge: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeRelationshipEdge]
+
+    public static func write(_ value: [BridgeRelationshipEdge], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeRelationshipEdge.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeRelationshipEdge] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeRelationshipEdge]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeRelationshipEdge.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeSavedFilterPreset: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeSavedFilterPreset]
 
@@ -5518,6 +5694,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_postgres_activity() != 29507) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_postgres_relationships() != 822) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_postgres_tool_status() != 6607) {

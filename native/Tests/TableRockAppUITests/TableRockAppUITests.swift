@@ -422,6 +422,30 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testPostgresRelationshipsOpenFromSelectedObject() throws {
+    let app = launch(scenario: "success")
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    connect.click()
+    let refresh = app.buttons["catalog.refresh"]
+    XCTAssertTrue(refresh.waitForExistence(timeout: 10))
+    refresh.click()
+    let table = app.staticTexts["fixture_table"]
+    XCTAssertTrue(table.waitForExistence(timeout: 10))
+    table.doubleClick()
+
+    let command = app.menuItems["Relationships…"]
+    XCTAssertTrue(command.waitForExistence(timeout: 10))
+    XCTAssertTrue(command.isEnabled)
+    command.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["postgres.relationships.sheet"]
+        .waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Self-reference"].exists)
+    XCTAssertTrue(app.buttons["Open Related"].firstMatch.exists)
+  }
+
+  @MainActor
   func testPostgresBackupRequiresToolFileAndReview() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("TableRock-PostgresTool-\(UUID().uuidString)", isDirectory: true)
@@ -433,12 +457,14 @@ final class TableRockAppUITests: XCTestCase {
     let connect = app.buttons["connection.direct.connect"]
     XCTAssertTrue(connect.waitForExistence(timeout: 10))
     connect.click()
-    XCTAssertTrue(app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
 
     let command = app.menuItems["PostgreSQL Backup and Restore…"]
     XCTAssertTrue(command.waitForExistence(timeout: 10))
     command.click()
-    XCTAssertTrue(app.descendants(matching: .any)["postgres.tools.sheet"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["postgres.tools.sheet"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.descendants(matching: .any)["postgres.tools.probe-result"].exists)
     app.buttons["postgres.tools.choose-file"].click()
     app.buttons["postgres.tools.start"].click()
@@ -447,7 +473,8 @@ final class TableRockAppUITests: XCTestCase {
     confirm.click()
     let status = app.descendants(matching: .any)["postgres.tools.status"]
     XCTAssertTrue(status.waitForExistence(timeout: 10))
-    XCTAssertTrue((status.value as? String ?? status.label).localizedCaseInsensitiveContains("succeeded"))
+    XCTAssertTrue(
+      (status.value as? String ?? status.label).localizedCaseInsensitiveContains("succeeded"))
   }
 
   @MainActor

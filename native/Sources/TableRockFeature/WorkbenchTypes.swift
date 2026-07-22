@@ -72,6 +72,8 @@ public protocol WorkbenchBackend: Actor, Sendable {
     -> WorkbenchRedisKeyView
   func redisOverview(sessionId: Data) throws -> WorkbenchRedisOverview
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow]
+  func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
+    -> WorkbenchRelationshipSnapshot
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
     -> WorkbenchBackendSignalOutcome
   func probePostgresTool(kind: String, explicitPath: String?) throws -> WorkbenchPostgresToolProbe
@@ -498,6 +500,44 @@ public struct WorkbenchPostgresActivityRow: Sendable, Equatable, Identifiable {
     self.application = application
     self.state = state
     self.queryPreview = queryPreview
+  }
+}
+
+public struct WorkbenchRelationshipEdge: Sendable, Equatable, Identifiable {
+  public let fromSchema: String
+  public let fromTable: String
+  public let fromColumn: String
+  public let toSchema: String
+  public let toTable: String
+  public let toColumn: String
+  public var id: String {
+    "\(fromSchema).\(fromTable).\(fromColumn)->\(toSchema).\(toTable).\(toColumn)"
+  }
+  public init(
+    fromSchema: String, fromTable: String, fromColumn: String,
+    toSchema: String, toTable: String, toColumn: String
+  ) {
+    self.fromSchema = fromSchema
+    self.fromTable = fromTable
+    self.fromColumn = fromColumn
+    self.toSchema = toSchema
+    self.toTable = toTable
+    self.toColumn = toColumn
+  }
+}
+
+public struct WorkbenchRelationshipSnapshot: Sendable, Equatable {
+  public let namespace: String
+  public let relation: String
+  public let edges: [WorkbenchRelationshipEdge]
+  public let truncated: Bool
+  public init(
+    namespace: String, relation: String, edges: [WorkbenchRelationshipEdge], truncated: Bool
+  ) {
+    self.namespace = namespace
+    self.relation = relation
+    self.edges = edges
+    self.truncated = truncated
   }
 }
 

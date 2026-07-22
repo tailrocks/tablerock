@@ -56,13 +56,15 @@ echo "==> Building SwiftUI app (direct swiftc)"
   && swiftc -parse-as-library -c -module-name TableRockFeature \
        -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
        -target "$TARGET_arm64" Sources/TableRockFeature/*.swift \
-  && mv AppConfiguration.o AppDependencies.o StructuredValueTree.o WorkbenchTypes.o "$BUILD/" \
+  && mv AppConfiguration.o AppDependencies.o ExternalConnectionRoute.o \
+       StructuredValueTree.o WorkbenchTypes.o "$BUILD/" \
   && swiftc -parse-as-library \
        -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
        -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
        Sources/TableRockApp/*.swift \
        "$BUILD/tablerock_ffi.o" "$BUILD/PageV1.o" \
        "$BUILD/AppConfiguration.o" "$BUILD/AppDependencies.o" \
+       "$BUILD/ExternalConnectionRoute.o" \
        "$BUILD/StructuredValueTree.o" "$BUILD/WorkbenchTypes.o" \
        -L "$REPO_ROOT/target/release" -ltablerock_ffi \
        -framework SwiftUI -framework AppKit \

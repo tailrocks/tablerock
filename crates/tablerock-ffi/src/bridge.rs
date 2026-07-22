@@ -392,6 +392,24 @@ pub struct BridgePostgresActivityRow {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRelationshipEdge {
+    pub from_schema: String,
+    pub from_table: String,
+    pub from_column: String,
+    pub to_schema: String,
+    pub to_table: String,
+    pub to_column: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRelationshipSnapshot {
+    pub namespace: String,
+    pub relation: String,
+    pub edges: Vec<BridgeRelationshipEdge>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeBackendSignalOutcome {
     pub kind: String,
     pub pid: i32,
@@ -954,6 +972,15 @@ impl TableRockBridge {
         session_id: Vec<u8>,
     ) -> Result<Vec<BridgePostgresActivityRow>, BridgeError> {
         catch_entry(|| self.postgres_activity_inner(session_id))
+    }
+
+    /// Loads a bounded inbound/outbound PostgreSQL FK graph for one catalog object.
+    pub fn postgres_relationships(
+        &self,
+        session_id: Vec<u8>,
+        catalog_node_id: Vec<u8>,
+    ) -> Result<BridgeRelationshipSnapshot, BridgeError> {
+        catch_entry(|| self.postgres_relationships_inner(session_id, catalog_node_id))
     }
 
     /// Signals one PostgreSQL backend. Kind is exactly `cancel` or `terminate`.
@@ -3540,6 +3567,81 @@ impl TableRockBridge {
                 query_preview: row.query_preview().to_owned(),
             })
             .collect())
+    }
+
+    fn postgres_relationships_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        catalog_node_id_bytes: Vec<u8>,
+    ) -> Result<BridgeRelationshipSnapshot, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let catalog_node_id = catalog_node_from_bytes(&catalog_node_id_bytes).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let (driver, namespace, relation) = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            if registered.engine != Engine::PostgreSql {
+                return Err(BridgeError::rejected(
+                    "postgres-relationships-engine",
+                    "relationships require a PostgreSQL session",
+                ));
+            }
+            let node = inner
+                .catalog_nodes
+                .get(&(session_id, catalog_node_id))
+                .ok_or_else(|| {
+                    BridgeError::rejected(
+                        "unknown-catalog-node",
+                        "catalog node is stale or unknown",
+                    )
+                })?;
+            if !matches!(node.kind(), CatalogNodeKind::PostgreSqlObject(_)) {
+                return Err(BridgeError::rejected(
+                    "postgres-relationships-kind",
+                    "relationships require a PostgreSQL relation",
+                ));
+            }
+            let parent = node
+                .parent_id()
+                .and_then(|id| inner.catalog_nodes.get(&(session_id, id)))
+                .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (driver, parent.name().to_owned(), node.name().to_owned())
+        };
+        let (graph, truncated) = self
+            .runtime
+            .block_on(driver.postgres_relationships(&namespace, &relation))?
+            .map_err(|error| BridgeError::rejected("postgres-relationships", error.to_string()))?;
+        Ok(BridgeRelationshipSnapshot {
+            namespace,
+            relation,
+            edges: graph
+                .edges
+                .into_iter()
+                .map(|edge| BridgeRelationshipEdge {
+                    from_schema: edge.from_schema,
+                    from_table: edge.from_table,
+                    from_column: edge.from_column,
+                    to_schema: edge.to_schema,
+                    to_table: edge.to_table,
+                    to_column: edge.to_column,
+                })
+                .collect(),
+            truncated,
+        })
     }
 
     fn signal_postgres_backend_inner(

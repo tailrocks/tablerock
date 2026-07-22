@@ -185,6 +185,9 @@ private struct WorkbenchActions {
     model.sessionHex != nil && model.connectedEngine == "postgresql"
   }
   var canShowPostgresTools: Bool { canShowActivity }
+  var canShowRelationships: Bool {
+    canShowActivity && model.selectedObjectTab != nil
+  }
 
   func run() { Task { await model.runQuery() } }
   func cancel() { Task { await model.cancel() } }
@@ -193,6 +196,7 @@ private struct WorkbenchActions {
   func explain() { Task { await model.runExplain() } }
   func showActivity() { Task { await model.showPostgresActivity() } }
   func showPostgresTools() { Task { await model.showPostgresTools() } }
+  func showRelationships() { Task { await model.showPostgresRelationships() } }
 }
 
 private struct WorkbenchActionsKey: FocusedValueKey {
@@ -231,6 +235,8 @@ private struct WorkbenchCommands: Commands {
         .disabled(actions?.canShowActivity != true)
       Button("PostgreSQL Backup and Restore…") { actions?.showPostgresTools() }
         .disabled(actions?.canShowPostgresTools != true)
+      Button("Relationships…") { actions?.showRelationships() }
+        .disabled(actions?.canShowRelationships != true)
     }
   }
 }
@@ -389,6 +395,9 @@ extension WorkbenchBackend {
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow] {
     try scriptedUnavailable("postgres-activity")
   }
+  func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
+    -> WorkbenchRelationshipSnapshot
+  { try scriptedUnavailable("postgres-relationships") }
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
     -> WorkbenchBackendSignalOutcome
   { try scriptedUnavailable("postgres-activity-signal") }
@@ -398,8 +407,7 @@ extension WorkbenchBackend {
   func startPostgresTool(
     sessionId: Data, kind: String, toolPath: String, filePath: String, content: String,
     clean: Bool, noOwner: Bool
-  ) throws -> Data
-  { try scriptedUnavailable("postgres-tool-start") }
+  ) throws -> Data { try scriptedUnavailable("postgres-tool-start") }
   func postgresToolStatus(operationId: Data) throws -> WorkbenchPostgresToolStatus {
     try scriptedUnavailable("postgres-tool-status")
   }
@@ -684,6 +692,24 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     ]
   }
 
+  func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
+    -> WorkbenchRelationshipSnapshot
+  {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16) else {
+      return try scriptedUnavailable("postgres-relationships")
+    }
+    return WorkbenchRelationshipSnapshot(
+      namespace: "public", relation: "fixture_table",
+      edges: [
+        WorkbenchRelationshipEdge(
+          fromSchema: "public", fromTable: "fixture_table", fromColumn: "customer_id",
+          toSchema: "public", toTable: "customers", toColumn: "id"),
+        WorkbenchRelationshipEdge(
+          fromSchema: "public", fromTable: "fixture_table", fromColumn: "parent_id",
+          toSchema: "public", toTable: "fixture_table", toColumn: "id"),
+      ], truncated: false)
+  }
+
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
     -> WorkbenchBackendSignalOutcome
   {
@@ -707,8 +733,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   func startPostgresTool(
     sessionId: Data, kind: String, toolPath: String, filePath: String, content: String,
     clean: Bool, noOwner: Bool
-  ) throws -> Data
-  {
+  ) throws -> Data {
     guard scenario == "success", sessionId == Data(repeating: 1, count: 16), !toolPath.isEmpty,
       !filePath.isEmpty
     else { return try scriptedUnavailable("postgres-tool-start") }
@@ -1026,6 +1051,14 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
     try bridge.postgresActivity(sessionId: sessionId).map(\.workbench)
   }
 
+  func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
+    -> WorkbenchRelationshipSnapshot
+  {
+    try bridge.postgresRelationships(
+      sessionId: sessionId, catalogNodeId: catalogNodeId
+    ).workbench
+  }
+
   func signalPostgresBackend(sessionId: Data, kind: String, pid: Int32) throws
     -> WorkbenchBackendSignalOutcome
   {
@@ -1039,8 +1072,7 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
   func startPostgresTool(
     sessionId: Data, kind: String, toolPath: String, filePath: String, content: String,
     clean: Bool, noOwner: Bool
-  ) throws -> Data
-  {
+  ) throws -> Data {
     try bridge.startPostgresTool(
       request: BridgePostgresToolRequest(
         sessionId: sessionId, kind: kind, toolPath: toolPath, filePath: filePath,
@@ -2070,6 +2102,10 @@ final class BridgeModel {
   private(set) var postgresActivityLoading = false
   private(set) var postgresActivityError: String?
   var postgresActivityOutcome: String?
+  var postgresRelationshipsPresented = false
+  var postgresRelationshipSnapshot: WorkbenchRelationshipSnapshot?
+  private(set) var postgresRelationshipsLoading = false
+  private(set) var postgresRelationshipsError: String?
   var postgresToolsPresented = false
   var postgresToolKind = "dump"
   var postgresToolContent = "all"
@@ -3768,6 +3804,46 @@ final class BridgeModel {
     }
   }
 
+  func showPostgresRelationships() async {
+    guard connectedEngine == "postgresql", activeObjectTab != nil else { return }
+    postgresRelationshipsPresented = true
+    await refreshPostgresRelationships()
+  }
+
+  func refreshPostgresRelationships() async {
+    guard let client, let session = sessionData, let object = activeObjectTab,
+      !postgresRelationshipsLoading
+    else { return }
+    postgresRelationshipsLoading = true
+    postgresRelationshipsError = nil
+    defer { postgresRelationshipsLoading = false }
+    do {
+      postgresRelationshipSnapshot = try await client.postgresRelationships(
+        sessionId: session, catalogNodeId: object.catalogNodeId)
+    } catch {
+      postgresRelationshipSnapshot = nil
+      postgresRelationshipsError = "Relationships unavailable: \(error)"
+    }
+  }
+
+  func openRelatedRelation(_ edge: WorkbenchRelationshipEdge) async {
+    guard let snapshot = postgresRelationshipSnapshot, let nodes = catalogSnapshot else { return }
+    let selectedIsSource =
+      edge.fromSchema == snapshot.namespace && edge.fromTable == snapshot.relation
+    let namespace = selectedIsSource ? edge.toSchema : edge.fromSchema
+    let relation = selectedIsSource ? edge.toTable : edge.fromTable
+    let node = nodes.first { candidate in
+      guard candidate.name == relation, let parentId = candidate.parentIdBytes else { return false }
+      return nodes.first(where: { $0.idBytes == parentId })?.name == namespace
+    }
+    guard let node else {
+      postgresRelationshipsError = "Load \(namespace).\(relation) in the catalog before opening it."
+      return
+    }
+    postgresRelationshipsPresented = false
+    await openCatalogObject(nodeKey: catalogNodeKey(node.idBytes))
+  }
+
   func signalPostgresBackend(kind: String, pid: Int32) async {
     guard let client, let session = sessionData else { return }
     postgresActivityError = nil
@@ -3775,7 +3851,8 @@ final class BridgeModel {
     do {
       let outcome = try await client.signalPostgresBackend(
         sessionId: session, kind: kind, pid: pid)
-      postgresActivityOutcome = outcome.acknowledged
+      postgresActivityOutcome =
+        outcome.acknowledged
         ? "\(kind.capitalized) acknowledged for PID \(pid)"
         : "PID \(pid) was not signalable"
       await refreshPostgresActivity()
@@ -3811,7 +3888,8 @@ final class BridgeModel {
       prompt: postgresToolKind == "dump" ? "Choose" : "Restore",
       suggestedFilename: postgresToolKind == "dump" ? "tablerock.dump" : nil,
       allowedExtensions: ["dump", "backup"])
-    postgresToolFileUrl = postgresToolKind == "dump"
+    postgresToolFileUrl =
+      postgresToolKind == "dump"
       ? dependencies.filePanels.chooseSaveFile(request)
       : dependencies.filePanels.chooseOpenFile(request)
     postgresToolStatus = nil
@@ -3880,8 +3958,9 @@ final class BridgeModel {
   }
 
   func closePostgresTools() {
-    guard postgresToolStatus?.phase != "running"
-      && postgresToolStatus?.phase != "cancel_requested"
+    guard
+      postgresToolStatus?.phase != "running"
+        && postgresToolStatus?.phase != "cancel_requested"
     else { return }
     releasePostgresToolSecurityScope()
     postgresToolsPresented = false
@@ -4288,7 +4367,8 @@ final class BridgeModel {
         favorite: false, target: .savedQuery($0.queryId))
     }
     let query = quickSwitcherSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    return items
+    return
+      items
       .filter {
         query.isEmpty || $0.title.lowercased().contains(query)
           || $0.subtitle.lowercased().contains(query)
@@ -5391,6 +5471,9 @@ struct ContentView: View {
     .sheet(isPresented: $model.postgresActivityPresented) {
       PostgresActivitySheet()
     }
+    .sheet(isPresented: $model.postgresRelationshipsPresented) {
+      PostgresRelationshipsSheet()
+    }
     .sheet(isPresented: $model.postgresToolsPresented) {
       PostgresToolsSheet()
     }
@@ -6030,7 +6113,8 @@ private struct CsvImportSheet: View {
           .buttonStyle(.borderedProminent)
           .disabled(
             model.csvImportPreview == nil || model.csvImportReview != nil
-              || model.csvImportOutcome != nil || model.csvImportApplying)
+              || model.csvImportOutcome != nil || model.csvImportApplying
+          )
           .accessibilityIdentifier("import.csv.stage")
         Button("Apply Import") { Task { await model.applyCsvImport() } }
           .buttonStyle(.borderedProminent)
@@ -6204,6 +6288,64 @@ private struct PendingPostgresSignal {
   let pid: Int32
 }
 
+private struct PostgresRelationshipsSheet: View {
+  @Environment(BridgeModel.self) private var model
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        Label("Relationships", systemImage: "arrow.triangle.branch")
+          .font(.headline)
+        Spacer()
+        Button("Refresh") { Task { await model.refreshPostgresRelationships() } }
+          .disabled(model.postgresRelationshipsLoading)
+        Button("Close") { model.postgresRelationshipsPresented = false }
+      }
+      if let snapshot = model.postgresRelationshipSnapshot {
+        Text(
+          "\(snapshot.namespace).\(snapshot.relation) · \(snapshot.edges.count) foreign-key columns"
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        if snapshot.truncated {
+          Label("Showing first 512 edges", systemImage: "exclamationmark.triangle")
+            .foregroundStyle(.orange)
+        }
+        if snapshot.edges.isEmpty && !model.postgresRelationshipsLoading {
+          ContentUnavailableView(
+            "No relationships", systemImage: "arrow.triangle.branch",
+            description: Text("No inbound or outbound foreign keys were found."))
+        } else {
+          List(snapshot.edges) { edge in
+            HStack(spacing: 10) {
+              VStack(alignment: .leading, spacing: 3) {
+                Text("\(edge.fromSchema).\(edge.fromTable).\(edge.fromColumn)")
+                Text("→ \(edge.toSchema).\(edge.toTable).\(edge.toColumn)")
+                  .foregroundStyle(.secondary)
+                if edge.fromSchema == edge.toSchema && edge.fromTable == edge.toTable {
+                  Text("Self-reference").font(.caption).foregroundStyle(.orange)
+                }
+              }
+              Spacer()
+              Button("Open Related") { Task { await model.openRelatedRelation(edge) } }
+                .accessibilityLabel("Open related relation for \(edge.id)")
+            }
+            .accessibilityIdentifier("postgres.relationship.edge.\(edge.id)")
+          }
+        }
+      }
+      if model.postgresRelationshipsLoading { ProgressView("Loading relationships…") }
+      if let error = model.postgresRelationshipsError {
+        Label(error, systemImage: "exclamationmark.triangle")
+          .foregroundStyle(.red)
+      }
+    }
+    .padding(18)
+    .frame(minWidth: 680, minHeight: 420)
+    .accessibilityIdentifier("postgres.relationships.sheet")
+  }
+}
+
 private struct PostgresActivitySheet: View {
   @Environment(BridgeModel.self) private var model
   @State private var pendingSignal: PendingPostgresSignal?
@@ -6248,9 +6390,11 @@ private struct PostgresActivitySheet: View {
               }
               .accessibilityIdentifier("postgres.activity.terminate.\(row.pid)")
             }
-            Text("\(row.user) · \(row.application.isEmpty ? "unknown application" : row.application)")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            Text(
+              "\(row.user) · \(row.application.isEmpty ? "unknown application" : row.application)"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
             Text(row.queryPreview.isEmpty ? "No query text" : row.queryPreview)
               .font(.system(.body, design: .monospaced))
               .textSelection(.enabled)
@@ -6310,9 +6454,10 @@ private struct PostgresToolsSheet: View {
 
   var body: some View {
     @Bindable var model = model
-    let target = model.activeProfile.map {
-      "\($0.name) · \($0.host ?? "unknown host"):\($0.port ?? "?")/\($0.context ?? "postgres")"
-    } ?? "Temporary · \(model.formHost):\(model.formPort)/\(model.formDatabase)"
+    let target =
+      model.activeProfile.map {
+        "\($0.name) · \($0.host ?? "unknown host"):\($0.port ?? "?")/\($0.context ?? "postgres")"
+      } ?? "Temporary · \(model.formHost):\(model.formPort)/\(model.formDatabase)"
     VStack(alignment: .leading, spacing: 16) {
       HStack {
         Label("PostgreSQL Backup and Restore", systemImage: "externaldrive.badge.timemachine")
@@ -6408,8 +6553,10 @@ private struct PostgresToolsSheet: View {
       if let status = model.postgresToolStatus {
         HStack {
           if operationActive { ProgressView() }
-          Text("\(status.phase.replacingOccurrences(of: "_", with: " ").capitalized): \(status.summary)")
-            .accessibilityIdentifier("postgres.tools.status")
+          Text(
+            "\(status.phase.replacingOccurrences(of: "_", with: " ").capitalized): \(status.summary)"
+          )
+          .accessibilityIdentifier("postgres.tools.status")
           Spacer()
           if operationActive {
             Button("Cancel", role: .destructive) { Task { await model.cancelPostgresTool() } }
@@ -6428,8 +6575,10 @@ private struct PostgresToolsSheet: View {
           model.requestStartPostgresTool()
         }
         .buttonStyle(.borderedProminent)
-        .disabled(operationActive || model.postgresToolProbe?.available != true
-          || model.postgresToolFileUrl == nil)
+        .disabled(
+          operationActive || model.postgresToolProbe?.available != true
+            || model.postgresToolFileUrl == nil
+        )
         .accessibilityIdentifier("postgres.tools.start")
       }
     }
