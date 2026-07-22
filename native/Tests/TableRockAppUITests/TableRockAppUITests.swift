@@ -57,6 +57,33 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testNamedParametersRequireSheetBeforeExecution() throws {
+    let app = launch(scenario: "success")
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    connect.click()
+    let editor = app.textViews["query.editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    editor.click()
+    app.typeKey("a", modifierFlags: .command)
+    app.typeText("SELECT :id")
+    app.buttons["query.run"].click()
+
+    let value = app.textFields["query-parameters.value.id"]
+    XCTAssertTrue(value.waitForExistence(timeout: 10))
+    value.click()
+    value.typeText("42 OR 1=1")
+    XCTAssertFalse(app.tables["results.grid"].exists)
+    app.buttons["query-parameters.run"].click()
+
+    let status = app.staticTexts["query.status"]
+    let completed = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value CONTAINS 'write ok'"), object: status)
+    XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 10), .completed)
+    XCTAssertFalse(app.descendants(matching: .any)["query-parameters.sheet"].exists)
+  }
+
+  @MainActor
   func testProfileCreationSavesAndAppearsThroughUserControls() throws {
     let app = launch(scenario: "success")
 

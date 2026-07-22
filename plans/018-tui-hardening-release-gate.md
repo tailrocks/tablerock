@@ -86,6 +86,9 @@ freshness-checked per repo convention).
 - Native Find and Replace now covers explicit document/selection scope,
   literal/case/word/regex modes, and zero-width safety (evidence 641). TUI
   word/regex/scope parity remains open.
+- Native named-query parameters now use Rust inspection, engine-correct typed
+  PostgreSQL/ClickHouse placeholders, and a native run/cancel sheet (evidence
+  642). Hosted native ClickHouse/type-error replay remains open.
 
 ## STOP conditions
 

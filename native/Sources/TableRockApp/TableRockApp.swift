@@ -377,6 +377,12 @@ extension WorkbenchBackend {
   func submit(session: Data, intent: String, statement: String?) throws -> Data {
     try scriptedUnavailable("submit")
   }
+  func inspectNamedParameters(statement: String) throws -> [String] {
+    try scriptedUnavailable("named-parameters")
+  }
+  func submitNamed(
+    session: Data, statement: String, bindings: [WorkbenchQueryParameter]
+  ) throws -> Data { try scriptedUnavailable("named-parameters") }
   func finish(operationId: Data) async throws -> WorkbenchOperation {
     try scriptedUnavailable("finish")
   }
@@ -613,6 +619,30 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
 
   func submit(session: Data, intent: String, statement: String?) throws -> Data {
     submittedIntent = intent
+    return Data(repeating: 2, count: 16)
+  }
+
+  func inspectNamedParameters(statement: String) throws -> [String] {
+    if statement.contains(":id") { return ["id"] }
+    if statement.contains(":value") { return ["value"] }
+    return []
+  }
+
+  func submitNamed(
+    session: Data, statement: String, bindings: [WorkbenchQueryParameter]
+  ) throws -> Data {
+    guard !bindings.isEmpty else { return try scriptedUnavailable("named-parameters") }
+    for binding in bindings {
+      if binding.kind == "integer", Int64(binding.value) == nil {
+        return try scriptedUnavailable("invalid 64-bit integer")
+      }
+      if binding.kind == "float",
+        Double(binding.value).map({ !$0.isFinite }) != false
+      {
+        return try scriptedUnavailable("invalid 64-bit float")
+      }
+    }
+    submittedIntent = "execute"
     return Data(repeating: 2, count: 16)
   }
 
@@ -1102,6 +1132,23 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
         intent: intent, sessionId: session, statement: statement,
         resultId: nil, startRow: nil, rowCount: 500, expectedRevision: 0
       ))
+  }
+
+  func inspectNamedParameters(statement: String) throws -> [String] {
+    try bridge.inspectNamedParameters(statement: statement).names
+  }
+
+  func submitNamed(
+    session: Data, statement: String, bindings: [WorkbenchQueryParameter]
+  ) throws -> Data {
+    try bridge.submitNamed(
+      spec: SubmitSpec(
+        intent: "execute", sessionId: session, statement: statement,
+        resultId: nil, startRow: nil, rowCount: 500, expectedRevision: 0),
+      bindings: bindings.map {
+        BridgeQueryParameter(
+          name: $0.name, kind: $0.kind, value: $0.kind == "null" ? nil : $0.value)
+      })
   }
 
   func finish(operationId: Data) async throws -> WorkbenchOperation {
@@ -2339,6 +2386,10 @@ final class BridgeModel {
   var findScope = "document"
   var findStatus: String?
   var findError: String?
+  var queryParametersPresented = false
+  var queryParameterBindings: [WorkbenchQueryParameter] = []
+  var queryParameterError: String?
+  private var parameterizedStatement: String?
   var postgresActivityPresented = false
   var postgresActivityRows: [WorkbenchPostgresActivityRow] = []
   private(set) var postgresActivityLoading = false
@@ -5442,11 +5493,16 @@ final class BridgeModel {
   private func fetchPage(
     intent: String,
     statement: String?,
-    tab: NativeQueryTab
+    tab: NativeQueryTab,
+    bindings: [WorkbenchQueryParameter]? = nil
   ) async throws -> WorkbenchTable? {
     guard let client, let session = sessionData else { return nil }
-    let operationId = try await client.submit(
-      session: session, intent: intent, statement: statement)
+    let operationId =
+      if let bindings, let statement {
+        try await client.submitNamed(session: session, statement: statement, bindings: bindings)
+      } else {
+        try await client.submit(session: session, intent: intent, statement: statement)
+      }
     tab.activeOperationId = operationId
     tab.isRunning = true
     tab.cancelOutcome = nil
@@ -5570,6 +5626,16 @@ final class BridgeModel {
     tab.queryError = nil
     tab.resultTable = nil
     do {
+      if connectedEngine != "redis" {
+        let names = try await client?.inspectNamedParameters(statement: sql) ?? []
+        if !names.isEmpty {
+          parameterizedStatement = sql
+          queryParameterBindings = names.map { WorkbenchQueryParameter(name: $0) }
+          queryParameterError = nil
+          queryParametersPresented = true
+          return
+        }
+      }
       if let table = try await fetchPage(intent: "execute", statement: sql, tab: tab) {
         tab.resultTable = table
         tab.querySummary =
@@ -5582,6 +5648,38 @@ final class BridgeModel {
     } catch {
       tab.queryError = "Query failed: \(error)"
     }
+  }
+
+  func runParameterizedQuery() async {
+    guard let statement = parameterizedStatement, !isRunning else { return }
+    let tab = activeQueryTab
+    queryParameterError = nil
+    do {
+      if let table = try await fetchPage(
+        intent: "execute", statement: statement, tab: tab,
+        bindings: queryParameterBindings)
+      {
+        tab.resultTable = table
+        tab.querySummary =
+          "result · \(counted(table.columns.count, "column")) · \(counted(table.rows.count, "row"))"
+      } else if let outcome = tab.writeOutcome {
+        tab.querySummary = "write ok · \(outcome)"
+      } else {
+        tab.querySummary = "query: no result"
+      }
+      queryParametersPresented = false
+      parameterizedStatement = nil
+      queryParameterBindings = []
+    } catch {
+      queryParameterError = "Parameterized query failed: \(error)"
+    }
+  }
+
+  func cancelQueryParameters() {
+    queryParametersPresented = false
+    parameterizedStatement = nil
+    queryParameterBindings = []
+    queryParameterError = nil
   }
 
   func runExplain() async {
@@ -6051,6 +6149,12 @@ struct ContentView: View {
     .sheet(isPresented: $model.findReplacePresented) {
       FindReplaceSheet()
     }
+    .sheet(
+      isPresented: $model.queryParametersPresented,
+      onDismiss: { model.cancelQueryParameters() }
+    ) {
+      QueryParametersSheet()
+    }
     .sheet(isPresented: $model.redisOverviewPresented) {
       RedisOverviewSheet()
     }
@@ -6326,6 +6430,81 @@ private struct FindReplaceSheet: View {
     .frame(width: 520)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("find-replace.sheet")
+  }
+}
+
+private struct QueryParametersSheet: View {
+  @Environment(BridgeModel.self) private var model
+
+  var body: some View {
+    @Bindable var model = model
+    VStack(alignment: .leading, spacing: 14) {
+      Label("Query Parameters", systemImage: "list.bullet.rectangle")
+        .font(.title2.bold())
+      Text("Values cross the Rust boundary separately from SQL text.")
+        .foregroundStyle(.secondary)
+      ForEach($model.queryParameterBindings) { $binding in
+        HStack(alignment: .firstTextBaseline) {
+          Text(":\(binding.name)")
+            .font(.system(.body, design: .monospaced))
+            .frame(width: 130, alignment: .leading)
+          Picker("Type", selection: $binding.kind) {
+            Text("Text").tag("text")
+            Text("Integer").tag("integer")
+            Text("Float").tag("float")
+            Text("Boolean").tag("boolean")
+            Text("NULL").tag("null")
+          }
+          .frame(width: 130)
+          .accessibilityIdentifier("query-parameters.type.\(binding.name)")
+          .onChange(of: binding.kind) { _, kind in
+            if kind == "boolean" && !["true", "false"].contains(binding.value) {
+              binding.value = "true"
+            } else if kind == "null" {
+              binding.value = ""
+            }
+          }
+          if binding.kind == "boolean" {
+            Picker("Value", selection: $binding.value) {
+              Text("True").tag("true")
+              Text("False").tag("false")
+            }
+            .accessibilityIdentifier("query-parameters.value.\(binding.name)")
+          } else if binding.kind == "null" {
+            Text("NULL").foregroundStyle(.secondary).frame(maxWidth: .infinity)
+          } else {
+            TextField("Value", text: $binding.value)
+              .accessibilityIdentifier("query-parameters.value.\(binding.name)")
+          }
+        }
+      }
+      if let error = model.queryParameterError {
+        Label(error, systemImage: "exclamationmark.triangle")
+          .foregroundStyle(.red)
+          .textSelection(.enabled)
+          .accessibilityIdentifier("query-parameters.error")
+      }
+      HStack {
+        Spacer()
+        Button(model.isRunning ? "Cancel Query" : "Cancel", role: .cancel) {
+          if model.isRunning {
+            Task { await model.cancel() }
+          } else {
+            model.cancelQueryParameters()
+          }
+        }
+        .accessibilityIdentifier("query-parameters.cancel")
+        Button("Run") { Task { await model.runParameterizedQuery() } }
+          .buttonStyle(.borderedProminent)
+          .disabled(model.isRunning)
+          .accessibilityIdentifier("query-parameters.run")
+      }
+    }
+    .padding(20)
+    .frame(minWidth: 620)
+    .interactiveDismissDisabled(model.isRunning)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("query-parameters.sheet")
   }
 }
 

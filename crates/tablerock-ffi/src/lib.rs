@@ -17,12 +17,13 @@ mod runtime;
 pub use bridge::{
     ApplyOutcome, BridgeBrowseFilter, BridgeBrowseSort, BridgeConnectionTestReport,
     BridgeDdlChangeRequest, BridgeDdlChangeReview, BridgeEventBatch, BridgeEventRecord,
-    BridgeHistoryItem, BridgeNativeWindowIntent, BridgePostgresToolProbe,
+    BridgeHistoryItem, BridgeNamedParameterPlan, BridgeNativeWindowIntent, BridgePostgresToolProbe,
     BridgePostgresToolRequest, BridgePostgresToolStatus, BridgeProfileDraft, BridgeProfileGroup,
-    BridgeProfileItem, BridgeProfileOrderItem, BridgeReconnectAttempt, BridgeReconnectPlan,
-    BridgeRedisSubscriptionStatus, BridgeRoleChangeRequest, BridgeRoleChangeReview,
-    BridgeRoleMembership, BridgeRolePrivilege, BridgeRoleSnapshot, BridgeSavedFilterPreset,
-    BridgeSavedQueryItem, BridgeSessionHealth, BridgeSessionIntent, BridgeSqlFile,
-    BridgeWorkspaceTab, CancelOutcome, OpenParams, ShutdownOutcome, SubmitSpec, TableRockBridge,
+    BridgeProfileItem, BridgeProfileOrderItem, BridgeQueryParameter, BridgeReconnectAttempt,
+    BridgeReconnectPlan, BridgeRedisSubscriptionStatus, BridgeRoleChangeRequest,
+    BridgeRoleChangeReview, BridgeRoleMembership, BridgeRolePrivilege, BridgeRoleSnapshot,
+    BridgeSavedFilterPreset, BridgeSavedQueryItem, BridgeSessionHealth, BridgeSessionIntent,
+    BridgeSqlFile, BridgeWorkspaceTab, CancelOutcome, OpenParams, ShutdownOutcome, SubmitSpec,
+    TableRockBridge,
 };
 pub use error::BridgeError;

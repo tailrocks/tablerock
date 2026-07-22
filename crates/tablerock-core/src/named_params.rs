@@ -19,6 +19,35 @@ pub struct NamedParamPlan {
     pub sql: String,
     /// Parameter names in first-occurrence order (1-based `$n` aligns with index+1).
     pub names: Vec<String>,
+    placeholders: Vec<NamedPlaceholder>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NamedPlaceholder {
+    start: usize,
+    end: usize,
+    parameter_index: usize,
+}
+
+impl NamedParamPlan {
+    /// Render only placeholders introduced by this plan. Existing positional
+    /// tokens in source SQL remain untouched.
+    #[must_use]
+    pub fn render_with_placeholders(
+        &self,
+        mut render: impl FnMut(usize, &str) -> String,
+    ) -> String {
+        let mut output = String::with_capacity(self.sql.len());
+        let mut cursor = 0;
+        for placeholder in &self.placeholders {
+            output.push_str(&self.sql[cursor..placeholder.start]);
+            let name = &self.names[placeholder.parameter_index];
+            output.push_str(&render(placeholder.parameter_index, name));
+            cursor = placeholder.end;
+        }
+        output.push_str(&self.sql[cursor..]);
+        output
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +86,7 @@ pub fn rewrite_named_params(sql: &str) -> Result<NamedParamPlan, NamedParamError
     let mut out = String::with_capacity(sql.len());
     let mut names: Vec<String> = Vec::new();
     let mut index_of: BTreeMap<String, usize> = BTreeMap::new();
+    let mut placeholders = Vec::new();
     let mut i = 0usize;
     while i < bytes.len() {
         // Line comment
@@ -177,15 +207,25 @@ pub fn rewrite_named_params(sql: &str) -> Result<NamedParamPlan, NamedParamError
                 index_of.insert(name.to_owned(), n);
                 n
             };
+            let start = out.len();
             out.push('$');
             out.push_str(&idx.to_string());
+            placeholders.push(NamedPlaceholder {
+                start,
+                end: out.len(),
+                parameter_index: idx - 1,
+            });
             i = j;
             continue;
         }
         out.push(sql[i..].chars().next().unwrap());
         i += sql[i..].chars().next().unwrap().len_utf8();
     }
-    Ok(NamedParamPlan { sql: out, names })
+    Ok(NamedParamPlan {
+        sql: out,
+        names,
+        placeholders,
+    })
 }
 
 fn is_valid_name(name: &str) -> bool {
@@ -288,5 +328,14 @@ mod tests {
         assert_eq!(m.get("id").map(String::as_str), Some("42"));
         assert_eq!(m.get("name").map(String::as_str), Some("alice"));
         assert_eq!(m.get("flag").map(String::as_str), Some("true"));
+    }
+
+    #[test]
+    fn alternate_render_changes_only_named_placeholders() {
+        let plan = rewrite_named_params("SELECT $1, :value, :value").unwrap();
+        assert_eq!(
+            plan.render_with_placeholders(|index, _| format!("{{p{}:Int64}}", index + 1)),
+            "SELECT $1, {p1:Int64}, {p1:Int64}"
+        );
     }
 }

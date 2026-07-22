@@ -69,6 +69,14 @@ Typing opens a completion popup anchored at the cursor:
   selectable, copyable native viewer and remain available as ordinary result
   data. Already-explained SQL is never double-prefixed.
 
+Before PostgreSQL or ClickHouse execution, Rust inspects `:name` placeholders
+outside literals, identifiers, comments, dollar-quoted bodies, casts, and
+assignments. A native sheet lists each distinct name once and requires an
+explicit text, signed 64-bit integer, finite 64-bit float, Boolean, or NULL
+value. Values cross the bridge as typed parameters and are never substituted
+into statement text. Cancel executes nothing; Run retains normal query
+cancellation and outcome behavior. Redis commands do not use this SQL flow.
+
 ## History
 
 - Executed statements enter a bounded, searchable local history with

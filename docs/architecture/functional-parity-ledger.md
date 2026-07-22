@@ -93,7 +93,7 @@ architecture decisions.
 | Syntax projection | Core | PostgreSQL/ClickHouse SQL and Redis command spans computed outside rendering | Incomplete/invalid document corpus |
 | Statement selection | Core | Execute selection or current statement without naive semicolon splitting | Procedures, comments, strings, and multi-statement fixtures |
 | Revisioned completion | Core | Keywords, catalogs, aliases, types, functions, and Redis commands; old results cannot apply | Race tests over edits and context changes |
-| Query parameters | Parity | Named parameters become prepared/bound values where the engine supports them; never string substitution | Injection and type-conversion tests |
+| Query parameters | Parity | Named parameters become prepared/bound values where the engine supports them; never string substitution | Core/TUI rewrite and bind (evidence 292); native PostgreSQL/ClickHouse typed sheet, hostile-value real PostgreSQL replay, cross-adapter placeholder proof (evidence 642) |
 | Find/replace | Parity | Literal, case, word, and regular-expression modes with explicit scope | TUI literal flow (evidence 293); native document/selection scopes, four modes, Unicode and zero-width replay (evidence 641); TUI word/regex parity remains |
 | Formatting | Parity | Dialect-aware formatting preserves comments, literals, identifier quoting, and cursor intent | Golden corpus owned by TableRock |
 | Query limits | Core | Enforce server-side limits only after parser proof; otherwise bound result consumption below presentation | Clause-order and misleading-limit tests |

@@ -211,6 +211,28 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertEqual(model.findStatus, "Replaced 1 match")
   }
 
+  func testNamedQueryParametersRequireTypedSheetBeforeRun() async {
+    let model = BridgeModel(client: ScriptedWorkbenchBackend(scenario: "success"))
+    await model.connectByParams()
+    model.queryText = "SELECT :id::int"
+
+    await model.runQuery()
+
+    XCTAssertTrue(model.queryParametersPresented)
+    XCTAssertEqual(model.queryParameterBindings.map(\.name), ["id"])
+    XCTAssertNil(model.resultTable)
+    model.queryParameterBindings[0].kind = "integer"
+    model.queryParameterBindings[0].value = "42 OR 1=1"
+    await model.runParameterizedQuery()
+    XCTAssertTrue(model.queryParametersPresented)
+    XCTAssertNotNil(model.queryParameterError)
+
+    model.queryParameterBindings[0].value = "42"
+    await model.runParameterizedQuery()
+    XCTAssertFalse(model.queryParametersPresented)
+    XCTAssertEqual(model.querySummary, "write ok · ok")
+  }
+
   func testPostgresBackupUsesProbeReviewAndSupervisedStatus() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
     let model = BridgeModel(client: backend)

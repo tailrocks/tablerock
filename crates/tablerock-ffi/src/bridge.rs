@@ -25,6 +25,7 @@ use tablerock_core::{
     SecretSource, SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
     StatementText, SupportBundle, SupportPlatform, TlsPolicy, copy_cell_from_page,
     format_copy_table, is_safe_preset_name, parse_connection_url, reconnect_decision,
+    rewrite_named_params,
 };
 use tablerock_engine::{
     AdapterFailureClass, BrowseDialect, BrowsePlan, CatalogRequest, ClickHouseCompression,
@@ -119,6 +120,31 @@ pub struct SubmitSpec {
     pub row_count: Option<u32>,
     /// Expected aggregate revision (context scope).
     pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeNamedParameterPlan {
+    pub names: Vec<String>,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct BridgeQueryParameter {
+    pub name: String,
+    /// `text`, `integer`, `float`, `boolean`, or `null`.
+    pub kind: String,
+    /// Absent only for `null`.
+    pub value: Option<String>,
+}
+
+impl std::fmt::Debug for BridgeQueryParameter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BridgeQueryParameter")
+            .field("name", &self.name)
+            .field("kind", &self.kind)
+            .field("value", &self.value.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 /// One native object-browse sort key. Rust validates and quotes the column.
@@ -1335,6 +1361,27 @@ impl TableRockBridge {
     /// Submits a command and returns a 16-byte operation id.
     pub fn submit(&self, spec: SubmitSpec) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| self.submit_inner(spec))
+    }
+
+    /// Inspects named placeholders without retaining statement text.
+    pub fn inspect_named_parameters(
+        &self,
+        statement: String,
+    ) -> Result<BridgeNamedParameterPlan, BridgeError> {
+        catch_entry(|| {
+            let plan = rewrite_named_params(&statement)
+                .map_err(|error| BridgeError::rejected("named-parameters", error.to_string()))?;
+            Ok(BridgeNamedParameterPlan { names: plan.names })
+        })
+    }
+
+    /// Rewrites named placeholders and submits separately typed values.
+    pub fn submit_named(
+        &self,
+        spec: SubmitSpec,
+        bindings: Vec<BridgeQueryParameter>,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| self.submit_named_inner(spec, bindings))
     }
 
     /// Pumps driver updates for `operation_id` until a terminal fact or no pending work.
@@ -5298,6 +5345,99 @@ impl TableRockBridge {
         Ok(session_bytes(session_id))
     }
 
+    fn submit_named_inner(
+        &self,
+        mut spec: SubmitSpec,
+        bindings: Vec<BridgeQueryParameter>,
+    ) -> Result<Vec<u8>, BridgeError> {
+        if !spec.intent.eq_ignore_ascii_case("execute") {
+            return Err(BridgeError::rejected(
+                "named-parameter-intent",
+                "named parameters require execute intent",
+            ));
+        }
+        let statement = spec.statement.as_deref().ok_or_else(|| {
+            BridgeError::rejected("named-parameter-statement", "statement is required")
+        })?;
+        let plan = rewrite_named_params(statement)
+            .map_err(|error| BridgeError::rejected("named-parameters", error.to_string()))?;
+        if plan.names.is_empty() {
+            return Err(BridgeError::rejected(
+                "named-parameters-empty",
+                "statement has no named parameters",
+            ));
+        }
+        if bindings.len() != plan.names.len() {
+            return Err(BridgeError::rejected(
+                "named-parameter-count",
+                "every named parameter requires exactly one binding",
+            ));
+        }
+
+        let engine = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let session_id = session_from_bytes(&spec.session_id).map_err(|_| {
+                BridgeError::rejected("bad-session-id", "session id must be 16 bytes")
+            })?;
+            inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?
+                .engine
+        };
+        if engine == Engine::Redis {
+            return Err(BridgeError::rejected(
+                "named-parameter-engine",
+                "named SQL parameters are unavailable for Redis",
+            ));
+        }
+
+        let mut by_name = BTreeMap::new();
+        for binding in bindings {
+            if binding.name.len() > 64 || binding.value.as_ref().is_some_and(|v| v.len() > 65_536) {
+                return Err(BridgeError::rejected(
+                    "named-parameter-limit",
+                    "parameter name or value exceeds its byte limit",
+                ));
+            }
+            let name = binding.name.clone();
+            if by_name.insert(name, binding).is_some() {
+                return Err(BridgeError::rejected(
+                    "named-parameter-duplicate",
+                    "parameter names must be unique",
+                ));
+            }
+        }
+
+        let mut parameters = Vec::with_capacity(plan.names.len());
+        let mut kinds = Vec::with_capacity(plan.names.len());
+        for name in &plan.names {
+            let binding = by_name.remove(name).ok_or_else(|| {
+                BridgeError::rejected("named-parameter-missing", "required parameter is missing")
+            })?;
+            let (value, clickhouse_type) = parse_bridge_query_parameter(binding)?;
+            parameters.push(value);
+            kinds.push(clickhouse_type);
+        }
+        if !by_name.is_empty() {
+            return Err(BridgeError::rejected(
+                "named-parameter-extra",
+                "unexpected parameter name",
+            ));
+        }
+
+        spec.statement = Some(if engine == Engine::ClickHouse {
+            plan.render_with_placeholders(|index, _| format!("{{p{}:{}}}", index + 1, kinds[index]))
+        } else {
+            plan.sql
+        });
+        self.submit_inner_with_parameters(spec, parameters)
+    }
+
     fn submit_inner(&self, spec: SubmitSpec) -> Result<Vec<u8>, BridgeError> {
         self.submit_inner_with_parameters(spec, Vec::new())
     }
@@ -7085,4 +7225,66 @@ fn starts_with_explain_keyword(statement: &str) -> bool {
             .chars()
             .next()
             .is_none_or(|next| next.is_ascii_whitespace() || next == '(')
+}
+
+fn parse_bridge_query_parameter(
+    binding: BridgeQueryParameter,
+) -> Result<(tablerock_engine::FilterValue, &'static str), BridgeError> {
+    let missing = || {
+        BridgeError::rejected(
+            "named-parameter-value",
+            "non-null parameter requires a value",
+        )
+    };
+    match binding.kind.as_str() {
+        "text" => Ok((
+            tablerock_engine::FilterValue::Text(binding.value.ok_or_else(missing)?),
+            "String",
+        )),
+        "integer" => {
+            let raw = binding.value.ok_or_else(missing)?;
+            let value = raw.parse::<i64>().map_err(|_| {
+                BridgeError::rejected("named-parameter-integer", "invalid 64-bit integer")
+            })?;
+            Ok((tablerock_engine::FilterValue::Integer(value), "Int64"))
+        }
+        "float" => {
+            let raw = binding.value.ok_or_else(missing)?;
+            let value = raw.parse::<f64>().map_err(|_| {
+                BridgeError::rejected("named-parameter-float", "invalid 64-bit float")
+            })?;
+            if !value.is_finite() {
+                return Err(BridgeError::rejected(
+                    "named-parameter-float",
+                    "float must be finite",
+                ));
+            }
+            Ok((tablerock_engine::FilterValue::Float(value), "Float64"))
+        }
+        "boolean" => {
+            let raw = binding.value.ok_or_else(missing)?;
+            let value = match raw.to_ascii_lowercase().as_str() {
+                "true" => true,
+                "false" => false,
+                _ => {
+                    return Err(BridgeError::rejected(
+                        "named-parameter-boolean",
+                        "boolean must be true or false",
+                    ));
+                }
+            };
+            Ok((tablerock_engine::FilterValue::Boolean(value), "Bool"))
+        }
+        "null" if binding.value.is_none() => {
+            Ok((tablerock_engine::FilterValue::Null, "Nullable(String)"))
+        }
+        "null" => Err(BridgeError::rejected(
+            "named-parameter-null",
+            "null parameter cannot carry a value",
+        )),
+        _ => Err(BridgeError::rejected(
+            "named-parameter-kind",
+            "parameter kind must be text, integer, float, boolean, or null",
+        )),
+    }
 }

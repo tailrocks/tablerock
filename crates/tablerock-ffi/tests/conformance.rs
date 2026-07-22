@@ -22,7 +22,8 @@ use tablerock_engine::{
 };
 use tablerock_ffi::{
     BridgeBrowseFilter, BridgeBrowseSort, BridgeError, BridgeProfileOrderItem,
-    BridgeSavedFilterPreset, BridgeSessionIntent, BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
+    BridgeQueryParameter, BridgeSavedFilterPreset, BridgeSessionIntent, BridgeWorkspaceTab,
+    SubmitSpec, TableRockBridge,
 };
 
 struct OnePageStream(Option<ResultPage>);
@@ -877,6 +878,91 @@ fn catalog_browse_filter_debug_redacts_value() {
     );
     assert!(!debug.contains("never-log-this"));
     assert!(debug.contains("<redacted>"));
+}
+
+#[test]
+fn named_parameters_are_typed_and_never_inlined() {
+    for (engine, low) in [(Engine::PostgreSql, 187_u64), (Engine::ClickHouse, 188)] {
+        let (_, page) = sample_page(engine, low, &[7]);
+        let bridge = TableRockBridge::new_for_test();
+        let (session_id, statements) = open_fixed_observed(&bridge, engine, page);
+        let statement = "SELECT $9, :id, :secret, :id";
+        let plan = bridge.inspect_named_parameters(statement.into()).unwrap();
+        assert_eq!(plan.names, ["id", "secret"]);
+        let operation = bridge
+            .submit_named(
+                SubmitSpec {
+                    intent: "execute".into(),
+                    session_id,
+                    statement: Some(statement.into()),
+                    result_id: None,
+                    start_row: None,
+                    row_count: Some(100),
+                    expected_revision: 0,
+                },
+                vec![
+                    BridgeQueryParameter {
+                        name: "secret".into(),
+                        kind: "text".into(),
+                        value: Some("never-inline-this".into()),
+                    },
+                    BridgeQueryParameter {
+                        name: "id".into(),
+                        kind: "integer".into(),
+                        value: Some("42".into()),
+                    },
+                ],
+            )
+            .unwrap();
+        bridge.pump(operation).unwrap();
+        let statements = statements.lock().unwrap();
+        assert_eq!(statements[0].1, 2);
+        assert_eq!(
+            statements[0].0,
+            if engine == Engine::PostgreSql {
+                "SELECT $9, $1, $2, $1"
+            } else {
+                "SELECT $9, {p1:Int64}, {p2:String}, {p1:Int64}"
+            }
+        );
+        assert!(!statements[0].0.contains("never-inline-this"));
+    }
+
+    let debug = format!(
+        "{:?}",
+        BridgeQueryParameter {
+            name: "password".into(),
+            kind: "text".into(),
+            value: Some("never-log-this".into()),
+        }
+    );
+    assert!(!debug.contains("never-log-this"));
+
+    let (_, page) = sample_page(Engine::PostgreSql, 189, &[7]);
+    let bridge = TableRockBridge::new_for_test();
+    let session_id = open_fixed(&bridge, Engine::PostgreSql, page);
+    let invalid = bridge
+        .submit_named(
+            SubmitSpec {
+                intent: "execute".into(),
+                session_id,
+                statement: Some("SELECT :id::int8".into()),
+                result_id: None,
+                start_row: None,
+                row_count: Some(100),
+                expected_revision: 0,
+            },
+            vec![BridgeQueryParameter {
+                name: "id".into(),
+                kind: "integer".into(),
+                value: Some("42 OR TRUE".into()),
+            }],
+        )
+        .unwrap_err();
+    assert!(matches!(
+        invalid,
+        BridgeError::Rejected { ref code, .. } if code == "named-parameter-integer"
+    ));
 }
 
 #[test]

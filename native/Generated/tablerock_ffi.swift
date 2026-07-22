@@ -748,6 +748,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
 
     func historyRetention() throws  -> String
 
+    /**
+     * Inspects named placeholders without retaining statement text.
+     */
+    func inspectNamedParameters(statement: String) throws  -> BridgeNamedParameterPlan
+
     func listCatalogFilterPresets(sessionId: Data, catalogNodeId: Data) throws  -> [BridgeSavedFilterPreset]
 
     /**
@@ -972,6 +977,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func submitCatalogBrowseWithPlan(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], filters: [BridgeBrowseFilter], rawWhere: String?, rowCount: UInt32) throws  -> Data
 
     func submitCatalogBrowseWithSort(sessionId: Data, catalogNodeId: Data, sort: [BridgeBrowseSort], rowCount: UInt32) throws  -> Data
+
+    /**
+     * Rewrites named placeholders and submits separately typed values.
+     */
+    func submitNamed(spec: SubmitSpec, bindings: [BridgeQueryParameter]) throws  -> Data
 
     /**
      * Connects, describes, and disconnects without changing persistence.
@@ -1373,6 +1383,19 @@ open func historyRetention()throws  -> String  {
         uniffiCallStatus in
     uniffi_tablerock_ffi_fn_method_tablerockbridge_history_retention(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Inspects named placeholders without retaining statement text.
+     */
+open func inspectNamedParameters(statement: String)throws  -> BridgeNamedParameterPlan  {
+    return try  FfiConverterTypeBridgeNamedParameterPlan_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_inspect_named_parameters(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(statement),uniffiCallStatus
     )
 })
 }
@@ -2060,6 +2083,20 @@ open func submitCatalogBrowseWithSort(sessionId: Data, catalogNodeId: Data, sort
         FfiConverterData.lower(catalogNodeId),
         FfiConverterSequenceTypeBridgeBrowseSort.lower(sort),
         FfiConverterUInt32.lower(rowCount),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Rewrites named placeholders and submits separately typed values.
+     */
+open func submitNamed(spec: SubmitSpec, bindings: [BridgeQueryParameter])throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_submit_named(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeSubmitSpec_lower(spec),
+        FfiConverterSequenceTypeBridgeQueryParameter.lower(bindings),uniffiCallStatus
     )
 })
 }
@@ -3085,6 +3122,56 @@ public func FfiConverterTypeBridgeHistoryItem_lower(_ value: BridgeHistoryItem) 
 }
 
 
+public struct BridgeNamedParameterPlan: Equatable, Hashable {
+    public var names: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(names: [String]) {
+        self.names = names
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeNamedParameterPlan: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeNamedParameterPlan: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeNamedParameterPlan {
+        return
+            try BridgeNamedParameterPlan(
+                names: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeNamedParameterPlan, into buf: inout [UInt8]) {
+        FfiConverterSequenceString.write(value.names, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeNamedParameterPlan_lift(_ buf: RustBuffer) throws -> BridgeNamedParameterPlan {
+    return try FfiConverterTypeBridgeNamedParameterPlan.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeNamedParameterPlan_lower(_ value: BridgeNamedParameterPlan) -> RustBuffer {
+    return FfiConverterTypeBridgeNamedParameterPlan.lower(value)
+}
+
+
 public struct BridgeNativeWindowIntent: Equatable, Hashable {
     public var profileId: Data
     public var intent: BridgeSessionIntent
@@ -3752,6 +3839,76 @@ public func FfiConverterTypeBridgeProfileOrderItem_lift(_ buf: RustBuffer) throw
 #endif
 public func FfiConverterTypeBridgeProfileOrderItem_lower(_ value: BridgeProfileOrderItem) -> RustBuffer {
     return FfiConverterTypeBridgeProfileOrderItem.lower(value)
+}
+
+
+public struct BridgeQueryParameter: Equatable, Hashable {
+    public var name: String
+    /**
+     * `text`, `integer`, `float`, `boolean`, or `null`.
+     */
+    public var kind: String
+    /**
+     * Absent only for `null`.
+     */
+    public var value: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String,
+        /**
+         * `text`, `integer`, `float`, `boolean`, or `null`.
+         */kind: String,
+        /**
+         * Absent only for `null`.
+         */value: String?) {
+        self.name = name
+        self.kind = kind
+        self.value = value
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeQueryParameter: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeQueryParameter: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeQueryParameter {
+        return
+            try BridgeQueryParameter(
+                name: FfiConverterString.read(from: &buf),
+                kind: FfiConverterString.read(from: &buf),
+                value: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeQueryParameter, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterOptionString.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeQueryParameter_lift(_ buf: RustBuffer) throws -> BridgeQueryParameter {
+    return try FfiConverterTypeBridgeQueryParameter.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeQueryParameter_lower(_ value: BridgeQueryParameter) -> RustBuffer {
+    return FfiConverterTypeBridgeQueryParameter.lower(value)
 }
 
 
@@ -6124,6 +6281,31 @@ fileprivate struct FfiConverterSequenceTypeBridgeProfileOrderItem: FfiConverterR
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeQueryParameter: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeQueryParameter]
+
+    public static func write(_ value: [BridgeQueryParameter], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeQueryParameter.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeQueryParameter] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeQueryParameter]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeQueryParameter.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgeRelationColumn: FfiConverterRustBuffer {
     typealias SwiftType = [BridgeRelationColumn]
 
@@ -6464,6 +6646,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_history_retention() != 30796) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_inspect_named_parameters() != 48176) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_catalog_filter_presets() != 22760) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6621,6 +6806,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_catalog_browse_with_sort() != 1474) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_named() != 38432) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_test_profile() != 43186) {

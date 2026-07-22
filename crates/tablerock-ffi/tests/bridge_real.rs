@@ -7,7 +7,8 @@
 
 use tablerock_core::{Engine, PageLimits, ResultPage};
 use tablerock_ffi::{
-    BridgeDdlChangeRequest, BridgePostgresToolRequest, OpenParams, SubmitSpec, TableRockBridge,
+    BridgeDdlChangeRequest, BridgePostgresToolRequest, BridgeQueryParameter, OpenParams,
+    SubmitSpec, TableRockBridge,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -175,6 +176,43 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
         let activity = bridge.postgres_activity(session.clone()).unwrap();
         assert!(!activity.is_empty());
         assert!(activity.iter().all(|row| row.pid > 0));
+        let hostile_value = "42' OR TRUE --";
+        let named = bridge
+            .submit_named(
+                SubmitSpec {
+                    intent: "execute".into(),
+                    session_id: session.clone(),
+                    statement: Some("SELECT :value::text AS bound_value".into()),
+                    result_id: None,
+                    start_row: None,
+                    row_count: Some(16),
+                    expected_revision: 0,
+                },
+                vec![BridgeQueryParameter {
+                    name: "value".into(),
+                    kind: "text".into(),
+                    value: Some(hostile_value.into()),
+                }],
+            )
+            .unwrap();
+        bridge.pump(named.clone()).unwrap();
+        let named_page = bridge
+            .next_events(0, 64)
+            .unwrap()
+            .events
+            .into_iter()
+            .find(|event| event.operation_id == named && event.kind == "page")
+            .and_then(|event| event.page_bytes)
+            .unwrap();
+        let named_page = ResultPage::decode_v1(
+            &named_page,
+            PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
+        )
+        .unwrap();
+        assert_eq!(
+            named_page.cell(0, 0).unwrap().bytes(),
+            hostile_value.as_bytes()
+        );
         let create = bridge
             .submit(SubmitSpec {
                 intent: "execute".into(),

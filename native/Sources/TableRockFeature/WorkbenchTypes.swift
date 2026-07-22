@@ -51,6 +51,10 @@ public protocol WorkbenchBackend: Actor, Sendable {
     session: Data, nodeId: Data, preset: WorkbenchSavedFilterPreset
   ) throws
   func submit(session: Data, intent: String, statement: String?) throws -> Data
+  func inspectNamedParameters(statement: String) throws -> [String]
+  func submitNamed(
+    session: Data, statement: String, bindings: [WorkbenchQueryParameter]
+  ) throws -> Data
   func finish(operationId: Data) async throws -> WorkbenchOperation
   func cancel(operationId: Data) throws -> WorkbenchCancelOutcome
   func fetchPage(resultId: Data, startRow: UInt64, revision: UInt64) async throws -> (
@@ -106,6 +110,19 @@ public protocol WorkbenchBackend: Actor, Sendable {
     -> WorkbenchApplyOutcome
   func revokeReviewToken(tokenId: Data) throws -> Bool
   func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome
+}
+
+public struct WorkbenchQueryParameter: Sendable, Equatable, Identifiable {
+  public let name: String
+  public var kind: String
+  public var value: String
+  public var id: String { name }
+
+  public init(name: String, kind: String = "text", value: String = "") {
+    self.name = name
+    self.kind = kind
+    self.value = value
+  }
 }
 
 // Immutable application facts crossing the presentation/backend seam. These
