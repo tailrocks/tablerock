@@ -8,7 +8,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use tablerock_files::{AtomicFileWriter, FileEffectError, validate_export_path};
+use crate::{AtomicFileWriter, FileEffectError, validate_export_path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamExportFormat {

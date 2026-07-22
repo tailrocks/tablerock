@@ -4300,7 +4300,7 @@ async fn export_stream_query(
     };
     use tablerock_engine::DriverPageRequest;
 
-    use crate::stream_export::{StreamExportError, StreamExportFormat, StreamExporter};
+    use tablerock_files::{StreamExportError, StreamExportFormat, StreamExporter};
 
     let _ = context_revision;
     let session_id = match session_id_hex.parse::<SessionId>() {

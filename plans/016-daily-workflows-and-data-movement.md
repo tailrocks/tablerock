@@ -121,6 +121,10 @@ Standard suites + Docker engine suites; new import/export tests live in
   spool, constant-memory full typed validation, 500-row/8 MiB apply batches,
   PostgreSQL transactional and ClickHouse progressive live proof, progress,
   cancellation, bounded error copy, expiry/discard/terminal cleanup.
+- 647 moves the bounded atomic streaming export encoder from the CLI adapter
+  into `tablerock-files`. CLI behavior stays source-compatible while native
+  can now use the same CSV/TSV/JSON writer, cancellation cleanup, and atomic
+  destination contract. Native full-result operation/UI wiring remains open.
 
 ## Residual (non-blocking)
 

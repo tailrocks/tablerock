@@ -7,7 +7,6 @@ mod input;
 mod pg_process;
 mod projection;
 mod run;
-mod stream_export;
 mod telemetry;
 mod tool_discovery;
 
@@ -15,13 +14,13 @@ pub use import_apply::{ImportApplyError, apply_csv_inserts};
 pub use pg_process::{
     PgToolRunOutcome, cancel_channel, run_pg_dump, run_pg_restore, validate_dump_path,
 };
-pub use stream_export::{
-    StreamExportError, StreamExportFormat, StreamExportOutcome, StreamExporter, run_stream_export,
-};
 pub use tablerock_files::{AtomicFileWriter, FileEffectError, validate_export_path, write_atomic};
 pub use tablerock_files::{
     CsvImportError, CsvTable, csv_to_insert_changes, is_formula_like, parse_csv,
     validate_insert_batch_size,
+};
+pub use tablerock_files::{
+    StreamExportError, StreamExportFormat, StreamExportOutcome, StreamExporter, run_stream_export,
 };
 pub use telemetry::{default_otlp_is_off, enable_otlp_export, init_local_tracing, otlp_enabled};
 pub use tool_discovery::{
