@@ -189,6 +189,9 @@ private struct WorkbenchActions {
     canShowActivity && model.selectedObjectTab != nil
   }
   var canShowRoles: Bool { canShowActivity }
+  var canShowRedisSubscription: Bool {
+    model.sessionHex != nil && model.connectedEngine == "redis"
+  }
 
   func run() { Task { await model.runQuery() } }
   func cancel() { Task { await model.cancel() } }
@@ -199,6 +202,7 @@ private struct WorkbenchActions {
   func showPostgresTools() { Task { await model.showPostgresTools() } }
   func showRelationships() { Task { await model.showPostgresRelationships() } }
   func showRoles() { Task { await model.showPostgresRoles() } }
+  func showRedisSubscription() { model.showRedisSubscription() }
 }
 
 private struct WorkbenchActionsKey: FocusedValueKey {
@@ -241,6 +245,8 @@ private struct WorkbenchCommands: Commands {
         .disabled(actions?.canShowRelationships != true)
       Button("PostgreSQL Roles and Privileges…") { actions?.showRoles() }
         .disabled(actions?.canShowRoles != true)
+      Button("Redis Pub/Sub…") { actions?.showRedisSubscription() }
+        .disabled(actions?.canShowRedisSubscription != true)
     }
   }
 }
@@ -396,6 +402,15 @@ extension WorkbenchBackend {
   func redisOverview(sessionId: Data) throws -> WorkbenchRedisOverview {
     try scriptedUnavailable("redis-overview")
   }
+  func startRedisSubscription(sessionId: Data, selector: String, pattern: Bool) throws -> Data {
+    try scriptedUnavailable("redis-subscription-start")
+  }
+  func redisSubscriptionStatus(operationId: Data) throws -> WorkbenchRedisSubscriptionStatus {
+    try scriptedUnavailable("redis-subscription-status")
+  }
+  func cancelRedisSubscription(operationId: Data) throws -> Bool {
+    try scriptedUnavailable("redis-subscription-cancel")
+  }
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow] {
     try scriptedUnavailable("postgres-activity")
   }
@@ -452,6 +467,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   private var filterPresets: [WorkbenchSavedFilterPreset] = []
   private var submittedIntent: String?
   private var postgresToolPhase = "succeeded"
+  private var redisSubscriptionActive = false
 
   init(scenario: String) { self.scenario = scenario }
 
@@ -695,6 +711,35 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     }
     let wasActive = importReviewActive
     importReviewActive = false
+    return wasActive
+  }
+
+  func startRedisSubscription(sessionId: Data, selector: String, pattern: Bool) throws -> Data {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16), !selector.isEmpty
+    else { return try scriptedUnavailable("redis-subscription-start") }
+    redisSubscriptionActive = true
+    return Data(repeating: pattern ? 14 : 13, count: 16)
+  }
+
+  func redisSubscriptionStatus(operationId: Data) throws -> WorkbenchRedisSubscriptionStatus {
+    guard scenario == "success" else {
+      return try scriptedUnavailable("redis-subscription-status")
+    }
+    return WorkbenchRedisSubscriptionStatus(
+      operationId: operationId, selector: "updates:*", pattern: operationId.first == 14,
+      phase: redisSubscriptionActive ? "listening" : "cancelled",
+      messages: ["updates:users · fixture message"], totalReceived: 1,
+      discontinuities: 1,
+      summary: redisSubscriptionActive
+        ? "Listening; delivery gap observed" : "Subscription cancelled")
+  }
+
+  func cancelRedisSubscription(operationId: Data) throws -> Bool {
+    guard scenario == "success" else {
+      return try scriptedUnavailable("redis-subscription-cancel")
+    }
+    let wasActive = redisSubscriptionActive
+    redisSubscriptionActive = false
     return wasActive
   }
 
@@ -1102,6 +1147,19 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
 
   func redisOverview(sessionId: Data) throws -> WorkbenchRedisOverview {
     try bridge.redisOverview(sessionId: sessionId).workbench
+  }
+
+  func startRedisSubscription(sessionId: Data, selector: String, pattern: Bool) throws -> Data {
+    try bridge.startRedisSubscription(
+      sessionId: sessionId, selector: selector, pattern: pattern)
+  }
+
+  func redisSubscriptionStatus(operationId: Data) throws -> WorkbenchRedisSubscriptionStatus {
+    try bridge.redisSubscriptionStatus(operationId: operationId).workbench
+  }
+
+  func cancelRedisSubscription(operationId: Data) throws -> Bool {
+    try bridge.cancelRedisSubscription(operationId: operationId)
   }
 
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow] {
@@ -2177,6 +2235,13 @@ final class BridgeModel {
   var redisOverview: WorkbenchRedisOverview?
   private(set) var redisOverviewLoading = false
   private(set) var redisOverviewError: String?
+  var redisSubscriptionPresented = false
+  var redisSubscriptionSelector = ""
+  var redisSubscriptionPattern = false
+  private(set) var redisSubscriptionStatus: WorkbenchRedisSubscriptionStatus?
+  private(set) var redisSubscriptionError: String?
+  private(set) var redisSubscriptionStarting = false
+  private var redisSubscriptionPollTask: Task<Void, Never>?
   var postgresActivityPresented = false
   var postgresActivityRows: [WorkbenchPostgresActivityRow] = []
   private(set) var postgresActivityLoading = false
@@ -2328,6 +2393,11 @@ final class BridgeModel {
   var queryWorkbenchSelected: Bool { selectedWorkbenchKind == "query" }
   private var hasRunningWorkbench: Bool {
     queryTabs.contains(where: \.isRunning) || objectTabs.contains(where: \.isRunning)
+      || redisSubscriptionIsActive
+  }
+  var redisSubscriptionIsActive: Bool {
+    guard let phase = redisSubscriptionStatus?.phase else { return false }
+    return phase == "connecting" || phase == "listening" || phase == "cancel_requested"
   }
   var sqlFile: WorkbenchSQLFile? {
     get { activeQueryTab.sqlFile }
@@ -2804,6 +2874,14 @@ final class BridgeModel {
       } catch {
         writePerformanceMetric("REDIS_OVERVIEW_PROOF_FAILED \(error)")
       }
+      return
+    }
+    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_REDIS_PUBSUB_UI"] == "1" {
+      sessionData = Data(repeating: 1, count: 16)
+      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+      connectedEngine = "redis"
+      redisSubscriptionSelector = "updates:*"
+      status = "Redis Pub/Sub fixture"
       return
     }
     if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_REDIS_KEY_VIEW"] == "1" {
@@ -3878,6 +3956,79 @@ final class BridgeModel {
     }
   }
 
+  func showRedisSubscription() {
+    guard connectedEngine == "redis", sessionData != nil else { return }
+    redisSubscriptionPresented = true
+    redisSubscriptionError = nil
+  }
+
+  func startRedisSubscription() async {
+    guard let client, let session = sessionData, !redisSubscriptionStarting,
+      !redisSubscriptionIsActive
+    else { return }
+    let selector = redisSubscriptionSelector.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !selector.isEmpty else {
+      redisSubscriptionError = "Enter a channel or pattern"
+      return
+    }
+    redisSubscriptionStarting = true
+    redisSubscriptionError = nil
+    defer { redisSubscriptionStarting = false }
+    do {
+      let operation = try await client.startRedisSubscription(
+        sessionId: session, selector: selector, pattern: redisSubscriptionPattern)
+      redisSubscriptionStatus = try await client.redisSubscriptionStatus(operationId: operation)
+      beginRedisSubscriptionPolling(operation)
+    } catch {
+      redisSubscriptionStatus = nil
+      redisSubscriptionError = "Subscription failed: \(error)"
+    }
+  }
+
+  func refreshRedisSubscription() async {
+    guard let client, let operation = redisSubscriptionStatus?.operationId else { return }
+    do {
+      let status = try await client.redisSubscriptionStatus(operationId: operation)
+      redisSubscriptionStatus = status
+      if !redisSubscriptionIsActive { redisSubscriptionPollTask?.cancel() }
+    } catch {
+      redisSubscriptionError = "Subscription status unavailable: \(error)"
+      redisSubscriptionPollTask?.cancel()
+    }
+  }
+
+  private func beginRedisSubscriptionPolling(_ operation: Data) {
+    redisSubscriptionPollTask?.cancel()
+    redisSubscriptionPollTask = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .milliseconds(250))
+        guard !Task.isCancelled, let self,
+          self.redisSubscriptionStatus?.operationId == operation,
+          self.redisSubscriptionPresented
+        else { return }
+        await self.refreshRedisSubscription()
+        if !self.redisSubscriptionIsActive { return }
+      }
+    }
+  }
+
+  func cancelRedisSubscription() async {
+    guard let client, let operation = redisSubscriptionStatus?.operationId else { return }
+    do {
+      _ = try await client.cancelRedisSubscription(operationId: operation)
+      await refreshRedisSubscription()
+    } catch {
+      redisSubscriptionError = "Cancel failed: \(error)"
+    }
+  }
+
+  func closeRedisSubscription() async {
+    if redisSubscriptionIsActive { await cancelRedisSubscription() }
+    redisSubscriptionPollTask?.cancel()
+    redisSubscriptionPollTask = nil
+    redisSubscriptionPresented = false
+  }
+
   func showPostgresActivity() async {
     guard connectedEngine == "postgresql", sessionData != nil else { return }
     postgresActivityPresented = true
@@ -4781,6 +4932,7 @@ final class BridgeModel {
   func disconnectActive() async {
     guard let client, let session = sessionData else { return }
     await persistSessionIntent()
+    if redisSubscriptionIsActive { await closeRedisSubscription() }
     do {
       try await client.disconnect(session: session)
       sessionData = nil
@@ -5621,6 +5773,12 @@ struct ContentView: View {
     .sheet(isPresented: $model.redisOverviewPresented) {
       RedisOverviewSheet()
     }
+    .sheet(
+      isPresented: $model.redisSubscriptionPresented,
+      onDismiss: { Task { await model.closeRedisSubscription() } }
+    ) {
+      RedisSubscriptionSheet()
+    }
     .sheet(isPresented: $model.postgresActivityPresented) {
       PostgresActivitySheet()
     }
@@ -6444,6 +6602,104 @@ private struct RedisOverviewSheet: View {
     }
     .padding(20)
     .frame(minWidth: 680, minHeight: 520)
+  }
+}
+
+private struct RedisSubscriptionSheet: View {
+  @Environment(BridgeModel.self) private var model
+
+  var body: some View {
+    @Bindable var model = model
+    VStack(alignment: .leading, spacing: 14) {
+      HStack {
+        Label("Redis Pub/Sub", systemImage: "dot.radiowaves.left.and.right")
+          .font(.title2.bold())
+        Spacer()
+        Button("Refresh") { Task { await model.refreshRedisSubscription() } }
+          .disabled(model.redisSubscriptionStatus == nil)
+        Button("Close") { Task { await model.closeRedisSubscription() } }
+      }
+      HStack(spacing: 10) {
+        Picker("Mode", selection: $model.redisSubscriptionPattern) {
+          Text("Channel").tag(false)
+          Text("Pattern").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 190)
+        .disabled(model.redisSubscriptionIsActive)
+        TextField(
+          model.redisSubscriptionPattern ? "Pattern" : "Channel",
+          text: $model.redisSubscriptionSelector
+        )
+        .textFieldStyle(.roundedBorder)
+        .disabled(model.redisSubscriptionIsActive)
+        .accessibilityIdentifier("redis.pubsub.selector")
+        Button("Subscribe") { Task { await model.startRedisSubscription() } }
+          .buttonStyle(.borderedProminent)
+          .disabled(
+            model.redisSubscriptionStarting || model.redisSubscriptionIsActive
+              || model.redisSubscriptionSelector.trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+          )
+          .accessibilityIdentifier("redis.pubsub.subscribe")
+        Button("Cancel", role: .cancel) { Task { await model.cancelRedisSubscription() } }
+          .disabled(!model.redisSubscriptionIsActive)
+          .accessibilityIdentifier("redis.pubsub.cancel")
+      }
+      if model.redisSubscriptionStarting {
+        ProgressView("Starting subscription…")
+      }
+      if let status = model.redisSubscriptionStatus {
+        HStack(spacing: 12) {
+          Text(status.pattern ? "PSUBSCRIBE" : "SUBSCRIBE").bold()
+          Text(status.selector).font(.system(.body, design: .monospaced))
+          Spacer()
+          Text(status.phase.replacingOccurrences(of: "_", with: " ").capitalized)
+          Text("\(status.totalReceived) received")
+        }
+        .foregroundStyle(.secondary)
+        if status.discontinuities > 0 {
+          Label(
+            "\(status.discontinuities) delivery gap(s); displayed messages are not complete",
+            systemImage: "exclamationmark.triangle.fill"
+          )
+          .foregroundStyle(.orange)
+          .accessibilityIdentifier("redis.pubsub.gap")
+        }
+        GroupBox("Messages · newest retained window") {
+          if status.messages.isEmpty {
+            ContentUnavailableView(
+              "Waiting for messages", systemImage: "ellipsis.message",
+              description: Text("Published messages appear here until cancellation."))
+          } else {
+            ScrollView {
+              LazyVStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(status.messages.enumerated()), id: \.offset) { _, message in
+                  Text(message)
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+              }
+              .padding(8)
+            }
+          }
+        }
+        Text(status.summary).font(.callout).foregroundStyle(.secondary)
+      } else if !model.redisSubscriptionStarting && model.redisSubscriptionError == nil {
+        ContentUnavailableView(
+          "No active subscription", systemImage: "dot.radiowaves.left.and.right",
+          description: Text("Choose a channel or pattern, then subscribe."))
+      }
+      if let error = model.redisSubscriptionError {
+        Text(error).foregroundStyle(.red).textSelection(.enabled)
+      }
+    }
+    .padding(20)
+    .frame(minWidth: 760, minHeight: 560)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("redis.pubsub.sheet")
+    .interactiveDismissDisabled(model.redisSubscriptionIsActive)
   }
 }
 

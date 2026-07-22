@@ -89,8 +89,7 @@ frame, never squeezed into a relational shape.
    clients, ops/sec, hit/miss, persistence, per-DB key/expiry counts) each
    with sample time/unavailable reason.
 
-**Out of scope**: continuous Pub/Sub stream tab (first-page Sub/PSub UI
-landed evidence 329; driver proven), cluster/sentinel (standalone-first
+**Out of scope**: cluster/sentinel (standalone-first
 fixed decision), module values beyond inspectable/read-only, the three
 known driver gaps above (stay visible).
 
@@ -127,6 +126,8 @@ extended; CI updated.
 - ~~Pub/Sub Sub/PSub first-page UI~~ (closed: evidence 329)
 - ~~Continuous Pub/Sub multi-page pump~~ (closed: evidence 330)
 - ~~Listen-until-Cancel Pub/Sub~~ (closed: evidence 335; no idle stop after first msg)
+- ~~Native channel/pattern console, bounded live messages, gap visibility,
+  cancellation, and accessibility~~ (closed: evidence 639)
 - ~~Multi-type collection mutations (HSET/HDEL/SADD/SREM/ZADD/ZREM) on apply path~~
   (closed: evidence 312–314; key-view RAdd/RRem stage + review wired)
 - ~~MATCH pattern filter on ScanRedisKeys~~ (closed: evidence 311)

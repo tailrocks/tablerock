@@ -125,6 +125,14 @@ extension BridgeRedisKeyView {
 extension BridgeRedisOverview {
   var workbench: WorkbenchRedisOverview { .init(sampledAtMs: sampledAtMs, lines: lines) }
 }
+extension BridgeRedisSubscriptionStatus {
+  var workbench: WorkbenchRedisSubscriptionStatus {
+    .init(
+      operationId: operationId, selector: selector, pattern: pattern, phase: phase,
+      messages: messages, totalReceived: totalReceived, discontinuities: discontinuities,
+      summary: summary)
+  }
+}
 extension BridgePostgresActivityRow {
   var workbench: WorkbenchPostgresActivityRow {
     .init(

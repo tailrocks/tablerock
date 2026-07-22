@@ -289,10 +289,73 @@ async fn bridge_redis_open_probe_fetch() {
         }
     }
 
-    let (engine, page) =
-        tokio::task::spawn_blocking(move || run_bridge_probe("redis", &host, port, "0", ""))
+    let publish_host = host.clone();
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+    let publisher = tokio::spawn(async move {
+        ready_rx.await.unwrap();
+        let client = redis::Client::open(format!("redis://{publish_host}:{port}")).unwrap();
+        let mut connection = client.get_multiplexed_async_connection().await.unwrap();
+        let delivered: u64 = redis::cmd("PUBLISH")
+            .arg("bridge:events")
+            .arg("facade-message")
+            .query_async(&mut connection)
             .await
             .unwrap();
+        assert_eq!(delivered, 1);
+    });
+    let (engine, page) = tokio::task::spawn_blocking(move || {
+        let bridge = TableRockBridge::new_for_test();
+        let session = open_when_ready(&bridge, "redis", &host, port, "0", "");
+        let subscription = bridge
+            .start_redis_subscription(session.clone(), "bridge:events".into(), false)
+            .unwrap();
+        loop {
+            let status = bridge
+                .redis_subscription_status(subscription.clone())
+                .unwrap();
+            if status.phase == "listening" {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        ready_tx.send(()).unwrap();
+        let status = loop {
+            let status = bridge
+                .redis_subscription_status(subscription.clone())
+                .unwrap();
+            if status.total_received > 0 {
+                break status;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        assert_eq!(status.messages, vec!["bridge:events · facade-message"]);
+        assert_eq!(status.discontinuities, 0);
+        assert!(
+            bridge
+                .cancel_redis_subscription(subscription.clone())
+                .unwrap()
+        );
+        loop {
+            let status = bridge
+                .redis_subscription_status(subscription.clone())
+                .unwrap();
+            if status.phase == "cancelled" {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let (page, _) = probe_and_fetch(&bridge, session, 0);
+        let engine =
+            ResultPage::decode_v1(&page, PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024))
+                .unwrap()
+                .envelope()
+                .engine();
+        bridge.shutdown(false, 5_000).unwrap();
+        (engine, page)
+    })
+    .await
+    .unwrap();
+    publisher.await.unwrap();
     assert_eq!(engine, Engine::Redis);
     assert!(!page.is_empty());
 }

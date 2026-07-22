@@ -54,3 +54,12 @@ A bounded current `INFO` snapshot shows uptime/version/mode, memory, clients,
 ops/sec, hit/miss, persistence state, and per-database key/expiry counts —
 each value with its sample time or an unavailable reason. No `MONITOR`, no
 implied history.
+
+## Pub/Sub console
+
+The Query menu opens a connection-scoped channel or pattern subscription.
+Messages stream into a bounded 256-row retained window; the received counter
+continues beyond that window. Binary fields remain reachable as hexadecimal
+instead of lossy text. Reconnect/resubscription gaps are explicit and counted,
+so the console never implies complete delivery. Closing or disconnecting first
+cancels the dedicated subscription; it never shares command connection state.

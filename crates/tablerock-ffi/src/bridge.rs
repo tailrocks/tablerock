@@ -8,22 +8,23 @@ use std::{
 };
 
 use tablerock_core::{
-    BoundedText, ByteLimit, CatalogChildrenState, CatalogNode, CatalogNodeId, CatalogNodeKind,
-    ClickHouseObjectKind, CommandBudget, CommandBudgetLimits, CommandEnvelope, CommandIntent,
-    CommandScope, CopyFormat, CopyTable, DangerousPlaintext, Engine, EnvironmentReference,
-    EnvironmentTag, FieldValue, KeychainReference, MutationChange, MutationPlan,
-    MutationPlanLimits, MutationReviewRegistry, MutationTarget, OnePasswordReference, OperationId,
-    OperationOutcome, OperationScope, OwnedValue, PageIdentity, PageKey, PageRequest,
-    PlaintextAcknowledgement, PostgreSqlObjectKind, ProfileAggregate, ProfileConnectionSnapshot,
-    ProfileDurability, ProfileEndpointPart, ProfileGroupName, ProfileId, ProfileIdentity,
-    ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName, ProfileOrganization,
-    ProfilePolicy, ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
-    ProfileSafetyMode, ProfileSearchTerm, ProfileTag, ReconnectDecision, ReconnectPreference,
-    RedisKeyKind, ResultStore, ResultStoreLimits, ReviewTokenId, ReviewedRoleChangePlan, Revision,
-    RoleChangeKind, RoleChangePlan, SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset,
-    SecretSource, SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
-    StatementText, SupportBundle, SupportPlatform, TlsPolicy, copy_cell_from_page,
-    format_copy_table, is_safe_preset_name, parse_connection_url, reconnect_decision,
+    BoundedBytes, BoundedText, ByteLimit, CatalogChildrenState, CatalogNode, CatalogNodeId,
+    CatalogNodeKind, ClickHouseObjectKind, CommandBudget, CommandBudgetLimits, CommandEnvelope,
+    CommandIntent, CommandScope, CopyFormat, CopyTable, DangerousPlaintext, Engine,
+    EnvironmentReference, EnvironmentTag, FieldValue, KeychainReference, MutationChange,
+    MutationPlan, MutationPlanLimits, MutationReviewRegistry, MutationTarget, OnePasswordReference,
+    OperationId, OperationOutcome, OperationScope, OwnedValue, PageIdentity, PageKey, PageLimits,
+    PageRequest, PageWarning, PlaintextAcknowledgement, PostgreSqlObjectKind, ProfileAggregate,
+    ProfileConnectionSnapshot, ProfileDurability, ProfileEndpointPart, ProfileGroupName, ProfileId,
+    ProfileIdentity, ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName,
+    ProfileOrganization, ProfilePolicy, ProfilePreferences, ProfileProperty,
+    ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileSearchTerm, ProfileTag,
+    ReconnectDecision, ReconnectPreference, RedisKeyKind, ResultStore, ResultStoreLimits,
+    ReviewTokenId, ReviewedRoleChangePlan, Revision, RoleChangeKind, RoleChangePlan,
+    SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset, SecretSource, SecretSourceKind,
+    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StatementText, SupportBundle,
+    SupportPlatform, TlsPolicy, copy_cell_from_page, format_copy_table, is_safe_preset_name,
+    parse_connection_url, reconnect_decision,
 };
 use tablerock_engine::{
     AdapterFailureClass, BrowseDialect, BrowsePlan, CatalogRequest, ClickHouseCompression,
@@ -31,9 +32,9 @@ use tablerock_engine::{
     DriverPageRequest, DriverRuntime, DriverSession, EngineService, EngineServiceUpdate,
     FilterOperator, KeychainReadPort, OpCliReader, PostgresConnectConfig, PostgresProbeQuery,
     PostgresSession, PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity,
-    RedisCredentials, RedisProtocol, RedisSession, RedisTlsMode, ResolvedSecret, SecretPromptPort,
-    SecretResolutionError, SortDirection, SortKey, TypedCondition,
-    load_relation_structure as load_structure_snapshot, parse_bind_text,
+    RedisCredentials, RedisProtocol, RedisSession, RedisSubscriptionKind, RedisSubscriptionOptions,
+    RedisTlsMode, ResolvedSecret, SecretPromptPort, SecretResolutionError, SortDirection, SortKey,
+    TypedCondition, load_relation_structure as load_structure_snapshot, parse_bind_text,
     resolve_for_connect_with_ports,
 };
 use tablerock_files::{
@@ -382,6 +383,19 @@ pub struct BridgeRedisOverview {
     pub lines: Vec<String>,
 }
 
+/// Bounded presentation snapshot for one supervised Redis subscription.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRedisSubscriptionStatus {
+    pub operation_id: Vec<u8>,
+    pub selector: String,
+    pub pattern: bool,
+    pub phase: String,
+    pub messages: Vec<String>,
+    pub total_received: u64,
+    pub discontinuities: u64,
+    pub summary: String,
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgePostgresActivityRow {
     pub pid: i32,
@@ -509,6 +523,18 @@ struct PostgresToolTask {
     cancel: tokio::sync::watch::Sender<bool>,
 }
 
+struct RedisSubscriptionTask {
+    session_id: SessionId,
+    selector: String,
+    pattern: bool,
+    phase: String,
+    messages: VecDeque<String>,
+    total_received: u64,
+    discontinuities: u64,
+    summary: String,
+    cancel: tokio::sync::watch::Sender<bool>,
+}
+
 struct RoleReviewEntry {
     session_id: SessionId,
     reviewed: ReviewedRoleChangePlan,
@@ -624,6 +650,7 @@ pub struct TableRockBridge {
     runtime: RuntimeOwner,
     inner: Mutex<Option<BridgeInner>>,
     postgres_tools: Arc<Mutex<BTreeMap<OperationId, PostgresToolTask>>>,
+    redis_subscriptions: Arc<Mutex<BTreeMap<OperationId, RedisSubscriptionTask>>>,
 }
 
 #[uniffi::export]
@@ -635,6 +662,7 @@ impl TableRockBridge {
             runtime: RuntimeOwner::new(),
             inner: Mutex::new(None),
             postgres_tools: Arc::new(Mutex::new(BTreeMap::new())),
+            redis_subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
         })
     }
 
@@ -1019,6 +1047,29 @@ impl TableRockBridge {
     /// Loads one bounded, sample-timed Redis INFO overview.
     pub fn redis_overview(&self, session_id: Vec<u8>) -> Result<BridgeRedisOverview, BridgeError> {
         catch_entry(|| self.redis_overview_inner(session_id))
+    }
+
+    /// Starts one bounded supervised SUBSCRIBE or PSUBSCRIBE stream.
+    pub fn start_redis_subscription(
+        &self,
+        session_id: Vec<u8>,
+        selector: String,
+        pattern: bool,
+    ) -> Result<Vec<u8>, BridgeError> {
+        catch_entry(|| self.start_redis_subscription_inner(session_id, selector, pattern))
+    }
+
+    /// Returns the latest bounded message window and delivery-gap count.
+    pub fn redis_subscription_status(
+        &self,
+        operation_id: Vec<u8>,
+    ) -> Result<BridgeRedisSubscriptionStatus, BridgeError> {
+        catch_entry(|| self.redis_subscription_status_inner(operation_id))
+    }
+
+    /// Requests cancellation. Repeated requests are safe.
+    pub fn cancel_redis_subscription(&self, operation_id: Vec<u8>) -> Result<bool, BridgeError> {
+        catch_entry(|| self.cancel_redis_subscription_inner(operation_id))
     }
 
     /// Loads a bounded Rust-owned PostgreSQL activity snapshot.
@@ -1580,6 +1631,7 @@ impl TableRockBridge {
             runtime: RuntimeOwner::new(),
             inner: Mutex::new(None),
             postgres_tools: Arc::new(Mutex::new(BTreeMap::new())),
+            redis_subscriptions: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 }
@@ -1975,6 +2027,28 @@ impl TableRockBridge {
             return Err(BridgeError::rejected(
                 "session-busy",
                 "session still has an active PostgreSQL tool operation",
+            ));
+        }
+        if self
+            .redis_subscriptions
+            .lock()
+            .map_err(|_| {
+                BridgeError::rejected(
+                    "redis-subscription-lock",
+                    "subscription registry mutex poisoned",
+                )
+            })?
+            .values()
+            .any(|task| {
+                task.session_id == session_id
+                    && (task.phase == "connecting"
+                        || task.phase == "listening"
+                        || task.phase == "cancel_requested")
+            })
+        {
+            return Err(BridgeError::rejected(
+                "session-busy",
+                "session still has an active Redis subscription",
             ));
         }
         let mut guard = self
@@ -3610,6 +3684,294 @@ impl TableRockBridge {
         })
     }
 
+    fn start_redis_subscription_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        selector: String,
+        pattern: bool,
+    ) -> Result<Vec<u8>, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let selector = selector.trim().to_owned();
+        if selector.is_empty() {
+            return Err(BridgeError::rejected(
+                "redis-subscription-selector",
+                "channel or pattern must not be empty",
+            ));
+        }
+        let bounded_selector =
+            BoundedBytes::copy_from_slice(selector.as_bytes(), ByteLimit::new(256)).map_err(
+                |error| BridgeError::rejected("redis-subscription-selector", error.to_string()),
+            )?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let (operation_id, identity, driver) = {
+            let mut guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+            if !inner.accepting {
+                return Err(BridgeError::ShuttingDown);
+            }
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            if registered.engine != Engine::Redis {
+                return Err(BridgeError::rejected(
+                    "redis-subscription-engine",
+                    "subscriptions require a Redis session",
+                ));
+            }
+            let operation_id = inner.ids.operation();
+            let identity = PageIdentity::new(inner.ids.result(), Revision::INITIAL, Engine::Redis);
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (operation_id, identity, driver)
+        };
+        let (cancel, mut cancellation) = tokio::sync::watch::channel(false);
+        {
+            let mut tasks = self.redis_subscriptions.lock().map_err(|_| {
+                BridgeError::rejected(
+                    "redis-subscription-lock",
+                    "subscription registry mutex poisoned",
+                )
+            })?;
+            if tasks
+                .values()
+                .filter(|task| {
+                    task.phase == "connecting"
+                        || task.phase == "listening"
+                        || task.phase == "cancel_requested"
+                })
+                .count()
+                >= 4
+            {
+                return Err(BridgeError::rejected(
+                    "redis-subscription-capacity",
+                    "at most four Redis subscriptions may run",
+                ));
+            }
+            if tasks.values().any(|task| {
+                task.session_id == session_id
+                    && (task.phase == "connecting"
+                        || task.phase == "listening"
+                        || task.phase == "cancel_requested")
+            }) {
+                return Err(BridgeError::rejected(
+                    "redis-subscription-active",
+                    "this Redis session already has an active subscription",
+                ));
+            }
+            while tasks.len() >= 256 {
+                let Some(completed) = tasks
+                    .iter()
+                    .find(|(_, task)| {
+                        task.phase != "connecting"
+                            && task.phase != "listening"
+                            && task.phase != "cancel_requested"
+                    })
+                    .map(|(operation_id, _)| *operation_id)
+                else {
+                    return Err(BridgeError::rejected(
+                        "redis-subscription-capacity",
+                        "Redis subscription status registry is full",
+                    ));
+                };
+                tasks.remove(&completed);
+            }
+            tasks.insert(
+                operation_id,
+                RedisSubscriptionTask {
+                    session_id,
+                    selector: selector.clone(),
+                    pattern,
+                    phase: "connecting".into(),
+                    messages: VecDeque::new(),
+                    total_received: 0,
+                    discontinuities: 0,
+                    summary: "Connecting subscription".into(),
+                    cancel,
+                },
+            );
+        }
+        let tasks = Arc::clone(&self.redis_subscriptions);
+        self.runtime.spawn(async move {
+            let options = RedisSubscriptionOptions::new(
+                PageLimits::new(16, if pattern { 3 } else { 2 }, 64 * 1024, 8 * 1024),
+                1_024,
+                64,
+            );
+            let request = DriverPageRequest::RedisSubscribe {
+                selector: bounded_selector,
+                kind: if pattern {
+                    RedisSubscriptionKind::Pattern
+                } else {
+                    RedisSubscriptionKind::Channel
+                },
+                options,
+            };
+            let started = tokio::select! {
+                result = driver.start_page_stream(request) => Some(result),
+                _ = cancellation.changed() => None,
+            };
+            let Some(started) = started else {
+                set_redis_subscription_terminal(
+                    &tasks,
+                    operation_id,
+                    "cancelled",
+                    "Subscription cancelled",
+                );
+                return;
+            };
+            let mut stream = match started {
+                Ok(stream) => stream,
+                Err(error) => {
+                    set_redis_subscription_terminal(
+                        &tasks,
+                        operation_id,
+                        "failed",
+                        &format!("Subscription failed: {error}"),
+                    );
+                    return;
+                }
+            };
+            if let Ok(mut guard) = tasks.lock()
+                && let Some(task) = guard.get_mut(&operation_id)
+            {
+                task.phase = "listening".into();
+                task.summary = "Listening for messages".into();
+            }
+            let mut start_row = 0_u64;
+            loop {
+                let next = tokio::select! {
+                    page = stream.next_page(identity, start_row) => Some(page),
+                    _ = cancellation.changed() => None,
+                };
+                let Some(next) = next else {
+                    set_redis_subscription_terminal(
+                        &tasks,
+                        operation_id,
+                        "cancelled",
+                        "Subscription cancelled",
+                    );
+                    break;
+                };
+                match next {
+                    Ok(Some(page)) => {
+                        let envelope = page.envelope();
+                        if let Ok(mut guard) = tasks.lock()
+                            && let Some(task) = guard.get_mut(&operation_id)
+                        {
+                            if envelope
+                                .warnings()
+                                .contains(PageWarning::DeliveryDiscontinuity)
+                            {
+                                task.discontinuities = task.discontinuities.saturating_add(1);
+                                task.summary = "Listening; delivery gap observed".into();
+                            }
+                            for row in 0..envelope.row_count() {
+                                let mut fields =
+                                    Vec::with_capacity(envelope.column_count() as usize);
+                                for column in 0..envelope.column_count() {
+                                    match page.cell(row, column) {
+                                        Ok(cell) => fields
+                                            .push(render_redis_subscription_cell(cell.bytes())),
+                                        Err(_) => fields.push("<unavailable>".into()),
+                                    }
+                                }
+                                task.messages.push_back(fields.join(" · "));
+                                task.total_received = task.total_received.saturating_add(1);
+                                while task.messages.len() > 256 {
+                                    task.messages.pop_front();
+                                }
+                            }
+                        }
+                        start_row = start_row.saturating_add(u64::from(envelope.row_count()));
+                    }
+                    Ok(None) => {
+                        set_redis_subscription_terminal(
+                            &tasks,
+                            operation_id,
+                            "completed",
+                            "Subscription ended",
+                        );
+                        break;
+                    }
+                    Err(error) => {
+                        set_redis_subscription_terminal(
+                            &tasks,
+                            operation_id,
+                            "failed",
+                            &format!("Subscription failed: {error}"),
+                        );
+                        break;
+                    }
+                }
+            }
+        })?;
+        Ok(operation_bytes(operation_id))
+    }
+
+    fn redis_subscription_status_inner(
+        &self,
+        operation_id_bytes: Vec<u8>,
+    ) -> Result<BridgeRedisSubscriptionStatus, BridgeError> {
+        let operation_id = operation_from_bytes(&operation_id_bytes)
+            .map_err(|_| BridgeError::rejected("operation-id", "invalid operation id"))?;
+        let tasks = self.redis_subscriptions.lock().map_err(|_| {
+            BridgeError::rejected(
+                "redis-subscription-lock",
+                "subscription registry mutex poisoned",
+            )
+        })?;
+        let task = tasks
+            .get(&operation_id)
+            .ok_or(BridgeError::UnknownOperation)?;
+        Ok(BridgeRedisSubscriptionStatus {
+            operation_id: operation_id_bytes,
+            selector: task.selector.clone(),
+            pattern: task.pattern,
+            phase: task.phase.clone(),
+            messages: task.messages.iter().cloned().collect(),
+            total_received: task.total_received,
+            discontinuities: task.discontinuities,
+            summary: task.summary.clone(),
+        })
+    }
+
+    fn cancel_redis_subscription_inner(
+        &self,
+        operation_id_bytes: Vec<u8>,
+    ) -> Result<bool, BridgeError> {
+        let operation_id = operation_from_bytes(&operation_id_bytes)
+            .map_err(|_| BridgeError::rejected("operation-id", "invalid operation id"))?;
+        let mut tasks = self.redis_subscriptions.lock().map_err(|_| {
+            BridgeError::rejected(
+                "redis-subscription-lock",
+                "subscription registry mutex poisoned",
+            )
+        })?;
+        let task = tasks
+            .get_mut(&operation_id)
+            .ok_or(BridgeError::UnknownOperation)?;
+        if task.phase != "connecting"
+            && task.phase != "listening"
+            && task.phase != "cancel_requested"
+        {
+            return Ok(false);
+        }
+        if task.phase == "cancel_requested" {
+            return Ok(true);
+        }
+        let _ = task.cancel.send(true);
+        task.phase = "cancel_requested".into();
+        task.summary = "Cancellation requested".into();
+        Ok(true)
+    }
+
     fn postgres_driver(
         &self,
         session_id_bytes: &[u8],
@@ -5081,6 +5443,29 @@ impl TableRockBridge {
             }
             active
         };
+        let initial_subscription_active = {
+            let mut tasks = self.redis_subscriptions.lock().map_err(|_| {
+                BridgeError::rejected(
+                    "redis-subscription-lock",
+                    "subscription registry mutex poisoned",
+                )
+            })?;
+            let mut active = 0_u32;
+            for task in tasks.values_mut() {
+                if task.phase == "connecting"
+                    || task.phase == "listening"
+                    || task.phase == "cancel_requested"
+                {
+                    active = active.saturating_add(1);
+                    if cancel_active && task.phase != "cancel_requested" {
+                        let _ = task.cancel.send(true);
+                        task.phase = "cancel_requested".into();
+                        task.summary = "Cancellation requested".into();
+                    }
+                }
+            }
+            active
+        };
         let mut guard = self
             .inner
             .lock()
@@ -5096,7 +5481,8 @@ impl TableRockBridge {
             tablerock_core::ShutdownOutcome::Stopped
             | tablerock_core::ShutdownOutcome::AlreadyStopped => 0,
         }
-        .saturating_add(initial_tool_active);
+        .saturating_add(initial_tool_active)
+        .saturating_add(initial_subscription_active);
         let deadline = Duration::from_millis(deadline_ms);
         let started = Instant::now();
         while inner.service.core().active_operations() > 0 && started.elapsed() < deadline {
@@ -5135,7 +5521,22 @@ impl TableRockBridge {
                 })?
                 .values()
                 .any(|task| task.phase == "running" || task.phase == "cancel_requested");
-            if !tool_active {
+            let subscription_active = self
+                .redis_subscriptions
+                .lock()
+                .map_err(|_| {
+                    BridgeError::rejected(
+                        "redis-subscription-lock",
+                        "subscription registry mutex poisoned",
+                    )
+                })?
+                .values()
+                .any(|task| {
+                    task.phase == "connecting"
+                        || task.phase == "listening"
+                        || task.phase == "cancel_requested"
+                });
+            if !tool_active && !subscription_active {
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -5149,11 +5550,28 @@ impl TableRockBridge {
             .values()
             .filter(|task| task.phase == "running" || task.phase == "cancel_requested")
             .count() as u32;
+        let subscription_active = self
+            .redis_subscriptions
+            .lock()
+            .map_err(|_| {
+                BridgeError::rejected(
+                    "redis-subscription-lock",
+                    "subscription registry mutex poisoned",
+                )
+            })?
+            .values()
+            .filter(|task| {
+                task.phase == "connecting"
+                    || task.phase == "listening"
+                    || task.phase == "cancel_requested"
+            })
+            .count() as u32;
         let active = inner
             .service
             .core()
             .active_operations()
-            .saturating_add(tool_active);
+            .saturating_add(tool_active)
+            .saturating_add(subscription_active);
         let core = if active == 0 {
             let _ = self.runtime.block_on(inner.service.complete_shutdown());
             "Stopped".to_owned()
@@ -5602,6 +6020,36 @@ fn bridge_sql_file(text: String, facts: SqlFileFacts) -> BridgeSqlFile {
             .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
             .and_then(|value| u64::try_from(value.as_nanos()).ok()),
         len: facts.len,
+    }
+}
+
+fn set_redis_subscription_terminal(
+    tasks: &Mutex<BTreeMap<OperationId, RedisSubscriptionTask>>,
+    operation_id: OperationId,
+    phase: &str,
+    summary: &str,
+) {
+    if let Ok(mut tasks) = tasks.lock()
+        && let Some(task) = tasks.get_mut(&operation_id)
+    {
+        task.phase = phase.into();
+        task.summary = summary.into();
+    }
+}
+
+fn render_redis_subscription_cell(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => text.to_owned(),
+        Err(_) => {
+            const HEX: &[u8; 16] = b"0123456789abcdef";
+            let mut rendered = String::with_capacity(2 + bytes.len().saturating_mul(2));
+            rendered.push_str("0x");
+            for byte in bytes {
+                rendered.push(char::from(HEX[(byte >> 4) as usize]));
+                rendered.push(char::from(HEX[(byte & 0x0f) as usize]));
+            }
+            rendered
+        }
     }
 }
 

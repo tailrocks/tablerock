@@ -10,9 +10,9 @@ use std::{
 };
 
 use tablerock_core::{
-    BoundedText, ByteLimit, CancelDispatch, ColumnMetadata, Engine, EngineType, IdParts,
-    OperationId, OwnedValue, PageDelivery, PageFacts, PageIdentity, PageLimits, PageWarnings,
-    ResultId, ResultPage, Revision, RowTotal,
+    BoundedBytes, BoundedText, ByteLimit, CancelDispatch, ColumnMetadata, Engine, EngineType,
+    IdParts, OperationId, OwnedValue, PageDelivery, PageFacts, PageIdentity, PageLimits,
+    PageWarnings, ResultId, ResultPage, Revision, RowTotal, Truncation,
 };
 use tablerock_engine::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
@@ -29,6 +29,99 @@ struct OnePageStream {
 struct ActivitySession {
     signals: Arc<Mutex<Vec<(bool, i32)>>>,
     role_changes: Arc<Mutex<Vec<String>>>,
+}
+
+struct RedisSubscriptionSession;
+
+struct RedisFixtureStream {
+    delivered: bool,
+}
+
+impl DriverPageStream for RedisFixtureStream {
+    fn next_page<'a>(
+        &'a mut self,
+        identity: PageIdentity,
+        start_row: u64,
+    ) -> DriverFuture<'a, Result<Option<ResultPage>, AdapterError>> {
+        Box::pin(async move {
+            if self.delivered {
+                std::future::pending::<()>().await;
+            }
+            self.delivered = true;
+            let column = |name: &str| {
+                ColumnMetadata::new(
+                    BoundedText::copy_from_str(name, ByteLimit::new(16)).unwrap(),
+                    EngineType::new(
+                        Engine::Redis,
+                        BoundedText::copy_from_str("binary", ByteLimit::new(16)).unwrap(),
+                    )
+                    .unwrap(),
+                    false,
+                )
+            };
+            let binary = |bytes: &[u8]| {
+                OwnedValue::binary(
+                    BoundedBytes::copy_from_slice(bytes, ByteLimit::new(64)).unwrap(),
+                    Truncation::Complete,
+                )
+                .unwrap()
+            };
+            Ok(Some(
+                ResultPage::from_row_major(
+                    identity,
+                    start_row,
+                    RowTotal::Unknown,
+                    PageFacts::new(PageDelivery::Partial, PageWarnings::none()),
+                    vec![column("channel"), column("payload")],
+                    vec![binary(b"updates"), binary(&[0xff, 0x00])],
+                    PageLimits::new(16, 2, 1_024, 1_024),
+                )
+                .unwrap(),
+            ))
+        })
+    }
+}
+
+impl DriverSession for RedisSubscriptionSession {
+    fn engine(&self) -> Engine {
+        Engine::Redis
+    }
+
+    fn start_page_stream<'a>(
+        &'a self,
+        request: DriverPageRequest,
+    ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
+        assert!(matches!(request, DriverPageRequest::RedisSubscribe { .. }));
+        Box::pin(async { Ok(Box::new(RedisFixtureStream { delivered: false }) as _) })
+    }
+
+    fn cancel<'a>(&'a self, _operation_id: OperationId) -> DriverFuture<'a, CancelDispatch> {
+        Box::pin(async { CancelDispatch::RequestSent })
+    }
+
+    fn health<'a>(&'a self) -> DriverFuture<'a, Result<SessionHealth, AdapterError>> {
+        Box::pin(async { Ok(SessionHealth::new(Engine::Redis, true, 0)) })
+    }
+
+    fn catalog<'a>(
+        &'a self,
+        _request: tablerock_engine::CatalogRequest,
+    ) -> DriverFuture<'a, Result<tablerock_engine::CatalogSubtree, AdapterError>> {
+        Box::pin(async {
+            Err(AdapterError::new(
+                Engine::Redis,
+                AdapterFailureClass::InvalidRequest,
+            ))
+        })
+    }
+
+    fn describe<'a>(&'a self) -> DriverFuture<'a, Result<ServerDescribe, AdapterError>> {
+        Box::pin(async { Ok(ServerDescribe::new(Engine::Redis, "test", 0)) })
+    }
+
+    fn shutdown(self: Box<Self>) -> DriverFuture<'static, Result<(), AdapterError>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 impl DriverSession for ActivitySession {
@@ -347,6 +440,59 @@ fn postgres_activity_and_signals_use_typed_driver_contract() {
     assert!(
         matches!(invalid, BridgeError::Rejected { code, .. } if code == "postgres-activity-signal")
     );
+}
+
+#[test]
+fn redis_subscription_is_bounded_binary_safe_and_cancelled_before_disconnect() {
+    let bridge = TableRockBridge::new_for_test();
+    let session = bridge
+        .open_driver_session(Engine::Redis, Box::new(RedisSubscriptionSession))
+        .unwrap();
+    let empty = bridge
+        .start_redis_subscription(session.clone(), "  ".into(), false)
+        .unwrap_err();
+    assert!(
+        matches!(empty, BridgeError::Rejected { code, .. } if code == "redis-subscription-selector")
+    );
+
+    let operation = bridge
+        .start_redis_subscription(session.clone(), "updates".into(), false)
+        .unwrap();
+    let duplicate = bridge
+        .start_redis_subscription(session.clone(), "other".into(), false)
+        .unwrap_err();
+    assert!(
+        matches!(duplicate, BridgeError::Rejected { code, .. } if code == "redis-subscription-active")
+    );
+    let mut status = bridge.redis_subscription_status(operation.clone()).unwrap();
+    for _ in 0..100 {
+        if status.total_received == 1 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+        status = bridge.redis_subscription_status(operation.clone()).unwrap();
+    }
+    assert_eq!(status.selector, "updates");
+    assert!(!status.pattern);
+    assert_eq!(status.total_received, 1);
+    assert_eq!(status.messages, vec!["updates · 0xff00"]);
+    assert_eq!(status.discontinuities, 0);
+
+    let busy = bridge.disconnect(session.clone()).unwrap_err();
+    assert!(matches!(busy, BridgeError::Rejected { code, .. } if code == "session-busy"));
+    assert!(bridge.cancel_redis_subscription(operation.clone()).unwrap());
+    assert!(bridge.cancel_redis_subscription(operation.clone()).unwrap());
+    for _ in 0..100 {
+        status = bridge.redis_subscription_status(operation.clone()).unwrap();
+        if status.phase == "cancelled" {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(status.phase, "cancelled");
+    assert!(!bridge.cancel_redis_subscription(operation).unwrap());
+    bridge.disconnect(session).unwrap();
+    bridge.destroy_runtime().unwrap();
 }
 
 #[test]

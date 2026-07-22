@@ -128,6 +128,27 @@ final class BridgeModelScenarioTests: XCTestCase {
     XCTAssertNil(model.postgresRoleChangeReview)
   }
 
+  func testRedisPubSubSurfacesMessagesGapsAndCancellation() async {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let model = BridgeModel(client: backend)
+    model.formEngine = "redis"
+
+    await model.connectByParams()
+    model.showRedisSubscription()
+    model.redisSubscriptionSelector = "updates:*"
+    model.redisSubscriptionPattern = true
+    await model.startRedisSubscription()
+
+    XCTAssertTrue(model.redisSubscriptionPresented)
+    XCTAssertTrue(model.redisSubscriptionIsActive)
+    XCTAssertEqual(model.redisSubscriptionStatus?.messages, ["updates:users · fixture message"])
+    XCTAssertEqual(model.redisSubscriptionStatus?.discontinuities, 1)
+    await model.cancelRedisSubscription()
+    XCTAssertEqual(model.redisSubscriptionStatus?.phase, "cancelled")
+    XCTAssertFalse(model.redisSubscriptionIsActive)
+    XCTAssertNil(model.redisSubscriptionError)
+  }
+
   func testPostgresBackupUsesProbeReviewAndSupervisedStatus() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
     let model = BridgeModel(client: backend)

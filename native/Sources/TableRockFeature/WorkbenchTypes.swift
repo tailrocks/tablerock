@@ -71,6 +71,9 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func redisKeyView(sessionId: Data, catalogNodeId: Data, collectionSkip: UInt64) throws
     -> WorkbenchRedisKeyView
   func redisOverview(sessionId: Data) throws -> WorkbenchRedisOverview
+  func startRedisSubscription(sessionId: Data, selector: String, pattern: Bool) throws -> Data
+  func redisSubscriptionStatus(operationId: Data) throws -> WorkbenchRedisSubscriptionStatus
+  func cancelRedisSubscription(operationId: Data) throws -> Bool
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow]
   func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
     -> WorkbenchRelationshipSnapshot
@@ -493,6 +496,29 @@ public struct WorkbenchRedisOverview: Sendable, Equatable {
   public init(sampledAtMs: UInt64, lines: [String]) {
     self.sampledAtMs = sampledAtMs
     self.lines = lines
+  }
+}
+public struct WorkbenchRedisSubscriptionStatus: Sendable, Equatable {
+  public let operationId: Data
+  public let selector: String
+  public let pattern: Bool
+  public let phase: String
+  public let messages: [String]
+  public let totalReceived: UInt64
+  public let discontinuities: UInt64
+  public let summary: String
+  public init(
+    operationId: Data, selector: String, pattern: Bool, phase: String, messages: [String],
+    totalReceived: UInt64, discontinuities: UInt64, summary: String
+  ) {
+    self.operationId = operationId
+    self.selector = selector
+    self.pattern = pattern
+    self.phase = phase
+    self.messages = messages
+    self.totalReceived = totalReceived
+    self.discontinuities = discontinuities
+    self.summary = summary
   }
 }
 

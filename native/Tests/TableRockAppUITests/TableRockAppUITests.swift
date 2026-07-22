@@ -447,6 +447,34 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testRedisPubSubShowsGapAndCancels() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_REDIS_PUBSUB_UI": "1"])
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+
+    let command = app.menuItems["Redis Pub/Sub…"]
+    XCTAssertTrue(command.waitForExistence(timeout: 10))
+    XCTAssertTrue(command.isEnabled)
+    command.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["redis.pubsub.sheet"].waitForExistence(timeout: 10))
+    let subscribe = app.buttons["redis.pubsub.subscribe"]
+    XCTAssertTrue(subscribe.isEnabled)
+    subscribe.click()
+    XCTAssertTrue(app.staticTexts["updates:users · fixture message"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["redis.pubsub.gap"].waitForExistence(timeout: 10))
+    let cancel = app.buttons["redis.pubsub.cancel"]
+    XCTAssertTrue(cancel.isEnabled)
+    cancel.click()
+    let cancelled = app.staticTexts.matching(
+      NSPredicate(format: "label CONTAINS[c] 'Cancelled'")
+    ).firstMatch
+    XCTAssertTrue(cancelled.waitForExistence(timeout: 10))
+  }
+
+  @MainActor
   func testPostgresRolesSearchAndInspectMembership() throws {
     let app = launch(scenario: "success")
     let connect = app.buttons["connection.direct.connect"]

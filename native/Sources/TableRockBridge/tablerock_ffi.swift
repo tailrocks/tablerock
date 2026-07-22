@@ -667,6 +667,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func cancelPostgresTool(operationId: Data) throws  -> Bool
 
     /**
+     * Requests cancellation. Repeated requests are safe.
+     */
+    func cancelRedisSubscription(operationId: Data) throws  -> Bool
+
+    /**
      * Executes one explicit driver health probe for a live session.
      */
     func checkSessionHealth(sessionId: Data) throws  -> BridgeSessionHealth
@@ -852,6 +857,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func redisOverview(sessionId: Data) throws  -> BridgeRedisOverview
 
     /**
+     * Returns the latest bounded message window and delivery-gap count.
+     */
+    func redisSubscriptionStatus(operationId: Data) throws  -> BridgeRedisSubscriptionStatus
+
+    /**
      * Load one typed catalog level. `parent_node_id` is an opaque id previously
      * returned by this method; Swift never chooses engine requests or names.
      */
@@ -931,6 +941,11 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Starts a supervised dump or restore against the connected endpoint.
      */
     func startPostgresTool(request: BridgePostgresToolRequest) throws  -> Data
+
+    /**
+     * Starts one bounded supervised SUBSCRIBE or PSUBSCRIBE stream.
+     */
+    func startRedisSubscription(sessionId: Data, selector: String, pattern: Bool) throws  -> Data
 
     /**
      * Submits a command and returns a 16-byte operation id.
@@ -1088,6 +1103,19 @@ open func cancelPostgresTool(operationId: Data)throws  -> Bool  {
     return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
         uniffiCallStatus in
     uniffi_tablerock_ffi_fn_method_tablerockbridge_cancel_postgres_tool(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Requests cancellation. Repeated requests are safe.
+     */
+open func cancelRedisSubscription(operationId: Data)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_cancel_redis_subscription(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(operationId),uniffiCallStatus
     )
@@ -1651,6 +1679,19 @@ open func redisOverview(sessionId: Data)throws  -> BridgeRedisOverview  {
 }
 
     /**
+     * Returns the latest bounded message window and delivery-gap count.
+     */
+open func redisSubscriptionStatus(operationId: Data)throws  -> BridgeRedisSubscriptionStatus  {
+    return try  FfiConverterTypeBridgeRedisSubscriptionStatus_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_redis_subscription_status(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Load one typed catalog level. `parent_node_id` is an opaque id previously
      * returned by this method; Swift never chooses engine requests or names.
      */
@@ -1894,6 +1935,21 @@ open func startPostgresTool(request: BridgePostgresToolRequest)throws  -> Data  
     uniffi_tablerock_ffi_fn_method_tablerockbridge_start_postgres_tool(
             self.uniffiCloneHandle(),
         FfiConverterTypeBridgePostgresToolRequest_lower(request),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Starts one bounded supervised SUBSCRIBE or PSUBSCRIBE stream.
+     */
+open func startRedisSubscription(sessionId: Data, selector: String, pattern: Bool)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_start_redis_subscription(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterString.lower(selector),
+        FfiConverterBool.lower(pattern),uniffiCallStatus
     )
 })
 }
@@ -3727,6 +3783,87 @@ public func FfiConverterTypeBridgeRedisOverview_lift(_ buf: RustBuffer) throws -
 #endif
 public func FfiConverterTypeBridgeRedisOverview_lower(_ value: BridgeRedisOverview) -> RustBuffer {
     return FfiConverterTypeBridgeRedisOverview.lower(value)
+}
+
+
+/**
+ * Bounded presentation snapshot for one supervised Redis subscription.
+ */
+public struct BridgeRedisSubscriptionStatus: Equatable, Hashable {
+    public var operationId: Data
+    public var selector: String
+    public var pattern: Bool
+    public var phase: String
+    public var messages: [String]
+    public var totalReceived: UInt64
+    public var discontinuities: UInt64
+    public var summary: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(operationId: Data, selector: String, pattern: Bool, phase: String, messages: [String], totalReceived: UInt64, discontinuities: UInt64, summary: String) {
+        self.operationId = operationId
+        self.selector = selector
+        self.pattern = pattern
+        self.phase = phase
+        self.messages = messages
+        self.totalReceived = totalReceived
+        self.discontinuities = discontinuities
+        self.summary = summary
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRedisSubscriptionStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRedisSubscriptionStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRedisSubscriptionStatus {
+        return
+            try BridgeRedisSubscriptionStatus(
+                operationId: FfiConverterData.read(from: &buf),
+                selector: FfiConverterString.read(from: &buf),
+                pattern: FfiConverterBool.read(from: &buf),
+                phase: FfiConverterString.read(from: &buf),
+                messages: FfiConverterSequenceString.read(from: &buf),
+                totalReceived: FfiConverterUInt64.read(from: &buf),
+                discontinuities: FfiConverterUInt64.read(from: &buf),
+                summary: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRedisSubscriptionStatus, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.operationId, into: &buf)
+        FfiConverterString.write(value.selector, into: &buf)
+        FfiConverterBool.write(value.pattern, into: &buf)
+        FfiConverterString.write(value.phase, into: &buf)
+        FfiConverterSequenceString.write(value.messages, into: &buf)
+        FfiConverterUInt64.write(value.totalReceived, into: &buf)
+        FfiConverterUInt64.write(value.discontinuities, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRedisSubscriptionStatus_lift(_ buf: RustBuffer) throws -> BridgeRedisSubscriptionStatus {
+    return try FfiConverterTypeBridgeRedisSubscriptionStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRedisSubscriptionStatus_lower(_ value: BridgeRedisSubscriptionStatus) -> RustBuffer {
+    return FfiConverterTypeBridgeRedisSubscriptionStatus.lower(value)
 }
 
 
@@ -6071,6 +6208,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel_postgres_tool() != 22580) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_cancel_redis_subscription() != 4093) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_check_session_health() != 24923) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6206,6 +6346,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_redis_overview() != 7755) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_redis_subscription_status() != 17826) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_refresh_catalog() != 24952) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6261,6 +6404,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_postgres_tool() != 21198) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_start_redis_subscription() != 11543) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit() != 59509) {
