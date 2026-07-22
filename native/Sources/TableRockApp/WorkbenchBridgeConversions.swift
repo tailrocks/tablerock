@@ -20,7 +20,13 @@ extension BridgeProfileDraft {
       environment: environment, host: host, port: port, database: database, username: username,
       passwordSource: passwordSource, passwordValue: passwordValue,
       passwordReference: passwordReference, hasStoredPassword: hasStoredPassword,
-      plaintextAcknowledged: plaintextAcknowledged, tlsMode: tlsMode, safetyMode: safetyMode)
+      plaintextAcknowledged: plaintextAcknowledged, tlsMode: tlsMode, safetyMode: safetyMode,
+      sshEnabled: sshEnabled, sshHost: sshHost, sshPort: sshPort,
+      sshUsername: sshUsername, sshAuthMode: sshAuthMode, sshPassword: sshPassword,
+      sshPrivateKey: sshPrivateKey, sshKnownHostsPath: sshKnownHostsPath,
+      sshHasStoredPassword: sshHasStoredPassword,
+      sshHasStoredPrivateKey: sshHasStoredPrivateKey,
+      sshPlaintextAcknowledged: sshPlaintextAcknowledged)
   }
 }
 extension WorkbenchProfileDraft {
@@ -30,7 +36,13 @@ extension WorkbenchProfileDraft {
       environment: environment, host: host, port: port, database: database, username: username,
       passwordSource: passwordSource, passwordValue: passwordValue,
       passwordReference: passwordReference, hasStoredPassword: hasStoredPassword,
-      plaintextAcknowledged: plaintextAcknowledged, tlsMode: tlsMode, safetyMode: safetyMode)
+      plaintextAcknowledged: plaintextAcknowledged, tlsMode: tlsMode, safetyMode: safetyMode,
+      sshEnabled: sshEnabled, sshHost: sshHost, sshPort: sshPort,
+      sshUsername: sshUsername, sshAuthMode: sshAuthMode, sshPassword: sshPassword,
+      sshPrivateKey: sshPrivateKey, sshKnownHostsPath: sshKnownHostsPath,
+      sshHasStoredPassword: sshHasStoredPassword,
+      sshHasStoredPrivateKey: sshHasStoredPrivateKey,
+      sshPlaintextAcknowledged: sshPlaintextAcknowledged)
   }
 }
 extension BridgeProfileGroup {

@@ -523,6 +523,7 @@ How to read an evidence document:
 - 647 — [Shared streaming export service](delivery/647-shared-streaming-export-service.md)
 - 648 — [Native full-query streaming export](delivery/648-native-full-query-streaming-export.md)
 - 649 — [Full object-export replay and TUI progress](delivery/649-full-export-replay-and-tui-progress.md)
+- 650 — [Native SSH configuration and session tunnel](delivery/650-native-ssh-configuration.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

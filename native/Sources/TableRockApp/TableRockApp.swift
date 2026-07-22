@@ -51,6 +51,17 @@ struct ProfileEditorDraft {
   var plaintextAcknowledged: Bool
   var tlsMode: String
   var safetyMode: String
+  var sshEnabled: Bool
+  var sshHost: String
+  var sshPort: String
+  var sshUsername: String
+  var sshAuthMode: String
+  var sshPassword: String
+  var sshPrivateKey: String
+  var sshKnownHostsPath: String
+  var sshHasStoredPassword: Bool
+  var sshHasStoredPrivateKey: Bool
+  var sshPlaintextAcknowledged: Bool
 
   init(_ value: WorkbenchProfileDraft) {
     idBytes = value.idBytes
@@ -70,6 +81,17 @@ struct ProfileEditorDraft {
     plaintextAcknowledged = value.plaintextAcknowledged
     tlsMode = value.tlsMode
     safetyMode = value.safetyMode
+    sshEnabled = value.sshEnabled
+    sshHost = value.sshHost
+    sshPort = value.sshPort
+    sshUsername = value.sshUsername
+    sshAuthMode = value.sshAuthMode
+    sshPassword = value.sshPassword
+    sshPrivateKey = value.sshPrivateKey
+    sshKnownHostsPath = value.sshKnownHostsPath
+    sshHasStoredPassword = value.sshHasStoredPassword
+    sshHasStoredPrivateKey = value.sshHasStoredPrivateKey
+    sshPlaintextAcknowledged = value.sshPlaintextAcknowledged
   }
 
   var workbench: WorkbenchProfileDraft {
@@ -80,7 +102,13 @@ struct ProfileEditorDraft {
       passwordValue: passwordValue, passwordReference: passwordReference,
       hasStoredPassword: hasStoredPassword,
       plaintextAcknowledged: plaintextAcknowledged,
-      tlsMode: tlsMode, safetyMode: safetyMode
+      tlsMode: tlsMode, safetyMode: safetyMode,
+      sshEnabled: sshEnabled, sshHost: sshHost, sshPort: sshPort,
+      sshUsername: sshUsername, sshAuthMode: sshAuthMode, sshPassword: sshPassword,
+      sshPrivateKey: sshPrivateKey, sshKnownHostsPath: sshKnownHostsPath,
+      sshHasStoredPassword: sshHasStoredPassword,
+      sshHasStoredPrivateKey: sshHasStoredPrivateKey,
+      sshPlaintextAcknowledged: sshPlaintextAcknowledged
     )
   }
 }
@@ -590,7 +618,13 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       passwordReference: draft.passwordReference,
       hasStoredPassword: draft.hasStoredPassword,
       plaintextAcknowledged: draft.plaintextAcknowledged,
-      tlsMode: draft.tlsMode, safetyMode: draft.safetyMode)
+      tlsMode: draft.tlsMode, safetyMode: draft.safetyMode,
+      sshEnabled: draft.sshEnabled, sshHost: draft.sshHost, sshPort: draft.sshPort,
+      sshUsername: draft.sshUsername, sshAuthMode: draft.sshAuthMode,
+      sshKnownHostsPath: draft.sshKnownHostsPath,
+      sshHasStoredPassword: draft.sshHasStoredPassword || !draft.sshPassword.isEmpty,
+      sshHasStoredPrivateKey: draft.sshHasStoredPrivateKey || !draft.sshPrivateKey.isEmpty,
+      sshPlaintextAcknowledged: draft.sshPlaintextAcknowledged)
     profileDrafts[id] = stored
     profiles.removeAll { $0.idBytes == id }
     profiles.append(
@@ -1910,7 +1944,10 @@ private struct NativeProfileEditorFixtureView: View {
       database: "analytics", username: "operator", passwordSource: "prompt",
       passwordValue: "", passwordReference: nil, hasStoredPassword: false,
       plaintextAcknowledged: false,
-      tlsMode: "verify_full", safetyMode: "read_only"
+      tlsMode: "verify_full", safetyMode: "read_only",
+      sshEnabled: true, sshHost: "bastion.example.internal", sshPort: "22",
+      sshUsername: "operator", sshAuthMode: "agent",
+      sshKnownHostsPath: "/Users/operator/.ssh/known_hosts"
     ))
 
   var body: some View {
@@ -1939,12 +1976,13 @@ private func runNativeProfileEditorAudit() {
   let buttons = views.compactMap { $0 as? NSButton }
   let titles = Set(buttons.map(\.title))
   guard window.title == "Edit Connection",
-    textFields.count >= 6,
+    textFields.count >= 10,
     titles.contains("PostgreSQL"),
     titles.contains("Production"),
     titles.contains("Prompt on connect"),
     titles.contains("Read only"),
-    titles.contains("Verify full")
+    titles.contains("Verify full"),
+    titles.contains("SSH agent")
   else {
     writePerformanceMetric(
       "PROFILE_EDITOR_PROOF_FAILED title=\(window.title) fields=\(textFields.count) buttons=\(titles.sorted())"
@@ -1952,7 +1990,7 @@ private func runNativeProfileEditorAudit() {
     return
   }
   writePerformanceMetric(
-    "PROFILE_EDITOR_PROOF_PASSED title=Edit_Connection fields=\(textFields.count) pickers=engine_environment_password_safety_tls"
+    "PROFILE_EDITOR_PROOF_PASSED title=Edit_Connection fields=\(textFields.count) pickers=engine_environment_password_safety_tls_ssh host_key=known_hosts_fail_closed"
   )
 }
 
@@ -10367,6 +10405,15 @@ struct ProfileEditorSheet: View {
         || (!draft.passwordValue.isEmpty && draft.plaintextAcknowledged))
       && (draft.passwordSource != "keychain"
         || draft.passwordReference != nil || !draft.passwordValue.isEmpty)
+      && (!draft.sshEnabled
+        || (!draft.sshHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          && UInt16(draft.sshPort).map { $0 > 0 } == true
+          && !draft.sshKnownHostsPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          && (draft.sshAuthMode == "agent"
+            || (draft.sshPlaintextAcknowledged
+              && (draft.sshAuthMode == "password"
+                ? (!draft.sshPassword.isEmpty || draft.sshHasStoredPassword)
+                : (!draft.sshPrivateKey.isEmpty || draft.sshHasStoredPrivateKey))))))
   }
 
   var body: some View {
@@ -10442,6 +10489,50 @@ struct ProfileEditorSheet: View {
             Text("Off").tag("off")
             Text("Verify CA").tag("verify_ca")
             Text("Verify full").tag("verify_full")
+          }
+        }
+        Section("SSH Tunnel") {
+          Toggle("Connect through SSH bastion", isOn: $draft.sshEnabled)
+            .accessibilityIdentifier("profile.editor.ssh.enabled")
+          if draft.sshEnabled {
+            TextField("Bastion host", text: $draft.sshHost)
+              .accessibilityIdentifier("profile.editor.ssh.host")
+            TextField("SSH port", text: $draft.sshPort)
+              .accessibilityIdentifier("profile.editor.ssh.port")
+            TextField("SSH username", text: $draft.sshUsername)
+              .accessibilityIdentifier("profile.editor.ssh.username")
+            Picker("Authentication", selection: $draft.sshAuthMode) {
+              Text("SSH agent").tag("agent")
+              Text("Password").tag("password")
+              Text("OpenSSH private key").tag("private_key")
+            }
+            .accessibilityIdentifier("profile.editor.ssh.authentication")
+            if draft.sshAuthMode == "password" {
+              SecureField(
+                draft.sshHasStoredPassword ? "Replace stored SSH password" : "SSH password",
+                text: $draft.sshPassword
+              )
+              .accessibilityIdentifier("profile.editor.ssh.password")
+            } else if draft.sshAuthMode == "private_key" {
+              TextEditor(text: $draft.sshPrivateKey)
+                .frame(minHeight: 90)
+                .accessibilityLabel("OpenSSH private key")
+                .accessibilityIdentifier("profile.editor.ssh.private-key")
+              SecureField("Private-key passphrase (optional)", text: $draft.sshPassword)
+            }
+            LabeledContent("Host-key policy", value: "OpenSSH known_hosts · fail closed")
+            TextField("Absolute known_hosts path", text: $draft.sshKnownHostsPath)
+              .accessibilityIdentifier("profile.editor.ssh.known-hosts")
+            if draft.sshAuthMode != "agent" {
+              Toggle(
+                "I understand SSH secrets are stored as acknowledged local plaintext",
+                isOn: $draft.sshPlaintextAcknowledged
+              )
+              .foregroundStyle(.orange)
+              Text("Use SSH agent where available. Secret values never appear in logs or profile reads.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
           }
         }
       }

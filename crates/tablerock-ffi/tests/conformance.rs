@@ -1865,6 +1865,37 @@ fn open_profile_requires_persistence_and_loads_literals() {
     assert_eq!(replacement.revision, 1);
     assert_eq!(replacement.name, "bridge-edited");
 
+    let mut ssh = replacement.clone();
+    ssh.id_bytes = None;
+    ssh.revision = 0;
+    ssh.name = "bridge-ssh".into();
+    ssh.ssh_enabled = true;
+    ssh.ssh_host = "bastion.example".into();
+    ssh.ssh_port = "2222".into();
+    ssh.ssh_username = "operator".into();
+    ssh.ssh_auth_mode = "private_key".into();
+    ssh.ssh_private_key = "private-key-fixture".into();
+    ssh.ssh_password = "passphrase-fixture".into();
+    ssh.ssh_known_hosts_path = "/tmp/tablerock-known-hosts".into();
+    ssh.ssh_plaintext_acknowledged = true;
+    let ssh_id = bridge.save_profile(ssh).unwrap();
+    let mut projected_ssh = bridge.get_profile_draft(ssh_id.clone()).unwrap();
+    assert!(projected_ssh.ssh_enabled);
+    assert_eq!(projected_ssh.ssh_host, "bastion.example");
+    assert_eq!(projected_ssh.ssh_port, "2222");
+    assert_eq!(projected_ssh.ssh_auth_mode, "private_key");
+    assert!(projected_ssh.ssh_has_stored_private_key);
+    assert!(projected_ssh.ssh_has_stored_password);
+    assert!(projected_ssh.ssh_private_key.is_empty());
+    assert!(projected_ssh.ssh_password.is_empty());
+    projected_ssh.name = "bridge-ssh-edited".into();
+    bridge.save_profile(projected_ssh).unwrap();
+    let projected_ssh = bridge.get_profile_draft(ssh_id.clone()).unwrap();
+    assert_eq!(projected_ssh.name, "bridge-ssh-edited");
+    bridge
+        .delete_profile(ssh_id, projected_ssh.revision)
+        .unwrap();
+
     edited.id_bytes = None;
     edited.revision = 0;
     edited.name = "bridge-copy".into();

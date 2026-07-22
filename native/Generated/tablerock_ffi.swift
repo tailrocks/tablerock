@@ -4015,10 +4015,39 @@ public struct BridgeProfileDraft: Equatable, Hashable {
     public var plaintextAcknowledged: Bool
     public var tlsMode: String
     public var safetyMode: String
+    public var sshEnabled: Bool
+    public var sshHost: String
+    public var sshPort: String
+    public var sshUsername: String
+    /**
+     * `agent`, `password`, or `private_key`.
+     */
+    public var sshAuthMode: String
+    /**
+     * Write-only password or private-key passphrase. Existing values never cross UniFFI.
+     */
+    public var sshPassword: String
+    /**
+     * Write-only OpenSSH private key. Existing values never cross UniFFI.
+     */
+    public var sshPrivateKey: String
+    public var sshKnownHostsPath: String
+    public var sshHasStoredPassword: Bool
+    public var sshHasStoredPrivateKey: Bool
+    public var sshPlaintextAcknowledged: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(idBytes: Data?, revision: UInt64, engine: String, name: String, group: String, environment: String, host: String, port: String, database: String, username: String, passwordSource: String, passwordValue: String, passwordReference: Data?, hasStoredPassword: Bool, plaintextAcknowledged: Bool, tlsMode: String, safetyMode: String) {
+    public init(idBytes: Data?, revision: UInt64, engine: String, name: String, group: String, environment: String, host: String, port: String, database: String, username: String, passwordSource: String, passwordValue: String, passwordReference: Data?, hasStoredPassword: Bool, plaintextAcknowledged: Bool, tlsMode: String, safetyMode: String, sshEnabled: Bool, sshHost: String, sshPort: String, sshUsername: String,
+        /**
+         * `agent`, `password`, or `private_key`.
+         */sshAuthMode: String,
+        /**
+         * Write-only password or private-key passphrase. Existing values never cross UniFFI.
+         */sshPassword: String,
+        /**
+         * Write-only OpenSSH private key. Existing values never cross UniFFI.
+         */sshPrivateKey: String, sshKnownHostsPath: String, sshHasStoredPassword: Bool, sshHasStoredPrivateKey: Bool, sshPlaintextAcknowledged: Bool) {
         self.idBytes = idBytes
         self.revision = revision
         self.engine = engine
@@ -4036,6 +4065,17 @@ public struct BridgeProfileDraft: Equatable, Hashable {
         self.plaintextAcknowledged = plaintextAcknowledged
         self.tlsMode = tlsMode
         self.safetyMode = safetyMode
+        self.sshEnabled = sshEnabled
+        self.sshHost = sshHost
+        self.sshPort = sshPort
+        self.sshUsername = sshUsername
+        self.sshAuthMode = sshAuthMode
+        self.sshPassword = sshPassword
+        self.sshPrivateKey = sshPrivateKey
+        self.sshKnownHostsPath = sshKnownHostsPath
+        self.sshHasStoredPassword = sshHasStoredPassword
+        self.sshHasStoredPrivateKey = sshHasStoredPrivateKey
+        self.sshPlaintextAcknowledged = sshPlaintextAcknowledged
     }
 
 
@@ -4070,7 +4110,18 @@ public struct FfiConverterTypeBridgeProfileDraft: FfiConverterRustBuffer {
                 hasStoredPassword: FfiConverterBool.read(from: &buf),
                 plaintextAcknowledged: FfiConverterBool.read(from: &buf),
                 tlsMode: FfiConverterString.read(from: &buf),
-                safetyMode: FfiConverterString.read(from: &buf)
+                safetyMode: FfiConverterString.read(from: &buf),
+                sshEnabled: FfiConverterBool.read(from: &buf),
+                sshHost: FfiConverterString.read(from: &buf),
+                sshPort: FfiConverterString.read(from: &buf),
+                sshUsername: FfiConverterString.read(from: &buf),
+                sshAuthMode: FfiConverterString.read(from: &buf),
+                sshPassword: FfiConverterString.read(from: &buf),
+                sshPrivateKey: FfiConverterString.read(from: &buf),
+                sshKnownHostsPath: FfiConverterString.read(from: &buf),
+                sshHasStoredPassword: FfiConverterBool.read(from: &buf),
+                sshHasStoredPrivateKey: FfiConverterBool.read(from: &buf),
+                sshPlaintextAcknowledged: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -4092,6 +4143,17 @@ public struct FfiConverterTypeBridgeProfileDraft: FfiConverterRustBuffer {
         FfiConverterBool.write(value.plaintextAcknowledged, into: &buf)
         FfiConverterString.write(value.tlsMode, into: &buf)
         FfiConverterString.write(value.safetyMode, into: &buf)
+        FfiConverterBool.write(value.sshEnabled, into: &buf)
+        FfiConverterString.write(value.sshHost, into: &buf)
+        FfiConverterString.write(value.sshPort, into: &buf)
+        FfiConverterString.write(value.sshUsername, into: &buf)
+        FfiConverterString.write(value.sshAuthMode, into: &buf)
+        FfiConverterString.write(value.sshPassword, into: &buf)
+        FfiConverterString.write(value.sshPrivateKey, into: &buf)
+        FfiConverterString.write(value.sshKnownHostsPath, into: &buf)
+        FfiConverterBool.write(value.sshHasStoredPassword, into: &buf)
+        FfiConverterBool.write(value.sshHasStoredPrivateKey, into: &buf)
+        FfiConverterBool.write(value.sshPlaintextAcknowledged, into: &buf)
     }
 }
 

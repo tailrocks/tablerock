@@ -127,3 +127,19 @@ connect automatically.
 open, SSH tunnel, and startup actions landed in dependency-ordered checkpoints
 (see delivery evidence 260–274, 289, 296, 630). Each extension is tracked in
 the parity ledger.
+
+### SSH tunnel extension
+
+Both connection editors expose an optional SSH bastion section for every
+database engine. Rust owns tunnel setup below PostgreSQL, ClickHouse, and Redis;
+database drivers receive only the loopback forwarding endpoint. Configuration
+includes bastion host/port/user, SSH agent/password/OpenSSH-private-key auth,
+and an absolute OpenSSH `known_hosts` path. Host-key verification always fails
+closed. Native sessions retain the Rust tunnel for exactly the database-session
+lifetime.
+
+SSH password, private key, and optional key passphrase are write-only form
+values. Existing values never cross UniFFI on profile reads. Agent auth is the
+preferred native choice. Until SSH-specific Keychain mapping lands, non-agent
+SSH secrets use the existing acknowledged local-plaintext policy and show an
+explicit warning; they never appear in logs, errors, profile lists, or history.

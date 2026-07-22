@@ -18,6 +18,10 @@
   shell-free Rust discovery and supervised process authority, native file
   panels, typed configuration, destructive review, bounded polling, and
   cancellation (evidence 636); hosted live restore/cancel replay remains.
+- **Progress note (evidence 650)**: native SSH connection configuration now
+  persists typed bastion/auth/known-hosts intent through UniFFI, keeps SSH
+  secrets write-only, and routes all engines through a session-owned shared
+  Rust tunnel. Hosted native test-action and live failure-matrix replay remain.
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

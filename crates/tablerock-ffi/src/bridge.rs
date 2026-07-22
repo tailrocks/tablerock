@@ -42,8 +42,9 @@ use tablerock_engine::{
     PostgresProbeQuery, PostgresSession, PostgresTlsMode, RedisConnectConfig,
     RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession, RedisSubscriptionKind,
     RedisSubscriptionOptions, RedisTlsMode, ResolvedSecret, SecretPromptPort,
-    SecretResolutionError, SortDirection, SortKey, TypedCondition,
-    load_relation_structure as load_structure_snapshot, parse_bind_text,
+    SecretResolutionError, SortDirection, SortKey, SshAgentAuth, SshAuthMaterial, SshHostKeyPolicy,
+    SshPasswordAuth, SshPublicKeyAuth, SshTunnelConfig, TypedCondition,
+    load_relation_structure as load_structure_snapshot, open_local_forward_tunnel, parse_bind_text,
     resolve_for_connect_with_ports,
 };
 use tablerock_files::{
@@ -745,6 +746,8 @@ struct RegisteredSession {
     engine: Engine,
     database: BoundedText,
     postgres_tool_connection: Option<PostgresToolConnection>,
+    /// Keeps a native-profile SSH forward alive for exactly this session.
+    _ssh_tunnel: Option<Arc<tablerock_engine::LocalForwardTunnel>>,
     /// Expected context revision tracked by the bridge.
     context_revision: Revision,
 }
@@ -850,6 +853,20 @@ pub struct BridgeProfileDraft {
     pub plaintext_acknowledged: bool,
     pub tls_mode: String,
     pub safety_mode: String,
+    pub ssh_enabled: bool,
+    pub ssh_host: String,
+    pub ssh_port: String,
+    pub ssh_username: String,
+    /// `agent`, `password`, or `private_key`.
+    pub ssh_auth_mode: String,
+    /// Write-only password or private-key passphrase. Existing values never cross UniFFI.
+    pub ssh_password: String,
+    /// Write-only OpenSSH private key. Existing values never cross UniFFI.
+    pub ssh_private_key: String,
+    pub ssh_known_hosts_path: String,
+    pub ssh_has_stored_password: bool,
+    pub ssh_has_stored_private_key: bool,
+    pub ssh_plaintext_acknowledged: bool,
 }
 
 /// Process-scoped UniFFI facade. One instance owns the multi-thread runtime.
@@ -1237,6 +1254,17 @@ impl TableRockBridge {
                 }
                 .to_owned(),
                 safety_mode: "confirm_writes".to_owned(),
+                ssh_enabled: false,
+                ssh_host: String::new(),
+                ssh_port: "22".to_owned(),
+                ssh_username: String::new(),
+                ssh_auth_mode: "agent".to_owned(),
+                ssh_password: String::new(),
+                ssh_private_key: String::new(),
+                ssh_known_hosts_path: String::new(),
+                ssh_has_stored_password: false,
+                ssh_has_stored_private_key: false,
+                ssh_plaintext_acknowledged: false,
             })
         })
     }
@@ -2244,7 +2272,7 @@ impl TableRockBridge {
         engine: Engine,
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
-        catch_entry(|| self.open_driver_session_inner(engine, session, None, None, None))
+        catch_entry(|| self.open_driver_session_inner(engine, session, None, None, None, None))
     }
 
     /// Registers a test driver under an existing saved-profile identity.
@@ -2256,7 +2284,7 @@ impl TableRockBridge {
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| {
-            self.open_driver_session_inner(engine, session, Some(profile_id), None, None)
+            self.open_driver_session_inner(engine, session, Some(profile_id), None, None, None)
         })
     }
 
@@ -3100,7 +3128,7 @@ impl TableRockBridge {
                 |_| BridgeError::rejected("bad-profile-id", "profile id must be 16 bytes"),
             )?)
             .map_err(|error| BridgeError::rejected("bad-profile-id", error.to_string()))?;
-        let params = {
+        let (mut params, ssh_config) = {
             let guard = self
                 .inner
                 .lock()
@@ -3201,23 +3229,112 @@ impl TableRockBridge {
                 Engine::ClickHouse => "clickhouse",
                 Engine::Redis => "redis",
             };
-            OpenParams {
-                engine: engine.into(),
-                host,
-                port,
-                database,
-                user,
-                password,
-                tls_mode: match connection.tls_policy() {
-                    TlsPolicy::Disabled => "off",
-                    TlsPolicy::VerifySystemRoots => "verify_ca",
-                    TlsPolicy::VerifyCustomCa => "verify_full",
-                    TlsPolicy::DangerousAcceptInvalidCertificate(_) => "off",
-                }
-                .into(),
-            }
+            let ssh_config = literal(ProfileProperty::SshHost)
+                .map(|bastion_host| {
+                    let bastion_port = literal(ProfileProperty::SshPort)
+                        .unwrap_or_else(|| "22".to_owned())
+                        .parse::<u16>()
+                        .map_err(|_| BridgeError::rejected("profile-ssh", "invalid SSH port"))?;
+                    let username = literal(ProfileProperty::SshUsername)
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or_else(|| "root".to_owned());
+                    let known_hosts = literal(ProfileProperty::SshKnownHostsPath)
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| {
+                            BridgeError::rejected(
+                                "profile-ssh",
+                                "SSH known_hosts path required for fail-closed verification",
+                            )
+                        })?;
+                    let resolve_ssh = |property| -> Result<String, BridgeError> {
+                        let Some(binding) = props.binding(property) else {
+                            return Ok(String::new());
+                        };
+                        let mut no_prompt = OverridePrompt(None);
+                        let mut no_keychain = OverrideKeychain(None);
+                        let mut op = OpCliReader::default();
+                        let resolved = resolve_for_connect_with_ports(
+                            binding,
+                            connection.name(),
+                            &mut no_prompt,
+                            &mut op,
+                            &mut no_keychain,
+                        )
+                        .map_err(|error| BridgeError::rejected("profile-ssh", error.to_string()))?;
+                        Ok(resolved
+                            .map(|secret| String::from_utf8_lossy(secret.as_bytes()).into_owned())
+                            .unwrap_or_default())
+                    };
+                    let auth = if aggregate.preferences().ssh_use_agent() {
+                        SshAuthMaterial::Agent(SshAgentAuth::from_env(username))
+                    } else {
+                        let private_key = resolve_ssh(ProfileProperty::SshPrivateKey)?;
+                        let ssh_password = resolve_ssh(ProfileProperty::SshPassword)?;
+                        if !private_key.is_empty() {
+                            SshAuthMaterial::PublicKey(
+                                SshPublicKeyAuth::from_openssh_private_key_with_passphrase(
+                                    &username,
+                                    &private_key,
+                                    (!ssh_password.is_empty()).then_some(ssh_password.as_str()),
+                                )
+                                .map_err(|error| {
+                                    BridgeError::rejected("profile-ssh", error.to_string())
+                                })?,
+                            )
+                        } else if !ssh_password.is_empty() {
+                            SshAuthMaterial::Password(SshPasswordAuth::new(username, ssh_password))
+                        } else {
+                            return Err(BridgeError::rejected(
+                                "profile-ssh",
+                                "SSH password, private key, or agent mode required",
+                            ));
+                        }
+                    };
+                    Ok(SshTunnelConfig {
+                        bastion_host,
+                        bastion_port,
+                        auth,
+                        host_key_policy: SshHostKeyPolicy::KnownHostsPath(PathBuf::from(
+                            known_hosts,
+                        )),
+                    })
+                })
+                .transpose()?;
+            (
+                OpenParams {
+                    engine: engine.into(),
+                    host,
+                    port,
+                    database,
+                    user,
+                    password,
+                    tls_mode: match connection.tls_policy() {
+                        TlsPolicy::Disabled => "off",
+                        TlsPolicy::VerifySystemRoots => "verify_ca",
+                        TlsPolicy::VerifyCustomCa => "verify_full",
+                        TlsPolicy::DangerousAcceptInvalidCertificate(_) => "off",
+                    }
+                    .into(),
+                },
+                ssh_config,
+            )
         };
-        self.open_inner_for_profile(params, Some(profile_id))
+        let tunnel = if let Some(config) = ssh_config {
+            let opened = self
+                .runtime
+                .block_on(open_local_forward_tunnel(
+                    &config,
+                    params.host.as_str(),
+                    params.port,
+                ))?
+                .map_err(|error| BridgeError::rejected("profile-ssh", error.to_string()))?;
+            params.host = tablerock_engine::LocalForwardTunnel::local_host().to_owned();
+            params.port = opened.local_port();
+            Some(opened)
+        } else {
+            None
+        };
+        self.open_inner_for_profile(params, Some(profile_id), tunnel)
     }
 
     fn get_profile_draft_inner(
@@ -6260,13 +6377,14 @@ impl TableRockBridge {
     }
 
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
-        self.open_inner_for_profile(params, None)
+        self.open_inner_for_profile(params, None, None)
     }
 
     fn open_inner_for_profile(
         &self,
         params: OpenParams,
         saved_profile_id: Option<ProfileId>,
+        ssh_tunnel: Option<tablerock_engine::LocalForwardTunnel>,
     ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let engine = parse_engine(&params.engine)?;
@@ -6402,6 +6520,7 @@ impl TableRockBridge {
             saved_profile_id,
             Some(database),
             postgres_tool_connection,
+            ssh_tunnel,
         )
     }
 
@@ -6412,6 +6531,7 @@ impl TableRockBridge {
         saved_profile_id: Option<ProfileId>,
         database: Option<BoundedText>,
         postgres_tool_connection: Option<PostgresToolConnection>,
+        ssh_tunnel: Option<tablerock_engine::LocalForwardTunnel>,
     ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let mut guard = self
@@ -6481,6 +6601,7 @@ impl TableRockBridge {
                     .expect("default database is bounded")
                 }),
                 postgres_tool_connection,
+                _ssh_tunnel: ssh_tunnel.map(Arc::new),
                 context_revision: Revision::INITIAL,
             },
         );
@@ -7354,6 +7475,14 @@ fn profile_to_bridge_draft(profile: &ProfileAggregate) -> Result<BridgeProfileDr
         TlsPolicy::VerifyCustomCa => "verify_full",
         TlsPolicy::DangerousAcceptInvalidCertificate(_) => "dangerous",
     };
+    let has_ssh_password = connection
+        .properties()
+        .binding(ProfileProperty::SshPassword)
+        .is_some();
+    let has_ssh_private_key = connection
+        .properties()
+        .binding(ProfileProperty::SshPrivateKey)
+        .is_some();
     Ok(BridgeProfileDraft {
         id_bytes: Some(connection.id().to_bytes().to_vec()),
         revision: connection.revision().get(),
@@ -7392,6 +7521,31 @@ fn profile_to_bridge_draft(profile: &ProfileAggregate) -> Result<BridgeProfileDr
             ProfileSafetyMode::ConfirmWrites => "confirm_writes",
         }
         .to_owned(),
+        ssh_enabled: !literal(ProfileProperty::SshHost).is_empty(),
+        ssh_host: literal(ProfileProperty::SshHost),
+        ssh_port: {
+            let value = literal(ProfileProperty::SshPort);
+            if value.is_empty() {
+                "22".to_owned()
+            } else {
+                value
+            }
+        },
+        ssh_username: literal(ProfileProperty::SshUsername),
+        ssh_auth_mode: if profile.preferences().ssh_use_agent() {
+            "agent"
+        } else if has_ssh_private_key {
+            "private_key"
+        } else {
+            "password"
+        }
+        .to_owned(),
+        ssh_password: String::new(),
+        ssh_private_key: String::new(),
+        ssh_known_hosts_path: literal(ProfileProperty::SshKnownHostsPath),
+        ssh_has_stored_password: has_ssh_password,
+        ssh_has_stored_private_key: has_ssh_private_key,
+        ssh_plaintext_acknowledged: has_ssh_password || has_ssh_private_key,
     })
 }
 
@@ -7433,6 +7587,99 @@ fn bridge_draft_to_profile(
                 ProfilePropertyBinding::literal(property, text(value, 128)?)
                     .map_err(|error| rejected("profile-field", error.to_string()))?,
             );
+        }
+    }
+    if draft.ssh_enabled {
+        let ssh_host = draft.ssh_host.trim();
+        let ssh_port = draft.ssh_port.trim();
+        let known_hosts = draft.ssh_known_hosts_path.trim();
+        if ssh_host.is_empty() || known_hosts.is_empty() {
+            return Err(BridgeError::rejected(
+                "profile-ssh",
+                "SSH host and known_hosts path are required",
+            ));
+        }
+        let parsed_port = ssh_port
+            .parse::<u16>()
+            .ok()
+            .filter(|port| *port > 0)
+            .ok_or_else(|| BridgeError::rejected("profile-ssh", "SSH port must be 1..=65535"))?;
+        let parsed_port = parsed_port.to_string();
+        for (property, value, maximum) in [
+            (ProfileProperty::SshHost, ssh_host, 253),
+            (ProfileProperty::SshPort, parsed_port.as_str(), 5),
+            (ProfileProperty::SshUsername, draft.ssh_username.trim(), 128),
+            (ProfileProperty::SshKnownHostsPath, known_hosts, 4_096),
+        ] {
+            if !value.is_empty() {
+                bindings.push(
+                    ProfilePropertyBinding::literal(property, text(value, maximum)?)
+                        .map_err(|error| rejected("profile-ssh", error.to_string()))?,
+                );
+            }
+        }
+        if !matches!(
+            draft.ssh_auth_mode.as_str(),
+            "agent" | "password" | "private_key"
+        ) {
+            return Err(BridgeError::rejected(
+                "profile-ssh",
+                "unknown SSH authentication mode",
+            ));
+        }
+        if draft.ssh_auth_mode != "agent" && !draft.ssh_plaintext_acknowledged {
+            return Err(BridgeError::rejected(
+                "profile-ssh",
+                "SSH secret local-storage acknowledgement required",
+            ));
+        }
+        let existing_secret = |property| {
+            existing
+                .and_then(|profile| profile.connection().properties().binding(property))
+                .and_then(ProfilePropertyBinding::secret_source)
+                .and_then(|source| match source.kind() {
+                    SecretSourceKind::DangerousPlaintext(value) => Some(value.bytes().to_vec()),
+                    _ => None,
+                })
+        };
+        let secret_binding =
+            |property, value: &str| -> Result<ProfilePropertyBinding, BridgeError> {
+                let value = if value.is_empty() {
+                    existing_secret(property).ok_or_else(|| {
+                        BridgeError::rejected("profile-ssh", "SSH authentication secret required")
+                    })?
+                } else {
+                    value.as_bytes().to_vec()
+                };
+                Ok(ProfilePropertyBinding::secret(
+                    property,
+                    SecretSource::new(SecretSourceKind::DangerousPlaintext(
+                        DangerousPlaintext::new(value, PlaintextAcknowledgement::LocalTestingOnly)
+                            .map_err(|error| rejected("profile-ssh", error.to_string()))?,
+                    )),
+                ))
+            };
+        match draft.ssh_auth_mode.as_str() {
+            "agent" => {}
+            "password" => bindings.push(secret_binding(
+                ProfileProperty::SshPassword,
+                &draft.ssh_password,
+            )?),
+            "private_key" => {
+                bindings.push(secret_binding(
+                    ProfileProperty::SshPrivateKey,
+                    &draft.ssh_private_key,
+                )?);
+                if !draft.ssh_password.is_empty()
+                    || existing_secret(ProfileProperty::SshPassword).is_some()
+                {
+                    bindings.push(secret_binding(
+                        ProfileProperty::SshPassword,
+                        &draft.ssh_password,
+                    )?);
+                }
+            }
+            _ => unreachable!("validated SSH authentication mode"),
         }
     }
     let password_kind = match draft.password_source.as_str() {
@@ -7564,13 +7811,14 @@ fn bridge_draft_to_profile(
         environment,
     )
     .map_err(|error| rejected("profile-organization", error.to_string()))?;
+    let preferences = existing.map(ProfileAggregate::preferences).unwrap_or(
+        ProfilePreferences::new(ReconnectPreference::BoundedAutomatic, true, 250).unwrap(),
+    );
     ProfileAggregate::new(
         connection,
         ProfileDurability::Saved,
         organization,
-        existing.map(ProfileAggregate::preferences).unwrap_or(
-            ProfilePreferences::new(ReconnectPreference::BoundedAutomatic, true, 250).unwrap(),
-        ),
+        preferences.with_ssh_use_agent(draft.ssh_enabled && draft.ssh_auth_mode == "agent"),
     )
     .map(|profile| match existing {
         Some(old) => profile.with_startup_actions(old.startup_actions().clone()),

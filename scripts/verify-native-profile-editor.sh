@@ -28,7 +28,10 @@ for pattern in \
   'case \.connect:' \
   'case \.test:' \
   'case \.reconnect:' \
-  'I understand this stores the password as plaintext locally'
+  'I understand this stores the password as plaintext locally' \
+  'Connect through SSH bastion' \
+  'OpenSSH known_hosts · fail closed' \
+  'profile.editor.ssh.authentication'
 do
   rg -q "$pattern" "$SOURCE" || {
     echo "error: missing native profile action/editor contract: $pattern" >&2

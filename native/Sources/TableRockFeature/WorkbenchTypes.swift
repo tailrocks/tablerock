@@ -327,11 +327,27 @@ public struct WorkbenchProfileDraft: Sendable, Equatable {
   public let plaintextAcknowledged: Bool
   public let tlsMode: String
   public let safetyMode: String
+  public let sshEnabled: Bool
+  public let sshHost: String
+  public let sshPort: String
+  public let sshUsername: String
+  public let sshAuthMode: String
+  public let sshPassword: String
+  public let sshPrivateKey: String
+  public let sshKnownHostsPath: String
+  public let sshHasStoredPassword: Bool
+  public let sshHasStoredPrivateKey: Bool
+  public let sshPlaintextAcknowledged: Bool
   public init(
     idBytes: Data?, revision: UInt64, engine: String, name: String, group: String,
     environment: String, host: String, port: String, database: String, username: String,
     passwordSource: String, passwordValue: String, passwordReference: Data?,
-    hasStoredPassword: Bool, plaintextAcknowledged: Bool, tlsMode: String, safetyMode: String
+    hasStoredPassword: Bool, plaintextAcknowledged: Bool, tlsMode: String, safetyMode: String,
+    sshEnabled: Bool = false, sshHost: String = "", sshPort: String = "22",
+    sshUsername: String = "", sshAuthMode: String = "agent", sshPassword: String = "",
+    sshPrivateKey: String = "", sshKnownHostsPath: String = "",
+    sshHasStoredPassword: Bool = false, sshHasStoredPrivateKey: Bool = false,
+    sshPlaintextAcknowledged: Bool = false
   ) {
     self.idBytes = idBytes
     self.revision = revision
@@ -350,6 +366,17 @@ public struct WorkbenchProfileDraft: Sendable, Equatable {
     self.plaintextAcknowledged = plaintextAcknowledged
     self.tlsMode = tlsMode
     self.safetyMode = safetyMode
+    self.sshEnabled = sshEnabled
+    self.sshHost = sshHost
+    self.sshPort = sshPort
+    self.sshUsername = sshUsername
+    self.sshAuthMode = sshAuthMode
+    self.sshPassword = sshPassword
+    self.sshPrivateKey = sshPrivateKey
+    self.sshKnownHostsPath = sshKnownHostsPath
+    self.sshHasStoredPassword = sshHasStoredPassword
+    self.sshHasStoredPrivateKey = sshHasStoredPrivateKey
+    self.sshPlaintextAcknowledged = sshPlaintextAcknowledged
   }
 }
 public struct WorkbenchProfileGroup: Sendable, Equatable {
