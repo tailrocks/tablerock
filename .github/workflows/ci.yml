@@ -30,6 +30,7 @@ jobs:
     name: Format, lint, and test (${{ matrix.config.lane }})
     timeout-minutes: 30
     env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/tablerock-target-${{ github.run_id }}-${{ github.run_attempt }}-rust-${{ matrix.config.lane }}
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "false"
@@ -84,6 +85,7 @@ jobs:
     name: Real-server integration (${{ matrix.config.lane }})
     timeout-minutes: 45
     env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/tablerock-target-${{ github.run_id }}-${{ github.run_attempt }}-integration-${{ matrix.config.lane }}
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "false"
