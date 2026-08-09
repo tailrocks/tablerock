@@ -3,6 +3,7 @@
 mod column_layout_store;
 mod history_store;
 mod native_window_intent_store;
+mod operator_paths;
 mod profile_store;
 mod recovery;
 mod saved_filter_store;
@@ -28,6 +29,10 @@ pub use history_store::{
     DEFAULT_HISTORY_LIMIT, HistoryAppend, HistoryEntry, HistoryOutcomeClass, HistoryRetention,
 };
 pub use native_window_intent_store::NativeWindowIntentRecord;
+pub use operator_paths::{
+    OPERATOR_DATA_DIR_NAME, OPERATOR_PROFILES_DB_FILE, OperatorPathError, TEST_ROOT_ENV,
+    default_operator_profiles_database, operator_data_root, resolve_operator_profiles_database,
+};
 use profile_store::EncodedProfile;
 pub use recovery::{
     BACKUP_FORMAT_VERSION, BackupManifest, MAX_BACKUP_BYTES, create_backup, read_backup_manifest,
@@ -550,21 +555,34 @@ impl PersistenceActor {
     }
 
     pub fn shutdown(mut self) -> Result<(), PersistenceError> {
+        let result = self.shutdown_worker();
+        // Join so PathLease is gone before callers reopen the same file
+        // (CLI ↔ native sequential switch).
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+        result
+    }
+
+    fn shutdown_worker(&self) -> Result<(), PersistenceError> {
         let (sender, receiver) = mpsc::sync_channel(1);
         submit(&self.sender, Command::Shutdown(sender))?;
-        let result = receiver
+        receiver
             .recv_timeout(CALLER_TIMEOUT)
-            .map_err(map_receive_error)?;
-        drop(self.worker.take());
-        result
+            .map_err(map_receive_error)?
     }
 }
 
 impl Drop for PersistenceActor {
     fn drop(&mut self) {
-        if self.worker.take().is_some() {
-            let (sender, _receiver) = mpsc::sync_channel(1);
-            let _ = self.sender.try_send(Command::Shutdown(sender));
+        if self.worker.is_none() {
+            return;
+        }
+        // Best-effort graceful close: wait for worker reply so PathLease
+        // releases before another client opens the same store path.
+        let _ = self.shutdown_worker();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
         }
     }
 }

@@ -6,7 +6,6 @@
 
 use std::{
     collections::BTreeMap,
-    path::PathBuf,
     sync::{
         Arc, Mutex as StdMutex,
         atomic::{AtomicBool, Ordering},
@@ -84,9 +83,14 @@ impl EffectExecutor {
         }
     }
 
-    /// Open a local-only database for the executor (default path or override).
+    /// Open the shared durable operator store both CLI and native production use.
+    ///
+    /// Path is `tablerock_persistence::default_operator_profiles_database`
+    /// (`~/Library/Application Support/TableRock/profiles.db` on macOS, or
+    /// absolute `TABLEROCK_TEST_ROOT/profiles.db` for isolation). Not a
+    /// process-PID private file.
     pub fn open_default(ingress: RootMessageSender) -> Result<Self, String> {
-        let path = default_persistence_path();
+        let path = crate::operator_profiles_database_path()?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
@@ -6412,21 +6416,7 @@ fn parse_environment(raw: &str) -> Result<Option<EnvironmentTag>, String> {
     }))
 }
 
-fn default_persistence_path() -> PathBuf {
-    let mut path = dirs_next_home();
-    path.push(".tablerock");
-    // Process-local file until cross-process ownership is productized
-    // (PathLease is single-process; concurrent PTY tests need isolation).
-    path.push(format!("state-{}.db", std::process::id()));
-    path
-}
 
-fn dirs_next_home() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("."))
-}
 
 #[cfg(test)]
 mod redis_collection_spec_tests {

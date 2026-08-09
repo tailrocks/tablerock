@@ -7646,6 +7646,11 @@ impl TableRockBridge {
             format!("Draining {{ active_operations: {active} }}")
         };
         if active == 0 {
+            // Release the durable store lease before dropping the bridge so a
+            // sequential CLI/TUI open of the same profiles.db can succeed.
+            if let Some(actor) = inner.persistence.take() {
+                let _ = actor.shutdown();
+            }
             drop(guard);
             let mut guard = self
                 .inner
