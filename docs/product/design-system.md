@@ -34,7 +34,7 @@ reversible.*
 |---|---|---|
 | **Environment Halo** | Know where you are (dev / staging / production) without color alone | Toolbar badge, context bar, profile rows |
 | **Change Ledger** | See staged inserts/updates/deletes before apply | Status `ledger N`, review sheet, TUI **Ledger** |
-| **Relation Lens** | Traverse FK / neighborhood from selection | Relationships sheet, TUI **Lens**, Open Related |
+| **Relation Lens / Row Continuum** | Traverse FK / neighborhood **without leaving the grid plane** | Continuum peer plane (⌘⌥→), relationships sheet, TUI **Lens** |
 
 Rank: Halo + Ledger ship continuously; Lens deepens as FK facts are available.
 
