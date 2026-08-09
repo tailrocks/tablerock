@@ -1981,7 +1981,7 @@ async fn load_catalog(
     level: CatalogLevelSpec,
     parent_id: Option<String>,
 ) -> Message {
-    use tablerock_core::{BoundedText, ByteLimit, PageLimits};
+    use tablerock_core::PageLimits;
     let session_id = match session_id_hex.parse::<SessionId>() {
         Ok(id) => id,
         Err(_) => {
@@ -2003,55 +2003,14 @@ async fn load_catalog(
             reason: FailureProjection::Label("session not registered".into()),
         });
     };
-    let text = |value: &str| {
-        BoundedText::copy_from_str(value, ByteLimit::new(128)).map_err(|e| e.to_string())
-    };
     let limits = PageLimits::new(256, 1, 64 * 1024, 256);
-    let request = match (&engine_label[..], &level) {
-        ("PostgreSQL", CatalogLevelSpec::Root) => CatalogRequest::PostgreSqlDatabases { limits },
-        ("PostgreSQL", CatalogLevelSpec::Schemas { database }) => match text(database) {
-            Ok(database) => CatalogRequest::PostgreSqlSchemas { database, limits },
-            Err(label) => {
-                return Message::Engine(tablerock_tui::EngineMsg::CatalogFailed {
-                    request_token,
-                    context_revision,
-                    reason: FailureProjection::Label(label),
-                });
-            }
-        },
-        ("PostgreSQL", CatalogLevelSpec::Relations { database, schema }) => {
-            match (text(database), text(schema)) {
-                (Ok(database), Ok(schema)) => CatalogRequest::PostgreSqlRelations {
-                    database,
-                    schema,
-                    limits,
-                },
-                (Err(label), _) | (_, Err(label)) => {
-                    return Message::Engine(tablerock_tui::EngineMsg::CatalogFailed {
-                        request_token,
-                        context_revision,
-                        reason: FailureProjection::Label(label),
-                    });
-                }
-            }
-        }
-        ("ClickHouse", CatalogLevelSpec::Root) => CatalogRequest::ClickHouseDatabases { limits },
-        ("ClickHouse", CatalogLevelSpec::Objects { database }) => match text(database) {
-            Ok(database) => CatalogRequest::ClickHouseObjects { database, limits },
-            Err(label) => {
-                return Message::Engine(tablerock_tui::EngineMsg::CatalogFailed {
-                    request_token,
-                    context_revision,
-                    reason: FailureProjection::Label(label),
-                });
-            }
-        },
-        ("Redis", CatalogLevelSpec::Root) => CatalogRequest::RedisLogicalDatabases { limits },
-        _ => {
+    let request = match catalog_request_for_level(&engine_label, &level, limits) {
+        Ok(request) => request,
+        Err(label) => {
             return Message::Engine(tablerock_tui::EngineMsg::CatalogFailed {
                 request_token,
                 context_revision,
-                reason: FailureProjection::Label("catalog level unsupported".into()),
+                reason: FailureProjection::Label(label),
             });
         }
     };
@@ -5357,6 +5316,50 @@ fn project_page_message(
     })
 }
 
+/// Map TUI engine label + catalog level to engine `CatalogRequest` (testable).
+fn catalog_request_for_level(
+    engine_label: &str,
+    level: &CatalogLevelSpec,
+    limits: tablerock_core::PageLimits,
+) -> Result<tablerock_engine::CatalogRequest, String> {
+    use tablerock_core::{BoundedText, ByteLimit};
+    use tablerock_engine::CatalogRequest;
+    let text = |value: &str| {
+        BoundedText::copy_from_str(value, ByteLimit::new(128)).map_err(|e| e.to_string())
+    };
+    match (engine_label, level) {
+        ("PostgreSQL", CatalogLevelSpec::Root) => Ok(CatalogRequest::PostgreSqlDatabases { limits }),
+        ("PostgreSQL", CatalogLevelSpec::Schemas { database }) => {
+            let database = text(database)?;
+            Ok(CatalogRequest::PostgreSqlSchemas { database, limits })
+        }
+        ("PostgreSQL", CatalogLevelSpec::Relations { database, schema }) => {
+            let database = text(database)?;
+            let schema = text(schema)?;
+            Ok(CatalogRequest::PostgreSqlRelations {
+                database,
+                schema,
+                limits,
+            })
+        }
+        ("ClickHouse", CatalogLevelSpec::Root) => Ok(CatalogRequest::ClickHouseDatabases { limits }),
+        ("ClickHouse", CatalogLevelSpec::Objects { database }) => {
+            let database = text(database)?;
+            Ok(CatalogRequest::ClickHouseObjects { database, limits })
+        }
+        ("Redis", CatalogLevelSpec::Root) => Ok(CatalogRequest::RedisLogicalDatabases { limits }),
+        ("SQLite", CatalogLevelSpec::Root) => Ok(CatalogRequest::SqliteRoot { limits }),
+        // Expand file root → tables.
+        ("SQLite", CatalogLevelSpec::Objects { .. }) => Ok(CatalogRequest::SqliteTables { limits }),
+        // Expand table → columns (Relations.schema carries the table name).
+        ("SQLite", CatalogLevelSpec::Relations { schema, .. }) => {
+            let table = text(schema)?;
+            Ok(CatalogRequest::SqliteColumns { table, limits })
+        }
+        _ => Err("catalog level unsupported".into()),
+    }
+}
+
 fn catalog_kind_label(kind: tablerock_core::CatalogNodeKind) -> &'static str {
     use tablerock_core::{
         CatalogNodeKind, ClickHouseObjectKind, PostgreSqlObjectKind, RedisKeyKind,
@@ -6556,6 +6559,50 @@ fn parse_environment(raw: &str) -> Result<Option<EnvironmentTag>, String> {
 }
 
 
+
+#[cfg(test)]
+mod sqlite_catalog_mapping_tests {
+    use super::*;
+    use tablerock_core::PageLimits;
+    use tablerock_engine::CatalogRequest;
+    use tablerock_tui::effect::CatalogLevelSpec;
+
+    #[test]
+    fn sqlite_root_and_expand_map_to_sqlite_catalog_requests() {
+        let limits = PageLimits::new(256, 1, 64 * 1024, 256);
+        assert!(matches!(
+            catalog_request_for_level("SQLite", &CatalogLevelSpec::Root, limits).unwrap(),
+            CatalogRequest::SqliteRoot { .. }
+        ));
+        assert!(matches!(
+            catalog_request_for_level(
+                "SQLite",
+                &CatalogLevelSpec::Objects {
+                    database: "main".into()
+                },
+                limits
+            )
+            .unwrap(),
+            CatalogRequest::SqliteTables { .. }
+        ));
+        assert!(matches!(
+            catalog_request_for_level(
+                "SQLite",
+                &CatalogLevelSpec::Relations {
+                    database: "main".into(),
+                    schema: "tracks".into()
+                },
+                limits
+            )
+            .unwrap(),
+            CatalogRequest::SqliteColumns { .. }
+        ));
+        assert!(
+            catalog_request_for_level("SQLite", &CatalogLevelSpec::Schemas { database: "x".into() }, limits)
+                .is_err()
+        );
+    }
+}
 
 #[cfg(test)]
 mod redis_collection_spec_tests {

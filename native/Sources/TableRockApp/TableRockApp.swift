@@ -5841,7 +5841,14 @@ final class BridgeModel {
       let id = try await client.saveProfile(draft)
       await refreshProfiles()
       if let item = profiles.first(where: { $0.idBytes == id }) {
-        _ = await connect(item)
+        let connected = await connect(item)
+        guard connected else {
+          // connect() already sets connectError; do not claim success.
+          if profileActionError == nil && connectError == nil {
+            profileActionError = "Sample database saved but connect failed"
+          }
+          return
+        }
         if let tabIndex = queryTabs.indices.first {
           queryTabs[tabIndex].statementText =
             """

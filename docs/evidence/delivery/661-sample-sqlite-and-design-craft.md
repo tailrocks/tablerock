@@ -35,15 +35,16 @@ rg -n 'glass|GlassEffect|NSVisualEffect' native/Sources
 Public workflow existence only (sample onboarding, native simplicity). No
 competitor source, layouts, colors, or product strings.
 
-## Verification (2026-08-09)
+## Verification (2026-08-09, skeptic pass)
 
 | Gate | Result |
 |---|---|
-| `sample_fixture` + `sqlite_profile` + `sample_sqlite` | pass (catalog + starter SQL rows) |
-| `craft_hierarchy` (6 tests) | pass (Sample action, empty hierarchy, no profile wipe) |
-| Glass grep (chrome-only) | pass (`glassProminent` on CTA/toolbar only) |
-| Flow/shared-store suite | pass (prior SCRATCH + facade) |
-| Native full launch | limited (headless; UniFFI + structural gates) |
+| Honest `sample_sqlite` (TABLEROCK_TEST_ROOT, no host rewrite, bridge execute) | pass |
+| TUI `ConnectOk` SQLite → `LoadCatalog` Root; expand levels not always Root | pass |
+| CLI `catalog_request_for_level` SQLite → SqliteRoot/Tables/Columns | pass |
+| Relative sample path resolves under configured persistence parent | pass |
+| Native `trySampleDatabase` honors `connect()` failure | pass |
+| Glass grep (chrome-only); no theater unit tautologies | pass |
 
 ## Remaining
 

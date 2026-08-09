@@ -804,6 +804,8 @@ struct BridgeInner {
     accepting: bool,
     /// Optional local-only profile store (never logs secrets).
     persistence: Option<PersistenceActor>,
+    /// Absolute path of the configured profiles database (parent = data root).
+    persistence_path: Option<PathBuf>,
     catalog_nodes: BTreeMap<(SessionId, CatalogNodeId), CatalogNode>,
     copy_identities: BTreeMap<tablerock_core::ResultId, CopyIdentity>,
     catalog_export_replays: BTreeMap<tablerock_core::ResultId, CatalogExportReplay>,
@@ -3213,6 +3215,7 @@ impl TableRockBridge {
 
     fn configure_persistence_inner(&self, path: String) -> Result<(), BridgeError> {
         self.ensure_runtime_inner()?;
+        let path_buf = PathBuf::from(&path);
         let actor = PersistenceActor::open(&path)
             .map_err(|error| BridgeError::rejected("persistence-open", error.to_string()))?;
         let history_retention = actor
@@ -3227,6 +3230,7 @@ impl TableRockBridge {
             let _ = previous.shutdown();
         }
         inner.persistence = Some(actor);
+        inner.persistence_path = Some(path_buf);
         inner.history_retention = history_retention;
         Ok(())
     }
@@ -6827,6 +6831,19 @@ impl TableRockBridge {
             _ => return Err(BridgeError::rejected("tls-mode", "unknown TLS mode")),
         };
 
+        // Sample relative paths resolve under the same data root as profiles.db.
+        let persistence_data_root = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            inner
+                .persistence_path
+                .as_ref()
+                .and_then(|p| p.parent().map(Path::to_path_buf))
+        };
+
         let session: Box<dyn DriverSession> = self.runtime.block_on(async {
             match engine {
                 Engine::PostgreSql => {
@@ -6910,7 +6927,11 @@ impl TableRockBridge {
                     Ok(Box::new(session) as Box<dyn DriverSession>)
                 }
                 Engine::Sqlite => {
-                    let path = resolve_sqlite_file_path(host.as_str(), database.as_str())?;
+                    let path = resolve_sqlite_file_path(
+                        host.as_str(),
+                        database.as_str(),
+                        persistence_data_root.as_deref(),
+                    )?;
                     let session = SqliteSession::connect(&path)
                         .await
                         .map_err(|error| BridgeError::rejected("connect", error.to_string()))?;
@@ -9303,7 +9324,17 @@ impl CatalogExpectedLevel {
     }
 }
 
-fn resolve_sqlite_file_path(host: &str, database: &str) -> Result<PathBuf, BridgeError> {
+/// Resolve SQLite file path for connect.
+///
+/// Absolute `database` or `host` wins. Relative sample paths
+/// (`samples/tablerock-sample.db`) resolve under, in order:
+/// 1. configured persistence parent (same root prepare/save used)
+/// 2. `default_operator_profiles_database()` parent (`TABLEROCK_TEST_ROOT` honored)
+fn resolve_sqlite_file_path(
+    host: &str,
+    database: &str,
+    persistence_data_root: Option<&Path>,
+) -> Result<PathBuf, BridgeError> {
     use tablerock_core::sample_sqlite_database_path;
     use tablerock_persistence::default_operator_profiles_database;
     if database.starts_with('/') {
@@ -9312,8 +9343,10 @@ fn resolve_sqlite_file_path(host: &str, database: &str) -> Result<PathBuf, Bridg
     if host.starts_with('/') {
         return Ok(PathBuf::from(host));
     }
-    // Relative sample path: resolve under production operator data root.
     if database.contains("tablerock-sample.db") || database.starts_with("samples/") {
+        if let Some(root) = persistence_data_root {
+            return Ok(sample_sqlite_database_path(root));
+        }
         let root = default_operator_profiles_database()
             .map_err(|e| BridgeError::rejected("sqlite-root", e.to_string()))?
             .parent()
@@ -9754,6 +9787,7 @@ impl BridgeInner {
             first_sequence: 0,
             accepting: true,
             persistence: None,
+            persistence_path: None,
             catalog_nodes: BTreeMap::new(),
             copy_identities: BTreeMap::new(),
             catalog_export_replays: BTreeMap::new(),

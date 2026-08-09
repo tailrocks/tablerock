@@ -1,4 +1,7 @@
-//! Sample SQLite: ensure fixture → bridge prepare → save → open → catalog → query.
+//! Honest product path: prepare → save → open_profile (as-draft) → catalog → execute.
+//!
+//! Uses `TABLEROCK_TEST_ROOT` so default path resolution and prepare share one root.
+//! Does **not** rewrite host/database to absolute paths before open.
 
 use std::{
     fs,
@@ -6,10 +9,13 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use tablerock_core::{SAMPLE_DATABASE_PROFILE_NAME, SAMPLE_STARTER_SQL, sample_sqlite_database_path};
+use tablerock_core::{
+    SAMPLE_DATABASE_PROFILE_NAME, SAMPLE_STARTER_SQL, sample_sqlite_database_path, ResultPage,
+    PageLimits,
+};
 use tablerock_engine::ensure_sample_sqlite_database;
-use tablerock_ffi::TableRockBridge;
-use tablerock_persistence::OPERATOR_PROFILES_DB_FILE;
+use tablerock_ffi::{SubmitSpec, TableRockBridge};
+use tablerock_persistence::{OPERATOR_PROFILES_DB_FILE, TEST_ROOT_ENV};
 
 fn unique_root() -> PathBuf {
     let nanos = SystemTime::now()
@@ -45,10 +51,15 @@ async fn ensure_sample_creates_demo_tables() {
     fs::remove_dir_all(&root).ok();
 }
 
-#[tokio::test]
-async fn prepare_sample_via_bridge_save_and_open() {
+#[test]
+fn prepare_sample_via_bridge_save_and_open() {
     let root = unique_root();
     fs::create_dir_all(&root).unwrap();
+    // Product isolation: default operator root + prepare data_root must agree.
+    // SAFETY: test-only env; single-threaded test process for this binary.
+    unsafe {
+        std::env::set_var(TEST_ROOT_ENV, &root);
+    }
     let db = root.join(OPERATOR_PROFILES_DB_FILE);
     let bridge = TableRockBridge::new_for_test();
     bridge
@@ -60,58 +71,79 @@ async fn prepare_sample_via_bridge_save_and_open() {
     assert_eq!(draft.name, SAMPLE_DATABASE_PROFILE_NAME);
     assert_eq!(draft.engine, "sqlite");
     assert_eq!(draft.host, "local");
-    assert!(draft.database.contains("tablerock-sample.db"));
-    assert!(SAMPLE_STARTER_SQL.contains("FROM tracks"));
+    assert_eq!(draft.database, "samples/tablerock-sample.db");
+    assert_eq!(draft.password_source, "none");
+    assert!(sample_sqlite_database_path(&root).is_file());
+
+    // Save as-draft — no host rewrite.
     let id = bridge.save_profile(draft).unwrap();
     let listed = bridge.list_profiles().unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].name, SAMPLE_DATABASE_PROFILE_NAME);
     assert_eq!(listed[0].engine, "sqlite");
-    // Connect with a short absolute host path (Host property max 253 bytes).
-    let abs = sample_sqlite_database_path(&root);
-    let short = std::env::temp_dir().join(format!("trs-{}.db", std::process::id()));
-    fs::copy(&abs, &short).unwrap();
-    let mut open_draft = bridge.get_profile_draft(id.clone()).unwrap();
-    open_draft.host = short.to_string_lossy().into_owned();
-    open_draft.database = "main".into();
-    open_draft.password_source = "none".into();
-    open_draft.password_value.clear();
-    let id2 = bridge.save_profile(open_draft).unwrap();
-    let session = bridge.open_profile(id2, None).unwrap();
+
+    // Open product draft (host=local, database=samples/…).
+    let session = bridge
+        .open_profile(id.clone(), None)
+        .expect("open_profile must resolve sample under persistence/data root");
     assert_eq!(session.len(), 16);
+
     let nodes = bridge.refresh_catalog(session.clone(), None).unwrap();
-    assert!(!nodes.is_empty());
-    assert!(nodes.iter().any(|n| n.kind.contains("sqlite")));
+    assert!(!nodes.is_empty(), "catalog root must be non-empty");
+    assert!(
+        nodes.iter().any(|n| n.kind.contains("sqlite") || n.kind.contains("database")),
+        "expected sqlite database root: {nodes:?}"
+    );
     let root_id = nodes[0].id_bytes.clone();
     let tables = bridge
         .refresh_catalog(session.clone(), Some(root_id))
-        .unwrap();
-    // Tables may be empty if the open path pointed at a non-seeded file; require
-    // at least seed-on-prepare path produced catalog root, and tables when seeded.
-    if tables.is_empty() {
-        // Direct driver proof already covers table listing; bridge expand is best-effort.
-        assert!(nodes[0].expandable || nodes[0].kind.contains("sqlite"));
-    } else {
-        assert!(
-            tables
-                .iter()
-                .any(|n| n.name == "artists" || n.name == "tracks"),
-            "{tables:?}"
-        );
-    }
-    // Fixed read against sample tables (plan gate: non-empty result page).
-    let driver = tablerock_engine::SqliteSession::connect(&short)
-        .await
-        .unwrap();
-    let (headers, body) = driver.query_rows(SAMPLE_STARTER_SQL, 16).await.unwrap();
-    assert!(!headers.is_empty(), "starter query must return columns");
-    assert!(!body.is_empty(), "starter query must return rows");
+        .expect("expand sqlite root to tables");
     assert!(
-        body.iter()
-            .any(|row| row.iter().any(|c| c.contains("Northwind") || c.contains("Morning"))),
-        "sample rows missing: {body:?}"
+        !tables.is_empty(),
+        "sample tables must load via product path"
     );
+    assert!(
+        tables
+            .iter()
+            .any(|n| n.name == "artists" || n.name == "tracks" || n.name == "orders"),
+        "demo tables missing: {tables:?}"
+    );
+
+    // Bridge execute starter SQL → non-empty page (not direct SqliteSession).
+    let operation = bridge
+        .submit(SubmitSpec {
+            intent: "execute".into(),
+            session_id: session.clone(),
+            statement: Some(SAMPLE_STARTER_SQL.into()),
+            result_id: None,
+            start_row: None,
+            row_count: Some(64),
+            expected_revision: 0,
+        })
+        .expect("submit SAMPLE_STARTER_SQL");
+    bridge.pump(operation).expect("pump execute");
+    let batch = bridge.next_events(0, 64).expect("events");
+    let page_bytes = batch
+        .events
+        .iter()
+        .rev()
+        .find(|e| e.kind == "page")
+        .and_then(|e| e.page_bytes.clone())
+        .expect("page event for starter SQL");
+    let page = ResultPage::decode_v1(
+        &page_bytes,
+        PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
+    )
+    .expect("decode page");
+    assert!(!page.columns().is_empty(), "starter SQL columns");
+    assert!(
+        page.envelope().row_count() > 0,
+        "starter SQL must return rows"
+    );
+
     let _ = bridge.shutdown(false, 1_000);
+    unsafe {
+        std::env::remove_var(TEST_ROOT_ENV);
+    }
     fs::remove_dir_all(&root).ok();
-    let _ = fs::remove_file(&short);
 }
