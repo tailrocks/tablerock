@@ -117,5 +117,6 @@ observation.
 |---|---|---|
 | Cell editor | in-grid typed editors | native in-cell editors |
 | Markers | gutter glyphs + row treatment | row background + badge, label on focus |
-| Review dialog | modal with `DiffView`-style list | sheet with statement list |
-| Apply | explicit action + shortcut | toolbar button + menu command |
+| Review dialog | modal with `DiffView`-style list | **Change Review** sheet plane: kind · monospaced preview · DESTRUCTIVE word · expiry · Apply/Discard |
+| Apply | explicit action + shortcut | Apply inside review only (consume-once token); never silent write from chrome |
+| Ledger chrome | status `ledger N` / **Ledger** action | status `LEDGER N` + fact chip when any review open |
