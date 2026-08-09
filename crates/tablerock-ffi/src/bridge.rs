@@ -8065,6 +8065,10 @@ fn profile_to_bridge_draft(profile: &ProfileAggregate) -> Result<BridgeProfileDr
             .unwrap_or_default()
             .to_owned()
     };
+    // Missing Password binding: SQLite/local-file is passwordless ("none").
+    // Sample draft saves source "none" with no binding; rewriting SQLite to
+    // "prompt" makes native connect() show a password sheet and fail Try Sample.
+    // Server engines keep historic default "prompt" when no binding is stored.
     let (password_source, password_value, has_stored_password) = connection
         .properties()
         .binding(ProfileProperty::Password)
@@ -8080,7 +8084,13 @@ fn profile_to_bridge_draft(profile: &ProfileAggregate) -> Result<BridgeProfileDr
             SecretSourceKind::DangerousPlaintext(_) => ("dangerous_plaintext", String::new(), true),
             SecretSourceKind::Keychain(_) => ("keychain", String::new(), true),
         })
-        .unwrap_or(("prompt", String::new(), false));
+        .unwrap_or_else(|| {
+            if connection.engine() == Engine::Sqlite {
+                ("none", String::new(), false)
+            } else {
+                ("prompt", String::new(), false)
+            }
+        });
     let tls_mode = match connection.tls_policy() {
         TlsPolicy::Disabled => "off",
         TlsPolicy::VerifySystemRoots => "verify_ca",
