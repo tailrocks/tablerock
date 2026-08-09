@@ -40,6 +40,7 @@ market expectations; every screen here is TableRock's own requirement.
   overview.
 - [ClickHouse screens](clickhouse.md) — analytics browsing and honest
   mutations.
+- [Design system](design-system.md) — philosophy, signatures, tokens, priorities
 - [Native macOS experience](native-macos.md) — Liquid Glass design language
   and platform behavior.
 
