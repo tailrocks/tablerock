@@ -97,10 +97,11 @@ dismissal remain keyboard reachable.
 
 | | TUI | Native macOS |
 |---|---|---|
-| Shell | TermRock `SplitPane`, `Tabs`, `StatusBar` | `NavigationSplitView`, toolbar, tab bar |
-| Context bar | one-line context region | toolbar items with Liquid Glass treatment |
+| Shell | TermRock `SplitPane`, `Tabs`, `StatusBar` | `WorkbenchShellView`: context strip · tabs · content · status |
+| Context bar | one-line context region | `WorkbenchContextStrip` + toolbar Liquid Glass |
 | Catalog | TermRock `Tree` | `NSOutlineView` via representable |
-| Tab strip | TermRock `Tabs` | window tab bar, native gestures |
+| Tab strip | TermRock `Tabs` | `QueryTabStrip` (selected glassProminent / plain) |
+| Status | TermRock `StatusBar` | `WorkbenchStatusBar` + `WorkbenchStatusFacts` |
 
 ## Failure truth
 

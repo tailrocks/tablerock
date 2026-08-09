@@ -6770,121 +6770,17 @@ struct ContentView: View {
       }
       .navigationTitle("Connections")
     } detail: {
-      VStack(alignment: .leading, spacing: 10) {
-        // Hierarchy: title → status (non-color) → safety badge; content stays opaque.
-        Text("TableRock")
-          .font(.title.weight(.semibold))
-          .tracking(-0.3)
-        Text(model.status)
-          .font(.subheadline)
-          .foregroundStyle(.secondary)
-          .accessibilityIdentifier("app.status")
-          .accessibilityValue(model.status)
-        EnvironmentSafetyBadge(model: model)
-        if let outcome = model.profileActionOutcome {
-          Text(outcome)
-            .foregroundStyle(.secondary)
-            .font(.callout)
-            .accessibilityIdentifier("profile.action.outcome")
-        }
-        if let bridgeError = model.bridgeError {
-          Text(bridgeError)
-            .foregroundStyle(.red)
-            .font(.callout)
-            .textSelection(.enabled)
-        }
-        if model.sessionHex == nil {
-          // Direct-connect form (no saved profile required).
-          GroupBox("New connection") {
-            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
-              GridRow {
-                Text("Engine")
-                Picker("", selection: $model.formEngine) {
-                  Text("PostgreSQL").tag("postgresql")
-                  Text("ClickHouse").tag("clickhouse")
-                  Text("Redis").tag("redis")
-                  Text("SQLite").tag("sqlite")
-                }
-                .labelsHidden()
-              }
-              GridRow {
-                Text(model.formEngine == "sqlite" ? "Path" : "Host")
-                TextField(
-                  model.formEngine == "sqlite" ? "/absolute/path.db" : "127.0.0.1",
-                  text: $model.formHost)
-              }
-              GridRow {
-                Text("Port")
-                TextField(model.formEngine == "sqlite" ? "1" : "5432", text: $model.formPort)
-                  .disabled(model.formEngine == "sqlite")
-              }
-              GridRow {
-                Text(model.formEngine == "sqlite" ? "File" : "Database")
-                TextField(
-                  model.formEngine == "sqlite" ? "main" : "postgres",
-                  text: $model.formDatabase)
-              }
-              GridRow {
-                Text("User")
-                TextField("postgres", text: $model.formUser)
-              }
-              GridRow {
-                Text("Password")
-                SecureField("", text: $model.formPassword)
-              }
-            }
-            HStack {
-              Button("Connect") { Task { await model.connectByParams() } }
-                .buttonStyle(.glassProminent)
-                .accessibilityIdentifier("connection.direct.connect")
-              Spacer()
-            }
-            .padding(.top, 4)
-          }
-          if let name = model.connectingName {
-            Text("Connecting to \(name)…").foregroundStyle(.secondary)
-          }
-        }
-        if let session = model.sessionHex {
-          Label(
-            connectedSessionLabel(session),
-            systemImage: "checkmark.circle.fill"
-          )
-          .foregroundStyle(.green)
-          .accessibilityIdentifier("connection.status")
-          .accessibilityValue(connectedSessionLabel(session))
-          Button("Browse catalog") { Task { await model.browse() } }
-            .buttonStyle(.glassProminent)
-        }
-        if let catalogSummary = model.catalogSummary {
-          Text(catalogSummary).foregroundStyle(.secondary)
-        }
-        if let catalogError = model.catalogError {
-          Text(catalogError).foregroundStyle(.red).font(.callout).textSelection(.enabled)
-        }
+      // Workbench shell when connected; welcome/direct-connect when not.
+      // Spec: context strip · tabs · content · status (workbench.md).
+      Group {
         if model.sessionHex != nil {
-          VStack(alignment: .leading, spacing: 6) {
-            QueryTabStrip()
-            if model.queryWorkbenchSelected {
-              QueryWorkbenchView()
-            } else {
-              ObjectWorkbenchView()
-            }
-          }
+          WorkbenchShellView()
+        } else {
+          WorkbenchWelcomeView()
         }
-        if let connectError = model.connectError {
-          Text(connectError)
-            .foregroundStyle(.red)
-            .font(.callout)
-            .textSelection(.enabled)
-        }
-        Spacer()
-        Text("PostgreSQL · ClickHouse · Redis — native vertical slice")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
       }
-      .padding(24)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .accessibilityIdentifier("workbench.detail")
     }
     .sheet(
       isPresented: Binding(
@@ -7094,6 +6990,234 @@ struct ContentView: View {
   }
 }
 
+/// Connected workbench: context strip · tabs · content · status bar.
+/// Content dominates; chrome is dense and non-marketing.
+struct WorkbenchShellView: View {
+  @Environment(BridgeModel.self) private var model
+
+  var body: some View {
+    VStack(spacing: 0) {
+      WorkbenchContextStrip()
+      Divider()
+      QueryTabStrip()
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+      Divider()
+      Group {
+        if model.queryWorkbenchSelected {
+          QueryWorkbenchView()
+        } else {
+          ObjectWorkbenchView()
+        }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .padding(.horizontal, 10)
+      .padding(.top, 8)
+      Divider()
+      WorkbenchStatusBar()
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("workbench.shell")
+    .accessibilityLabel("Workbench")
+  }
+}
+
+/// Disconnected detail: quiet invite + direct connect (not a workbench chrome).
+struct WorkbenchWelcomeView: View {
+  @Environment(BridgeModel.self) private var model
+
+  var body: some View {
+    @Bindable var model = model
+    VStack(alignment: .leading, spacing: 12) {
+      Text("TableRock")
+        .font(.title2.weight(.semibold))
+        .tracking(-0.2)
+      Text(model.status)
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .accessibilityIdentifier("app.status")
+        .accessibilityValue(model.status)
+      if let outcome = model.profileActionOutcome {
+        Text(outcome)
+          .foregroundStyle(.secondary)
+          .font(.callout)
+          .accessibilityIdentifier("profile.action.outcome")
+      }
+      if let bridgeError = model.bridgeError {
+        Text(bridgeError)
+          .foregroundStyle(.red)
+          .font(.callout)
+          .textSelection(.enabled)
+      }
+      GroupBox("New connection") {
+        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+          GridRow {
+            Text("Engine")
+            Picker("", selection: $model.formEngine) {
+              Text("PostgreSQL").tag("postgresql")
+              Text("ClickHouse").tag("clickhouse")
+              Text("Redis").tag("redis")
+              Text("SQLite").tag("sqlite")
+            }
+            .labelsHidden()
+          }
+          GridRow {
+            Text(model.formEngine == "sqlite" ? "Path" : "Host")
+            TextField(
+              model.formEngine == "sqlite" ? "/absolute/path.db" : "127.0.0.1",
+              text: $model.formHost)
+          }
+          GridRow {
+            Text("Port")
+            TextField(model.formEngine == "sqlite" ? "1" : "5432", text: $model.formPort)
+              .disabled(model.formEngine == "sqlite")
+          }
+          GridRow {
+            Text(model.formEngine == "sqlite" ? "File" : "Database")
+            TextField(
+              model.formEngine == "sqlite" ? "main" : "postgres",
+              text: $model.formDatabase)
+          }
+          GridRow {
+            Text("User")
+            TextField("postgres", text: $model.formUser)
+          }
+          GridRow {
+            Text("Password")
+            SecureField("", text: $model.formPassword)
+          }
+        }
+        HStack {
+          Button("Connect") { Task { await model.connectByParams() } }
+            .buttonStyle(.glassProminent)
+            .accessibilityIdentifier("connection.direct.connect")
+          Spacer()
+        }
+        .padding(.top, 4)
+      }
+      if let name = model.connectingName {
+        Text("Connecting to \(name)…").foregroundStyle(.secondary)
+      }
+      if let connectError = model.connectError {
+        Text(connectError)
+          .foregroundStyle(.red)
+          .font(.callout)
+          .textSelection(.enabled)
+      }
+      Spacer(minLength: 0)
+      Text("Select a connection or try Sample — connect → catalog → query")
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+    }
+    .padding(20)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .accessibilityIdentifier("workbench.welcome")
+  }
+}
+
+/// Dense context facts (spec context bar). Halo stays non-color text.
+struct WorkbenchContextStrip: View {
+  @Environment(BridgeModel.self) private var model
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Label {
+        Text(model.activeProfile?.name ?? model.connectedEngine)
+          .font(.subheadline.weight(.semibold))
+      } icon: {
+        Image(systemName: "bolt.horizontal.fill")
+      }
+      .accessibilityIdentifier("workbench.context.connection")
+      Text(model.connectedEngine.uppercased())
+        .font(.caption.weight(.semibold).monospaced())
+        .foregroundStyle(.secondary)
+        .accessibilityIdentifier("workbench.context.engine")
+      if let session = model.sessionHex {
+        Text(connectedSessionLabel(session))
+          .font(.caption.monospaced())
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+          .accessibilityIdentifier("connection.status")
+          .accessibilityValue(connectedSessionLabel(session))
+      }
+      EnvironmentSafetyBadge(model: model)
+      if model.isCatalogRefreshing {
+        ProgressView()
+          .controlSize(.small)
+          .accessibilityLabel("Refreshing catalog")
+      }
+      Spacer(minLength: 0)
+      Button {
+        Task { await model.browse() }
+      } label: {
+        Label("Catalog", systemImage: "arrow.clockwise")
+      }
+      .buttonStyle(.glass)
+      .controlSize(.small)
+      .disabled(model.isRunning || model.isCatalogRefreshing)
+      .accessibilityIdentifier("workbench.catalog.refresh")
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 6)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("workbench.context")
+  }
+}
+
+/// Permanent status bar: operation · rows · health words (never color alone).
+struct WorkbenchStatusBar: View {
+  @Environment(BridgeModel.self) private var model
+
+  private var operationWord: String {
+    if model.isRunning { return "RUNNING" }
+    if model.isCatalogRefreshing { return "CATALOG" }
+    if model.connectError != nil || model.catalogError != nil { return "ERROR" }
+    if model.queryError != nil { return "QUERY ERROR" }
+    return "READY"
+  }
+
+  private var factLine: String {
+    WorkbenchStatusFacts.line(
+      operation: operationWord,
+      engine: model.connectedEngine,
+      querySummary: model.querySummary,
+      queryError: model.queryError,
+      cancelOutcome: model.cancelOutcome,
+      catalogSummary: model.catalogSummary,
+      catalogError: model.catalogError,
+      resultRowCount: model.resultTable?.rows.count,
+      production: model.activeProductionWarning
+    )
+  }
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Text(operationWord)
+        .font(.caption2.weight(.bold).monospaced())
+        .accessibilityIdentifier("workbench.status.operation")
+      Text(factLine)
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .textSelection(.enabled)
+        .accessibilityIdentifier("workbench.status.facts")
+        .accessibilityValue(factLine)
+      Spacer(minLength: 0)
+      if model.activeProductionWarning {
+        Text("HALO PRODUCTION")
+          .font(.caption2.weight(.bold))
+          .accessibilityLabel("Production environment")
+      }
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 5)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("workbench.status")
+    .accessibilityLabel("Workbench status \(operationWord), \(factLine)")
+  }
+}
+
 struct QueryWorkbenchView: View {
   @Environment(BridgeModel.self) private var model
 
@@ -7112,7 +7236,7 @@ struct QueryWorkbenchView: View {
         Spacer(minLength: 0)
       }
       SqlTextEditor(text: $model.queryText, selection: $model.queryEditorSelection)
-        .frame(minHeight: 56, maxHeight: 80)
+        .frame(minHeight: 64, idealHeight: 88, maxHeight: 120)
         .task(id: model.queryText) {
           try? await Task.sleep(for: .milliseconds(300))
           guard !Task.isCancelled else { return }
@@ -7130,9 +7254,6 @@ struct QueryWorkbenchView: View {
             .buttonStyle(.glass)
             .accessibilityIdentifier("query.cancel")
             .disabled(!model.isRunning)
-          Button("Refresh catalog") { Task { await model.browse() } }
-            .buttonStyle(.glass)
-            .disabled(model.isRunning || model.isCatalogRefreshing)
           if model.connectedEngine == "redis" {
             Button("Redis Overview") { Task { await model.showRedisOverview() } }
               .buttonStyle(.glass)
@@ -7146,24 +7267,34 @@ struct QueryWorkbenchView: View {
       }
       Text(queryStatus)
         .foregroundStyle(model.queryError == nil ? Color.secondary : Color.red)
-        .font(.callout)
+        .font(.caption)
         .textSelection(.enabled)
         .accessibilityIdentifier("query.status")
         .accessibilityValue(queryStatus)
       if let value = model.reviewOutcome {
-        Text(value).foregroundStyle(.green).font(.callout)
+        Text(value).foregroundStyle(.secondary).font(.caption)
       }
       if let value = model.reviewError {
-        Text(value).foregroundStyle(.red).font(.callout).textSelection(.enabled)
+        Text(value).foregroundStyle(.red).font(.caption).textSelection(.enabled)
       }
       if let value = model.sqlFileError {
-        Text(value).foregroundStyle(.red).font(.callout).textSelection(.enabled)
+        Text(value).foregroundStyle(.red).font(.caption).textSelection(.enabled)
       }
       if let table = model.resultTable {
         ResultGridWithInspector(
-          table: table, minimumHeight: 220, exposesResultPaging: true)
+          table: table, minimumHeight: 180, exposesResultPaging: true)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        ContentUnavailableView(
+          "No result yet",
+          systemImage: "tablecells",
+          description: Text("Run a query to fill the workbench grid.")
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("workbench.query.empty-result")
       }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
 }
 
@@ -7313,11 +7444,11 @@ struct ObjectWorkbenchView: View {
 
   var body: some View {
     if let tab = model.selectedObjectTab {
-      VStack(alignment: .leading, spacing: 8) {
-        HStack {
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 8) {
           Label(tab.title, systemImage: tab.pinned ? "pin.fill" : "eye")
-            .font(.headline)
-          Text(tab.kind).font(.caption).foregroundStyle(.secondary)
+            .font(.subheadline.weight(.semibold))
+          Text(tab.kind).font(.caption.monospaced()).foregroundStyle(.secondary)
           if !tab.kind.hasPrefix("redis_key_") {
             Picker(
               "Object section",
@@ -7337,23 +7468,32 @@ struct ObjectWorkbenchView: View {
             .pickerStyle(.segmented)
             .frame(width: 180)
           }
-          Spacer()
-          if !tab.pinned {
-            Button("Pin") { model.pinObjectTab(tab) }
+          Spacer(minLength: 0)
+          GlassEffectContainer {
+            HStack(spacing: 6) {
+              if !tab.pinned {
+                Button("Pin") { model.pinObjectTab(tab) }
+                  .buttonStyle(.glass)
+              }
+              Button("Refresh") { Task { await model.reloadObjectTab() } }
+                .buttonStyle(.glass)
+                .disabled(tab.isRunning)
+              if model.sqlInsertCopyAvailable {
+                Button("Import CSV") { Task { await model.chooseCsvImport() } }
+                  .buttonStyle(.glass)
+                  .accessibilityIdentifier("import.csv.open")
+                  .disabled(tab.isRunning)
+              }
+              Button("Close", role: .destructive) { model.closeObjectTab(tab) }
+                .buttonStyle(.glass)
+                .disabled(tab.isRunning)
+            }
+            .controlSize(.small)
           }
-          Button("Refresh") { Task { await model.reloadObjectTab() } }
-            .disabled(tab.isRunning)
-          if model.sqlInsertCopyAvailable {
-            Button("Import CSV") { Task { await model.chooseCsvImport() } }
-              .accessibilityIdentifier("import.csv.open")
-              .disabled(tab.isRunning)
-          }
-          Button("Close", role: .destructive) { model.closeObjectTab(tab) }
-            .disabled(tab.isRunning)
         }
         if tab.isRunning { ProgressView("Loading \(tab.title)…") }
         if let summary = tab.summary {
-          Text(summary).font(.callout).foregroundStyle(.secondary)
+          Text(summary).font(.caption).foregroundStyle(.secondary)
         }
         if tab.selectedSection == "data", let table = tab.resultTable,
           !tab.kind.hasPrefix("redis_key_")
@@ -7362,7 +7502,7 @@ struct ObjectWorkbenchView: View {
           ObjectFilterBar(tab: tab, table: table)
         }
         if let error = tab.error {
-          Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+          Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
         }
         if let view = tab.redisView {
           RedisKeyObjectView(view: view)
@@ -7373,19 +7513,25 @@ struct ObjectWorkbenchView: View {
         } else if tab.selectedSection == "structure" {
           ObjectStructureView(tab: tab)
         } else if let table = tab.resultTable {
-          ResultGridWithInspector(table: table, minimumHeight: 260)
+          ResultGridWithInspector(table: table, minimumHeight: 180)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
           if tab.nextStartRow != nil {
             Button("Load more rows") { Task { await model.loadMoreObjectRows() } }
+              .buttonStyle(.glass)
+              .controlSize(.small)
           }
         } else if !tab.isRunning && tab.error == nil {
           ContentUnavailableView(
             "No object rows", systemImage: "tablecells",
             description: Text("Refresh to browse this object again.")
           )
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     } else {
       ContentUnavailableView("No object tab", systemImage: "tablecells")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 }
