@@ -103,6 +103,43 @@ fn empty_connections_render_shows_sample_hierarchy() {
 }
 
 #[test]
+fn sqlite_connect_ok_loads_root_catalog_not_failed_path() {
+    // TrySample → ConnectOk must emit LoadCatalog Root for SQLite so the CLI
+    // executor maps to CatalogRequest::SqliteRoot (not CatalogFailed).
+    let mut model = Model::default();
+    let _ = update(
+        &mut model,
+        Message::Resize {
+            width: 80,
+            height: 24,
+        },
+    );
+    let result = update(
+        &mut model,
+        Message::Engine(tablerock_tui::EngineMsg::ConnectOk {
+            request_token: 1,
+            session_id_hex: "00000000000000010000000000000002".into(),
+            identity: "sqlite:sample".into(),
+            temporary: true,
+            engine_label: "SQLite".into(),
+            profile_id_hex: None,
+            startup_summary: None,
+            startup_pending: Vec::new(),
+            reconnect_preference: Some("Manual".into()),
+        }),
+    );
+    assert_eq!(model.screen(), tablerock_tui::Screen::Workbench);
+    match result.effects().next() {
+        Some(Effect::LoadCatalog {
+            engine_label,
+            level: tablerock_tui::effect::CatalogLevelSpec::Root,
+            ..
+        }) => assert_eq!(engine_label, "SQLite"),
+        other => panic!("expected LoadCatalog Root for SQLite, got {other:?}"),
+    }
+}
+
+#[test]
 fn try_sample_preserves_profile_list_and_emits_effect() {
     let mut model = Model::default();
     let _ = update(

@@ -9550,6 +9550,14 @@ fn catalog_level_for_expand(
         "ClickHouse" if node.kind_label == "database" => CatalogLevelSpec::Objects {
             database: node.label.clone(),
         },
+        // SQLite: file root node (kind "database") → tables; table → columns.
+        "SQLite" if node.kind_label == "database" => CatalogLevelSpec::Objects {
+            database: node.label.clone(),
+        },
+        "SQLite" if node.kind_label == "table" => CatalogLevelSpec::Relations {
+            database: "main".to_owned(),
+            schema: node.label.clone(),
+        },
         _ => CatalogLevelSpec::Root,
     }
 }
@@ -10550,6 +10558,39 @@ mod tests {
             GridOperationState::Disconnected
         );
         assert_eq!(model.workbench().active_grid().unwrap().rows_loaded, 1);
+    }
+
+    #[test]
+    fn sqlite_catalog_expand_levels_are_not_always_root() {
+        use crate::model::catalog::CatalogNodeProjection;
+        let db = CatalogNodeProjection {
+            id: "main".into(),
+            label: "main".into(),
+            kind_label: "database".into(),
+            depth: 0,
+            branch: true,
+            expanded: false,
+            status: CatalogNodeStatus::Ready,
+        };
+        assert!(matches!(
+            catalog_level_for_expand("SQLite", &db),
+            crate::effect::CatalogLevelSpec::Objects { .. }
+        ));
+        let table = CatalogNodeProjection {
+            id: "main/tracks".into(),
+            label: "tracks".into(),
+            kind_label: "table".into(),
+            depth: 1,
+            branch: true,
+            expanded: false,
+            status: CatalogNodeStatus::Ready,
+        };
+        match catalog_level_for_expand("SQLite", &table) {
+            crate::effect::CatalogLevelSpec::Relations { schema, .. } => {
+                assert_eq!(schema, "tracks");
+            }
+            other => panic!("expected Relations for table expand, got {other:?}"),
+        }
     }
 
     #[test]
