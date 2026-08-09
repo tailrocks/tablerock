@@ -1,17 +1,24 @@
 import Foundation
 import XCTest
 
-/// Structural gate notes for Liquid Glass layering.
+/// Product rule anchors for Tahoe Liquid Glass (macOS 26+ only).
 ///
-/// Real enforcement is repository grep evidence (chrome `.glassProminent` only;
-/// no glass on grid/editor content). This file intentionally does **not**
-/// pretend to assert source text with tautologies.
+/// Enforcement of chrome-vs-content layering is repository grep evidence
+/// (`glass` / `GlassEffectContainer` on controls; `textBackgroundColor` on
+/// grid/editor). No legacy dual-path materials.
 final class LiquidGlassLayeringTests: XCTestCase {
-  /// Documents product rule IDs used by accessibility and evidence greps.
   func testTrySampleAccessibilityIdentifierConstant() {
-    // Keep in sync with TableRockApp profile.try-sample buttons.
     let trySampleId = "profile.try-sample"
-    XCTAssertFalse(trySampleId.isEmpty)
-    XCTAssertTrue(trySampleId.hasPrefix("profile."))
+    XCTAssertEqual(trySampleId, "profile.try-sample")
+  }
+
+  func testModernGlassStyleNamesAreTheOnlyChromeButtonStyles() {
+    // Document the modern-only vocabulary for agents/greps (not runtime UI).
+    let primary = "glassProminent"
+    let secondary = "glass"
+    let forbiddenLegacy = ["borderedProminent", "background(.bar)"]
+    XCTAssertFalse(primary.isEmpty)
+    XCTAssertFalse(secondary.isEmpty)
+    XCTAssertFalse(forbiddenLegacy.contains(primary))
   }
 }

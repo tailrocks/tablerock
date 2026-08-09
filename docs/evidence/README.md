@@ -534,6 +534,7 @@ How to read an evidence document:
 - 659 — [TUI find/replace modes via shared core engine](delivery/659-tui-find-replace-modes.md)
 - 660 — [Design research Liquid Glass and sample onboarding](delivery/660-design-research-liquid-glass-and-sample.md)
 - 661 — [Sample SQLite and design craft checkpoint](delivery/661-sample-sqlite-and-design-craft.md)
+- 662 — [Modern Liquid Glass only (Tahoe, no legacy chrome)](delivery/662-modern-liquid-glass-only.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
