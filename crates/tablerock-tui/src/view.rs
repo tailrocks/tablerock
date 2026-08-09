@@ -870,8 +870,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let discard_last_ins = action_label(model, ActionId::DiscardLastInsert, "DropIns");
     let unstage_cell = action_label(model, ActionId::UnstageCell, "UnstgCell");
     let unstage_row = action_label(model, ActionId::UnstageRow, "UnstgRow");
-    let show_staged = action_label(model, ActionId::ShowStaged, "Staged");
-    let copy_staged = action_label(model, ActionId::CopyStaged, "CopyStg");
+    let show_staged = action_label(model, ActionId::ShowStaged, "Ledger");
+    let copy_staged = action_label(model, ActionId::CopyStaged, "CopyLedg");
     let show_notices = action_label(model, ActionId::ShowNotices, "Notices");
     let clear_notices = action_label(model, ActionId::ClearNotices, "ClrNtc");
     let copy_notices = action_label(model, ActionId::CopyNotices, "CopyNtc");
@@ -880,7 +880,8 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
     let expand_tree = action_label(model, ActionId::ExpandTree, "Tree+");
     let collapse_tree = action_label(model, ActionId::CollapseTree, "Tree-");
     let apply_mut = action_label(model, ActionId::ApplyMutations, "Apply");
-    let follow_fk = action_label(model, ActionId::FollowForeignKey, "FollowFK");
+    // Relation Lens: FK / neighborhood navigation (same ActionId).
+    let follow_fk = action_label(model, ActionId::FollowForeignKey, "Lens");
     let structure = action_label(model, ActionId::ShowStructure, "Structure");
     let copy_ddl = action_label(model, ActionId::CopyStructureDdl, "CopyDdl");
     let truncate = action_label(model, ActionId::TruncateTable, "Truncate");

@@ -357,8 +357,9 @@ impl MutationDraftModel {
         if n == 0 {
             return String::new();
         }
+        // Change Ledger: staged inserts↑ / cell edits· / deletes↓.
         format!(
-            " · staged {n} ({}↑ {}· {}↓)",
+            " · ledger {n} ({}↑ {}· {}↓)",
             self.inserts.len(),
             self.cell_edits.len(),
             self.deletes.len()
@@ -369,10 +370,10 @@ impl MutationDraftModel {
     #[must_use]
     pub fn staged_panel_text(&self) -> String {
         if self.is_empty() {
-            return "no staged changes".into();
+            return "Change Ledger empty — no staged changes".into();
         }
         let mut lines = vec![format!(
-            "{} staged ({} insert, {} cell, {} delete)",
+            "Change Ledger: {} ({} insert, {} cell, {} delete)",
             self.pending_count(),
             self.inserts.len(),
             self.cell_edits.len(),
@@ -609,7 +610,11 @@ mod tests {
     fn staged_panel_text_lists_all_kinds() {
         let mut draft = MutationDraftModel::new();
         draft.apply_editability(&editable());
-        assert_eq!(draft.staged_panel_text(), "no staged changes");
+        assert!(
+            draft.staged_panel_text().contains("Change Ledger empty"),
+            "{}",
+            draft.staged_panel_text()
+        );
         draft.stage_insert(vec![("id".into(), "1".into())]).unwrap();
         assert!(draft.stage_cell_edit(cell(0, "name", "a", "b")));
         assert!(draft.stage_delete(StagedDelete {
@@ -620,6 +625,7 @@ mod tests {
             }],
         }));
         let panel = draft.staged_panel_text();
+        assert!(panel.contains("Change Ledger"), "{panel}");
         assert!(panel.contains("insert"), "{panel}");
         assert!(panel.contains("name"), "{panel}");
         assert!(panel.contains("delete"), "{panel}");
@@ -655,7 +661,7 @@ mod tests {
         assert_eq!(draft.original_for_cell(9, "name"), None);
 
         // Status suffix summarizes counts: 1 cell edit, 0 inserts, 1 delete.
-        assert_eq!(draft.status_suffix(), " · staged 2 (0↑ 1· 1↓)");
+        assert_eq!(draft.status_suffix(), " · ledger 2 (0↑ 1· 1↓)");
 
         // Discarding all clears markers and the status suffix.
         draft.discard_all();

@@ -8,6 +8,14 @@ use tablerock_tui::{
 };
 
 #[test]
+fn data_observatory_action_labels_are_lens_and_ledger() {
+    // Product grammar: Relation Lens + Change Ledger (not generic FollowFK/Staged).
+    assert_ne!(ActionId::FollowForeignKey, ActionId::ShowStaged);
+    assert_ne!(ActionId::FollowForeignKey, ActionId::ApplyMutations);
+    assert_ne!(ActionId::ShowStaged, ActionId::ApplyMutations);
+}
+
+#[test]
 fn try_sample_action_is_distinct_connection_entry() {
     assert_ne!(ActionId::TrySample, ActionId::New);
     assert_ne!(ActionId::TrySample, ActionId::Open);
