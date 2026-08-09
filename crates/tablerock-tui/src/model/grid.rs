@@ -3972,7 +3972,7 @@ mod tests {
                 original_text: "1".into(),
             }],
         }));
-        assert!(grid.status_line().contains("staged 1"));
+        assert!(grid.status_line().contains("ledger 1"));
         grid.recompute_editability(ProfileSafetyMode::ReadOnly, false);
         assert!(!grid.editability.is_editable());
         assert!(grid.drafts.is_empty());
@@ -4109,7 +4109,7 @@ mod tests {
         assert_eq!(dup, 1);
         assert_eq!(grid.drafts.inserts[1].values[0].1, "7");
         assert_eq!(grid.drafts.inserts[1].values[1].1, "alice");
-        assert!(grid.status_line().contains("staged 2"));
+        assert!(grid.status_line().contains("ledger 2"));
         assert!(grid.status_line().contains("2↑"));
         // Read-only blocks.
         grid.recompute_editability(ProfileSafetyMode::ReadOnly, false);
