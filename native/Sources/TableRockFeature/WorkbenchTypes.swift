@@ -207,6 +207,47 @@ public func workbenchColumnHeaderTitle(
   return "\(column) \(direction) \(index + 1)"
 }
 
+// MARK: - Workbench status facts (presentation assembly)
+
+/// Dense workbench status line facts — non-color operation words live in the shell.
+public enum WorkbenchStatusFacts {
+  public static func line(
+    operation: String,
+    engine: String,
+    querySummary: String?,
+    queryError: String?,
+    cancelOutcome: String?,
+    catalogSummary: String?,
+    catalogError: String?,
+    resultRowCount: Int?,
+    production: Bool
+  ) -> String {
+    var parts: [String] = [engine.isEmpty ? "session" : engine]
+    if let rows = resultRowCount {
+      parts.append("\(rows) rows loaded")
+    }
+    // Prefer failure truth over success summary (status bar is operational).
+    if let err = queryError, !err.isEmpty {
+      parts.append(err)
+    } else if let cancel = cancelOutcome, !cancel.isEmpty {
+      parts.append(cancel)
+    } else if let summary = querySummary, !summary.isEmpty {
+      parts.append(summary)
+    } else {
+      parts.append(operation.lowercased())
+    }
+    if let catalogError, !catalogError.isEmpty {
+      parts.append("catalog: \(catalogError)")
+    } else if let catalogSummary, !catalogSummary.isEmpty {
+      parts.append(catalogSummary)
+    }
+    if production {
+      parts.append("writes need review")
+    }
+    return parts.joined(separator: " · ")
+  }
+}
+
 // MARK: - Data Grid cell presentation (parity with TUI typed distinctions)
 
 /// Pure presentation facts for one result cell.
