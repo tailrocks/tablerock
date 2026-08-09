@@ -75,10 +75,10 @@ they are not a claim of 100% product/parity closure.**
 | 015 | DONE | **High** | evidence 241–244 + Redis follow-ons | Residuals largely closed in body |
 | 016 | DONE\* | **High** | evidence 245–246, 644–649 | Hosted native sheet replay gaps remain **evidence** gaps |
 | 017 | DONE | **High** | evidence 260–284, SSH/DDL/roles/dump | Residuals closed; SSH matrix maintenance notes only |
-| 018 | DONE\* | **Med–High** | evidence 248, 286, 280–309, 328 | `[~]` failure-injection partial; perf polish; TUI F&R / param parity open |
+| 018 | DONE\* | **Med–High** | evidence 248, 286, 280–309, 328, 659 | `[~]` failure-injection partial; perf polish; TUI F&R modes closed (659); param hosted replay open |
 | 019 | **BLOCKED** | **High** | software + XCFramework green (249–255, 406); evidence 251 STOP | Notarize / clean-machine **operator credentials** |
 | 020 | DONE | **High** | evidence 506–511; local app path documented | Not a signed release claim |
-| 021 | **IN PROGRESS** | **High** | Large landed surface 512–658; **13 exit boxes open** | Accessibility matrix, signed clean-machine, ledger closure, full Both-clients, equivalence suite |
+| 021 | **IN PROGRESS** | **High** | Large landed surface 512–659; workflow-equivalence + shared store closed | Accessibility matrix, signed clean-machine, ledger closure, full Both-clients screens, hosted XCTest |
 | 022 | DONE | **High** | evidence 554–561; `preview.yml`; public `homebrew-tablerock` | Checklist unticked; ad-hoc cask until 019 unblocks |
 
 **Bottom line for “100% sure fully done high quality”:**  

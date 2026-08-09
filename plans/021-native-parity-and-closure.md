@@ -34,6 +34,12 @@
   `PersistenceActor` and UniFFI bridge (single-writer switch; live sessions
   stay process-local). Signed clean-machine notarize remains externally
   blocked; hosted live/IME/accessibility matrix remains open.
+- **Progress note (evidence 659 + workflow_equivalence)**: TUI find/replace
+  modes/scope match native contract through shared core; durable workflow
+  equivalence tests cover profile+intent, history, list shape, named-param
+  rewrite, and find-replace modes across PersistenceActor and UniFFI.
+  Full product-screen Both-clients closure, accessibility matrix, and
+  signed clean-machine still open.
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED
@@ -251,17 +257,26 @@ diff must be empty after regeneration.
 ## Done criteria
 
 - [ ] Every product screen exists natively per its "Both clients" row
-- [ ] Workflow-equivalence suite green (same Rust outcomes both clients)
-- [ ] Rust TUI process tests and deterministic TEA/effect suites green
+- [x] Workflow-equivalence suite green (same Rust outcomes both clients) —
+  durable path: `cargo test -p tablerock-ffi --test workflow_equivalence`
+  (+ shared-store round-trip); live engine matrix remains process-local
+- [x] Rust TUI process tests and deterministic TEA/effect suites green
+  (`cargo test -p tablerock-tui` / `-p tablerock-cli` workspace gate)
 - [ ] Swift bridge and injected feature-model test targets green
-- [ ] Checkpoint/Nightly/Release Xcode test plans exist and required cases pass
-- [ ] Every native test uses an isolated temporary root/capability namespace
+  (hosted Xcode; local CLT lacks XCTest)
+- [x] Checkpoint/Nightly/Release Xcode test plans exist and required cases pass
+  (evidence 564–565; hosted required cases — unsigned)
+- [x] Every native test uses an isolated temporary root/capability namespace
+  (evidence 541)
 - [x] Stable accessibility identifiers cover all required automation surfaces
 - [ ] Full accessibility matrix recorded
 - [ ] Clean-machine Release artifact passes install/update/uninstall/crash-recovery audits
+  (**BLOCKED** on Developer ID / notarize — plan 019)
 - [ ] Ledger closure: no silently-open row; release claims exact
-- [ ] Compatibility monitoring running on schedule
+- [x] Compatibility monitoring running on schedule
+  (`ci.yml` schedule + dependency freshness + preview/native workflows)
 - [ ] Canonical screen manifest complete and traceability verifier green
+  (structural tests green; status still mostly `partial`)
 - [ ] Two consecutive full manifest replays find no new gap
 - [ ] ROADMAP Phases 14–15 complete; `plans/README.md` updated
 
