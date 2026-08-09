@@ -82,10 +82,24 @@ fn prepare_sample_via_bridge_save_and_open() {
     assert_eq!(listed[0].name, SAMPLE_DATABASE_PROFILE_NAME);
     assert_eq!(listed[0].engine, "sqlite");
 
-    // Open product draft (host=local, database=samples/…).
+    // Round-trip: reloaded draft must keep passwordless source (native connect
+    // prompts only when password_source == "prompt").
+    let reloaded = bridge
+        .get_profile_draft(id.clone())
+        .expect("get_profile_draft after sample save");
+    assert_eq!(
+        reloaded.password_source, "none",
+        "sample must stay passwordless after save; got {:?}",
+        reloaded.password_source
+    );
+    assert_eq!(reloaded.engine, "sqlite");
+    assert_eq!(reloaded.host, "local");
+    assert_eq!(reloaded.database, "samples/tablerock-sample.db");
+
+    // Open product draft without secret override (native path after skip prompt).
     let session = bridge
         .open_profile(id.clone(), None)
-        .expect("open_profile must resolve sample under persistence/data root");
+        .expect("open_profile must resolve sample under persistence/data root without password");
     assert_eq!(session.len(), 16);
 
     let nodes = bridge.refresh_catalog(session.clone(), None).unwrap();

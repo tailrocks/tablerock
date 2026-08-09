@@ -44,6 +44,8 @@ competitor source, layouts, colors, or product strings.
 | CLI `catalog_request_for_level` SQLite → SqliteRoot/Tables/Columns | pass |
 | Relative sample path resolves under configured persistence parent | pass |
 | Native `trySampleDatabase` honors `connect()` failure | pass |
+| Sample `password_source=none` survives save→get_profile_draft (not rewritten to prompt) | pass |
+| Native connect skips password sheet for sqlite / source none | pass |
 | Glass grep (chrome-only); no theater unit tautologies | pass |
 
 ## Remaining

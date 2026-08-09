@@ -5880,7 +5880,10 @@ final class BridgeModel {
     if passwordOverride == nil {
       do {
         let draft = try await client.profileDraft(id: item.idBytes)
-        if draft.passwordSource == "prompt" {
+        // Local SQLite (sample / file path) is passwordless — never prompt.
+        let isSqlite = item.engine.caseInsensitiveCompare("sqlite") == .orderedSame
+          || draft.engine.caseInsensitiveCompare("sqlite") == .orderedSame
+        if draft.passwordSource == "prompt", !isSqlite {
           passwordPrompt = ProfilePasswordPrompt(profile: item, action: .connect)
           return false
         }
