@@ -207,6 +207,55 @@ public func workbenchColumnHeaderTitle(
   return "\(column) \(direction) \(index + 1)"
 }
 
+// MARK: - Connection list presentation (scannable rows)
+
+/// Short engine codes for connection list density (never color alone).
+public enum ProfileEngineBadge {
+  public static func code(_ engine: String) -> String {
+    switch engine.lowercased() {
+    case "postgresql", "postgres": return "PG"
+    case "clickhouse": return "CH"
+    case "redis": return "RD"
+    case "sqlite": return "SQ"
+    default:
+      let trimmed = engine.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !trimmed.isEmpty else { return "?" }
+      return String(trimmed.prefix(2)).uppercased()
+    }
+  }
+
+  public static func accessibilityName(_ engine: String) -> String {
+    switch engine.lowercased() {
+    case "postgresql", "postgres": return "PostgreSQL"
+    case "clickhouse": return "ClickHouse"
+    case "redis": return "Redis"
+    case "sqlite": return "SQLite"
+    default: return engine
+    }
+  }
+}
+
+/// Live-state word for connection rows (text primary; optional symbol secondary).
+public enum ProfileLiveStatePresentation {
+  /// Returns (WORD, detail) e.g. ("HEALTHY", "12 ms").
+  public static func parts(from connectionState: String) -> (word: String, detail: String?) {
+    let trimmed = connectionState.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return ("UNKNOWN", nil) }
+    if let sep = trimmed.range(of: " · ") {
+      let word = String(trimmed[..<sep.lowerBound]).uppercased()
+      let detail = String(trimmed[sep.upperBound...])
+      return (word, detail)
+    }
+    return (trimmed.uppercased(), nil)
+  }
+
+  public static func line(from connectionState: String) -> String {
+    let p = parts(from: connectionState)
+    if let detail = p.detail { return "\(p.word) · \(detail)" }
+    return p.word
+  }
+}
+
 // MARK: - Workbench status facts (presentation assembly)
 
 /// Dense workbench status line facts — non-color operation words live in the shell.

@@ -6490,285 +6490,327 @@ final class BridgeModel {
   }
 }
 
+/// Sidebar profile list: groups, search, Sample/New chrome, empty/loading/error.
+struct ConnectionsProfileList: View {
+  @Environment(BridgeModel.self) private var model
+
+  var body: some View {
+    @Bindable var model = model
+    List {
+      ForEach(model.profileSections) { section in
+        Section {
+          if !model.collapsedProfileGroups.contains(section.id) {
+            ForEach(section.profiles, id: \.idBytes) { profile in
+              let active = model.isActiveProfile(profile)
+              HStack(spacing: 4) {
+                Button {
+                  Task { await model.connect(profile) }
+                } label: {
+                  ProfileRow(
+                    profile: profile,
+                    connectionState: model.connectionState(profile),
+                    isActive: active
+                  )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(
+                  "profile.\(profile.idBytes.hexEncodedString())"
+                )
+                Menu {
+                  Button("Connect") { Task { await model.connect(profile) } }
+                  if active {
+                    Button("Check Health") { Task { await model.checkActiveHealth() } }
+                    Button("Reconnect") { Task { await model.reconnectActive() } }
+                    Button("Disconnect") { Task { await model.disconnectActive() } }
+                  }
+                  Button("Edit…") { Task { await model.editProfile(profile) } }
+                  Button("Duplicate…") { Task { await model.duplicateProfile(profile) } }
+                  Button("Test") { Task { await model.testProfile(profile) } }
+                  Button(profile.favorite ? "Remove Favorite" : "Add Favorite") {
+                    Task { await model.toggleFavorite(profile) }
+                  }
+                  Button("Move Up") {
+                    Task { await model.move(profile, in: section, offset: -1) }
+                  }
+                  .disabled(!model.canMove(profile, in: section, offset: -1))
+                  Button("Move Down") {
+                    Task { await model.move(profile, in: section, offset: 1) }
+                  }
+                  .disabled(!model.canMove(profile, in: section, offset: 1))
+                  Divider()
+                  Button("Remove…", role: .destructive) {
+                    model.pendingRemoval = profile
+                  }
+                } label: {
+                  Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .accessibilityLabel("Actions for \(profile.name)")
+              }
+              .listRowBackground(
+                active
+                  ? Color.accentColor.opacity(0.12)
+                  : Color.clear
+              )
+              .contextMenu {
+                Button("Connect") { Task { await model.connect(profile) } }
+                if profile.connected {
+                  Button("Check Health") { Task { await model.checkActiveHealth() } }
+                  Button("Reconnect") { Task { await model.reconnectActive() } }
+                  Button("Disconnect") { Task { await model.disconnectActive() } }
+                }
+                Button("Edit…") { Task { await model.editProfile(profile) } }
+                Button("Duplicate…") { Task { await model.duplicateProfile(profile) } }
+                Button("Test") { Task { await model.testProfile(profile) } }
+                Button(profile.favorite ? "Remove Favorite" : "Add Favorite") {
+                  Task { await model.toggleFavorite(profile) }
+                }
+                Button("Move Up") {
+                  Task { await model.move(profile, in: section, offset: -1) }
+                }
+                .disabled(!model.canMove(profile, in: section, offset: -1))
+                Button("Move Down") {
+                  Task { await model.move(profile, in: section, offset: 1) }
+                }
+                .disabled(!model.canMove(profile, in: section, offset: 1))
+                Divider()
+                Button("Remove…", role: .destructive) {
+                  model.pendingRemoval = profile
+                }
+              }
+            }
+          }
+        } header: {
+          HStack {
+            Button {
+              if model.collapsedProfileGroups.contains(section.id) {
+                model.collapsedProfileGroups.remove(section.id)
+              } else {
+                model.collapsedProfileGroups.insert(section.id)
+              }
+            } label: {
+              Label(
+                "\(section.title) (\(section.profiles.count))",
+                systemImage: model.collapsedProfileGroups.contains(section.id)
+                  ? "chevron.right" : "chevron.down"
+              )
+              .font(.caption.weight(.semibold))
+              .textCase(.uppercase)
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            if section.id != "ungrouped" {
+              Menu {
+                Button {
+                  Task { await model.setGroupAlphabetical(section, false) }
+                } label: {
+                  Label(
+                    "Manual Order",
+                    systemImage: section.alphabetical ? "circle" : "checkmark")
+                }
+                Button {
+                  Task { await model.setGroupAlphabetical(section, true) }
+                } label: {
+                  Label(
+                    "Alphabetical",
+                    systemImage: section.alphabetical ? "checkmark" : "circle")
+                }
+                Divider()
+                Button("Rename Group…") {
+                  model.beginRenameGroup(section.title)
+                }
+                Button("Remove Group…", role: .destructive) {
+                  model.pendingGroupRemoval = section.title
+                }
+              } label: {
+                Image(systemName: "ellipsis")
+              }
+              .menuStyle(.borderlessButton)
+              .accessibilityLabel("Actions for group \(section.title)")
+            }
+          }
+        }
+      }
+    }
+    .listStyle(.sidebar)
+    .accessibilityIdentifier("sidebar.profiles")
+    .searchable(text: $model.profileSearch, prompt: "Search connections")
+    .task(id: model.profileSearch) {
+      try? await Task.sleep(for: .milliseconds(150))
+      guard !Task.isCancelled else { return }
+      await model.refreshProfiles()
+    }
+    .safeAreaInset(edge: .bottom) {
+      GlassEffectContainer {
+        HStack(spacing: 8) {
+          Button {
+            model.createProfile()
+          } label: {
+            Label("New", systemImage: "plus")
+          }
+          .buttonStyle(.glass)
+          .accessibilityIdentifier("profile.add")
+          Button {
+            Task { await model.trySampleDatabase() }
+          } label: {
+            Label("Sample", systemImage: "cylinder.split.1x2")
+          }
+          .buttonStyle(.glassProminent)
+          .accessibilityIdentifier("profile.try-sample")
+          Button {
+            model.beginCreateGroup()
+          } label: {
+            Label("Group", systemImage: "folder.badge.plus")
+          }
+          .buttonStyle(.glass)
+          Button {
+            model.beginConnectionUrlImport()
+          } label: {
+            Label("URL", systemImage: "link.badge.plus")
+          }
+          .buttonStyle(.glass)
+          .accessibilityIdentifier("profile.url-import")
+          Spacer(minLength: 0)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+      }
+    }
+    .overlay {
+      if model.profilesLoading {
+        ProgressView("Loading connections…")
+          .accessibilityIdentifier("connections.loading")
+      } else if let profilesError = model.profilesError {
+        ContentUnavailableView(
+          "Connections failed",
+          systemImage: "exclamationmark.triangle",
+          description: Text(profilesError)
+        )
+        .accessibilityIdentifier("connections.error")
+      } else if model.profiles.isEmpty && model.sessionHex == nil
+        && (!model.profileSearch.isEmpty || model.profileGroups.isEmpty)
+      {
+        ContentUnavailableView {
+          Label(
+            model.profileSearch.isEmpty ? "No connections" : "No matches",
+            systemImage: model.profileSearch.isEmpty ? "tray" : "magnifyingglass")
+        } description: {
+          Text(
+            model.profileSearch.isEmpty
+              ? "Try the sample database or create a connection."
+              : "No saved connection matches this search.")
+        } actions: {
+          if model.profileSearch.isEmpty {
+            Button {
+              Task { await model.trySampleDatabase() }
+            } label: {
+              Text("Try Sample Database")
+            }
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+            .accessibilityIdentifier("profile.try-sample")
+            Button("New Connection…") {
+              model.createProfile()
+            }
+            .buttonStyle(.glass)
+          }
+        }
+        .accessibilityIdentifier("connections.empty")
+      }
+    }
+  }
+}
+
+/// Catalog half of the connections sidebar when a session is live.
+struct ConnectionsCatalogPane: View {
+  @Environment(BridgeModel.self) private var model
+
+  var body: some View {
+    @Bindable var model = model
+    VStack(spacing: 0) {
+      HStack {
+        Text("CATALOG")
+          .font(.caption.weight(.bold).monospaced())
+        Spacer()
+        Button {
+          Task { await model.browse() }
+        } label: {
+          Image(systemName: "arrow.clockwise")
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .disabled(model.isRunning || model.isCatalogRefreshing)
+        .accessibilityLabel("Refresh catalog")
+        .accessibilityIdentifier("catalog.refresh")
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 6)
+      if model.isCatalogRefreshing {
+        ProgressView("Refreshing catalog…")
+          .controlSize(.small)
+          .padding(.horizontal, 10)
+      }
+      if let snapshot = model.catalogSnapshot {
+        CatalogOutline(
+          table: snapshot,
+          selection: $model.catalogSelection,
+          refreshState: model.catalogRefreshState,
+          onExpand: { nodeKey in
+            Task { await model.browse(expandedNodeKey: nodeKey) }
+          },
+          onOpen: { nodeKey in
+            Task { await model.openCatalogObject(nodeKey: nodeKey) }
+          }
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        switch model.catalogRefreshState {
+        case .loading:
+          ProgressView("Loading catalog…")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .failed(let message):
+          ContentUnavailableView(
+            "Catalog failed",
+            systemImage: "exclamationmark.triangle",
+            description: Text(message)
+          )
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        default:
+          ContentUnavailableView(
+            "Catalog not loaded",
+            systemImage: "sidebar.left",
+            description: Text("Refresh to list database objects.")
+          )
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+      }
+    }
+    .accessibilityIdentifier("connections.catalog")
+  }
+}
+
 struct ContentView: View {
   @Environment(BridgeModel.self) private var model
 
   var body: some View {
     @Bindable var model = model
     NavigationSplitView {
-      VStack(spacing: 0) {
-        List {
-          ForEach(model.profileSections) { section in
-            Section {
-              if !model.collapsedProfileGroups.contains(section.id) {
-                ForEach(section.profiles, id: \.idBytes) { profile in
-                  HStack(spacing: 4) {
-                    Button {
-                      Task { await model.connect(profile) }
-                    } label: {
-                      ProfileRow(
-                        profile: profile,
-                        connectionState: model.connectionState(profile)
-                      )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier(
-                      "profile.\(profile.idBytes.hexEncodedString())"
-                    )
-                    Menu {
-                      Button("Connect") { Task { await model.connect(profile) } }
-                      if model.isActiveProfile(profile) {
-                        Button("Check Health") { Task { await model.checkActiveHealth() } }
-                        Button("Reconnect") { Task { await model.reconnectActive() } }
-                        Button("Disconnect") { Task { await model.disconnectActive() } }
-                      }
-                      Button("Edit…") { Task { await model.editProfile(profile) } }
-                      Button("Duplicate…") { Task { await model.duplicateProfile(profile) } }
-                      Button("Test") { Task { await model.testProfile(profile) } }
-                      Button(profile.favorite ? "Remove Favorite" : "Add Favorite") {
-                        Task { await model.toggleFavorite(profile) }
-                      }
-                      Button("Move Up") {
-                        Task { await model.move(profile, in: section, offset: -1) }
-                      }
-                      .disabled(!model.canMove(profile, in: section, offset: -1))
-                      Button("Move Down") {
-                        Task { await model.move(profile, in: section, offset: 1) }
-                      }
-                      .disabled(!model.canMove(profile, in: section, offset: 1))
-                      Divider()
-                      Button("Remove…", role: .destructive) {
-                        model.pendingRemoval = profile
-                      }
-                    } label: {
-                      Image(systemName: "ellipsis.circle")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .accessibilityLabel("Actions for \(profile.name)")
-                  }
-                  .contextMenu {
-                    Button("Connect") { Task { await model.connect(profile) } }
-                    if profile.connected {
-                      Button("Check Health") { Task { await model.checkActiveHealth() } }
-                      Button("Reconnect") { Task { await model.reconnectActive() } }
-                      Button("Disconnect") { Task { await model.disconnectActive() } }
-                    }
-                    Button("Edit…") { Task { await model.editProfile(profile) } }
-                    Button("Duplicate…") { Task { await model.duplicateProfile(profile) } }
-                    Button("Test") { Task { await model.testProfile(profile) } }
-                    Button(profile.favorite ? "Remove Favorite" : "Add Favorite") {
-                      Task { await model.toggleFavorite(profile) }
-                    }
-                    Button("Move Up") {
-                      Task { await model.move(profile, in: section, offset: -1) }
-                    }
-                    .disabled(!model.canMove(profile, in: section, offset: -1))
-                    Button("Move Down") {
-                      Task { await model.move(profile, in: section, offset: 1) }
-                    }
-                    .disabled(!model.canMove(profile, in: section, offset: 1))
-                    Divider()
-                    Button("Remove…", role: .destructive) {
-                      model.pendingRemoval = profile
-                    }
-                  }
-                }
-              }
-            } header: {
-              HStack {
-                Button {
-                  if model.collapsedProfileGroups.contains(section.id) {
-                    model.collapsedProfileGroups.remove(section.id)
-                  } else {
-                    model.collapsedProfileGroups.insert(section.id)
-                  }
-                } label: {
-                  Label(
-                    "\(section.title) (\(section.profiles.count))",
-                    systemImage: model.collapsedProfileGroups.contains(section.id)
-                      ? "chevron.right" : "chevron.down"
-                  )
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                if section.id != "ungrouped" {
-                  Menu {
-                    Button {
-                      Task { await model.setGroupAlphabetical(section, false) }
-                    } label: {
-                      Label(
-                        "Manual Order",
-                        systemImage: section.alphabetical
-                          ? "circle" : "checkmark")
-                    }
-                    Button {
-                      Task { await model.setGroupAlphabetical(section, true) }
-                    } label: {
-                      Label(
-                        "Alphabetical",
-                        systemImage: section.alphabetical
-                          ? "checkmark" : "circle")
-                    }
-                    Divider()
-                    Button("Rename Group…") {
-                      model.beginRenameGroup(section.title)
-                    }
-                    Button("Remove Group…", role: .destructive) {
-                      model.pendingGroupRemoval = section.title
-                    }
-                  } label: {
-                    Image(systemName: "ellipsis")
-                  }
-                  .menuStyle(.borderlessButton)
-                  .accessibilityLabel("Actions for group \(section.title)")
-                }
-              }
-            }
-          }
-        }
-        .accessibilityIdentifier("sidebar.profiles")
-        .searchable(text: $model.profileSearch, prompt: "Search connections")
-        .task(id: model.profileSearch) {
-          try? await Task.sleep(for: .milliseconds(150))
-          guard !Task.isCancelled else { return }
-          await model.refreshProfiles()
-        }
-        .safeAreaInset(edge: .bottom) {
-          // One glass cluster (Tahoe): no custom .bar fill — system glass only.
-          GlassEffectContainer {
-            HStack(spacing: 8) {
-              Button {
-                model.createProfile()
-              } label: {
-                Label("New", systemImage: "plus")
-              }
-              .buttonStyle(.glass)
-              .accessibilityIdentifier("profile.add")
-              Button {
-                Task { await model.trySampleDatabase() }
-              } label: {
-                Label("Sample", systemImage: "cylinder.split.1x2")
-              }
-              .buttonStyle(.glassProminent)
-              .accessibilityIdentifier("profile.try-sample")
-              Button {
-                model.beginCreateGroup()
-              } label: {
-                Label("Group", systemImage: "folder.badge.plus")
-              }
-              .buttonStyle(.glass)
-              Button {
-                model.beginConnectionUrlImport()
-              } label: {
-                Label("URL", systemImage: "link.badge.plus")
-              }
-              .buttonStyle(.glass)
-              .accessibilityIdentifier("profile.url-import")
-              Spacer(minLength: 0)
-            }
-            .controlSize(.small)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-          }
-        }
-        .overlay {
-          if model.profilesLoading {
-            ProgressView("Loading connections…")
-          } else if let profilesError = model.profilesError {
-            ContentUnavailableView(
-              "Connections failed",
-              systemImage: "exclamationmark.triangle",
-              description: Text(profilesError)
-            )
-          } else if model.profiles.isEmpty && model.sessionHex == nil
-            && (!model.profileSearch.isEmpty || model.profileGroups.isEmpty)
-          {
-            ContentUnavailableView {
-              Label(
-                model.profileSearch.isEmpty ? "No connections" : "No matches",
-                systemImage: model.profileSearch.isEmpty ? "tray" : "magnifyingglass")
-            } description: {
-              Text(
-                model.profileSearch.isEmpty
-                  ? "Try the sample database or create a connection."
-                  : "No saved connection matches this search.")
-            } actions: {
-              if model.profileSearch.isEmpty {
-                Button {
-                  Task { await model.trySampleDatabase() }
-                } label: {
-                  Text("Try Sample Database")
-                }
-                .buttonStyle(.glassProminent)
-                .controlSize(.large)
-                .accessibilityIdentifier("profile.try-sample")
-                Button("New Connection…") {
-                  model.createProfile()
-                }
-                .buttonStyle(.glass)
-              }
-            }
-          }
-        }
+      // Connections list is primary; when connected, catalog shares a resizable split.
+      Group {
         if model.sessionHex != nil {
-          Divider()
-          HStack {
-            Text("Catalog").font(.headline)
-            Spacer()
-            Button {
-              Task { await model.browse() }
-            } label: {
-              Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.borderless)
-            .disabled(model.isRunning || model.isCatalogRefreshing)
-            .accessibilityLabel("Refresh catalog")
-            .accessibilityIdentifier("catalog.refresh")
+          VSplitView {
+            ConnectionsProfileList()
+              .frame(minHeight: 140)
+            ConnectionsCatalogPane()
+              .frame(minHeight: 140)
           }
-          .padding(.horizontal, 10)
-          .padding(.vertical, 6)
-          if model.isCatalogRefreshing {
-            ProgressView("Refreshing catalog…")
-              .controlSize(.small)
-              .padding(.horizontal, 10)
-          }
-          if let snapshot = model.catalogSnapshot {
-            CatalogOutline(
-              table: snapshot,
-              selection: $model.catalogSelection,
-              refreshState: model.catalogRefreshState,
-              onExpand: { nodeKey in
-                Task { await model.browse(expandedNodeKey: nodeKey) }
-              },
-              onOpen: { nodeKey in
-                Task { await model.openCatalogObject(nodeKey: nodeKey) }
-              }
-            )
-            .frame(minHeight: 160)
-          } else {
-            switch model.catalogRefreshState {
-            case .loading:
-              ProgressView("Loading catalog…")
-                .frame(minHeight: 160)
-            case .failed(let message):
-              ContentUnavailableView(
-                "Catalog failed",
-                systemImage: "exclamationmark.triangle",
-                description: Text(message)
-              )
-              .frame(minHeight: 160)
-            default:
-              ContentUnavailableView(
-                "Catalog not loaded",
-                systemImage: "sidebar.left",
-                description: Text("Refresh to list database objects.")
-              )
-              .frame(minHeight: 160)
-            }
-          }
+        } else {
+          ConnectionsProfileList()
         }
       }
       .navigationTitle("Connections")
+      .accessibilityIdentifier("connections.sidebar")
     } detail: {
       // Workbench shell when connected; welcome/direct-connect when not.
       // Spec: context strip · tabs · content · status (workbench.md).
@@ -11325,50 +11367,103 @@ struct ProfileEditorSheet: View {
 struct ProfileRow: View {
   let profile: WorkbenchProfileItem
   let connectionState: String
+  var isActive: Bool = false
+
+  private var targetSummary: String {
+    [
+      [
+        [profile.host, profile.port].compactMap { $0 }.joined(separator: ":"),
+        profile.context,
+      ].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "/"),
+      profile.safetyMode == "read_only" ? "Read only" : "Confirm writes",
+    ].compactMap { value in value?.isEmpty == false ? value : nil }.joined(separator: " · ")
+  }
+
+  private var live: (word: String, detail: String?) {
+    ProfileLiveStatePresentation.parts(from: connectionState)
+  }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      HStack(spacing: 6) {
-        if profile.favorite {
-          Image(systemName: "star.fill").foregroundStyle(.yellow).font(.caption)
+    HStack(alignment: .top, spacing: 8) {
+      // Engine badge — monospaced code, scannable in dense lists.
+      Text(ProfileEngineBadge.code(profile.engine))
+        .font(.caption.weight(.bold).monospaced())
+        .frame(width: 28, alignment: .center)
+        .padding(.vertical, 2)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .accessibilityLabel(ProfileEngineBadge.accessibilityName(profile.engine))
+
+      VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 6) {
+          if profile.favorite {
+            Image(systemName: "star.fill")
+              .foregroundStyle(.yellow)
+              .font(.caption2)
+              .accessibilityLabel("Favorite")
+          }
+          Text(profile.name)
+            .font(.body.weight(.medium))
+            .lineLimit(1)
+          if isActive {
+            Text("ACTIVE")
+              .font(.caption2.weight(.bold).monospaced())
+              .accessibilityLabel("Active in this window")
+          }
+          if profile.productionWarning {
+            Text("HALO PRODUCTION")
+              .font(.caption2.weight(.bold))
+              .accessibilityLabel("Production environment")
+          } else if let environment = profile.environment, !environment.isEmpty {
+            Text("HALO \(environment.uppercased())")
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.secondary)
+              .accessibilityLabel("Environment \(environment)")
+          }
         }
-        Text(profile.name).font(.body.weight(.medium))
-        if profile.productionWarning {
-          // Halo word is text-primary, not color-only.
-          Text("HALO PRODUCTION")
-            .font(.caption2.weight(.bold))
-            .accessibilityLabel("Production environment")
-        } else if let environment = profile.environment, !environment.isEmpty {
-          Text("HALO \(environment.uppercased())")
-            .font(.caption2.weight(.semibold))
+        if !targetSummary.isEmpty {
+          Text(targetSummary)
+            .font(.caption)
             .foregroundStyle(.secondary)
-            .accessibilityLabel("Environment \(environment)")
+            .lineLimit(1)
+            .truncationMode(.middle)
         }
-      }
-      Text(
-        [
-          profile.engine,
-          [
-            [profile.host, profile.port].compactMap { $0 }.joined(separator: ":"),
-            profile.context,
-          ].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "/"),
-          profile.safetyMode == "read_only" ? "Read only" : "Confirm writes",
-        ].compactMap { value in value?.isEmpty == false ? value : nil }.joined(separator: " · ")
-      )
-      .font(.caption)
-      .foregroundStyle(.secondary)
-      HStack(spacing: 4) {
-        Text(connectionState)
-        if profile.dangerousPlaintext {
-          Label("Plaintext password", systemImage: "exclamationmark.shield")
+        HStack(spacing: 4) {
+          Text(live.word)
+            .font(.caption2.weight(.semibold).monospaced())
+          if let detail = live.detail {
+            Text(detail)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+          if profile.dangerousPlaintext {
+            Text("PLAINTEXT SECRET")
+              .font(.caption2.weight(.bold))
+              .accessibilityLabel("Password stored as acknowledged plaintext")
+          }
         }
+        .foregroundStyle(.secondary)
       }
-      .font(.caption2)
-      .foregroundStyle(
-        profile.dangerousPlaintext
-          ? Color.orange : Color(nsColor: .tertiaryLabelColor))
+      Spacer(minLength: 0)
     }
-    .padding(.vertical, 2)
+    .padding(.vertical, 3)
     .accessibilityElement(children: .combine)
+    .accessibilityLabel(accessibilitySummary)
+  }
+
+  private var accessibilitySummary: String {
+    var parts = [
+      ProfileEngineBadge.accessibilityName(profile.engine),
+      profile.name,
+      ProfileLiveStatePresentation.line(from: connectionState),
+    ]
+    if isActive { parts.append("active in this window") }
+    if profile.productionWarning {
+      parts.append("production environment")
+    } else if let environment = profile.environment, !environment.isEmpty {
+      parts.append("environment \(environment)")
+    }
+    if profile.dangerousPlaintext { parts.append("plaintext secret warning") }
+    if !targetSummary.isEmpty { parts.append(targetSummary) }
+    return parts.joined(separator: ", ")
   }
 }

@@ -107,7 +107,7 @@ connect automatically.
 
 | | TUI | Native macOS |
 |---|---|---|
-| List | TermRock `Tree` (groups) + `List`, search input | SwiftUI `List` with sections, search field |
+| List | TermRock `Tree` (groups) + `List`, search input | `ConnectionsProfileList`: engine badge, live-state words, Halo, Sample chrome; with session, catalog shares `VSplitView` |
 | Editor | TermRock `Form`, sections, focus traversal | SwiftUI `Form` scene, native controls |
 | Password prompt | modal dialog | native secure field sheet |
 | Warnings | text + glyph, never color alone | label + symbol, never color alone |

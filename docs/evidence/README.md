@@ -540,6 +540,7 @@ How to read an evidence document:
 - 665 — [Signature interaction research + Row Continuum](delivery/665-signature-interaction-research.md)
 - 666 — [Data Grid typed cell presentation](delivery/666-data-grid-typed-presentation.md)
 - 667 — [Workbench shell hierarchy](delivery/667-workbench-shell-hierarchy.md)
+- 668 — [Connections list scannability](delivery/668-connections-list-scannability.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
