@@ -486,6 +486,100 @@ public struct GridCellPresentation: Sendable, Equatable {
     if isNumeric { parts.append("numeric") }
     return parts.joined(separator: " · ")
   }
+
+  /// Compact kind glyph for inspector chrome (never color alone).
+  public var kindGlyph: String {
+    if isTruncated { return "…" }
+    switch kindLabel {
+    case "NULL": return "∅"
+    case "Structured": return "{}"
+    case "Binary": return "⟨b⟩"
+    case "Invalid": return "!"
+    case "Unknown": return "?"
+    case "Text" where title == "·": return "·"
+    case "Boolean": return "⊤"
+    case "Temporal": return "◷"
+    default: return isNumeric ? "#" : "T"
+    }
+  }
+}
+
+/// Pure presentation helpers for the native value inspector (no I/O, no pasteboard).
+public enum ValueInspectorProjection {
+  public static let defaultBytesPerLine = 16
+  /// Soft cap so huge blobs stay scannable in the panel; full bytes remain on the model.
+  public static let defaultMaxDumpBytes = 4_096
+
+  /// Row/column fact shown in inspector chrome (1-based, monospaced-friendly).
+  public static func locationFact(row: Int, columnIndex: Int) -> String {
+    "R\(row + 1) C\(columnIndex + 1)"
+  }
+
+  /// Space-separated linear hex (clipboard / dense single-line audit).
+  public static func hexLinear(_ data: Data) -> String {
+    data.map { String(format: "%02x", $0) }.joined(separator: " ")
+  }
+
+  /// Multi-line classic dump: `0000  hh hh …  |ascii|` with optional tail ellipsis.
+  public static func hexDump(
+    _ data: Data,
+    bytesPerLine: Int = defaultBytesPerLine,
+    maxBytes: Int = defaultMaxDumpBytes
+  ) -> String {
+    guard !data.isEmpty else { return "" }
+    let perLine = max(1, bytesPerLine)
+    let limit = min(data.count, max(0, maxBytes))
+    var lines: [String] = []
+    lines.reserveCapacity((limit + perLine - 1) / perLine + 1)
+    var offset = 0
+    while offset < limit {
+      let end = min(offset + perLine, limit)
+      let chunk = data[offset..<end]
+      var hex = String()
+      hex.reserveCapacity(perLine * 3)
+      var ascii = String()
+      ascii.reserveCapacity(perLine)
+      for (i, byte) in chunk.enumerated() {
+        if i > 0 { hex.append(" ") }
+        hex.append(String(format: "%02x", byte))
+        if (32...126).contains(byte) {
+          ascii.append(Character(UnicodeScalar(byte)))
+        } else {
+          ascii.append(".")
+        }
+      }
+      // Pad hex column so the ASCII gutter stays aligned on short final lines.
+      let hexWidth = perLine * 3 - 1
+      if hex.count < hexWidth {
+        hex.append(String(repeating: " ", count: hexWidth - hex.count))
+      }
+      lines.append(String(format: "%04x  ", offset) + hex + "  |" + ascii + "|")
+      offset = end
+    }
+    if data.count > limit {
+      lines.append("… (\(data.count - limit) more bytes)")
+    }
+    return lines.joined(separator: "\n")
+  }
+
+  /// Dense metadata strip for inspector chrome (non-color semantics).
+  public static func metadataFact(
+    engineType: String,
+    nullable: Bool,
+    byteCount: Int,
+    originalByteCount: UInt64?,
+    isTruncated: Bool
+  ) -> String {
+    var parts = [engineType, nullable ? "nullable" : "not null", "\(byteCount) B"]
+    if isTruncated {
+      if let original = originalByteCount {
+        parts.append("truncated from \(original) B")
+      } else {
+        parts.append("truncated")
+      }
+    }
+    return parts.joined(separator: " · ")
+  }
 }
 
 public struct WorkbenchBrowseFilter: Sendable, Equatable, Identifiable {
