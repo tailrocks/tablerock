@@ -2479,6 +2479,7 @@ fn activate_selected_action(model: &mut Model) -> Update {
                                     tablerock_core::Engine::PostgreSql => "PostgreSQL",
                                     tablerock_core::Engine::ClickHouse => "ClickHouse",
                                     tablerock_core::Engine::Redis => "Redis",
+                                    tablerock_core::Engine::Sqlite => "SQLite",
                                 };
                                 let matched = match model.profiles() {
                                     crate::model::profiles::ProfileListState::Loaded {
@@ -3232,6 +3233,30 @@ fn activate_selected_action(model: &mut Model) -> Update {
             model.set_screen(Screen::Editor);
             model.set_action(ActionId::Save);
             Update::render()
+        }
+        ActionId::TrySample => {
+            if !matches!(
+                model.screen(),
+                Screen::Connections | Screen::ConnectionPicker
+            ) {
+                return Update::unchanged();
+            }
+            // Do not replace the profile list with Loading — ConnectOk never
+            // restores profiles, and the list must stay visible on return.
+            let token = model.mint_request_token();
+            model.set_session(Some(SessionFacts {
+                session_id_hex: String::new(),
+                identity: "Sample Database".into(),
+                temporary: true,
+                engine_label: "SQLite".into(),
+                status: Some("opening sample…".into()),
+            }));
+            Update {
+                render: true,
+                effect: Some(Effect::OpenSampleDatabase {
+                    request_token: token,
+                }),
+            }
         }
         ActionId::ImportUrl
             if matches!(
@@ -9267,6 +9292,7 @@ fn cycle_action(
             Screen::Connections | Screen::ConnectionPicker => &[
                 ActionId::Open,
                 ActionId::New,
+                ActionId::TrySample,
                 ActionId::ImportUrl,
                 ActionId::OpenExternalUrl,
                 ActionId::QuickSwitch,

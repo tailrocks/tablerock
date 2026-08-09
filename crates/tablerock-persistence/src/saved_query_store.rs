@@ -25,6 +25,7 @@ fn engine_code(engine: Engine) -> i64 {
         Engine::PostgreSql => 1,
         Engine::ClickHouse => 2,
         Engine::Redis => 3,
+        Engine::Sqlite => 4,
     }
 }
 
@@ -32,6 +33,7 @@ fn engine_from_code(code: i64) -> Engine {
     match code {
         2 => Engine::ClickHouse,
         3 => Engine::Redis,
+        4 => Engine::Sqlite,
         _ => Engine::PostgreSql,
     }
 }

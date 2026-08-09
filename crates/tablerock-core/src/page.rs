@@ -1412,6 +1412,7 @@ const fn engine_to_wire(engine: Engine) -> u8 {
         Engine::PostgreSql => 0,
         Engine::ClickHouse => 1,
         Engine::Redis => 2,
+        Engine::Sqlite => 3,
     }
 }
 
@@ -1420,6 +1421,7 @@ const fn engine_from_wire(tag: u8) -> Result<Engine, PageValidationError> {
         0 => Ok(Engine::PostgreSql),
         1 => Ok(Engine::ClickHouse),
         2 => Ok(Engine::Redis),
+        3 => Ok(Engine::Sqlite),
         _ => Err(PageValidationError::InvalidEngineTag),
     }
 }

@@ -453,6 +453,8 @@ impl MutationPlan {
                 MutationExecutionModel::ClickHouseAsynchronousMutationNonTransactional
             }
             Engine::Redis => MutationExecutionModel::RedisSequentialNoRollback,
+            // Sample/local SQLite is read-first; mutations fail closed at the engine.
+            Engine::Sqlite => MutationExecutionModel::RedisSequentialNoRollback,
         }
     }
 

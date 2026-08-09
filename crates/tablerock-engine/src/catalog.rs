@@ -176,6 +176,19 @@ pub enum CatalogRequest {
     RedisKeys {
         limits: PageLimits,
     },
+    /// Local SQLite file root (single database node).
+    SqliteRoot {
+        limits: PageLimits,
+    },
+    /// Tables/views in the open SQLite file.
+    SqliteTables {
+        limits: PageLimits,
+    },
+    /// Columns for one SQLite table.
+    SqliteColumns {
+        table: BoundedText,
+        limits: PageLimits,
+    },
 }
 
 impl CatalogRequest {
@@ -187,6 +200,9 @@ impl CatalogRequest {
             | Self::PostgreSqlRelations { .. } => Engine::PostgreSql,
             Self::ClickHouseDatabases { .. } | Self::ClickHouseObjects { .. } => Engine::ClickHouse,
             Self::RedisLogicalDatabases { .. } | Self::RedisKeys { .. } => Engine::Redis,
+            Self::SqliteRoot { .. } | Self::SqliteTables { .. } | Self::SqliteColumns { .. } => {
+                Engine::Sqlite
+            }
         }
     }
 
@@ -199,7 +215,10 @@ impl CatalogRequest {
             | Self::ClickHouseDatabases { limits }
             | Self::ClickHouseObjects { limits, .. }
             | Self::RedisLogicalDatabases { limits }
-            | Self::RedisKeys { limits } => *limits,
+            | Self::RedisKeys { limits }
+            | Self::SqliteRoot { limits }
+            | Self::SqliteTables { limits }
+            | Self::SqliteColumns { limits, .. } => *limits,
         }
     }
 }
@@ -237,6 +256,16 @@ impl fmt::Debug for CatalogRequest {
                 .field("max_rows", &limits.max_rows()),
             Self::RedisKeys { limits } => debug
                 .field("level", &"keys")
+                .field("max_rows", &limits.max_rows()),
+            Self::SqliteRoot { limits } => debug
+                .field("level", &"sqlite_root")
+                .field("max_rows", &limits.max_rows()),
+            Self::SqliteTables { limits } => debug
+                .field("level", &"sqlite_tables")
+                .field("max_rows", &limits.max_rows()),
+            Self::SqliteColumns { table, limits } => debug
+                .field("level", &"sqlite_columns")
+                .field("table_bytes", &table.len())
                 .field("max_rows", &limits.max_rows()),
         };
         debug.finish()

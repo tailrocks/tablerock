@@ -6,6 +6,8 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func profileDraft(id: Data) throws -> WorkbenchProfileDraft
   func parseConnectionUrl(_ input: String) throws -> WorkbenchProfileDraft
   func saveProfile(_ draft: WorkbenchProfileDraft) throws -> Data
+  /// Ensure offline sample SQLite exists under data root; returns a saveable draft.
+  func prepareSampleDatabase(dataRoot: String) throws -> WorkbenchProfileDraft
   func deleteProfile(id: Data, revision: UInt64) throws
   func testProfile(id: Data, secretOverride: Data?) throws -> WorkbenchConnectionTestReport
   func listProfileGroups() throws -> [WorkbenchProfileGroup]

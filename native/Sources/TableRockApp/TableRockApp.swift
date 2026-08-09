@@ -344,6 +344,10 @@ extension WorkbenchBackend {
   func saveProfile(_ draft: WorkbenchProfileDraft) throws -> Data {
     try scriptedUnavailable("save")
   }
+  func prepareSampleDatabase(dataRoot: String) throws -> WorkbenchProfileDraft {
+    _ = dataRoot
+    try scriptedUnavailable("sample")
+  }
   func deleteProfile(id: Data, revision: UInt64) throws {
     throw ScriptedBackendError.unavailable("delete")
   }
@@ -636,6 +640,18 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       username: "fixture", passwordSource: "keychain", passwordValue: "secret",
       passwordReference: nil, hasStoredPassword: false, plaintextAcknowledged: false,
       tlsMode: "off", safetyMode: "confirm_writes")
+  }
+
+  func prepareSampleDatabase(dataRoot: String) throws -> WorkbenchProfileDraft {
+    _ = dataRoot
+    guard scenario == "success" else { return try scriptedUnavailable("sample") }
+    return WorkbenchProfileDraft(
+      idBytes: nil, revision: 0, engine: "sqlite", name: "Sample Database",
+      group: "", environment: "development",
+      host: "local", port: "1", database: "samples/tablerock-sample.db", username: "",
+      passwordSource: "none", passwordValue: "", passwordReference: nil,
+      hasStoredPassword: false, plaintextAcknowledged: false, tlsMode: "off",
+      safetyMode: "read_only")
   }
 
   func saveProfile(_ draft: WorkbenchProfileDraft) throws -> Data {
@@ -1231,6 +1247,10 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
   }
   func saveProfile(_ draft: WorkbenchProfileDraft) throws -> Data {
     try bridge.saveProfile(draft: draft.bridgeRecord)
+  }
+
+  func prepareSampleDatabase(dataRoot: String) throws -> WorkbenchProfileDraft {
+    try bridge.prepareSampleDatabase(dataRoot: dataRoot).workbench
   }
   func deleteProfile(id: Data, revision: UInt64) throws {
     try bridge.deleteProfile(profileId: id, expectedRevision: revision)
@@ -1837,6 +1857,8 @@ private final class NativeApplicationModel {
   let client: (any WorkbenchBackend)?
   let bridgeError: String?
   let dependencies: AppDependencies
+  /// Operator data root (Application Support/TableRock or test root).
+  let dataRootPath: String
   private var fixtureWindowOpened = false
 
   init() {
@@ -1875,10 +1897,12 @@ private final class NativeApplicationModel {
       }
       dependencies = configuredDependencies
       client = configuredClient
+      dataRootPath = configuration.paths.dataRoot.path
       bridgeError = nil
     } catch {
       dependencies = configuredDependencies
       client = nil
+      dataRootPath = FileManager.default.temporaryDirectory.path
       bridgeError = "Bridge init failed: \(error)"
     }
   }
@@ -1939,7 +1963,8 @@ private struct WorkbenchWindowRoot: View {
         client: application.client,
         startupError: application.bridgeError,
         windowId: windowId,
-        dependencies: application.dependencies
+        dependencies: application.dependencies,
+        dataRootPath: application.dataRootPath
       ))
   }
 
@@ -3050,6 +3075,8 @@ final class BridgeModel {
   private let client: (any WorkbenchBackend)?
   private let startupError: String?
   private let dependencies: AppDependencies
+  /// Operator data root used for sample SQLite + isolation.
+  let dataRootPath: String
   var sessionData: Data?
   private var queryStateRevision: UInt64 = 0
 
@@ -3057,11 +3084,13 @@ final class BridgeModel {
     client: (any WorkbenchBackend)? = nil,
     startupError: String? = nil,
     windowId: UUID? = nil,
-    dependencies: AppDependencies = AppDependencies()
+    dependencies: AppDependencies = AppDependencies(),
+    dataRootPath: String = FileManager.default.temporaryDirectory.path
   ) {
     self.client = client
     self.startupError = startupError
     self.dependencies = dependencies
+    self.dataRootPath = dataRootPath
     self.windowId = windowId ?? dependencies.identifiers.next()
     let tab = NativeQueryTab(
       id: dependencies.identifiers.next(), title: "Query 1", statementText: "SELECT 1;"
@@ -5801,6 +5830,37 @@ final class BridgeModel {
   }
 
   /// Open a saved profile, prompting transiently when its source requires it.
+  /// Create sample SQLite under data root, save profile, connect.
+  func trySampleDatabase() async {
+    guard let client else {
+      profileActionError = "Bridge unavailable"
+      return
+    }
+    do {
+      let draft = try await client.prepareSampleDatabase(dataRoot: dataRootPath)
+      let id = try await client.saveProfile(draft)
+      await refreshProfiles()
+      if let item = profiles.first(where: { $0.idBytes == id }) {
+        _ = await connect(item)
+        if let tabIndex = queryTabs.indices.first {
+          queryTabs[tabIndex].statementText =
+            """
+            SELECT t.name AS track, a.title AS album, ar.name AS artist
+            FROM tracks t
+            JOIN albums a ON a.id = t.album_id
+            JOIN artists ar ON ar.id = a.artist_id
+            ORDER BY t.id;
+            """
+        }
+        profileActionOutcome = "Sample database ready"
+      } else {
+        profileActionError = "Sample profile missing after save"
+      }
+    } catch {
+      profileActionError = "Sample database failed: \(error)"
+    }
+  }
+
   @discardableResult
   func connect(_ item: WorkbenchProfileItem, passwordOverride: String? = nil) async -> Bool {
     guard let client else { return false }
@@ -6494,27 +6554,37 @@ struct ContentView: View {
           await model.refreshProfiles()
         }
         .safeAreaInset(edge: .bottom) {
-          HStack {
+          HStack(spacing: 10) {
             Button {
               model.createProfile()
             } label: {
-              Label("New connection", systemImage: "plus")
+              Label("New", systemImage: "plus")
             }
             .accessibilityIdentifier("profile.add")
             Button {
+              Task { await model.trySampleDatabase() }
+            } label: {
+              Label("Sample", systemImage: "cylinder.split.1x2")
+            }
+            .buttonStyle(.glassProminent)
+            .accessibilityIdentifier("profile.try-sample")
+            Button {
               model.beginCreateGroup()
             } label: {
-              Label("New group", systemImage: "folder.badge.plus")
+              Label("Group", systemImage: "folder.badge.plus")
             }
             Button {
               model.beginConnectionUrlImport()
             } label: {
-              Label("Import URL", systemImage: "link.badge.plus")
+              Label("URL", systemImage: "link.badge.plus")
             }
             .accessibilityIdentifier("profile.url-import")
             Spacer()
           }
-          .padding(8)
+          .controlSize(.small)
+          .padding(.horizontal, 10)
+          .padding(.vertical, 8)
+          // System bar material only — chrome layer, not content.
           .background(.bar)
         }
         .overlay {
@@ -6529,14 +6599,30 @@ struct ContentView: View {
           } else if model.profiles.isEmpty && model.sessionHex == nil
             && (!model.profileSearch.isEmpty || model.profileGroups.isEmpty)
           {
-            ContentUnavailableView(
-              model.profileSearch.isEmpty ? "No connections" : "No matches",
-              systemImage: model.profileSearch.isEmpty ? "tray" : "magnifyingglass",
-              description: Text(
+            ContentUnavailableView {
+              Label(
+                model.profileSearch.isEmpty ? "No connections" : "No matches",
+                systemImage: model.profileSearch.isEmpty ? "tray" : "magnifyingglass")
+            } description: {
+              Text(
                 model.profileSearch.isEmpty
-                  ? "Create or use a temporary connection."
+                  ? "Try the sample database or create a connection."
                   : "No saved connection matches this search.")
-            )
+            } actions: {
+              if model.profileSearch.isEmpty {
+                Button {
+                  Task { await model.trySampleDatabase() }
+                } label: {
+                  Text("Try Sample Database")
+                }
+                .buttonStyle(.glassProminent)
+                .accessibilityIdentifier("profile.try-sample")
+                Button("New Connection…") {
+                  model.createProfile()
+                }
+                .buttonStyle(.bordered)
+              }
+            }
           }
         }
         if model.sessionHex != nil {

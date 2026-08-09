@@ -48,6 +48,11 @@ pub enum CatalogNodeKind {
     RedisLogicalDatabase,
     RedisNamespace,
     RedisKey(RedisKeyKind),
+    /// Local SQLite file (root catalog node).
+    SqliteDatabase,
+    /// Table or view inside a SQLite file.
+    SqliteTable,
+    SqliteColumn,
 }
 
 impl CatalogNodeKind {
@@ -61,21 +66,26 @@ impl CatalogNodeKind {
                 Engine::ClickHouse
             }
             Self::RedisLogicalDatabase | Self::RedisNamespace | Self::RedisKey(_) => Engine::Redis,
+            Self::SqliteDatabase | Self::SqliteTable | Self::SqliteColumn => Engine::Sqlite,
         }
     }
 
     const fn is_leaf(self) -> bool {
         matches!(
             self,
-            Self::PostgreSqlColumn | Self::ClickHouseColumn | Self::RedisKey(_)
+            Self::PostgreSqlColumn
+                | Self::ClickHouseColumn
+                | Self::RedisKey(_)
+                | Self::SqliteColumn
         )
     }
 
     const fn may_have_parent(self, parent: Self) -> bool {
         match self {
-            Self::PostgreSqlDatabase | Self::ClickHouseDatabase | Self::RedisLogicalDatabase => {
-                false
-            }
+            Self::PostgreSqlDatabase
+            | Self::ClickHouseDatabase
+            | Self::RedisLogicalDatabase
+            | Self::SqliteDatabase => false,
             Self::PostgreSqlSchema => matches!(parent, Self::PostgreSqlDatabase),
             Self::PostgreSqlObject(_) => matches!(parent, Self::PostgreSqlSchema),
             Self::PostgreSqlColumn => matches!(parent, Self::PostgreSqlObject(_)),
@@ -87,6 +97,8 @@ impl CatalogNodeKind {
             Self::RedisKey(_) => {
                 matches!(parent, Self::RedisLogicalDatabase | Self::RedisNamespace)
             }
+            Self::SqliteTable => matches!(parent, Self::SqliteDatabase),
+            Self::SqliteColumn => matches!(parent, Self::SqliteTable),
         }
     }
 }

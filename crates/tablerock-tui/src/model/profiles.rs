@@ -146,20 +146,55 @@ impl ProfileListState {
     #[must_use]
     pub fn status_line(&self) -> String {
         match self {
-            Self::Idle => "Profiles: —".to_owned(),
+            Self::Idle => "Profiles: idle · Sample opens offline demo".to_owned(),
             Self::Loading { .. } => "Profiles: loading…".to_owned(),
             Self::Loaded { rows, search, .. } => {
                 let visible = Self::filter_rows(rows, search).len();
-                if search.is_empty() {
-                    format!("Profiles: {visible}")
-                } else {
+                if !search.is_empty() {
                     format!("Profiles: {visible}/{} (filter)", rows.len())
+                } else if visible == 0 {
+                    "Profiles: empty · Sample opens offline demo".to_owned()
+                } else {
+                    format!("Profiles: {visible}")
                 }
             }
             Self::Failed {
                 reason: FailureProjection::Label(label),
                 ..
             } => format!("Profiles: error ({label})"),
+        }
+    }
+
+    /// Body copy for empty / non-loaded connection list hierarchy (non-color).
+    #[must_use]
+    pub fn empty_body_lines(&self) -> Vec<&'static str> {
+        match self {
+            Self::Idle => vec![
+                "No connections yet.",
+                "Sample — offline SQLite demo (no host credentials).",
+                "New — create a connection.",
+            ],
+            Self::Loading { .. } => vec!["Loading connections…"],
+            Self::Loaded { rows, search, .. } => {
+                if !search.is_empty() && Self::filter_rows(rows, search).is_empty() {
+                    vec!["No matches for this filter.", "Clear the filter to see all."]
+                } else if rows.is_empty() {
+                    vec![
+                        "No connections yet.",
+                        "Sample — offline SQLite demo (no host credentials).",
+                        "New — create a connection.",
+                    ]
+                } else {
+                    Vec::new()
+                }
+            }
+            Self::Failed {
+                reason: FailureProjection::Label(_),
+                ..
+            } => vec![
+                "Could not load connections.",
+                "Retry or use Sample for an offline demo.",
+            ],
         }
     }
 

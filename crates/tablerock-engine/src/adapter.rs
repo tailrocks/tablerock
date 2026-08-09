@@ -150,6 +150,12 @@ pub enum DriverPageRequest {
         kind: RedisSubscriptionKind,
         options: RedisSubscriptionOptions,
     },
+    /// Operator-supplied SQLite statement against a local file session.
+    SqliteStatement {
+        statement: StatementText,
+        limits: PageLimits,
+        max_cell_bytes: u64,
+    },
 }
 
 impl DriverPageRequest {
@@ -162,6 +168,7 @@ impl DriverPageRequest {
             | Self::RedisCollectionScan { .. }
             | Self::RedisBlockingPop { .. }
             | Self::RedisSubscribe { .. } => Engine::Redis,
+            Self::SqliteStatement { .. } => Engine::Sqlite,
         }
     }
 }
@@ -246,6 +253,14 @@ impl fmt::Debug for DriverPageRequest {
                 .field("selector_bytes", &selector.len())
                 .field("kind", kind)
                 .field("options", options),
+            Self::SqliteStatement {
+                statement,
+                limits,
+                max_cell_bytes,
+            } => debug
+                .field("statement_bytes", &statement.len())
+                .field("limits", limits)
+                .field("max_cell_bytes", max_cell_bytes),
         };
         debug.finish()
     }

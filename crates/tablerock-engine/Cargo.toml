@@ -18,6 +18,7 @@ tablerock-core = { version = "=0.1.0", path = "../tablerock-core" }
 tokio.workspace = true
 tokio-postgres.workspace = true
 tokio-postgres-rustls.workspace = true
+turso.workspace = true
 zeroize.workspace = true
 russh.workspace = true
 

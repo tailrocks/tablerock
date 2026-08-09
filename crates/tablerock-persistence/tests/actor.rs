@@ -47,7 +47,7 @@ fn actor_opens_migrates_checks_and_reopens_one_local_file() {
     let _ = fs::remove_file(&path);
     let actor = PersistenceActor::open(&path).unwrap();
     let health = actor.health().unwrap();
-    assert_eq!(health.schema_version, 18);
+    assert_eq!(health.schema_version, 19);
     assert!(health.foreign_keys_enabled);
     assert!(health.integrity_ok);
     actor.shutdown().unwrap();
@@ -86,7 +86,8 @@ fn schema_18_retires_arbitrary_support_fact_storage() {
         let connection = database.connect().unwrap();
         connection
             .execute_batch(
-                "DELETE FROM schema_migrations WHERE version = 18;\
+                // Drop 18+ later so ledger has no gaps; re-apply 18 (drop facts) and 19 (sqlite engine).
+                "DELETE FROM schema_migrations WHERE version >= 18;\
                  CREATE TABLE support_facts(\
                    fact_key TEXT PRIMARY KEY NOT NULL,\
                    fact_value TEXT NOT NULL,\
@@ -100,7 +101,7 @@ fn schema_18_retires_arbitrary_support_fact_storage() {
     });
 
     let upgraded = PersistenceActor::open(&path).unwrap();
-    assert_eq!(upgraded.health().unwrap().schema_version, 18);
+    assert_eq!(upgraded.health().unwrap().schema_version, 19);
     upgraded.shutdown().unwrap();
     runtime.block_on(async {
         let database = turso::Builder::new_local(path.to_str().unwrap())
@@ -213,7 +214,7 @@ fn restart_rolls_back_an_interrupted_transactional_migration() {
     });
 
     let actor = PersistenceActor::open(&path).unwrap();
-    assert_eq!(actor.health().unwrap().schema_version, 18);
+    assert_eq!(actor.health().unwrap().schema_version, 19);
     actor.shutdown().unwrap();
     fs::remove_file(path).unwrap();
 }

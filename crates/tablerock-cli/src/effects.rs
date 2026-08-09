@@ -183,6 +183,15 @@ impl EffectExecutor {
                     let _ = ingress.try_send_event(message);
                 });
             }
+            Effect::OpenSampleDatabase { request_token } => {
+                let persistence = Arc::clone(&self.persistence);
+                let sessions = Arc::clone(&self.sessions);
+                let ingress = self.ingress.clone();
+                tokio::task::spawn_local(async move {
+                    let message = open_sample_database(persistence, sessions, request_token).await;
+                    let _ = ingress.try_send_event(message);
+                });
+            }
             Effect::ResumeConnectProfile {
                 request_token,
                 profile_id_hex,
@@ -1387,6 +1396,7 @@ async fn list_named_queries(
                         Engine::PostgreSql => "PostgreSQL",
                         Engine::ClickHouse => "ClickHouse",
                         Engine::Redis => "Redis",
+                Engine::Sqlite => "SQLite",
                     }
                     .to_owned();
                     tablerock_tui::SavedQueryRow {
@@ -1757,6 +1767,7 @@ fn history_row(entry: tablerock_persistence::HistoryEntry) -> tablerock_tui::His
         Engine::PostgreSql => "PostgreSQL",
         Engine::ClickHouse => "ClickHouse",
         Engine::Redis => "Redis",
+                Engine::Sqlite => "SQLite",
     }
     .to_owned();
     let preview = entry
@@ -1885,6 +1896,7 @@ async fn connect_session(
         EngineKind::PostgreSql => "PostgreSQL",
         EngineKind::ClickHouse => "ClickHouse",
         EngineKind::Redis => "Redis",
+                        EngineKind::Sqlite => "SQLite",
     }
     .to_owned();
     let reconnect_preference = draft.reconnect_preference.clone();
@@ -2394,6 +2406,11 @@ async fn execute_sql(
                 max_cell_bytes: 64 * 1024,
             }
         }
+        CoreEngine::Sqlite => DriverPageRequest::SqliteStatement {
+            statement,
+            limits,
+            max_cell_bytes: 64 * 1024,
+        },
         CoreEngine::Redis => {
             return Message::Engine(tablerock_tui::EngineMsg::GridFailed {
                 request_token,
@@ -2975,6 +2992,13 @@ async fn review_mutations(
                 key,
             }
         }
+        CoreEngine::Sqlite => {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationReviewFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("mutations unsupported for SQLite sample".into()),
+            });
+        }
     };
     let plan = match MutationPlan::new(
         MutationId::from_parts(IdParts::new(1, request_token.max(1)).unwrap()).unwrap(),
@@ -3524,6 +3548,13 @@ async fn execute_table_op(
                 reason: FailureProjection::Label("table ops not supported for Redis".into()),
             });
         }
+        (CoreEngine::Sqlite, _) => {
+            return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("table ops not supported for SQLite sample".into()),
+            });
+        }
     };
     let statement = match StatementText::new(&sql) {
         Ok(s) => s,
@@ -3542,6 +3573,15 @@ async fn execute_table_op(
                 .start_page_stream(DriverPageRequest::PostgreSqlStatement {
                     statement,
                     parameters: Vec::new(),
+                    limits,
+                    max_cell_bytes: 256,
+                })
+                .await
+        }
+        CoreEngine::Sqlite => {
+            session
+                .start_page_stream(DriverPageRequest::SqliteStatement {
+                    statement,
                     limits,
                     max_cell_bytes: 256,
                 })
@@ -4204,6 +4244,14 @@ async fn import_csv_apply(
             schema: bt(&schema),
             relation: bt(&table),
         },
+        Engine::Sqlite => {
+            return Message::Engine(tablerock_tui::EngineMsg::MutationFailed {
+                request_token,
+                context_revision,
+                reason: FailureProjection::Label("import unsupported for SQLite sample".into()),
+                needs_re_review: false,
+            });
+        }
         Engine::ClickHouse => MutationTarget::ClickHouseTable {
             database: bt(if database.is_empty() {
                 "default"
@@ -4404,6 +4452,11 @@ async fn export_stream_query(
                 max_cell_bytes: 64 * 1024,
             }
         }
+        Engine::Sqlite => DriverPageRequest::SqliteStatement {
+            statement: sql,
+            limits,
+            max_cell_bytes: 64 * 1024,
+        },
         Engine::Redis => {
             return Message::Engine(tablerock_tui::EngineMsg::ExportFailed {
                 request_token,
@@ -5326,6 +5379,9 @@ fn catalog_kind_label(kind: tablerock_core::CatalogNodeKind) -> &'static str {
         CatalogNodeKind::RedisNamespace => "ns",
         CatalogNodeKind::RedisKey(RedisKeyKind::String) => "string",
         CatalogNodeKind::RedisKey(_) => "key",
+        CatalogNodeKind::SqliteDatabase => "database",
+        CatalogNodeKind::SqliteTable => "table",
+        CatalogNodeKind::SqliteColumn => "column",
     }
 }
 
@@ -5517,6 +5573,61 @@ fn profile_organization_message(
     }
 }
 
+async fn open_sample_database(
+    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    sessions: Arc<Mutex<SessionRegistry>>,
+    request_token: RequestToken,
+) -> Message {
+    use tablerock_core::{SAMPLE_DATABASE_PROFILE_NAME, sample_sqlite_database_path};
+    use tablerock_engine::ensure_sample_sqlite_database;
+    use tablerock_persistence::default_operator_profiles_database;
+    use tablerock_tui::effect::{PasswordSourceSpec, TlsModeSpec};
+
+    let path = match default_operator_profiles_database() {
+        Ok(db) => db
+            .parent()
+            .map(sample_sqlite_database_path)
+            .unwrap_or_else(|| sample_sqlite_database_path(std::path::Path::new("."))),
+        Err(e) => {
+            return Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
+                request_token,
+                reason: FailureProjection::Label(e.to_string()),
+            });
+        }
+    };
+    if let Err(e) = ensure_sample_sqlite_database(&path).await {
+        return Message::Engine(tablerock_tui::EngineMsg::ConnectFailed {
+            request_token,
+            reason: FailureProjection::Label(e.to_string()),
+        });
+    }
+    let draft = ConnectionDraft {
+        name: SAMPLE_DATABASE_PROFILE_NAME.into(),
+        engine: EngineKind::Sqlite,
+        host: "local".into(),
+        port: "1".into(),
+        database: path.to_string_lossy().into_owned(),
+        username: String::new(),
+        password: String::new(),
+        password_source: PasswordSourceSpec::PromptOnConnect,
+        tls_mode: TlsModeSpec::Off,
+        group: String::new(),
+        environment: "development".into(),
+        plaintext_acknowledged: false,
+        ssh_host: String::new(),
+        ssh_port: String::new(),
+        ssh_username: String::new(),
+        ssh_password: String::new(),
+        ssh_private_key: String::new(),
+        ssh_known_hosts_path: String::new(),
+        ssh_use_agent: false,
+        startup_actions: tablerock_core::StartupActionSet::empty(),
+        reconnect_preference: "Manual".into(),
+    };
+    // Connect temporary (no durable save required for demo); still optional save.
+    connect_session(sessions, request_token, draft, true, None).await
+}
+
 async fn connect_profile(
     persistence: Arc<Mutex<Option<PersistenceActor>>>,
     sessions: Arc<Mutex<SessionRegistry>>,
@@ -5618,6 +5729,7 @@ async fn reconnect_session(
                         EngineKind::PostgreSql => "PostgreSQL",
                         EngineKind::ClickHouse => "ClickHouse",
                         EngineKind::Redis => "Redis",
+                        EngineKind::Sqlite => "SQLite",
                     }
                     .into(),
                     profile_id_hex: None,
@@ -5763,6 +5875,7 @@ fn aggregate_to_draft(aggregate: &ProfileAggregate) -> Result<ConnectionDraft, S
         Engine::PostgreSql => EngineKind::PostgreSql,
         Engine::ClickHouse => EngineKind::ClickHouse,
         Engine::Redis => EngineKind::Redis,
+        Engine::Sqlite => EngineKind::Sqlite,
     };
     let tls_mode = match connection.tls_policy() {
         TlsPolicy::Disabled => TlsModeSpec::Off,
@@ -6167,6 +6280,31 @@ async fn open_described_session(
                 pending,
             ))
         }
+        EngineKind::Sqlite => {
+            let candidate = if draft.database.starts_with('/') {
+                draft.database.as_str()
+            } else {
+                host.as_str()
+            };
+            let path = std::path::PathBuf::from(candidate);
+            if !path.is_absolute() {
+                return Err(
+                    "SQLite path must be absolute (database or host property)".into(),
+                );
+            }
+            let session = tablerock_engine::SqliteSession::connect(&path)
+                .await
+                .map_err(|e| e.to_string())?;
+            let described = session.describe().await.map_err(|e| e.to_string())?;
+            Ok((
+                Box::new(session) as Box<dyn DriverSession>,
+                described.identity().to_owned(),
+                described.elapsed_millis(),
+                tunnel,
+                None,
+                Vec::new(),
+            ))
+        }
     }
     // resolved_password: Zeroizing — heap material scrubbed on drop (all paths).
 }
@@ -6211,6 +6349,7 @@ fn draft_to_aggregate(draft: &ConnectionDraft) -> Result<ProfileAggregate, Strin
         EngineKind::PostgreSql => Engine::PostgreSql,
         EngineKind::ClickHouse => Engine::ClickHouse,
         EngineKind::Redis => Engine::Redis,
+        EngineKind::Sqlite => Engine::Sqlite,
     };
     let mut bindings = vec![
         ProfilePropertyBinding::literal(ProfileProperty::Host, text(&draft.host)?)

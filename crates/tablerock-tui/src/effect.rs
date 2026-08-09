@@ -19,6 +19,7 @@ pub enum EngineKind {
     PostgreSql,
     ClickHouse,
     Redis,
+    Sqlite,
 }
 
 /// Opaque profile identity for effects (string form of core ProfileId).
@@ -174,6 +175,10 @@ pub enum Effect {
     ConnectProfile {
         request_token: RequestToken,
         profile_id_hex: String,
+    },
+    /// Ensure sample SQLite under operator data root, save profile, connect.
+    OpenSampleDatabase {
+        request_token: RequestToken,
     },
     /// Resume profile connect after password prompt (secret lives only here).
     ResumeConnectProfile {

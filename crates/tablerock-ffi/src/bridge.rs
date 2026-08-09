@@ -46,7 +46,7 @@ use tablerock_engine::{
     SshPasswordAuth, SshPublicKeyAuth, SshTunnelConfig, TypedCondition,
     load_relation_structure as load_structure_snapshot, open_local_forward_tunnel, parse_bind_text,
     resolve_for_connect_with_ports, run_clickhouse_startup_actions, run_postgres_startup_actions,
-    run_redis_startup_actions,
+    run_redis_startup_actions, SqliteSession, ensure_sample_sqlite_database,
 };
 use tablerock_files::{
     CsvStreamLimits, CsvTable, CsvValueType, StreamExportFormat, StreamExporter,
@@ -994,6 +994,11 @@ impl TableRockBridge {
                     max_cell_bytes: 64 * 1024,
                 },
                 Engine::Redis => unreachable!("Redis rejected above"),
+                Engine::Sqlite => DriverPageRequest::SqliteStatement {
+                    statement,
+                    limits,
+                    max_cell_bytes: 64 * 1024,
+                },
             };
             (driver, operation_id, identity, page_request)
         };
@@ -1103,6 +1108,11 @@ impl TableRockBridge {
                     "full-result re-query export is unsupported for Redis",
                 ));
             }
+            Engine::Sqlite => DriverPageRequest::SqliteStatement {
+                statement,
+                limits,
+                max_cell_bytes: 64 * 1024,
+            },
         };
         self.spawn_stream_export(StreamExportStart {
             session_id: replay.session_id,
@@ -1314,6 +1324,13 @@ impl TableRockBridge {
     /// Creates or revision-checked replaces one saved profile.
     pub fn save_profile(&self, draft: BridgeProfileDraft) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| self.save_profile_inner(draft))
+    }
+
+    /// Ensure the offline sample SQLite file exists under `data_root` and
+    /// return a saveable profile draft (host = absolute path). Does not
+    /// require network or credentials.
+    pub fn prepare_sample_database(&self, data_root: String) -> Result<BridgeProfileDraft, BridgeError> {
+        catch_entry(|| self.prepare_sample_database_inner(data_root))
     }
 
     /// Revision-checked removal; active sessions remain alive.
@@ -3310,6 +3327,9 @@ impl TableRockBridge {
                         })?,
                     None => String::new(),
                 }
+            } else if connection.engine() == Engine::Sqlite {
+                // Local file sample / path profiles have no password property.
+                String::new()
             } else {
                 let bytes = password_override.ok_or_else(|| {
                     BridgeError::rejected(
@@ -3325,6 +3345,7 @@ impl TableRockBridge {
                 Engine::PostgreSql => "postgresql",
                 Engine::ClickHouse => "clickhouse",
                 Engine::Redis => "redis",
+                Engine::Sqlite => "sqlite",
             };
             let ssh_config = literal(ProfileProperty::SshHost)
                 .map(|bastion_host| {
@@ -3490,6 +3511,68 @@ impl TableRockBridge {
             }
             .to_owned(),
             elapsed_millis: described.elapsed_millis(),
+        })
+    }
+
+    fn prepare_sample_database_inner(
+        &self,
+        data_root: String,
+    ) -> Result<BridgeProfileDraft, BridgeError> {
+        use tablerock_core::{SAMPLE_DATABASE_PROFILE_NAME, sample_sqlite_database_path};
+        let root = PathBuf::from(data_root);
+        if !root.is_absolute() {
+            return Err(BridgeError::rejected(
+                "sample-root",
+                "data root must be absolute",
+            ));
+        }
+        let path = sample_sqlite_database_path(&root);
+        // Runtime::block_on wraps the future output in Result<T, BridgeError>.
+        let seeded = self
+            .runtime
+            .block_on(async { ensure_sample_sqlite_database(&path).await })?;
+        seeded.map_err(|error| {
+            BridgeError::rejected("sample-sqlite", error.to_string())
+        })?;
+        // Profile property limits: Host ≤253, DefaultContext ≤128. Persist a
+        // short relative path under the operator data root (samples/…).
+        let relative = format!(
+            "{}/{}",
+            tablerock_core::SAMPLE_DATABASE_DIR,
+            tablerock_core::SAMPLE_DATABASE_FILE
+        );
+        Ok(BridgeProfileDraft {
+            id_bytes: None,
+            revision: 0,
+            engine: "sqlite".into(),
+            name: SAMPLE_DATABASE_PROFILE_NAME.into(),
+            group: String::new(),
+            environment: "development".into(),
+            host: "local".into(),
+            // Port is unused for local SQLite; profile schema still requires 1..=65535.
+            port: "1".into(),
+            database: relative,
+            username: String::new(),
+            // No secret required for local sample file.
+            password_source: "none".into(),
+            password_value: String::new(),
+            password_reference: None,
+            has_stored_password: false,
+            plaintext_acknowledged: false,
+            tls_mode: "off".into(),
+            safety_mode: "read_only".into(),
+            ssh_enabled: false,
+            ssh_host: String::new(),
+            ssh_port: String::new(),
+            ssh_username: String::new(),
+            ssh_auth_mode: "agent".into(),
+            ssh_password: String::new(),
+            ssh_private_key: String::new(),
+            ssh_known_hosts_path: String::new(),
+            ssh_has_stored_password: false,
+            ssh_has_stored_private_key: false,
+            ssh_plaintext_acknowledged: false,
+            startup_actions: Vec::new(),
         })
     }
 
@@ -4341,12 +4424,14 @@ impl TableRockBridge {
                     Engine::PostgreSql => CatalogRequest::PostgreSqlDatabases { limits },
                     Engine::ClickHouse => CatalogRequest::ClickHouseDatabases { limits },
                     Engine::Redis => CatalogRequest::RedisLogicalDatabases { limits },
+                    Engine::Sqlite => CatalogRequest::SqliteRoot { limits },
                 },
                 None,
                 match registered.engine {
                     Engine::PostgreSql => CatalogExpectedLevel::PostgreSqlDatabase,
                     Engine::ClickHouse => CatalogExpectedLevel::ClickHouseDatabase,
                     Engine::Redis => CatalogExpectedLevel::RedisLogicalDatabase,
+                    Engine::Sqlite => CatalogExpectedLevel::SqliteDatabase,
                 },
             ),
             Some(parent_id) => {
@@ -4406,6 +4491,17 @@ impl TableRockBridge {
                             CatalogExpectedLevel::RedisKey,
                         )
                     }
+                    CatalogNodeKind::SqliteDatabase => (
+                        CatalogRequest::SqliteTables { limits },
+                        CatalogExpectedLevel::SqliteTable,
+                    ),
+                    CatalogNodeKind::SqliteTable => (
+                        CatalogRequest::SqliteColumns {
+                            table: bounded_catalog_name(node.name())?,
+                            limits,
+                        },
+                        CatalogExpectedLevel::SqliteColumn,
+                    ),
                     _ => {
                         return Err(BridgeError::rejected(
                             "catalog-leaf",
@@ -4682,6 +4778,7 @@ impl TableRockBridge {
                 Engine::PostgreSql => BrowseDialect::PostgreSql,
                 Engine::ClickHouse => BrowseDialect::ClickHouse,
                 Engine::Redis => unreachable!("Redis catalog nodes are not browsable tables"),
+                Engine::Sqlite => BrowseDialect::PostgreSql, // quote_ident style reused
             };
             if raw_where
                 .as_ref()
@@ -4815,6 +4912,7 @@ impl TableRockBridge {
                 Engine::PostgreSql => "postgresql",
                 Engine::ClickHouse => "clickhouse",
                 Engine::Redis => "redis",
+                Engine::Sqlite => "sqlite",
             }
             .into(),
             namespace: snapshot.namespace,
@@ -6688,6 +6786,7 @@ impl TableRockBridge {
                     Engine::PostgreSql => "postgres",
                     Engine::ClickHouse => "default",
                     Engine::Redis => "0",
+                    Engine::Sqlite => "main",
                 }
             } else {
                 &params.database
@@ -6700,6 +6799,7 @@ impl TableRockBridge {
                     Engine::PostgreSql => "postgres",
                     Engine::ClickHouse => "default",
                     Engine::Redis => "",
+                    Engine::Sqlite => "",
                 }
             } else {
                 &params.user
@@ -6809,6 +6909,13 @@ impl TableRockBridge {
                     }
                     Ok(Box::new(session) as Box<dyn DriverSession>)
                 }
+                Engine::Sqlite => {
+                    let path = resolve_sqlite_file_path(host.as_str(), database.as_str())?;
+                    let session = SqliteSession::connect(&path)
+                        .await
+                        .map_err(|error| BridgeError::rejected("connect", error.to_string()))?;
+                    Ok(Box::new(session) as Box<dyn DriverSession>)
+                }
             }
         })??;
 
@@ -6893,6 +7000,7 @@ impl TableRockBridge {
                             Engine::PostgreSql => "postgres",
                             Engine::ClickHouse => "default",
                             Engine::Redis => "0",
+                    Engine::Sqlite => "main",
                         },
                         ByteLimit::new(16),
                     )
@@ -7096,6 +7204,7 @@ impl TableRockBridge {
                             Engine::PostgreSql => "postgres".into(),
                             Engine::ClickHouse => "default".into(),
                             Engine::Redis => "0".into(),
+                            Engine::Sqlite => "main".into(),
                         });
                     HistoryAppend {
                         engine,
@@ -7183,6 +7292,11 @@ impl TableRockBridge {
                             scan_count: 16,
                             max_scan_rounds: 128,
                             match_pattern: None,
+                        },
+                        (Engine::Sqlite, _) => DriverPageRequest::SqliteStatement {
+                            statement: text.clone(),
+                            limits,
+                            max_cell_bytes,
                         },
                     };
                     (CommandIntent::Execute { statement: text }, request)
@@ -8056,6 +8170,7 @@ fn bridge_draft_to_profile(
         "postgresql" => Engine::PostgreSql,
         "clickhouse" => Engine::ClickHouse,
         "redis" => Engine::Redis,
+        "sqlite" => Engine::Sqlite,
         _ => return Err(BridgeError::rejected("profile-engine", "unknown engine")),
     };
     let revision = if existing.is_some() {
@@ -8176,15 +8291,16 @@ fn bridge_draft_to_profile(
         }
     }
     let password_kind = match draft.password_source.as_str() {
-        "prompt" => SecretSourceKind::PromptOnConnect,
-        "environment" => SecretSourceKind::HostEnvironment(
+        "none" | "" => None,
+        "prompt" => Some(SecretSourceKind::PromptOnConnect),
+        "environment" => Some(SecretSourceKind::HostEnvironment(
             EnvironmentReference::parse(draft.password_value.trim())
                 .map_err(|error| rejected("profile-password", error.to_string()))?,
-        ),
-        "onepassword" => SecretSourceKind::OnePassword(
+        )),
+        "onepassword" => Some(SecretSourceKind::OnePassword(
             OnePasswordReference::from_compact_wire(draft.password_value.trim())
                 .map_err(|error| rejected("profile-password", error.to_string()))?,
-        ),
+        )),
         "dangerous_plaintext" => {
             if !draft.plaintext_acknowledged {
                 return Err(BridgeError::rejected(
@@ -8198,13 +8314,13 @@ fn bridge_draft_to_profile(
                     "re-enter the stored plaintext password before saving",
                 ));
             }
-            SecretSourceKind::DangerousPlaintext(
+            Some(SecretSourceKind::DangerousPlaintext(
                 DangerousPlaintext::new(
                     draft.password_value.as_bytes().to_vec(),
                     PlaintextAcknowledgement::LocalTestingOnly,
                 )
                 .map_err(|error| rejected("profile-password", error.to_string()))?,
-            )
+            ))
         }
         "keychain" => {
             let reference = draft.password_reference.as_deref().or_else(|| {
@@ -8224,7 +8340,7 @@ fn bridge_draft_to_profile(
             let reference = reference.ok_or_else(|| {
                 BridgeError::rejected("profile-password", "Keychain password reference required")
             })?;
-            SecretSourceKind::Keychain(
+            Some(SecretSourceKind::Keychain(
                 KeychainReference::new(
                     tablerock_core::BoundedBytes::copy_from_slice(
                         reference,
@@ -8233,7 +8349,7 @@ fn bridge_draft_to_profile(
                     .map_err(|error| rejected("profile-password", error.to_string()))?,
                 )
                 .map_err(|error| rejected("profile-password", error.to_string()))?,
-            )
+            ))
         }
         _ => {
             return Err(BridgeError::rejected(
@@ -8242,10 +8358,12 @@ fn bridge_draft_to_profile(
             ));
         }
     };
-    bindings.push(ProfilePropertyBinding::secret(
-        ProfileProperty::Password,
-        SecretSource::new(password_kind),
-    ));
+    if let Some(password_kind) = password_kind {
+        bindings.push(ProfilePropertyBinding::secret(
+            ProfileProperty::Password,
+            SecretSource::new(password_kind),
+        ));
+    }
     let properties = ProfilePropertySet::new(bindings)
         .map_err(|error| rejected("profile-properties", error.to_string()))?;
     let tls = match draft.tls_mode.as_str() {
@@ -9154,6 +9272,9 @@ enum CatalogExpectedLevel {
     ClickHouseObject,
     RedisLogicalDatabase,
     RedisKey,
+    SqliteDatabase,
+    SqliteTable,
+    SqliteColumn,
 }
 
 impl CatalogExpectedLevel {
@@ -9175,8 +9296,35 @@ impl CatalogExpectedLevel {
                     CatalogNodeKind::RedisLogicalDatabase
                 )
                 | (Self::RedisKey, CatalogNodeKind::RedisKey(_))
+                | (Self::SqliteDatabase, CatalogNodeKind::SqliteDatabase)
+                | (Self::SqliteTable, CatalogNodeKind::SqliteTable)
+                | (Self::SqliteColumn, CatalogNodeKind::SqliteColumn)
         )
     }
+}
+
+fn resolve_sqlite_file_path(host: &str, database: &str) -> Result<PathBuf, BridgeError> {
+    use tablerock_core::sample_sqlite_database_path;
+    use tablerock_persistence::default_operator_profiles_database;
+    if database.starts_with('/') {
+        return Ok(PathBuf::from(database));
+    }
+    if host.starts_with('/') {
+        return Ok(PathBuf::from(host));
+    }
+    // Relative sample path: resolve under production operator data root.
+    if database.contains("tablerock-sample.db") || database.starts_with("samples/") {
+        let root = default_operator_profiles_database()
+            .map_err(|e| BridgeError::rejected("sqlite-root", e.to_string()))?
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| BridgeError::rejected("sqlite-root", "operator root missing"))?;
+        return Ok(sample_sqlite_database_path(&root));
+    }
+    Err(BridgeError::rejected(
+        "sqlite-path",
+        "SQLite path must be absolute or the sample relative path",
+    ))
 }
 
 fn bridge_catalog_node(node: &CatalogNode) -> BridgeCatalogNode {
@@ -9319,6 +9467,8 @@ const fn catalog_kind_is_expandable(kind: CatalogNodeKind) -> bool {
             | CatalogNodeKind::PostgreSqlSchema
             | CatalogNodeKind::ClickHouseDatabase
             | CatalogNodeKind::RedisLogicalDatabase
+            | CatalogNodeKind::SqliteDatabase
+            | CatalogNodeKind::SqliteTable
     )
 }
 
@@ -9563,6 +9713,9 @@ const fn catalog_kind_label(kind: CatalogNodeKind) -> &'static str {
         CatalogNodeKind::RedisKey(RedisKeyKind::Set) => "redis_key_set",
         CatalogNodeKind::RedisKey(RedisKeyKind::SortedSet) => "redis_key_sorted_set",
         CatalogNodeKind::RedisKey(RedisKeyKind::Stream) => "redis_key_stream",
+        CatalogNodeKind::SqliteDatabase => "sqlite_database",
+        CatalogNodeKind::SqliteTable => "sqlite_table",
+        CatalogNodeKind::SqliteColumn => "sqlite_column",
     }
 }
 
@@ -9780,6 +9933,7 @@ const fn engine_label(engine: Engine) -> &'static str {
         Engine::PostgreSql => "postgresql",
         Engine::ClickHouse => "clickhouse",
         Engine::Redis => "redis",
+                Engine::Sqlite => "sqlite",
     }
 }
 
@@ -9788,9 +9942,10 @@ fn parse_engine(name: &str) -> Result<Engine, BridgeError> {
         "postgresql" | "postgres" | "pg" => Ok(Engine::PostgreSql),
         "clickhouse" | "ch" => Ok(Engine::ClickHouse),
         "redis" => Ok(Engine::Redis),
+        "sqlite" => Ok(Engine::Sqlite),
         _ => Err(BridgeError::rejected(
             "engine",
-            "engine must be postgresql, clickhouse, or redis",
+            "engine must be postgresql, clickhouse, redis, or sqlite",
         )),
     }
 }
