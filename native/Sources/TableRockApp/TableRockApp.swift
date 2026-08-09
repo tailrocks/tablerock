@@ -2934,6 +2934,76 @@ final class BridgeModel {
   }
   func selectCell(row: Int, column: Int) {
     selectedCell = NativeCellSelection(row: row, column: column)
+    // Continuum stays closed until explicit open — selection alone must not navigate.
+    queryStateRevision &+= 1
+  }
+
+  // MARK: - Row Continuum (presentation prototype; fixture neighbors until Rust contract)
+
+  /// Presentation-only continuum plane. Never invents live DB truth beyond fixtures.
+  struct RelationContinuumState: Equatable {
+    var edgeTitle: String
+    var directionWord: String
+    var fromColumn: String
+    var fromValue: String
+    var relatedSchema: String
+    var relatedTable: String
+    var relatedColumn: String
+    var columns: [String]
+    var rows: [[String]]
+    /// Always true until `relation_neighbors` ships in Rust.
+    var usesFixtureData: Bool
+    var statusWord: String
+  }
+
+  var relationContinuum: RelationContinuumState?
+  var relationContinuumError: String?
+
+  var canOpenRelationContinuum: Bool {
+    guard sessionHex != nil, let snap = selectedCellSnapshot else { return false }
+    return RelationContinuumFixtures.edge(forColumn: snap.0.name) != nil
+  }
+
+  func openRelationContinuumFromSelection() {
+    relationContinuumError = nil
+    guard sessionHex != nil else {
+      relationContinuumError = "DISCONNECTED — connect before Continuum"
+      relationContinuum = nil
+      return
+    }
+    guard let snap = selectedCellSnapshot else {
+      relationContinuumError = "Select a cell that participates in a relation"
+      relationContinuum = nil
+      return
+    }
+    let column = snap.0.name
+    let value = snap.1.display
+    guard let edge = RelationContinuumFixtures.edge(forColumn: column) else {
+      relationContinuumError = "No Continuum edge for column \(column) (fixture map)"
+      relationContinuum = nil
+      return
+    }
+    let neighbors = RelationContinuumFixtures.neighbors(
+      edge: edge, value: value)
+    relationContinuum = RelationContinuumState(
+      edgeTitle: "\(edge.fromTable).\(edge.fromColumn) → \(edge.toTable).\(edge.toColumn)",
+      directionWord: "outbound",
+      fromColumn: column,
+      fromValue: value,
+      relatedSchema: edge.toSchema,
+      relatedTable: edge.toTable,
+      relatedColumn: edge.toColumn,
+      columns: neighbors.columns,
+      rows: neighbors.rows,
+      usesFixtureData: true,
+      statusWord: neighbors.rows.isEmpty ? "EMPTY" : "READY"
+    )
+    queryStateRevision &+= 1
+  }
+
+  func closeRelationContinuum() {
+    relationContinuum = nil
+    relationContinuumError = nil
     queryStateRevision &+= 1
   }
   var queryWorkbenchSelected: Bool { selectedWorkbenchKind == "query" }
@@ -8819,6 +8889,24 @@ private struct ResultGridWithInspector: View {
           HStack(spacing: 8) {
             ResultCopyMenu()
             ResultExportMenu()
+            Button {
+              model.openRelationContinuumFromSelection()
+            } label: {
+              Label("Continuum", systemImage: "arrow.triangle.branch")
+            }
+            .buttonStyle(.glassProminent)
+            .controlSize(.small)
+            .disabled(!model.canOpenRelationContinuum)
+            .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+            .help("Row Continuum: related rows for this cell (⌘⌥→)")
+            .accessibilityIdentifier("relation.continuum.open")
+            if model.relationContinuum != nil {
+              Button("Close Continuum") { model.closeRelationContinuum() }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                .accessibilityIdentifier("relation.continuum.close")
+            }
             Spacer(minLength: 0)
           }
           HStack(spacing: 8) {
@@ -8853,6 +8941,12 @@ private struct ResultGridWithInspector: View {
             if let error = model.copyError {
               Text(error).font(.caption).foregroundStyle(.red)
             }
+            if let continuumError = model.relationContinuumError {
+              Text(continuumError)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("relation.continuum.error")
+            }
             Spacer(minLength: 0)
           }
         }
@@ -8864,7 +8958,12 @@ private struct ResultGridWithInspector: View {
           model.selectCell(row: visibleRowIndices[row], column: column)
         }
         .frame(minWidth: 280, minHeight: 100, idealHeight: minimumHeight)
-        if let snapshot = model.selectedCellSnapshot {
+        if let continuum = model.relationContinuum {
+          RelationContinuumPlane(state: continuum) {
+            model.closeRelationContinuum()
+          }
+          .frame(minWidth: 220, idealWidth: 320, maxWidth: 480)
+        } else if let snapshot = model.selectedCellSnapshot {
           NativeValueInspector(
             column: snapshot.0, cell: snapshot.1,
             row: snapshot.2, columnIndex: snapshot.3
@@ -8872,6 +8971,137 @@ private struct ResultGridWithInspector: View {
           .frame(minWidth: 180, idealWidth: 280, maxWidth: 380)
         }
       }
+    }
+  }
+}
+
+/// Spatial peer plane for Row Continuum (opaque content; chrome is labels only).
+private struct RelationContinuumPlane: View {
+  let state: BridgeModel.RelationContinuumState
+  let onClose: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("CONTINUUM")
+            .font(.caption.weight(.bold))
+            .tracking(0.6)
+          Text(state.edgeTitle)
+            .font(.caption.monospaced())
+            .textSelection(.enabled)
+        }
+        Spacer(minLength: 0)
+        Text(state.statusWord)
+          .font(.caption2.weight(.semibold))
+          .accessibilityLabel("Continuum status \(state.statusWord)")
+        Button(action: onClose) {
+          Image(systemName: "xmark")
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("Close Continuum")
+      }
+      Text("\(state.directionWord) · \(state.fromColumn) = \(state.fromValue)")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      if state.usesFixtureData {
+        Text("FIXTURE neighbors — not live catalog truth")
+          .font(.caption2.weight(.semibold))
+          .accessibilityIdentifier("relation.continuum.fixture-badge")
+      }
+      if state.rows.isEmpty {
+        ContentUnavailableView(
+          "No related rows",
+          systemImage: "arrow.triangle.branch",
+          description: Text("No fixture neighbors for this value.")
+        )
+        .frame(maxHeight: .infinity)
+      } else {
+        // Dense opaque preview grid (not glass). AppKit NSTableView remains
+        // primary for full results; this plane is a focused neighbor surface.
+        VStack(alignment: .leading, spacing: 0) {
+          HStack(spacing: 8) {
+            ForEach(state.columns, id: \.self) { name in
+              Text(name)
+                .font(.caption2.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+          }
+          .padding(.vertical, 4)
+          Divider()
+          ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
+              ForEach(Array(state.rows.enumerated()), id: \.offset) { _, cells in
+                HStack(spacing: 8) {
+                  ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
+                    Text(cell)
+                      .font(.system(.caption, design: .monospaced))
+                      .frame(maxWidth: .infinity, alignment: .leading)
+                      .textSelection(.enabled)
+                  }
+                }
+                .padding(.vertical, 2)
+              }
+            }
+          }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+    }
+    .padding(10)
+    .background(Color(nsColor: .textBackgroundColor))
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("relation.continuum.plane")
+    .accessibilityLabel(
+      "Relation Continuum \(state.edgeTitle), \(state.rows.count) rows, \(state.statusWord)")
+  }
+}
+
+/// Deterministic neighbor map for presentation prototype (sample-schema shaped).
+private enum RelationContinuumFixtures {
+  struct Edge {
+    let fromTable: String
+    let fromColumn: String
+    let toSchema: String
+    let toTable: String
+    let toColumn: String
+  }
+
+  static func edge(forColumn column: String) -> Edge? {
+    switch column.lowercased() {
+    case "album_id":
+      return Edge(
+        fromTable: "tracks", fromColumn: "album_id",
+        toSchema: "main", toTable: "albums", toColumn: "id")
+    case "artist_id":
+      return Edge(
+        fromTable: "albums", fromColumn: "artist_id",
+        toSchema: "main", toTable: "artists", toColumn: "id")
+    default:
+      return nil
+    }
+  }
+
+  static func neighbors(edge: Edge, value: String) -> (columns: [String], rows: [[String]]) {
+    switch edge.toTable {
+    case "albums":
+      let columns = ["id", "title", "artist_id"]
+      let all: [[String]] = [
+        ["1", "Harbor Light", "1"],
+        ["2", "Stone Circle", "2"],
+      ]
+      let rows = all.filter { $0[0] == value }
+      return (columns, rows)
+    case "artists":
+      let columns = ["id", "name"]
+      let all: [[String]] = [
+        ["1", "Northwind Quartet"],
+        ["2", "Lake District Trio"],
+      ]
+      let rows = all.filter { $0[0] == value }
+      return (columns, rows)
+    default:
+      return ([], [])
     }
   }
 }
