@@ -221,28 +221,19 @@ impl QueryEditorModel {
         replacement: &str,
         case_insensitive: bool,
     ) -> bool {
-        let Some(start) = self.find_next(needle, case_insensitive) else {
-            return false;
-        };
-        let end = start + needle.len();
-        if end > self.text.len() {
-            return false;
-        }
-        // Case-insensitive match may differ in length of actual slice — use found length.
-        let actual_end = if case_insensitive {
-            // Re-find exact byte length of match in original by comparing lowered.
-            let hay = &self.text[start..];
-            let n = needle.len().min(hay.len());
-            start + n
+        let mode = if case_insensitive {
+            tablerock_core::FindReplaceMode::Literal
         } else {
-            end
+            tablerock_core::FindReplaceMode::CaseSensitive
         };
-        self.text.replace_range(start..actual_end, replacement);
-        self.cursor = start + replacement.len();
-        self.selection = None;
-        self.bump_revision();
-        self.recompute_spans();
-        true
+        self.replace_with_mode(
+            needle,
+            replacement,
+            mode,
+            tablerock_core::FindReplaceScope::Document,
+            false,
+        )
+            .is_ok_and(|n| n > 0)
     }
 
     /// Replace all occurrences (left-to-right, non-overlapping). Returns count.
@@ -252,18 +243,71 @@ impl QueryEditorModel {
         replacement: &str,
         case_insensitive: bool,
     ) -> usize {
-        if needle.is_empty() {
-            return 0;
+        let mode = if case_insensitive {
+            tablerock_core::FindReplaceMode::Literal
+        } else {
+            tablerock_core::FindReplaceMode::CaseSensitive
+        };
+        self.replace_with_mode(
+            needle,
+            replacement,
+            mode,
+            tablerock_core::FindReplaceScope::Document,
+            true,
+        )
+        .unwrap_or(0)
+    }
+
+    /// Shared find/replace modes (literal / whole-word / regex) and document or
+    /// selection scope — same contract as native TR-SCR-049.
+    pub fn replace_with_mode(
+        &mut self,
+        pattern: &str,
+        replacement: &str,
+        mode: tablerock_core::FindReplaceMode,
+        scope: tablerock_core::FindReplaceScope,
+        replace_all: bool,
+    ) -> Result<usize, tablerock_core::FindReplaceError> {
+        let selection = self.selection.map(|(a, b)| {
+            let (start, end) = if a <= b { (a, b) } else { (b, a) };
+            start..end
+        });
+        if replace_all {
+            let outcome = tablerock_core::replace_all(
+                &self.text,
+                pattern,
+                replacement,
+                mode,
+                scope,
+                selection,
+            )?;
+            self.text = outcome.text;
+            self.cursor = outcome.cursor.min(self.text.len());
+            self.selection = None;
+            self.bump_revision();
+            self.recompute_spans();
+            Ok(outcome.count)
+        } else {
+            let from = self.cursor.min(self.text.len());
+            let Some(outcome) = tablerock_core::replace_next(
+                &self.text,
+                pattern,
+                replacement,
+                mode,
+                scope,
+                selection,
+                from,
+            )?
+            else {
+                return Ok(0);
+            };
+            self.text = outcome.text;
+            self.cursor = outcome.cursor.min(self.text.len());
+            self.selection = None;
+            self.bump_revision();
+            self.recompute_spans();
+            Ok(outcome.count)
         }
-        let mut count = 0usize;
-        self.cursor = 0;
-        while self.replace_next(needle, replacement, case_insensitive) {
-            count += 1;
-            if count > 10_000 {
-                break; // safety bound
-            }
-        }
-        count
     }
 
     /// Text Run should execute: selection if non-empty, else current statement.

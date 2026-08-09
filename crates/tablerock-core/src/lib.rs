@@ -7,6 +7,7 @@ mod copy_projection;
 mod ddl;
 mod diagnostic;
 mod editability;
+mod find_replace;
 mod id;
 mod mutation;
 mod named_params;
@@ -57,6 +58,10 @@ pub use diagnostic::{
     SafeCode, SafeDiagnostic, Severity,
 };
 pub use editability::{EditabilityFacts, EditabilityReason, StableIdentity};
+pub use find_replace::{
+    FindMatch, FindReplaceError, FindReplaceMode, FindReplaceScope, MAX_FIND_REPLACE_MATCHES,
+    ReplaceOutcome, find_all, find_next, replace_all, replace_next,
+};
 pub use id::{
     CatalogNodeId, ContextId, IdDecodeError, IdParts, MutationId, OperationId, ProfileId, QueryId,
     RequestId, ResultId, ReviewTokenId, RowId, SessionId, SubscriptionId, TabId,

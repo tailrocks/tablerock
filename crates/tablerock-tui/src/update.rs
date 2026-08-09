@@ -2531,7 +2531,10 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     if raw.is_empty() {
                         return Update::render();
                     }
-                    // Formats: find=>replace | find=>replace=>all | find=>replace=>i | find=>replace=>all=>i
+                    // Formats:
+                    //   find=>replace
+                    //   find=>replace=>all|i|ci|cs|word|regex|sel|doc
+                    // Legacy flags still accepted; modes/scopes match native TR-SCR-049.
                     let parts: Vec<&str> = raw.split("=>").map(str::trim).collect();
                     if parts.len() < 2 || parts[0].is_empty() {
                         return Update::render();
@@ -2540,23 +2543,35 @@ fn activate_selected_action(model: &mut Model) -> Update {
                     let replacement = parts[1];
                     let flags = parts.get(2..).unwrap_or(&[]);
                     let all = flags.iter().any(|f| f.eq_ignore_ascii_case("all"));
-                    let case_i = flags
-                        .iter()
-                        .any(|f| f.eq_ignore_ascii_case("i") || f.eq_ignore_ascii_case("ci"));
+                    let mut mode = tablerock_core::FindReplaceMode::Literal;
+                    let mut scope = tablerock_core::FindReplaceScope::Document;
+                    for flag in flags {
+                        if flag.eq_ignore_ascii_case("all") {
+                            continue;
+                        }
+                        if let Some(parsed) = tablerock_core::FindReplaceMode::parse(flag) {
+                            mode = parsed;
+                            continue;
+                        }
+                        if let Some(parsed) = tablerock_core::FindReplaceScope::parse(flag) {
+                            scope = parsed;
+                            continue;
+                        }
+                        // Legacy: bare `i`/`ci` already mapped by FindReplaceMode::parse.
+                        // `cs` maps to case-sensitive.
+                    }
                     let Some(ed) = model.workbench_mut().active_editor_mut() else {
                         model.set_confirm(None);
                         return Update::unchanged();
                     };
-                    let n = if all {
-                        ed.replace_all(needle, replacement, case_i)
-                    } else if ed.replace_next(needle, replacement, case_i) {
-                        1
-                    } else {
-                        0
-                    };
+                    let result = ed.replace_with_mode(needle, replacement, mode, scope, all);
                     model.set_confirm(None);
+                    let label = match result {
+                        Ok(n) => format!("replace: {n} occurrence(s)"),
+                        Err(error) => format!("replace failed: {error}"),
+                    };
                     if let Some(g) = model.workbench_mut().active_grid_mut() {
-                        g.error_label = Some(format!("replace: {n} occurrence(s)"));
+                        g.error_label = Some(label);
                     }
                     Update::render()
                 }
@@ -14923,6 +14938,53 @@ CREATE TABLE \"public\".\"users\" (
             model.workbench().active_editor().unwrap().text(),
             "SELECT bar FROM t"
         );
+    }
+
+    #[test]
+    fn find_replace_whole_word_and_regex_modes() {
+        let mut model = Model::default();
+        model.set_screen(Screen::Workbench);
+        model.set_session(Some(SessionFacts {
+            session_id_hex: "aabb".into(),
+            identity: "local".into(),
+            temporary: true,
+            engine_label: "PostgreSQL".into(),
+            status: None,
+        }));
+        model.workbench_mut().open_sql_tab();
+        model
+            .workbench_mut()
+            .active_editor_mut()
+            .unwrap()
+            .set_text("foo food FOO");
+        let _ = model.request_focus(FocusRegion::Actions);
+        model.set_action(ActionId::FindReplace);
+        let _ = update(&mut model, Message::Activate);
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded("foo=>X=>all=>word".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(
+            model.workbench().active_editor().unwrap().text(),
+            "X food X"
+        );
+
+        model
+            .workbench_mut()
+            .active_editor_mut()
+            .unwrap()
+            .set_text("a1b2");
+        model.set_action(ActionId::FindReplace);
+        let _ = update(&mut model, Message::Activate);
+        let _ = update(
+            &mut model,
+            Message::Paste(PasteText::bounded(r"(\d)=>N=>all=>regex".into())),
+        );
+        model.set_action(ActionId::Submit);
+        let _ = update(&mut model, Message::Activate);
+        assert_eq!(model.workbench().active_editor().unwrap().text(), "aNbN");
     }
 
     #[test]

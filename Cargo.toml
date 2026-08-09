@@ -29,6 +29,7 @@ russh = { version = "=0.62.2", default-features = false, features = ["ring"] }
 tokio-postgres = "=0.7.18"
 tokio-postgres-rustls = { version = "=0.14.0", features = ["native-certs", "ring"] }
 turso = { version = "=0.7.0", default-features = false }
+regex = { version = "=1.13.1", default-features = false, features = ["std", "unicode"] }
 unicode-normalization = { version = "=0.1.25", default-features = false, features = ["std"] }
 zeroize = { version = "=1.9.0", default-features = false, features = ["alloc"] }
 

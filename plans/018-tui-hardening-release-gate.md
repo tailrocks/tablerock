@@ -83,9 +83,10 @@ freshness-checked per repo convention).
 
 - ~~True ENOSPC volume-image CI job~~ (closed: evidence 328, 1MiB tmpfs on ubuntu)
 - Fixed-spec runner perf budgets + TUI first-paint / first-row numbers (optional polish)
-- Native Find and Replace now covers explicit document/selection scope,
+- Native Find and Replace covers explicit document/selection scope,
   literal/case/word/regex modes, and zero-width safety (evidence 641). TUI
-  word/regex/scope parity remains open.
+  word/regex/scope parity closed via shared `tablerock_core::find_replace`
+  (evidence 659).
 - Native named-query parameters now use Rust inspection, engine-correct typed
   PostgreSQL/ClickHouse placeholders, and a native run/cancel sheet (evidence
   642). Hosted native ClickHouse/type-error replay remains open.
