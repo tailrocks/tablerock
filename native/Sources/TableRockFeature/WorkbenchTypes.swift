@@ -207,6 +207,123 @@ public func workbenchColumnHeaderTitle(
   return "\(column) \(direction) \(index + 1)"
 }
 
+// MARK: - Data Grid cell presentation (parity with TUI typed distinctions)
+
+/// Pure presentation facts for one result cell.
+/// Glyph + text; never color alone (Increase Contrast / non-color semantics).
+public struct GridCellPresentation: Sendable, Equatable {
+  public let title: String
+  public let accessibilityValue: String
+  public let kindLabel: String
+  public let isNumeric: Bool
+  public let isNull: Bool
+  public let isTruncated: Bool
+
+  public init(
+    title: String, accessibilityValue: String, kindLabel: String, isNumeric: Bool, isNull: Bool,
+    isTruncated: Bool
+  ) {
+    self.title = title
+    self.accessibilityValue = accessibilityValue
+    self.kindLabel = kindLabel
+    self.isNumeric = isNumeric
+    self.isNull = isNull
+    self.isTruncated = isTruncated
+  }
+
+  /// Project a typed UniFFI cell into grid paint facts.
+  public static func project(_ cell: WorkbenchCell) -> GridCellPresentation {
+    let truncated = cell.isTruncated
+    let kind = cell.kind
+    let isNumeric = (2...5).contains(kind)
+    switch kind {
+    case 0:
+      return GridCellPresentation(
+        title: "∅",
+        accessibilityValue: "NULL",
+        kindLabel: "NULL",
+        isNumeric: false,
+        isNull: true,
+        isTruncated: truncated)
+    case 8:
+      let body = cell.display
+      let title: String = {
+        if body.isEmpty { return "{}" }
+        return truncated ? "… \(body)" : "{} \(body)"
+      }()
+      return GridCellPresentation(
+        title: title,
+        accessibilityValue: truncated
+          ? "Structured truncated \(body.isEmpty ? "value" : body)"
+          : "Structured \(body.isEmpty ? "value" : body)",
+        kindLabel: "Structured",
+        isNumeric: false,
+        isNull: false,
+        isTruncated: truncated)
+    case 9:
+      let n = cell.bytes.count
+      let title = truncated ? "… ⟨b \(n)⟩" : "⟨b \(n)⟩"
+      return GridCellPresentation(
+        title: title,
+        accessibilityValue: truncated
+          ? "Binary truncated \(n) bytes" : "Binary \(n) bytes",
+        kindLabel: "Binary",
+        isNumeric: false,
+        isNull: false,
+        isTruncated: truncated)
+    case 10:
+      let body = cell.display
+      let title = body.isEmpty ? "!" : "! \(body)"
+      return GridCellPresentation(
+        title: title,
+        accessibilityValue: body.isEmpty ? "Invalid value" : "Invalid \(body)",
+        kindLabel: "Invalid",
+        isNumeric: false,
+        isNull: false,
+        isTruncated: truncated)
+    case 11:
+      let body = cell.display
+      let title = body.isEmpty ? "?" : "? \(body)"
+      return GridCellPresentation(
+        title: title,
+        accessibilityValue: body.isEmpty ? "Unknown value" : "Unknown \(body)",
+        kindLabel: "Unknown",
+        isNumeric: false,
+        isNull: false,
+        isTruncated: truncated)
+    default:
+      // Text / bool / number / temporal
+      if kind == 7 && cell.display.isEmpty {
+        return GridCellPresentation(
+          title: "·",
+          accessibilityValue: "Empty text",
+          kindLabel: "Text",
+          isNumeric: false,
+          isNull: false,
+          isTruncated: truncated)
+      }
+      let body = cell.display
+      let title = truncated ? "… \(body)" : body
+      return GridCellPresentation(
+        title: title,
+        accessibilityValue: truncated ? "Truncated \(body)" : body,
+        kindLabel: cell.kindLabel,
+        isNumeric: isNumeric,
+        isNull: false,
+        isTruncated: truncated)
+    }
+  }
+
+  /// Status-line fact for the selection strip (non-color).
+  public var statusFact: String {
+    var parts = [kindLabel]
+    if isNull { parts.append("null") }
+    if isTruncated { parts.append("truncated") }
+    if isNumeric { parts.append("numeric") }
+    return parts.joined(separator: " · ")
+  }
+}
+
 public struct WorkbenchBrowseFilter: Sendable, Equatable, Identifiable {
   public let id: UUID
   public let column: String

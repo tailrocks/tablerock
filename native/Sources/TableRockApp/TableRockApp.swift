@@ -8952,23 +8952,44 @@ private struct ResultGridWithInspector: View {
         }
         .controlSize(.small)
       }
-      HSplitView {
-        CatalogGrid(table: visibleTable, sorts: model.resultSort) { row, column in
-          guard visibleRowIndices.indices.contains(row) else { return }
-          model.selectCell(row: visibleRowIndices[row], column: column)
-        }
-        .frame(minWidth: 280, minHeight: 100, idealHeight: minimumHeight)
-        if let continuum = model.relationContinuum {
-          RelationContinuumPlane(state: continuum) {
-            model.closeRelationContinuum()
+      if let selection = model.selectedCellSnapshot {
+        let presentation = GridCellPresentation.project(selection.1)
+        Text(
+          "\(selection.0.name) · \(presentation.statusFact) · R\(selection.2 + 1) C\(selection.3 + 1)"
+        )
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .accessibilityIdentifier("results.selection.status")
+        .accessibilityValue(
+          "\(selection.0.name), \(presentation.accessibilityValue), row \(selection.2 + 1)")
+      }
+      if table.rows.isEmpty {
+        ContentUnavailableView(
+          "No rows in this result",
+          systemImage: "tablecells",
+          description: Text("Run a query or open a table that returns rows.")
+        )
+        .frame(minHeight: minimumHeight)
+        .accessibilityIdentifier("results.grid.empty")
+      } else {
+        HSplitView {
+          CatalogGrid(table: visibleTable, sorts: model.resultSort) { row, column in
+            guard visibleRowIndices.indices.contains(row) else { return }
+            model.selectCell(row: visibleRowIndices[row], column: column)
           }
-          .frame(minWidth: 220, idealWidth: 320, maxWidth: 480)
-        } else if let snapshot = model.selectedCellSnapshot {
-          NativeValueInspector(
-            column: snapshot.0, cell: snapshot.1,
-            row: snapshot.2, columnIndex: snapshot.3
-          )
-          .frame(minWidth: 180, idealWidth: 280, maxWidth: 380)
+          .frame(minWidth: 280, minHeight: 100, idealHeight: minimumHeight)
+          if let continuum = model.relationContinuum {
+            RelationContinuumPlane(state: continuum) {
+              model.closeRelationContinuum()
+            }
+            .frame(minWidth: 220, idealWidth: 320, maxWidth: 480)
+          } else if let snapshot = model.selectedCellSnapshot {
+            NativeValueInspector(
+              column: snapshot.0, cell: snapshot.1,
+              row: snapshot.2, columnIndex: snapshot.3
+            )
+            .frame(minWidth: 180, idealWidth: 280, maxWidth: 380)
+          }
         }
       }
     }
@@ -10139,7 +10160,10 @@ struct CatalogGrid: NSViewRepresentable {
     grid.allowsColumnResizing = true
     grid.allowsMultipleSelection = true
     grid.rowSizeStyle = .small
+    // Opaque content surface — never glass (Liquid Glass / design-system).
     grid.backgroundColor = .textBackgroundColor
+    grid.gridStyleMask = []  // no interior gridlines; hierarchy via alternating rows
+    grid.intercellSpacing = NSSize(width: 6, height: 1)
     grid.setAccessibilityLabel("Query results")
     grid.setAccessibilityIdentifier("results.grid")
     let scroll = NSScrollView()
@@ -10149,7 +10173,9 @@ struct CatalogGrid: NSViewRepresentable {
     scroll.hasVerticalScroller = true
     scroll.hasHorizontalScroller = true
     scroll.autohidesScrollers = true
-    scroll.borderType = .bezelBorder
+    // Content surface: separator only, not heavy bezel chrome.
+    scroll.borderType = .lineBorder
+    scroll.focusRingType = .exterior
     context.coordinator.installColumns(on: grid)
     grid.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
     grid.delegate = context.coordinator
@@ -10292,9 +10318,14 @@ struct CatalogGrid: NSViewRepresentable {
         let column = NSTableColumn(
           identifier: NSUserInterfaceItemIdentifier("result-column-\(index)"))
         column.title = workbenchColumnHeaderTitle(column: title, sorts: sorts)
-        column.minWidth = 60
-        column.width = 140
+        column.minWidth = 72
+        column.width = 148
         column.resizingMask = [.autoresizingMask, .userResizingMask]
+        if snapshot.columnMetadata.indices.contains(index) {
+          let meta = snapshot.columnMetadata[index]
+          let nullability = meta.nullable ? "nullable" : "not null"
+          column.headerToolTip = "\(meta.engineType) · \(nullability)"
+        }
         tableView.addTableColumn(column)
       }
     }
@@ -10325,22 +10356,43 @@ struct CatalogGrid: NSViewRepresentable {
         button.isBordered = false
         button.alignment = .left
         button.lineBreakMode = .byTruncatingTail
+        // Monospaced digits for professional dense tables (numbers align visually).
+        button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
         button.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(button)
         NSLayoutConstraint.activate([
-          button.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
-          button.trailingAnchor.constraint(equalTo: cell.trailingAnchor),
+          button.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+          button.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
           button.topAnchor.constraint(equalTo: cell.topAnchor),
           button.bottomAnchor.constraint(equalTo: cell.bottomAnchor),
         ])
       }
-      let value = snapshot.rows[row][column]
+      let typed: WorkbenchCell = {
+        if snapshot.cells.indices.contains(row),
+          snapshot.cells[row].indices.contains(column)
+        {
+          return snapshot.cells[row][column]
+        }
+        let raw = snapshot.rows[row][column]
+        return WorkbenchCell(
+          display: raw, kind: 7, truncation: 0, originalByteCount: nil, bytes: Data(raw.utf8))
+      }()
+      let presentation = GridCellPresentation.project(typed)
       guard let button = cell.subviews.first as? ResultCellButton else { return nil }
-      button.title = value
+      button.title = presentation.title
+      button.alignment = presentation.isNumeric ? .right : .left
+      // Null/empty use secondary label color *plus* glyph (never color alone).
+      button.contentTintColor =
+        presentation.isNull || presentation.title == "·"
+        ? NSColor.secondaryLabelColor : NSColor.labelColor
+      let engineType =
+        snapshot.columnMetadata.indices.contains(column)
+        ? snapshot.columnMetadata[column].engineType : "unknown"
       button.setAccessibilityElement(true)
       button.setAccessibilityRole(.button)
-      button.setAccessibilityLabel("\(snapshot.columns[column]), row \(row + 1)")
-      button.setAccessibilityValue(value)
+      button.setAccessibilityLabel(
+        "\(snapshot.columns[column]), \(engineType), row \(row + 1), \(presentation.kindLabel)")
+      button.setAccessibilityValue(presentation.accessibilityValue)
       button.setAccessibilityIdentifier("results.cell.\(row).\(column)")
       button.onActivate = { [weak self, weak tableView] in
         guard let self, let tableView else { return }

@@ -65,6 +65,21 @@ completed, cancel requested, cancelled, failed, disconnected — with elapsed
 time, loaded rows/bytes, truncation, and a cancel action while running.
 Failed loads keep stale pages visible and marked stale.
 
+## Typed cell paint (both clients)
+
+| Distinction | Glyph + text (never color alone) |
+|---|---|
+| NULL | `∅` |
+| Empty text | `·` |
+| Structured | `{}` prefix / empty braces |
+| Binary | `⟨b N⟩` byte count |
+| Truncated | `…` prefix |
+| Invalid / unknown | `!` / `?` |
+| Numbers | monospaced digits; native right-align |
+
+Native maps UniFFI `WorkbenchCell.kind` through pure `GridCellPresentation`
+(see evidence 666). TUI maps via `CellDistinction` on `ProjectedCell`.
+
 ## Both clients
 
 | | TUI | Native macOS |
@@ -73,6 +88,8 @@ Failed loads keep stale pages visible and marked stale.
 | Filter bar | focusable rows under the tab strip | toolbar-attached filter row |
 | Sort headers | header cells with glyph + index | native column header sort indicators |
 | Inspector | side/bottom panel | side panel or popover |
+| Empty result | status / empty body | `ContentUnavailableView` |
+| Selection fact | inspector / status | `results.selection.status` strip |
 
 ## Failure truth
 
