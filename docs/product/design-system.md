@@ -133,7 +133,7 @@ Rank: Halo + Ledger ship continuously; Lens deepens as FK facts are available.
 | Connections | Search, groups, Sample CTA | Action strip density OK; list still generic |
 | Workbench shell | Split + toolbar | Detail stack can feel like a form dump |
 | Tabs | Functional | **Glass on every tab flattens hierarchy** |
-| Grid + inspector | AppKit dense | Tool strip can look bolt-on |
+| Grid + inspector | AppKit dense; kind-first inspector | Continuum peer still fixture-bound |
 | Halo | Non-color text | Must stay on every connected surface |
 | Ledger | Rust staging truth | Presentation naming still maturing |
 | Relation Lens | PG relationships sheet | Not yet continuous from cell selection |

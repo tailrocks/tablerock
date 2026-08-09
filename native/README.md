@@ -145,10 +145,11 @@ results, and errors. macOS may group them with native window tabs. Each restored
 window UUID persists only editor intent and its associated profile; reconnect is
 explicit, and results, credentials, operations, and pending writes never restore.
 
-Click any loaded result cell to open its tab-local value inspector. It preserves
-Rust page metadata and shows database type, nullability, value kind, truncation,
-selectable text, and raw hexadecimal bytes. Structured JSON trees and editable
-typed controls remain later parity work.
+Click any loaded result cell to open its tab-local value inspector. It is a
+kind-first opaque instrument: type/nullability/byte facts, monospaced text (or
+binary hex dump primary), always-visible linear hex, Copy Text/Copy Hex, and a
+bounded structured JSON tree when the payload decodes. Editable typed controls
+and staged/original compare remain later parity work.
 
 Result grids copy a selected cell, selected row, or all loaded rows through the
 shared Rust formatter. The native pasteboard receives plain text plus CSV, TSV,

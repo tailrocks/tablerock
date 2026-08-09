@@ -9431,83 +9431,297 @@ private struct ResultCopyMenu: View {
   }
 }
 
+/// Kind-first trailing inspector: opaque content plane matching Continuum density.
+/// Rust/UniFFI own typed bytes; Swift only projects text, hex dump, and bounded JSON tree.
 private struct NativeValueInspector: View {
   let column: WorkbenchColumn
   let cell: WorkbenchCell
   let row: Int
   let columnIndex: Int
 
-  private var hex: String {
-    cell.bytes.map { String(format: "%02x", $0) }.joined(separator: " ")
+  @State private var hexExpanded: Bool = true
+
+  private var presentation: GridCellPresentation {
+    GridCellPresentation.project(cell)
+  }
+
+  private var hexLinear: String {
+    ValueInspectorProjection.hexLinear(cell.bytes)
+  }
+
+  private var hexDump: String {
+    ValueInspectorProjection.hexDump(cell.bytes)
+  }
+
+  private var metadataFact: String {
+    ValueInspectorProjection.metadataFact(
+      engineType: column.engineType,
+      nullable: column.nullable,
+      byteCount: cell.bytes.count,
+      originalByteCount: cell.originalByteCount,
+      isTruncated: cell.isTruncated)
   }
 
   private var structuredRows: [StructuredValueTreeRow]? {
-    guard cell.kindLabel == "Structured" else { return nil }
+    guard cell.kind == 8 else { return nil }
     return try? StructuredValueTree.decode(cell.bytes)
   }
 
+  private var structuredTreeFailed: Bool {
+    cell.kind == 8 && structuredRows == nil
+  }
+
+  private var prefersHexPrimary: Bool {
+    cell.kind == 9  // Binary
+  }
+
+  /// Multi-line dump is progressive when large; compact linear hex always stays painted.
+  private var hexNeedsDisclosure: Bool {
+    cell.bytes.count > 64
+  }
+
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 10) {
-        HStack {
-          Text("Value Inspector").font(.headline)
-          Spacer()
-          Text("R\(row + 1) C\(columnIndex + 1)")
-            .font(.caption).foregroundStyle(.secondary)
-        }
-        LabeledContent("Column", value: column.name)
-        LabeledContent("Database type", value: column.engineType)
-        LabeledContent("Value kind", value: cell.kindLabel)
-        LabeledContent("Nullable", value: column.nullable ? "Yes" : "No")
-        LabeledContent("Stored bytes", value: "\(cell.bytes.count)")
-        if cell.isTruncated {
-          Label(
-            cell.originalByteCount.map { "Truncated from \($0) bytes" }
-              ?? "Truncated value",
-            systemImage: "scissors"
-          )
-          .foregroundStyle(.orange)
-        }
-        GroupBox("Text") {
-          Text(cell.display)
-            .font(.system(.body, design: .monospaced))
+    VStack(alignment: .leading, spacing: 0) {
+      header
+      Divider()
+      ScrollView {
+        VStack(alignment: .leading, spacing: 8) {
+          Text(metadataFact)
+            .font(.caption2.monospaced())
+            .foregroundStyle(.secondary)
             .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("value.inspector.metadata")
+
+          if cell.isTruncated {
+            Label(
+              cell.originalByteCount.map { "Truncated — original \($0) B" }
+                ?? "Truncated value",
+              systemImage: "scissors"
+            )
+            .font(.caption.weight(.semibold))
+            .accessibilityIdentifier("value.inspector.truncated")
+          }
+
+          primarySurface
+
+          if structuredTreeFailed {
+            Text(
+              "JSON tree unavailable — payload is not valid JSON within tree bounds. Text and hex remain."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("value.inspector.tree.unavailable")
+          }
+
+          if let structuredRows {
+            treeSection(structuredRows)
+          }
+
+          hexSection
         }
-        GroupBox("Hex") {
-          Text(hex.isEmpty ? "Empty" : hex)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+    }
+    .background(Color(nsColor: .textBackgroundColor))
+    .onAppear {
+      // Large blobs start collapsed; binary and small values keep hex open.
+      hexExpanded = prefersHexPrimary || !hexNeedsDisclosure
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("value.inspector")
+    .accessibilityLabel(
+      "Value inspector for \(column.name), \(presentation.accessibilityValue), \(ValueInspectorProjection.locationFact(row: row, columnIndex: columnIndex))"
+    )
+  }
+
+  private var header: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Text(presentation.kindGlyph)
+        .font(.caption.weight(.bold).monospaced())
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(presentation.kindLabel.uppercased())
+          .font(.caption.weight(.bold))
+          .tracking(0.5)
+          .accessibilityIdentifier("value.inspector.kind")
+        Text(column.name)
+          .font(.caption.monospaced())
+          .textSelection(.enabled)
+          .lineLimit(2)
+          .accessibilityIdentifier("value.inspector.column")
+      }
+      Spacer(minLength: 4)
+      VStack(alignment: .trailing, spacing: 4) {
+        Text(ValueInspectorProjection.locationFact(row: row, columnIndex: columnIndex))
+          .font(.caption2.monospacedDigit())
+          .foregroundStyle(.secondary)
+          .accessibilityIdentifier("value.inspector.location")
+        HStack(spacing: 6) {
+          Button("Copy Text") { copyToPasteboard(cell.display) }
+            .buttonStyle(.borderless)
+            .controlSize(.mini)
+            .disabled(presentation.isNull && cell.display.isEmpty)
+            .accessibilityIdentifier("value.inspector.copy.text")
+          Button("Copy Hex") { copyToPasteboard(hexLinear) }
+            .buttonStyle(.borderless)
+            .controlSize(.mini)
+            .disabled(cell.bytes.isEmpty)
+            .accessibilityIdentifier("value.inspector.copy.hex")
+        }
+      }
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 8)
+  }
+
+  @ViewBuilder
+  private var primarySurface: some View {
+    if presentation.isNull {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("∅")
+          .font(.title2.monospaced())
+        Text("NULL")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+        // Keep raw display text in the hierarchy for audit / selection.
+        Text(cell.display.isEmpty ? "NULL" : cell.display)
+          .font(.system(.body, design: .monospaced))
+          .textSelection(.enabled)
+          .opacity(cell.display.isEmpty ? 0 : 1)
+          .accessibilityIdentifier("value.inspector.text")
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel("NULL value")
+    } else if presentation.kindLabel == "Text" && presentation.title == "·" {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("·")
+          .font(.title2.monospaced())
+        Text("Empty text")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.secondary)
+        Text(cell.display)
+          .font(.system(.body, design: .monospaced))
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityIdentifier("value.inspector.text")
+      }
+    } else if prefersHexPrimary {
+      VStack(alignment: .leading, spacing: 6) {
+        sectionLabel("BYTES")
+        Text(hexDump.isEmpty ? "Empty" : hexDump)
+          .font(.system(.caption, design: .monospaced))
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityIdentifier("value.inspector.hex")
+        if !cell.display.isEmpty {
+          sectionLabel("LABEL")
+          Text(cell.display)
             .font(.system(.caption, design: .monospaced))
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        if let structuredRows {
-          GroupBox("JSON Tree") {
-            VStack(alignment: .leading, spacing: 4) {
-              ForEach(structuredRows) { row in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                  Text(row.label).fontWeight(.medium)
-                  if let value = row.value {
-                    Text(value).foregroundStyle(.secondary)
-                  }
-                }
-                .font(.system(.caption, design: .monospaced))
-                .padding(.leading, CGFloat(row.depth) * 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("value.inspector.tree.\(row.id)")
-              }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-          }
-          .accessibilityIdentifier("value.inspector.tree")
+            .accessibilityIdentifier("value.inspector.text")
         }
       }
-      .padding(10)
+    } else {
+      VStack(alignment: .leading, spacing: 6) {
+        sectionLabel("TEXT")
+        Text(cell.display.isEmpty ? "Empty" : cell.display)
+          .font(.system(.body, design: .monospaced))
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityIdentifier("value.inspector.text")
+      }
     }
-    .background(Color(nsColor: .textBackgroundColor))
-    .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("value.inspector")
-    .accessibilityLabel("Value inspector for \(column.name)")
+  }
+
+  private func treeSection(_ rows: [StructuredValueTreeRow]) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      sectionLabel("JSON TREE")
+      VStack(alignment: .leading, spacing: 3) {
+        ForEach(rows) { treeRow in
+          HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(treeRow.label)
+              .fontWeight(.medium)
+            if let value = treeRow.value {
+              Text(value)
+                .foregroundStyle(.secondary)
+                .lineLimit(4)
+            }
+          }
+          .font(.system(.caption, design: .monospaced))
+          .padding(.leading, CGFloat(treeRow.depth) * 12)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityElement(children: .combine)
+          .accessibilityIdentifier("value.inspector.tree.\(treeRow.id)")
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .accessibilityIdentifier("value.inspector.tree")
+  }
+
+  private var hexSection: some View {
+    // Binary already surfaces dump as primary. Other kinds keep linear hex always
+    // painted (audit + copy), with multi-line dump progressive when large.
+    Group {
+      if prefersHexPrimary {
+        EmptyView()
+      } else {
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 6) {
+            Text("HEX")
+              .font(.caption2.weight(.semibold))
+              .tracking(0.4)
+              .foregroundStyle(.secondary)
+            Text("\(cell.bytes.count) B")
+              .font(.caption2.monospacedDigit())
+              .foregroundStyle(.secondary)
+          }
+          // Always-visible compact hex — required for fixture audits and quick scan.
+          Text(hexLinear.isEmpty ? "Empty" : hexLinear)
+            .font(.system(.caption, design: .monospaced))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("value.inspector.hex")
+          if hexNeedsDisclosure {
+            DisclosureGroup(isExpanded: $hexExpanded) {
+              Text(hexDump)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 2)
+                .accessibilityIdentifier("value.inspector.hex.dump")
+            } label: {
+              Text("Dump")
+                .font(.caption2)
+            }
+            .accessibilityIdentifier("value.inspector.hex.group")
+          } else if !hexDump.isEmpty, hexDump.contains("\n") {
+            Text(hexDump)
+              .font(.system(.caption2, design: .monospaced))
+              .foregroundStyle(.secondary)
+              .textSelection(.enabled)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .accessibilityIdentifier("value.inspector.hex.dump")
+          }
+        }
+      }
+    }
+  }
+
+  private func sectionLabel(_ title: String) -> some View {
+    Text(title)
+      .font(.caption2.weight(.semibold))
+      .tracking(0.4)
+      .foregroundStyle(.secondary)
+  }
+
+  private func copyToPasteboard(_ string: String) {
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    pasteboard.setString(string, forType: .string)
   }
 }
 
