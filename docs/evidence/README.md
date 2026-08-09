@@ -538,6 +538,7 @@ How to read an evidence document:
 - 663 — [Data Observatory design research (Halo / Ledger / Lens)](delivery/663-data-observatory-design-research.md)
 - 664 — [Design system and hierarchy pass](delivery/664-design-system-and-hierarchy-pass.md)
 - 665 — [Signature interaction research + Row Continuum](delivery/665-signature-interaction-research.md)
+- 666 — [Data Grid typed cell presentation](delivery/666-data-grid-typed-presentation.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
