@@ -94,10 +94,11 @@ unsaved-change policy as staged edits.
 
 | | TUI | Native macOS |
 |---|---|---|
-| Editor | TermRock `TextArea` behind a TableRock model | `NSTextView`/TextKit with IME and native find |
+| Editor | TermRock `TextArea` behind a TableRock model | `SqlTextEditor` NSTextView + line-number gutter, IME-safe, native find bar |
+| Layout | editor / actions / results | `VSplitView` editor above action strip + results |
 | Completion | TermRock `CompletionMenu` | native completion presentation |
 | Results | `VirtualGrid` | `NSTableView` |
-| Diagnostics | inline marks + status | inline marks + inspector |
+| Diagnostics | inline marks + status | inline marks + inspector; metrics chip `L·C·lines` |
 
 Completion candidates, statement boundaries, execution, and result truth are
 Rust-owned in both clients; the native editor never parses SQL for behavior.
