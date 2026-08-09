@@ -572,6 +572,9 @@ extension WorkbenchBackend {
   func revokeReviewToken(tokenId: Data) throws -> Bool {
     try scriptedUnavailable("revoke")
   }
+  func stageProbeReview(sessionId: Data, nowMs: UInt64) throws -> Data {
+    try scriptedUnavailable("stage-probe")
+  }
   func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome {
     try scriptedUnavailable("stage-apply")
   }
@@ -582,6 +585,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   let scenario: String
   private var cancelled = false
   private var importReviewActive = false
+  private var probeReviewActive = false
   private var importApplyActive = false
   private var importApplyCancelled = false
   private var importApplyPollCount = 0
@@ -968,23 +972,52 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
     -> WorkbenchApplyOutcome
   {
-    guard scenario == "success", importReviewActive,
-      tokenId == Data(repeating: 10, count: 16),
-      sessionId == Data(repeating: 1, count: 16)
-    else { return try scriptedUnavailable("apply") }
-    importReviewActive = false
-    return WorkbenchApplyOutcome(
-      transaction: "committed", changeCount: 1, appliedCount: 1,
-      conflictCount: 0, failedCount: 0)
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16) else {
+      return try scriptedUnavailable("apply")
+    }
+    if importReviewActive, tokenId == Data(repeating: 10, count: 16) {
+      importReviewActive = false
+      return WorkbenchApplyOutcome(
+        transaction: "committed", changeCount: 1, appliedCount: 1,
+        conflictCount: 0, failedCount: 0)
+    }
+    if probeReviewActive, tokenId == Data(repeating: 11, count: 16) {
+      probeReviewActive = false
+      return WorkbenchApplyOutcome(
+        transaction: "committed", changeCount: 1, appliedCount: 1,
+        conflictCount: 0, failedCount: 0)
+    }
+    return try scriptedUnavailable("apply")
   }
 
   func revokeReviewToken(tokenId: Data) throws -> Bool {
-    guard scenario == "success", tokenId == Data(repeating: 10, count: 16) else {
+    guard scenario == "success" else {
       return try scriptedUnavailable("revoke")
     }
-    let wasActive = importReviewActive
-    importReviewActive = false
-    return wasActive
+    if tokenId == Data(repeating: 10, count: 16) {
+      let wasActive = importReviewActive
+      importReviewActive = false
+      return wasActive
+    }
+    if tokenId == Data(repeating: 11, count: 16) {
+      let wasActive = probeReviewActive
+      probeReviewActive = false
+      return wasActive
+    }
+    return try scriptedUnavailable("revoke")
+  }
+
+  func stageProbeReview(sessionId: Data, nowMs: UInt64) throws -> Data {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16), !probeReviewActive
+    else { return try scriptedUnavailable("stage-probe") }
+    _ = nowMs
+    probeReviewActive = true
+    return Data(repeating: 11, count: 16)
+  }
+
+  func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome {
+    let token = try stageProbeReview(sessionId: session, nowMs: now)
+    return try applyReviewToken(tokenId: token, nowMs: now, sessionId: session)
   }
 
   func startRedisSubscription(sessionId: Data, selector: String, pattern: Bool) throws -> Data {
@@ -1715,11 +1748,13 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
     try bridge.revokeReviewToken(tokenId: tokenId)
   }
 
+  func stageProbeReview(sessionId: Data, nowMs: UInt64) throws -> Data {
+    try bridge.stageProbeReview(sessionId: sessionId, nowMs: nowMs)
+  }
+
   func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome {
-    let token = try bridge.stageProbeReview(sessionId: session, nowMs: now)
-    return try bridge.applyReviewToken(
-      tokenId: token, nowMs: now, sessionId: session, expectedRevision: 0
-    ).workbench
+    let token = try stageProbeReview(sessionId: session, nowMs: now)
+    return try applyReviewToken(tokenId: token, nowMs: now, sessionId: session)
   }
 }
 
@@ -2498,6 +2533,14 @@ struct ConnectionUrlImport: Identifiable {
   var parsing = false
 }
 
+/// Presentation state for the edit-safety probe Change Review sheet.
+struct ProbeChangeReviewState: Identifiable, Equatable {
+  let id = UUID()
+  let tokenId: Data
+  let issuedAtMs: UInt64
+  let expiresAtMs: UInt64
+}
+
 struct ExternalUrlReview: Identifiable {
   let id = UUID()
   let draft: ProfileEditorDraft
@@ -2755,6 +2798,12 @@ final class BridgeModel {
   var ddlChangeError: String?
   private(set) var ddlChangeApplying = false
   private var ddlChangeCatalogNodeId: Data?
+  /// Edit-safety probe held behind explicit Change Review (not silent apply).
+  var probeChangeReview: ProbeChangeReviewState?
+  var probeChangePresented = false
+  var probeChangeOutcome: String?
+  var probeChangeError: String?
+  private(set) var probeChangeApplying = false
   var tableOperationPresented = false
   var tableOperationKind = "truncate"
   var tableOperationNewName = ""
@@ -2837,6 +2886,27 @@ final class BridgeModel {
     return safety == "read_only" ? "Read only" : "Confirm writes"
   }
   var activeProductionWarning: Bool { activeProfile?.productionWarning == true }
+
+  /// Presentation clock for expiry facts (Rust tokens still own authority).
+  func nowMilliseconds() -> UInt64 {
+    dependencies.clock.nowMilliseconds()
+  }
+
+  /// Pending ledger entries visible to presentation (probe review open counts as 1).
+  var changeLedgerEntryCount: Int {
+    var n = 0
+    if probeChangeReview != nil { n += ChangeReviewPresentation.probeLedgerCount }
+    if ddlChangeReview != nil { n += 1 }
+    if tableOperationReview != nil { n += 1 }
+    if csvImportReview != nil { n += 1 }
+    if postgresRoleChangeReview != nil { n += 1 }
+    return n
+  }
+
+  var changeReviewOpen: Bool {
+    probeChangeReview != nil || ddlChangeReview != nil || tableOperationReview != nil
+      || csvImportReview != nil || postgresRoleChangeReview != nil
+  }
   private var activeQueryTab: NativeQueryTab {
     queryTabs.first(where: { $0.id == selectedQueryTabId }) ?? queryTabs[0]
   }
@@ -6449,20 +6519,82 @@ final class BridgeModel {
     }
   }
 
-  /// Stage a probe mutation, authorize it, and apply it through the single-use
-  /// review-token safety gate. Demonstrates the edit/review flow.
-  func applyProbeEdit() async {
+  /// Stage edit-safety probe and open Change Review (does not apply).
+  func stageProbeChangeReview() async {
     let tab = activeQueryTab
     guard let client, let session = sessionData else { return }
     tab.reviewOutcome = nil
     tab.reviewError = nil
+    probeChangeOutcome = nil
+    probeChangeError = nil
+    if let existing = probeChangeReview {
+      _ = try? await client.revokeReviewToken(tokenId: existing.tokenId)
+      probeChangeReview = nil
+    }
     do {
       let now = dependencies.clock.nowMilliseconds()
-      let outcome = try await client.stageAndApply(session: session, now: now)
-      tab.reviewOutcome =
-        "\(outcome.transaction) · \(outcome.appliedCount) applied · \(outcome.conflictCount) conflict · \(outcome.failedCount) failed"
+      let token = try await client.stageProbeReview(sessionId: session, nowMs: now)
+      let expires =
+        now &+ (ChangeReviewPresentation.probeAuthoritySeconds * 1_000)
+      probeChangeReview = ProbeChangeReviewState(
+        tokenId: token, issuedAtMs: now, expiresAtMs: expires)
+      probeChangePresented = true
+      queryStateRevision &+= 1
     } catch {
-      tab.reviewError = "Review/apply failed: \(error)"
+      probeChangeError = "Stage probe review failed: \(error)"
+      tab.reviewError = probeChangeError
+    }
+  }
+
+  func applyProbeChangeReview() async {
+    let tab = activeQueryTab
+    guard let client, let session = sessionData, let review = probeChangeReview else { return }
+    probeChangeApplying = true
+    probeChangeError = nil
+    defer { probeChangeApplying = false }
+    do {
+      let now = dependencies.clock.nowMilliseconds()
+      let outcome = try await client.applyReviewToken(
+        tokenId: review.tokenId, nowMs: now, sessionId: session)
+      let fact = ChangeReviewPresentation.outcomeFact(outcome)
+      probeChangeOutcome = fact
+      tab.reviewOutcome = fact
+      probeChangeReview = nil
+      queryStateRevision &+= 1
+    } catch {
+      probeChangeError = "Apply reviewed probe failed: \(error)"
+      tab.reviewError = probeChangeError
+      // Consume-once: clear local review even when apply fails so the token
+      // is not presented as still available.
+      probeChangeReview = nil
+      queryStateRevision &+= 1
+    }
+  }
+
+  func discardProbeChangeReview() async {
+    guard let client else {
+      probeChangeReview = nil
+      probeChangePresented = false
+      return
+    }
+    if let review = probeChangeReview {
+      _ = try? await client.revokeReviewToken(tokenId: review.tokenId)
+    }
+    probeChangeReview = nil
+    probeChangePresented = false
+    queryStateRevision &+= 1
+  }
+
+  func closeProbeChangeReview() async {
+    await discardProbeChangeReview()
+  }
+
+  /// Legacy one-shot stage+apply (tests / automation). Prefer review sheet UI.
+  func applyProbeEdit() async {
+    await stageProbeChangeReview()
+    if probeChangeReview != nil {
+      await applyProbeChangeReview()
+      probeChangePresented = false
     }
   }
 
@@ -6891,6 +7023,12 @@ struct ContentView: View {
       DdlChangeSheet()
     }
     .sheet(
+      isPresented: $model.probeChangePresented,
+      onDismiss: { Task { await model.closeProbeChangeReview() } }
+    ) {
+      ProbeChangeReviewSheet()
+    }
+    .sheet(
       isPresented: $model.tableOperationPresented,
       onDismiss: { Task { await model.closeTableOperation() } }
     ) {
@@ -7228,7 +7366,9 @@ struct WorkbenchStatusBar: View {
       catalogSummary: model.catalogSummary,
       catalogError: model.catalogError,
       resultRowCount: model.resultTable?.rows.count,
-      production: model.activeProductionWarning
+      production: model.activeProductionWarning,
+      ledgerEntryCount: model.changeLedgerEntryCount,
+      reviewOpen: model.changeReviewOpen
     )
   }
 
@@ -7246,6 +7386,13 @@ struct WorkbenchStatusBar: View {
         .accessibilityIdentifier("workbench.status.facts")
         .accessibilityValue(factLine)
       Spacer(minLength: 0)
+      if model.changeReviewOpen {
+        Text("LEDGER \(max(model.changeLedgerEntryCount, 1))")
+          .font(.caption2.weight(.bold).monospaced())
+          .accessibilityIdentifier("workbench.status.ledger")
+          .accessibilityLabel(
+            "Change Ledger \(max(model.changeLedgerEntryCount, 1)) entries, review open")
+      }
       if model.activeProductionWarning {
         Text("HALO PRODUCTION")
           .font(.caption2.weight(.bold))
@@ -7334,10 +7481,19 @@ struct QueryWorkbenchView: View {
                   .buttonStyle(.glass)
                   .disabled(model.redisOverviewLoading)
               }
-              Button("Apply probe") { Task { await model.applyProbeEdit() } }
+              Button("Review probe…") { Task { await model.stageProbeChangeReview() } }
                 .buttonStyle(.glass)
-                .disabled(model.isRunning || model.isCatalogRefreshing)
+                .disabled(
+                  model.isRunning || model.isCatalogRefreshing || model.probeChangeApplying
+                    || model.probeChangeReview != nil)
+                .accessibilityIdentifier("query.review-probe")
+                .help("Stage edit-safety probe and open Change Review")
               Spacer(minLength: 0)
+              if model.changeReviewOpen {
+                Text("LEDGER")
+                  .font(.caption2.weight(.bold).monospaced())
+                  .accessibilityIdentifier("query.ledger.chip")
+              }
               Text(queryStatus)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(model.queryError == nil ? Color.secondary : Color.primary)
@@ -7350,10 +7506,16 @@ struct QueryWorkbenchView: View {
             .controlSize(.small)
           }
           if let value = model.reviewOutcome {
-            Text(value).foregroundStyle(.secondary).font(.caption2)
+            Text(value)
+              .foregroundStyle(.secondary)
+              .font(.caption2.monospaced())
+              .accessibilityIdentifier("query.review.outcome")
           }
           if let value = model.reviewError {
-            Text(value).foregroundStyle(.red).font(.caption2).textSelection(.enabled)
+            Text(value)
+              .font(.caption2.monospaced())
+              .textSelection(.enabled)
+              .accessibilityIdentifier("query.review.error")
           }
           if let value = model.sqlFileError {
             Text(value).foregroundStyle(.red).font(.caption2).textSelection(.enabled)
@@ -8144,25 +8306,26 @@ private struct CsvImportSheet: View {
             }
           }
           if let review = model.csvImportReview {
-            GroupBox("Review required") {
-              VStack(alignment: .leading, spacing: 6) {
-                Text(
-                  "Insert \(review.rowCount) rows and \(review.columnCount) mapped columns into \(review.target)."
-                )
-                .font(.headline)
-                if review.formulaLikeCells > 0 {
-                  Text(
-                    "\(review.formulaLikeCells) formula-like cells are frozen as literal text in this reviewed plan."
-                  )
-                  .foregroundStyle(.orange)
-                }
-                Text(
-                  "The reviewed plan is frozen for 60 seconds. Authority is consumed before database I/O and cannot be retried after failure."
-                )
-                .foregroundStyle(.secondary)
-              }
-              .padding(6)
-            }
+            ChangeReviewPlane(
+              kindWord: "INSERT",
+              title: "LEDGER · frozen CSV import",
+              preview:
+                "INSERT \(review.rowCount) rows · \(review.columnCount) mapped columns → \(review.target)",
+              metadataFact: ChangeReviewPresentation.metadataStrip(
+                target: review.target,
+                expiresAtMs: review.expiresAtMs,
+                nowMs: model.nowMilliseconds(),
+                destructive: false,
+                extra: review.formulaLikeCells > 0
+                  ? "\(review.formulaLikeCells) formula-like cells as literals" : nil),
+              destructive: false,
+              production: model.activeProductionWarning,
+              rollbackSummary:
+                "Plan frozen 60s. Authority is consumed before database I/O and cannot be retried after failure.",
+              fixtureNote: review.formulaLikeCells > 0
+                ? "Formula-like cells insert as literal text (never formulas)." : nil,
+              previewAccessibilityId: "import.csv.review.preview"
+            )
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -8377,6 +8540,173 @@ private struct RedisSubscriptionSheet: View {
   }
 }
 
+/// Shared Change Review plane: kind-first opaque instrument (not glass content).
+/// Preview text is descriptive only — Rust owns execution plans and tokens.
+private struct ChangeReviewPlane: View {
+  let kindWord: String
+  let title: String
+  let preview: String
+  let metadataFact: String
+  let destructive: Bool
+  let production: Bool
+  let rollbackSummary: String?
+  let fixtureNote: String?
+  let previewAccessibilityId: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Text(kindWord)
+          .font(.caption.weight(.bold).monospaced())
+          .tracking(0.4)
+          .accessibilityIdentifier("change.review.kind")
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title)
+            .font(.caption.weight(.bold))
+            .tracking(0.4)
+          Text(metadataFact)
+            .font(.caption2.monospaced())
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .accessibilityIdentifier("change.review.metadata")
+        }
+        Spacer(minLength: 4)
+        if production {
+          Text("HALO PRODUCTION")
+            .font(.caption2.weight(.bold))
+            .accessibilityLabel("Production — writes need review")
+        }
+        if destructive {
+          Text("DESTRUCTIVE")
+            .font(.caption2.weight(.bold).monospaced())
+            .accessibilityIdentifier("change.review.destructive")
+        }
+      }
+      Text(preview)
+        .font(.system(.body, design: .monospaced))
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(Color(nsColor: .textBackgroundColor))
+        .accessibilityIdentifier(previewAccessibilityId)
+      if let fixtureNote {
+        Text(fixtureNote)
+          .font(.caption2.weight(.semibold))
+          .foregroundStyle(.secondary)
+          .accessibilityIdentifier("change.review.fixture")
+      }
+      if let rollbackSummary, !rollbackSummary.isEmpty {
+        Text(rollbackSummary)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+          .accessibilityIdentifier("change.review.rollback")
+      }
+    }
+    .padding(10)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color(nsColor: .controlBackgroundColor))
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("change.review.plane")
+  }
+}
+
+private struct ProbeChangeReviewSheet: View {
+  @Environment(BridgeModel.self) private var model
+  @Environment(\.dismiss) private var dismiss
+
+  private var nowMs: UInt64 {
+    model.nowMilliseconds()
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack(alignment: .firstTextBaseline) {
+        Text("CHANGE REVIEW")
+          .font(.caption.weight(.bold))
+          .tracking(0.6)
+        Text("LEDGER")
+          .font(.caption2.weight(.bold).monospaced())
+          .foregroundStyle(.secondary)
+        Spacer()
+        Button("Close") {
+          Task {
+            await model.closeProbeChangeReview()
+            dismiss()
+          }
+        }
+        .disabled(model.probeChangeApplying)
+        .accessibilityIdentifier("change.review.probe.close")
+      }
+      Text("Edit-safety probe")
+        .font(.title3.weight(.semibold))
+      if let review = model.probeChangeReview {
+        ChangeReviewPlane(
+          kindWord: ChangeReviewPresentation.probeKindWord,
+          title: "LEDGER · \(ChangeReviewPresentation.probeLedgerCount) entry",
+          preview: ChangeReviewPresentation.probePreview,
+          metadataFact: ChangeReviewPresentation.metadataStrip(
+            target: ChangeReviewPresentation.probeTarget,
+            expiresAtMs: review.expiresAtMs,
+            nowMs: nowMs,
+            destructive: ChangeReviewPresentation.probeDestructive,
+            extra: "safety probe"),
+          destructive: ChangeReviewPresentation.probeDestructive,
+          production: model.activeProductionWarning,
+          rollbackSummary: ChangeReviewPresentation.probeRollbackSummary,
+          fixtureNote: ChangeReviewPresentation.probeIsFixtureSafetyDemo
+            ? "Safety probe — demonstrates consume-once review; not a staged grid cell edit."
+            : nil,
+          previewAccessibilityId: "change.review.probe.preview"
+        )
+        HStack {
+          Button("Discard Review", role: .cancel) {
+            Task {
+              await model.discardProbeChangeReview()
+              dismiss()
+            }
+          }
+          .accessibilityIdentifier("change.review.probe.discard")
+          Spacer()
+          Button("Apply Reviewed Change") {
+            Task { await model.applyProbeChangeReview() }
+          }
+          .buttonStyle(.glassProminent)
+          .disabled(model.probeChangeApplying)
+          .accessibilityIdentifier("change.review.probe.apply")
+        }
+      } else if model.probeChangeOutcome == nil && model.probeChangeError == nil {
+        ContentUnavailableView(
+          "No open review",
+          systemImage: "checkmark.shield",
+          description: Text("Stage a probe from the SQL workbench to open Change Review.")
+        )
+      }
+      if model.probeChangeApplying {
+        ProgressView("Applying reviewed probe…")
+          .accessibilityIdentifier("change.review.probe.applying")
+      }
+      if let outcome = model.probeChangeOutcome {
+        Label(outcome, systemImage: "checkmark.circle.fill")
+          .font(.caption.monospaced())
+          .accessibilityIdentifier("change.review.probe.outcome")
+      }
+      if let error = model.probeChangeError {
+        Text(error)
+          .font(.caption.monospaced())
+          .textSelection(.enabled)
+          .accessibilityIdentifier("change.review.probe.error")
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(20)
+    .frame(minWidth: 640, minHeight: 420)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("change.review.probe.sheet")
+    .interactiveDismissDisabled(model.probeChangeReview != nil || model.probeChangeApplying)
+  }
+}
+
 private struct DdlChangeSheet: View {
   @Environment(BridgeModel.self) private var model
   @State private var applyConfirmationPresented = false
@@ -8389,12 +8719,18 @@ private struct DdlChangeSheet: View {
     @Bindable var model = model
     VStack(alignment: .leading, spacing: 14) {
       HStack {
-        Label("Review Structure Change", systemImage: "tablecells.badge.ellipsis")
-          .font(.title2.bold())
+        Text("CHANGE REVIEW")
+          .font(.caption.weight(.bold))
+          .tracking(0.6)
+        Text("STRUCTURE")
+          .font(.caption2.weight(.bold).monospaced())
+          .foregroundStyle(.secondary)
         Spacer()
         Button("Close") { Task { await model.closeDdlChange() } }
           .disabled(model.ddlChangeApplying)
       }
+      Text("Structure change")
+        .font(.title3.weight(.semibold))
       Form {
         Picker("Operation", selection: $model.ddlChangeKind) {
           Text("Add column").tag("add_column")
@@ -8439,25 +8775,31 @@ private struct DdlChangeSheet: View {
         Spacer()
       }
       if let review = model.ddlChangeReview {
-        GroupBox("Frozen statement preview") {
-          VStack(alignment: .leading, spacing: 8) {
-            Text(review.preview)
-              .font(.system(.body, design: .monospaced))
-              .textSelection(.enabled)
-              .accessibilityIdentifier("structure.change.preview")
-            if review.destructive {
-              Label(
-                "This operation removes structure", systemImage: "exclamationmark.triangle.fill"
-              )
-              .foregroundStyle(.orange)
-            }
-            Text(review.rollbackSummary).font(.callout).foregroundStyle(.secondary)
-            Button("Apply Reviewed Change…") { applyConfirmationPresented = true }
-              .buttonStyle(.glassProminent)
-              .accessibilityIdentifier("structure.change.apply-review")
+        ChangeReviewPlane(
+          kindWord: ChangeReviewPresentation.kindWord(
+            preview: review.preview, destructive: review.destructive, fallback: "DDL"),
+          title: "LEDGER · frozen structure plan",
+          preview: review.preview,
+          metadataFact: ChangeReviewPresentation.metadataStrip(
+            target: nil,
+            expiresAtMs: review.expiresAtMs,
+            nowMs: model.nowMilliseconds(),
+            destructive: review.destructive),
+          destructive: review.destructive,
+          production: model.activeProductionWarning,
+          rollbackSummary: review.rollbackSummary,
+          fixtureNote: review.destructive
+            ? "Removes structure — second confirmation required before apply." : nil,
+          previewAccessibilityId: "structure.change.preview"
+        )
+        HStack {
+          Button("Discard Review", role: .cancel) {
+            Task { await model.discardDdlChangeReview() }
           }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(6)
+          Spacer()
+          Button("Apply Reviewed Change…") { applyConfirmationPresented = true }
+            .buttonStyle(.glassProminent)
+            .accessibilityIdentifier("structure.change.apply-review")
         }
       }
       if model.ddlChangeApplying { ProgressView("Applying structure change…") }
@@ -8503,13 +8845,19 @@ private struct TableOperationSheet: View {
     @Bindable var model = model
     VStack(alignment: .leading, spacing: 14) {
       HStack {
-        Label("Table Operations", systemImage: "wrench.and.screwdriver")
-          .font(.title2.bold())
+        Text("CHANGE REVIEW")
+          .font(.caption.weight(.bold))
+          .tracking(0.6)
+        Text("TABLE OP")
+          .font(.caption2.weight(.bold).monospaced())
+          .foregroundStyle(.secondary)
         Spacer()
         Button("Close") { Task { await model.closeTableOperation() } }
           .disabled(model.tableOperationApplying)
           .accessibilityIdentifier("table-operation.close")
       }
+      Text("Table operation")
+        .font(.title3.weight(.semibold))
       Picker("Operation", selection: $model.tableOperationKind) {
         if model.connectedEngine == "postgresql" {
           Text("Rename table").tag("rename")
@@ -8541,39 +8889,38 @@ private struct TableOperationSheet: View {
         )
         .accessibilityIdentifier("table-operation.review")
       if let review = model.tableOperationReview {
-        GroupBox("Frozen operation") {
-          VStack(alignment: .leading, spacing: 8) {
-            Text(review.target).font(.headline).textSelection(.enabled)
-            Text(review.preview)
-              .font(.system(.body, design: .monospaced))
-              .textSelection(.enabled)
-              .accessibilityIdentifier("table-operation.preview")
-            if review.destructive {
-              Label(
-                "This operation destroys table data", systemImage: "exclamationmark.triangle.fill"
-              )
-              .foregroundStyle(.orange)
-            }
-            Text("Type \(review.confirmation) to authorize this exact target.")
-              .foregroundStyle(.secondary)
-            TextField("Exact table name", text: $model.tableOperationConfirmation)
-              .accessibilityIdentifier("table-operation.confirmation")
-            HStack {
-              Button("Discard Review", role: .cancel) {
-                Task { await model.resetTableOperationReview() }
-              }
-              Spacer()
-              Button(review.destructive ? "Apply Destructive Operation" : "Apply Operation") {
-                Task { await model.applyTableOperation() }
-              }
-              .buttonStyle(.glassProminent)
-              .tint(review.destructive ? .red : .accentColor)
-              .disabled(model.tableOperationConfirmation != review.confirmation)
-              .accessibilityIdentifier("table-operation.apply")
-            }
+        ChangeReviewPlane(
+          kindWord: ChangeReviewPresentation.kindWord(
+            preview: review.preview, destructive: review.destructive, fallback: "TABLE"),
+          title: "LEDGER · frozen table operation",
+          preview: review.preview,
+          metadataFact: ChangeReviewPresentation.metadataStrip(
+            target: review.target,
+            expiresAtMs: review.expiresAtMs,
+            nowMs: model.nowMilliseconds(),
+            destructive: review.destructive,
+            extra: "type \(review.confirmation) to authorize"),
+          destructive: review.destructive,
+          production: model.activeProductionWarning,
+          rollbackSummary: review.destructive
+            ? "Destroys table data — exact target name required."
+            : "Exact target name required before apply.",
+          fixtureNote: nil,
+          previewAccessibilityId: "table-operation.preview"
+        )
+        TextField("Exact table name", text: $model.tableOperationConfirmation)
+          .accessibilityIdentifier("table-operation.confirmation")
+        HStack {
+          Button("Discard Review", role: .cancel) {
+            Task { await model.resetTableOperationReview() }
           }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(6)
+          Spacer()
+          Button(review.destructive ? "Apply Destructive Operation" : "Apply Operation") {
+            Task { await model.applyTableOperation() }
+          }
+          .buttonStyle(.glassProminent)
+          .disabled(model.tableOperationConfirmation != review.confirmation)
+          .accessibilityIdentifier("table-operation.apply")
         }
       }
       if model.tableOperationApplying {

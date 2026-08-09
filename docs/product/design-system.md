@@ -134,6 +134,7 @@ Rank: Halo + Ledger ship continuously; Lens deepens as FK facts are available.
 | Workbench shell | Split + toolbar | Detail stack can feel like a form dump |
 | Tabs | Functional | **Glass on every tab flattens hierarchy** |
 | Grid + inspector | AppKit dense; kind-first inspector | Continuum peer still fixture-bound |
+| Change Review | Shared plane + LEDGER status chip | Full grid draft inventory still TUI-ahead |
 | Halo | Non-color text | Must stay on every connected surface |
 | Ledger | Rust staging truth | Presentation naming still maturing |
 | Relation Lens | PG relationships sheet | Not yet continuous from cell selection |
@@ -153,7 +154,7 @@ Rank: Halo + Ledger ship continuously; Lens deepens as FK facts are available.
 
 ### P1 — interaction
 
-1. Change Ledger affordance when staged count &gt; 0 (native + TUI).
+1. ~~Change Ledger affordance when staged count &gt; 0 (native + TUI).~~ Native LEDGER chip + status fact when any review open (evidence 671); full grid draft counts still TUI-ahead.
 2. Relation Lens from selection in ≤2 actions when edges exist.
 3. Denser status line: rows · timing · ledger · focus hints.
 

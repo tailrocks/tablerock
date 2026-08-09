@@ -131,6 +131,8 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
     -> WorkbenchApplyOutcome
   func revokeReviewToken(tokenId: Data) throws -> Bool
+  /// Stage edit-safety probe; returns opaque review token (does not apply).
+  func stageProbeReview(sessionId: Data, nowMs: UInt64) throws -> Data
   func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome
 }
 
@@ -343,7 +345,9 @@ public enum WorkbenchStatusFacts {
     catalogSummary: String?,
     catalogError: String?,
     resultRowCount: Int?,
-    production: Bool
+    production: Bool,
+    ledgerEntryCount: Int = 0,
+    reviewOpen: Bool = false
   ) -> String {
     var parts: [String] = [engine.isEmpty ? "session" : engine]
     if let rows = resultRowCount {
@@ -364,10 +368,103 @@ public enum WorkbenchStatusFacts {
     } else if let catalogSummary, !catalogSummary.isEmpty {
       parts.append(catalogSummary)
     }
+    if let ledger = ChangeReviewPresentation.ledgerChip(
+      entryCount: ledgerEntryCount, reviewOpen: reviewOpen)
+    {
+      parts.append(ledger)
+    }
     if production {
       parts.append("writes need review")
     }
     return parts.joined(separator: " · ")
+  }
+}
+
+// MARK: - Change Review / Change Ledger presentation (pure)
+
+/// Pure presentation facts for review gates and ledger chrome.
+/// Never constructs SQL for execution — preview text is descriptive only.
+public enum ChangeReviewPresentation {
+  /// Documented shape of UniFFI `stage_probe_review` / Rust probe DELETE plan.
+  public static let probeKindWord = "DELETE"
+  public static let probeTarget = "public.users"
+  public static let probePreview =
+    #"DELETE FROM "public"."users" WHERE "id" = $1  -- locator 1"#
+  public static let probeRollbackSummary =
+    "Single-row PostgreSQL DELETE under consume-once review; success clears the token; conflict/failure does not re-arm the same token."
+  public static let probeLedgerCount = 1
+  public static let probeAuthoritySeconds: UInt64 = 60
+  public static let probeDestructive = true
+  public static let probeIsFixtureSafetyDemo = true
+
+  public static func ledgerChip(entryCount: Int, reviewOpen: Bool) -> String? {
+    guard entryCount > 0 || reviewOpen else { return nil }
+    let n = max(entryCount, reviewOpen ? 1 : 0)
+    if reviewOpen {
+      return "ledger \(n) · review open"
+    }
+    return "ledger \(n)"
+  }
+
+  public static func outcomeFact(_ outcome: WorkbenchApplyOutcome) -> String {
+    "\(outcome.transaction) · \(outcome.appliedCount) applied · \(outcome.conflictCount) conflict · \(outcome.failedCount) failed · \(outcome.changeCount) planned"
+  }
+
+  public static func expiryFact(expiresAtMs: UInt64, nowMs: UInt64) -> String {
+    if nowMs >= expiresAtMs { return "EXPIRED" }
+    let seconds = (expiresAtMs &- nowMs) / 1_000
+    return "expires in \(seconds)s"
+  }
+
+  public static func authorityFact(consumeOnce: Bool = true) -> String {
+    consumeOnce ? "consume-once authority" : "authority"
+  }
+
+  public static func destructiveWord(_ destructive: Bool) -> String? {
+    destructive ? "DESTRUCTIVE" : nil
+  }
+
+  /// Dense non-color metadata for a frozen review plane.
+  public static func metadataStrip(
+    target: String?,
+    expiresAtMs: UInt64?,
+    nowMs: UInt64,
+    destructive: Bool,
+    extra: String? = nil
+  ) -> String {
+    var parts: [String] = []
+    if let target, !target.isEmpty { parts.append(target) }
+    if let expiresAtMs {
+      parts.append(expiryFact(expiresAtMs: expiresAtMs, nowMs: nowMs))
+    }
+    parts.append(authorityFact())
+    if let word = destructiveWord(destructive) {
+      parts.append(word)
+    }
+    if let extra, !extra.isEmpty { parts.append(extra) }
+    return parts.joined(separator: " · ")
+  }
+
+  public static func kindWord(
+    preview: String,
+    destructive: Bool,
+    fallback: String = "CHANGE"
+  ) -> String {
+    let upper = preview.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    if upper.hasPrefix("DELETE") { return "DELETE" }
+    if upper.hasPrefix("INSERT") { return "INSERT" }
+    if upper.hasPrefix("UPDATE") { return "UPDATE" }
+    if upper.hasPrefix("DROP") { return "DROP" }
+    if upper.hasPrefix("TRUNCATE") { return "TRUNCATE" }
+    if upper.hasPrefix("ALTER") { return "ALTER" }
+    if upper.hasPrefix("CREATE") { return "CREATE" }
+    if upper.hasPrefix("GRANT") { return "GRANT" }
+    if upper.hasPrefix("REVOKE") { return "REVOKE" }
+    if upper.hasPrefix("VACUUM") { return "VACUUM" }
+    if upper.hasPrefix("ANALYZE") { return "ANALYZE" }
+    if upper.hasPrefix("OPTIMIZE") { return "OPTIMIZE" }
+    if destructive { return "DESTRUCTIVE" }
+    return fallback
   }
 }
 
