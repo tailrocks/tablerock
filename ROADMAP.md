@@ -271,7 +271,13 @@ distribution remains the separately recorded Phase 12/14 operator gate.
 
 ## Phase 14 — native parity and release evidence
 
-Project all supported profiles, tabs, history, query/edit/review,
+**Status: in progress** (plan 021). Shared durable operator store for CLI and
+native production is closed (evidence 658:
+`~/Library/Application Support/TableRock/profiles.db`). Hosted live/IME/full
+accessibility matrix and signed/notarized clean-machine release remain open or
+externally blocked (Developer ID credentials — plan 019).
+
+Project remaining supported profiles, tabs, history, query/edit/review,
 engine-specific views, import/export, files, settings, restoration,
 multi-window behavior, VoiceOver, keyboard, appearance, IME, signing, hardened
 runtime/notarization, upgrade, uninstall, crash recovery, and performance
@@ -279,9 +285,9 @@ through the shared Rust contracts.
 
 ## Phase 15 — close and maintain parity
 
-Audit the functional ledger, user documentation, tested server/terminal/macOS
-matrix, provenance, licenses, migrations, support diagnostics, and release
-artifacts. Continue compatibility work through small buildable `main` commits;
+**Status: partial** (plan 021). Safe support-bundle foundation and checkpoint
+CI exist; full ledger audit, VoiceOver matrix, and signed release proof are not
+complete. Continue compatibility work through small buildable `main` commits;
 never hide an unsupported or regressed capability behind a parity claim.
 
 ---

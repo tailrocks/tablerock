@@ -60,7 +60,10 @@ do not make database claims.
 
 `TableRockFeature` owns typed startup configuration, application paths, and
 presentation clock/identity ports.
-Production uses `Application Support/TableRock`; explicit test launches require
+Production uses `Application Support/TableRock/profiles.db` (same durable
+operator store the CLI/TUI open-default path uses via
+`tablerock_persistence::default_operator_profiles_database`); explicit test
+launches require
 an absolute `TABLEROCK_TEST_ROOT`, while legacy fixture launches automatically
 use a process-local temporary root. Tests and fixture gates therefore cannot
 open the developer's real profiles database. Production uses system clock/UUID

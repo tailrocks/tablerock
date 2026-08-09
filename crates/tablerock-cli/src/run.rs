@@ -130,6 +130,11 @@ fn run_caught_boundary(operation: impl FnOnce() -> Result<(), RunError>) -> Resu
 
 /// Own the sole live terminal session and root event loop.
 pub async fn run() -> Result<(), RunError> {
+    // Fail closed before opening the shared operator store so non-TTY and
+    // dry process-contract runs never take the PathLease on profiles.db.
+    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+        return Err(RunError::NonInteractive);
+    }
     let (ingress, root_messages) = root_message_channel();
     let executor = EffectExecutor::open_default(ingress)
         .map_err(|error| RunError::Runtime(io::Error::other(error)))?;

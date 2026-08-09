@@ -10,6 +10,15 @@ mod run;
 mod telemetry;
 mod tool_discovery;
 
+use std::path::PathBuf;
+
+/// Durable profiles database path used by CLI open-default (shared with native).
+///
+/// See [`tablerock_persistence::default_operator_profiles_database`].
+pub fn operator_profiles_database_path() -> Result<PathBuf, String> {
+    tablerock_persistence::default_operator_profiles_database().map_err(|error| error.to_string())
+}
+
 pub use import_apply::{ImportApplyError, apply_csv_inserts};
 pub use pg_process::{
     PgToolRunOutcome, cancel_channel, run_pg_dump, run_pg_restore, validate_dump_path,

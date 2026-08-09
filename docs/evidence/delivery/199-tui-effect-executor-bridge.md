@@ -36,4 +36,5 @@ CLI executes effects on Tokio LocalSet and feeds completions through ingress.
 
 - Connection screens (plan 006) consume list rows and health.
 - Wire `CheckSessionHealth` through `EngineService` + registry.
-- Single shared state.db with explicit multi-instance policy.
+- Shared durable `profiles.db` (no process-local `state-{pid}.db`) closed in
+  evidence 658; concurrent dual-writer remains unsupported (single-writer switch).

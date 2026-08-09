@@ -1,12 +1,15 @@
 use std::{
+    fs,
     io::{Read, Write},
+    path::PathBuf,
     process::Command,
     sync::mpsc,
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
+use tablerock_persistence::TEST_ROOT_ENV;
 
 mod support;
 
@@ -157,8 +160,13 @@ fn run_pty(
             pixel_height: 0,
         })
         .expect("open PTY");
+    // Isolate the shared operator store so parallel PTY children do not race
+    // Turso on the production profiles.db path.
+    let test_root = unique_test_root();
+    fs::create_dir_all(&test_root).expect("create PTY test root");
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_tablerock"));
     command.env("TERM", "xterm-256color");
+    command.env(TEST_ROOT_ENV, test_root.as_os_str());
     #[cfg(unix)]
     let initial_termios = pair.master.get_termios().expect("initial PTY termios");
     let mut child = pair.slave.spawn_command(command).expect("spawn TableRock");
@@ -223,7 +231,22 @@ fn run_pty(
     );
     drop(writer);
     drop(pair.master);
-    reader_thread.join().expect("join PTY reader")
+    let output = reader_thread.join().expect("join PTY reader");
+    let _ = fs::remove_dir_all(&test_root);
+    output
+}
+
+fn unique_test_root() -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "tablerock-pty-{}-{}-{}",
+        std::process::id(),
+        thread::current().name().unwrap_or("pty"),
+        nanos
+    ))
 }
 
 fn assert_restored(output: &[u8]) {

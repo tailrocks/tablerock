@@ -26,6 +26,14 @@
   round-trips the shared bounded safety/timeout/reconnect contract; Rust runs
   only read-only actions automatically. Reviewed skipped-action execution and
   native reconnect outcome replay remain open.
+- **Progress note (evidence 658)**: production CLI open-default and native
+  `AppPaths` share one durable operator store
+  (`~/Library/Application Support/TableRock/profiles.db` on macOS;
+  absolute `TABLEROCK_TEST_ROOT/profiles.db` for isolation). Cross-client
+  profile + session-intent round-trip is proven on the real
+  `PersistenceActor` and UniFFI bridge (single-writer switch; live sessions
+  stay process-local). Signed clean-machine notarize remains externally
+  blocked; hosted live/IME/accessibility matrix remains open.
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED

@@ -530,6 +530,7 @@ How to read an evidence document:
 - 655 — [Remove Vim mode](delivery/655-remove-vim-mode.md)
 - 656 — [Native PostgreSQL maintenance lifecycle](delivery/656-native-postgresql-maintenance.md)
 - 657 — [Native column-layout bridge foundation](delivery/657-native-column-layout-bridge.md)
+- 658 — [Shared operator store CLI/native path parity](delivery/658-shared-operator-store-cli-native.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

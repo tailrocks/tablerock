@@ -56,6 +56,12 @@ public struct AppConfiguration: Sendable, Equatable {
     }
 }
 
+/// Operator data layout shared with CLI/TUI open-default.
+///
+/// Production root is `Application Support/TableRock`; the durable file is
+/// always `profiles.db` (same contract as Rust
+/// `tablerock_persistence::default_operator_profiles_database`). Live engine
+/// sessions stay process-local; only durable profiles/intent/history share.
 public struct AppPaths: Sendable, Equatable {
     public let dataRoot: URL
 
