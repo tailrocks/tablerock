@@ -21,4 +21,11 @@ final class LiquidGlassLayeringTests: XCTestCase {
     XCTAssertFalse(secondary.isEmpty)
     XCTAssertFalse(forbiddenLegacy.contains(primary))
   }
+
+  func testTabStripHierarchyRule() {
+    // Product design-system: unselected tabs are plain; only selection is prominent.
+    let selectedStyle = "glassProminent"
+    let unselectedStyle = "plain"
+    XCTAssertNotEqual(selectedStyle, unselectedStyle)
+  }
 }

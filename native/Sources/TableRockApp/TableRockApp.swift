@@ -346,7 +346,7 @@ extension WorkbenchBackend {
   }
   func prepareSampleDatabase(dataRoot: String) throws -> WorkbenchProfileDraft {
     _ = dataRoot
-    try scriptedUnavailable("sample")
+    return try scriptedUnavailable("sample")
   }
   func deleteProfile(id: Data, revision: UInt64) throws {
     throw ScriptedBackendError.unavailable("delete")
@@ -7031,14 +7031,15 @@ struct QueryWorkbenchView: View {
     @Bindable var model = model
     @Bindable var tab = model.activeQueryTabForPresentation
     let queryStatus = tab.queryError ?? tab.cancelOutcome ?? tab.querySummary ?? "Idle"
-    VStack(alignment: .leading, spacing: 6) {
-      HStack {
-        Text("SQL").font(.headline)
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        Text("SQL").font(.subheadline.weight(.semibold))
         if let file = model.sqlFile {
           Text(URL(fileURLWithPath: file.path).lastPathComponent)
-            .font(.caption)
+            .font(.caption.monospaced())
             .foregroundStyle(.secondary)
         }
+        Spacer(minLength: 0)
       }
       SqlTextEditor(text: $model.queryText, selection: $model.queryEditorSelection)
         .frame(minHeight: 56, maxHeight: 80)
@@ -8811,44 +8812,51 @@ private struct ResultGridWithInspector: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      VStack(alignment: .leading, spacing: 6) {
-        HStack {
-          ResultCopyMenu()
-          ResultExportMenu()
-          Spacer()
+    VStack(alignment: .leading, spacing: 4) {
+      // One glass chrome cluster above opaque grid content.
+      GlassEffectContainer {
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 8) {
+            ResultCopyMenu()
+            ResultExportMenu()
+            Spacer(minLength: 0)
+          }
+          HStack(spacing: 8) {
+            TextField(
+              "Filter loaded rows",
+              text: Binding(
+                get: { model.loadedRowQuickFilter },
+                set: { model.loadedRowQuickFilter = $0 })
+            )
+            .textFieldStyle(.roundedBorder)
+            .frame(minWidth: 120, maxWidth: 220)
+            .accessibilityIdentifier("results.quick-filter")
+            let loadedRowsStatus =
+              "Loaded \(visibleRowIndices.count)/\(table.rows.count)"
+            Text(loadedRowsStatus)
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(.secondary)
+              .accessibilityIdentifier("results.quick-filter.status")
+              .accessibilityValue(loadedRowsStatus)
+            if exposesResultPaging && model.nextStartRow != nil {
+              Button("Load more") { Task { await model.loadMore() } }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+                .accessibilityIdentifier("results.next-page")
+            }
+            if let outcome = model.copyOutcome {
+              Text(outcome)
+                .font(.caption).foregroundStyle(.secondary)
+                .accessibilityIdentifier("results.copy.outcome")
+                .accessibilityValue(outcome)
+            }
+            if let error = model.copyError {
+              Text(error).font(.caption).foregroundStyle(.red)
+            }
+            Spacer(minLength: 0)
+          }
         }
-        HStack {
-          TextField(
-            "Filter loaded rows",
-            text: Binding(
-              get: { model.loadedRowQuickFilter },
-              set: { model.loadedRowQuickFilter = $0 })
-          )
-          .frame(minWidth: 120, maxWidth: 220)
-          .accessibilityIdentifier("results.quick-filter")
-          let loadedRowsStatus =
-            "Loaded rows only · \(visibleRowIndices.count)/\(table.rows.count)"
-          Text(loadedRowsStatus)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("results.quick-filter.status")
-            .accessibilityValue(loadedRowsStatus)
-          if exposesResultPaging && model.nextStartRow != nil {
-            Button("Load more rows") { Task { await model.loadMore() } }
-              .accessibilityIdentifier("results.next-page")
-          }
-          if let outcome = model.copyOutcome {
-            Text(outcome)
-              .font(.caption).foregroundStyle(.secondary)
-              .accessibilityIdentifier("results.copy.outcome")
-              .accessibilityValue(outcome)
-          }
-          if let error = model.copyError {
-            Text(error).font(.caption).foregroundStyle(.red)
-          }
-          Spacer()
-        }
+        .controlSize(.small)
       }
       HSplitView {
         CatalogGrid(table: visibleTable, sorts: model.resultSort) { row, column in
@@ -9028,28 +9036,15 @@ struct QueryTabStrip: View {
   @Environment(BridgeModel.self) private var model
 
   var body: some View {
-    ScrollView(.horizontal) {
-      HStack(spacing: 4) {
+    // Hierarchy: tabs are content selectors, not a row of glass pills.
+    // Only the selected tab uses glassProminent; unselected stay plain.
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 2) {
         ForEach(model.queryTabs) { tab in
-          HStack(spacing: 2) {
-            if model.queryWorkbenchSelected && tab.id == model.selectedQueryTabId {
-              Button {
-                model.selectQueryTab(tab)
-              } label: {
-                WorkbenchTabLabel(title: tab.title, model: model)
-              }
-              .buttonStyle(.glassProminent)
-              .accessibilityIdentifier("query.tab.\(tab.id.uuidString.lowercased())")
-              .accessibilityValue("Selected")
-            } else {
-              Button {
-                model.selectQueryTab(tab)
-              } label: {
-                WorkbenchTabLabel(title: tab.title, model: model)
-              }
-              .buttonStyle(.glass)
-              .accessibilityIdentifier("query.tab.\(tab.id.uuidString.lowercased())")
-            }
+          let selected =
+            model.queryWorkbenchSelected && tab.id == model.selectedQueryTabId
+          HStack(spacing: 0) {
+            queryTabButton(tab: tab, selected: selected)
             Menu {
               Button("Rename…") { model.beginRenameQueryTab(tab) }
               Button("Close", role: .destructive) {
@@ -9059,38 +9054,20 @@ struct QueryTabStrip: View {
               .disabled(model.queryTabs.count == 1 || tab.isRunning)
             } label: {
               Image(systemName: tab.isRunning ? "progress.indicator" : "ellipsis")
+                .font(.caption)
             }
             .menuStyle(.borderlessButton)
+            .controlSize(.small)
             .accessibilityIdentifier("query.tab.actions.\(tab.id.uuidString.lowercased())")
             .accessibilityLabel("Actions for \(tab.title)")
           }
+          .padding(.trailing, 2)
         }
         ForEach(model.objectTabs) { tab in
-          HStack(spacing: 2) {
-            if !model.queryWorkbenchSelected && tab.id == model.selectedObjectTabId {
-              Button {
-                model.selectObjectTab(tab)
-              } label: {
-                WorkbenchTabLabel(
-                  title: tab.title, model: model,
-                  leadingSystemImage: tab.pinned ? "pin.fill" : "eye"
-                )
-              }
-              .buttonStyle(.glassProminent)
-              .accessibilityIdentifier("object.tab.\(tab.id.uuidString.lowercased())")
-              .accessibilityValue("Selected")
-            } else {
-              Button {
-                model.selectObjectTab(tab)
-              } label: {
-                WorkbenchTabLabel(
-                  title: tab.title, model: model,
-                  leadingSystemImage: tab.pinned ? "pin.fill" : "eye"
-                )
-              }
-              .buttonStyle(.glass)
-              .accessibilityIdentifier("object.tab.\(tab.id.uuidString.lowercased())")
-            }
+          let selected =
+            !model.queryWorkbenchSelected && tab.id == model.selectedObjectTabId
+          HStack(spacing: 0) {
+            objectTabButton(tab: tab, selected: selected)
             Menu {
               if !tab.pinned {
                 Button("Pin") { model.pinObjectTab(tab) }
@@ -9100,20 +9077,66 @@ struct QueryTabStrip: View {
                 .disabled(tab.isRunning)
             } label: {
               Image(systemName: tab.isRunning ? "progress.indicator" : "ellipsis")
+                .font(.caption)
             }
             .menuStyle(.borderlessButton)
+            .controlSize(.small)
             .accessibilityLabel("Actions for object \(tab.title)")
           }
+          .padding(.trailing, 2)
         }
         Button {
           model.addQueryTab()
         } label: {
           Image(systemName: "plus")
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.glass)
+        .controlSize(.small)
         .accessibilityLabel("New query tab")
         .disabled(model.queryTabs.count + model.objectTabs.count >= 64)
       }
+      .padding(.vertical, 2)
+    }
+    .accessibilityIdentifier("workbench.tab-strip")
+  }
+
+  @ViewBuilder
+  private func queryTabButton(tab: NativeQueryTab, selected: Bool) -> some View {
+    let label = WorkbenchTabLabel(title: tab.title, model: model)
+    let id = "query.tab.\(tab.id.uuidString.lowercased())"
+    if selected {
+      Button { model.selectQueryTab(tab) } label: { label }
+        .buttonStyle(.glassProminent)
+        .controlSize(.small)
+        .accessibilityIdentifier(id)
+        .accessibilityValue("Selected")
+    } else {
+      Button { model.selectQueryTab(tab) } label: { label }
+        .buttonStyle(.plain)
+        .controlSize(.small)
+        .accessibilityIdentifier(id)
+        .accessibilityValue("Not selected")
+    }
+  }
+
+  @ViewBuilder
+  private func objectTabButton(tab: NativeObjectTab, selected: Bool) -> some View {
+    let label = WorkbenchTabLabel(
+      title: tab.title, model: model,
+      leadingSystemImage: tab.pinned ? "pin.fill" : "eye")
+    let id = "object.tab.\(tab.id.uuidString.lowercased())"
+    if selected {
+      Button { model.selectObjectTab(tab) } label: { label }
+        .buttonStyle(.glassProminent)
+        .controlSize(.small)
+        .accessibilityIdentifier(id)
+        .accessibilityValue("Selected")
+    } else {
+      Button { model.selectObjectTab(tab) } label: { label }
+        .buttonStyle(.plain)
+        .controlSize(.small)
+        .accessibilityIdentifier(id)
+        .accessibilityValue("Not selected")
     }
   }
 }
@@ -10881,11 +10904,17 @@ struct ProfileRow: View {
         if profile.favorite {
           Image(systemName: "star.fill").foregroundStyle(.yellow).font(.caption)
         }
-        Text(profile.name).font(.body)
+        Text(profile.name).font(.body.weight(.medium))
         if profile.productionWarning {
-          Label("Production", systemImage: "exclamationmark.triangle.fill")
-            .font(.caption)
-            .foregroundStyle(.orange)
+          // Halo word is text-primary, not color-only.
+          Text("HALO PRODUCTION")
+            .font(.caption2.weight(.bold))
+            .accessibilityLabel("Production environment")
+        } else if let environment = profile.environment, !environment.isEmpty {
+          Text("HALO \(environment.uppercased())")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Environment \(environment)")
         }
       }
       Text(
@@ -10895,7 +10924,6 @@ struct ProfileRow: View {
             [profile.host, profile.port].compactMap { $0 }.joined(separator: ":"),
             profile.context,
           ].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "/"),
-          profile.environment,
           profile.safetyMode == "read_only" ? "Read only" : "Confirm writes",
         ].compactMap { value in value?.isEmpty == false ? value : nil }.joined(separator: " · ")
       )
