@@ -7267,76 +7267,116 @@ struct QueryWorkbenchView: View {
     @Bindable var model = model
     @Bindable var tab = model.activeQueryTabForPresentation
     let queryStatus = tab.queryError ?? tab.cancelOutcome ?? tab.querySummary ?? "Idle"
-    VStack(alignment: .leading, spacing: 4) {
+    let caretChip = SqlEditorMetrics.statusChip(
+      text: model.queryText,
+      selection: model.queryEditorSelection,
+      isRunning: model.isRunning,
+      hasError: tab.queryError != nil
+    )
+    // Spec layout: editor · run chrome · results (resizable split).
+    VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 8) {
-        Text("SQL").font(.subheadline.weight(.semibold))
+        Text("SQL")
+          .font(.subheadline.weight(.semibold))
         if let file = model.sqlFile {
           Text(URL(fileURLWithPath: file.path).lastPathComponent)
             .font(.caption.monospaced())
             .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
         Spacer(minLength: 0)
+        Text(caretChip)
+          .font(.caption2.monospaced())
+          .foregroundStyle(.secondary)
+          .accessibilityIdentifier("query.editor.metrics")
+          .accessibilityValue(caretChip)
+        if model.activeProductionWarning {
+          Text("HALO PRODUCTION")
+            .font(.caption2.weight(.bold))
+            .accessibilityLabel("Production — writes need review")
+        }
       }
-      SqlTextEditor(text: $model.queryText, selection: $model.queryEditorSelection)
-        .frame(minHeight: 64, idealHeight: 88, maxHeight: 120)
+      .padding(.bottom, 4)
+
+      VSplitView {
+        SqlTextEditor(
+          text: $model.queryText,
+          selection: $model.queryEditorSelection,
+          isRunning: model.isRunning
+        )
+        .frame(minHeight: 96)
         .task(id: model.queryText) {
           try? await Task.sleep(for: .milliseconds(300))
           guard !Task.isCancelled else { return }
           await model.persistSessionIntent()
         }
-      // Chrome control cluster — glass only; grid/editor below stay opaque.
-      GlassEffectContainer {
-        HStack(spacing: 8) {
-          Button("Run query") { Task { await model.runQuery() } }
-            .accessibilityIdentifier("query.run")
-            .buttonStyle(.glassProminent)
-            .keyboardShortcut("r", modifiers: .command)
-            .disabled(model.isRunning || model.isCatalogRefreshing)
-          Button("Cancel") { Task { await model.cancel() } }
-            .buttonStyle(.glass)
-            .accessibilityIdentifier("query.cancel")
-            .disabled(!model.isRunning)
-          if model.connectedEngine == "redis" {
-            Button("Redis Overview") { Task { await model.showRedisOverview() } }
-              .buttonStyle(.glass)
-              .disabled(model.redisOverviewLoading)
+
+        VStack(alignment: .leading, spacing: 4) {
+          // Action strip between editor and results (sql-editor.md).
+          GlassEffectContainer {
+            HStack(spacing: 8) {
+              Button("Run") { Task { await model.runQuery() } }
+                .accessibilityIdentifier("query.run")
+                .buttonStyle(.glassProminent)
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(model.isRunning || model.isCatalogRefreshing)
+                .help("Run selection or whole buffer")
+              Button("Cancel") { Task { await model.cancel() } }
+                .buttonStyle(.glass)
+                .accessibilityIdentifier("query.cancel")
+                .disabled(!model.isRunning)
+              Button("Find…") { model.findReplacePresented = true }
+                .buttonStyle(.glass)
+                .keyboardShortcut("f", modifiers: .command)
+                .accessibilityIdentifier("query.find")
+              if model.connectedEngine == "redis" {
+                Button("Redis Overview") { Task { await model.showRedisOverview() } }
+                  .buttonStyle(.glass)
+                  .disabled(model.redisOverviewLoading)
+              }
+              Button("Apply probe") { Task { await model.applyProbeEdit() } }
+                .buttonStyle(.glass)
+                .disabled(model.isRunning || model.isCatalogRefreshing)
+              Spacer(minLength: 0)
+              Text(queryStatus)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(model.queryError == nil ? Color.secondary : Color.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .accessibilityIdentifier("query.status")
+                .accessibilityValue(queryStatus)
+            }
+            .controlSize(.small)
           }
-          Button("Apply probe edit") { Task { await model.applyProbeEdit() } }
-            .buttonStyle(.glass)
-            .disabled(model.isRunning || model.isCatalogRefreshing)
+          if let value = model.reviewOutcome {
+            Text(value).foregroundStyle(.secondary).font(.caption2)
+          }
+          if let value = model.reviewError {
+            Text(value).foregroundStyle(.red).font(.caption2).textSelection(.enabled)
+          }
+          if let value = model.sqlFileError {
+            Text(value).foregroundStyle(.red).font(.caption2).textSelection(.enabled)
+          }
+          if let table = model.resultTable {
+            ResultGridWithInspector(
+              table: table, minimumHeight: 140, exposesResultPaging: true)
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+          } else {
+            ContentUnavailableView(
+              "No result yet",
+              systemImage: "tablecells",
+              description: Text("Run a query to fill the workbench grid.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("workbench.query.empty-result")
+          }
         }
-        .controlSize(.small)
-      }
-      Text(queryStatus)
-        .foregroundStyle(model.queryError == nil ? Color.secondary : Color.red)
-        .font(.caption)
-        .textSelection(.enabled)
-        .accessibilityIdentifier("query.status")
-        .accessibilityValue(queryStatus)
-      if let value = model.reviewOutcome {
-        Text(value).foregroundStyle(.secondary).font(.caption)
-      }
-      if let value = model.reviewError {
-        Text(value).foregroundStyle(.red).font(.caption).textSelection(.enabled)
-      }
-      if let value = model.sqlFileError {
-        Text(value).foregroundStyle(.red).font(.caption).textSelection(.enabled)
-      }
-      if let table = model.resultTable {
-        ResultGridWithInspector(
-          table: table, minimumHeight: 180, exposesResultPaging: true)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else {
-        ContentUnavailableView(
-          "No result yet",
-          systemImage: "tablecells",
-          description: Text("Run a query to fill the workbench grid.")
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityIdentifier("workbench.query.empty-result")
+        .frame(minHeight: 160)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .accessibilityIdentifier("query.workbench")
   }
 }
 
@@ -10755,6 +10795,7 @@ private enum NativeFindReplaceEngine {
 struct SqlTextEditor: NSViewRepresentable {
   @Binding var text: String
   @Binding var selection: NSRange
+  var isRunning: Bool = false
 
   func makeCoordinator() -> Coordinator { Coordinator(text: $text, selection: $selection) }
 
@@ -10769,11 +10810,24 @@ struct SqlTextEditor: NSViewRepresentable {
     editor.isAutomaticQuoteSubstitutionEnabled = false
     editor.isAutomaticDashSubstitutionEnabled = false
     editor.isAutomaticTextReplacementEnabled = false
+    editor.isAutomaticSpellingCorrectionEnabled = false
+    editor.isContinuousSpellCheckingEnabled = false
+    editor.usesFindBar = true
+    editor.isIncrementalSearchingEnabled = true
     editor.font = NSFont.monospacedSystemFont(
       ofSize: NSFont.systemFontSize, weight: .regular)
-    editor.textContainerInset = NSSize(width: 6, height: 6)
+    // Gutter clearance for line numbers (drawn in ruler).
+    editor.textContainerInset = NSSize(width: 4, height: 8)
     editor.drawsBackground = true
     editor.backgroundColor = .textBackgroundColor
+    editor.maxSize = NSSize(
+      width: CGFloat.greatestFiniteMagnitude,
+      height: CGFloat.greatestFiniteMagnitude)
+    editor.isHorizontallyResizable = true
+    editor.textContainer?.widthTracksTextView = true
+    editor.textContainer?.containerSize = NSSize(
+      width: CGFloat.greatestFiniteMagnitude,
+      height: CGFloat.greatestFiniteMagnitude)
     editor.string = text
     editor.setAccessibilityEnabled(true)
     editor.setAccessibilityLabel("SQL editor")
@@ -10784,8 +10838,16 @@ struct SqlTextEditor: NSViewRepresentable {
     scroll.drawsBackground = true
     scroll.backgroundColor = .textBackgroundColor
     scroll.hasVerticalScroller = true
+    scroll.hasHorizontalScroller = true
     scroll.autohidesScrollers = true
-    scroll.borderType = .bezelBorder
+    scroll.borderType = .lineBorder
+    scroll.focusRingType = .exterior
+    scroll.hasVerticalRuler = true
+    scroll.rulersVisible = true
+    let ruler = SqlLineNumberRulerView(scrollView: scroll, orientation: .verticalRuler)
+    ruler.clientView = editor
+    scroll.verticalRulerView = ruler
+    context.coordinator.ruler = ruler
     return scroll
   }
 
@@ -10807,6 +10869,7 @@ struct SqlTextEditor: NSViewRepresentable {
             length: min(range.length, max(0, maximum - min(range.location, maximum)))
           ))
       }
+      context.coordinator.ruler?.needsDisplay = true
     }
     let maximum = (text as NSString).length
     let requested = NSRange(
@@ -10816,12 +10879,16 @@ struct SqlTextEditor: NSViewRepresentable {
       editor.setSelectedRange(requested)
       editor.scrollRangeToVisible(requested)
     }
+    // Soft running cue: keep editable for cancel/edit, dim slightly via text color.
+    editor.textColor = isRunning ? NSColor.secondaryLabelColor : NSColor.labelColor
+    context.coordinator.ruler?.needsDisplay = true
   }
 
   @MainActor
   final class Coordinator: NSObject, NSTextViewDelegate {
     var text: Binding<String>
     var selection: Binding<NSRange>
+    weak var ruler: SqlLineNumberRulerView?
 
     init(text: Binding<String>, selection: Binding<NSRange>) {
       self.text = text
@@ -10831,11 +10898,88 @@ struct SqlTextEditor: NSViewRepresentable {
     func textDidChange(_ notification: Notification) {
       guard let editor = notification.object as? NSTextView else { return }
       text.wrappedValue = editor.string
+      ruler?.needsDisplay = true
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
       guard let editor = notification.object as? NSTextView else { return }
       selection.wrappedValue = editor.selectedRange()
+      ruler?.needsDisplay = true
+    }
+  }
+}
+
+/// Vertical line-number gutter for the SQL editor (opaque content chrome).
+final class SqlLineNumberRulerView: NSRulerView {
+  private let gutterWidth: CGFloat = 36
+
+  override init(scrollView: NSScrollView?, orientation: NSRulerView.Orientation) {
+    super.init(scrollView: scrollView, orientation: orientation)
+    ruleThickness = gutterWidth
+    clientView = scrollView?.documentView
+  }
+
+  @available(*, unavailable)
+  required init(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func drawHashMarksAndLabels(in rect: NSRect) {
+    guard let textView = clientView as? NSTextView,
+      let layoutManager = textView.layoutManager,
+      let textContainer = textView.textContainer
+    else { return }
+
+    NSColor.controlBackgroundColor.setFill()
+    bounds.fill()
+
+    let selected = textView.selectedRange()
+    let caret = SqlEditorMetrics.caret(text: textView.string, selection: selected)
+    let ns = textView.string as NSString
+    let length = ns.length
+    let attrs: [NSAttributedString.Key: Any] = [
+      .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular),
+      .foregroundColor: NSColor.secondaryLabelColor,
+    ]
+    let activeAttrs: [NSAttributedString.Key: Any] = [
+      .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold),
+      .foregroundColor: NSColor.labelColor,
+    ]
+
+    if length == 0 {
+      let label = "1" as NSString
+      let size = label.size(withAttributes: activeAttrs)
+      label.draw(
+        at: NSPoint(x: ruleThickness - size.width - 6, y: textView.textContainerInset.height),
+        withAttributes: activeAttrs)
+      return
+    }
+
+    var line = 1
+    var index = 0
+    let visible = textView.visibleRect
+    while index < length {
+      let lineRange = ns.lineRange(for: NSRange(location: index, length: 0))
+      let glyphRange = layoutManager.glyphRange(
+        forCharacterRange: lineRange, actualCharacterRange: nil)
+      var lineRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+      lineRect.origin.x += textView.textContainerOrigin.x
+      lineRect.origin.y += textView.textContainerOrigin.y
+      if lineRect.maxY >= visible.minY, lineRect.minY <= visible.maxY {
+        let y = lineRect.minY - visible.minY
+        let label = "\(line)" as NSString
+        let used = line == caret.line ? activeAttrs : attrs
+        let size = label.size(withAttributes: used)
+        let point = NSPoint(
+          x: ruleThickness - size.width - 6,
+          y: y + max(0, (lineRect.height - size.height) / 2))
+        label.draw(at: point, withAttributes: used)
+      }
+      let next = lineRange.location + lineRange.length
+      if next <= index { break }
+      index = next
+      line += 1
+      if line > 100_000 { break }
     }
   }
 }

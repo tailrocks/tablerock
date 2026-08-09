@@ -207,6 +207,80 @@ public func workbenchColumnHeaderTitle(
   return "\(column) \(direction) \(index + 1)"
 }
 
+// MARK: - SQL editor metrics (presentation)
+
+/// Cursor / buffer metrics for the SQL editor chrome (1-based line/column).
+public enum SqlEditorMetrics {
+  /// Line and column of the selection start; total line count in the buffer.
+  public static func caret(
+    text: String,
+    selection: NSRange
+  ) -> (line: Int, column: Int, lineCount: Int) {
+    let ns = text as NSString
+    let length = ns.length
+    let location = max(0, min(selection.location, length))
+    var line = 1
+    var column = 1
+    var lineCount = 1
+    var i = 0
+    while i < length {
+      let ch = ns.character(at: i)
+      if i < location {
+        if ch == 10 {  // \n
+          line += 1
+          column = 1
+        } else if ch == 13 {  // \r
+          line += 1
+          column = 1
+          if i + 1 < length, ns.character(at: i + 1) == 10 {
+            i += 1
+          }
+        } else {
+          column += 1
+        }
+      }
+      if ch == 10 {
+        lineCount += 1
+      } else if ch == 13 {
+        lineCount += 1
+        if i + 1 < length, ns.character(at: i + 1) == 10 {
+          i += 1
+        }
+      }
+      i += 1
+    }
+    if length == 0 {
+      return (1, 1, 1)
+    }
+    // Trailing content without final newline still counts as one line (already 1).
+    return (line, column, max(lineCount, 1))
+  }
+
+  public static func selectionSummary(selection: NSRange) -> String? {
+    guard selection.length > 0 else { return nil }
+    return "sel \(selection.length)"
+  }
+
+  public static func statusChip(
+    text: String,
+    selection: NSRange,
+    isRunning: Bool,
+    hasError: Bool
+  ) -> String {
+    let caret = caret(text: text, selection: selection)
+    var parts = ["L\(caret.line)", "C\(caret.column)", "\(caret.lineCount) lines"]
+    if let sel = selectionSummary(selection: selection) {
+      parts.append(sel)
+    }
+    if isRunning {
+      parts.append("RUNNING")
+    } else if hasError {
+      parts.append("ERROR")
+    }
+    return parts.joined(separator: " · ")
+  }
+}
+
 // MARK: - Connection list presentation (scannable rows)
 
 /// Short engine codes for connection list density (never color alone).
