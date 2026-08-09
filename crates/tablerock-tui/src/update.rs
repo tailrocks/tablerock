@@ -11626,10 +11626,10 @@ mod tests {
         model.set_action(ActionId::CopyStagedStatus);
         match update(&mut model, Message::Activate).effects().next() {
             Some(Effect::CopyToClipboard { text, .. }) => {
-                assert!(text.contains("staged 1"), "{text}");
+                assert!(text.contains("ledger 1"), "{text}");
                 assert!(text.contains("1·") || text.contains("·"), "{text}");
             }
-            other => panic!("expected staged status, got {other:?}"),
+            other => panic!("expected ledger status, got {other:?}"),
         }
     }
 
