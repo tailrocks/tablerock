@@ -14,6 +14,7 @@ mod runtime;
 mod secret_resolution;
 mod service;
 mod session_pool;
+mod sqlite;
 mod ssh_tunnel;
 mod startup_run;
 mod temporal;
@@ -52,6 +53,7 @@ pub use redis::{
     RedisSubscriptionKind, RedisSubscriptionOptions, RedisSubscriptionStream, RedisTlsMaterial,
     RedisTlsMode, RedisTtlApplication, RedisTtlMutationOutcome,
 };
+pub use sqlite::{SqliteError, SqliteSession, ensure_sample_sqlite_database};
 pub use relation_structure::{
     ClickHouseColumnFacts, ClickHouseEngineFacts, RelationColumn, RelationConstraint, RelationFact,
     RelationIndex, RelationStructureError, RelationStructureSnapshot, load_relation_structure,

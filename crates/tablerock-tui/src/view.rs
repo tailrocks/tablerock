@@ -102,7 +102,7 @@ impl ShellView {
             model,
             frame,
             rows[0],
-            "TableRock — Connections",
+            "TableRock · Connections",
             model.focus() == Some(FocusRegion::Context),
         );
         geometry.push(ShellTarget::Focus(FocusRegion::Context), rows[0]);
@@ -637,6 +637,7 @@ fn render_body(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut 
 fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &mut ShellGeometry) {
     let open = action_label(model, ActionId::Open, "Open");
     let new = action_label(model, ActionId::New, "New");
+    let sample = action_label(model, ActionId::TrySample, "Sample");
     let import_url = action_label(model, ActionId::ImportUrl, "URL");
     let open_ext = action_label(model, ActionId::OpenExternalUrl, "OpenURL");
     let quick_conn = action_label(model, ActionId::QuickSwitch, "Switch");
@@ -2780,6 +2781,12 @@ fn render_actions(model: &Model, frame: &mut Frame<'_>, area: Rect, geometry: &m
                         style: None,
                     },
                     Action {
+                        id: ActionId::TrySample,
+                        label: sample.as_str(),
+                        enabled: true,
+                        style: None,
+                    },
+                    Action {
                         id: ActionId::ImportUrl,
                         label: import_url.as_str(),
                         enabled: true,
@@ -3088,6 +3095,27 @@ fn render_connection_tree(model: &Model, frame: &mut Frame<'_>, area: Rect, stat
         );
         content.y = content.y.saturating_add(1);
         content.height = content.height.saturating_sub(1);
+    }
+    let empty_lines = model.profiles().empty_body_lines();
+    if !empty_lines.is_empty() {
+        // Hierarchy: status (panel header) → invitation lines → actions strip.
+        let mut y = content.y;
+        for line in empty_lines {
+            if y >= content.y.saturating_add(content.height) {
+                break;
+            }
+            Line::from(line).render(
+                Rect {
+                    x: content.x,
+                    y,
+                    width: content.width,
+                    height: 1,
+                },
+                frame.buffer_mut(),
+            );
+            y = y.saturating_add(1);
+        }
+        return;
     }
     let (nodes, labels, depths, selected_key) = build_connection_tree_nodes(model);
     let tree_nodes: Vec<TreeNode<'_, String>> = nodes

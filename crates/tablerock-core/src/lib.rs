@@ -21,6 +21,7 @@ mod redis_command;
 mod result_store;
 mod revision;
 mod role_change;
+mod sample;
 mod saved_filter;
 mod secret;
 mod service;
@@ -108,6 +109,10 @@ pub use redis_command::{
     complete_prefix as complete_redis_command_prefix,
     parse_command_line as parse_redis_command_line, plan_command_text as plan_redis_command_text,
     tokenize as tokenize_redis_command,
+};
+pub use sample::{
+    SAMPLE_DATABASE_DIR, SAMPLE_DATABASE_FILE, SAMPLE_DATABASE_PROFILE_NAME, SAMPLE_SCHEMA_SQL,
+    SAMPLE_STARTER_SQL, is_sample_sqlite_path, sample_sqlite_database_path,
 };
 pub use result_store::{
     AdmissionOutcome, OpenResultOutcome, PageKey, ResultStore, ResultStoreError, ResultStoreLimits,

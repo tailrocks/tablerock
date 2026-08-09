@@ -1200,6 +1200,7 @@ const fn decode_engine(value: u8) -> Result<Engine, PersistenceError> {
         1 => Ok(Engine::PostgreSql),
         2 => Ok(Engine::ClickHouse),
         3 => Ok(Engine::Redis),
+        4 => Ok(Engine::Sqlite),
         _ => Err(PersistenceError::ProfileDecode),
     }
 }
@@ -1275,6 +1276,7 @@ const fn encode_engine(engine: Engine) -> u8 {
         Engine::PostgreSql => 1,
         Engine::ClickHouse => 2,
         Engine::Redis => 3,
+        Engine::Sqlite => 4,
     }
 }
 

@@ -67,6 +67,8 @@ pub enum ActionId {
     Test,
     Connect,
     Disconnect,
+    /// Offline sample SQLite under operator data root (no credentials).
+    TrySample,
     Remove,
     /// Cycle database selector (workbench).
     NextDatabase,

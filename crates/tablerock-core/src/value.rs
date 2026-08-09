@@ -7,6 +7,8 @@ pub enum Engine {
     PostgreSql,
     ClickHouse,
     Redis,
+    /// Local file SQLite (sample database and operator file paths).
+    Sqlite,
 }
 
 /// Point-in-time Redis key-expiration state.

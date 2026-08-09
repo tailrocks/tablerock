@@ -197,6 +197,7 @@ impl ConnectionFormModel {
             tablerock_core::Engine::PostgreSql => EngineKind::PostgreSql,
             tablerock_core::Engine::ClickHouse => EngineKind::ClickHouse,
             tablerock_core::Engine::Redis => EngineKind::Redis,
+            tablerock_core::Engine::Sqlite => EngineKind::Sqlite,
         };
         self.host = draft.host.clone();
         self.port = draft.port.to_string();
@@ -223,6 +224,7 @@ impl ConnectionFormModel {
             EngineKind::PostgreSql => "pg",
             EngineKind::ClickHouse => "ch",
             EngineKind::Redis => "redis",
+            EngineKind::Sqlite => "sqlite",
         }
     }
 
@@ -262,8 +264,15 @@ impl ConnectionFormModel {
                 EngineKind::Redis
             }
             EngineKind::Redis => {
+                self.port = "".into();
+                self.database = "main".into();
+                self.host = "/path/to/database.sqlite".into();
+                EngineKind::Sqlite
+            }
+            EngineKind::Sqlite => {
                 self.port = "5432".into();
                 self.database = "postgres".into();
+                self.host = "127.0.0.1".into();
                 EngineKind::PostgreSql
             }
         };
@@ -399,6 +408,7 @@ const fn engine_label(engine: EngineKind) -> &'static str {
         EngineKind::PostgreSql => "PostgreSQL",
         EngineKind::ClickHouse => "ClickHouse",
         EngineKind::Redis => "Redis",
+        EngineKind::Sqlite => "SQLite",
     }
 }
 

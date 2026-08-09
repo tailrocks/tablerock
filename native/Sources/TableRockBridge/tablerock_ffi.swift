@@ -868,6 +868,13 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func postgresToolStatus(operationId: Data) throws  -> BridgePostgresToolStatus
 
     /**
+     * Ensure the offline sample SQLite file exists under `data_root` and
+     * return a saveable profile draft (host = absolute path). Does not
+     * require network or credentials.
+     */
+    func prepareSampleDatabase(dataRoot: String) throws  -> BridgeProfileDraft
+
+    /**
      * Reads a bounded UTF-8 CSV file for native mapping and review.
      */
     func previewCsvImport(path: String) throws  -> BridgeCsvImportPreview
@@ -1807,6 +1814,21 @@ open func postgresToolStatus(operationId: Data)throws  -> BridgePostgresToolStat
     uniffi_tablerock_ffi_fn_method_tablerockbridge_postgres_tool_status(
             self.uniffiCloneHandle(),
         FfiConverterData.lower(operationId),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Ensure the offline sample SQLite file exists under `data_root` and
+     * return a saveable profile draft (host = absolute path). Does not
+     * require network or credentials.
+     */
+open func prepareSampleDatabase(dataRoot: String)throws  -> BridgeProfileDraft  {
+    return try  FfiConverterTypeBridgeProfileDraft_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_prepare_sample_database(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(dataRoot),uniffiCallStatus
     )
 })
 }
@@ -7904,6 +7926,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_postgres_tool_status() != 6607) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_prepare_sample_database() != 17437) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_preview_csv_import() != 5325) {

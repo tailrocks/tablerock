@@ -4661,6 +4661,7 @@ name = "tablerock-core"
 version = "0.1.0"
 dependencies = [
  "caseless",
+ "regex",
  "sqlparser",
  "unicode-normalization",
  "zeroize",
@@ -4683,6 +4684,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-postgres-rustls",
+ "turso",
  "zeroize",
 ]
 

@@ -65,6 +65,7 @@ impl ConnectionUrlDraft {
             Engine::PostgreSql => "PostgreSQL",
             Engine::ClickHouse => "ClickHouse",
             Engine::Redis => "Redis",
+            Engine::Sqlite => "SQLite",
         };
         let user = if self.username.is_empty() {
             "(none)"
@@ -158,6 +159,8 @@ pub fn parse_connection_url(input: &str) -> Result<ConnectionUrlDraft, Connectio
         "https" => (Engine::ClickHouse, 8443, ConnectionUrlTls::Required),
         "redis" => (Engine::Redis, 6379, ConnectionUrlTls::Off),
         "rediss" => (Engine::Redis, 6379, ConnectionUrlTls::Required),
+        // Local file SQLite: host holds the filesystem path (or path after //).
+        "sqlite" => (Engine::Sqlite, 0_u16, ConnectionUrlTls::Off),
         // Explicit reject list for common deep-link attack schemes.
         "javascript" | "data" | "file" | "about" | "blob" | "vbscript" | "mailto" => {
             return Err(ConnectionUrlError::HostileInput);
@@ -234,6 +237,7 @@ pub fn parse_connection_url(input: &str) -> Result<ConnectionUrlDraft, Connectio
             Engine::PostgreSql => "postgres".into(),
             Engine::ClickHouse => "default".into(),
             Engine::Redis => "0".into(),
+            Engine::Sqlite => "main".into(),
         },
     };
 
