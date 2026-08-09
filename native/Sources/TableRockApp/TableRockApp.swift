@@ -6564,38 +6564,42 @@ struct ContentView: View {
           await model.refreshProfiles()
         }
         .safeAreaInset(edge: .bottom) {
-          HStack(spacing: 10) {
-            Button {
-              model.createProfile()
-            } label: {
-              Label("New", systemImage: "plus")
+          // One glass cluster (Tahoe): no custom .bar fill — system glass only.
+          GlassEffectContainer {
+            HStack(spacing: 8) {
+              Button {
+                model.createProfile()
+              } label: {
+                Label("New", systemImage: "plus")
+              }
+              .buttonStyle(.glass)
+              .accessibilityIdentifier("profile.add")
+              Button {
+                Task { await model.trySampleDatabase() }
+              } label: {
+                Label("Sample", systemImage: "cylinder.split.1x2")
+              }
+              .buttonStyle(.glassProminent)
+              .accessibilityIdentifier("profile.try-sample")
+              Button {
+                model.beginCreateGroup()
+              } label: {
+                Label("Group", systemImage: "folder.badge.plus")
+              }
+              .buttonStyle(.glass)
+              Button {
+                model.beginConnectionUrlImport()
+              } label: {
+                Label("URL", systemImage: "link.badge.plus")
+              }
+              .buttonStyle(.glass)
+              .accessibilityIdentifier("profile.url-import")
+              Spacer(minLength: 0)
             }
-            .accessibilityIdentifier("profile.add")
-            Button {
-              Task { await model.trySampleDatabase() }
-            } label: {
-              Label("Sample", systemImage: "cylinder.split.1x2")
-            }
-            .buttonStyle(.glassProminent)
-            .accessibilityIdentifier("profile.try-sample")
-            Button {
-              model.beginCreateGroup()
-            } label: {
-              Label("Group", systemImage: "folder.badge.plus")
-            }
-            Button {
-              model.beginConnectionUrlImport()
-            } label: {
-              Label("URL", systemImage: "link.badge.plus")
-            }
-            .accessibilityIdentifier("profile.url-import")
-            Spacer()
+            .controlSize(.small)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
           }
-          .controlSize(.small)
-          .padding(.horizontal, 10)
-          .padding(.vertical, 8)
-          // System bar material only — chrome layer, not content.
-          .background(.bar)
         }
         .overlay {
           if model.profilesLoading {
@@ -6626,11 +6630,12 @@ struct ContentView: View {
                   Text("Try Sample Database")
                 }
                 .buttonStyle(.glassProminent)
+                .controlSize(.large)
                 .accessibilityIdentifier("profile.try-sample")
                 Button("New Connection…") {
                   model.createProfile()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
               }
             }
           }
@@ -6695,9 +6700,13 @@ struct ContentView: View {
       }
       .navigationTitle("Connections")
     } detail: {
-      VStack(alignment: .leading, spacing: 12) {
-        Text("TableRock").font(.largeTitle).bold()
+      VStack(alignment: .leading, spacing: 10) {
+        // Hierarchy: title → status (non-color) → safety badge; content stays opaque.
+        Text("TableRock")
+          .font(.title.weight(.semibold))
+          .tracking(-0.3)
         Text(model.status)
+          .font(.subheadline)
           .foregroundStyle(.secondary)
           .accessibilityIdentifier("app.status")
           .accessibilityValue(model.status)
@@ -6724,20 +6733,26 @@ struct ContentView: View {
                   Text("PostgreSQL").tag("postgresql")
                   Text("ClickHouse").tag("clickhouse")
                   Text("Redis").tag("redis")
+                  Text("SQLite").tag("sqlite")
                 }
                 .labelsHidden()
               }
               GridRow {
-                Text("Host")
-                TextField("127.0.0.1", text: $model.formHost)
+                Text(model.formEngine == "sqlite" ? "Path" : "Host")
+                TextField(
+                  model.formEngine == "sqlite" ? "/absolute/path.db" : "127.0.0.1",
+                  text: $model.formHost)
               }
               GridRow {
                 Text("Port")
-                TextField("5432", text: $model.formPort)
+                TextField(model.formEngine == "sqlite" ? "1" : "5432", text: $model.formPort)
+                  .disabled(model.formEngine == "sqlite")
               }
               GridRow {
-                Text("Database")
-                TextField("postgres", text: $model.formDatabase)
+                Text(model.formEngine == "sqlite" ? "File" : "Database")
+                TextField(
+                  model.formEngine == "sqlite" ? "main" : "postgres",
+                  text: $model.formDatabase)
               }
               GridRow {
                 Text("User")
@@ -6750,7 +6765,7 @@ struct ContentView: View {
             }
             HStack {
               Button("Connect") { Task { await model.connectByParams() } }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .accessibilityIdentifier("connection.direct.connect")
               Spacer()
             }
@@ -6769,7 +6784,7 @@ struct ContentView: View {
           .accessibilityIdentifier("connection.status")
           .accessibilityValue(connectedSessionLabel(session))
           Button("Browse catalog") { Task { await model.browse() } }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
         }
         if let catalogSummary = model.catalogSummary {
           Text(catalogSummary).foregroundStyle(.secondary)
@@ -7032,23 +7047,31 @@ struct QueryWorkbenchView: View {
           guard !Task.isCancelled else { return }
           await model.persistSessionIntent()
         }
-      HStack {
-        Button("Run query") { Task { await model.runQuery() } }
-          .accessibilityIdentifier("query.run")
-          .buttonStyle(.borderedProminent)
-          .keyboardShortcut("r", modifiers: .command)
-          .disabled(model.isRunning || model.isCatalogRefreshing)
-        Button("Cancel") { Task { await model.cancel() } }
-          .accessibilityIdentifier("query.cancel")
-          .disabled(!model.isRunning)
-        Button("Refresh catalog") { Task { await model.browse() } }
-          .disabled(model.isRunning || model.isCatalogRefreshing)
-        if model.connectedEngine == "redis" {
-          Button("Redis Overview") { Task { await model.showRedisOverview() } }
-            .disabled(model.redisOverviewLoading)
+      // Chrome control cluster — glass only; grid/editor below stay opaque.
+      GlassEffectContainer {
+        HStack(spacing: 8) {
+          Button("Run query") { Task { await model.runQuery() } }
+            .accessibilityIdentifier("query.run")
+            .buttonStyle(.glassProminent)
+            .keyboardShortcut("r", modifiers: .command)
+            .disabled(model.isRunning || model.isCatalogRefreshing)
+          Button("Cancel") { Task { await model.cancel() } }
+            .buttonStyle(.glass)
+            .accessibilityIdentifier("query.cancel")
+            .disabled(!model.isRunning)
+          Button("Refresh catalog") { Task { await model.browse() } }
+            .buttonStyle(.glass)
+            .disabled(model.isRunning || model.isCatalogRefreshing)
+          if model.connectedEngine == "redis" {
+            Button("Redis Overview") { Task { await model.showRedisOverview() } }
+              .buttonStyle(.glass)
+              .disabled(model.redisOverviewLoading)
+          }
+          Button("Apply probe edit") { Task { await model.applyProbeEdit() } }
+            .buttonStyle(.glass)
+            .disabled(model.isRunning || model.isCatalogRefreshing)
         }
-        Button("Apply probe edit") { Task { await model.applyProbeEdit() } }
-          .disabled(model.isRunning || model.isCatalogRefreshing)
+        .controlSize(.small)
       }
       Text(queryStatus)
         .foregroundStyle(model.queryError == nil ? Color.secondary : Color.red)
@@ -7201,7 +7224,7 @@ private struct QueryParametersSheet: View {
         }
         .accessibilityIdentifier("query-parameters.cancel")
         Button("Run") { Task { await model.runParameterizedQuery() } }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.glassProminent)
           .disabled(model.isRunning)
           .accessibilityIdentifier("query-parameters.run")
       }
@@ -7737,14 +7760,14 @@ private struct CsvImportSheet: View {
       }
       HStack {
         Button("Stage Reviewed Import") { Task { await model.stageCsvImport() } }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.glassProminent)
           .disabled(
             model.csvImportPreview == nil || model.csvImportReview != nil
               || model.csvImportOutcome != nil || model.csvImportApplying
           )
           .accessibilityIdentifier("import.csv.stage")
         Button("Apply Import") { Task { await model.applyCsvImport() } }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.glassProminent)
           .disabled(model.csvImportReview == nil || model.csvImportApplying)
           .accessibilityIdentifier("import.csv.apply")
         Button("Discard Review", role: .cancel) {
@@ -7987,7 +8010,7 @@ private struct RedisSubscriptionSheet: View {
         .disabled(model.redisSubscriptionIsActive)
         .accessibilityIdentifier("redis.pubsub.selector")
         Button("Subscribe") { Task { await model.startRedisSubscription() } }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.glassProminent)
           .disabled(
             model.redisSubscriptionStarting || model.redisSubscriptionIsActive
               || model.redisSubscriptionSelector.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -8101,7 +8124,7 @@ private struct DdlChangeSheet: View {
       .formStyle(.grouped)
       HStack {
         Button("Review Change…") { Task { await model.stageDdlChange() } }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.glassProminent)
           .disabled(
             model.ddlChangeReview != nil || model.ddlChangeApplying
               || model.ddlChangeObjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -8131,7 +8154,7 @@ private struct DdlChangeSheet: View {
             }
             Text(review.rollbackSummary).font(.callout).foregroundStyle(.secondary)
             Button("Apply Reviewed Change…") { applyConfirmationPresented = true }
-              .buttonStyle(.borderedProminent)
+              .buttonStyle(.glassProminent)
               .accessibilityIdentifier("structure.change.apply-review")
           }
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -8210,7 +8233,7 @@ private struct TableOperationSheet: View {
           .accessibilityIdentifier("table-operation.new-name")
       }
       Button("Review Operation…") { Task { await model.stageTableOperation() } }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.glassProminent)
         .disabled(
           model.tableOperationReview != nil || model.tableOperationApplying
             || (model.tableOperationKind == "rename"
@@ -8244,7 +8267,7 @@ private struct TableOperationSheet: View {
               Button(review.destructive ? "Apply Destructive Operation" : "Apply Operation") {
                 Task { await model.applyTableOperation() }
               }
-              .buttonStyle(.borderedProminent)
+              .buttonStyle(.glassProminent)
               .tint(review.destructive ? .red : .accentColor)
               .disabled(model.tableOperationConfirmation != review.confirmation)
               .accessibilityIdentifier("table-operation.apply")
@@ -8728,7 +8751,7 @@ private struct PostgresToolsSheet: View {
         Button(model.postgresToolKind == "dump" ? "Start Backup…" : "Start Restore…") {
           model.requestStartPostgresTool()
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.glassProminent)
         .disabled(
           operationActive || model.postgresToolProbe?.available != true
             || model.postgresToolFileUrl == nil
@@ -8872,7 +8895,7 @@ private struct ResultExportMenu: View {
 
   private func exportButton(_ label: String, format: String) -> some View {
     Button(label) { Task { await model.exportLoadedResult(format: format) } }
-      .buttonStyle(.bordered)
+      .buttonStyle(.glass)
       .accessibilityIdentifier("results.export.\(format)")
   }
 
@@ -9013,7 +9036,7 @@ struct QueryTabStrip: View {
               } label: {
                 WorkbenchTabLabel(title: tab.title, model: model)
               }
-              .buttonStyle(.borderedProminent)
+              .buttonStyle(.glassProminent)
               .accessibilityIdentifier("query.tab.\(tab.id.uuidString.lowercased())")
               .accessibilityValue("Selected")
             } else {
@@ -9022,7 +9045,7 @@ struct QueryTabStrip: View {
               } label: {
                 WorkbenchTabLabel(title: tab.title, model: model)
               }
-              .buttonStyle(.bordered)
+              .buttonStyle(.glass)
               .accessibilityIdentifier("query.tab.\(tab.id.uuidString.lowercased())")
             }
             Menu {
@@ -9051,7 +9074,7 @@ struct QueryTabStrip: View {
                   leadingSystemImage: tab.pinned ? "pin.fill" : "eye"
                 )
               }
-              .buttonStyle(.borderedProminent)
+              .buttonStyle(.glassProminent)
               .accessibilityIdentifier("object.tab.\(tab.id.uuidString.lowercased())")
               .accessibilityValue("Selected")
             } else {
@@ -9063,7 +9086,7 @@ struct QueryTabStrip: View {
                   leadingSystemImage: tab.pinned ? "pin.fill" : "eye"
                 )
               }
-              .buttonStyle(.bordered)
+              .buttonStyle(.glass)
               .accessibilityIdentifier("object.tab.\(tab.id.uuidString.lowercased())")
             }
             Menu {
@@ -10315,7 +10338,7 @@ struct ProfilePasswordSheet: View {
         Button("Cancel", role: .cancel) { dismiss() }
           .disabled(connecting)
         Button("Connect") { submit() }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.glassProminent)
           .disabled(connecting)
       }
     }
@@ -10462,7 +10485,7 @@ struct ExternalUrlConfirmationSheet: View {
           Button("Connect Temporarily") {
             Task { await model.connectExternalTemporarily() }
           }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.glassProminent)
           .accessibilityIdentifier("external-url.connect-temporary")
 
           Button("Review as New") { model.reviewExternalURLAsNewConnection() }

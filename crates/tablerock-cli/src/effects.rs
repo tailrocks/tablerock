@@ -22,7 +22,7 @@ use tablerock_core::{
     SessionId, TlsPolicy,
 };
 use tablerock_engine::{
-    CatalogRequest, DriverPageRequest, DriverPageStream, DriverSession, SessionRegistry,
+    DriverPageRequest, DriverPageStream, DriverSession, SessionRegistry,
 };
 use tablerock_persistence::PersistenceActor;
 use tablerock_tui::{
@@ -5577,7 +5577,7 @@ fn profile_organization_message(
 }
 
 async fn open_sample_database(
-    persistence: Arc<Mutex<Option<PersistenceActor>>>,
+    _persistence: Arc<Mutex<Option<PersistenceActor>>>,
     sessions: Arc<Mutex<SessionRegistry>>,
     request_token: RequestToken,
 ) -> Message {

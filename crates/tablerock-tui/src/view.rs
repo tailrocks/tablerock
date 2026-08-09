@@ -102,6 +102,7 @@ impl ShellView {
             model,
             frame,
             rows[0],
+            // Sparse hierarchy (TUI analogue of Tahoe restraint): product · screen.
             "TableRock · Connections",
             model.focus() == Some(FocusRegion::Context),
         );

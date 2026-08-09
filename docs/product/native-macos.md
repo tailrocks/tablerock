@@ -5,9 +5,12 @@ same Rust core. It is not a terminal in a window and not a second product:
 Swift owns presentation and OS integration; Rust owns every database, safety,
 and state decision ([native path](../architecture/native-macos-path.md)).
 
-Design target: **macOS 26 Tahoe and later**, with the **Liquid Glass** design
-system. macOS 27 removes the Liquid Glass compatibility opt-out, so the app is
-built glass-native from the start; there is no legacy-material mode to carry.
+Design target: **macOS 26 Tahoe and later only**, with the **Liquid Glass**
+design system. Deployment target is 26.0; there is **no** pre-Tahoe / legacy
+material fallback, no “compatibility opt-out” mode, and no dual-path UI for
+older SDKs. Prefer current system glass APIs (`.glass` / `.glassProminent`,
+`GlassEffectContainer`, system toolbars) over `.borderedProminent`, custom
+`.bar` fills, or hand-rolled blurs.
 
 ## Design language
 
