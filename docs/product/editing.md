@@ -3,6 +3,15 @@
 Table data is editable in place. Nothing touches the database until the
 operator previews and applies: every change is staged in memory first.
 
+## Change Ledger (product name)
+
+The in-memory staged set is the **Change Ledger**: a calm, reviewable list of
+proposed inserts, updates, and deletes for the active tab. The status bar
+counts ledger entries; the review dialog shows exact parameterized statements
+before apply. Discard and undo clear ledger entries without touching the
+server. This is the same staging model as below — the name makes consequence
+visible in the UI.
+
 ## Editability
 
 A result is editable only when it comes from one base table with stable row

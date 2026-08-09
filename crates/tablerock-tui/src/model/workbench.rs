@@ -29,31 +29,35 @@ pub struct ContextBarModel {
 }
 
 impl ContextBarModel {
+    /// Environment Halo: non-color text that makes prod/staging/dev unmistakable.
+    #[must_use]
+    pub fn environment_halo(&self) -> String {
+        match self.environment.as_deref() {
+            Some(env) if self.production_warning || env.eq_ignore_ascii_case("production") => {
+                format!("HALO PRODUCTION · {env} · writes need review")
+            }
+            Some(env) if env.eq_ignore_ascii_case("staging") => {
+                format!("HALO staging · {env} · confirm before apply")
+            }
+            Some(env) => format!("HALO {env}"),
+            None => "HALO (no environment tag)".to_owned(),
+        }
+    }
+
     #[must_use]
     pub fn line(&self) -> String {
-        let env = self
-            .environment
-            .as_deref()
-            .map(|value| {
-                if self.production_warning {
-                    format!(" [{value}!]")
-                } else {
-                    format!(" [{value}]")
-                }
-            })
-            .unwrap_or_default();
         let schema = self
             .schema
             .as_deref()
             .map(|value| format!(" · schema {value}"))
             .unwrap_or_default();
         format!(
-            "{} · {} · db {}{}{} · {} · {}",
+            "{} · {} · db {}{} · {} · {} · {}",
             self.connection_name,
             self.engine_label,
             self.database,
             schema,
-            env,
+            self.environment_halo(),
             self.safety_label,
             self.health_label
         )
@@ -99,8 +103,9 @@ impl WorkbenchStatus {
     #[must_use]
     pub fn summary(&self) -> String {
         let trunc = if self.truncated { " trunc" } else { "" };
+        // Change Ledger count — consequence visible before apply.
         format!(
-            "{} · {} rows · {} B{} · pending {}",
+            "{} · {} rows · {} B{} · ledger {}",
             self.operation, self.rows, self.bytes, trunc, self.pending_changes
         )
     }
@@ -1007,6 +1012,47 @@ pub enum CloseTabOutcome {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn environment_halo_marks_production_without_color_alone() {
+        let mut ctx = ContextBarModel {
+            connection_name: "app".into(),
+            engine_label: "PostgreSQL".into(),
+            database: "app".into(),
+            schema: Some("public".into()),
+            environment: Some("production".into()),
+            production_warning: true,
+            safety_label: "Confirm writes".into(),
+            health_label: "ok".into(),
+        };
+        let halo = ctx.environment_halo();
+        assert!(halo.contains("HALO PRODUCTION"), "{halo}");
+        assert!(halo.contains("review"), "{halo}");
+        let line = ctx.line();
+        assert!(line.contains("HALO PRODUCTION"), "{line}");
+        assert!(line.contains("Confirm writes"), "{line}");
+
+        ctx.production_warning = false;
+        ctx.environment = Some("staging".into());
+        assert!(ctx.environment_halo().contains("staging"), "{}", ctx.environment_halo());
+
+        ctx.environment = None;
+        assert!(ctx.environment_halo().contains("no environment"), "{}", ctx.environment_halo());
+    }
+
+    #[test]
+    fn workbench_status_names_change_ledger() {
+        let status = WorkbenchStatus {
+            operation: "idle".into(),
+            rows: 10,
+            bytes: 100,
+            truncated: false,
+            pending_changes: 3,
+        };
+        let s = status.summary();
+        assert!(s.contains("ledger 3"), "{s}");
+        assert!(!s.contains("pending 3"), "{s}");
+    }
 
     #[test]
     fn preview_promotes_and_close_dirty_asks() {

@@ -36,6 +36,10 @@ Always visible, always current:
 - **Schema selector** — PostgreSQL only. Lists schemas of the current
   database; switching refreshes the sidebar to that schema's objects and
   retargets new tabs. Hidden where the engine has no schemas.
+- **Environment Halo** — the profile's environment is always visible as text
+  (and symbol where useful), never color alone. `production` is unmistakable;
+  staging and development remain legible under Increase Contrast / Reduce
+  Transparency. See also safety mode on the same bar.
 - **Environment tag** — the profile's environment, with `production` as a
   persistent warning treatment.
 - **Safety mode** — Read only / Confirm writes.

@@ -298,7 +298,7 @@ private struct WorkbenchCommands: Commands {
         .disabled(actions?.canShowActivity != true)
       Button("PostgreSQL Backup and Restore…") { actions?.showPostgresTools() }
         .disabled(actions?.canShowPostgresTools != true)
-      Button("Relationships…") { actions?.showRelationships() }
+      Button("Relation Lens…") { actions?.showRelationships() }
         .disabled(actions?.canShowRelationships != true)
       Button("PostgreSQL Roles and Privileges…") { actions?.showRoles() }
         .disabled(actions?.canShowRoles != true)
@@ -8471,7 +8471,7 @@ private struct PostgresRelationshipsSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack {
-        Label("Relationships", systemImage: "arrow.triangle.branch")
+        Label("Relation Lens", systemImage: "arrow.triangle.branch")
           .font(.headline)
         Spacer()
         Button("Refresh") { Task { await model.refreshPostgresRelationships() } }
@@ -8504,8 +8504,10 @@ private struct PostgresRelationshipsSheet: View {
                 }
               }
               Spacer()
-              Button("Open Related") { Task { await model.openRelatedRelation(edge) } }
-                .accessibilityLabel("Open related relation for \(edge.id)")
+              Button("Relation Lens") { Task { await model.openRelatedRelation(edge) } }
+                .buttonStyle(.glass)
+                .accessibilityLabel("Open Relation Lens for \(edge.id)")
+                .accessibilityIdentifier("relation.lens.open")
             }
             .accessibilityIdentifier("postgres.relationship.edge.\(edge.id)")
           }
@@ -9145,6 +9147,8 @@ private struct WorkbenchTabLabel: View {
   }
 }
 
+/// Environment Halo: production / staging / development must be unmistakable
+/// without relying on color alone (Increase Contrast / Reduce Transparency).
 private struct EnvironmentSafetyBadge: View {
   let model: BridgeModel
 
@@ -9152,17 +9156,42 @@ private struct EnvironmentSafetyBadge: View {
     if let environment = model.activeEnvironmentLabel,
       let safety = model.activeSafetyLabel
     {
-      Label {
-        Text("\(environment) · \(safety)")
-      } icon: {
+      let isProduction =
+        model.activeProductionWarning
+        || environment.caseInsensitiveCompare("production") == .orderedSame
+      let isStaging = environment.caseInsensitiveCompare("staging") == .orderedSame
+      let haloWord: String = {
+        if isProduction { return "PRODUCTION" }
+        if isStaging { return "STAGING" }
+        return environment.uppercased()
+      }()
+      let haloDetail: String = {
+        if isProduction { return "writes need review" }
+        if isStaging { return "confirm before apply" }
+        return safety
+      }()
+      HStack(spacing: 6) {
         Image(
-          systemName: model.activeProductionWarning
+          systemName: isProduction
             ? "exclamationmark.triangle.fill"
-            : safety == "Read only" ? "lock.fill" : "shield")
+            : isStaging ? "flag.fill" : safety == "Read only" ? "lock.fill" : "shield")
+        VStack(alignment: .leading, spacing: 0) {
+          Text("HALO \(haloWord)")
+            .font(.caption.weight(isProduction ? .bold : .semibold))
+            .textCase(.uppercase)
+          Text("\(environment) · \(safety) · \(haloDetail)")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
       }
-      .font(.caption)
-      .foregroundStyle(model.activeProductionWarning ? .orange : .secondary)
-      .accessibilityLabel("Environment \(environment), safety \(safety)")
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      // Chrome halo capsule (Tahoe glass); not a content surface.
+      .glassEffect(.regular.interactive())
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(
+        "Environment halo \(haloWord), \(environment), safety \(safety), \(haloDetail)")
+      .accessibilityIdentifier("environment.halo")
     }
   }
 }
