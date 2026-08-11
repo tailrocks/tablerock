@@ -53,7 +53,6 @@ pub use redis::{
     RedisSubscriptionKind, RedisSubscriptionOptions, RedisSubscriptionStream, RedisTlsMaterial,
     RedisTlsMode, RedisTtlApplication, RedisTtlMutationOutcome,
 };
-pub use sqlite::{SqliteError, SqliteSession, ensure_sample_sqlite_database};
 pub use relation_structure::{
     ClickHouseColumnFacts, ClickHouseEngineFacts, RelationColumn, RelationConstraint, RelationFact,
     RelationIndex, RelationStructureError, RelationStructureSnapshot, load_relation_structure,
@@ -74,6 +73,7 @@ pub use service::{
 pub use session_pool::{
     MAX_REGISTERED_SESSIONS, SessionRegistry, SessionRegistryError, SessionSlot,
 };
+pub use sqlite::{SqliteError, SqliteSession, ensure_sample_sqlite_database};
 pub use ssh_tunnel::{
     ClientHandler, LocalForwardTunnel, SSH_KEEPALIVE_INTERVAL_SECS, SSH_KEEPALIVE_MAX,
     SshAgentAuth, SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth, SshPublicKeyAuth,

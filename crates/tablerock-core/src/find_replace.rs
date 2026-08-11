@@ -71,10 +71,9 @@ impl fmt::Display for FindReplaceError {
             Self::EmptyPattern => f.write_str("find pattern is empty"),
             Self::InvalidPattern(detail) => write!(f, "invalid find pattern: {detail}"),
             Self::InvalidScope => f.write_str("selection scope requires a non-empty selection"),
-            Self::ReplacementLimit => write!(
-                f,
-                "replace-all exceeded {MAX_FIND_REPLACE_MATCHES} matches"
-            ),
+            Self::ReplacementLimit => {
+                write!(f, "replace-all exceeded {MAX_FIND_REPLACE_MATCHES} matches")
+            }
         }
     }
 }
@@ -103,19 +102,7 @@ fn escape_literal(pattern: &str) -> String {
     for ch in pattern.chars() {
         if matches!(
             ch,
-            '\\' | '.'
-                | '+'
-                | '*'
-                | '?'
-                | '('
-                | ')'
-                | '|'
-                | '['
-                | ']'
-                | '{'
-                | '}'
-                | '^'
-                | '$'
+            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']' | '{' | '}' | '^' | '$'
         ) {
             out.push('\\');
         }
@@ -134,10 +121,7 @@ fn compile(pattern: &str, mode: FindReplaceMode) -> Result<Regex, FindReplaceErr
         FindReplaceMode::WholeWord => {
             // Unicode-ish boundary: not preceded/followed by letter/number/_.
             let escaped = escape_literal(pattern);
-            (
-                format!(r"(?P<tr>{escaped})"),
-                true,
-            )
+            (format!(r"(?P<tr>{escaped})"), true)
         }
         FindReplaceMode::RegularExpression => (pattern.to_owned(), false),
     };
@@ -262,7 +246,12 @@ pub fn find_next(
         .or_else(|| matches.first().cloned()))
 }
 
-fn apply_replacement(mode: FindReplaceMode, re: &Regex, hay_slice: &str, replacement: &str) -> String {
+fn apply_replacement(
+    mode: FindReplaceMode,
+    re: &Regex,
+    hay_slice: &str,
+    replacement: &str,
+) -> String {
     if mode == FindReplaceMode::RegularExpression {
         re.replace(hay_slice, replacement).into_owned()
     } else {
@@ -340,8 +329,14 @@ mod tests {
     fn literal_case_insensitive_and_whole_word() {
         let text = "Foo food FOO";
         // Literal matches Foo, the "foo" prefix inside food, and FOO.
-        let all = find_all(text, "foo", FindReplaceMode::Literal, FindReplaceScope::Document, None)
-            .unwrap();
+        let all = find_all(
+            text,
+            "foo",
+            FindReplaceMode::Literal,
+            FindReplaceScope::Document,
+            None,
+        )
+        .unwrap();
         assert_eq!(all.len(), 3);
         let words = find_all(
             text,
@@ -405,11 +400,23 @@ mod tests {
     #[test]
     fn empty_pattern_and_bad_regex_fail_closed() {
         assert!(matches!(
-            find_all("a", "", FindReplaceMode::Literal, FindReplaceScope::Document, None),
+            find_all(
+                "a",
+                "",
+                FindReplaceMode::Literal,
+                FindReplaceScope::Document,
+                None
+            ),
             Err(FindReplaceError::EmptyPattern)
         ));
         assert!(matches!(
-            find_all("a", "(", FindReplaceMode::RegularExpression, FindReplaceScope::Document, None),
+            find_all(
+                "a",
+                "(",
+                FindReplaceMode::RegularExpression,
+                FindReplaceScope::Document,
+                None
+            ),
             Err(FindReplaceError::InvalidPattern(_))
         ));
     }

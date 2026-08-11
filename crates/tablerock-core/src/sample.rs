@@ -70,8 +70,7 @@ INSERT OR IGNORE INTO orders(id, customer, total_cents, status) VALUES
 "#;
 
 /// Suggested first query for the sample workbench (read-only demo).
-pub const SAMPLE_STARTER_SQL: &str =
-    "SELECT t.name AS track, a.title AS album, ar.name AS artist\n\
+pub const SAMPLE_STARTER_SQL: &str = "SELECT t.name AS track, a.title AS album, ar.name AS artist\n\
      FROM tracks t\n\
      JOIN albums a ON a.id = t.album_id\n\
      JOIN artists ar ON ar.id = a.artist_id\n\
@@ -84,7 +83,9 @@ mod tests {
 
     #[test]
     fn sample_path_is_under_data_root() {
-        let path = sample_sqlite_database_path(Path::new("/Users/op/Library/Application Support/TableRock"));
+        let path = sample_sqlite_database_path(Path::new(
+            "/Users/op/Library/Application Support/TableRock",
+        ));
         assert!(path.ends_with("samples/tablerock-sample.db"));
         assert!(is_sample_sqlite_path(&path));
     }

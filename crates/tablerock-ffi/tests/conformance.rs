@@ -150,6 +150,21 @@ impl DriverSession for FixedPageSession {
                     "text:fixture-key",
                     CatalogChildrenState::NotApplicable,
                 ),
+                CatalogRequest::SqliteRoot { .. } => (
+                    CatalogNodeKind::SqliteDatabase,
+                    "fixture.sqlite",
+                    CatalogChildrenState::Unrequested,
+                ),
+                CatalogRequest::SqliteTables { .. } => (
+                    CatalogNodeKind::SqliteTable,
+                    "users",
+                    CatalogChildrenState::Unrequested,
+                ),
+                CatalogRequest::SqliteColumns { .. } => (
+                    CatalogNodeKind::SqliteColumn,
+                    "id",
+                    CatalogChildrenState::NotApplicable,
+                ),
             };
             Ok(CatalogSubtree::new(
                 engine,
@@ -309,6 +324,7 @@ fn sample_page(engine: Engine, result_low: u64, values: &[i64]) -> (ResultId, Re
         Engine::PostgreSql => "int8",
         Engine::ClickHouse => "Int64",
         Engine::Redis => "integer",
+        Engine::Sqlite => "INTEGER",
     };
     let page = ResultPage::from_row_major(
         PageIdentity::new(result_id, Revision::INITIAL, engine),
@@ -1148,6 +1164,7 @@ fn catalog_browse_plan_is_rust_rendered_with_typed_values() {
                     "SELECT * FROM \"default\".\"events\" WHERE \"name\" = {p1:String} AND \"age\" >= {p2:Int64} AND (active IS TRUE) ORDER BY \"created_at\" DESC, \"id\" ASC LIMIT 500 OFFSET 0"
                 }
                 Engine::Redis => unreachable!(),
+                Engine::Sqlite => unreachable!(),
             }
         );
         assert!(!statements[0].0.contains("private"));

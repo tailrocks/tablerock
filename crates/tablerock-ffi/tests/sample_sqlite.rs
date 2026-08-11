@@ -10,8 +10,8 @@ use std::{
 };
 
 use tablerock_core::{
-    SAMPLE_DATABASE_PROFILE_NAME, SAMPLE_STARTER_SQL, sample_sqlite_database_path, ResultPage,
-    PageLimits,
+    PageLimits, ResultPage, SAMPLE_DATABASE_PROFILE_NAME, SAMPLE_STARTER_SQL,
+    sample_sqlite_database_path,
 };
 use tablerock_engine::ensure_sample_sqlite_database;
 use tablerock_ffi::{SubmitSpec, TableRockBridge};
@@ -22,11 +22,7 @@ fn unique_root() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!(
-        "tablerock-sample-{}-{}",
-        std::process::id(),
-        nanos
-    ))
+    std::env::temp_dir().join(format!("tablerock-sample-{}-{}", std::process::id(), nanos))
 }
 
 #[tokio::test]
@@ -36,7 +32,9 @@ async fn ensure_sample_creates_demo_tables() {
     let path = sample_sqlite_database_path(&root);
     ensure_sample_sqlite_database(&path).await.unwrap();
     assert!(path.is_file());
-    let session = tablerock_engine::SqliteSession::connect(&path).await.unwrap();
+    let session = tablerock_engine::SqliteSession::connect(&path)
+        .await
+        .unwrap();
     use tablerock_engine::{CatalogRequest, DriverSession};
     let subtree = session
         .catalog(CatalogRequest::SqliteTables {
@@ -44,7 +42,11 @@ async fn ensure_sample_creates_demo_tables() {
         })
         .await
         .unwrap();
-    let names: Vec<_> = subtree.nodes().iter().map(|n| n.name().to_owned()).collect();
+    let names: Vec<_> = subtree
+        .nodes()
+        .iter()
+        .map(|n| n.name().to_owned())
+        .collect();
     assert!(names.iter().any(|n| n == "artists"), "{names:?}");
     assert!(names.iter().any(|n| n == "tracks"), "{names:?}");
     assert!(names.iter().any(|n| n == "orders"), "{names:?}");
@@ -105,7 +107,9 @@ fn prepare_sample_via_bridge_save_and_open() {
     let nodes = bridge.refresh_catalog(session.clone(), None).unwrap();
     assert!(!nodes.is_empty(), "catalog root must be non-empty");
     assert!(
-        nodes.iter().any(|n| n.kind.contains("sqlite") || n.kind.contains("database")),
+        nodes
+            .iter()
+            .any(|n| n.kind.contains("sqlite") || n.kind.contains("database")),
         "expected sqlite database root: {nodes:?}"
     );
     let root_id = nodes[0].id_bytes.clone();

@@ -233,7 +233,7 @@ impl QueryEditorModel {
             tablerock_core::FindReplaceScope::Document,
             false,
         )
-            .is_ok_and(|n| n > 0)
+        .is_ok_and(|n| n > 0)
     }
 
     /// Replace all occurrences (left-to-right, non-overlapping). Returns count.

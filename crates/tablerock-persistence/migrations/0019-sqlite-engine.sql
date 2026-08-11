@@ -33,8 +33,20 @@ INSERT INTO saved_profiles_v19 SELECT * FROM saved_profiles;
 DROP TABLE saved_profiles;
 ALTER TABLE saved_profiles_v19 RENAME TO saved_profiles;
 
+CREATE INDEX IF NOT EXISTS saved_profiles_organization
+    ON saved_profiles(favorite DESC, saved_order, name, profile_id);
+
+CREATE INDEX IF NOT EXISTS saved_profiles_bounded_list
+    ON saved_profiles(favorite DESC, saved_order, profile_id);
+
 CREATE INDEX IF NOT EXISTS saved_profiles_engine_bounded_list
     ON saved_profiles(engine, favorite DESC, saved_order, profile_id);
+
+CREATE INDEX IF NOT EXISTS saved_profiles_group_bounded_list
+    ON saved_profiles(group_name, favorite DESC, saved_order, profile_id);
+
+CREATE INDEX IF NOT EXISTS saved_profiles_environment
+    ON saved_profiles(environment_kind, profile_id);
 
 CREATE TABLE query_history_v19 (
     history_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,

@@ -18,9 +18,7 @@ use tablerock_core::{
     ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
     ProfileSafetyMode, ReconnectPreference, Revision, TlsPolicy, rewrite_named_params,
 };
-use tablerock_ffi::{
-    BridgeProfileDraft, BridgeSessionIntent, BridgeWorkspaceTab, TableRockBridge,
-};
+use tablerock_ffi::{BridgeProfileDraft, BridgeSessionIntent, BridgeWorkspaceTab, TableRockBridge};
 use tablerock_persistence::{
     HistoryAppend, HistoryOutcomeClass, HistoryRetention, OPERATOR_PROFILES_DB_FILE,
     PersistenceActor,
@@ -92,7 +90,9 @@ fn profile_and_session_intent_match_across_facades() {
             statement_text: "SELECT :id;".into(),
         }],
     };
-    bridge.put_session_intent(id.clone(), intent.clone()).unwrap();
+    bridge
+        .put_session_intent(id.clone(), intent.clone())
+        .unwrap();
     let listed = bridge.list_profiles().unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].name, "workflow-a");

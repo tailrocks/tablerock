@@ -153,16 +153,14 @@ mod tests {
             path,
             PathBuf::from("/private/tmp/TableRockUITest-123/profiles.db")
         );
-        assert!(!path
-            .to_string_lossy()
-            .contains("Application Support"));
+        assert!(!path.to_string_lossy().contains("Application Support"));
     }
 
     #[test]
     fn relative_test_root_is_rejected() {
         let home = Path::new("/Users/operator");
-        let err = resolve_operator_profiles_database(home, Some(Path::new("relative/path")))
-            .unwrap_err();
+        let err =
+            resolve_operator_profiles_database(home, Some(Path::new("relative/path"))).unwrap_err();
         assert_eq!(err, OperatorPathError::AbsoluteTestRootRequired);
     }
 }

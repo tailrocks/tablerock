@@ -123,7 +123,9 @@ fn cli_open_default_path_under_test_root_lists_seeded_profile() {
     // path resolution (TTY-less list proof).
     let actor = PersistenceActor::open(&resolved).unwrap();
     let page = actor
-        .list_profiles(ProfileListRequest::new(ProfileListFilter::new(None, None), None, 10).unwrap())
+        .list_profiles(
+            ProfileListRequest::new(ProfileListFilter::new(None, None), None, 10).unwrap(),
+        )
         .unwrap();
     assert_eq!(page.items().len(), 1);
     assert_eq!(page.items()[0].name().as_str(), "seeded-shared");

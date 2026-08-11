@@ -58,7 +58,7 @@ const fn engine_label(engine: Engine) -> &'static str {
         Engine::PostgreSql => "PostgreSQL",
         Engine::ClickHouse => "ClickHouse",
         Engine::Redis => "Redis",
-                Engine::Sqlite => "SQLite",
+        Engine::Sqlite => "SQLite",
     }
 }
 

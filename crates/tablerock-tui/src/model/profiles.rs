@@ -177,7 +177,10 @@ impl ProfileListState {
             Self::Loading { .. } => vec!["Loading connections…"],
             Self::Loaded { rows, search, .. } => {
                 if !search.is_empty() && Self::filter_rows(rows, search).is_empty() {
-                    vec!["No matches for this filter.", "Clear the filter to see all."]
+                    vec![
+                        "No matches for this filter.",
+                        "Clear the filter to see all.",
+                    ]
                 } else if rows.is_empty() {
                     vec![
                         "No connections yet.",
