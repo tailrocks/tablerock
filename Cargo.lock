@@ -4641,6 +4641,7 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "futures-util",
+ "nix 0.31.3",
  "portable-pty",
  "ratatui-core",
  "ratatui-crossterm",

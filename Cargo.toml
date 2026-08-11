@@ -15,6 +15,7 @@ crossterm = { version = "0.29.0", features = ["event-stream"] }
 caseless = "=0.2.2"
 clickhouse = { version = "=0.15.1", default-features = false, features = ["lz4", "rustls-tls-native-roots", "rustls-tls-ring"] }
 futures-util = "0.3.32"
+nix = { version = "=0.31.3", features = ["term"] }
 ratatui-core = "0.1.2"
 ratatui-crossterm = { version = "0.1.2", default-features = false, features = ["crossterm_0_29"] }
 redis = { version = "=1.4.1", default-features = false, features = ["connection-manager", "tokio-rustls-comp"] }

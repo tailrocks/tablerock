@@ -6,6 +6,12 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
+#[cfg(unix)]
+use std::os::fd::AsFd;
+
+#[cfg(unix)]
+use nix::sys::termios::{LocalFlags, SetArg, tcgetattr, tcsetattr};
+
 use ratatui_core::terminal::Terminal;
 use ratatui_crossterm::CrosstermBackend;
 use tablerock_tui::subscriptions::{Subscription, root_subscriptions};
@@ -161,6 +167,8 @@ async fn run_with_root_messages_and_executor(
 
     let mut session =
         Session::enter(io::stdout(), SessionOptions::default()).map_err(RunError::Terminal)?;
+    #[cfg(unix)]
+    enable_interrupt_signal().map_err(RunError::Terminal)?;
     let local = tokio::task::LocalSet::new();
     let result = local
         .run_until(async {
@@ -175,6 +183,17 @@ async fn run_with_root_messages_and_executor(
         })
         .await;
     finish_restoration(result, session.restore())
+}
+
+/// Keep the terminal otherwise raw while restoring the kernel's interrupt
+/// character path. Ctrl-C is the fixed emergency quit binding, so it must not
+/// depend on Crossterm decoding an arbitrarily long resize/pointer byte queue.
+#[cfg(unix)]
+fn enable_interrupt_signal() -> io::Result<()> {
+    let stdin = io::stdin();
+    let mut termios = tcgetattr(stdin.as_fd()).map_err(io::Error::from)?;
+    termios.local_flags.insert(LocalFlags::ISIG);
+    tcsetattr(stdin.as_fd(), SetArg::TCSANOW, &termios).map_err(io::Error::from)
 }
 
 fn finish_restoration(

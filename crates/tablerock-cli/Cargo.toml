@@ -26,6 +26,9 @@ termrock.workspace = true
 tokio.workspace = true
 zeroize.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
+
 [dev-dependencies]
 portable-pty = "0.9.0"
 testcontainers = { version = "=0.28.0", default-features = false }
