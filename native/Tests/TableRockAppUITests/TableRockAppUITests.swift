@@ -417,8 +417,11 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(search.waitForExistence(timeout: 10))
     search.click()
     search.typeText("Users")
-    let users = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Users'"))
-      .firstMatch
+    let users = app.buttons.matching(
+      NSPredicate(
+        format: "identifier BEGINSWITH 'quick-switch.item.' AND label BEGINSWITH 'Users'")
+    )
+    .firstMatch
     XCTAssertTrue(users.waitForExistence(timeout: 5))
     users.click()
 
@@ -443,7 +446,7 @@ final class TableRockAppUITests: XCTestCase {
     let plan = app.staticTexts["explain.plan"]
     XCTAssertTrue(plan.waitForExistence(timeout: 10))
     XCTAssertTrue((plan.value as? String ?? plan.label).contains("Seq Scan on fixture"))
-    XCTAssertTrue(app.buttons["explain.copy"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["explain.copy"].exists)
   }
 
   @MainActor
@@ -464,7 +467,7 @@ final class TableRockAppUITests: XCTestCase {
         .waitForExistence(timeout: 10))
 
     app.buttons["postgres.activity.cancel.4242"].click()
-    let confirm = app.buttons["Cancel PID 4242"]
+    let confirm = app.buttons["postgres.activity.confirm"]
     XCTAssertTrue(confirm.waitForExistence(timeout: 10))
     confirm.click()
     let outcome = app.descendants(matching: .any)["postgres.activity.outcome"]
@@ -485,15 +488,12 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(table.waitForExistence(timeout: 10))
     table.doubleClick()
 
-    let command = app.menuItems["Relationships…"]
+    let command = app.menuItems["Relation Lens…"]
     XCTAssertTrue(command.waitForExistence(timeout: 10))
     XCTAssertTrue(command.isEnabled)
     command.click()
-    XCTAssertTrue(
-      app.descendants(matching: .any)["postgres.relationships.sheet"]
-        .waitForExistence(timeout: 10))
-    XCTAssertTrue(app.staticTexts["Self-reference"].exists)
-    XCTAssertTrue(app.buttons["Open Related"].firstMatch.exists)
+    XCTAssertTrue(app.staticTexts["Self-reference"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["relation.lens.open"].exists)
   }
 
   @MainActor
@@ -507,9 +507,8 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(command.waitForExistence(timeout: 10))
     XCTAssertTrue(command.isEnabled)
     command.click()
-    XCTAssertTrue(
-      app.descendants(matching: .any)["redis.pubsub.sheet"].waitForExistence(timeout: 10))
     let subscribe = app.buttons["redis.pubsub.subscribe"]
+    XCTAssertTrue(subscribe.waitForExistence(timeout: 10))
     XCTAssertTrue(subscribe.isEnabled)
     subscribe.click()
     XCTAssertTrue(app.staticTexts["updates:users · fixture message"].waitForExistence(timeout: 10))
@@ -518,10 +517,11 @@ final class TableRockAppUITests: XCTestCase {
     let cancel = app.buttons["redis.pubsub.cancel"]
     XCTAssertTrue(cancel.isEnabled)
     cancel.click()
-    let cancelled = app.staticTexts.matching(
-      NSPredicate(format: "label CONTAINS[c] 'Cancelled'")
-    ).firstMatch
-    XCTAssertTrue(cancelled.waitForExistence(timeout: 10))
+    let status = app.descendants(matching: .any)["redis.pubsub.status"]
+    XCTAssertTrue(status.waitForExistence(timeout: 10))
+    let cancelled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value CONTAINS[c] 'cancelled'"), object: status)
+    XCTAssertEqual(XCTWaiter.wait(for: [cancelled], timeout: 10), .completed)
   }
 
   @MainActor
@@ -536,16 +536,15 @@ final class TableRockAppUITests: XCTestCase {
     let table = app.staticTexts["fixture_table"]
     XCTAssertTrue(table.waitForExistence(timeout: 10))
     table.doubleClick()
-    let structure = app.buttons["Structure"]
+    let structure = app.radioButtons["Structure"]
     XCTAssertTrue(structure.waitForExistence(timeout: 10))
     structure.click()
-    let open = app.buttons["structure.change.open"]
+    let open = app.descendants(matching: .any)["structure.change.open"]
     XCTAssertTrue(open.waitForExistence(timeout: 10))
     XCTAssertTrue(open.isEnabled)
     open.click()
-    XCTAssertTrue(
-      app.descendants(matching: .any)["structure.change.sheet"].waitForExistence(timeout: 10))
     let object = app.textFields["structure.change.object"]
+    XCTAssertTrue(object.waitForExistence(timeout: 10))
     object.click()
     object.typeText("reviewed_column")
     let definition = app.textFields["structure.change.definition"]
@@ -556,7 +555,7 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(preview.waitForExistence(timeout: 10))
     XCTAssertTrue((preview.value as? String ?? preview.label).contains("reviewed_column"))
     app.buttons["structure.change.apply-review"].click()
-    let confirm = app.buttons["Apply Structure Change"]
+    let confirm = app.sheets.buttons["Apply Structure Change"]
     XCTAssertTrue(confirm.waitForExistence(timeout: 10))
     confirm.click()
     XCTAssertTrue(
@@ -575,15 +574,15 @@ final class TableRockAppUITests: XCTestCase {
     let table = app.staticTexts["fixture_table"]
     XCTAssertTrue(table.waitForExistence(timeout: 10))
     table.doubleClick()
-    let structure = app.buttons["Structure"]
+    let structure = app.radioButtons["Structure"]
     XCTAssertTrue(structure.waitForExistence(timeout: 10))
     structure.click()
-    let open = app.buttons["table-operation.open"]
+    let open = app.descendants(matching: .any)["table-operation.open"]
     XCTAssertTrue(open.waitForExistence(timeout: 10))
     open.click()
-    XCTAssertTrue(
-      app.descendants(matching: .any)["table-operation.sheet"].waitForExistence(timeout: 10))
-    app.buttons["table-operation.review"].click()
+    let review = app.buttons["table-operation.review"]
+    XCTAssertTrue(review.waitForExistence(timeout: 10))
+    review.click()
     XCTAssertTrue(
       app.descendants(matching: .any)["table-operation.preview"].waitForExistence(timeout: 10))
     let apply = app.buttons["table-operation.apply"]
@@ -612,11 +611,8 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(command.waitForExistence(timeout: 10))
     XCTAssertTrue(command.isEnabled)
     command.click()
-    XCTAssertTrue(
-      app.descendants(matching: .any)["postgres.roles.sheet"]
-        .waitForExistence(timeout: 10))
     let search = app.textFields["postgres.roles.search"]
-    XCTAssertTrue(search.exists)
+    XCTAssertTrue(search.waitForExistence(timeout: 10))
     search.click()
     search.typeText("reader")
     XCTAssertTrue(app.staticTexts["reader"].firstMatch.exists)
@@ -628,7 +624,7 @@ final class TableRockAppUITests: XCTestCase {
     member.click()
     member.typeText("analyst")
     app.buttons["postgres.roles.change.review"].click()
-    let apply = app.buttons["Apply Role Change"].firstMatch
+    let apply = app.sheets.buttons["Apply Role Change"].firstMatch
     XCTAssertTrue(apply.waitForExistence(timeout: 10))
     apply.click()
     XCTAssertTrue(
@@ -655,11 +651,11 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(command.waitForExistence(timeout: 10))
     command.click()
     XCTAssertTrue(
-      app.descendants(matching: .any)["postgres.tools.sheet"].waitForExistence(timeout: 10))
-    XCTAssertTrue(app.descendants(matching: .any)["postgres.tools.probe-result"].exists)
+      app.descendants(matching: .any)["postgres.tools.probe-result"]
+        .waitForExistence(timeout: 10))
     app.buttons["postgres.tools.choose-file"].click()
     app.buttons["postgres.tools.start"].click()
-    let confirm = app.buttons["Create Backup"].firstMatch
+    let confirm = app.sheets.buttons["Create Backup"].firstMatch
     XCTAssertTrue(confirm.waitForExistence(timeout: 10))
     confirm.click()
     let status = app.descendants(matching: .any)["postgres.tools.status"]
@@ -709,8 +705,6 @@ final class TableRockAppUITests: XCTestCase {
     let open = app.buttons["import.csv.open"]
     XCTAssertTrue(open.waitForExistence(timeout: 10))
     open.click()
-    XCTAssertTrue(
-      app.descendants(matching: .any)["import.csv.sheet"].waitForExistence(timeout: 10))
     let stage = app.descendants(matching: .any)["import.csv.stage"]
     XCTAssertTrue(stage.waitForExistence(timeout: 10))
     stage.click()
@@ -743,17 +737,17 @@ final class TableRockAppUITests: XCTestCase {
 
     XCTAssertTrue(app.buttons["import.csv.open"].waitForExistence(timeout: 10))
     app.buttons["import.csv.open"].click()
-    let sheet = app.descendants(matching: .any)["import.csv.sheet"]
-    XCTAssertTrue(sheet.waitForExistence(timeout: 10))
-    sheet.descendants(matching: .any)["import.csv.stage"].click()
-    let apply = sheet.descendants(matching: .any)["import.csv.apply"]
+    let stage = app.descendants(matching: .any)["import.csv.stage"]
+    XCTAssertTrue(stage.waitForExistence(timeout: 10))
+    stage.click()
+    let apply = app.descendants(matching: .any)["import.csv.apply"]
     XCTAssertTrue(apply.waitForExistence(timeout: 10))
     apply.click()
-    let cancel = sheet.descendants(matching: .any)["import.csv.cancel"]
+    let cancel = app.descendants(matching: .any)["import.csv.cancel"]
     XCTAssertTrue(cancel.waitForExistence(timeout: 10))
     cancel.click()
 
-    let outcome = sheet.descendants(matching: .any)["import.csv.outcome"]
+    let outcome = app.descendants(matching: .any)["import.csv.outcome"]
     let cancelled = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "value CONTAINS[c] 'cancelled'"), object: outcome)
     XCTAssertEqual(XCTWaiter.wait(for: [cancelled], timeout: 10), .completed)
@@ -765,7 +759,11 @@ final class TableRockAppUITests: XCTestCase {
       scenario: "success",
       environment: ["TABLEROCK_FIXTURE_IME": "1"])
 
-    let status = app.staticTexts["app.status"]
+    let status = app.staticTexts.matching(
+      NSPredicate(
+        format: "value == 'IME composition preserved' OR label == 'IME composition preserved'")
+    )
+    .firstMatch
     XCTAssertTrue(status.waitForExistence(timeout: 10))
     let preserved = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "value == 'IME composition preserved'"), object: status)
@@ -792,6 +790,7 @@ final class TableRockAppUITests: XCTestCase {
     ].merging(environment) { _, fixture in fixture }
     app.launchArguments = ["-ApplePersistenceIgnoreState", "YES"]
     app.launch()
+    app.activate()
     return app
   }
 }

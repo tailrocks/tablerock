@@ -110,8 +110,7 @@ final class BridgeModelScenarioTests: XCTestCase {
     let session = Data(repeating: 1, count: 16)
     model.catalogSnapshot = try await backend.refreshCatalog(session: session, parentNodeId: nil)
     let table = try XCTUnwrap(model.catalogSnapshot?.last)
-    let nodeKey = table.idBytes.map { String(format: "%02x", $0) }.joined()
-    await model.openCatalogObject(nodeKey: nodeKey)
+    await model.openCatalogObject(nodeId: table.idBytes)
     await model.showPostgresRelationships()
 
     XCTAssertTrue(model.postgresRelationshipsPresented)
@@ -174,8 +173,7 @@ final class BridgeModelScenarioTests: XCTestCase {
     let session = Data(repeating: 1, count: 16)
     model.catalogSnapshot = try await backend.refreshCatalog(session: session, parentNodeId: nil)
     let table = try XCTUnwrap(model.catalogSnapshot?.last)
-    let nodeKey = table.idBytes.map { String(format: "%02x", $0) }.joined()
-    await model.openCatalogObject(nodeKey: nodeKey)
+    await model.openCatalogObject(nodeId: table.idBytes)
     await model.loadObjectStructure()
     model.showDdlChange()
     model.ddlChangeKind = "add_column"
@@ -257,8 +255,7 @@ final class BridgeModelScenarioTests: XCTestCase {
     let session = Data(repeating: 1, count: 16)
     model.catalogSnapshot = try await backend.refreshCatalog(session: session, parentNodeId: nil)
     let table = try XCTUnwrap(model.catalogSnapshot?.last)
-    let nodeKey = table.idBytes.map { String(format: "%02x", $0) }.joined()
-    await model.openCatalogObject(nodeKey: nodeKey)
+    await model.openCatalogObject(nodeId: table.idBytes)
     model.showTableOperation()
 
     await model.stageTableOperation()
