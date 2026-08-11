@@ -66,7 +66,9 @@ pub async fn ensure_sample_sqlite_database(path: &Path) -> Result<(), SqliteErro
         .await
         .map_err(|e| SqliteError::Query(e.to_string()))?;
     // Checkpoint so a bare file copy (no -wal) still has seeded tables.
-    let _ = connection.execute("PRAGMA wal_checkpoint(TRUNCATE);", ()).await;
+    let _ = connection
+        .execute("PRAGMA wal_checkpoint(TRUNCATE);", ())
+        .await;
     Ok(())
 }
 
@@ -116,20 +118,18 @@ impl SqliteSession {
             .await
             .map_err(|e| SqliteError::Query(e.to_string()))?
         {
-            let name: String = row
-                .get(0)
-                .map_err(|e| SqliteError::Query(e.to_string()))?;
+            let name: String = row.get(0).map_err(|e| SqliteError::Query(e.to_string()))?;
             names.push(name);
         }
         Ok(names)
     }
 
-    async fn list_columns(&self, table: &str, limit: u32) -> Result<Vec<(String, String)>, SqliteError> {
-        if !table
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-            || table.is_empty()
-        {
+    async fn list_columns(
+        &self,
+        table: &str,
+        limit: u32,
+    ) -> Result<Vec<(String, String)>, SqliteError> {
+        if !table.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || table.is_empty() {
             return Err(SqliteError::Query("invalid table name".into()));
         }
         let sql = format!("PRAGMA table_info({table})");
@@ -147,9 +147,7 @@ impl SqliteSession {
             if cols.len() as u32 >= limit {
                 break;
             }
-            let name: String = row
-                .get(1)
-                .map_err(|e| SqliteError::Query(e.to_string()))?;
+            let name: String = row.get(1).map_err(|e| SqliteError::Query(e.to_string()))?;
             let ty: String = row.get::<String>(2).unwrap_or_else(|_| "TEXT".into());
             cols.push((name, ty));
         }
@@ -226,11 +224,7 @@ impl DriverSession for SqliteSession {
                     statement,
                     limits,
                     max_cell_bytes,
-                } => (
-                    statement.as_str().to_owned(),
-                    limits,
-                    max_cell_bytes,
-                ),
+                } => (statement.as_str().to_owned(), limits, max_cell_bytes),
                 _ => {
                     return Err(AdapterError::new(
                         Engine::Sqlite,
@@ -442,8 +436,9 @@ fn build_text_page(
             } else {
                 cell.as_str()
             };
-            let text = BoundedText::copy_from_str(clipped, ByteLimit::new(max_cell_bytes.max(1)))
-                .map_err(|_| AdapterError::new(Engine::Sqlite, AdapterFailureClass::Query))?;
+            let text =
+                BoundedText::copy_from_str(clipped, ByteLimit::new(max_cell_bytes.max(1)))
+                    .map_err(|_| AdapterError::new(Engine::Sqlite, AdapterFailureClass::Query))?;
             let trunc = if (cell.len() as u64) > max_cell_bytes {
                 Truncation::Truncated {
                     original_byte_len: Some(cell.len() as u64),
@@ -492,7 +487,10 @@ mod tests {
             .await
             .unwrap();
         assert!(!headers.is_empty());
-        assert!(body.iter().any(|row| row.iter().any(|c| c.contains("Northwind"))));
+        assert!(
+            body.iter()
+                .any(|row| row.iter().any(|c| c.contains("Northwind")))
+        );
         let _ = std::fs::remove_file(&path);
     }
 }

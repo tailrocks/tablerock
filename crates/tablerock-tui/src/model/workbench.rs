@@ -1034,10 +1034,18 @@ mod tests {
 
         ctx.production_warning = false;
         ctx.environment = Some("staging".into());
-        assert!(ctx.environment_halo().contains("staging"), "{}", ctx.environment_halo());
+        assert!(
+            ctx.environment_halo().contains("staging"),
+            "{}",
+            ctx.environment_halo()
+        );
 
         ctx.environment = None;
-        assert!(ctx.environment_halo().contains("no environment"), "{}", ctx.environment_halo());
+        assert!(
+            ctx.environment_halo().contains("no environment"),
+            "{}",
+            ctx.environment_halo()
+        );
     }
 
     #[test]

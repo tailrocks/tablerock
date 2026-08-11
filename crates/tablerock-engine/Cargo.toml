@@ -23,8 +23,8 @@ zeroize.workspace = true
 russh.workspace = true
 
 [dev-dependencies]
-rcgen = { version = "=0.14.8", features = ["zeroize"] }
-testcontainers = { version = "=0.27.3", default-features = false }
+rcgen = { version = "=0.14.9", features = ["zeroize"] }
+testcontainers = { version = "=0.28.0", default-features = false }
 
 [lints]
 workspace = true

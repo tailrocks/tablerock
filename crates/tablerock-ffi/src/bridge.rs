@@ -42,11 +42,11 @@ use tablerock_engine::{
     PostgresProbeQuery, PostgresSession, PostgresTlsMode, RedisConnectConfig,
     RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession, RedisSubscriptionKind,
     RedisSubscriptionOptions, RedisTlsMode, ResolvedSecret, SecretPromptPort,
-    SecretResolutionError, SortDirection, SortKey, SshAgentAuth, SshAuthMaterial, SshHostKeyPolicy,
-    SshPasswordAuth, SshPublicKeyAuth, SshTunnelConfig, TypedCondition,
-    load_relation_structure as load_structure_snapshot, open_local_forward_tunnel, parse_bind_text,
-    resolve_for_connect_with_ports, run_clickhouse_startup_actions, run_postgres_startup_actions,
-    run_redis_startup_actions, SqliteSession, ensure_sample_sqlite_database,
+    SecretResolutionError, SortDirection, SortKey, SqliteSession, SshAgentAuth, SshAuthMaterial,
+    SshHostKeyPolicy, SshPasswordAuth, SshPublicKeyAuth, SshTunnelConfig, TypedCondition,
+    ensure_sample_sqlite_database, load_relation_structure as load_structure_snapshot,
+    open_local_forward_tunnel, parse_bind_text, resolve_for_connect_with_ports,
+    run_clickhouse_startup_actions, run_postgres_startup_actions, run_redis_startup_actions,
 };
 use tablerock_files::{
     CsvStreamLimits, CsvTable, CsvValueType, StreamExportFormat, StreamExporter,
@@ -1331,7 +1331,10 @@ impl TableRockBridge {
     /// Ensure the offline sample SQLite file exists under `data_root` and
     /// return a saveable profile draft (host = absolute path). Does not
     /// require network or credentials.
-    pub fn prepare_sample_database(&self, data_root: String) -> Result<BridgeProfileDraft, BridgeError> {
+    pub fn prepare_sample_database(
+        &self,
+        data_root: String,
+    ) -> Result<BridgeProfileDraft, BridgeError> {
         catch_entry(|| self.prepare_sample_database_inner(data_root))
     }
 
@@ -3535,9 +3538,7 @@ impl TableRockBridge {
         let seeded = self
             .runtime
             .block_on(async { ensure_sample_sqlite_database(&path).await })?;
-        seeded.map_err(|error| {
-            BridgeError::rejected("sample-sqlite", error.to_string())
-        })?;
+        seeded.map_err(|error| BridgeError::rejected("sample-sqlite", error.to_string()))?;
         // Profile property limits: Host ≤253, DefaultContext ≤128. Persist a
         // short relative path under the operator data root (samples/…).
         let relative = format!(
@@ -7021,7 +7022,7 @@ impl TableRockBridge {
                             Engine::PostgreSql => "postgres",
                             Engine::ClickHouse => "default",
                             Engine::Redis => "0",
-                    Engine::Sqlite => "main",
+                            Engine::Sqlite => "main",
                         },
                         ByteLimit::new(16),
                     )
@@ -9977,7 +9978,7 @@ const fn engine_label(engine: Engine) -> &'static str {
         Engine::PostgreSql => "postgresql",
         Engine::ClickHouse => "clickhouse",
         Engine::Redis => "redis",
-                Engine::Sqlite => "sqlite",
+        Engine::Sqlite => "sqlite",
     }
 }
 

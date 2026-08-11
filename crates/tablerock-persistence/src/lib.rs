@@ -96,10 +96,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
         18,
         include_str!("../migrations/0018-retire-support-facts.sql"),
     ),
-    (
-        19,
-        include_str!("../migrations/0019-sqlite-engine.sql"),
-    ),
+    (19, include_str!("../migrations/0019-sqlite-engine.sql")),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -16,9 +16,7 @@ use tablerock_core::{
     ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
     ProfileSafetyMode, ProfileTag, ReconnectPreference, Revision, TlsPolicy,
 };
-use tablerock_ffi::{
-    BridgeProfileDraft, BridgeSessionIntent, BridgeWorkspaceTab, TableRockBridge,
-};
+use tablerock_ffi::{BridgeProfileDraft, BridgeSessionIntent, BridgeWorkspaceTab, TableRockBridge};
 use tablerock_persistence::{
     OPERATOR_PROFILES_DB_FILE, PersistenceActor, resolve_operator_profiles_database,
 };
@@ -213,7 +211,9 @@ fn persistence_actor_write_then_uniffi_read_shares_profile_and_intent() {
             .put_session_intent(profile_id, intent_json.to_owned())
             .unwrap();
         let page = actor
-            .list_profiles(ProfileListRequest::new(ProfileListFilter::new(None, None), None, 10).unwrap())
+            .list_profiles(
+                ProfileListRequest::new(ProfileListFilter::new(None, None), None, 10).unwrap(),
+            )
             .unwrap();
         assert_eq!(page.items().len(), 1);
         actor.shutdown().unwrap();

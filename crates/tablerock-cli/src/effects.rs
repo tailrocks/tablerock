@@ -21,9 +21,7 @@ use tablerock_core::{
     ReconnectPreference, ResultStore, ResultStoreLimits, Revision, SecretSource, SecretSourceKind,
     SessionId, TlsPolicy,
 };
-use tablerock_engine::{
-    DriverPageRequest, DriverPageStream, DriverSession, SessionRegistry,
-};
+use tablerock_engine::{DriverPageRequest, DriverPageStream, DriverSession, SessionRegistry};
 use tablerock_persistence::PersistenceActor;
 use tablerock_tui::{
     CatalogLevelSpec, CatalogNodeProjection, CatalogNodeStatus, CellDistinction, ConnectionDraft,
@@ -1396,7 +1394,7 @@ async fn list_named_queries(
                         Engine::PostgreSql => "PostgreSQL",
                         Engine::ClickHouse => "ClickHouse",
                         Engine::Redis => "Redis",
-                Engine::Sqlite => "SQLite",
+                        Engine::Sqlite => "SQLite",
                     }
                     .to_owned();
                     tablerock_tui::SavedQueryRow {
@@ -1767,7 +1765,7 @@ fn history_row(entry: tablerock_persistence::HistoryEntry) -> tablerock_tui::His
         Engine::PostgreSql => "PostgreSQL",
         Engine::ClickHouse => "ClickHouse",
         Engine::Redis => "Redis",
-                Engine::Sqlite => "SQLite",
+        Engine::Sqlite => "SQLite",
     }
     .to_owned();
     let preview = entry
@@ -1896,7 +1894,7 @@ async fn connect_session(
         EngineKind::PostgreSql => "PostgreSQL",
         EngineKind::ClickHouse => "ClickHouse",
         EngineKind::Redis => "Redis",
-                        EngineKind::Sqlite => "SQLite",
+        EngineKind::Sqlite => "SQLite",
     }
     .to_owned();
     let reconnect_preference = draft.reconnect_preference.clone();
@@ -3511,7 +3509,9 @@ async fn execute_table_op(
             return Message::Engine(tablerock_tui::EngineMsg::TableOpFailed {
                 request_token,
                 context_revision,
-                reason: FailureProjection::Label("table ops not supported for SQLite sample".into()),
+                reason: FailureProjection::Label(
+                    "table ops not supported for SQLite sample".into(),
+                ),
             });
         }
     };
@@ -5328,7 +5328,9 @@ fn catalog_request_for_level(
         BoundedText::copy_from_str(value, ByteLimit::new(128)).map_err(|e| e.to_string())
     };
     match (engine_label, level) {
-        ("PostgreSQL", CatalogLevelSpec::Root) => Ok(CatalogRequest::PostgreSqlDatabases { limits }),
+        ("PostgreSQL", CatalogLevelSpec::Root) => {
+            Ok(CatalogRequest::PostgreSqlDatabases { limits })
+        }
         ("PostgreSQL", CatalogLevelSpec::Schemas { database }) => {
             let database = text(database)?;
             Ok(CatalogRequest::PostgreSqlSchemas { database, limits })
@@ -5342,7 +5344,9 @@ fn catalog_request_for_level(
                 limits,
             })
         }
-        ("ClickHouse", CatalogLevelSpec::Root) => Ok(CatalogRequest::ClickHouseDatabases { limits }),
+        ("ClickHouse", CatalogLevelSpec::Root) => {
+            Ok(CatalogRequest::ClickHouseDatabases { limits })
+        }
         ("ClickHouse", CatalogLevelSpec::Objects { database }) => {
             let database = text(database)?;
             Ok(CatalogRequest::ClickHouseObjects { database, limits })
@@ -6291,9 +6295,7 @@ async fn open_described_session(
             };
             let path = std::path::PathBuf::from(candidate);
             if !path.is_absolute() {
-                return Err(
-                    "SQLite path must be absolute (database or host property)".into(),
-                );
+                return Err("SQLite path must be absolute (database or host property)".into());
             }
             let session = tablerock_engine::SqliteSession::connect(&path)
                 .await
@@ -6558,8 +6560,6 @@ fn parse_environment(raw: &str) -> Result<Option<EnvironmentTag>, String> {
     }))
 }
 
-
-
 #[cfg(test)]
 mod sqlite_catalog_mapping_tests {
     use super::*;
@@ -6598,8 +6598,14 @@ mod sqlite_catalog_mapping_tests {
             CatalogRequest::SqliteColumns { .. }
         ));
         assert!(
-            catalog_request_for_level("SQLite", &CatalogLevelSpec::Schemas { database: "x".into() }, limits)
-                .is_err()
+            catalog_request_for_level(
+                "SQLite",
+                &CatalogLevelSpec::Schemas {
+                    database: "x".into()
+                },
+                limits
+            )
+            .is_err()
         );
     }
 }

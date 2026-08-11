@@ -30,8 +30,10 @@ fn create_sqlite_profile() {
             id,
             Revision::INITIAL,
             Engine::Sqlite,
-            ProfileName::new(BoundedText::copy_from_str("Sample Database", ByteLimit::new(64)).unwrap())
-                .unwrap(),
+            ProfileName::new(
+                BoundedText::copy_from_str("Sample Database", ByteLimit::new(64)).unwrap(),
+            )
+            .unwrap(),
         ),
         props,
         ProfilePolicy::new(

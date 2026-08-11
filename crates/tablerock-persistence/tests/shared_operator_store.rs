@@ -11,8 +11,8 @@ use tablerock_core::{
     ProfileConnectionSnapshot, ProfileDurability, ProfileGroupName, ProfileId, ProfileIdentity,
     ProfileLimits, ProfileListFilter, ProfileListPage, ProfileListRequest, ProfileName,
     ProfileOrganization, ProfilePolicy, ProfilePreferences, ProfileProperty,
-    ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag,
-    ReconnectPreference, TlsPolicy,
+    ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileTag, ReconnectPreference,
+    TlsPolicy,
 };
 use tablerock_persistence::{
     OPERATOR_PROFILES_DB_FILE, PersistenceActor, default_operator_profiles_database,
@@ -77,8 +77,10 @@ fn sample_profile(id: ProfileId, name: &str) -> ProfileAggregate {
         ProfileDurability::Saved,
         ProfileOrganization::new(
             Some(
-                ProfileGroupName::new(BoundedText::copy_from_str("shared", ByteLimit::new(16)).unwrap())
-                    .unwrap(),
+                ProfileGroupName::new(
+                    BoundedText::copy_from_str("shared", ByteLimit::new(16)).unwrap(),
+                )
+                .unwrap(),
             ),
             vec![
                 ProfileTag::new(BoundedText::copy_from_str("parity", ByteLimit::new(16)).unwrap())
@@ -95,8 +97,7 @@ fn sample_profile(id: ProfileId, name: &str) -> ProfileAggregate {
 }
 
 fn list_all(actor: &PersistenceActor) -> ProfileListPage {
-    let request =
-        ProfileListRequest::new(ProfileListFilter::new(None, None), None, 100).unwrap();
+    let request = ProfileListRequest::new(ProfileListFilter::new(None, None), None, 100).unwrap();
     actor.list_profiles(request).unwrap()
 }
 
@@ -113,7 +114,11 @@ fn sequential_open_on_shared_profiles_db_round_trips_profile_and_intent() {
     {
         let writer = PersistenceActor::open(&path).unwrap();
         writer
-            .create_profile(sample_profile(profile_id, "shared-from-cli").persistable().unwrap())
+            .create_profile(
+                sample_profile(profile_id, "shared-from-cli")
+                    .persistable()
+                    .unwrap(),
+            )
             .unwrap();
         writer
             .put_session_intent(profile_id, intent_json.to_owned())

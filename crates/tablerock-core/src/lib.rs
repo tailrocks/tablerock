@@ -110,10 +110,6 @@ pub use redis_command::{
     parse_command_line as parse_redis_command_line, plan_command_text as plan_redis_command_text,
     tokenize as tokenize_redis_command,
 };
-pub use sample::{
-    SAMPLE_DATABASE_DIR, SAMPLE_DATABASE_FILE, SAMPLE_DATABASE_PROFILE_NAME, SAMPLE_SCHEMA_SQL,
-    SAMPLE_STARTER_SQL, is_sample_sqlite_path, sample_sqlite_database_path,
-};
 pub use result_store::{
     AdmissionOutcome, OpenResultOutcome, PageKey, ResultStore, ResultStoreError, ResultStoreLimits,
 };
@@ -121,6 +117,10 @@ pub use revision::{CounterOverflow, EventSequence, Revision, RevisionRelation, S
 pub use role_change::{
     AuthorizedRoleChangePlan, ReviewedRoleChangePlan, RoleChangeError, RoleChangeKind,
     RoleChangePlan,
+};
+pub use sample::{
+    SAMPLE_DATABASE_DIR, SAMPLE_DATABASE_FILE, SAMPLE_DATABASE_PROFILE_NAME, SAMPLE_SCHEMA_SQL,
+    SAMPLE_STARTER_SQL, is_sample_sqlite_path, sample_sqlite_database_path,
 };
 pub use saved_filter::{
     SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset, fuzzy_score, is_safe_preset_name,

@@ -6,6 +6,7 @@ fn core_contract_has_no_runtime_or_presentation_dependency() {
     // only when a deliberate core-contract decision adds another.
     for required in [
         "caseless.workspace = true",
+        "regex.workspace = true",
         "sqlparser.workspace = true",
         "unicode-normalization.workspace = true",
         "zeroize.workspace = true",
@@ -15,7 +16,7 @@ fn core_contract_has_no_runtime_or_presentation_dependency() {
             "core manifest must declare {required:?}"
         );
     }
-    assert_eq!(manifest.matches(".workspace = true").count(), 9);
+    assert_eq!(manifest.matches(".workspace = true").count(), 10);
 
     // Inspect every source file. A hand-maintained include list let new modules
     // bypass this guard, while engine-name substrings incorrectly rejected
