@@ -739,6 +739,36 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     ]
   }
 
+  func relationStructure(sessionId: Data, catalogNodeId: Data) throws
+    -> WorkbenchRelationStructure
+  {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16),
+      catalogNodeId == Data(repeating: 7, count: 16)
+    else { return try scriptedUnavailable("relation-structure") }
+    return WorkbenchRelationStructure(
+      engine: "postgresql", namespace: "public", relation: "fixture_table",
+      columns: [
+        WorkbenchRelationColumn(
+          name: "id", dataType: "bigint", nullable: false, defaultExpression: nil,
+          comment: nil, primaryKey: true, sortingKey: false),
+        WorkbenchRelationColumn(
+          name: "name", dataType: "text", nullable: true, defaultExpression: nil,
+          comment: nil, primaryKey: false, sortingKey: false),
+      ],
+      indexes: [
+        WorkbenchRelationIndex(
+          kind: "primary", name: "fixture_table_pkey",
+          definition: "CREATE UNIQUE INDEX fixture_table_pkey ON public.fixture_table (id)")
+      ],
+      constraints: [
+        WorkbenchRelationConstraint(
+          kind: "primary_key", name: "fixture_table_pkey", definition: "PRIMARY KEY (id)")
+      ],
+      facts: [WorkbenchRelationFact(name: "Rows", value: "2")],
+      ddl: "CREATE TABLE public.fixture_table (id bigint PRIMARY KEY, name text);"
+    )
+  }
+
   func open(params: WorkbenchOpenParams) throws -> Data {
     switch scenario {
     case "connection-failure": throw ScriptedBackendError.connectionFailed
@@ -863,7 +893,8 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     guard scenario == "success", operationId == Data(repeating: 16, count: 16), streamExportActive
     else { return try scriptedUnavailable("stream-export-progress") }
     streamExportPollCount += 1
-    let phase = streamExportCancelled
+    let phase =
+      streamExportCancelled
       ? "cancelled" : (streamExportPollCount < 4 ? "running" : "completed")
     return WorkbenchStreamExportProgress(
       operationId: operationId, phase: phase,
@@ -942,8 +973,9 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     guard scenario == "success", operationId == Data(repeating: 15, count: 16), importApplyActive
     else { return try scriptedUnavailable("import-progress") }
     importApplyPollCount += 1
-    let phase = importApplyCancelled
-      ? "cancelled" : (importApplyPollCount < 4 ? "running" : "completed")
+    let phase =
+      importApplyCancelled
+      ? "cancelled" : (importApplyPollCount < 20 ? "running" : "completed")
     let complete = phase == "completed"
     return WorkbenchCSVImportProgress(
       operationId: operationId, phase: phase,
@@ -1118,7 +1150,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       return try scriptedUnavailable("table-operation-status")
     }
     scriptedTableOperationPollCount += 1
-    let running = scriptedTableOperationPollCount == 1
+    let running = scriptedTableOperationPollCount <= 20
     return WorkbenchTableOperationStatus(
       operationId: operationId, kind: scriptedTableOperationKind,
       phase: running ? "running" : "succeeded", cancellable: false,
@@ -2011,7 +2043,6 @@ private struct WorkbenchWindowRoot: View {
     } else {
       ContentView()
         .environment(model)
-        .accessibilityIdentifier("window.workbench")
         .background(NativeWindowConfiguration())
         .modifier(
           NativeAppearanceFixtureModifier(
@@ -4221,6 +4252,10 @@ final class BridgeModel {
     await loadObjectFilterPresets(tab)
   }
 
+  func openCatalogObject(nodeId: Data) async {
+    await openCatalogObject(nodeKey: catalogNodeKey(nodeId))
+  }
+
   func selectObjectTab(_ tab: NativeObjectTab) {
     if selectedWorkbenchKind == "object", selectedObjectTabId != tab.id {
       activeObjectTab?.pinned = true
@@ -6021,7 +6056,8 @@ final class BridgeModel {
       do {
         let draft = try await client.profileDraft(id: item.idBytes)
         // Local SQLite (sample / file path) is passwordless — never prompt.
-        let isSqlite = item.engine.caseInsensitiveCompare("sqlite") == .orderedSame
+        let isSqlite =
+          item.engine.caseInsensitiveCompare("sqlite") == .orderedSame
           || draft.engine.caseInsensitiveCompare("sqlite") == .orderedSame
         if draft.passwordSource == "prompt", !isSqlite {
           passwordPrompt = ProfilePasswordPrompt(profile: item, action: .connect)
@@ -6918,7 +6954,6 @@ struct ConnectionsCatalogPane: View {
         }
       }
     }
-    .accessibilityIdentifier("connections.catalog")
   }
 }
 
@@ -6942,7 +6977,6 @@ struct ContentView: View {
         }
       }
       .navigationTitle("Connections")
-      .accessibilityIdentifier("connections.sidebar")
     } detail: {
       // Workbench shell when connected; welcome/direct-connect when not.
       // Spec: context strip · tabs · content · status (workbench.md).
@@ -6954,7 +6988,6 @@ struct ContentView: View {
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .accessibilityIdentifier("workbench.detail")
     }
     .sheet(
       isPresented: Binding(
@@ -7485,7 +7518,8 @@ struct QueryWorkbenchView: View {
                 .buttonStyle(.glass)
                 .disabled(
                   model.isRunning || model.isCatalogRefreshing || model.probeChangeApplying
-                    || model.probeChangeReview != nil)
+                    || model.probeChangeReview != nil
+                )
                 .accessibilityIdentifier("query.review-probe")
                 .help("Stage edit-safety probe and open Change Review")
               Spacer(minLength: 0)
@@ -7522,8 +7556,9 @@ struct QueryWorkbenchView: View {
           }
           if let table = model.resultTable {
             ResultGridWithInspector(
-              table: table, minimumHeight: 140, exposesResultPaging: true)
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
+              table: table, minimumHeight: 140, exposesResultPaging: true
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
           } else {
             ContentUnavailableView(
               "No result yet",
@@ -8157,14 +8192,18 @@ private struct StreamExportSheet: View {
       HStack {
         VStack(alignment: .leading, spacing: 3) {
           Text("Export Full Result").font(.title2).bold()
-          Text("Rust replays the exact query or typed object browse in bounded pages and publishes atomically.")
-            .foregroundStyle(.secondary)
+          Text(
+            "Rust replays the exact query or typed object browse in bounded pages and publishes atomically."
+          )
+          .foregroundStyle(.secondary)
         }
         Spacer()
         Button("Close") { model.closeStreamExport() }
-          .disabled(model.streamExportProgress.map {
-            ["running", "cancel_requested"].contains($0.phase)
-          } ?? true)
+          .disabled(
+            model.streamExportProgress.map {
+              ["running", "cancel_requested"].contains($0.phase)
+            } ?? true
+          )
           .accessibilityIdentifier("export.stream.close")
       }
       if let progress = model.streamExportProgress {
@@ -8380,9 +8419,9 @@ private struct CsvImportSheet: View {
           systemImage: model.csvImportProgress?.phase == "completed"
             ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
         )
-          .foregroundStyle(model.csvImportProgress?.phase == "completed" ? .green : .orange)
-          .accessibilityIdentifier("import.csv.outcome")
-          .accessibilityValue(outcome)
+        .foregroundStyle(model.csvImportProgress?.phase == "completed" ? .green : .orange)
+        .accessibilityIdentifier("import.csv.outcome")
+        .accessibilityValue(outcome)
       }
       if let error = model.csvImportError {
         Text(error).foregroundStyle(.red).textSelection(.enabled)
@@ -8391,7 +8430,6 @@ private struct CsvImportSheet: View {
     .padding(20)
     .frame(minWidth: 720, idealHeight: 560)
     .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("import.csv.sheet")
     .interactiveDismissDisabled(model.csvImportReview != nil || model.csvImportApplying)
   }
 }
@@ -8523,6 +8561,8 @@ private struct RedisSubscriptionSheet: View {
           }
         }
         Text(status.summary).font(.callout).foregroundStyle(.secondary)
+          .accessibilityIdentifier("redis.pubsub.status")
+          .accessibilityValue(status.summary)
       } else if !model.redisSubscriptionStarting && model.redisSubscriptionError == nil {
         ContentUnavailableView(
           "No active subscription", systemImage: "dot.radiowaves.left.and.right",
@@ -8535,7 +8575,6 @@ private struct RedisSubscriptionSheet: View {
     .padding(20)
     .frame(minWidth: 760, minHeight: 560)
     .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("redis.pubsub.sheet")
     .interactiveDismissDisabled(model.redisSubscriptionIsActive)
   }
 }
@@ -8816,7 +8855,6 @@ private struct DdlChangeSheet: View {
     .padding(20)
     .frame(minWidth: 680, minHeight: 520)
     .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("structure.change.sheet")
     .interactiveDismissDisabled(model.ddlChangeReview != nil || model.ddlChangeApplying)
     .confirmationDialog(
       model.ddlChangeReview?.destructive == true
@@ -8948,7 +8986,6 @@ private struct TableOperationSheet: View {
     .frame(minWidth: 680, minHeight: 500)
     .interactiveDismissDisabled(model.tableOperationReview != nil || model.tableOperationApplying)
     .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("table-operation.sheet")
   }
 }
 
@@ -9092,7 +9129,6 @@ private struct PostgresRolesSheet: View {
     }
     .padding(18)
     .frame(minWidth: 720, minHeight: 520)
-    .accessibilityIdentifier("postgres.roles.sheet")
     .confirmationDialog(
       "Apply role change?",
       isPresented: Binding(
@@ -9155,7 +9191,6 @@ private struct PostgresRelationshipsSheet: View {
                 .accessibilityLabel("Open Relation Lens for \(edge.id)")
                 .accessibilityIdentifier("relation.lens.open")
             }
-            .accessibilityIdentifier("postgres.relationship.edge.\(edge.id)")
           }
         }
       }
@@ -9167,7 +9202,6 @@ private struct PostgresRelationshipsSheet: View {
     }
     .padding(18)
     .frame(minWidth: 680, minHeight: 420)
-    .accessibilityIdentifier("postgres.relationships.sheet")
   }
 }
 
@@ -9242,7 +9276,6 @@ private struct PostgresActivitySheet: View {
     .padding(20)
     .frame(minWidth: 760, minHeight: 520)
     .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("postgres.activity.sheet")
     .confirmationDialog(
       pendingSignal?.kind == "terminate" ? "Terminate PostgreSQL session?" : "Cancel query?",
       isPresented: Binding(
@@ -9410,7 +9443,6 @@ private struct PostgresToolsSheet: View {
     .padding(20)
     .frame(minWidth: 700, minHeight: 500)
     .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("postgres.tools.sheet")
     .interactiveDismissDisabled(operationActive)
     .confirmationDialog(
       model.postgresToolKind == "dump" ? "Start PostgreSQL backup?" : "Start PostgreSQL restore?",
@@ -9495,7 +9527,7 @@ private struct ResultGridWithInspector: View {
             .frame(minWidth: 120, maxWidth: 220)
             .accessibilityIdentifier("results.quick-filter")
             let loadedRowsStatus =
-              "Loaded \(visibleRowIndices.count)/\(table.rows.count)"
+              "Loaded rows only · \(visibleRowIndices.count)/\(table.rows.count)"
             Text(loadedRowsStatus)
               .font(.caption.monospacedDigit())
               .foregroundStyle(.secondary)
@@ -10145,17 +10177,25 @@ struct QueryTabStrip: View {
     let label = WorkbenchTabLabel(title: tab.title, model: model)
     let id = "query.tab.\(tab.id.uuidString.lowercased())"
     if selected {
-      Button { model.selectQueryTab(tab) } label: { label }
-        .buttonStyle(.glassProminent)
-        .controlSize(.small)
-        .accessibilityIdentifier(id)
-        .accessibilityValue("Selected")
+      Button {
+        model.selectQueryTab(tab)
+      } label: {
+        label
+      }
+      .buttonStyle(.glassProminent)
+      .controlSize(.small)
+      .accessibilityIdentifier(id)
+      .accessibilityValue("Selected")
     } else {
-      Button { model.selectQueryTab(tab) } label: { label }
-        .buttonStyle(.plain)
-        .controlSize(.small)
-        .accessibilityIdentifier(id)
-        .accessibilityValue("Not selected")
+      Button {
+        model.selectQueryTab(tab)
+      } label: {
+        label
+      }
+      .buttonStyle(.plain)
+      .controlSize(.small)
+      .accessibilityIdentifier(id)
+      .accessibilityValue("Not selected")
     }
   }
 
@@ -10166,17 +10206,25 @@ struct QueryTabStrip: View {
       leadingSystemImage: tab.pinned ? "pin.fill" : "eye")
     let id = "object.tab.\(tab.id.uuidString.lowercased())"
     if selected {
-      Button { model.selectObjectTab(tab) } label: { label }
-        .buttonStyle(.glassProminent)
-        .controlSize(.small)
-        .accessibilityIdentifier(id)
-        .accessibilityValue("Selected")
+      Button {
+        model.selectObjectTab(tab)
+      } label: {
+        label
+      }
+      .buttonStyle(.glassProminent)
+      .controlSize(.small)
+      .accessibilityIdentifier(id)
+      .accessibilityValue("Selected")
     } else {
-      Button { model.selectObjectTab(tab) } label: { label }
-        .buttonStyle(.plain)
-        .controlSize(.small)
-        .accessibilityIdentifier(id)
-        .accessibilityValue("Not selected")
+      Button {
+        model.selectObjectTab(tab)
+      } label: {
+        label
+      }
+      .buttonStyle(.plain)
+      .controlSize(.small)
+      .accessibilityIdentifier(id)
+      .accessibilityValue("Not selected")
     }
   }
 }
@@ -10253,7 +10301,8 @@ private struct EnvironmentSafetyBadge: View {
       .glassEffect(.regular.interactive())
       .accessibilityElement(children: .combine)
       .accessibilityLabel(
-        "Environment halo \(haloWord), \(environment), safety \(safety), \(haloDetail)")
+        "Environment halo \(haloWord), \(environment), safety \(safety), \(haloDetail)"
+      )
       .accessibilityIdentifier("environment.halo")
     }
   }
@@ -11146,7 +11195,8 @@ struct CatalogGrid: NSViewRepresentable {
         button.alignment = .left
         button.lineBreakMode = .byTruncatingTail
         // Monospaced digits for professional dense tables (numbers align visually).
-        button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        button.font = NSFont.monospacedDigitSystemFont(
+          ofSize: NSFont.smallSystemFontSize, weight: .regular)
         button.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(button)
         NSLayoutConstraint.activate([
@@ -11503,7 +11553,8 @@ final class SqlLineNumberRulerView: NSRulerView {
       .foregroundColor: NSColor.secondaryLabelColor,
     ]
     let activeAttrs: [NSAttributedString.Key: Any] = [
-      .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold),
+      .font: NSFont.monospacedDigitSystemFont(
+        ofSize: NSFont.smallSystemFontSize, weight: .semibold),
       .foregroundColor: NSColor.labelColor,
     ]
 
@@ -11800,22 +11851,24 @@ struct ExplainPlanSheet: View {
 
   var body: some View {
     NavigationStack {
-      ScrollView {
-        Text(model.activeExplainPlan ?? "No plan")
-          .font(.system(.body, design: .monospaced))
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding()
-          .accessibilityIdentifier("explain.plan")
+      VStack(spacing: 0) {
+        HStack {
+          Spacer()
+          Button("Copy") { model.copyExplainPlan() }
+            .accessibilityIdentifier("explain.copy")
+        }
+        .padding(.horizontal)
+        ScrollView {
+          Text(model.activeExplainPlan ?? "No plan")
+            .font(.system(.body, design: .monospaced))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .accessibilityIdentifier("explain.plan")
+        }
       }
       .navigationTitle("Explain Plan")
       .toolbar {
-        ToolbarItem(placement: .primaryAction) {
-          Button("Copy") {
-            model.copyExplainPlan()
-          }
-          .accessibilityIdentifier("explain.copy")
-        }
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") {
             model.explainPresented = false
@@ -11979,9 +12032,11 @@ struct ProfileEditorSheet: View {
                 isOn: $draft.sshPlaintextAcknowledged
               )
               .foregroundStyle(.orange)
-              Text("Use SSH agent where available. Secret values never appear in logs or profile reads.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+              Text(
+                "Use SSH agent where available. Secret values never appear in logs or profile reads."
+              )
+              .font(.caption)
+              .foregroundStyle(.secondary)
             }
           }
         }
@@ -12095,7 +12150,9 @@ struct ProfileRow: View {
         .font(.caption.weight(.bold).monospaced())
         .frame(width: 28, alignment: .center)
         .padding(.vertical, 2)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .background(
+          .quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+        )
         .accessibilityLabel(ProfileEngineBadge.accessibilityName(profile.engine))
 
       VStack(alignment: .leading, spacing: 2) {
