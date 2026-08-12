@@ -16,7 +16,7 @@ struct TableRockDesignLabApp: App {
     var body: some Scene {
         WindowGroup("TableRock Design Lab") {
             LabRootView(session: session)
-                .frame(minWidth: 1280, minHeight: 760)
+                .frame(minWidth: 1280, minHeight: 680)
                 .environmentObject(session)
         }
         .defaultSize(

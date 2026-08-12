@@ -140,7 +140,9 @@ final class TableRockDesignLabUITests: XCTestCase {
     func testRequiredStateRoutesAndWindowSizing() {
         var app = launchLab(fixture: "empty", windowSize: "minimum")
         XCTAssertTrue(app.staticTexts["No objects yet"].waitForExistence(timeout: 10))
-        let minimumWidth = app.windows.firstMatch.frame.width
+        let minimumFrame = app.windows.firstMatch.frame
+        XCTAssertEqual(minimumFrame.width, 1_280, accuracy: 2)
+        XCTAssertEqual(minimumFrame.height, 760, accuracy: 2)
         app.terminate()
 
         app = launchLab(engine: "clickhouse", fixture: "loading")
@@ -151,7 +153,7 @@ final class TableRockDesignLabUITests: XCTestCase {
 
         app = launchLab(engine: "redis", fixture: "connection-error", windowSize: "expanded")
         XCTAssertTrue(app.staticTexts["Connection unavailable"].waitForExistence(timeout: 10))
-        XCTAssertGreaterThan(app.windows.firstMatch.frame.width, minimumWidth + 400)
+        XCTAssertGreaterThan(app.windows.firstMatch.frame.width, minimumFrame.width + 400)
         app.terminate()
 
         app = launchLab(fixture: "pending-change")
