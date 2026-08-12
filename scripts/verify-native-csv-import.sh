@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 FILES="$REPO_ROOT/crates/tablerock-files/src/csv_import.rs"
 FFI="$REPO_ROOT/crates/tablerock-ffi/src/bridge.rs"
 APP="$REPO_ROOT/native/dist/TableRock.app"
@@ -44,7 +45,7 @@ for pattern in \
   'formula-like cells will be inserted as literal text' \
   'interactiveDismissDisabled'
 do
-  rg -q "$pattern" "$SOURCE" || { echo "error: missing native import UI: $pattern" >&2; exit 1; }
+  native_source_has_regex "$pattern" || { echo "error: missing native import UI: $pattern" >&2; exit 1; }
 done
 
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true

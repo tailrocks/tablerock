@@ -13,10 +13,7 @@ on:
       - "crates/tablerock-files/**"
       - "crates/tablerock-persistence/**"
       - "native/**"
-      - "scripts/build-native-app.sh"
-      - "scripts/build-xcframework.sh"
-      - "scripts/generate-swift-bindings.sh"
-      - "scripts/record-native-artifact-metadata.sh"
+      - "scripts/**"
   workflow_dispatch:
 
 permissions:
@@ -87,6 +84,9 @@ jobs:
           mise exec github:yonaskolb/XcodeGen@2.46.0 -- \
             xcodegen generate --spec native/App/project.yml
           git diff --exit-code -- native/App/TableRock.xcodeproj native/App/TableRock-Info.plist
+
+      - name: Verify native source ownership
+        run: ./scripts/verify-native-source-ownership.sh
 
       - name: Build Rust bridge
         run: cargo build -p tablerock-ffi --release --locked

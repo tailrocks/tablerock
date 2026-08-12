@@ -261,8 +261,10 @@ git diff --check
 - replace monolith-only source variables with the production source roots
   needed by each assertion;
 - keep fixed-string versus regular-expression semantics unchanged;
-- add a source-ownership gate that rejects forbidden dependency directions,
-  production imports of Design Lab, and Release fixture compilation;
+- add a source-ownership gate that rejects forbidden dependency directions and
+  production imports of Design Lab;
+- freeze existing Release fixture symbols as explicit debt, reject new symbols
+  or spread into more source files, then make the debt set empty in P6;
 - add a focused fixture proving a symbol may move files without defeating a
   verifier.
 
@@ -281,6 +283,7 @@ No expected pattern may be weakened or deleted.
 
 - gates search responsibility roots rather than one filename;
 - moving declarations cannot create false failures or hide forbidden imports;
+- existing fixture debt cannot grow before its P6 removal;
 - direct production build remains green.
 
 **Stop/recovery**

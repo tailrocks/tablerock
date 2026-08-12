@@ -547,6 +547,7 @@ How to read an evidence document:
 - 672 — [Native Design Lab first operator gate](delivery/672-native-design-lab-operator-gate.md)
 - 673 — [Native Workbench production confirmation](delivery/673-native-workbench-confirmation.md)
 - 674 — [Native production migration plan](delivery/674-native-production-migration-plan.md)
+- 675 — [Native source ownership gate](delivery/675-native-source-ownership-gate.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

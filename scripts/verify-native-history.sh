@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 APP="$REPO_ROOT/native/dist/TableRock.app"
 EXECUTABLE="$APP/Contents/MacOS/TableRock"
 APP_PID=""
@@ -23,9 +24,9 @@ for pattern in \
   'Text\("Full SQL"\).tag\("full"\)' \
   'Text\("Metadata only"\).tag\("metadata_only"\)' \
   'Text\("Private"\).tag\("private"\)' \
-  'historyRetention = try await loadedClient.historyRetention\(\)'
+  'historyRetention = try await client.historyRetention\(\)'
 do
-  rg -q "$pattern" "$SOURCE" || {
+  native_source_has_regex "$pattern" || {
     echo "error: missing native history contract: $pattern" >&2
     exit 1
   }

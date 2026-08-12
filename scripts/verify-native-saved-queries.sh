@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 APP="$REPO_ROOT/native/dist/TableRock.app"
 EXECUTABLE="$APP/Contents/MacOS/TableRock"
 APP_PID=""
@@ -24,7 +25,7 @@ for pattern in \
   'Remove saved query\?' \
   'Query history is unchanged.'
 do
-  rg -q "$pattern" "$SOURCE" || {
+  native_source_has_regex "$pattern" || {
     echo "error: missing native saved-query contract: $pattern" >&2
     exit 1
   }

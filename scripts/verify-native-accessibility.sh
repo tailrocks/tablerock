@@ -3,7 +3,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 APP_BUNDLE="$REPO_ROOT/native/dist/TableRock.app"
 APP_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/TableRock"
 APP_PID=""
@@ -19,7 +20,7 @@ trap cleanup EXIT
 require() {
   local pattern="$1"
   local description="$2"
-  if ! rg -q "$pattern" "$SOURCE"; then
+  if ! native_source_has_regex "$pattern"; then
     echo "error: missing $description" >&2
     exit 1
   fi
@@ -28,7 +29,7 @@ require() {
 forbid() {
   local pattern="$1"
   local description="$2"
-  if rg -q "$pattern" "$SOURCE"; then
+  if native_source_has_regex "$pattern"; then
     echo "error: forbidden $description" >&2
     exit 1
   fi
@@ -37,9 +38,10 @@ forbid() {
 require 'setAccessibilityLabel\("Database catalog"\)' 'catalog outline label'
 require 'Catalog (object|group)' 'catalog row semantic labels'
 require 'setAccessibilityLabel\("Query results"\)' 'result table label'
-require 'setAccessibilityValue\(value\)' 'result cell accessible value'
+require 'setAccessibilityValue\(presentation\.accessibilityValue\)' \
+  'typed result cell accessible value'
 require 'setAccessibilityLabel\("SQL editor"\)' 'SQL editor label'
-require 'accessibilityIdentifier\("window\.workbench"\)' 'workbench window identifier'
+require 'accessibilityIdentifier\("workbench\.shell"\)' 'SwiftUI workbench identifier'
 require 'setAccessibilityIdentifier\("window\.workbench"\)' 'AppKit window identifier'
 require 'accessibilityIdentifier\("sidebar\.profiles"\)' 'profile sidebar identifier'
 require 'accessibilityIdentifier\("profile\.add"\)' 'profile add identifier'
@@ -63,7 +65,7 @@ require 'Label\("Cancel Query"' 'Cancel toolbar/menu label'
 require 'Fixture ·' 'appearance evidence marker'
 require '\.buttonStyle\(\.glassProminent\)' 'glass-prominent primary toolbar action'
 require 'backgroundColor = \.textBackgroundColor' 'opaque editor/grid content surfaces'
-if [[ "$(rg -c 'ToolbarSpacer\(\.fixed\)' "$SOURCE")" -lt 2 ]]; then
+if [[ "$(native_source_regex_count 'ToolbarSpacer\(\.fixed\)')" -lt 2 ]]; then
   echo "error: missing toolbar glass-cluster separators" >&2
   exit 1
 fi

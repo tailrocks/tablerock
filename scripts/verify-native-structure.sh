@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 ENGINE="$REPO_ROOT/crates/tablerock-engine/src/relation_structure.rs"
 FFI="$REPO_ROOT/crates/tablerock-ffi/src/bridge.rs"
 APP="$REPO_ROOT/native/dist/TableRock.app"
@@ -37,7 +38,7 @@ for pattern in \
   '"Indexes"' \
   '"Constraints"'
 do
-  rg -q "$pattern" "$SOURCE" || { echo "error: missing native structure UI: $pattern" >&2; exit 1; }
+  native_source_has_regex "$pattern" || { echo "error: missing native structure UI: $pattern" >&2; exit 1; }
 done
 
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true

@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 APP="$REPO_ROOT/native/dist/TableRock.app"
 EXECUTABLE="$APP/Contents/MacOS/TableRock"
 APP_PID=""
@@ -25,7 +26,7 @@ for pattern in \
   'Reload External Changes' \
   'Overwrite External Changes'
 do
-  rg -q "$pattern" "$SOURCE" || {
+  native_source_has_regex "$pattern" || {
     echo "error: missing native SQL-file contract: $pattern" >&2
     exit 1
   }

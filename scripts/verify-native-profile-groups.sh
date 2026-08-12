@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 APP="$REPO_ROOT/native/dist/TableRock.app"
 EXECUTABLE="$APP/Contents/MacOS/TableRock"
 APP_PID=""
@@ -16,11 +17,11 @@ cleanup() {
 trap cleanup EXIT
 
 for pattern in \
-  'Label\("New group", systemImage: "folder.badge.plus"\)' \
+  'Label\("Group", systemImage: "folder.badge.plus"\)' \
   'Button\("Rename Group…"\)' \
   'Button\("Remove Group…", role: \.destructive\)' \
-  'Label\("Manual Order"' \
-  'Label\("Alphabetical"' \
+  '"Manual Order",' \
+  '"Alphabetical",' \
   'Button\(profile.favorite \? "Remove Favorite" : "Add Favorite"\)' \
   'Button\("Move Up"\)' \
   'Button\("Move Down"\)' \
@@ -29,7 +30,6 @@ for pattern in \
   'Button\("Check Health"\)' \
   'Button\("Reconnect"\)' \
   'planReconnect\(' \
-  'reconnectSavedSession\(' \
   'case "authentication_stopped"' \
   'case "exhausted"' \
   'case "authentication_stopped": return "Authentication stopped"' \
@@ -38,11 +38,16 @@ for pattern in \
   'accessibilityLabel\("Environment ' \
   'Connections in .* move to Ungrouped. No connection is deleted.'
 do
-  rg -q "$pattern" "$SOURCE" || {
+  native_source_has_regex "$pattern" || {
     echo "error: missing native group contract: $pattern" >&2
     exit 1
   }
 done
+
+native_production_source_has_regex 'reconnectSavedSessionWithSecret\(' || {
+  echo "error: missing native live reconnect bridge contract" >&2
+  exit 1
+}
 
 pgrep -f "^$EXECUTABLE$" >/dev/null && {
   echo "error: TableRock already running" >&2

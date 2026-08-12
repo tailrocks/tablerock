@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 DECODER="$REPO_ROOT/native/Sources/TableRockBridge/PageV1.swift"
 TREE="$REPO_ROOT/native/Sources/TableRockFeature/StructuredValueTree.swift"
 APP="$REPO_ROOT/native/dist/TableRock.app"
@@ -43,18 +44,19 @@ do
 done
 
 for pattern in \
-  'max\(tableView\.clickedColumn, 0\)' \
+  'tableView\.clickedColumn >= 0' \
+  'tableView\.clickedColumn : lastActivatedColumn' \
   'func tableViewSelectionDidChange' \
-  'Text\("Value Inspector"\)' \
-  'LabeledContent\("Database type"' \
-  'LabeledContent\("Value kind"' \
-  'GroupBox\("Text"\)' \
-  'GroupBox\("Hex"\)' \
-  'GroupBox\("JSON Tree"\)' \
+  'accessibilityIdentifier\("value\.inspector"\)' \
+  'ValueInspectorProjection\.metadataFact\(' \
+  'accessibilityIdentifier\("value\.inspector\.kind"\)' \
+  'sectionLabel\("TEXT"\)' \
+  'Text\("HEX"\)' \
+  'sectionLabel\("JSON TREE"\)' \
   'StructuredValueTree.decode\(cell.bytes\)' \
   'cell\.isTruncated'
 do
-  rg -q "$pattern" "$SOURCE" || {
+  native_source_has_regex "$pattern" || {
     echo "error: missing native inspector contract: $pattern" >&2
     exit 1
   }
