@@ -1,6 +1,7 @@
 # Native concept selection
 
-Status: accepted for Design Lab refinement; production not authorized  
+Status: refinement complete; operator confirmation pending; production not authorized
+
 Decision date: 2026-08-12  
 Decision owner: operator
 
@@ -43,6 +44,9 @@ and unresolved limits. Production work may begin only after the operator then
 states explicitly:
 
 > This native concept is the production design TableRock should implement.
+
+That second gate is now open with the exact build and evidence in the
+[Native Workbench refined confirmation gate](../../evidence/design-lab/native-workbench-refined/README.md).
 
 ## Clean-room provenance
 

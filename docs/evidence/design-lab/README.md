@@ -1,6 +1,7 @@
 # Native Design Lab operator gate
 
-Status: **SELECTED — Native Workbench refinement in progress**  
+Status: **SELECTED — refined confirmation gate open**
+
 Captured revision: `f0820edc01be011ca241654d783ad6ee46ee35c6`  
 Captured: 2026-08-12 on macOS 26.5.2, Xcode 26.6, macOS SDK 26.5
 
@@ -8,6 +9,10 @@ This records the completed first design gate. The operator selected Native
 Workbench on 2026-08-12 after launching the current Design Lab preview. The five
 concepts remain runnable, interaction-capable, dependency-isolated, and captured
 from the real Design Lab window. Production `TableRockApp` UI remains unchanged.
+
+Phase 10 refinement is complete. The second operator gate, exact refined build,
+and 26-capture evidence matrix are available in the
+[Native Workbench refined confirmation gate](native-workbench-refined/README.md).
 
 ## Run
 
@@ -132,7 +137,7 @@ changes, or explicitly name a remix.
 ## Accessibility and verification
 
 The independent verifier proves an empty Swift Package/Xcode dependency graph,
-builds the app, runs five model tests, and runs three XCUITests. Runtime tests
+builds the app, runs ten model tests, and runs five XCUITests. Runtime tests
 exercise semantic accessibility auditing, named regions, table selection,
 context menu actions, sheets, commands, engine switching, fixtures, and exact
 minimum-window size. Contrast uses the deterministic Increase Contrast capture
@@ -170,6 +175,6 @@ used. The operator-rejected Sketch artifact had no influence.
 Native Workbench selected. See the recorded
 [decision](../../design/native-macos-2026/decision-native-workbench.md).
 
-Phase 10 refinement is now authorized in Design Lab only. No production UI
-refactor or migration is authorized until the later refined-concept
-confirmation.
+Phase 10 refinement is complete in Design Lab only. Production UI refactor or
+migration remains blocked pending the exact confirmation in the
+[refined-concept gate](native-workbench-refined/README.md).
