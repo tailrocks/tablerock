@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TableRockPresentation
 
 @main
 struct TableRockApp: App {
@@ -36,7 +37,10 @@ struct TableRockApp: App {
       WorkbenchCommands()
     }
     Settings {
-      NativeSettingsView(application: application)
+      NativeSettingsView(
+        client: application.client,
+        dependencies: application.dependencies
+      )
     }
   }
 }
@@ -61,7 +65,7 @@ private struct WorkbenchWindowRoot: View {
   var body: some View {
     #if TABLEROCK_DEVELOPMENT_SUPPORT
     if application.launchConfiguration.surface == .performanceGrid {
-      PerformanceFixtureView(table: model.resultTable)
+      PerformanceFixtureView(model: model)
         .frame(minWidth: 760, minHeight: 520)
         .task { await openFixtureWindowIfNeeded() }
     } else {

@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import TableRock
+@testable import TableRockPresentation
 
 @MainActor
 final class WorkbenchPresentationStoreLifetimeTests: XCTestCase {

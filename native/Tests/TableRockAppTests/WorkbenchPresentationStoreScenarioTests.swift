@@ -2,6 +2,7 @@ import TableRockFeature
 import XCTest
 
 @testable import TableRock
+@testable import TableRockPresentation
 
 @MainActor
 final class WorkbenchPresentationStoreScenarioTests: XCTestCase {

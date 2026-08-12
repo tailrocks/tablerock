@@ -49,10 +49,12 @@ extension FocusedValues {
   }
 }
 
-struct WorkbenchCommands: Commands {
+public struct WorkbenchCommands: Commands {
   @FocusedValue(\.workbenchActions) private var actions
 
-  var body: some Commands {
+  public init() {}
+
+  public var body: some Commands {
     CommandMenu("Query") {
       Button("Run Query") { actions?.run() }
         .keyboardShortcut(.return, modifiers: .command)

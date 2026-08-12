@@ -1,9 +1,11 @@
 import SwiftUI
 
-struct ContentView: View {
+public struct ContentView: View {
   @Environment(WorkbenchPresentationStore.self) private var model
 
-  var body: some View {
+  public init() {}
+
+  public var body: some View {
     @Bindable var model = model
     NavigationSplitView {
       // Connections list is primary; when connected, catalog shares a resizable split.

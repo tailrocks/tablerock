@@ -63,6 +63,24 @@ echo "==> Building UniFFI bridge module (direct swiftc, no SwiftPM)"
   && mv LiveWorkbenchBackend.o PageV1.o WorkbenchBridgeConversions.o \
        tablerock_ffi.o "$BUILD/" )
 
+echo "==> Building presentation module (direct swiftc, no SwiftPM)"
+( cd "$NATIVE" \
+  && swiftc -emit-module -module-name TableRockPresentation \
+       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -D TABLEROCK_DEVELOPMENT_SUPPORT \
+       -I "$BUILD" -target "$TARGET_arm64" \
+       -emit-module-path "$BUILD/TableRockPresentation.swiftmodule" \
+       Sources/TableRockPresentation/*.swift \
+       Sources/TableRockPresentation/DevelopmentSupport/*.swift \
+  && swiftc -parse-as-library -whole-module-optimization -c \
+       -module-name TableRockPresentation \
+       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -D TABLEROCK_DEVELOPMENT_SUPPORT \
+       -I "$BUILD" -target "$TARGET_arm64" \
+       Sources/TableRockPresentation/*.swift \
+       Sources/TableRockPresentation/DevelopmentSupport/*.swift \
+       -o "$BUILD/TableRockPresentation.o" )
+
 echo "==> Building SwiftUI app (direct swiftc)"
 ( cd "$NATIVE" \
   && swiftc -parse-as-library \
@@ -70,6 +88,7 @@ echo "==> Building SwiftUI app (direct swiftc)"
        -D TABLEROCK_DEVELOPMENT_SUPPORT \
        -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
        Sources/TableRockApp/*.swift Sources/TableRockApp/DevelopmentSupport/*.swift \
+       "$BUILD/TableRockPresentation.o" \
        "$BUILD/tablerock_ffi.o" "$BUILD/PageV1.o" \
        "$BUILD/LiveWorkbenchBackend.o" "$BUILD/WorkbenchBridgeConversions.o" \
        "$BUILD/AppConfiguration.o" "$BUILD/AppDependencies.o" \

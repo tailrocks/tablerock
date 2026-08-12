@@ -120,9 +120,8 @@ only production composition root.
 
 | Responsibility | Final owner and exact path |
 |---|---|
-| Application entry | `native/Sources/TableRockApp/TableRockApp.swift` |
-| Window hosting and restoration | `native/Sources/TableRockApp/ApplicationRoot.swift`, `ApplicationWindows.swift` |
-| Runtime composition and backend selection | `native/Sources/TableRockApp/ApplicationRuntime.swift` |
+| Application entry and window hosting | `native/Sources/TableRockApp/ApplicationRoot.swift` |
+| Runtime composition and backend selection | `native/Sources/TableRockApp/ApplicationRuntime.swift`, `BackendComposition.swift` |
 | System/file/keychain/open-panel ports | `native/Sources/TableRockApp/ApplicationPorts.swift` |
 | Live backend facade | `native/Sources/TableRockBridge/LiveWorkbenchBackend.swift` |
 | Bridge DTO conversions | `native/Sources/TableRockBridge/WorkbenchBridgeConversions.swift` |
@@ -145,8 +144,8 @@ only production composition root.
 | AppKit SQL editor adapter | `native/Sources/TableRockPresentation/AppKitSQLEditor.swift`; `NSTextView` only |
 | Reusable native components | `native/Sources/TableRockPresentation/NativeComponents.swift` |
 | Liquid Glass helpers | `native/Sources/TableRockPresentation/FunctionalMaterials.swift`; approved functional chrome only |
-| Fixtures and scripted backend | `native/Sources/TableRockApp/DevelopmentSupport/ScriptedWorkbenchBackend.swift`, `FixtureRoutes.swift`; development/test compilation only |
-| Visual-QA route parsing | `native/Sources/TableRockApp/DevelopmentSupport/VisualQARoutes.swift`; development/test compilation only |
+| Scripted backend and app launch routes | `native/Sources/TableRockApp/DevelopmentSupport/DevelopmentSupport.swift`; development/test compilation only |
+| Presentation visual-QA support | `native/Sources/TableRockPresentation/DevelopmentSupport/PresentationDevelopmentSupport.swift`; development/test compilation only |
 | Visual-QA tests | `native/Tests/TableRockAppUITests/NativeWorkbenchVisualQATests.swift`, existing UI-test files split by surface as needed |
 | Presentation unit tests | `native/Tests/TableRockPresentationTests/` |
 | App composition tests | `native/Tests/TableRockAppTests/` |

@@ -5,7 +5,7 @@ import TableRockFeature
 
 @MainActor
 @Observable
-final class WorkbenchPresentationStore {
+public final class WorkbenchPresentationStore {
   let windowId: UUID
   var status: String = "starting…"
   var bridgeError: String?
@@ -552,7 +552,7 @@ final class WorkbenchPresentationStore {
     windowId: UUID? = nil,
     dependencies: AppDependencies = AppDependencies(),
     dataRootPath: String = FileManager.default.temporaryDirectory.path,
-    fixtures: NativeWorkbenchFixtureConfiguration = .current
+    fixtures: NativeWorkbenchFixtureConfiguration
   ) {
     self.client = client
     self.startupError = startupError
@@ -567,8 +567,25 @@ final class WorkbenchPresentationStore {
     selectedQueryTabId = tab.id
     installPerformanceFixtureIfRequested()
   }
+
+    public convenience init(
+      client: (any WorkbenchBackend)? = nil,
+      startupError: String? = nil,
+      windowId: UUID? = nil,
+      dependencies: AppDependencies = AppDependencies(),
+      dataRootPath: String = FileManager.default.temporaryDirectory.path
+    ) {
+      self.init(
+        client: client,
+        startupError: startupError,
+        windowId: windowId,
+        dependencies: dependencies,
+        dataRootPath: dataRootPath,
+        fixtures: .current
+      )
+    }
   #else
-    init(
+    public init(
       client: (any WorkbenchBackend)? = nil,
       startupError: String? = nil,
       windowId: UUID? = nil,
@@ -588,7 +605,7 @@ final class WorkbenchPresentationStore {
     }
   #endif
 
-  func initialize() async {
+  public func initialize() async {
     #if TABLEROCK_DEVELOPMENT_SUPPORT
     if fixtures.multiWindow {
       let other = WorkbenchPresentationStore(client: client, dependencies: dependencies, fixtures: fixtures)

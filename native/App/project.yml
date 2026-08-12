@@ -42,6 +42,22 @@ targets:
     sources:
       - path: ../Sources/TableRockFeature
 
+  TableRockPresentation:
+    type: framework.static
+    platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+        Test Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+    sources:
+      - path: ../Sources/TableRockPresentation
+    dependencies:
+      - target: TableRockFeature
+
   TableRockBridge:
     type: framework.static
     platform: macOS
@@ -62,6 +78,7 @@ targets:
       - path: ../Sources/TableRockApp
     dependencies:
       - target: TableRockFeature
+      - target: TableRockPresentation
       - target: TableRockBridge
       - framework: ../../target/xcframework/tablerock_ffiFFI.xcframework
         embed: false
@@ -127,6 +144,23 @@ targets:
     dependencies:
       - target: TableRockFeature
 
+  TableRockPresentationTests:
+    type: bundle.unit-test
+    platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+        Test Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+    sources:
+      - path: ../Tests/TableRockPresentationTests
+    dependencies:
+      - target: TableRockPresentation
+      - target: TableRockFeature
+
   TableRockBridgeTests:
     type: bundle.unit-test
     platform: macOS
@@ -165,6 +199,7 @@ targets:
       - path: ../Tests/TableRockAppTests
     dependencies:
       - target: TableRock
+      - target: TableRockPresentation
 
   TableRockDesignLabTests:
     type: bundle.unit-test
@@ -194,6 +229,7 @@ schemes:
       targets:
         TableRock: all
         TableRockFeatureTests: [test]
+        TableRockPresentationTests: [test]
         TableRockBridgeTests: [test]
         TableRockAppTests: [test]
         TableRockAppUITests: [test]

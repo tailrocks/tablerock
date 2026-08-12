@@ -134,7 +134,7 @@ extension WorkbenchPresentationStore {
   }
 
   #if TABLEROCK_DEVELOPMENT_SUPPORT
-    func receiveExternalUrlFixtureIfNeeded() async {
+    public func receiveExternalUrlFixtureIfNeeded() async {
     guard !externalUrlFixtureConsumed,
       let raw = fixtures.externalURL,
       let url = URL(string: raw)
@@ -144,7 +144,7 @@ extension WorkbenchPresentationStore {
     }
   #endif
 
-  func receiveExternalURL(_ externalUrl: URL) async {
+  public func receiveExternalURL(_ externalUrl: URL) async {
     let input: String
     do {
       input = try externalConnectionUrlPayload(externalUrl)

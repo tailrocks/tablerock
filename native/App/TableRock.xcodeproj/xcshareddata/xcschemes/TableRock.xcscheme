@@ -77,6 +77,20 @@
                ReferencedContainer = "container:TableRock.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "5F2C9D368D16923B5080E53A"
+               BuildableName = "TableRockPresentationTests.xctest"
+               BlueprintName = "TableRockPresentationTests"
+               ReferencedContainer = "container:TableRock.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

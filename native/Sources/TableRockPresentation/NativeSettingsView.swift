@@ -2,11 +2,17 @@ import Foundation
 import SwiftUI
 import TableRockFeature
 
-struct NativeSettingsView: View {
-  let application: NativeApplicationModel
+public struct NativeSettingsView: View {
+  let client: (any WorkbenchBackend)?
+  let dependencies: AppDependencies
   @State private var outcome: String?
 
-  var body: some View {
+  public init(client: (any WorkbenchBackend)?, dependencies: AppDependencies) {
+    self.client = client
+    self.dependencies = dependencies
+  }
+
+  public var body: some View {
     Form {
       LabeledContent("Storage", value: "Local only")
       LabeledContent("Telemetry", value: "Off by default")
@@ -30,12 +36,12 @@ struct NativeSettingsView: View {
   }
 
   private func exportSupportBundle() {
-    guard let client = application.client else {
+    guard let client else {
       outcome = "Support export unavailable"
       return
     }
     guard
-      let url = application.dependencies.filePanels.chooseSaveFile(
+      let url = dependencies.filePanels.chooseSaveFile(
         AppFilePanelRequest(
           title: "Export Safe Support Bundle", prompt: "Export",
           suggestedFilename: "tablerock-support.txt", allowedExtensions: ["txt"]

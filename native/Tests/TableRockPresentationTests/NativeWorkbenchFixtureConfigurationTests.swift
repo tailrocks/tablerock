@@ -1,6 +1,8 @@
+#if TABLEROCK_DEVELOPMENT_SUPPORT
+
 import XCTest
 
-@testable import TableRock
+@testable import TableRockPresentation
 
 final class NativeWorkbenchFixtureConfigurationTests: XCTestCase {
   func testEmptyEnvironmentDisablesEveryFixture() {
@@ -102,3 +104,5 @@ final class NativeWorkbenchFixtureConfigurationTests: XCTestCase {
     XCTAssertFalse(configuration.queryTabs)
   }
 }
+
+#endif

@@ -10,6 +10,7 @@ PROJECT_SPEC="$REPO_ROOT/native/App/project.yml"
 DEVELOPMENT_FIXTURE_SYMBOLS="$REPO_ROOT/scripts/native-development-fixture-symbols.txt"
 APP_DEVELOPMENT_SUPPORT="$APP_SOURCE/DevelopmentSupport"
 FEATURE_DEVELOPMENT_SUPPORT="$FEATURE_SOURCE/AppConfigurationDevelopmentSupport.swift"
+PRESENTATION_DEVELOPMENT_SUPPORT="$PRESENTATION_SOURCE/DevelopmentSupport"
 
 production_roots=("$APP_SOURCE" "$FEATURE_SOURCE" "$BRIDGE_SOURCE")
 if [[ -d "$PRESENTATION_SOURCE" ]]; then
@@ -78,6 +79,14 @@ if [[ "$(jq -r '
   echo "error: Swift Package Bridge dependencies drifted" >&2
   exit 1
 fi
+if [[ "$(jq -r '
+  [.targets[] | select(.name == "TableRockPresentation")][0].dependencies
+  | map(.byName?[0] // .target?[0] // .product?[0] // "")
+  | sort | join("\n")
+' <<<"$package_json")" != 'TableRockFeature' ]]; then
+  echo "error: Swift Package Presentation must depend only on TableRockFeature" >&2
+  exit 1
+fi
 
 ruby - "$PROJECT_SPEC" <<'RUBY'
 require "yaml"
@@ -110,7 +119,7 @@ end
   end
 
 development_condition = "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
-%w[TableRockFeature TableRock].each do |name|
+%w[TableRockFeature TableRockPresentation TableRock].each do |name|
   configs = targets.fetch(name).fetch("settings").fetch("configs")
   unless configs.dig("Debug", "SWIFT_ACTIVE_COMPILATION_CONDITIONS") == development_condition &&
       configs.dig("Test Release", "SWIFT_ACTIVE_COMPILATION_CONDITIONS") == development_condition &&
@@ -127,7 +136,8 @@ cleanup() {
 trap cleanup EXIT
 
 for support_file in "$APP_DEVELOPMENT_SUPPORT/DevelopmentSupport.swift" \
-  "$FEATURE_DEVELOPMENT_SUPPORT"; do
+  "$FEATURE_DEVELOPMENT_SUPPORT" \
+  "$PRESENTATION_DEVELOPMENT_SUPPORT/PresentationDevelopmentSupport.swift"; do
   if [[ "$(sed -n '/[^[:space:]]/{p;q;}' "$support_file")" != \
       '#if TABLEROCK_DEVELOPMENT_SUPPORT' ]]; then
     echo "error: development support is not compile-time guarded: $support_file" >&2
@@ -143,6 +153,7 @@ fi
 
 rg -o --no-filename 'TABLEROCK_FIXTURE_[A-Z0-9_]+' \
   "$APP_DEVELOPMENT_SUPPORT" "$FEATURE_DEVELOPMENT_SUPPORT" \
+  "$PRESENTATION_DEVELOPMENT_SUPPORT" \
   | sort -u >"$actual_fixture_symbols"
 added="$(comm -13 "$DEVELOPMENT_FIXTURE_SYMBOLS" "$actual_fixture_symbols")"
 if [[ -n "$added" ]]; then

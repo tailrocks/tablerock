@@ -13,6 +13,7 @@ let package = Package(
     products: [
         .library(name: "TableRockBridge", targets: ["TableRockBridge"]),
         .library(name: "TableRockFeature", targets: ["TableRockFeature"]),
+        .library(name: "TableRockPresentation", targets: ["TableRockPresentation"]),
         .executable(name: "TableRockDesignLab", targets: ["TableRockDesignLab"]),
     ],
     targets: [
@@ -43,11 +44,19 @@ let package = Package(
                 .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
             ]
         ),
+        .target(
+            name: "TableRockPresentation",
+            dependencies: ["TableRockFeature"],
+            path: "Sources/TableRockPresentation",
+            swiftSettings: [
+                .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
+            ]
+        ),
         // Native macOS app (plan 020 checkpoint 1). SwiftUI + AppKit on macOS 26;
         // links the cargo release dylib transitively through TableRockBridge.
         .executableTarget(
             name: "TableRockApp",
-            dependencies: ["TableRockBridge", "TableRockFeature"],
+            dependencies: ["TableRockBridge", "TableRockFeature", "TableRockPresentation"],
             path: "Sources/TableRockApp",
             swiftSettings: [
                 .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
@@ -70,6 +79,14 @@ let package = Package(
             name: "TableRockFeatureTests",
             dependencies: ["TableRockFeature"],
             path: "Tests/TableRockFeatureTests"
+        ),
+        .testTarget(
+            name: "TableRockPresentationTests",
+            dependencies: ["TableRockPresentation"],
+            path: "Tests/TableRockPresentationTests",
+            swiftSettings: [
+                .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
+            ]
         ),
         .testTarget(
             name: "TableRockDesignLabTests",
