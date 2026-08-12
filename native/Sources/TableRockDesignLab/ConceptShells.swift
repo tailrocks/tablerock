@@ -210,13 +210,23 @@ private struct LabColumnObservatory: View {
 
     var body: some View {
         HSplitView {
-            LabSourceColumn()
-                .frame(minWidth: 170, idealWidth: 190, maxWidth: 220)
-                .background(.bar)
+            if surface == .connections || surface == .setup {
+                LabConnectionGroupsColumn()
+                    .frame(minWidth: 170, idealWidth: 190, maxWidth: 220)
+                    .background(.bar)
 
-            LabObjectColumn()
-                .frame(minWidth: 190, idealWidth: 220, maxWidth: 260)
-                .background(Color(nsColor: .windowBackgroundColor))
+                LabConnectionProfilesColumn(setupSelected: surface == .setup)
+                    .frame(minWidth: 190, idealWidth: 220, maxWidth: 260)
+                    .background(Color(nsColor: .windowBackgroundColor))
+            } else {
+                LabSourceColumn()
+                    .frame(minWidth: 170, idealWidth: 190, maxWidth: 220)
+                    .background(.bar)
+
+                LabObjectColumn()
+                    .frame(minWidth: 190, idealWidth: 220, maxWidth: 260)
+                    .background(Color(nsColor: .windowBackgroundColor))
+            }
 
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
@@ -225,7 +235,7 @@ private struct LabColumnObservatory: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(surface == .dataGrid ? "customers" : surface.title)
                             .font(.headline)
-                        Text("Northstar Analytics · analytics.public")
+                        Text(contextDetail)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -244,6 +254,14 @@ private struct LabColumnObservatory: View {
             .frame(minWidth: 560)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var contextDetail: String {
+        switch surface {
+        case .connections: "All Connections · 3 profiles"
+        case .setup: "New profile · PostgreSQL"
+        default: "Northstar Analytics · analytics.public"
+        }
     }
 }
 

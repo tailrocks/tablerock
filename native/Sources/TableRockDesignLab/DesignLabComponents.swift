@@ -450,6 +450,111 @@ struct LabObjectColumn: View {
     }
 }
 
+struct LabConnectionGroupsColumn: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("GROUPS")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+
+            LabGroupRow(title: "All Connections", count: 3, symbol: "tray.full", selected: true)
+            LabGroupRow(title: "Favorites", count: 3, symbol: "star")
+            LabGroupRow(title: "Production", count: 1, symbol: "exclamationmark.triangle")
+            LabGroupRow(title: "Staging", count: 1, symbol: "shippingbox")
+            LabGroupRow(title: "Local", count: 1, symbol: "desktopcomputer")
+            Spacer()
+            Button("New Group", systemImage: "folder.badge.plus") {}
+                .buttonStyle(.plain)
+                .font(.caption)
+                .padding(12)
+        }
+    }
+}
+
+private struct LabGroupRow: View {
+    let title: String
+    let count: Int
+    let symbol: String
+    var selected = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundStyle(selected ? Color.accentColor : .secondary)
+                .frame(width: 16)
+            Text(title)
+                .font(.caption)
+            Spacer()
+            Text(String(count))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 30)
+        .background(selected ? Color.accentColor.opacity(0.13) : .clear, in: .rect(cornerRadius: 7))
+        .padding(.horizontal, 5)
+    }
+}
+
+struct LabConnectionProfilesColumn: View {
+    let setupSelected: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("CONNECTIONS")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "line.3.horizontal.decrease")
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 38)
+            Divider()
+
+            VStack(spacing: 2) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle")
+                        .foregroundStyle(setupSelected ? Color.accentColor : .secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("New Connection").font(.caption.weight(.medium))
+                        Text("PostgreSQL").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 9)
+                .frame(height: 42)
+                .background(setupSelected ? Color.accentColor.opacity(0.13) : .clear, in: .rect(cornerRadius: 7))
+
+                ForEach(LabFixtures.connections) { connection in
+                    HStack(spacing: 8) {
+                        Image(systemName: connection.symbol)
+                            .foregroundStyle(!setupSelected && connection.id == "northstar" ? Color.accentColor : .secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(connection.name).font(.caption)
+                            Text(connection.environment).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(height: 42)
+                    .background(
+                        !setupSelected && connection.id == "northstar"
+                            ? Color.accentColor.opacity(0.13)
+                            : .clear,
+                        in: .rect(cornerRadius: 7)
+                    )
+                }
+            }
+            .padding(6)
+            Spacer()
+        }
+    }
+}
+
 struct LabStatusBar: View {
     var reviewEmphasis = false
 
