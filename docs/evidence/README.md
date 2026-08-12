@@ -557,6 +557,7 @@ How to read an evidence document:
 - 682 — [Native live backend extraction](delivery/682-native-live-backend-extraction.md)
 - 683 — [Native Bridge facade ownership](delivery/683-native-bridge-facade-ownership.md)
 - 684 — [Native fixture projection boundary](delivery/684-native-fixture-projection-boundary.md)
+- 685 — [Native presentation store extraction](delivery/685-native-presentation-store-extraction.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
