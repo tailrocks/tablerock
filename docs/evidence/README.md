@@ -591,6 +591,7 @@ How to read an evidence document:
 - 716 — [Native settings extraction](delivery/716-native-settings-extraction.md)
 - 717 — [Native workspace-tab extraction](delivery/717-native-workspace-tab-extraction.md)
 - 718 — [Native object-surface extraction](delivery/718-native-object-surface-extraction.md)
+- 719 — [Native change-review extraction](delivery/719-native-change-review-extraction.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

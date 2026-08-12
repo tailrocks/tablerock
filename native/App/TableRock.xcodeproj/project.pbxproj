@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01F6FA6192ABBD9BBB44C7A4 /* ChangeReviewSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B19021BB67F99297D599A7D7 /* ChangeReviewSheets.swift */; };
 		03EA8F5972377B177CF3949B /* GridCellPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FE4A4192046C53B74989CB3 /* GridCellPresentationTests.swift */; };
 		08418AD3F194E697CBAEF800 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7056B74025E206D1A652A30B /* AppConfiguration.swift */; };
 		0B308D2CE229CE59FBDA96DC /* WorkbenchToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67EBE74057F33F89C0DD0F47 /* WorkbenchToolbar.swift */; };
@@ -293,6 +294,7 @@
 		A61EA4DB356144BD42272270 /* TableRockBridge.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TableRockBridge.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		A68E1D5D9FB490A8CE2982A6 /* redis-signed-v1.hex */ = {isa = PBXFileReference; path = "redis-signed-v1.hex"; sourceTree = "<group>"; };
 		AA0F98710C17A489C2A8ABBC /* NativeFindReplaceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeFindReplaceEngine.swift; sourceTree = "<group>"; };
+		B19021BB67F99297D599A7D7 /* ChangeReviewSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangeReviewSheets.swift; sourceTree = "<group>"; };
 		C7DDBBBFFBDE47B37C5CA82C /* WorkbenchStatusFactsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchStatusFactsTests.swift; sourceTree = "<group>"; };
 		CA12356E610CE9E7EEB4BD2B /* DesignLabSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabSession.swift; sourceTree = "<group>"; };
 		D2CD044701909D9865A79995 /* libiconv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libiconv.tbd; path = usr/lib/libiconv.tbd; sourceTree = SDKROOT; };
@@ -534,6 +536,7 @@
 				9E8F4B2D8575F664883970CD /* ApplicationRuntime.swift */,
 				2007E6448343CED0B5816844 /* CatalogGrid.swift */,
 				26D5DF8DF8C2847671DFFB6C /* CatalogOutline.swift */,
+				B19021BB67F99297D599A7D7 /* ChangeReviewSheets.swift */,
 				8DF4E47C74A6EA2E7CE6ACC1 /* ConnectionsCatalogPane.swift */,
 				F2383F7968C0CB87D8CB7D83 /* ConnectionSheets.swift */,
 				957C32C81C6C4BCCABFFFD37 /* ConnectionsProfileList.swift */,
@@ -907,6 +910,7 @@
 				4E9E25C3BE62B8507E68FC45 /* ApplicationRuntime.swift in Sources */,
 				3DB2534830E5B6F40ED976DF /* CatalogGrid.swift in Sources */,
 				9427571ACB8AA0CA2757886E /* CatalogOutline.swift in Sources */,
+				01F6FA6192ABBD9BBB44C7A4 /* ChangeReviewSheets.swift in Sources */,
 				451C6F000145F0E9AA5EC5F5 /* ConnectionSheets.swift in Sources */,
 				E04BA777910E414DF689C9AA /* ConnectionsCatalogPane.swift in Sources */,
 				AFDFB9A4ABFF8D346A9DB4B0 /* ConnectionsProfileList.swift in Sources */,
