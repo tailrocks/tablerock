@@ -133,14 +133,16 @@ extension WorkbenchPresentationStore {
     }
   }
 
-  func receiveExternalUrlFixtureIfNeeded() async {
+  #if TABLEROCK_DEVELOPMENT_SUPPORT
+    func receiveExternalUrlFixtureIfNeeded() async {
     guard !externalUrlFixtureConsumed,
       let raw = fixtures.externalURL,
       let url = URL(string: raw)
     else { return }
     externalUrlFixtureConsumed = true
     await receiveExternalURL(url)
-  }
+    }
+  #endif
 
   func receiveExternalURL(_ externalUrl: URL) async {
     let input: String

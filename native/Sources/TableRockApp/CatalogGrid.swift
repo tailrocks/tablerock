@@ -175,7 +175,9 @@ struct CatalogGrid: NSViewRepresentable {
         !snapshot.rows.isEmpty
       else { return }
       let finalRow = snapshot.rows.count - 1
-      writePerformanceMetric("PERF_SCROLL_ARMED rows=\(finalRow + 1)")
+      #if TABLEROCK_DEVELOPMENT_SUPPORT
+        writePerformanceMetric("PERF_SCROLL_ARMED rows=\(finalRow + 1)")
+      #endif
       fixtureScrollTask = Task { @MainActor [weak tableView] in
         try? await Task.sleep(for: .milliseconds(500))
         guard let tableView, !Task.isCancelled else { return }
@@ -189,9 +191,13 @@ struct CatalogGrid: NSViewRepresentable {
           try? await Task.sleep(for: .milliseconds(16))
         }
         let elapsed = Date().timeIntervalSince(started)
-        writePerformanceMetric(
-          "PERF_SCROLL_DONE rows=\(finalRow + 1) elapsed_seconds=\(String(format: "%.6f", elapsed))"
-        )
+        #if TABLEROCK_DEVELOPMENT_SUPPORT
+          writePerformanceMetric(
+            "PERF_SCROLL_DONE rows=\(finalRow + 1) elapsed_seconds=\(String(format: "%.6f", elapsed))"
+          )
+        #else
+          _ = elapsed
+        #endif
       }
     }
 

@@ -6,15 +6,21 @@ final class NativeApplicationModel {
   let client: (any WorkbenchBackend)?
   let bridgeError: String?
   let dependencies: AppDependencies
+  #if TABLEROCK_DEVELOPMENT_SUPPORT
   let launchConfiguration: NativeLaunchConfiguration
   let appearanceFixture: NativeAppearanceFixture
+  #endif
   /// Operator data root (Application Support/TableRock or test root).
   let dataRootPath: String
-  private var fixtureWindowOpened = false
+  #if TABLEROCK_DEVELOPMENT_SUPPORT
+    private var fixtureWindowOpened = false
+  #endif
 
   init() {
+    #if TABLEROCK_DEVELOPMENT_SUPPORT
     launchConfiguration = .current
     appearanceFixture = .current
+    #endif
     var configuredDependencies = AppDependencies(
       filePanels: SystemFilePanelPort(),
       pasteboard: SystemPasteboardPort()
@@ -52,9 +58,11 @@ final class NativeApplicationModel {
     }
   }
 
-  func claimMultiWindowFixtureOpen() -> Bool {
-    guard !fixtureWindowOpened else { return false }
-    fixtureWindowOpened = true
-    return true
-  }
+  #if TABLEROCK_DEVELOPMENT_SUPPORT
+    func claimMultiWindowFixtureOpen() -> Bool {
+      guard !fixtureWindowOpened else { return false }
+      fixtureWindowOpened = true
+      return true
+    }
+  #endif
 }

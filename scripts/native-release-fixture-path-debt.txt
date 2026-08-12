@@ -1,2 +1,0 @@
-native/Sources/TableRockApp/TableRockApp.swift
-native/Sources/TableRockFeature/AppConfiguration.swift

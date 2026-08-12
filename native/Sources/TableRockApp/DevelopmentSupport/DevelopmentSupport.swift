@@ -1,4 +1,6 @@
-// TableRock native macOS app — plan 020.
+#if TABLEROCK_DEVELOPMENT_SUPPORT
+
+// TableRock native macOS development and test support.
 //
 // Built directly with Swift 6 against the macOS 26 SDK. The Rust bridge is
 // linked as the cargo release dylib for local development; notarized
@@ -114,6 +116,10 @@ private enum ScriptedBackendError: Error {
 
 private func scriptedUnavailable<T>(_ operation: String) throws -> T {
   throw ScriptedBackendError.unavailable(operation)
+}
+
+func makeDevelopmentWorkbenchBackend(scenario: String) -> any WorkbenchBackend {
+  ScriptedWorkbenchBackend(scenario: scenario)
 }
 
 extension WorkbenchBackend {
@@ -1075,19 +1081,6 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   }
 }
 
-func makeConfiguredWorkbenchBackend(_ configuration: AppConfiguration) throws
-  -> any WorkbenchBackend
-{
-  switch configuration.backend {
-  case .live:
-    return try makeLiveWorkbenchBackend(
-      persistencePath: configuration.paths.profilesDatabase.path
-    )
-  case .scripted(let scenario):
-    return ScriptedWorkbenchBackend(scenario: scenario)
-  }
-}
-
 struct NativeLaunchConfiguration: Sendable, Equatable {
   enum Surface: Sendable, Equatable {
     case workbench
@@ -1630,6 +1623,4 @@ func writePerformanceMetric(_ metric: String) {
   FileHandle.standardError.write(Data("\(metric)\n".utf8))
 }
 
-func counted(_ count: Int, _ singular: String) -> String {
-  "\(count) \(singular)\(count == 1 ? "" : "s")"
-}
+#endif

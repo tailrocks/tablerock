@@ -27,7 +27,9 @@ final class WorkbenchPresentationStore {
   var quickSwitcherPresented = false
   var quickSwitcherSearch = ""
   var explainPresented = false
-  var externalUrlFixtureConsumed = false
+  #if TABLEROCK_DEVELOPMENT_SUPPORT
+    var externalUrlFixtureConsumed = false
+  #endif
   var pendingGroupRemoval: String?
   var profileSections: [ProfileSection] {
     var order = profileGroups.map(\.name)
@@ -535,13 +537,16 @@ final class WorkbenchPresentationStore {
   let client: (any WorkbenchBackend)?
   private let startupError: String?
   let dependencies: AppDependencies
-  let fixtures: NativeWorkbenchFixtureConfiguration
+  #if TABLEROCK_DEVELOPMENT_SUPPORT
+    let fixtures: NativeWorkbenchFixtureConfiguration
+  #endif
   /// Operator data root used for sample SQLite + isolation.
   let dataRootPath: String
   var sessionData: Data?
   var queryStateRevision: UInt64 = 0
 
-  init(
+  #if TABLEROCK_DEVELOPMENT_SUPPORT
+    init(
     client: (any WorkbenchBackend)? = nil,
     startupError: String? = nil,
     windowId: UUID? = nil,
@@ -562,8 +567,29 @@ final class WorkbenchPresentationStore {
     selectedQueryTabId = tab.id
     installPerformanceFixtureIfRequested()
   }
+  #else
+    init(
+      client: (any WorkbenchBackend)? = nil,
+      startupError: String? = nil,
+      windowId: UUID? = nil,
+      dependencies: AppDependencies = AppDependencies(),
+      dataRootPath: String = FileManager.default.temporaryDirectory.path
+    ) {
+      self.client = client
+      self.startupError = startupError
+      self.dependencies = dependencies
+      self.dataRootPath = dataRootPath
+      self.windowId = windowId ?? dependencies.identifiers.next()
+      let tab = NativeQueryTab(
+        id: dependencies.identifiers.next(), title: "Query 1", statementText: "SELECT 1;"
+      )
+      queryTabs = [tab]
+      selectedQueryTabId = tab.id
+    }
+  #endif
 
   func initialize() async {
+    #if TABLEROCK_DEVELOPMENT_SUPPORT
     if fixtures.multiWindow {
       let other = WorkbenchPresentationStore(client: client, dependencies: dependencies, fixtures: fixtures)
       other.queryText = "SELECT second_window;"
@@ -1238,11 +1264,13 @@ final class WorkbenchPresentationStore {
       runNativeProfileGroupAudit()
       return
     }
+    #endif
     guard let client else {
       bridgeError = startupError ?? "Bridge unavailable"
       status = "error"
       return
     }
+    #if TABLEROCK_DEVELOPMENT_SUPPORT
     if fixtures.activeQuery {
       do {
         let session = try await client.open(
@@ -1261,6 +1289,7 @@ final class WorkbenchPresentationStore {
       }
       return
     }
+    #endif
     do {
       historyRetention = try await client.historyRetention()
       await refreshProfiles()
@@ -1271,7 +1300,8 @@ final class WorkbenchPresentationStore {
     }
   }
 
-  private func installPerformanceFixtureIfRequested() {
+  #if TABLEROCK_DEVELOPMENT_SUPPORT
+    private func installPerformanceFixtureIfRequested() {
     guard let requested = fixtures.performanceGridRows, requested > 0
     else { return }
     let count = min(requested, 10_000)
@@ -1293,7 +1323,8 @@ final class WorkbenchPresentationStore {
     writePerformanceMetric(
       "PERF_FIXTURE_READY rows=\(count) columns=\(columns.count) build_seconds=\(String(format: "%.6f", elapsed))"
     )
-  }
+    }
+  #endif
 
   private func sharesBridge(with other: WorkbenchPresentationStore) -> Bool {
     guard let client, let otherClient = other.client else {

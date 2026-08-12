@@ -596,6 +596,7 @@ How to read an evidence document:
 - 721 — [Native result-surface extraction](delivery/721-native-result-surface-extraction.md)
 - 722 — [Native environment-chrome consolidation](delivery/722-native-environment-chrome-consolidation.md)
 - 723 — [Native bridge-error projection](delivery/723-native-bridge-error-projection.md)
+- 724 — [Native Release development-support isolation](delivery/724-native-release-development-support-isolation.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

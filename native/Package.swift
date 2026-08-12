@@ -38,14 +38,20 @@ let package = Package(
         ),
         .target(
             name: "TableRockFeature",
-            path: "Sources/TableRockFeature"
+            path: "Sources/TableRockFeature",
+            swiftSettings: [
+                .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
+            ]
         ),
         // Native macOS app (plan 020 checkpoint 1). SwiftUI + AppKit on macOS 26;
         // links the cargo release dylib transitively through TableRockBridge.
         .executableTarget(
             name: "TableRockApp",
             dependencies: ["TableRockBridge", "TableRockFeature"],
-            path: "Sources/TableRockApp"
+            path: "Sources/TableRockApp",
+            swiftSettings: [
+                .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
+            ]
         ),
         // Static, clean-room native interface exploration. This target must
         // remain dependency-free and must not reuse production models.

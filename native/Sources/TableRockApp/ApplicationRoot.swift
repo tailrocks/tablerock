@@ -6,11 +6,14 @@ struct TableRockApp: App {
   private let application = NativeApplicationModel()
 
   init() {
+    #if TABLEROCK_DEVELOPMENT_SUPPORT
     application.appearanceFixture.applyApplicationAppearance()
+    #endif
   }
 
   var body: some Scene {
     WindowGroup(for: UUID.self) { $windowId in
+      #if TABLEROCK_DEVELOPMENT_SUPPORT
       switch application.launchConfiguration.surface {
       case .accessibilityAudit:
         NativeAccessibilityFixtureView()
@@ -22,6 +25,9 @@ struct TableRockApp: App {
           application: application, windowId: windowId
         )
       }
+      #else
+        WorkbenchWindowRoot(application: application, windowId: windowId)
+      #endif
     } defaultValue: {
       application.dependencies.identifiers.next()
     }
@@ -53,6 +59,7 @@ private struct WorkbenchWindowRoot: View {
   }
 
   var body: some View {
+    #if TABLEROCK_DEVELOPMENT_SUPPORT
     if application.launchConfiguration.surface == .performanceGrid {
       PerformanceFixtureView(table: model.resultTable)
         .frame(minWidth: 760, minHeight: 520)
@@ -72,8 +79,22 @@ private struct WorkbenchWindowRoot: View {
           Task { await model.receiveExternalURL(url) }
         }
     }
+    #else
+      productionWorkbench
+    #endif
   }
 
+  private var productionWorkbench: some View {
+    ContentView()
+      .environment(model)
+      .background(NativeWindowConfiguration())
+      .frame(minWidth: 760, minHeight: 520)
+      .onOpenURL { url in
+        Task { await model.receiveExternalURL(url) }
+      }
+  }
+
+  #if TABLEROCK_DEVELOPMENT_SUPPORT
   private func launchFixturesIfNeeded() async {
     await model.receiveExternalUrlFixtureIfNeeded()
     await openFixtureWindowIfNeeded()
@@ -87,6 +108,7 @@ private struct WorkbenchWindowRoot: View {
     try? await Task.sleep(for: .milliseconds(800))
     runNativeMultiWindowAudit()
   }
+  #endif
 }
 
 private struct NativeWindowConfiguration: NSViewRepresentable {

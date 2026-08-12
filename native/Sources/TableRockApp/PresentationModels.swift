@@ -5,6 +5,10 @@ func connectedSessionLabel(_ session: String) -> String {
   "Connected · session \(session.prefix(16))…"
 }
 
+func counted(_ count: Int, _ singular: String) -> String {
+  "\(count) \(singular)\(count == 1 ? "" : "s")"
+}
+
 func zeroizeTransientData(_ data: inout Data?) {
   guard var value = data else { return }
   value.resetBytes(in: 0..<value.count)

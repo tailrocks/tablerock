@@ -34,6 +34,11 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+        Test Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
     sources:
       - path: ../Sources/TableRockFeature
 
@@ -84,6 +89,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.tablerock.TableRock
         PRODUCT_NAME: TableRock
         ENABLE_HARDENED_RUNTIME: YES
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+        Test Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
 
   TableRockDesignLab:
     type: application

@@ -10,6 +10,14 @@ public struct AppConfiguration: Sendable, Equatable {
     public let paths: AppPaths
     public let isTestMode: Bool
 
+    static var developmentSupportEnabled: Bool {
+        #if TABLEROCK_DEVELOPMENT_SUPPORT
+        true
+        #else
+        false
+        #endif
+    }
+
     public var keychainNamespace: String {
         let root = Data(paths.dataRoot.path.utf8).base64EncodedString()
         return "app.tablerock.credentials.\(root)"
@@ -21,8 +29,9 @@ public struct AppConfiguration: Sendable, Equatable {
         temporaryRoot: URL,
         processIdentifier: Int32
     ) throws -> Self {
+        #if TABLEROCK_DEVELOPMENT_SUPPORT
         let explicitTest = environment["TABLEROCK_TEST_MODE"] == "1"
-        let fixtureTest = environment.keys.contains { $0.hasPrefix("TABLEROCK_FIXTURE_") }
+        let fixtureTest = containsNativeFixtureRoute(environment)
         let isTestMode = explicitTest || fixtureTest
         let dataRoot: URL
         if explicitTest {
@@ -52,6 +61,13 @@ public struct AppConfiguration: Sendable, Equatable {
         case let value?:
             throw AppConfigurationError.unsupportedBackend(value)
         }
+        #else
+        let isTestMode = false
+        let dataRoot = applicationSupportRoot.appendingPathComponent(
+            "TableRock", isDirectory: true
+        )
+        let backend = Backend.live
+        #endif
         return Self(backend: backend, paths: AppPaths(dataRoot: dataRoot), isTestMode: isTestMode)
     }
 }

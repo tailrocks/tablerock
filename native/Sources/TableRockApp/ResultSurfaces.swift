@@ -122,7 +122,7 @@ struct ResultGridWithInspector: View {
           CatalogGrid(
             table: visibleTable,
             sorts: model.resultSort,
-            performanceAutoScroll: model.fixtures.performanceAutoScroll
+            performanceAutoScroll: performanceAutoScroll
           ) { row, column in
             guard visibleRowIndices.indices.contains(row) else { return }
             model.selectCell(row: visibleRowIndices[row], column: column)
@@ -143,6 +143,14 @@ struct ResultGridWithInspector: View {
         }
       }
     }
+  }
+
+  private var performanceAutoScroll: Bool {
+    #if TABLEROCK_DEVELOPMENT_SUPPORT
+      model.fixtures.performanceAutoScroll
+    #else
+      false
+    #endif
   }
 }
 

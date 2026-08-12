@@ -37,13 +37,16 @@ mkdir -p "$BUILD"
 ( cd "$NATIVE" \
   && swiftc -emit-module -module-name TableRockFeature \
        -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -D TABLEROCK_DEVELOPMENT_SUPPORT \
        -target "$TARGET_arm64" \
        -emit-module-path "$BUILD/TableRockFeature.swiftmodule" \
        Sources/TableRockFeature/*.swift \
   && swiftc -parse-as-library -c -module-name TableRockFeature \
        -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -D TABLEROCK_DEVELOPMENT_SUPPORT \
        -target "$TARGET_arm64" Sources/TableRockFeature/*.swift \
-  && mv AppConfiguration.o AppDependencies.o ExternalConnectionRoute.o \
+  && mv AppConfiguration.o AppConfigurationDevelopmentSupport.o \
+       AppDependencies.o ExternalConnectionRoute.o \
        StructuredValueTree.o WorkbenchTypes.o "$BUILD/" )
 
 echo "==> Building UniFFI bridge module (direct swiftc, no SwiftPM)"
@@ -64,11 +67,13 @@ echo "==> Building SwiftUI app (direct swiftc)"
 ( cd "$NATIVE" \
   && swiftc -parse-as-library \
        -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -D TABLEROCK_DEVELOPMENT_SUPPORT \
        -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
-       Sources/TableRockApp/*.swift \
+       Sources/TableRockApp/*.swift Sources/TableRockApp/DevelopmentSupport/*.swift \
        "$BUILD/tablerock_ffi.o" "$BUILD/PageV1.o" \
        "$BUILD/LiveWorkbenchBackend.o" "$BUILD/WorkbenchBridgeConversions.o" \
        "$BUILD/AppConfiguration.o" "$BUILD/AppDependencies.o" \
+       "$BUILD/AppConfigurationDevelopmentSupport.o" \
        "$BUILD/ExternalConnectionRoute.o" \
        "$BUILD/StructuredValueTree.o" "$BUILD/WorkbenchTypes.o" \
        -L "$REPO_ROOT/target/release" -ltablerock_ffi \
