@@ -6,11 +6,15 @@ final class NativeApplicationModel {
   let client: (any WorkbenchBackend)?
   let bridgeError: String?
   let dependencies: AppDependencies
+  let launchConfiguration: NativeLaunchConfiguration
+  let appearanceFixture: NativeAppearanceFixture
   /// Operator data root (Application Support/TableRock or test root).
   let dataRootPath: String
   private var fixtureWindowOpened = false
 
   init() {
+    launchConfiguration = .current
+    appearanceFixture = .current
     var configuredDependencies = AppDependencies(
       filePanels: SystemFilePanelPort(),
       pasteboard: SystemPasteboardPort()

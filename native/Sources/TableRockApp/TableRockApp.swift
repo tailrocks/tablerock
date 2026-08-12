@@ -137,7 +137,7 @@ struct ProfileEditorDraft {
 
 /// Test-only environment projection for deterministic appearance evidence.
 /// Production launches have no fixture variables and follow system settings.
-private struct NativeAppearanceFixture: Sendable {
+struct NativeAppearanceFixture: Sendable {
   let scheme: ColorScheme?
   let increasedContrast: Bool
   let reduceTransparency: Bool
@@ -189,7 +189,7 @@ private struct NativeAppearanceFixture: Sendable {
   }
 }
 
-private struct NativeAppearanceFixtureModifier: ViewModifier {
+struct NativeAppearanceFixtureModifier: ViewModifier {
   let fixture: NativeAppearanceFixture
 
   func body(content: Content) -> some View {
@@ -268,7 +268,7 @@ extension FocusedValues {
   }
 }
 
-private struct WorkbenchCommands: Commands {
+struct WorkbenchCommands: Commands {
   @FocusedValue(\.workbenchActions) private var actions
 
   var body: some Commands {
@@ -1801,112 +1801,37 @@ func makeConfiguredWorkbenchBackend(_ configuration: AppConfiguration) throws
   }
 }
 
-@main
-struct TableRockApp: App {
-  private let application = NativeApplicationModel()
-
-  init() {
-    NativeAppearanceFixture.current.applyApplicationAppearance()
+struct NativeLaunchConfiguration: Sendable, Equatable {
+  enum Surface: Sendable, Equatable {
+    case workbench
+    case accessibilityAudit
+    case profileEditor
+    case performanceGrid
   }
 
-  var body: some Scene {
-    WindowGroup(for: UUID.self) { $windowId in
-      if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_ACCESSIBILITY_AUDIT"] == "1" {
-        NativeAccessibilityFixtureView()
-          .frame(minWidth: 760, minHeight: 520)
-      } else if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_PROFILE_EDITOR"] == "1" {
-        NativeProfileEditorFixtureView()
-      } else if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"] != nil {
-        WorkbenchWindowRoot(
-          application: application, windowId: windowId
-        )
-      } else {
-        WorkbenchWindowRoot(
-          application: application, windowId: windowId
-        )
-      }
-    } defaultValue: {
-      application.dependencies.identifiers.next()
-    }
-    .restorationBehavior(.automatic)
-    .commands {
-      WorkbenchCommands()
-    }
-    Settings {
-      NativeSettingsView(application: application)
-    }
-  }
-}
+  let surface: Surface
+  let opensSecondWindow: Bool
 
-private struct WorkbenchWindowRoot: View {
-  @Environment(\.openWindow) private var openWindow
-  @State private var model: BridgeModel
-  private let application: NativeApplicationModel
-
-  init(application: NativeApplicationModel, windowId: UUID) {
-    self.application = application
-    _model = State(
-      initialValue: BridgeModel(
-        client: application.client,
-        startupError: application.bridgeError,
-        windowId: windowId,
-        dependencies: application.dependencies,
-        dataRootPath: application.dataRootPath
-      ))
-  }
-
-  var body: some View {
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"] != nil {
-      PerformanceFixtureView(table: model.resultTable)
-        .frame(minWidth: 760, minHeight: 520)
-        .task { await openFixtureWindowIfNeeded() }
+  static let current: NativeLaunchConfiguration = {
+    let environment = ProcessInfo.processInfo.environment
+    let surface: Surface
+    if environment["TABLEROCK_FIXTURE_ACCESSIBILITY_AUDIT"] == "1" {
+      surface = .accessibilityAudit
+    } else if environment["TABLEROCK_FIXTURE_PROFILE_EDITOR"] == "1" {
+      surface = .profileEditor
+    } else if environment["TABLEROCK_FIXTURE_GRID_ROWS"] != nil {
+      surface = .performanceGrid
     } else {
-      ContentView()
-        .environment(model)
-        .background(NativeWindowConfiguration())
-        .modifier(
-          NativeAppearanceFixtureModifier(
-            fixture: NativeAppearanceFixture.current
-          )
-        )
-        .frame(minWidth: 760, minHeight: 520)
-        .task { await launchFixturesIfNeeded() }
-        .onOpenURL { url in
-          Task { await model.receiveExternalURL(url) }
-        }
+      surface = .workbench
     }
-  }
-
-  private func launchFixturesIfNeeded() async {
-    await model.receiveExternalUrlFixtureIfNeeded()
-    await openFixtureWindowIfNeeded()
-  }
-
-  private func openFixtureWindowIfNeeded() async {
-    guard ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_MULTI_WINDOW"] == "1",
-      application.claimMultiWindowFixtureOpen()
-    else { return }
-    openWindow(value: application.dependencies.identifiers.next())
-    try? await Task.sleep(for: .milliseconds(800))
-    runNativeMultiWindowAudit()
-  }
+    return NativeLaunchConfiguration(
+      surface: surface,
+      opensSecondWindow: environment["TABLEROCK_FIXTURE_MULTI_WINDOW"] == "1"
+    )
+  }()
 }
 
-private struct NativeWindowConfiguration: NSViewRepresentable {
-  func makeNSView(context: Context) -> NSView { NSView() }
-
-  func updateNSView(_ view: NSView, context: Context) {
-    Task { @MainActor in
-      guard let window = view.window else { return }
-      window.setAccessibilityIdentifier("window.workbench")
-      window.tabbingIdentifier = "tablerock-workbench"
-      window.tabbingMode = .preferred
-      window.tab.title = window.title
-    }
-  }
-}
-
-private struct NativeProfileEditorFixtureView: View {
+struct NativeProfileEditorFixtureView: View {
   private let draft = ProfileEditorDraft(
     WorkbenchProfileDraft(
       idBytes: Data(repeating: 7, count: 16), revision: 3,
@@ -2197,7 +2122,7 @@ private func runNativeObjectTabsAudit() {
 }
 
 @MainActor
-private func runNativeMultiWindowAudit() {
+func runNativeMultiWindowAudit() {
   let visible = NSApplication.shared.windows.filter(\.isVisible)
   guard visible.count >= 2 else {
     writePerformanceMetric("MULTI_WINDOW_PROOF_FAILED visible_windows=\(visible.count)")
@@ -2208,7 +2133,7 @@ private func runNativeMultiWindowAudit() {
   )
 }
 
-private struct NativeAccessibilityFixtureView: View {
+struct NativeAccessibilityFixtureView: View {
   @State private var catalogSelection: String?
   @State private var query = "SELECT 1;"
   @State private var querySelection = NSRange(location: 0, length: 0)
@@ -2331,7 +2256,7 @@ private func runNativeCatalogStateAudit() {
   writePerformanceMetric("CATALOG_STATE_PROOF_FAILED stale node missing")
 }
 
-private struct PerformanceFixtureView: View {
+struct PerformanceFixtureView: View {
   let table: WorkbenchTable?
 
   var body: some View {
@@ -10474,7 +10399,7 @@ struct HistorySheet: View {
   }
 }
 
-private struct NativeSettingsView: View {
+struct NativeSettingsView: View {
   let application: NativeApplicationModel
   @State private var outcome: String?
 
