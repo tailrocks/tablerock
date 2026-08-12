@@ -1,13 +1,13 @@
 # Native Design Lab operator gate
 
-Status: **OPEN — operator decision required**  
+Status: **SELECTED — Native Workbench refinement in progress**  
 Captured revision: `f0820edc01be011ca241654d783ad6ee46ee35c6`  
 Captured: 2026-08-12 on macOS 26.5.2, Xcode 26.6, macOS SDK 26.5
 
-This is the first design gate. The five concepts are runnable, interaction-
-capable, dependency-isolated, and captured from the real Design Lab window.
-Production `TableRockApp` UI is unchanged. No concept is approved by this
-review.
+This records the completed first design gate. The operator selected Native
+Workbench on 2026-08-12 after launching the current Design Lab preview. The five
+concepts remain runnable, interaction-capable, dependency-isolated, and captured
+from the real Design Lab window. Production `TableRockApp` UI remains unchanged.
 
 ## Run
 
@@ -165,16 +165,11 @@ and implementation are original TableRock work. No TablePro source, tests,
 comments, bundle internals, branding, or proprietary assets were inspected or
 used. The operator-rejected Sketch artifact had no influence.
 
-## Required operator decision
+## Operator decision
 
-Choose one:
+Native Workbench selected. See the recorded
+[decision](../../design/native-macos-2026/decision-native-workbench.md).
 
-1. Native Workbench (recommended)
-2. Query Studio
-3. Column Observatory
-4. Grid Canvas
-5. Change Desk
-6. Request named changes or a named remix
-
-Work stops here. No production UI refactor or migration is authorized until
-this decision and a later refined-concept confirmation.
+Phase 10 refinement is now authorized in Design Lab only. No production UI
+refactor or migration is authorized until the later refined-concept
+confirmation.
