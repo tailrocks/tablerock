@@ -80,6 +80,7 @@
 		F212B359F604BAA292F4664F /* ColumnHeaderPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6AFA7C53FF20F48FF62523 /* ColumnHeaderPresentationTests.swift */; };
 		F3E6C5EB63188CF0940F0330 /* WorkbenchTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD18301D71E2140043B680F /* WorkbenchTypes.swift */; };
 		F42BEA2AD4B262850D8C3D96 /* TableRockApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */; };
+		F621D58990289149F8922007 /* WorkbenchPresentationStore+Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DDD84D96580B56E321211AA /* WorkbenchPresentationStore+Library.swift */; };
 		FE135630C789CBC06C06930C /* PresentationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC6A08042DF578C0DAE913EA /* PresentationModels.swift */; };
 /* End PBXBuildFile section */
 
@@ -231,6 +232,7 @@
 		7F24F1E2FB76DDA5D0255906 /* TableRockAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		88E4D5C7A42F17282F830DEA /* DesignLabSurfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabSurfaces.swift; sourceTree = "<group>"; };
 		8C42185AD707FA2A7890B1E5 /* TableRockFeatureTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockFeatureTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		8DDD84D96580B56E321211AA /* WorkbenchPresentationStore+Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbenchPresentationStore+Library.swift"; sourceTree = "<group>"; };
 		90C435174637E2A8C0EB630B /* ProfilePresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePresentationTests.swift; sourceTree = "<group>"; };
 		92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableRockApp.swift; sourceTree = "<group>"; };
 		92AC8FE02BC1492D4B381E40 /* TableRockDesignLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TableRockDesignLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -483,6 +485,7 @@
 				EE82A85C7E1E72D60BF46D94 /* WorkbenchPresentationStore.swift */,
 				E2FAC44291F44B534C09488C /* WorkbenchPresentationStore+Connections.swift */,
 				57B1E905C76FEE831BCF568D /* WorkbenchPresentationStore+Files.swift */,
+				8DDD84D96580B56E321211AA /* WorkbenchPresentationStore+Library.swift */,
 				1A269C1E6DE37AC12AE9BE6D /* WorkbenchPresentationStore+Queries.swift */,
 				DB3CB9A296443783125050FE /* WorkbenchPresentationStore+Restoration.swift */,
 			);
@@ -827,6 +830,7 @@
 				CE3F361CE4393A1BB51A1637 /* WorkbenchCommands.swift in Sources */,
 				130C119718D60FADD4F12AE4 /* WorkbenchPresentationStore+Connections.swift in Sources */,
 				2EA0BDC03EF429DCD1E2EA6E /* WorkbenchPresentationStore+Files.swift in Sources */,
+				F621D58990289149F8922007 /* WorkbenchPresentationStore+Library.swift in Sources */,
 				D9A3C363D749C1BC7F7B7A30 /* WorkbenchPresentationStore+Queries.swift in Sources */,
 				C67E9515CDAEDAE470EFB4DB /* WorkbenchPresentationStore+Restoration.swift in Sources */,
 				E91F2FE24A6C6E8681F532D3 /* WorkbenchPresentationStore.swift in Sources */,
