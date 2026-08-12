@@ -567,6 +567,7 @@ How to read an evidence document:
 - 692 — [Native workbench navigation extraction](delivery/692-native-navigation-workflow-extraction.md)
 - 693 — [Native transfer workflow extraction](delivery/693-native-transfer-workflow-extraction.md)
 - 694 — [Native Redis workflow extraction](delivery/694-native-redis-workflow-extraction.md)
+- 695 — [Native PostgreSQL workflow extraction](delivery/695-native-postgres-workflow-extraction.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
