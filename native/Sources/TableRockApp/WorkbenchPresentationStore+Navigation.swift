@@ -206,6 +206,33 @@ extension WorkbenchPresentationStore {
     } catch { tab.error = "Redis key page failed: \(error)" }
   }
 
+  func loadMoreObjectRows() async {
+    guard let tab = activeObjectTab, let client, let resultId = tab.resultIdData,
+      let start = tab.nextStartRow
+    else { return }
+    do {
+      let (more, envelope) = try await client.fetchPage(
+        resultId: resultId, startRow: start, revision: tab.resultRevision
+      )
+      if more.rows.isEmpty {
+        tab.nextStartRow = nil
+        return
+      }
+      if let table = tab.resultTable {
+        guard let table = table.appending(more) else {
+          tab.error = "Load more returned incompatible page metadata"
+          return
+        }
+        tab.resultTable = table
+        tab.summary =
+          "\(counted(table.rows.count, "row")) · \(counted(table.columns.count, "column"))"
+      }
+      tab.nextStartRow =
+        envelope.rowCount == 500
+        ? envelope.startRow + UInt64(envelope.rowCount) : nil
+    } catch { tab.error = "Load more failed: \(error)" }
+  }
+
   func reloadObjectTab() async {
     guard let tab = activeObjectTab, !tab.isRunning else { return }
     await loadObjectTab(tab)

@@ -565,6 +565,7 @@ How to read an evidence document:
 - 690 — [Native SQL file workflow extraction](delivery/690-native-sql-file-workflow-extraction.md)
 - 691 — [Native history and saved-query workflow extraction](delivery/691-native-library-workflow-extraction.md)
 - 692 — [Native workbench navigation extraction](delivery/692-native-navigation-workflow-extraction.md)
+- 693 — [Native transfer workflow extraction](delivery/693-native-transfer-workflow-extraction.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

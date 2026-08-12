@@ -3,6 +3,25 @@ import TableRockFeature
 
 @MainActor
 extension WorkbenchPresentationStore {
+  func persistSessionIntent() async {
+    guard let client, let profileId = activeProfileId,
+      let selected = queryTabs.firstIndex(where: { $0.id == selectedQueryTabId })
+    else { return }
+    let intent = WorkbenchSessionIntent(
+      database: formDatabase,
+      schema: nil,
+      selectedTab: UInt32(selected),
+      tabs: queryTabs.map {
+        WorkbenchWorkspaceTab(title: $0.title, statementText: $0.statementText)
+      }
+    )
+    do {
+      try await client.putNativeWindowIntent(
+        windowId: windowId.uuidString.lowercased(), profileId: profileId, intent: intent
+      )
+    } catch { profileActionError = "Save workspace intent failed: \(error)" }
+  }
+
   func restoreSessionIntent(profileId: Data) async {
     guard let client else { return }
     do {
