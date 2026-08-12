@@ -574,6 +574,7 @@ How to read an evidence document:
 - 699 — [Native profile-editor extraction](delivery/699-native-profile-editor-extraction.md)
 - 700 — [Native connection-sheet extraction](delivery/700-native-connection-sheet-extraction.md)
 - 701 — [Native profile-row extraction](delivery/701-native-profile-row-extraction.md)
+- 702 — [Native connections-sidebar extraction](delivery/702-native-connections-sidebar-extraction.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
