@@ -15,7 +15,7 @@ this evidence.
 
 ```sh
 ./scripts/verify-native-design-lab.sh
-open -na target/design-lab-derived-data/Build/Products/Debug/TableRockDesignLab.app \
+open -n "$PWD/target/design-lab-derived-data/Build/Products/Debug/TableRockDesignLab.app" \
   --args --concept native-workbench --surface data-grid \
   --appearance light --accessibility system --engine postgresql \
   --fixture populated --window-size typical

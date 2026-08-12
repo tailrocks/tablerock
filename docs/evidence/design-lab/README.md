@@ -24,7 +24,7 @@ open target/design-lab-derived-data/Build/Products/Debug/TableRockDesignLab.app
 Deterministic example:
 
 ```sh
-open -na target/design-lab-derived-data/Build/Products/Debug/TableRockDesignLab.app \
+open -n "$PWD/target/design-lab-derived-data/Build/Products/Debug/TableRockDesignLab.app" \
   --args --concept native-workbench --surface data-grid --appearance dark \
   --accessibility system --engine clickhouse --fixture pending-change \
   --window-size typical --capture
