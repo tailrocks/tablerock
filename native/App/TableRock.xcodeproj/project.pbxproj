@@ -30,6 +30,7 @@
 		4E9E25C3BE62B8507E68FC45 /* ApplicationRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E8F4B2D8575F664883970CD /* ApplicationRuntime.swift */; };
 		519303D4F6C8A8BF6F4FABEB /* LiquidGlassLayeringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9414D0F2A6DF66E2DDDB2428 /* LiquidGlassLayeringTests.swift */; };
 		56C50F51ED5EB75093D80EAB /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E25AD0385D015297CBBA9D78 /* CoreFoundation.framework */; };
+		56F04C7CA3E8B87D7B9FD170 /* NativeWorkbenchFixtureConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C3D340EE8465317D52F0702 /* NativeWorkbenchFixtureConfigurationTests.swift */; };
 		57441F98AF5BC1313E70A603 /* ApplicationPorts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F2C76DDF73A5760AD61701F /* ApplicationPorts.swift */; };
 		6189A683586BD39D3AC5806E /* PageV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D0C1A38F65F28CBDE5C94D7 /* PageV1.swift */; };
 		61CEE8F0FA0BC89145C18C68 /* ConceptShells.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45BD4F811FBA403DF53CAAF1 /* ConceptShells.swift */; };
@@ -215,6 +216,7 @@
 		5FE4A4192046C53B74989CB3 /* GridCellPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridCellPresentationTests.swift; sourceTree = "<group>"; };
 		639CD75DC96C036A1A245DF6 /* ExternalConnectionRouteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalConnectionRouteTests.swift; sourceTree = "<group>"; };
 		6849571B55F5705D4B99DF75 /* ExternalConnectionRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalConnectionRoute.swift; sourceTree = "<group>"; };
+		6C3D340EE8465317D52F0702 /* NativeWorkbenchFixtureConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkbenchFixtureConfigurationTests.swift; sourceTree = "<group>"; };
 		6D0C1A38F65F28CBDE5C94D7 /* PageV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1.swift; sourceTree = "<group>"; };
 		7056B74025E206D1A652A30B /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
 		74B974D7ED34ED229C8EECD1 /* PageV1FixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1FixtureTests.swift; sourceTree = "<group>"; };
@@ -315,6 +317,7 @@
 			children = (
 				F9C1E6469A2ACF82CA630D65 /* BridgeModelLifetimeTests.swift */,
 				3B603D771219E813A92103B1 /* BridgeModelScenarioTests.swift */,
+				6C3D340EE8465317D52F0702 /* NativeWorkbenchFixtureConfigurationTests.swift */,
 			);
 			path = TableRockAppTests;
 			sourceTree = "<group>";
@@ -792,6 +795,7 @@
 			files = (
 				31FD459BCAEED3A74451B50A /* BridgeModelLifetimeTests.swift in Sources */,
 				66313AB511DC01EA4B5CF447 /* BridgeModelScenarioTests.swift in Sources */,
+				56F04C7CA3E8B87D7B9FD170 /* NativeWorkbenchFixtureConfigurationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

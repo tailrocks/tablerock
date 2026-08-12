@@ -1118,6 +1118,68 @@ struct NativeLaunchConfiguration: Sendable, Equatable {
   }()
 }
 
+/// Test-only environment projection. Production launches receive the empty
+/// value and never select deterministic proof flows.
+struct NativeWorkbenchFixtureConfiguration: Sendable, Equatable {
+  let multiWindow: Bool
+  let objectTabs: Bool
+  let dataMovementUI: Bool
+  let valueInspector: Bool
+  let selectableInspector: Bool
+  let resultPaging: Bool
+  let quickFilter: Bool
+  let inputMethodEditor: Bool
+  let structure: Bool
+  let clickHouseStructure: Bool
+  let redisOverview: Bool
+  let redisPubSubUI: Bool
+  let redisKeyView: Bool
+  let csvImportPath: String?
+  let resultCopy: Bool
+  let resultExportPath: String?
+  let streamExportPath: String?
+  let queryTabs: Bool
+  let sqlFiles: Bool
+  let savedQueries: Bool
+  let history: Bool
+  let profileGroups: Bool
+  let activeQuery: Bool
+  let performanceGridRows: Int?
+  let externalURL: String?
+
+  static let current = from(environment: ProcessInfo.processInfo.environment)
+
+  static func from(environment: [String: String]) -> NativeWorkbenchFixtureConfiguration {
+    NativeWorkbenchFixtureConfiguration(
+      multiWindow: environment["TABLEROCK_FIXTURE_MULTI_WINDOW"] == "1",
+      objectTabs: environment["TABLEROCK_FIXTURE_OBJECT_TABS"] == "1",
+      dataMovementUI: environment["TABLEROCK_FIXTURE_DATA_MOVEMENT_UI"] == "1",
+      valueInspector: environment["TABLEROCK_FIXTURE_VALUE_INSPECTOR"] == "1",
+      selectableInspector: environment["TABLEROCK_FIXTURE_SELECTABLE_INSPECTOR"] == "1",
+      resultPaging: environment["TABLEROCK_FIXTURE_RESULT_PAGING"] == "1",
+      quickFilter: environment["TABLEROCK_FIXTURE_QUICK_FILTER"] == "1",
+      inputMethodEditor: environment["TABLEROCK_FIXTURE_IME"] == "1",
+      structure: environment["TABLEROCK_FIXTURE_STRUCTURE"] == "1",
+      clickHouseStructure: environment["TABLEROCK_FIXTURE_CLICKHOUSE_STRUCTURE"] == "1",
+      redisOverview: environment["TABLEROCK_FIXTURE_REDIS_OVERVIEW"] == "1",
+      redisPubSubUI: environment["TABLEROCK_FIXTURE_REDIS_PUBSUB_UI"] == "1",
+      redisKeyView: environment["TABLEROCK_FIXTURE_REDIS_KEY_VIEW"] == "1",
+      csvImportPath: environment["TABLEROCK_FIXTURE_CSV_IMPORT_PATH"],
+      resultCopy: environment["TABLEROCK_FIXTURE_RESULT_COPY"] == "1",
+      resultExportPath: environment["TABLEROCK_FIXTURE_RESULT_EXPORT_PATH"],
+      streamExportPath: environment["TABLEROCK_FIXTURE_STREAM_EXPORT_PATH"],
+      queryTabs: environment["TABLEROCK_FIXTURE_QUERY_TABS"] == "1",
+      sqlFiles: environment["TABLEROCK_FIXTURE_SQL_FILES"] == "1",
+      savedQueries: environment["TABLEROCK_FIXTURE_SAVED_QUERIES"] == "1",
+      history: environment["TABLEROCK_FIXTURE_HISTORY"] == "1",
+      profileGroups: environment["TABLEROCK_FIXTURE_PROFILE_GROUPS"] == "1",
+      activeQuery: environment["TABLEROCK_FIXTURE_ACTIVE_QUERY"] == "1",
+      performanceGridRows: environment["TABLEROCK_FIXTURE_GRID_ROWS"].flatMap(Int.init),
+      externalURL: environment["TABLEROCK_FIXTURE_EXTERNAL_URL"]
+    )
+  }
+}
+
 struct NativeProfileEditorFixtureView: View {
   private let draft = ProfileEditorDraft(
     WorkbenchProfileDraft(
@@ -2088,6 +2150,7 @@ final class BridgeModel {
   private let client: (any WorkbenchBackend)?
   private let startupError: String?
   private let dependencies: AppDependencies
+  private let fixtures: NativeWorkbenchFixtureConfiguration
   /// Operator data root used for sample SQLite + isolation.
   let dataRootPath: String
   var sessionData: Data?
@@ -2098,11 +2161,13 @@ final class BridgeModel {
     startupError: String? = nil,
     windowId: UUID? = nil,
     dependencies: AppDependencies = AppDependencies(),
-    dataRootPath: String = FileManager.default.temporaryDirectory.path
+    dataRootPath: String = FileManager.default.temporaryDirectory.path,
+    fixtures: NativeWorkbenchFixtureConfiguration = .current
   ) {
     self.client = client
     self.startupError = startupError
     self.dependencies = dependencies
+    self.fixtures = fixtures
     self.dataRootPath = dataRootPath
     self.windowId = windowId ?? dependencies.identifiers.next()
     let tab = NativeQueryTab(
@@ -2114,8 +2179,8 @@ final class BridgeModel {
   }
 
   func initialize() async {
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_MULTI_WINDOW"] == "1" {
-      let other = BridgeModel(client: client, dependencies: dependencies)
+    if fixtures.multiWindow {
+      let other = BridgeModel(client: client, dependencies: dependencies, fixtures: fixtures)
       other.queryText = "SELECT second_window;"
       other.sessionData = Data(repeating: 9, count: 16)
       guard other.windowId != windowId, sharesBridge(with: other),
@@ -2129,7 +2194,7 @@ final class BridgeModel {
       status = "Multi-window fixture"
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_OBJECT_TABS"] == "1" {
+    if fixtures.objectTabs {
       let node = WorkbenchCatalogNode(
         idBytes: Data(repeating: 7, count: 16), parentIdBytes: Data(repeating: 6, count: 16),
         depth: 2, name: "users", kind: "postgresql_table",
@@ -2160,7 +2225,7 @@ final class BridgeModel {
       runNativeObjectTabsAudit()
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_DATA_MOVEMENT_UI"] == "1" {
+    if fixtures.dataMovementUI {
       sessionData = Data(repeating: 1, count: 16)
       sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
       connectedEngine = "postgresql"
@@ -2181,7 +2246,7 @@ final class BridgeModel {
       status = "Data movement fixture"
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_VALUE_INSPECTOR"] == "1" {
+    if fixtures.valueInspector {
       sessionData = Data(repeating: 4, count: 16)
       sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
       connectedEngine = "postgresql"
@@ -2215,7 +2280,7 @@ final class BridgeModel {
       runNativeValueInspectorAudit()
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_SELECTABLE_INSPECTOR"] == "1" {
+    if fixtures.selectableInspector {
       sessionData = Data(repeating: 5, count: 16)
       sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
       connectedEngine = "postgresql"
@@ -2236,7 +2301,7 @@ final class BridgeModel {
       status = "Selectable inspector fixture"
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_RESULT_PAGING"] == "1" {
+    if fixtures.resultPaging {
       sessionData = Data(repeating: 5, count: 16)
       sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
       connectedEngine = "postgresql"
@@ -2249,7 +2314,7 @@ final class BridgeModel {
       status = "Result paging fixture"
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_QUICK_FILTER"] == "1" {
+    if fixtures.quickFilter {
       sessionData = Data(repeating: 5, count: 16)
       sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
       connectedEngine = "postgresql"
@@ -2260,7 +2325,7 @@ final class BridgeModel {
       status = "Quick filter fixture"
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_IME"] == "1" {
+    if fixtures.inputMethodEditor {
       activeQueryTab.statementText = "SELECT "
       status = "Preparing IME fixture"
       try? await Task.sleep(for: .milliseconds(500))
@@ -2297,7 +2362,7 @@ final class BridgeModel {
       writePerformanceMetric("IME_PROOF_PASSED marked_text_survived_model_update=true")
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_STRUCTURE"] == "1" {
+    if fixtures.structure {
       guard let client else {
         writePerformanceMetric("STRUCTURE_PROOF_FAILED no bridge")
         return
@@ -2354,7 +2419,7 @@ final class BridgeModel {
       }
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_CLICKHOUSE_STRUCTURE"] == "1" {
+    if fixtures.clickHouseStructure {
       guard let client else {
         writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED no bridge")
         return
@@ -2411,7 +2476,7 @@ final class BridgeModel {
       }
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_REDIS_OVERVIEW"] == "1" {
+    if fixtures.redisOverview {
       guard let client else {
         writePerformanceMetric("REDIS_OVERVIEW_PROOF_FAILED no bridge")
         return
@@ -2443,7 +2508,7 @@ final class BridgeModel {
       }
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_REDIS_PUBSUB_UI"] == "1" {
+    if fixtures.redisPubSubUI {
       sessionData = Data(repeating: 1, count: 16)
       sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
       connectedEngine = "redis"
@@ -2451,7 +2516,7 @@ final class BridgeModel {
       status = "Redis Pub/Sub fixture"
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_REDIS_KEY_VIEW"] == "1" {
+    if fixtures.redisKeyView {
       guard let client else {
         writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED no bridge")
         return
@@ -2509,9 +2574,7 @@ final class BridgeModel {
       }
       return
     }
-    if let importPath = ProcessInfo.processInfo.environment[
-      "TABLEROCK_FIXTURE_CSV_IMPORT_PATH"
-    ] {
+    if let importPath = fixtures.csvImportPath {
       guard let client else {
         writePerformanceMetric("CSV_IMPORT_PROOF_FAILED no bridge")
         return
@@ -2588,7 +2651,7 @@ final class BridgeModel {
       }
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_RESULT_COPY"] == "1" {
+    if fixtures.resultCopy {
       guard let client else {
         writePerformanceMetric("RESULT_COPY_PROOF_FAILED no bridge")
         return
@@ -2613,9 +2676,7 @@ final class BridgeModel {
           writePerformanceMetric("RESULT_COPY_PROOF_FAILED \(copyError ?? "unknown")")
           return
         }
-        if let exportPath = ProcessInfo.processInfo.environment[
-          "TABLEROCK_FIXTURE_RESULT_EXPORT_PATH"
-        ] {
+        if let exportPath = fixtures.resultExportPath {
           let bytes = try await client.exportLoadedResult(
             resultId: activeQueryTab.resultIdData ?? Data(),
             revision: activeQueryTab.resultRevision,
@@ -2627,9 +2688,7 @@ final class BridgeModel {
             return
           }
         }
-        if let streamPath = ProcessInfo.processInfo.environment[
-          "TABLEROCK_FIXTURE_STREAM_EXPORT_PATH"
-        ] {
+        if let streamPath = fixtures.streamExportPath {
           let operationId = try await client.startStreamExport(
             sessionId: session,
             statement: "SELECT generate_series(1, 1200)::bigint AS id",
@@ -2652,7 +2711,7 @@ final class BridgeModel {
       }
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_QUERY_TABS"] == "1" {
+    if fixtures.queryTabs {
       let first = NativeQueryTab(
         id: dependencies.identifiers.next(), title: "Users", statementText: "SELECT 1;"
       )
@@ -2681,7 +2740,7 @@ final class BridgeModel {
       runNativeQueryTabsAudit()
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_SQL_FILES"] == "1" {
+    if fixtures.sqlFiles {
       sqlFile = WorkbenchSQLFile(
         path: "/tmp/fixture.sql", statementText: "SELECT fixture_sql_file;",
         modifiedNanos: 1, len: 24
@@ -2693,7 +2752,7 @@ final class BridgeModel {
       runNativeSqlFilesAudit()
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_SAVED_QUERIES"] == "1" {
+    if fixtures.savedQueries {
       savedQueries = [
         WorkbenchSavedQueryItem(
           queryId: 1, name: "Recent users", engine: "postgresql",
@@ -2716,7 +2775,7 @@ final class BridgeModel {
       runNativeSavedQueriesAudit()
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_HISTORY"] == "1" {
+    if fixtures.history {
       historyItems = [
         WorkbenchHistoryItem(
           historyId: 2, engine: "postgresql", databaseName: "postgres",
@@ -2742,7 +2801,7 @@ final class BridgeModel {
       runNativeHistoryAudit()
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_PROFILE_GROUPS"] == "1" {
+    if fixtures.profileGroups {
       profileGroups = [
         WorkbenchProfileGroup(name: "Empty", alphabetical: false),
         WorkbenchProfileGroup(name: "Production", alphabetical: true),
@@ -2799,7 +2858,7 @@ final class BridgeModel {
       status = "error"
       return
     }
-    if ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_ACTIVE_QUERY"] == "1" {
+    if fixtures.activeQuery {
       do {
         let session = try await client.open(
           params: WorkbenchOpenParams(
@@ -2828,8 +2887,7 @@ final class BridgeModel {
   }
 
   private func installPerformanceFixtureIfRequested() {
-    guard let raw = ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_GRID_ROWS"],
-      let requested = Int(raw), requested > 0
+    guard let requested = fixtures.performanceGridRows, requested > 0
     else { return }
     let count = min(requested, 10_000)
     let columns = ["id", "engine", "schema", "object", "status", "rows", "bytes", "note"]
@@ -4548,7 +4606,7 @@ final class BridgeModel {
 
   func receiveExternalUrlFixtureIfNeeded() async {
     guard !externalUrlFixtureConsumed,
-      let raw = ProcessInfo.processInfo.environment["TABLEROCK_FIXTURE_EXTERNAL_URL"],
+      let raw = fixtures.externalURL,
       let url = URL(string: raw)
     else { return }
     externalUrlFixtureConsumed = true
