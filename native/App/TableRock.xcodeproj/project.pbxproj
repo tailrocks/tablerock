@@ -51,6 +51,7 @@
 		AAF4313779A370A1FCF5A800 /* RelationContinuumTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE0278B1B46E810EB8830E5 /* RelationContinuumTests.swift */; };
 		AE5AFDABD4F52A3E036A6A95 /* TableRockAppUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522462239F32BD6A1FA81F2B /* TableRockAppUITests.swift */; };
 		B1E398B44C08B80C28D66530 /* AppConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C51BE56FE33E3F86FAD4A4 /* AppConfigurationTests.swift */; };
+		B4F4586120BC6DDF6EC33E7D /* PresentationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 090283225DAF932866B612E0 /* PresentationState.swift */; };
 		B5271F793DBA059B179658C0 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A94F4528ED04C3B8016BDA /* AppDependencies.swift */; };
 		B85A1683438F04B41F2AB2F8 /* TableRockBridge.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		BA7227AA4869FE09F72A67E7 /* BridgeLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A34ED7C245BB8AF855C9333 /* BridgeLifecycleTests.swift */; };
@@ -172,6 +173,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		090283225DAF932866B612E0 /* PresentationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresentationState.swift; sourceTree = "<group>"; };
 		0F2C76DDF73A5760AD61701F /* ApplicationPorts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationPorts.swift; sourceTree = "<group>"; };
 		112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = tablerock_ffiFFI.xcframework; path = ../../target/xcframework/tablerock_ffiFFI.xcframework; sourceTree = "<group>"; };
 		13C717EA88A43EE4A3BD7F62 /* StructuredValueTreeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredValueTreeTests.swift; sourceTree = "<group>"; };
@@ -453,6 +455,7 @@
 				278D2E3A88447819988515D3 /* ApplicationRoot.swift */,
 				9E8F4B2D8575F664883970CD /* ApplicationRuntime.swift */,
 				FC6A08042DF578C0DAE913EA /* PresentationModels.swift */,
+				090283225DAF932866B612E0 /* PresentationState.swift */,
 				92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */,
 				D00166DA6649C44AF44DC6CA /* WorkbenchBridgeConversions.swift */,
 				4187B078084E36F107491A35 /* WorkbenchCommands.swift */,
@@ -789,6 +792,7 @@
 				E27DCDE16F7AF51AC934408D /* ApplicationRoot.swift in Sources */,
 				4E9E25C3BE62B8507E68FC45 /* ApplicationRuntime.swift in Sources */,
 				FE135630C789CBC06C06930C /* PresentationModels.swift in Sources */,
+				B4F4586120BC6DDF6EC33E7D /* PresentationState.swift in Sources */,
 				F42BEA2AD4B262850D8C3D96 /* TableRockApp.swift in Sources */,
 				2F1FCE7D6A6B5A253B35595D /* WorkbenchBridgeConversions.swift in Sources */,
 				CE3F361CE4393A1BB51A1637 /* WorkbenchCommands.swift in Sources */,
