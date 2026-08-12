@@ -30,6 +30,7 @@ final class NativeWorkbenchFixtureConfigurationTests: XCTestCase {
     XCTAssertFalse(configuration.profileGroups)
     XCTAssertFalse(configuration.activeQuery)
     XCTAssertNil(configuration.performanceGridRows)
+    XCTAssertFalse(configuration.performanceAutoScroll)
     XCTAssertNil(configuration.externalURL)
   }
 
@@ -55,6 +56,7 @@ final class NativeWorkbenchFixtureConfigurationTests: XCTestCase {
       "TABLEROCK_FIXTURE_HISTORY",
       "TABLEROCK_FIXTURE_PROFILE_GROUPS",
       "TABLEROCK_FIXTURE_ACTIVE_QUERY",
+      "TABLEROCK_FIXTURE_AUTOSCROLL",
     ]
     var environment = Dictionary(uniqueKeysWithValues: booleanKeys.map { ($0, "1") })
     environment["TABLEROCK_FIXTURE_CSV_IMPORT_PATH"] = "/tmp/input.csv"
@@ -89,6 +91,7 @@ final class NativeWorkbenchFixtureConfigurationTests: XCTestCase {
     XCTAssertTrue(configuration.profileGroups)
     XCTAssertTrue(configuration.activeQuery)
     XCTAssertEqual(configuration.performanceGridRows, 4096)
+    XCTAssertTrue(configuration.performanceAutoScroll)
     XCTAssertEqual(configuration.externalURL, "tablerock://connect?url=fixture")
   }
 

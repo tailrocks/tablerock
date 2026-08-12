@@ -582,6 +582,7 @@ How to read an evidence document:
 - 707 — [Native find/replace-engine extraction](delivery/707-native-find-replace-engine-extraction.md)
 - 708 — [Native SQL-editor adapter extraction](delivery/708-native-sql-editor-adapter-extraction.md)
 - 709 — [Native catalog-outline adapter extraction](delivery/709-native-catalog-outline-adapter-extraction.md)
+- 710 — [Native result-grid adapter extraction](delivery/710-native-result-grid-adapter-extraction.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
