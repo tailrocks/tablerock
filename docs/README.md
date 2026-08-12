@@ -23,6 +23,12 @@ by repository evidence and names the unproven boundaries.
 - [Native macOS 2026 phase 0 audit](design/native-macos-2026/phase-0-architecture-and-drift.md)
   — current architecture, drift, clean-room reference boundary, design-lab
   isolation contract, and the mandatory operator gate.
+- [Experience brief](design/native-macos-2026/experience-brief.md) ·
+  [information architecture](design/native-macos-2026/information-architecture.md) ·
+  [component/material map](design/native-macos-2026/component-material-map.md) ·
+  [design contracts](design/native-macos-2026/design-contracts.md) ·
+  [five concepts](design/native-macos-2026/concepts.md) ·
+  [research provenance](design/native-macos-2026/research-provenance.md)
 
 ## Product specification
 
