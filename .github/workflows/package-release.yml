@@ -1,0 +1,230 @@
+name: Publish immutable package release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      source-ref: ${{ steps.tag.outputs.source_ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]
+          test "$REF" = "refs/tags/$TAG"
+          version=${TAG#v}
+          manifest_version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)
+          test "${manifest_version%-dev}" = "$version"
+          {
+            echo "version=$version"
+            echo "source_ref=$REF"
+          } >> "$GITHUB_OUTPUT"
+
+  build-cli:
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: aarch64-apple-darwin, os: macos-latest, builder: cargo}
+          - {target: x86_64-apple-darwin, os: macos-latest, builder: cargo}
+          - {target: aarch64-unknown-linux-gnu, os: ubuntu-latest, builder: zigbuild, build_target: aarch64-unknown-linux-gnu.2.17}
+          - {target: x86_64-unknown-linux-gnu, os: ubuntu-latest, builder: zigbuild, build_target: x86_64-unknown-linux-gnu.2.17}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          install_args: rust
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        if: matrix.builder == 'zigbuild'
+        with:
+          mise_toml: |
+            [tools]
+            zig = "0.16.0"
+            "cargo:cargo-zigbuild" = "0.23.0"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build CLI
+        env:
+          TABLEROCK_VERSION_OVERRIDE: ${{ needs.validate.outputs.version }}
+          TARGET: ${{ matrix.target }}
+          BUILD_TARGET: ${{ matrix.build_target }}
+          BUILDER: ${{ matrix.builder }}
+        run: |
+          set -euo pipefail
+          rustup target add "$TARGET"
+          if test "$BUILDER" = cargo; then
+            cargo build -p tablerock-cli --release --locked --target "$TARGET"
+          else
+            cargo zigbuild -p tablerock-cli --release --locked --target "$BUILD_TARGET"
+          fi
+      - name: Package CLI
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          archive="tablerock-${VERSION}-${TARGET}.tar.gz"
+          tar -czf "$archive" -C "target/${TARGET}/release" tablerock
+          sha256sum "$archive" | awk '{print $1}' > "${archive}.sha256"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tablerock-${{ matrix.target }}
+          path: tablerock-*
+          if-no-files-found: error
+
+  build-app:
+    needs: validate
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          install_args: rust
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and package application
+        env:
+          TABLEROCK_APP_VERSION: ${{ needs.validate.outputs.version }}
+          TABLEROCK_BUNDLE_VERSION: ${{ github.run_number }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          ./scripts/build-native-app.sh
+          archive="tablerock-app-${VERSION}-aarch64-apple-darwin.zip"
+          ditto -c -k --keepParent native/dist/TableRock.app "$archive"
+          shasum -a 256 "$archive" | awk '{print $1}' > "${archive}.sha256"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tablerock-app-aarch64-apple-darwin
+          path: tablerock-app-*
+          if-no-files-found: error
+
+  package-record:
+    needs: [validate, build-cli, build-app]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ needs.validate.outputs.version }}
+      source-ref: ${{ needs.validate.outputs.source-ref }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Build closed release record
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          SOURCE_REF: ${{ needs.validate.outputs.source-ref }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mapfile -t subjects < <(find artifacts -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | sort)
+          test "${#subjects[@]}" -eq 5
+          : > SHA256SUMS
+          : > assets.jsonl
+          mkdir signer-input
+          for subject in "${subjects[@]}"; do
+            name=$(basename "$subject")
+            digest=$(sha256sum "$subject" | awk '{print $1}')
+            test "$(cat "${subject}.sha256")" = "$digest"
+            printf '%s  %s\n' "$digest" "$name" >> SHA256SUMS
+            jq -cn --arg name "$name" --arg sha256 "$digest" '{name:$name,sha256:$sha256}' >> assets.jsonl
+            cp "$subject" signer-input/
+          done
+          jq -S -n --arg source_repository "$GITHUB_REPOSITORY" \
+            --arg source_ref "$SOURCE_REF" --arg source_commit "$SOURCE_COMMIT" \
+            --arg version "$VERSION" --slurpfile assets assets.jsonl \
+            '{schema:"velnor.package-release.v1",source_repository:$source_repository,source_ref:$source_ref,source_commit:$source_commit,version:$version,assets:$assets}' \
+            > release-manifest.json
+          sha256sum --check --strict SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-subjects
+          path: signer-input
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-release-metadata
+          path: |
+            release-manifest.json
+            SHA256SUMS
+          if-no-files-found: error
+
+  sign-cli:
+    needs: package-record
+    permissions: {attestations: write, contents: read, id-token: write}
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin, aarch64-unknown-linux-gnu, x86_64-unknown-linux-gnu]
+    uses: tailrocks/velnor-actions/.github/workflows/package-signer.yml@dbd534fa00cf7b610f7ebde13c8352ab6ce280e4 # 2026.8.9
+    with:
+      artifact-name: package-subjects
+      subject-path: tablerock-${{ needs.package-record.outputs.version }}-${{ matrix.target }}.tar.gz
+      source-ref: ${{ needs.package-record.outputs.source-ref }}
+
+  sign-app:
+    needs: package-record
+    permissions: {attestations: write, contents: read, id-token: write}
+    uses: tailrocks/velnor-actions/.github/workflows/package-signer.yml@dbd534fa00cf7b610f7ebde13c8352ab6ce280e4 # 2026.8.9
+    with:
+      artifact-name: package-subjects
+      subject-path: tablerock-app-${{ needs.package-record.outputs.version }}-aarch64-apple-darwin.zip
+      source-ref: ${{ needs.package-record.outputs.source-ref }}
+
+  publish:
+    needs: [package-record, sign-cli, sign-app]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Publish immutable release without replacement
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find artifacts -maxdepth 1 -type f | sort)
+          test "${#files[@]}" -eq 12
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release already exists" >&2
+            exit 1
+          fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$TAG" --notes "Immutable signed package release $TAG." "${files[@]}"
