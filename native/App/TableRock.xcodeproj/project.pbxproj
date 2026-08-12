@@ -10,6 +10,7 @@
 		01F6FA6192ABBD9BBB44C7A4 /* ChangeReviewSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B19021BB67F99297D599A7D7 /* ChangeReviewSheets.swift */; };
 		03EA8F5972377B177CF3949B /* GridCellPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FE4A4192046C53B74989CB3 /* GridCellPresentationTests.swift */; };
 		08418AD3F194E697CBAEF800 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7056B74025E206D1A652A30B /* AppConfiguration.swift */; };
+		085793C78BB752A50869FFD5 /* PostgresSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D34545BCE918C4F6A1D3C44 /* PostgresSheets.swift */; };
 		0B308D2CE229CE59FBDA96DC /* WorkbenchToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67EBE74057F33F89C0DD0F47 /* WorkbenchToolbar.swift */; };
 		0FE432AC6F178577E64C4B16 /* TableRockFeature.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		110596D97D66EBF3653855CC /* DesignLabTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 755FAB62C996DA5DAEA1C5CA /* DesignLabTable.swift */; };
@@ -246,6 +247,7 @@
 		4593C9F33EA2B77A8CB555A4 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		45BD4F811FBA403DF53CAAF1 /* ConceptShells.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptShells.swift; sourceTree = "<group>"; };
 		474ED5368A7E1345CE774E9D /* postgres-signed-v1.hex */ = {isa = PBXFileReference; path = "postgres-signed-v1.hex"; sourceTree = "<group>"; };
+		4D34545BCE918C4F6A1D3C44 /* PostgresSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostgresSheets.swift; sourceTree = "<group>"; };
 		4DB307557D10AEDA47511BEA /* TableRockDesignLabUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockDesignLabUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4DE0278B1B46E810EB8830E5 /* RelationContinuumTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelationContinuumTests.swift; sourceTree = "<group>"; };
 		4FCEEC684B0A871E2A6310EA /* LiveBridgeBehaviorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveBridgeBehaviorTests.swift; sourceTree = "<group>"; };
@@ -546,6 +548,7 @@
 				6F9F30A3812A7D23E68B4B7D /* NativeSettingsView.swift */,
 				2BD162BDDD5D5C099B11FD98 /* ObjectBrowseSurfaces.swift */,
 				8B5BEECCE6354A4B2929C3C6 /* ObjectWorkbenchView.swift */,
+				4D34545BCE918C4F6A1D3C44 /* PostgresSheets.swift */,
 				FC6A08042DF578C0DAE913EA /* PresentationModels.swift */,
 				090283225DAF932866B612E0 /* PresentationState.swift */,
 				86831D8FA3668BADDA0CBC68 /* ProfileEditorSheet.swift */,
@@ -920,6 +923,7 @@
 				11DA8DAC9F2D2690EE381615 /* NativeSettingsView.swift in Sources */,
 				82C98841CD4CF6CCADD9D265 /* ObjectBrowseSurfaces.swift in Sources */,
 				BFA198B5FC8267D98ABD6330 /* ObjectWorkbenchView.swift in Sources */,
+				085793C78BB752A50869FFD5 /* PostgresSheets.swift in Sources */,
 				FE135630C789CBC06C06930C /* PresentationModels.swift in Sources */,
 				B4F4586120BC6DDF6EC33E7D /* PresentationState.swift in Sources */,
 				500D740DC14AF90AE8D0427D /* ProfileEditorSheet.swift in Sources */,
