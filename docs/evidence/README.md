@@ -571,6 +571,7 @@ How to read an evidence document:
 - 696 — [Native editor workflow extraction](delivery/696-native-editor-workflow-extraction.md)
 - 697 — [Native safety workflow extraction](delivery/697-native-safety-workflow-extraction.md)
 - 698 — [Native library-sheet extraction](delivery/698-native-library-sheet-extraction.md)
+- 699 — [Native profile-editor extraction](delivery/699-native-profile-editor-extraction.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

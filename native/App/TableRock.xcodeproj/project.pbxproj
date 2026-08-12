@@ -32,6 +32,7 @@
 		45AFEBCFC2E2040410C736D2 /* LibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF16C90DF01B501DA35D669 /* LibrarySheets.swift */; };
 		493700EAADCCC3020615EA6F /* clickhouse-signed-v1.hex in Resources */ = {isa = PBXBuildFile; fileRef = 4458632FEA057E87DB3BB33C /* clickhouse-signed-v1.hex */; };
 		4E9E25C3BE62B8507E68FC45 /* ApplicationRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E8F4B2D8575F664883970CD /* ApplicationRuntime.swift */; };
+		500D740DC14AF90AE8D0427D /* ProfileEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86831D8FA3668BADDA0CBC68 /* ProfileEditorSheet.swift */; };
 		519303D4F6C8A8BF6F4FABEB /* LiquidGlassLayeringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9414D0F2A6DF66E2DDDB2428 /* LiquidGlassLayeringTests.swift */; };
 		53EA0F6938DCA9EC03C7A466 /* WorkbenchPresentationStore+Postgres.swift in Sources */ = {isa = PBXBuildFile; fileRef = 862B2E9A04760DC449467BE9 /* WorkbenchPresentationStore+Postgres.swift */; };
 		54644B96E46E3EF9FECC00D3 /* WorkbenchPresentationStore+Redis.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5555658D746EFB1C7624A390 /* WorkbenchPresentationStore+Redis.swift */; };
@@ -241,6 +242,7 @@
 		7D4F7741E9DE06B844834E2B /* ChangeReviewPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangeReviewPresentationTests.swift; sourceTree = "<group>"; };
 		7F24F1E2FB76DDA5D0255906 /* TableRockAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		862B2E9A04760DC449467BE9 /* WorkbenchPresentationStore+Postgres.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbenchPresentationStore+Postgres.swift"; sourceTree = "<group>"; };
+		86831D8FA3668BADDA0CBC68 /* ProfileEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileEditorSheet.swift; sourceTree = "<group>"; };
 		88E4D5C7A42F17282F830DEA /* DesignLabSurfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabSurfaces.swift; sourceTree = "<group>"; };
 		8C42185AD707FA2A7890B1E5 /* TableRockFeatureTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockFeatureTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8DDD84D96580B56E321211AA /* WorkbenchPresentationStore+Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbenchPresentationStore+Library.swift"; sourceTree = "<group>"; };
@@ -495,6 +497,7 @@
 				1EF16C90DF01B501DA35D669 /* LibrarySheets.swift */,
 				FC6A08042DF578C0DAE913EA /* PresentationModels.swift */,
 				090283225DAF932866B612E0 /* PresentationState.swift */,
+				86831D8FA3668BADDA0CBC68 /* ProfileEditorSheet.swift */,
 				92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */,
 				4187B078084E36F107491A35 /* WorkbenchCommands.swift */,
 				EE82A85C7E1E72D60BF46D94 /* WorkbenchPresentationStore.swift */,
@@ -848,6 +851,7 @@
 				45AFEBCFC2E2040410C736D2 /* LibrarySheets.swift in Sources */,
 				FE135630C789CBC06C06930C /* PresentationModels.swift in Sources */,
 				B4F4586120BC6DDF6EC33E7D /* PresentationState.swift in Sources */,
+				500D740DC14AF90AE8D0427D /* ProfileEditorSheet.swift in Sources */,
 				F42BEA2AD4B262850D8C3D96 /* TableRockApp.swift in Sources */,
 				CE3F361CE4393A1BB51A1637 /* WorkbenchCommands.swift in Sources */,
 				130C119718D60FADD4F12AE4 /* WorkbenchPresentationStore+Connections.swift in Sources */,
