@@ -45,6 +45,7 @@ struct LabRootView: View {
                 .id("\(concept.rawValue)-\(surface.rawValue)")
                 .accessibilityIdentifier("design-lab-concept")
         }
+        .contrast(accessibility == .increaseContrast ? 1.22 : 1)
         .preferredColorScheme(preferredColorScheme)
         .environment(\.labAccessibilityPreview, accessibility)
         .background(Color(nsColor: .windowBackgroundColor))

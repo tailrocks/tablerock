@@ -53,6 +53,11 @@ struct LabGlassPanel<Content: View>: View {
 }
 
 struct LabIconButton: View {
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var systemDifferentiate
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    @Environment(\.labAccessibilityPreview) private var preview
+
     let title: String
     let symbol: String
     var selected = false
@@ -60,7 +65,11 @@ struct LabIconButton: View {
 
     var body: some View {
         Group {
-            if prominent {
+            if reduceTransparency && prominent {
+                button.buttonStyle(.borderedProminent)
+            } else if reduceTransparency {
+                button.buttonStyle(.bordered)
+            } else if prominent {
                 button.buttonStyle(.glassProminent)
             } else {
                 button.buttonStyle(.glass)
@@ -69,6 +78,21 @@ struct LabIconButton: View {
         .tint(selected ? .accentColor : nil)
         .help(title)
         .accessibilityLabel(title)
+        .overlay {
+            if highContrast {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(nsColor: .labelColor), lineWidth: 1.5)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private var reduceTransparency: Bool {
+        systemReduceTransparency || preview == .reduceTransparency
+    }
+
+    private var highContrast: Bool {
+        systemDifferentiate || systemContrast == .increased || preview == .increaseContrast
     }
 
     private var button: some View {

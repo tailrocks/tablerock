@@ -253,7 +253,7 @@ private struct LabGridCanvas: View {
     var body: some View {
         ZStack {
             LabSurfaceContent(surface: surface)
-                .padding(.top, 30)
+                .padding(.top, 84)
 
             VStack {
                 HStack(alignment: .top) {
