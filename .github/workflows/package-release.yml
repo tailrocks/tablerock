@@ -168,7 +168,9 @@ jobs:
             --arg version "$VERSION" --slurpfile assets assets.jsonl \
             '{schema:"velnor.package-release.v1",source_repository:$source_repository,source_ref:$source_ref,source_commit:$source_commit,version:$version,assets:$assets}' \
             > release-manifest.json
-          sha256sum --check --strict SHA256SUMS
+          # SHA256SUMS names the immutable signer corpus by basename. Verify
+          # from that corpus directory instead of the workflow workspace.
+          (cd signer-input && sha256sum --check --strict ../SHA256SUMS)
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: package-subjects
