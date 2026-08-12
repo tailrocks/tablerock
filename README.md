@@ -20,8 +20,8 @@ native macOS developer preview uses SwiftUI/AppKit over the same Rust core.
   excluded.
 - 1Password is the preferred credential source. Saved plaintext passwords are
   an explicitly dangerous local-testing fallback.
-- TablePro, TablePlus, and Zedis are concepts-only references. No source code,
-  tests, assets, text, or distinctive layouts are copied or adapted.
+- TablePro, TablePlus, and Zedis may inform workflows and interface design. No
+  implementation is copied, translated, or derived from their source code or tests.
 
 ## Status
 

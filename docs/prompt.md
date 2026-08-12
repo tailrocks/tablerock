@@ -146,30 +146,24 @@ goal to match existing code.
 Use Context7 for current library/framework/SDK/API/CLI documentation when
 available. For Apple platform APIs and tooling, use current primary Apple
 documentation and current Xcode SDK interfaces. For database behavior, use
-official database/client documentation and direct tests. Apply the clean-room
-rule and record provenance for externally influenced work.
+official database/client documentation and direct tests. Apply the external
+product reference policy and record provenance for externally influenced work.
 
 ## TablePro reference rule
 
-Use TablePro as the primary external product reference throughout discovery,
-planning, implementation review, and final parity review. At the start of each
-screen family, inspect TablePro's current public user-facing documentation,
-public feature descriptions, and high-level public screenshots to identify the
-broad workflows, states, and operator expectations that a complete database
-workbench must cover. Re-check it during final screen audit so obvious workflow
-classes are not missed.
+Use TablePro as the primary external product and interface reference throughout
+discovery, design, planning, implementation review, and final parity review.
+Inspect its current public documentation, feature descriptions, product
+behavior, and screenshots to identify workflows, states, interaction patterns,
+screen composition, and visual concepts worth adapting. Prefer native Apple
+components and current platform guidance when realizing those ideas.
 
-TablePro is a reference for **what problems and broad workflows exist**, never
-an implementation or visual-expression source. Its AGPL source must not be read
-for implementation guidance or copied, translated, or structurally ported.
-Never copy its source, tests, comments, identifiers, strings, assets, icons,
-colors, geometry, layout measurements, key bindings, or distinctive screen
-expression. Derive every TableRock requirement independently in
-`docs/product/`, implement it from official platform/database/library docs,
-and verify it with TableRock-owned tests. Every TablePro-influenced checkpoint
-records the required clean-room provenance block. If TablePro and TableRock
-architecture conflict, TablePro establishes only the workflow need;
-TableRock's fixed architecture controls the solution.
+TablePro's AGPL source code, tests, and source comments must not be read for
+implementation guidance or copied, translated, structurally ported, or used to
+derive TableRock code. Define adapted behavior in `docs/product/`, implement it
+from official platform/database/library documentation, and verify it with
+TableRock-owned tests. Record external-reference provenance for materially
+influenced checkpoints. TableRock's fixed architecture controls implementation.
 
 ## Fixed architecture
 

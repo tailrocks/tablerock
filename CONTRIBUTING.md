@@ -32,9 +32,10 @@ dependencies, configuration schemas, or public APIs, confirm the relevant
 
 ## Reference provenance
 
-TablePro, TablePlus, and Zedis are concepts-only references. Contributions must
-not copy or adapt their source, tests, comments, identifiers, assets, text,
-screenshots, geometry, colors, or key bindings.
+TablePro, TablePlus, and Zedis may inform product ideas, workflows, interaction
+design, screen composition, and visual direction. Contributions must not copy,
+translate, or derive implementation from their source code, tests, or source
+comments. Third-party branding and proprietary assets require clear permission.
 
 When external product documentation informs a change, include:
 
@@ -43,7 +44,7 @@ External concept: <broad behavior>
 Public source: <documentation URL>
 TableRock requirement: <research/issue link>
 Implementation source: official protocol/library docs and TableRock tests
-Copied code/assets/text: none
+Copied source code: none
 ```
 
 ## Safety
