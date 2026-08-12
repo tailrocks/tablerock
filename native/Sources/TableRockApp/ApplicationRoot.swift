@@ -18,7 +18,7 @@ struct TableRockApp: App {
       switch application.launchConfiguration.surface {
       case .accessibilityAudit:
         NativeAccessibilityFixtureView()
-          .frame(minWidth: 760, minHeight: 520)
+          .frame(minWidth: 1_280, minHeight: 680)
       case .profileEditor:
         NativeProfileEditorFixtureView()
       case .performanceGrid, .workbench:
@@ -32,6 +32,9 @@ struct TableRockApp: App {
     } defaultValue: {
       application.dependencies.identifiers.next()
     }
+    .defaultSize(width: 1_440, height: 900)
+    .windowStyle(.hiddenTitleBar)
+    .windowToolbarStyle(.unified)
     .restorationBehavior(.automatic)
     .commands {
       WorkbenchCommands()
@@ -66,7 +69,7 @@ private struct WorkbenchWindowRoot: View {
     #if TABLEROCK_DEVELOPMENT_SUPPORT
     if application.launchConfiguration.surface == .performanceGrid {
       PerformanceFixtureView(model: model)
-        .frame(minWidth: 760, minHeight: 520)
+        .frame(minWidth: 1_280, minHeight: 680)
         .task { await openFixtureWindowIfNeeded() }
     } else {
       ContentView()
@@ -77,7 +80,7 @@ private struct WorkbenchWindowRoot: View {
             fixture: application.appearanceFixture
           )
         )
-        .frame(minWidth: 760, minHeight: 520)
+        .frame(minWidth: 1_280, minHeight: 680)
         .task { await launchFixturesIfNeeded() }
         .onOpenURL { url in
           Task { await model.receiveExternalURL(url) }
@@ -92,7 +95,7 @@ private struct WorkbenchWindowRoot: View {
     ContentView()
       .environment(model)
       .background(NativeWindowConfiguration())
-      .frame(minWidth: 760, minHeight: 520)
+      .frame(minWidth: 1_280, minHeight: 680)
       .onOpenURL { url in
         Task { await model.receiveExternalURL(url) }
       }

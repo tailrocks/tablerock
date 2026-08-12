@@ -1,155 +1,146 @@
 import SwiftUI
 
+/// Dense document tabs from the confirmed Native Workbench. Tabs are content
+/// selectors on an opaque underlay, never a row of independent glass pills.
 struct QueryTabStrip: View {
   @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
-    // Hierarchy: tabs are content selectors, not a row of glass pills.
-    // Only the selected tab uses glassProminent; unselected stay plain.
     ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: 2) {
+      HStack(spacing: 1) {
         ForEach(model.queryTabs) { tab in
-          let selected =
-            model.queryWorkbenchSelected && tab.id == model.selectedQueryTabId
+          let selected = model.queryWorkbenchSelected && tab.id == model.selectedQueryTabId
           HStack(spacing: 0) {
-            queryTabButton(tab: tab, selected: selected)
+            WorkbenchDocumentTab(
+              title: tab.title,
+              symbol: "chevron.left.forwardslash.chevron.right",
+              selected: selected,
+              dirty: tab.statementText != tab.sqlFileBaseline,
+              running: tab.isRunning
+            ) {
+              model.selectQueryTab(tab)
+            }
+            .accessibilityIdentifier("query.tab.\(tab.id.uuidString.lowercased())")
+            .accessibilityValue(selected ? "Selected" : "Not selected")
+
             Menu {
               Button("Rename…") { model.beginRenameQueryTab(tab) }
-              Button("Close", role: .destructive) {
-                model.requestCloseQueryTab(tab)
-              }
-              .accessibilityIdentifier("query.tab.close")
-              .disabled(model.queryTabs.count == 1 || tab.isRunning)
+              Button("Close", role: .destructive) { model.requestCloseQueryTab(tab) }
+                .accessibilityIdentifier("query.tab.close")
+                .disabled(model.queryTabs.count == 1 || tab.isRunning)
             } label: {
-              Image(systemName: tab.isRunning ? "progress.indicator" : "ellipsis")
-                .font(.caption)
+              Image(systemName: "xmark")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.tertiary)
+                .frame(width: 18, height: 28)
             }
             .menuStyle(.borderlessButton)
-            .controlSize(.small)
             .accessibilityIdentifier("query.tab.actions.\(tab.id.uuidString.lowercased())")
             .accessibilityLabel("Actions for \(tab.title)")
           }
           .padding(.trailing, 2)
+          .background(selected ? Color(nsColor: .controlBackgroundColor) : .clear)
+          .clipShape(.rect(cornerRadius: 7))
+          .overlay {
+            if selected {
+              RoundedRectangle(cornerRadius: 7)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            }
+          }
         }
+
         ForEach(model.objectTabs) { tab in
-          let selected =
-            !model.queryWorkbenchSelected && tab.id == model.selectedObjectTabId
+          let selected = !model.queryWorkbenchSelected && tab.id == model.selectedObjectTabId
           HStack(spacing: 0) {
-            objectTabButton(tab: tab, selected: selected)
+            WorkbenchDocumentTab(
+              title: tab.title,
+              symbol: "tablecells",
+              selected: selected,
+              dirty: model.changeReviewOpen && selected,
+              running: tab.isRunning
+            ) {
+              model.selectObjectTab(tab)
+            }
+            .accessibilityIdentifier("object.tab.\(tab.id.uuidString.lowercased())")
+            .accessibilityValue(selected ? "Selected" : "Not selected")
+
             Menu {
-              if !tab.pinned {
-                Button("Pin") { model.pinObjectTab(tab) }
-              }
+              if !tab.pinned { Button("Pin") { model.pinObjectTab(tab) } }
               Button("Refresh") { Task { await model.reloadObjectTab() } }
               Button("Close", role: .destructive) { model.closeObjectTab(tab) }
                 .disabled(tab.isRunning)
             } label: {
-              Image(systemName: tab.isRunning ? "progress.indicator" : "ellipsis")
-                .font(.caption)
+              Image(systemName: "xmark")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.tertiary)
+                .frame(width: 18, height: 28)
             }
             .menuStyle(.borderlessButton)
-            .controlSize(.small)
             .accessibilityLabel("Actions for object \(tab.title)")
           }
           .padding(.trailing, 2)
+          .background(selected ? Color(nsColor: .controlBackgroundColor) : .clear)
+          .clipShape(.rect(cornerRadius: 7))
+          .overlay {
+            if selected {
+              RoundedRectangle(cornerRadius: 7)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            }
+          }
         }
+
         Button {
           model.addQueryTab()
         } label: {
           Image(systemName: "plus")
+            .frame(width: 28, height: 28)
         }
-        .buttonStyle(.glass)
-        .controlSize(.small)
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
         .accessibilityLabel("New query tab")
         .disabled(model.queryTabs.count + model.objectTabs.count >= 64)
+
+        Spacer(minLength: 0)
       }
-      .padding(.vertical, 2)
+      .padding(.horizontal, 8)
     }
+    .frame(height: 34)
+    .background(Color(nsColor: .windowBackgroundColor))
+    .overlay(alignment: .bottom) { Divider() }
     .accessibilityIdentifier("workbench.tab-strip")
-  }
-
-  @ViewBuilder
-  private func queryTabButton(tab: NativeQueryTab, selected: Bool) -> some View {
-    let label = WorkbenchTabLabel(title: tab.title, model: model)
-    let id = "query.tab.\(tab.id.uuidString.lowercased())"
-    if selected {
-      Button {
-        model.selectQueryTab(tab)
-      } label: {
-        label
-      }
-      .buttonStyle(.glassProminent)
-      .controlSize(.small)
-      .accessibilityIdentifier(id)
-      .accessibilityValue("Selected")
-    } else {
-      Button {
-        model.selectQueryTab(tab)
-      } label: {
-        label
-      }
-      .buttonStyle(.plain)
-      .controlSize(.small)
-      .accessibilityIdentifier(id)
-      .accessibilityValue("Not selected")
-    }
-  }
-
-  @ViewBuilder
-  private func objectTabButton(tab: NativeObjectTab, selected: Bool) -> some View {
-    let label = WorkbenchTabLabel(
-      title: tab.title, model: model,
-      leadingSystemImage: tab.pinned ? "pin.fill" : "eye")
-    let id = "object.tab.\(tab.id.uuidString.lowercased())"
-    if selected {
-      Button {
-        model.selectObjectTab(tab)
-      } label: {
-        label
-      }
-      .buttonStyle(.glassProminent)
-      .controlSize(.small)
-      .accessibilityIdentifier(id)
-      .accessibilityValue("Selected")
-    } else {
-      Button {
-        model.selectObjectTab(tab)
-      } label: {
-        label
-      }
-      .buttonStyle(.plain)
-      .controlSize(.small)
-      .accessibilityIdentifier(id)
-      .accessibilityValue("Not selected")
-    }
   }
 }
 
-private struct WorkbenchTabLabel: View {
+private struct WorkbenchDocumentTab: View {
   let title: String
-  let model: WorkbenchPresentationStore
-  var leadingSystemImage: String?
-
-  init(title: String, model: WorkbenchPresentationStore, leadingSystemImage: String? = nil) {
-    self.title = title
-    self.model = model
-    self.leadingSystemImage = leadingSystemImage
-  }
+  let symbol: String
+  let selected: Bool
+  let dirty: Bool
+  let running: Bool
+  let action: () -> Void
 
   var body: some View {
-    HStack(spacing: 4) {
-      if let leadingSystemImage { Image(systemName: leadingSystemImage) }
-      Text(title)
-      if model.activeProductionWarning {
-        Image(systemName: "exclamationmark.triangle.fill")
-          .accessibilityLabel("Production")
-      } else if let environment = model.activeEnvironmentLabel {
-        Text(environment).font(.caption2)
+    Button(action: action) {
+      HStack(spacing: 6) {
+        Image(systemName: running ? "progress.indicator" : symbol)
+          .font(.caption)
+          .foregroundStyle(selected ? Color.accentColor : .secondary)
+        Text(title)
+          .font(.caption)
+          .lineLimit(1)
+        if dirty {
+          Circle()
+            .fill(.orange)
+            .frame(width: 6, height: 6)
+            .accessibilityHidden(true)
+        }
       }
-      if model.activeSafetyLabel == "Read only" {
-        Image(systemName: "lock.fill").accessibilityLabel("Read only")
-      }
+      .padding(.leading, 10)
+      .frame(height: 28)
+      .contentShape(.rect)
     }
-    .accessibilityElement(children: .combine)
+    .buttonStyle(.plain)
+    .accessibilityLabel(title)
+    .accessibilityHint(dirty ? "Pending changes" : "No pending changes")
   }
 }

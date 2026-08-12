@@ -60,15 +60,15 @@ require 'accessibilityIdentifier\("query\.tab\.' \
 require 'profile\.idBytes\.hexEncodedString' \
   'stable profile identifiers'
 require 'accessibilityLabel\("Refresh catalog"\)' 'catalog refresh label'
-require 'Label\("Run Query"' 'Run toolbar/menu label'
-require 'Label\("Cancel Query"' 'Cancel toolbar/menu label'
+require 'Button\("Run Query"' 'Run menu label'
+require 'Button\("Cancel Query"' 'Cancel menu label'
 require 'Fixture ·' 'appearance evidence marker'
 require '\.buttonStyle\(\.glassProminent\)' 'glass-prominent primary toolbar action'
 require 'backgroundColor = \.textBackgroundColor' 'opaque editor/grid content surfaces'
-if [[ "$(native_source_regex_count 'ToolbarSpacer\(\.fixed\)')" -lt 2 ]]; then
-  echo "error: missing toolbar glass-cluster separators" >&2
-  exit 1
-fi
+require 'ToolbarItem\(id: "new-query", placement: \.primaryAction\)' \
+  'Native Workbench new-query toolbar command'
+require 'ToolbarItem\(id: "inspector", placement: \.primaryAction\)' \
+  'Native Workbench inspector toolbar command'
 
 forbid 'NSVisualEffectView' 'custom visual-effect material'
 forbid '\.blur\(' 'custom blur'

@@ -23,9 +23,10 @@ final class LiquidGlassLayeringTests: XCTestCase {
   }
 
   func testTabStripHierarchyRule() {
-    // Product design-system: unselected tabs are plain; only selection is prominent.
-    let selectedStyle = "glassProminent"
+    // Document tabs belong to opaque content chrome, not detached glass.
+    let selectedStyle = "opaqueSelection"
     let unselectedStyle = "plain"
     XCTAssertNotEqual(selectedStyle, unselectedStyle)
+    XCTAssertNotEqual(selectedStyle, "glassProminent")
   }
 }

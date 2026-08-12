@@ -324,6 +324,26 @@ public final class WorkbenchPresentationStore {
     queryStateRevision &+= 1
   }
 
+  func toggleValueInspector() {
+    if selectedCell != nil {
+      selectedCell = nil
+    } else if let table = resultTable, !table.rows.isEmpty, !table.columns.isEmpty {
+      selectCell(row: 0, column: 0)
+    }
+  }
+
+  func presentActiveReview() {
+    if ddlChangeReview != nil {
+      ddlChangePresented = true
+    } else if tableOperationReview != nil {
+      tableOperationPresented = true
+    } else if csvImportReview != nil {
+      csvImportPresented = true
+    } else if postgresRoleChangeReview != nil {
+      postgresRolesPresented = true
+    }
+  }
+
   var relationContinuum: RelationContinuumState?
   var relationContinuumError: String?
   var relationContinuumLoading = false

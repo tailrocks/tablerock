@@ -8,20 +8,17 @@ public struct ContentView: View {
   public var body: some View {
     @Bindable var model = model
     NavigationSplitView {
-      // Connections list is primary; when connected, catalog shares a resizable split.
+      // Native Workbench uses one stable leading plane. Connections own it
+      // before connect; the database catalog owns it for the live session.
       Group {
         if model.sessionHex != nil {
-          VSplitView {
-            ConnectionsProfileList()
-              .frame(minHeight: 140)
-            ConnectionsCatalogPane()
-              .frame(minHeight: 140)
-          }
+          ConnectionsCatalogPane()
         } else {
           ConnectionsProfileList()
         }
       }
-      .navigationTitle("Connections")
+      .navigationTitle(model.sessionHex == nil ? "Connections" : "Catalog")
+      .navigationSplitViewColumnWidth(min: 210, ideal: 232, max: 300)
     } detail: {
       // Workbench shell when connected; welcome/direct-connect when not.
       // Spec: context strip · tabs · content · status (workbench.md).
@@ -34,6 +31,7 @@ public struct ContentView: View {
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+    .navigationSplitViewStyle(.balanced)
     .sheet(
       isPresented: Binding(
         get: { model.editorDraft != nil },

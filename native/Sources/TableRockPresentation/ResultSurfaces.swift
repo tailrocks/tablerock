@@ -138,12 +138,6 @@ struct ResultGridWithInspector: View {
               model.closeRelationContinuum()
             }
             .frame(minWidth: 220, idealWidth: 320, maxWidth: 480)
-          } else if let snapshot = model.selectedCellSnapshot {
-            NativeValueInspector(
-              column: snapshot.0, cell: snapshot.1,
-              row: snapshot.2, columnIndex: snapshot.3
-            )
-            .frame(minWidth: 180, idealWidth: 280, maxWidth: 380)
           }
         }
       }
@@ -314,7 +308,8 @@ private struct ResultCopyMenu: View {
 
 /// Kind-first trailing inspector: opaque content plane matching Continuum density.
 /// Rust/UniFFI own typed bytes; Swift only projects text, hex dump, and bounded JSON tree.
-private struct NativeValueInspector: View {
+struct NativeValueInspector: View {
+  @Environment(WorkbenchPresentationStore.self) private var model
   let column: WorkbenchColumn
   let cell: WorkbenchCell
   let row: Int
@@ -434,10 +429,20 @@ private struct NativeValueInspector: View {
       }
       Spacer(minLength: 4)
       VStack(alignment: .trailing, spacing: 4) {
-        Text(ValueInspectorProjection.locationFact(row: row, columnIndex: columnIndex))
-          .font(.caption2.monospacedDigit())
-          .foregroundStyle(.secondary)
-          .accessibilityIdentifier("value.inspector.location")
+        HStack(spacing: 6) {
+          Text(ValueInspectorProjection.locationFact(row: row, columnIndex: columnIndex))
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("value.inspector.location")
+          Button {
+            model.selectedCell = nil
+          } label: {
+            Image(systemName: "xmark")
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Close inspector")
+          .accessibilityIdentifier("value.inspector.close")
+        }
         HStack(spacing: 6) {
           Button("Copy Text") { copyToPasteboard(cell.display) }
             .buttonStyle(.borderless)

@@ -7,25 +7,34 @@ struct WorkbenchShellView: View {
   @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
-    VStack(spacing: 0) {
-      WorkbenchContextStrip()
-      Divider()
-      QueryTabStrip()
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-      Divider()
-      Group {
-        if model.queryWorkbenchSelected {
-          QueryWorkbenchView()
-        } else {
-          ObjectWorkbenchView()
+    HStack(spacing: 0) {
+      VStack(spacing: 0) {
+        WorkbenchContextStrip()
+          .background(.bar)
+        Divider()
+        QueryTabStrip()
+        Group {
+          if model.queryWorkbenchSelected {
+            QueryWorkbenchView()
+          } else {
+            ObjectWorkbenchView()
+          }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        Divider()
+        WorkbenchStatusBar()
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .padding(.horizontal, 10)
-      .padding(.top, 8)
-      Divider()
-      WorkbenchStatusBar()
+
+      if let snapshot = model.selectedCellSnapshot {
+        Divider()
+        NativeValueInspector(
+          column: snapshot.0,
+          cell: snapshot.1,
+          row: snapshot.2,
+          columnIndex: snapshot.3
+        )
+        .frame(width: 270)
+      }
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("workbench.shell")
@@ -131,47 +140,112 @@ struct WorkbenchContextStrip: View {
   @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
-    HStack(spacing: 10) {
-      Label {
-        Text(model.activeProfile?.name ?? model.connectedEngine)
-          .font(.subheadline.weight(.semibold))
-      } icon: {
-        Image(systemName: "bolt.horizontal.fill")
+    HStack(spacing: 8) {
+      Menu {
+        ForEach(model.profiles, id: \.idBytes) { profile in
+          Button {
+            Task { await model.connect(profile) }
+          } label: {
+            Label(
+              profile.name,
+              systemImage: profile.idBytes == model.activeProfileId
+                ? "checkmark" : engineSymbol(profile.engine)
+            )
+          }
+        }
+        Divider()
+        Button("Disconnect", systemImage: "bolt.slash") {
+          Task { await model.disconnectActive() }
+        }
+      } label: {
+        HStack(spacing: 7) {
+          Image(systemName: engineSymbol(model.connectedEngine))
+            .foregroundStyle(.blue)
+          VStack(alignment: .leading, spacing: 0) {
+            Text(model.activeProfile?.name ?? model.connectedEngine)
+              .font(.caption.weight(.semibold))
+            Text(model.activeProfile?.context ?? model.connectedEngine.uppercased())
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+          if model.activeProductionWarning {
+            Text("PRODUCTION")
+              .font(.caption2.weight(.bold))
+              .foregroundStyle(.orange)
+          }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 32)
       }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.visible)
       .accessibilityIdentifier("workbench.context.connection")
-      Text(model.connectedEngine.uppercased())
-        .font(.caption.weight(.semibold).monospaced())
-        .foregroundStyle(.secondary)
-        .accessibilityIdentifier("workbench.context.engine")
-      if let session = model.sessionHex {
-        Text(connectedSessionLabel(session))
-          .font(.caption.monospaced())
-          .foregroundStyle(.secondary)
-          .textSelection(.enabled)
-          .accessibilityIdentifier("connection.status")
-          .accessibilityValue(connectedSessionLabel(session))
-      }
-      EnvironmentSafetyBadge(model: model)
+      .accessibilityLabel(
+        "Database context, \(model.activeProfile?.name ?? model.connectedEngine)"
+      )
+
       if model.isCatalogRefreshing {
         ProgressView()
           .controlSize(.small)
           .accessibilityLabel("Refreshing catalog")
       }
       Spacer(minLength: 0)
+
       Button {
         Task { await model.browse() }
       } label: {
-        Label("Catalog", systemImage: "arrow.clockwise")
+        Image(systemName: "arrow.clockwise")
       }
       .buttonStyle(.glass)
-      .controlSize(.small)
+      .help("Refresh catalog")
       .disabled(model.isRunning || model.isCatalogRefreshing)
       .accessibilityIdentifier("workbench.catalog.refresh")
+
+      Button {
+        Task { await model.showQuickSwitcher() }
+      } label: {
+        Image(systemName: "magnifyingglass")
+      }
+      .buttonStyle(.glass)
+      .help("Quick switcher")
+      .accessibilityLabel("Quick switcher")
+
+      Button {
+        model.addQueryTab()
+      } label: {
+        Image(systemName: "plus.rectangle.on.rectangle")
+      }
+      .buttonStyle(.glass)
+      .help("New query")
+      .accessibilityLabel("New query")
+
+      Button {
+        Task { await model.presentHistory() }
+      } label: {
+        Image(systemName: "clock.arrow.circlepath")
+      }
+      .buttonStyle(.glass)
+      .help("Query history")
+      .accessibilityLabel("Query history")
+
+      Divider().frame(height: 20)
+      EnvironmentSafetyBadge(model: model)
     }
     .padding(.horizontal, 10)
-    .padding(.vertical, 6)
+    .frame(height: 48)
+    .controlSize(.small)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("workbench.context")
+  }
+
+  private func engineSymbol(_ engine: String) -> String {
+    switch engine.lowercased() {
+    case "postgresql": "cylinder.split.1x2"
+    case "clickhouse": "chart.bar.xaxis"
+    case "redis": "square.stack.3d.up.fill"
+    case "sqlite": "internaldrive"
+    default: "cylinder"
+    }
   }
 }
 
@@ -256,32 +330,23 @@ struct EnvironmentSafetyBadge: View {
         if isStaging { return "STAGING" }
         return environment.uppercased()
       }()
-      let haloDetail: String = {
-        if isProduction { return "writes need review" }
-        if isStaging { return "confirm before apply" }
-        return safety
-      }()
-      HStack(spacing: 6) {
+      let safetyWord = safety == "Read only" ? "SAFE MODE" : "CONFIRM WRITES"
+      HStack(spacing: 4) {
         Image(
           systemName: isProduction
             ? "exclamationmark.triangle.fill"
             : isStaging ? "flag.fill" : safety == "Read only" ? "lock.fill" : "shield")
-        VStack(alignment: .leading, spacing: 0) {
-          Text("HALO \(haloWord)")
-            .font(.caption.weight(isProduction ? .bold : .semibold))
-            .textCase(.uppercase)
-          Text("\(environment) · \(safety) · \(haloDetail)")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-        }
+        Text(safetyWord)
       }
-      .padding(.horizontal, 8)
-      .padding(.vertical, 4)
+      .font(.caption2.weight(.semibold))
+      .foregroundStyle(isProduction ? Color.orange : Color.green)
+      .padding(.horizontal, 7)
+      .padding(.vertical, 3)
       // Chrome halo capsule (Tahoe glass); not a content surface.
       .glassEffect(.regular.interactive())
       .accessibilityElement(children: .combine)
       .accessibilityLabel(
-        "Environment halo \(haloWord), \(environment), safety \(safety), \(haloDetail)"
+        "Environment halo \(haloWord), \(environment), safety \(safety)"
       )
       .accessibilityIdentifier("environment.halo")
     }
