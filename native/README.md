@@ -51,6 +51,30 @@ xcodebuild test -project native/App/TableRock.xcodeproj -scheme TableRock \
   -testPlan Nightly -destination 'platform=macOS'
 ```
 
+## Native Design Lab
+
+`TableRockDesignLab` is a standalone, dependency-free executable and Xcode app
+for operator-gated macOS interface exploration. It owns only invented immutable
+fixtures and transient view state. It does not link the production app,
+features, bridge, XCFramework, database clients, persistence, or networking.
+
+```bash
+./scripts/verify-native-design-lab.sh
+./scripts/capture-native-design-lab.sh
+```
+
+The capture script renders five structural concepts across Connections,
+Connection Setup, Data Grid, SQL + Results, and Change Review. Launch one
+comparison directly with:
+
+```bash
+swift run --package-path native TableRockDesignLab \
+  --concept native-workbench --surface data-grid --appearance light
+```
+
+Production UI migration remains forbidden until the operator selects a
+captured concept and separately confirms its refinement.
+
 `Checkpoint` is the every-push deterministic model, bridge, app, and UI gate.
 `Nightly` adds the scheduled full-plan and performance artifact gate. `Release`
 is the signed-release plan. GitHub Actions retains the `.xcresult`, logs,

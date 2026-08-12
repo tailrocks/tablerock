@@ -84,6 +84,27 @@ targets:
         PRODUCT_NAME: TableRock
         ENABLE_HARDENED_RUNTIME: YES
 
+  TableRockDesignLab:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../Sources/TableRockDesignLab
+    info:
+      path: TableRockDesignLab-Info.plist
+      properties:
+        CFBundleDisplayName: TableRock Design Lab
+        CFBundleIdentifier: app.tablerock.TableRockDesignLab
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "26.0"
+        NSHighResolutionCapable: true
+        NSHumanReadableCopyright: "Copyright © 2026 Tailrocks"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.tablerock.TableRockDesignLab
+        PRODUCT_NAME: TableRockDesignLab
+        ENABLE_HARDENED_RUNTIME: YES
+
   TableRockFeatureTests:
     type: bundle.unit-test
     platform: macOS
@@ -134,6 +155,17 @@ targets:
     dependencies:
       - target: TableRock
 
+  TableRockDesignLabTests:
+    type: bundle.unit-test
+    platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    sources:
+      - path: ../Tests/TableRockDesignLabTests
+    dependencies:
+      - target: TableRockDesignLab
+
 schemes:
   TableRock:
     build:
@@ -152,5 +184,19 @@ schemes:
           defaultPlan: true
         - path: TestPlans/Nightly.xctestplan
         - path: TestPlans/Release.xctestplan
+    archive:
+      config: Release
+
+  TableRockDesignLab:
+    build:
+      targets:
+        TableRockDesignLab: all
+        TableRockDesignLabTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - TableRockDesignLabTests
     archive:
       config: Release

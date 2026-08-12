@@ -14,10 +14,13 @@
 		14D023A5261B2B5CD80FDC18 /* TableRockFeature.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; };
 		161D919AE1BEF59F67B25D41 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50BA7DBEE0A6F285A3CE9CC5 /* SystemConfiguration.framework */; };
 		18FAFF073C518B43C8DDCDCA /* redis-signed-v1.hex in Resources */ = {isa = PBXBuildFile; fileRef = A68E1D5D9FB490A8CE2982A6 /* redis-signed-v1.hex */; };
+		2555D1DC3BB267F4EA3B912B /* DesignLabModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEB5E3AF9306E47AB8CAD2E1 /* DesignLabModelTests.swift */; };
 		2CBE0A9311B7732E3BD27C71 /* TableRockFeature.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; };
+		2D7C822345D3585CEB388AC5 /* DesignLabComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 458733A3A628C9289EB6B3DB /* DesignLabComponents.swift */; };
 		2F1FCE7D6A6B5A253B35595D /* WorkbenchBridgeConversions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00166DA6649C44AF44DC6CA /* WorkbenchBridgeConversions.swift */; };
 		31FD459BCAEED3A74451B50A /* BridgeModelLifetimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9C1E6469A2ACF82CA630D65 /* BridgeModelLifetimeTests.swift */; };
 		389224D06A5BA46505A9AF47 /* ProfilePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C435174637E2A8C0EB630B /* ProfilePresentationTests.swift */; };
+		3B37984F65F6FF7B9A3F3D3C /* DesignLabModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E66D615292CDDBE99DD23B93 /* DesignLabModel.swift */; };
 		3BC1F892B2D11CFFFFA88C3F /* PageV1BoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BD73D03EAEEE2DE99D6F35 /* PageV1BoundaryTests.swift */; };
 		411EB8166C56FC0EBE4C8394 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4593C9F33EA2B77A8CB555A4 /* Security.framework */; };
 		44AA1BFAFD6E6CC7BF238C6C /* ExternalConnectionRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6849571B55F5705D4B99DF75 /* ExternalConnectionRoute.swift */; };
@@ -25,6 +28,7 @@
 		519303D4F6C8A8BF6F4FABEB /* LiquidGlassLayeringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9414D0F2A6DF66E2DDDB2428 /* LiquidGlassLayeringTests.swift */; };
 		56C50F51ED5EB75093D80EAB /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E25AD0385D015297CBBA9D78 /* CoreFoundation.framework */; };
 		6189A683586BD39D3AC5806E /* PageV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D0C1A38F65F28CBDE5C94D7 /* PageV1.swift */; };
+		61CEE8F0FA0BC89145C18C68 /* ConceptShells.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45BD4F811FBA403DF53CAAF1 /* ConceptShells.swift */; };
 		648FA6521CC497F9CAED7485 /* ValueInspectorProjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 587AF293CEBFDBE9D9FAD880 /* ValueInspectorProjectionTests.swift */; };
 		649DD63D9AC98840E6A86737 /* TableRockBridge.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		66313AB511DC01EA4B5CF447 /* BridgeModelScenarioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B603D771219E813A92103B1 /* BridgeModelScenarioTests.swift */; };
@@ -35,8 +39,10 @@
 		8709E0F3395FEEC0940FC670 /* TableRockBridge.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; };
 		88C5E2A0B166D9E394831AEA /* tablerock_ffiFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */; };
 		96A1EC7298B3EF2077A15BE5 /* TableRockFeature.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		99978E26D7AA36C611286B3E /* DesignLabSurfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88E4D5C7A42F17282F830DEA /* DesignLabSurfaces.swift */; };
 		A40F73637B5A9903607565E6 /* StructuredValueTreeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13C717EA88A43EE4A3BD7F62 /* StructuredValueTreeTests.swift */; };
 		A65A1363D7D503413C15A4A1 /* WorkbenchStatusFactsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7DDBBBFFBDE47B37C5CA82C /* WorkbenchStatusFactsTests.swift */; };
+		A9DFF2096FE41B7946911F7E /* TableRockDesignLabApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F14AA6A488E1B11AA572BD7 /* TableRockDesignLabApp.swift */; };
 		AAF4313779A370A1FCF5A800 /* RelationContinuumTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE0278B1B46E810EB8830E5 /* RelationContinuumTests.swift */; };
 		AE5AFDABD4F52A3E036A6A95 /* TableRockAppUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522462239F32BD6A1FA81F2B /* TableRockAppUITests.swift */; };
 		B1E398B44C08B80C28D66530 /* AppConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C51BE56FE33E3F86FAD4A4 /* AppConfigurationTests.swift */; };
@@ -81,6 +87,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 4D0AA50F4B0CBA53F3870A53;
 			remoteInfo = TableRockFeature;
+		};
+		41E1FE6A82BE95BABB309AFC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 3126D0F4FCF9FB695F7ABEC7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B0ECC8475356A1FC4D777863;
+			remoteInfo = TableRockDesignLab;
 		};
 		CF8CDFA480BA26964CE46311 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -147,13 +160,17 @@
 		13C717EA88A43EE4A3BD7F62 /* StructuredValueTreeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredValueTreeTests.swift; sourceTree = "<group>"; };
 		170A6205E293BBDD55598B6C /* AppDependenciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependenciesTests.swift; sourceTree = "<group>"; };
 		2919168F670129A9DE843433 /* StructuredValueTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredValueTree.swift; sourceTree = "<group>"; };
+		2F14AA6A488E1B11AA572BD7 /* TableRockDesignLabApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableRockDesignLabApp.swift; sourceTree = "<group>"; };
 		3216C4DBC614A64F649BFB7E /* SqlEditorMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SqlEditorMetricsTests.swift; sourceTree = "<group>"; };
 		389BF5258A746A4D8C3BFA05 /* TableRock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TableRock.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3A34ED7C245BB8AF855C9333 /* BridgeLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeLifecycleTests.swift; sourceTree = "<group>"; };
 		3B603D771219E813A92103B1 /* BridgeModelScenarioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeModelScenarioTests.swift; sourceTree = "<group>"; };
+		3B6D49A4F3A0FB6BC7BC659E /* TableRockDesignLabTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockDesignLabTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3BD1F73B0512F5C88FF9C25C /* TableRockAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4458632FEA057E87DB3BB33C /* clickhouse-signed-v1.hex */ = {isa = PBXFileReference; path = "clickhouse-signed-v1.hex"; sourceTree = "<group>"; };
+		458733A3A628C9289EB6B3DB /* DesignLabComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabComponents.swift; sourceTree = "<group>"; };
 		4593C9F33EA2B77A8CB555A4 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		45BD4F811FBA403DF53CAAF1 /* ConceptShells.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptShells.swift; sourceTree = "<group>"; };
 		474ED5368A7E1345CE774E9D /* postgres-signed-v1.hex */ = {isa = PBXFileReference; path = "postgres-signed-v1.hex"; sourceTree = "<group>"; };
 		4DE0278B1B46E810EB8830E5 /* RelationContinuumTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelationContinuumTests.swift; sourceTree = "<group>"; };
 		4FCEEC684B0A871E2A6310EA /* LiveBridgeBehaviorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveBridgeBehaviorTests.swift; sourceTree = "<group>"; };
@@ -170,9 +187,11 @@
 		74B974D7ED34ED229C8EECD1 /* PageV1FixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1FixtureTests.swift; sourceTree = "<group>"; };
 		7D4F7741E9DE06B844834E2B /* ChangeReviewPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangeReviewPresentationTests.swift; sourceTree = "<group>"; };
 		7F24F1E2FB76DDA5D0255906 /* TableRockAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		88E4D5C7A42F17282F830DEA /* DesignLabSurfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabSurfaces.swift; sourceTree = "<group>"; };
 		8C42185AD707FA2A7890B1E5 /* TableRockFeatureTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockFeatureTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		90C435174637E2A8C0EB630B /* ProfilePresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePresentationTests.swift; sourceTree = "<group>"; };
 		92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableRockApp.swift; sourceTree = "<group>"; };
+		92AC8FE02BC1492D4B381E40 /* TableRockDesignLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TableRockDesignLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9414D0F2A6DF66E2DDDB2428 /* LiquidGlassLayeringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidGlassLayeringTests.swift; sourceTree = "<group>"; };
 		A2C51BE56FE33E3F86FAD4A4 /* AppConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigurationTests.swift; sourceTree = "<group>"; };
 		A61EA4DB356144BD42272270 /* TableRockBridge.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TableRockBridge.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -181,7 +200,9 @@
 		D00166DA6649C44AF44DC6CA /* WorkbenchBridgeConversions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchBridgeConversions.swift; sourceTree = "<group>"; };
 		D2CD044701909D9865A79995 /* libiconv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libiconv.tbd; path = usr/lib/libiconv.tbd; sourceTree = SDKROOT; };
 		DCD18301D71E2140043B680F /* WorkbenchTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchTypes.swift; sourceTree = "<group>"; };
+		DEB5E3AF9306E47AB8CAD2E1 /* DesignLabModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabModelTests.swift; sourceTree = "<group>"; };
 		E25AD0385D015297CBBA9D78 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
+		E66D615292CDDBE99DD23B93 /* DesignLabModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabModel.swift; sourceTree = "<group>"; };
 		EC6AFA7C53FF20F48FF62523 /* ColumnHeaderPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColumnHeaderPresentationTests.swift; sourceTree = "<group>"; };
 		F0BD73D03EAEEE2DE99D6F35 /* PageV1BoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1BoundaryTests.swift; sourceTree = "<group>"; };
 		F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TableRockFeature.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -271,6 +292,7 @@
 				39400463DF2EE7387E010C41 /* TableRockAppTests */,
 				7472B70C4B42E6E03DF55A8D /* TableRockAppUITests */,
 				39C25CC9D5E95F848276105E /* TableRockBridgeTests */,
+				97F05077E937F3C2A4558B72 /* TableRockDesignLabTests */,
 				80DB598D9955F9EA1AB6378D /* TableRockFeatureTests */,
 			);
 			path = Tests;
@@ -281,9 +303,22 @@
 			children = (
 				C33651FEBDA588CCFE2A0E14 /* TableRockApp */,
 				F4DCBE56A80B297C50C6E609 /* TableRockBridge */,
+				5C8AC17C4A6448622E577542 /* TableRockDesignLab */,
 				947B0886E4D40E94F5C5A09D /* TableRockFeature */,
 			);
 			path = Sources;
+			sourceTree = "<group>";
+		};
+		5C8AC17C4A6448622E577542 /* TableRockDesignLab */ = {
+			isa = PBXGroup;
+			children = (
+				45BD4F811FBA403DF53CAAF1 /* ConceptShells.swift */,
+				458733A3A628C9289EB6B3DB /* DesignLabComponents.swift */,
+				E66D615292CDDBE99DD23B93 /* DesignLabModel.swift */,
+				88E4D5C7A42F17282F830DEA /* DesignLabSurfaces.swift */,
+				2F14AA6A488E1B11AA572BD7 /* TableRockDesignLabApp.swift */,
+			);
+			path = TableRockDesignLab;
 			sourceTree = "<group>";
 		};
 		7472B70C4B42E6E03DF55A8D /* TableRockAppUITests */ = {
@@ -322,6 +357,8 @@
 				7F24F1E2FB76DDA5D0255906 /* TableRockAppUITests.xctest */,
 				A61EA4DB356144BD42272270 /* TableRockBridge.framework */,
 				5ED022E8C15474B31E1F1F6C /* TableRockBridgeTests.xctest */,
+				92AC8FE02BC1492D4B381E40 /* TableRockDesignLab.app */,
+				3B6D49A4F3A0FB6BC7BC659E /* TableRockDesignLabTests.xctest */,
 				F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */,
 				8C42185AD707FA2A7890B1E5 /* TableRockFeatureTests.xctest */,
 			);
@@ -350,6 +387,14 @@
 				112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		97F05077E937F3C2A4558B72 /* TableRockDesignLabTests */ = {
+			isa = PBXGroup;
+			children = (
+				DEB5E3AF9306E47AB8CAD2E1 /* DesignLabModelTests.swift */,
+			);
+			path = TableRockDesignLabTests;
 			sourceTree = "<group>";
 		};
 		B9CB723C5AFF33A00528A5EC /* native */ = {
@@ -402,6 +447,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		069F4500EDD02B69D582E892 /* TableRockDesignLabTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 447183C263F3914CACE11B55 /* Build configuration list for PBXNativeTarget "TableRockDesignLabTests" */;
+			buildPhases = (
+				BD00078E054E35E93F1CE66F /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				BFA6D6426A2D55EC3E9F14D4 /* PBXTargetDependency */,
+			);
+			name = TableRockDesignLabTests;
+			packageProductDependencies = (
+			);
+			productName = TableRockDesignLabTests;
+			productReference = 3B6D49A4F3A0FB6BC7BC659E /* TableRockDesignLabTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		0C67E5685B0ACA4686E8553D /* TableRockAppTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 68C0B03C3334D0EEA6FC6366 /* Build configuration list for PBXNativeTarget "TableRockAppTests" */;
@@ -476,6 +539,23 @@
 			productReference = 389BF5258A746A4D8C3BFA05 /* TableRock.app */;
 			productType = "com.apple.product-type.application";
 		};
+		B0ECC8475356A1FC4D777863 /* TableRockDesignLab */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D1BCCF09252BF1F325DD4082 /* Build configuration list for PBXNativeTarget "TableRockDesignLab" */;
+			buildPhases = (
+				A6B8847786DB0AF70342831E /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TableRockDesignLab;
+			packageProductDependencies = (
+			);
+			productName = TableRockDesignLab;
+			productReference = 92AC8FE02BC1492D4B381E40 /* TableRockDesignLab.app */;
+			productType = "com.apple.product-type.application";
+		};
 		D6F8C508A473DACB04BCEF23 /* TableRockFeatureTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B44F33CE7391BDDAE13F2EC0 /* Build configuration list for PBXNativeTarget "TableRockFeatureTests" */;
@@ -544,6 +624,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
+					069F4500EDD02B69D582E892 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
 					0C67E5685B0ACA4686E8553D = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
@@ -557,6 +641,10 @@
 						ProvisioningStyle = Automatic;
 					};
 					8B9AFC4F2E2F35FE54332C77 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					B0ECC8475356A1FC4D777863 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
@@ -592,10 +680,12 @@
 				4D0AA50F4B0CBA53F3870A53 /* TableRockFeature */,
 				5CE2D108C202AEF090ACD434 /* TableRockBridge */,
 				8B9AFC4F2E2F35FE54332C77 /* TableRock */,
+				B0ECC8475356A1FC4D777863 /* TableRockDesignLab */,
 				D6F8C508A473DACB04BCEF23 /* TableRockFeatureTests */,
 				F11A8438480CB06F7F49776F /* TableRockBridgeTests */,
 				DD7B0395A914CDDEFF02F41E /* TableRockAppUITests */,
 				0C67E5685B0ACA4686E8553D /* TableRockAppTests */,
+				069F4500EDD02B69D582E892 /* TableRockDesignLabTests */,
 			);
 		};
 /* End PBXProject section */
@@ -629,6 +719,26 @@
 			files = (
 				F42BEA2AD4B262850D8C3D96 /* TableRockApp.swift in Sources */,
 				2F1FCE7D6A6B5A253B35595D /* WorkbenchBridgeConversions.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A6B8847786DB0AF70342831E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				61CEE8F0FA0BC89145C18C68 /* ConceptShells.swift in Sources */,
+				2D7C822345D3585CEB388AC5 /* DesignLabComponents.swift in Sources */,
+				3B37984F65F6FF7B9A3F3D3C /* DesignLabModel.swift in Sources */,
+				99978E26D7AA36C611286B3E /* DesignLabSurfaces.swift in Sources */,
+				A9DFF2096FE41B7946911F7E /* TableRockDesignLabApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BD00078E054E35E93F1CE66F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2555D1DC3BB267F4EA3B912B /* DesignLabModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -725,6 +835,11 @@
 			target = 8B9AFC4F2E2F35FE54332C77 /* TableRock */;
 			targetProxy = 0DE7484AAF4382C203200705 /* PBXContainerItemProxy */;
 		};
+		BFA6D6426A2D55EC3E9F14D4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B0ECC8475356A1FC4D777863 /* TableRockDesignLab */;
+			targetProxy = 41E1FE6A82BE95BABB309AFC /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -781,6 +896,23 @@
 			};
 			name = Release;
 		};
+		2EDD97BB3B9C64F59B1B066F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = "TableRockDesignLab-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.tablerock.TableRockDesignLab;
+				PRODUCT_NAME = TableRockDesignLab;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
 		2F45056142ADB7C74377778E /* Test Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -804,6 +936,22 @@
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
 				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = "Test Release";
+		};
+		378D0B2D05541A1386E034A2 /* Test Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TableRockDesignLab.app/Contents/MacOS/TableRockDesignLab";
 			};
 			name = "Test Release";
 		};
@@ -1009,6 +1157,22 @@
 			};
 			name = Debug;
 		};
+		7081C540F5A89FC20ABC8767 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TableRockDesignLab.app/Contents/MacOS/TableRockDesignLab";
+			};
+			name = Debug;
+		};
 		72DEF895AE3BF1F2B5B8D4E5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1034,6 +1198,23 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
+		};
+		801A6DF5B1A25403EEA81774 /* Test Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = "TableRockDesignLab-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.tablerock.TableRockDesignLab;
+				PRODUCT_NAME = TableRockDesignLab;
+				SDKROOT = macosx;
+			};
+			name = "Test Release";
 		};
 		926052BB5B72FA177FF7C25D /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -1206,6 +1387,39 @@
 			};
 			name = Debug;
 		};
+		C77AF00CF05E28DE919A21F0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TableRockDesignLab.app/Contents/MacOS/TableRockDesignLab";
+			};
+			name = Release;
+		};
+		C786792BBF3C265E96FB762C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = "TableRockDesignLab-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.tablerock.TableRockDesignLab;
+				PRODUCT_NAME = TableRockDesignLab;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
 		D37DF846A710D21B7F49FC79 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1324,6 +1538,16 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		447183C263F3914CACE11B55 /* Build configuration list for PBXNativeTarget "TableRockDesignLabTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7081C540F5A89FC20ABC8767 /* Debug */,
+				C77AF00CF05E28DE919A21F0 /* Release */,
+				378D0B2D05541A1386E034A2 /* Test Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		466E4CF3A76B5E4A5C149A88 /* Build configuration list for PBXNativeTarget "TableRockFeature" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1390,6 +1614,16 @@
 				0A25A96F08DF90FB9E4BF847 /* Debug */,
 				926052BB5B72FA177FF7C25D /* Release */,
 				432DD9760495C46A125C672F /* Test Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D1BCCF09252BF1F325DD4082 /* Build configuration list for PBXNativeTarget "TableRockDesignLab" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C786792BBF3C265E96FB762C /* Debug */,
+				2EDD97BB3B9C64F59B1B066F /* Release */,
+				801A6DF5B1A25403EEA81774 /* Test Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

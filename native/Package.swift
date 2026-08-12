@@ -13,6 +13,7 @@ let package = Package(
     products: [
         .library(name: "TableRockBridge", targets: ["TableRockBridge"]),
         .library(name: "TableRockFeature", targets: ["TableRockFeature"]),
+        .executable(name: "TableRockDesignLab", targets: ["TableRockDesignLab"]),
     ],
     targets: [
         // System library target wrapping the UniFFI C header + module map.
@@ -46,6 +47,13 @@ let package = Package(
             dependencies: ["TableRockBridge", "TableRockFeature"],
             path: "Sources/TableRockApp"
         ),
+        // Static, clean-room native interface exploration. This target must
+        // remain dependency-free and must not reuse production models.
+        .executableTarget(
+            name: "TableRockDesignLab",
+            dependencies: [],
+            path: "Sources/TableRockDesignLab"
+        ),
         .testTarget(
             name: "TableRockBridgeTests",
             dependencies: ["TableRockBridge"],
@@ -56,6 +64,11 @@ let package = Package(
             name: "TableRockFeatureTests",
             dependencies: ["TableRockFeature"],
             path: "Tests/TableRockFeatureTests"
+        ),
+        .testTarget(
+            name: "TableRockDesignLabTests",
+            dependencies: ["TableRockDesignLab"],
+            path: "Tests/TableRockDesignLabTests"
         ),
     ]
 )
