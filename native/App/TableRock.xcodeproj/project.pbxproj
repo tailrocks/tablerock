@@ -29,6 +29,7 @@
 		411EB8166C56FC0EBE4C8394 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4593C9F33EA2B77A8CB555A4 /* Security.framework */; };
 		44AA1BFAFD6E6CC7BF238C6C /* ExternalConnectionRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6849571B55F5705D4B99DF75 /* ExternalConnectionRoute.swift */; };
 		44CA4698082C55FAB7268CB3 /* WorkbenchPresentationStore+Navigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 797D7777533A81807FBE8443 /* WorkbenchPresentationStore+Navigation.swift */; };
+		451C6F000145F0E9AA5EC5F5 /* ConnectionSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2383F7968C0CB87D8CB7D83 /* ConnectionSheets.swift */; };
 		45AFEBCFC2E2040410C736D2 /* LibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF16C90DF01B501DA35D669 /* LibrarySheets.swift */; };
 		493700EAADCCC3020615EA6F /* clickhouse-signed-v1.hex in Resources */ = {isa = PBXBuildFile; fileRef = 4458632FEA057E87DB3BB33C /* clickhouse-signed-v1.hex */; };
 		4E9E25C3BE62B8507E68FC45 /* ApplicationRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E8F4B2D8575F664883970CD /* ApplicationRuntime.swift */; };
@@ -272,6 +273,7 @@
 		EC6AFA7C53FF20F48FF62523 /* ColumnHeaderPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColumnHeaderPresentationTests.swift; sourceTree = "<group>"; };
 		EE82A85C7E1E72D60BF46D94 /* WorkbenchPresentationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchPresentationStore.swift; sourceTree = "<group>"; };
 		F0BD73D03EAEEE2DE99D6F35 /* PageV1BoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1BoundaryTests.swift; sourceTree = "<group>"; };
+		F2383F7968C0CB87D8CB7D83 /* ConnectionSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSheets.swift; sourceTree = "<group>"; };
 		F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TableRockFeature.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5A94F4528ED04C3B8016BDA /* AppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependencies.swift; sourceTree = "<group>"; };
 		FC6A08042DF578C0DAE913EA /* PresentationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresentationModels.swift; sourceTree = "<group>"; };
@@ -494,6 +496,7 @@
 				0F2C76DDF73A5760AD61701F /* ApplicationPorts.swift */,
 				278D2E3A88447819988515D3 /* ApplicationRoot.swift */,
 				9E8F4B2D8575F664883970CD /* ApplicationRuntime.swift */,
+				F2383F7968C0CB87D8CB7D83 /* ConnectionSheets.swift */,
 				1EF16C90DF01B501DA35D669 /* LibrarySheets.swift */,
 				FC6A08042DF578C0DAE913EA /* PresentationModels.swift */,
 				090283225DAF932866B612E0 /* PresentationState.swift */,
@@ -848,6 +851,7 @@
 				57441F98AF5BC1313E70A603 /* ApplicationPorts.swift in Sources */,
 				E27DCDE16F7AF51AC934408D /* ApplicationRoot.swift in Sources */,
 				4E9E25C3BE62B8507E68FC45 /* ApplicationRuntime.swift in Sources */,
+				451C6F000145F0E9AA5EC5F5 /* ConnectionSheets.swift in Sources */,
 				45AFEBCFC2E2040410C736D2 /* LibrarySheets.swift in Sources */,
 				FE135630C789CBC06C06930C /* PresentationModels.swift in Sources */,
 				B4F4586120BC6DDF6EC33E7D /* PresentationState.swift in Sources */,
