@@ -546,6 +546,7 @@ How to read an evidence document:
 - 671 — [Change Review craft](delivery/671-change-review-craft.md)
 - 672 — [Native Design Lab first operator gate](delivery/672-native-design-lab-operator-gate.md)
 - 673 — [Native Workbench production confirmation](delivery/673-native-workbench-confirmation.md)
+- 674 — [Native production migration plan](delivery/674-native-production-migration-plan.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
