@@ -496,26 +496,26 @@ public final class WorkbenchPresentationStore {
 
   #if TABLEROCK_DEVELOPMENT_SUPPORT
     init(
-    client: (any WorkbenchBackend)? = nil,
-    startupError: String? = nil,
-    windowId: UUID? = nil,
-    dependencies: AppDependencies = AppDependencies(),
-    dataRootPath: String = FileManager.default.temporaryDirectory.path,
-    fixtures: NativeWorkbenchFixtureConfiguration
-  ) {
-    self.client = client
-    self.startupError = startupError
-    self.dependencies = dependencies
-    self.fixtures = fixtures
-    self.dataRootPath = dataRootPath
-    self.windowId = windowId ?? dependencies.identifiers.next()
-    let tab = NativeQueryTab(
-      id: dependencies.identifiers.next(), title: "Query 1", statementText: "SELECT 1;"
-    )
-    queryTabs = [tab]
-    selectedQueryTabId = tab.id
-    installPerformanceFixtureIfRequested()
-  }
+      client: (any WorkbenchBackend)? = nil,
+      startupError: String? = nil,
+      windowId: UUID? = nil,
+      dependencies: AppDependencies = AppDependencies(),
+      dataRootPath: String = FileManager.default.temporaryDirectory.path,
+      fixtures: NativeWorkbenchFixtureConfiguration
+    ) {
+      self.client = client
+      self.startupError = startupError
+      self.dependencies = dependencies
+      self.fixtures = fixtures
+      self.dataRootPath = dataRootPath
+      self.windowId = windowId ?? dependencies.identifiers.next()
+      let tab = NativeQueryTab(
+        id: dependencies.identifiers.next(), title: "Query 1", statementText: "SELECT 1;"
+      )
+      queryTabs = [tab]
+      selectedQueryTabId = tab.id
+      installPerformanceFixtureIfRequested()
+    }
 
     public convenience init(
       client: (any WorkbenchBackend)? = nil,
@@ -556,680 +556,685 @@ public final class WorkbenchPresentationStore {
 
   public func initialize() async {
     #if TABLEROCK_DEVELOPMENT_SUPPORT
-    if fixtures.multiWindow {
-      let other = WorkbenchPresentationStore(client: client, dependencies: dependencies, fixtures: fixtures)
-      other.queryText = "SELECT second_window;"
-      other.sessionData = Data(repeating: 9, count: 16)
-      guard other.windowId != windowId, sharesBridge(with: other),
-        queryText == "SELECT 1;", other.queryText == "SELECT second_window;",
-        sessionData == nil, other.sessionData != nil,
-        queryTabs[0] !== other.queryTabs[0]
-      else {
-        writePerformanceMetric("MULTI_WINDOW_PROOF_FAILED ownership mismatch")
+      if fixtures.nativeWorkbench {
+        installNativeWorkbenchFixture()
         return
       }
-      status = "Multi-window fixture"
-      return
-    }
-    if fixtures.objectTabs {
-      let node = WorkbenchCatalogNode(
-        idBytes: Data(repeating: 7, count: 16), parentIdBytes: Data(repeating: 6, count: 16),
-        depth: 2, name: "users", kind: "postgresql_table",
-        childrenState: "not_applicable", expandable: false
-      )
-      let first = NativeObjectTab(
-        id: dependencies.identifiers.next(), node: node, pinned: true
-      )
-      first.resultTable = WorkbenchTable(columns: ["id"], rows: [["1"]])
-      let preview = NativeObjectTab(id: dependencies.identifiers.next(), node: node)
-      preview.resultTable = WorkbenchTable(columns: ["id"], rows: [["2"]])
-      objectTabs = [first, preview]
-      selectedObjectTabId = preview.id
-      selectedWorkbenchKind = "object"
-      sessionData = Data(repeating: 11, count: 16)
-      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
-      connectedEngine = "postgresql"
-      selectQueryTab(queryTabs[0])
-      selectObjectTab(preview)
-      guard preview.pinned, first.catalogNodeId == preview.catalogNodeId,
-        first.resultTable?.rows == [["1"]], preview.resultTable?.rows == [["2"]]
-      else {
-        writePerformanceMetric("OBJECT_TABS_PROOF_FAILED isolation mismatch")
+      if fixtures.multiWindow {
+        let other = WorkbenchPresentationStore(
+          client: client, dependencies: dependencies, fixtures: fixtures)
+        other.queryText = "SELECT second_window;"
+        other.sessionData = Data(repeating: 9, count: 16)
+        guard other.windowId != windowId, sharesBridge(with: other),
+          queryText == "SELECT 1;", other.queryText == "SELECT second_window;",
+          sessionData == nil, other.sessionData != nil,
+          queryTabs[0] !== other.queryTabs[0]
+        else {
+          writePerformanceMetric("MULTI_WINDOW_PROOF_FAILED ownership mismatch")
+          return
+        }
+        status = "Multi-window fixture"
         return
       }
-      try? await Task.sleep(for: .milliseconds(500))
-      await loadObjectFilterPresets(preview)
-      runNativeObjectTabsAudit()
-      return
-    }
-    if fixtures.dataMovementUI {
-      sessionData = Data(repeating: 1, count: 16)
-      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
-      connectedEngine = "postgresql"
-      let node = WorkbenchCatalogNode(
-        idBytes: Data(repeating: 7, count: 16),
-        parentIdBytes: Data(repeating: 6, count: 16), depth: 1,
-        name: "fixture_table", kind: "postgresql_table",
-        childrenState: "not_applicable", expandable: false)
-      let tab = NativeObjectTab(id: dependencies.identifiers.next(), node: node, pinned: true)
-      tab.resultTable = WorkbenchTable(
-        columns: ["id", "name"], rows: [["1", "Ada"]])
-      tab.resultIdData = Data(repeating: 8, count: 16)
-      tab.resultRevision = 1
-      tab.summary = "1 row · 2 columns"
-      objectTabs = [tab]
-      selectedObjectTabId = tab.id
-      selectedWorkbenchKind = "object"
-      status = "Data movement fixture"
-      return
-    }
-    if fixtures.valueInspector {
-      sessionData = Data(repeating: 4, count: 16)
-      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
-      connectedEngine = "postgresql"
-      let raw = Data(#"{"ok":true}"#.utf8)
-      activeQueryTab.resultTable = WorkbenchTable(
-        columns: ["payload"], rows: [[#"{"ok":true}"#]],
-        columnMetadata: [
-          WorkbenchColumn(
-            name: "payload", engine: 0, engineType: "jsonb", nullable: true
-          )
-        ],
-        cells: [
-          [
-            WorkbenchCell(
-              display: #"{"ok":true}"#, kind: 8, truncation: 2,
-              originalByteCount: 128, bytes: raw
+      if fixtures.objectTabs {
+        let node = WorkbenchCatalogNode(
+          idBytes: Data(repeating: 7, count: 16), parentIdBytes: Data(repeating: 6, count: 16),
+          depth: 2, name: "users", kind: "postgresql_table",
+          childrenState: "not_applicable", expandable: false
+        )
+        let first = NativeObjectTab(
+          id: dependencies.identifiers.next(), node: node, pinned: true
+        )
+        first.resultTable = WorkbenchTable(columns: ["id"], rows: [["1"]])
+        let preview = NativeObjectTab(id: dependencies.identifiers.next(), node: node)
+        preview.resultTable = WorkbenchTable(columns: ["id"], rows: [["2"]])
+        objectTabs = [first, preview]
+        selectedObjectTabId = preview.id
+        selectedWorkbenchKind = "object"
+        sessionData = Data(repeating: 11, count: 16)
+        sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+        connectedEngine = "postgresql"
+        selectQueryTab(queryTabs[0])
+        selectObjectTab(preview)
+        guard preview.pinned, first.catalogNodeId == preview.catalogNodeId,
+          first.resultTable?.rows == [["1"]], preview.resultTable?.rows == [["2"]]
+        else {
+          writePerformanceMetric("OBJECT_TABS_PROOF_FAILED isolation mismatch")
+          return
+        }
+        try? await Task.sleep(for: .milliseconds(500))
+        await loadObjectFilterPresets(preview)
+        runNativeObjectTabsAudit()
+        return
+      }
+      if fixtures.dataMovementUI {
+        sessionData = Data(repeating: 1, count: 16)
+        sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+        connectedEngine = "postgresql"
+        let node = WorkbenchCatalogNode(
+          idBytes: Data(repeating: 7, count: 16),
+          parentIdBytes: Data(repeating: 6, count: 16), depth: 1,
+          name: "fixture_table", kind: "postgresql_table",
+          childrenState: "not_applicable", expandable: false)
+        let tab = NativeObjectTab(id: dependencies.identifiers.next(), node: node, pinned: true)
+        tab.resultTable = WorkbenchTable(
+          columns: ["id", "name"], rows: [["1", "Ada"]])
+        tab.resultIdData = Data(repeating: 8, count: 16)
+        tab.resultRevision = 1
+        tab.summary = "1 row · 2 columns"
+        objectTabs = [tab]
+        selectedObjectTabId = tab.id
+        selectedWorkbenchKind = "object"
+        status = "Data movement fixture"
+        return
+      }
+      if fixtures.valueInspector {
+        sessionData = Data(repeating: 4, count: 16)
+        sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+        connectedEngine = "postgresql"
+        let raw = Data(#"{"ok":true}"#.utf8)
+        activeQueryTab.resultTable = WorkbenchTable(
+          columns: ["payload"], rows: [[#"{"ok":true}"#]],
+          columnMetadata: [
+            WorkbenchColumn(
+              name: "payload", engine: 0, engineType: "jsonb", nullable: true
             )
+          ],
+          cells: [
+            [
+              WorkbenchCell(
+                display: #"{"ok":true}"#, kind: 8, truncation: 2,
+                originalByteCount: 128, bytes: raw
+              )
+            ]
           ]
-        ]
-      )
-      activeQueryTab.selectedCell = NativeCellSelection(row: 0, column: 0)
-      status = "Value inspector fixture"
-      guard selectedCellSnapshot?.0.engineType == "jsonb",
-        selectedCellSnapshot?.1.kindLabel == "Structured",
-        selectedCellSnapshot?.1.originalByteCount == 128
-      else {
-        writePerformanceMetric("VALUE_INSPECTOR_PROOF_FAILED model projection mismatch")
-        return
-      }
-      try? await Task.sleep(for: .milliseconds(500))
-      runNativeValueInspectorAudit()
-      return
-    }
-    if fixtures.selectableInspector {
-      sessionData = Data(repeating: 5, count: 16)
-      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
-      connectedEngine = "postgresql"
-      let raw = Data(#"{"selected":true}"#.utf8)
-      activeQueryTab.resultTable = WorkbenchTable(
-        columns: ["payload"], rows: [[#"{"selected":true}"#]],
-        columnMetadata: [
-          WorkbenchColumn(name: "payload", engine: 0, engineType: "jsonb", nullable: false)
-        ],
-        cells: [
-          [
-            WorkbenchCell(
-              display: #"{"selected":true}"#, kind: 8, truncation: 0,
-              originalByteCount: UInt64(raw.count), bytes: raw)
-          ]
-        ])
-      activeQueryTab.selectedCell = nil
-      status = "Selectable inspector fixture"
-      return
-    }
-    if fixtures.resultPaging {
-      sessionData = Data(repeating: 5, count: 16)
-      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
-      connectedEngine = "postgresql"
-      activeQueryTab.resultTable = WorkbenchTable(
-        columns: ["n"], rows: (1...500).map { [String($0)] })
-      activeQueryTab.resultIdData = Data(repeating: 8, count: 16)
-      activeQueryTab.resultRevision = 1
-      activeQueryTab.nextStartRow = 500
-      activeQueryTab.querySummary = "result · 1 column · 500 rows loaded"
-      status = "Result paging fixture"
-      return
-    }
-    if fixtures.quickFilter {
-      sessionData = Data(repeating: 5, count: 16)
-      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
-      connectedEngine = "postgresql"
-      activeQueryTab.resultTable = WorkbenchTable(
-        columns: ["id", "name"],
-        rows: [["1", "Ada"], ["2", "Grace"], ["3", "Linus"]])
-      activeQueryTab.querySummary = "result · 2 columns · 3 rows loaded"
-      status = "Quick filter fixture"
-      return
-    }
-    if fixtures.inputMethodEditor {
-      activeQueryTab.statementText = "SELECT "
-      status = "Preparing IME fixture"
-      try? await Task.sleep(for: .milliseconds(500))
-      guard let root = NSApplication.shared.windows.first(where: { $0.isVisible })?.contentView
-      else {
-        status = "IME fixture failed: no window"
-        return
-      }
-      func descendants(of view: NSView) -> [NSView] {
-        [view] + view.subviews.flatMap(descendants)
-      }
-      guard let editor = descendants(of: root).compactMap({ $0 as? NSTextView }).first else {
-        status = "IME fixture failed: no editor"
-        return
-      }
-      editor.window?.makeFirstResponder(editor)
-      editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
-      editor.setMarkedText(
-        "かな", selectedRange: NSRange(location: 2, length: 0),
-        replacementRange: NSRange(location: NSNotFound, length: 0))
-      guard editor.hasMarkedText() else {
-        status = "IME fixture failed: no marked text"
-        return
-      }
-      let composed = editor.string
-      activeQueryTab.statementText = "model update must not replace composition"
-      try? await Task.sleep(for: .milliseconds(250))
-      guard editor.hasMarkedText(), editor.string == composed else {
-        status = "IME fixture failed: composition replaced"
-        writePerformanceMetric("IME_PROOF_FAILED composition_replaced=true")
-        return
-      }
-      status = "IME composition preserved"
-      writePerformanceMetric("IME_PROOF_PASSED marked_text_survived_model_update=true")
-      return
-    }
-    if fixtures.structure {
-      guard let client else {
-        writePerformanceMetric("STRUCTURE_PROOF_FAILED no bridge")
-        return
-      }
-      do {
-        let session = try await client.open(
-          params: WorkbenchOpenParams(
-            engine: "postgresql", host: "127.0.0.1", port: 5433,
-            database: "db", user: "u", password: "secret", tlsMode: "off"
-          ))
-        sessionData = session
-        sessionHex = session.map { String(format: "%02x", $0) }.joined()
-        connectedEngine = "postgresql"
-        guard
-          let database = try await client.refreshCatalog(
-            session: session, parentNodeId: nil
-          ).first,
-          let schema = try await client.refreshCatalog(
-            session: session, parentNodeId: database.idBytes
-          ).first(where: { $0.name == "public" })
-        else {
-          writePerformanceMetric("STRUCTURE_PROOF_FAILED catalog hierarchy missing")
-          return
-        }
-        let objects = try await client.refreshCatalog(
-          session: session, parentNodeId: schema.idBytes
-        )
-        guard let object = objects.first(where: { $0.name == "structure_probe" }) else {
-          writePerformanceMetric("STRUCTURE_PROOF_FAILED target missing")
-          return
-        }
-        let tab = NativeObjectTab(
-          id: dependencies.identifiers.next(), node: object, pinned: true
-        )
-        objectTabs = [tab]
-        selectedObjectTabId = tab.id
-        selectedWorkbenchKind = "object"
-        await loadObjectStructure()
-        guard tab.structure?.columns.count == 3,
-          tab.structure?.indexes.contains(where: { $0.name == "structure_probe_pkey" }) == true,
-          tab.structure?.constraints.contains(where: { $0.name == "structure_probe_name_check" })
-            == true
-        else {
-          writePerformanceMetric(
-            "STRUCTURE_PROOF_FAILED \(tab.structureError ?? "snapshot mismatch")"
-          )
-          return
-        }
-        copyStructureDdl(tab.structure!.ddl)
-        try? await Task.sleep(for: .milliseconds(500))
-        runNativeStructureAudit()
-      } catch {
-        writePerformanceMetric("STRUCTURE_PROOF_FAILED \(error)")
-      }
-      return
-    }
-    if fixtures.clickHouseStructure {
-      guard let client else {
-        writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED no bridge")
-        return
-      }
-      do {
-        let session = try await client.open(
-          params: WorkbenchOpenParams(
-            engine: "clickhouse", host: "127.0.0.1", port: 8122,
-            database: "db", user: "u", password: "secret", tlsMode: "off"
-          ))
-        sessionData = session
-        sessionHex = session.map { String(format: "%02x", $0) }.joined()
-        connectedEngine = "clickhouse"
-        guard
-          let database = try await client.refreshCatalog(
-            session: session, parentNodeId: nil
-          ).first(where: { $0.name == "db" })
-        else {
-          writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED database missing")
-          return
-        }
-        let objects = try await client.refreshCatalog(
-          session: session, parentNodeId: database.idBytes
-        )
-        guard let object = objects.first(where: { $0.name == "structure_probe" }) else {
-          writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED target missing")
-          return
-        }
-        let tab = NativeObjectTab(
-          id: dependencies.identifiers.next(), node: object, pinned: true
-        )
-        objectTabs = [tab]
-        selectedObjectTabId = tab.id
-        selectedWorkbenchKind = "object"
-        await loadObjectStructure()
-        guard tab.structure?.engine == "clickhouse",
-          tab.structure?.columns.count == 3,
-          tab.structure?.columns.first(where: { $0.name == "id" })?.primaryKey == true,
-          tab.structure?.columns.first(where: { $0.name == "id" })?.sortingKey == true,
-          tab.structure?.facts.contains(where: {
-            $0.name == "Engine" && $0.value == "MergeTree"
-          }) == true
-        else {
-          writePerformanceMetric(
-            "CLICKHOUSE_STRUCTURE_PROOF_FAILED \(tab.structureError ?? "snapshot mismatch")"
-          )
-          return
-        }
-        copyStructureDdl(tab.structure!.ddl)
-        try? await Task.sleep(for: .milliseconds(500))
-        runNativeClickHouseStructureAudit()
-      } catch {
-        writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED \(error)")
-      }
-      return
-    }
-    if fixtures.redisOverview {
-      guard let client else {
-        writePerformanceMetric("REDIS_OVERVIEW_PROOF_FAILED no bridge")
-        return
-      }
-      do {
-        let session = try await client.open(
-          params: WorkbenchOpenParams(
-            engine: "redis", host: "127.0.0.1", port: 6380,
-            database: "0", user: "", password: "", tlsMode: "off"
-          ))
-        sessionData = session
-        sessionHex = session.map { String(format: "%02x", $0) }.joined()
-        connectedEngine = "redis"
-        await showRedisOverview()
-        guard redisOverview?.sampledAtMs ?? 0 > 0,
-          redisOverview?.lines.contains(where: {
-            $0.hasPrefix("redis_version: ")
-          }) == true
-        else {
-          writePerformanceMetric(
-            "REDIS_OVERVIEW_PROOF_FAILED \(redisOverviewError ?? "snapshot missing")"
-          )
-          return
-        }
-        try? await Task.sleep(for: .milliseconds(500))
-        runNativeRedisOverviewAudit(sampledAtMs: redisOverview?.sampledAtMs ?? 0)
-      } catch {
-        writePerformanceMetric("REDIS_OVERVIEW_PROOF_FAILED \(error)")
-      }
-      return
-    }
-    if fixtures.redisPubSubUI {
-      sessionData = Data(repeating: 1, count: 16)
-      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
-      connectedEngine = "redis"
-      redisSubscriptionSelector = "updates:*"
-      status = "Redis Pub/Sub fixture"
-      return
-    }
-    if fixtures.redisKeyView {
-      guard let client else {
-        writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED no bridge")
-        return
-      }
-      do {
-        let session = try await client.open(
-          params: WorkbenchOpenParams(
-            engine: "redis", host: "127.0.0.1", port: 6380,
-            database: "0", user: "", password: "", tlsMode: "off"
-          ))
-        sessionData = session
-        sessionHex = session.map { String(format: "%02x", $0) }.joined()
-        connectedEngine = "redis"
-        guard
-          let database = try await client.refreshCatalog(
-            session: session, parentNodeId: nil
-          ).first(where: { $0.name == "db0" })
-        else {
-          writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED db0 missing")
-          return
-        }
-        let keys = try await client.refreshCatalog(
-          session: session, parentNodeId: database.idBytes
-        )
-        let expected = Set([
-          "redis_key_string", "redis_key_hash", "redis_key_list",
-          "redis_key_set", "redis_key_sorted_set", "redis_key_stream",
-        ])
-        guard expected.isSubset(of: Set(keys.map(\.kind))),
-          let hash = keys.first(where: { $0.kind == "redis_key_hash" })
-        else {
-          writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED key kinds missing")
-          return
-        }
-        catalogSnapshot = [database] + keys
-        for key in keys where expected.contains(key.kind) {
-          _ = try await client.redisKeyView(
-            sessionId: session, catalogNodeId: key.idBytes, collectionSkip: 0
-          )
-        }
-        await openCatalogObject(nodeKey: catalogNodeKey(hash.idBytes))
-        await loadMoreRedisKey()
-        guard activeObjectTab?.redisView?.kind == "hash",
-          (activeObjectTab?.redisView?.lines.count ?? 0) > 34
-        else {
-          writePerformanceMetric(
-            "REDIS_KEY_VIEW_PROOF_FAILED native view kind=\(activeObjectTab?.redisView?.kind ?? "nil") lines=\(activeObjectTab?.redisView?.lines.count ?? 0) next=\(String(describing: activeObjectTab?.redisView?.nextSkip))"
-          )
-          return
-        }
-        try? await Task.sleep(for: .milliseconds(500))
-        runNativeRedisKeyViewAudit()
-      } catch {
-        writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED \(error)")
-      }
-      return
-    }
-    if let importPath = fixtures.csvImportPath {
-      guard let client else {
-        writePerformanceMetric("CSV_IMPORT_PROOF_FAILED no bridge")
-        return
-      }
-      do {
-        let session = try await client.open(
-          params: WorkbenchOpenParams(
-            engine: "postgresql", host: "127.0.0.1", port: 5433,
-            database: "db", user: "u", password: "secret", tlsMode: "off"
-          ))
-        sessionData = session
-        sessionHex = session.map { String(format: "%02x", $0) }.joined()
-        connectedEngine = "postgresql"
-        guard
-          let database = try await client.refreshCatalog(
-            session: session, parentNodeId: nil
-          ).first,
-          let schema = try await client.refreshCatalog(
-            session: session, parentNodeId: database.idBytes
-          ).first(where: { $0.name == "public" })
-        else {
-          writePerformanceMetric("CSV_IMPORT_PROOF_FAILED catalog hierarchy missing")
-          return
-        }
-        let objects = try await client.refreshCatalog(
-          session: session, parentNodeId: schema.idBytes
-        )
-        guard let object = objects.first(where: { $0.name == "import_probe" }) else {
-          writePerformanceMetric(
-            "CSV_IMPORT_PROOF_FAILED target missing objects=\(objects.map(\.name))"
-          )
-          return
-        }
-        let tab = NativeObjectTab(
-          id: dependencies.identifiers.next(), node: object, pinned: true
-        )
-        objectTabs = [tab]
-        selectedObjectTabId = tab.id
-        selectedWorkbenchKind = "object"
-        let url = URL(fileURLWithPath: importPath)
-        csvImportUrl = url
-        csvImportPreview = try await client.previewCsvImport(path: importPath)
-        csvImportMappedColumns = csvImportPreview?.headers ?? []
-        csvImportColumnTypes = ["signed", "text"]
-        csvImportPresented = true
-        await stageCsvImport()
-        guard csvImportReview?.rowCount == 2 else {
-          writePerformanceMetric(
-            "CSV_IMPORT_PROOF_FAILED \(csvImportError ?? "review missing")"
-          )
-          return
-        }
-        await applyCsvImport()
-        guard csvImportError == nil, csvImportOutcome?.contains("2 applied") == true else {
-          writePerformanceMetric(
-            "CSV_IMPORT_PROOF_FAILED \(csvImportError ?? csvImportOutcome ?? "apply missing")"
-          )
-          return
-        }
-        guard
-          let verification = try await fetchPage(
-            intent: "execute",
-            statement: "SELECT count(*)::bigint AS n FROM import_probe",
-            tab: activeQueryTab
-          ), verification.rows == [["2"]]
-        else {
-          writePerformanceMetric("CSV_IMPORT_PROOF_FAILED server count mismatch")
-          return
-        }
-        try? await Task.sleep(for: .milliseconds(500))
-        runNativeCsvImportAudit()
-      } catch {
-        writePerformanceMetric("CSV_IMPORT_PROOF_FAILED \(error)")
-      }
-      return
-    }
-    if fixtures.resultCopy {
-      guard let client else {
-        writePerformanceMetric("RESULT_COPY_PROOF_FAILED no bridge")
-        return
-      }
-      do {
-        let session = try await client.open(
-          params: WorkbenchOpenParams(
-            engine: "postgresql", host: "127.0.0.1", port: 5433,
-            database: "db", user: "u", password: "secret", tlsMode: "off"
-          ))
-        sessionData = session
-        sessionHex = session.map { String(format: "%02x", $0) }.joined()
-        connectedEngine = "postgresql"
-        activeQueryTab.resultTable = try await fetchPage(
-          intent: "execute",
-          statement: "SELECT 7::bigint AS id, 'a,b'::text AS name",
-          tab: activeQueryTab
         )
         activeQueryTab.selectedCell = NativeCellSelection(row: 0, column: 0)
-        await copyResult(scope: "loaded", preferredFormat: "json")
-        guard copyError == nil else {
-          writePerformanceMetric("RESULT_COPY_PROOF_FAILED \(copyError ?? "unknown")")
+        status = "Value inspector fixture"
+        guard selectedCellSnapshot?.0.engineType == "jsonb",
+          selectedCellSnapshot?.1.kindLabel == "Structured",
+          selectedCellSnapshot?.1.originalByteCount == 128
+        else {
+          writePerformanceMetric("VALUE_INSPECTOR_PROOF_FAILED model projection mismatch")
           return
         }
-        if let exportPath = fixtures.resultExportPath {
-          let bytes = try await client.exportLoadedResult(
-            resultId: activeQueryTab.resultIdData ?? Data(),
-            revision: activeQueryTab.resultRevision,
-            format: "json", path: exportPath
-          )
-          let exported = try String(contentsOfFile: exportPath, encoding: .utf8)
-          guard bytes == exported.utf8.count, exported.contains(#""id":7"#) else {
-            writePerformanceMetric("RESULT_EXPORT_PROOF_FAILED payload mismatch")
+        try? await Task.sleep(for: .milliseconds(500))
+        runNativeValueInspectorAudit()
+        return
+      }
+      if fixtures.selectableInspector {
+        sessionData = Data(repeating: 5, count: 16)
+        sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+        connectedEngine = "postgresql"
+        let raw = Data(#"{"selected":true}"#.utf8)
+        activeQueryTab.resultTable = WorkbenchTable(
+          columns: ["payload"], rows: [[#"{"selected":true}"#]],
+          columnMetadata: [
+            WorkbenchColumn(name: "payload", engine: 0, engineType: "jsonb", nullable: false)
+          ],
+          cells: [
+            [
+              WorkbenchCell(
+                display: #"{"selected":true}"#, kind: 8, truncation: 0,
+                originalByteCount: UInt64(raw.count), bytes: raw)
+            ]
+          ])
+        activeQueryTab.selectedCell = nil
+        status = "Selectable inspector fixture"
+        return
+      }
+      if fixtures.resultPaging {
+        sessionData = Data(repeating: 5, count: 16)
+        sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+        connectedEngine = "postgresql"
+        activeQueryTab.resultTable = WorkbenchTable(
+          columns: ["n"], rows: (1...500).map { [String($0)] })
+        activeQueryTab.resultIdData = Data(repeating: 8, count: 16)
+        activeQueryTab.resultRevision = 1
+        activeQueryTab.nextStartRow = 500
+        activeQueryTab.querySummary = "result · 1 column · 500 rows loaded"
+        status = "Result paging fixture"
+        return
+      }
+      if fixtures.quickFilter {
+        sessionData = Data(repeating: 5, count: 16)
+        sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+        connectedEngine = "postgresql"
+        activeQueryTab.resultTable = WorkbenchTable(
+          columns: ["id", "name"],
+          rows: [["1", "Ada"], ["2", "Grace"], ["3", "Linus"]])
+        activeQueryTab.querySummary = "result · 2 columns · 3 rows loaded"
+        status = "Quick filter fixture"
+        return
+      }
+      if fixtures.inputMethodEditor {
+        activeQueryTab.statementText = "SELECT "
+        status = "Preparing IME fixture"
+        try? await Task.sleep(for: .milliseconds(500))
+        guard let root = NSApplication.shared.windows.first(where: { $0.isVisible })?.contentView
+        else {
+          status = "IME fixture failed: no window"
+          return
+        }
+        func descendants(of view: NSView) -> [NSView] {
+          [view] + view.subviews.flatMap(descendants)
+        }
+        guard let editor = descendants(of: root).compactMap({ $0 as? NSTextView }).first else {
+          status = "IME fixture failed: no editor"
+          return
+        }
+        editor.window?.makeFirstResponder(editor)
+        editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
+        editor.setMarkedText(
+          "かな", selectedRange: NSRange(location: 2, length: 0),
+          replacementRange: NSRange(location: NSNotFound, length: 0))
+        guard editor.hasMarkedText() else {
+          status = "IME fixture failed: no marked text"
+          return
+        }
+        let composed = editor.string
+        activeQueryTab.statementText = "model update must not replace composition"
+        try? await Task.sleep(for: .milliseconds(250))
+        guard editor.hasMarkedText(), editor.string == composed else {
+          status = "IME fixture failed: composition replaced"
+          writePerformanceMetric("IME_PROOF_FAILED composition_replaced=true")
+          return
+        }
+        status = "IME composition preserved"
+        writePerformanceMetric("IME_PROOF_PASSED marked_text_survived_model_update=true")
+        return
+      }
+      if fixtures.structure {
+        guard let client else {
+          writePerformanceMetric("STRUCTURE_PROOF_FAILED no bridge")
+          return
+        }
+        do {
+          let session = try await client.open(
+            params: WorkbenchOpenParams(
+              engine: "postgresql", host: "127.0.0.1", port: 5433,
+              database: "db", user: "u", password: "secret", tlsMode: "off"
+            ))
+          sessionData = session
+          sessionHex = session.map { String(format: "%02x", $0) }.joined()
+          connectedEngine = "postgresql"
+          guard
+            let database = try await client.refreshCatalog(
+              session: session, parentNodeId: nil
+            ).first,
+            let schema = try await client.refreshCatalog(
+              session: session, parentNodeId: database.idBytes
+            ).first(where: { $0.name == "public" })
+          else {
+            writePerformanceMetric("STRUCTURE_PROOF_FAILED catalog hierarchy missing")
             return
           }
-        }
-        if let streamPath = fixtures.streamExportPath {
-          let operationId = try await client.startStreamExport(
-            sessionId: session,
-            statement: "SELECT generate_series(1, 1200)::bigint AS id",
-            format: "csv", path: streamPath)
-          let outcome = try await pollStreamExport(client: client, operationId: operationId)
-          let exported = try String(contentsOfFile: streamPath, encoding: .utf8)
-          guard outcome.phase == "completed", outcome.completedRows == 1_200,
-            exported.hasPrefix("id\n"), exported.contains("1200\n")
+          let objects = try await client.refreshCatalog(
+            session: session, parentNodeId: schema.idBytes
+          )
+          guard let object = objects.first(where: { $0.name == "structure_probe" }) else {
+            writePerformanceMetric("STRUCTURE_PROOF_FAILED target missing")
+            return
+          }
+          let tab = NativeObjectTab(
+            id: dependencies.identifiers.next(), node: object, pinned: true
+          )
+          objectTabs = [tab]
+          selectedObjectTabId = tab.id
+          selectedWorkbenchKind = "object"
+          await loadObjectStructure()
+          guard tab.structure?.columns.count == 3,
+            tab.structure?.indexes.contains(where: { $0.name == "structure_probe_pkey" }) == true,
+            tab.structure?.constraints.contains(where: { $0.name == "structure_probe_name_check" })
+              == true
           else {
             writePerformanceMetric(
-              "RESULT_EXPORT_PROOF_FAILED stream phase=\(outcome.phase) rows=\(outcome.completedRows)"
+              "STRUCTURE_PROOF_FAILED \(tab.structureError ?? "snapshot mismatch")"
             )
             return
           }
-          _ = try await client.dismissStreamExport(operationId: operationId)
+          copyStructureDdl(tab.structure!.ddl)
+          try? await Task.sleep(for: .milliseconds(500))
+          runNativeStructureAudit()
+        } catch {
+          writePerformanceMetric("STRUCTURE_PROOF_FAILED \(error)")
         }
-        runNativeResultCopyAudit()
-      } catch {
-        writePerformanceMetric("RESULT_COPY_PROOF_FAILED \(error)")
-      }
-      return
-    }
-    if fixtures.queryTabs {
-      let first = NativeQueryTab(
-        id: dependencies.identifiers.next(), title: "Users", statementText: "SELECT 1;"
-      )
-      first.resultTable = WorkbenchTable(columns: ["n"], rows: [["1"]])
-      first.isRunning = true
-      first.querySummary = "first result"
-      let second = NativeQueryTab(
-        id: dependencies.identifiers.next(), title: "Orders", statementText: "SELECT 2;"
-      )
-      second.resultTable = WorkbenchTable(columns: ["n"], rows: [["2"]])
-      second.querySummary = "second result"
-      queryTabs = [first, second]
-      selectedQueryTabId = second.id
-      sessionHex = String(repeating: "a", count: 32)
-      connectedEngine = "postgresql"
-      status = "Query tabs fixture"
-      guard queryText == "SELECT 2;", resultTable?.rows == [["2"]], !isRunning,
-        querySummary == "second result",
-        first.statementText == "SELECT 1;", first.resultTable?.rows == [["1"]],
-        first.isRunning, first.querySummary == "first result"
-      else {
-        writePerformanceMetric("QUERY_TABS_PROOF_FAILED isolation mismatch")
         return
       }
-      try? await Task.sleep(for: .milliseconds(500))
-      runNativeQueryTabsAudit()
-      return
-    }
-    if fixtures.sqlFiles {
-      sqlFile = WorkbenchSQLFile(
-        path: "/tmp/fixture.sql", statementText: "SELECT fixture_sql_file;",
-        modifiedNanos: 1, len: 24
-      )
-      sqlFileBaseline = "SELECT fixture_sql_file;"
-      queryText = "SELECT fixture_sql_file;"
-      status = "SQL file fixture"
-      try? await Task.sleep(for: .milliseconds(500))
-      runNativeSqlFilesAudit()
-      return
-    }
-    if fixtures.savedQueries {
-      savedQueries = [
-        WorkbenchSavedQueryItem(
-          queryId: 1, name: "Recent users", engine: "postgresql",
-          statementText: "SELECT id FROM users", updatedAt: "2026-07-19 05:00:00"
-        ),
-        WorkbenchSavedQueryItem(
-          queryId: 2, name: "Scan keys", engine: "redis",
-          statementText: "SCAN 0", updatedAt: "2026-07-19 04:00:00"
-        ),
-      ]
-      savedQueriesPresented = true
-      status = "Saved queries fixture"
-      guard savedQueries.map(\.engine) == ["postgresql", "redis"],
-        savedQueries[0].statementText == "SELECT id FROM users"
-      else {
-        writePerformanceMetric("SAVED_QUERIES_PROOF_FAILED projection mismatch")
+      if fixtures.clickHouseStructure {
+        guard let client else {
+          writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED no bridge")
+          return
+        }
+        do {
+          let session = try await client.open(
+            params: WorkbenchOpenParams(
+              engine: "clickhouse", host: "127.0.0.1", port: 8122,
+              database: "db", user: "u", password: "secret", tlsMode: "off"
+            ))
+          sessionData = session
+          sessionHex = session.map { String(format: "%02x", $0) }.joined()
+          connectedEngine = "clickhouse"
+          guard
+            let database = try await client.refreshCatalog(
+              session: session, parentNodeId: nil
+            ).first(where: { $0.name == "db" })
+          else {
+            writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED database missing")
+            return
+          }
+          let objects = try await client.refreshCatalog(
+            session: session, parentNodeId: database.idBytes
+          )
+          guard let object = objects.first(where: { $0.name == "structure_probe" }) else {
+            writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED target missing")
+            return
+          }
+          let tab = NativeObjectTab(
+            id: dependencies.identifiers.next(), node: object, pinned: true
+          )
+          objectTabs = [tab]
+          selectedObjectTabId = tab.id
+          selectedWorkbenchKind = "object"
+          await loadObjectStructure()
+          guard tab.structure?.engine == "clickhouse",
+            tab.structure?.columns.count == 3,
+            tab.structure?.columns.first(where: { $0.name == "id" })?.primaryKey == true,
+            tab.structure?.columns.first(where: { $0.name == "id" })?.sortingKey == true,
+            tab.structure?.facts.contains(where: {
+              $0.name == "Engine" && $0.value == "MergeTree"
+            }) == true
+          else {
+            writePerformanceMetric(
+              "CLICKHOUSE_STRUCTURE_PROOF_FAILED \(tab.structureError ?? "snapshot mismatch")"
+            )
+            return
+          }
+          copyStructureDdl(tab.structure!.ddl)
+          try? await Task.sleep(for: .milliseconds(500))
+          runNativeClickHouseStructureAudit()
+        } catch {
+          writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED \(error)")
+        }
         return
       }
-      try? await Task.sleep(for: .milliseconds(500))
-      runNativeSavedQueriesAudit()
-      return
-    }
-    if fixtures.history {
-      historyItems = [
-        WorkbenchHistoryItem(
-          historyId: 2, engine: "postgresql", databaseName: "postgres",
-          schemaName: "public", statementText: "SELECT fixture_history",
-          outcome: "completed", createdAt: "2026-07-19 05:00:00"
-        ),
-        WorkbenchHistoryItem(
-          historyId: 1, engine: "redis", databaseName: "0",
-          schemaName: nil, statementText: nil,
-          outcome: "failed", createdAt: "2026-07-19 04:00:00"
-        ),
-      ]
-      historyPresented = true
-      status = "History fixture"
-      guard historyItems.count == 2,
-        historyItems[0].statementText == "SELECT fixture_history",
-        historyItems[1].statementText == nil
-      else {
-        writePerformanceMetric("HISTORY_PROOF_FAILED projection mismatch")
+      if fixtures.redisOverview {
+        guard let client else {
+          writePerformanceMetric("REDIS_OVERVIEW_PROOF_FAILED no bridge")
+          return
+        }
+        do {
+          let session = try await client.open(
+            params: WorkbenchOpenParams(
+              engine: "redis", host: "127.0.0.1", port: 6380,
+              database: "0", user: "", password: "", tlsMode: "off"
+            ))
+          sessionData = session
+          sessionHex = session.map { String(format: "%02x", $0) }.joined()
+          connectedEngine = "redis"
+          await showRedisOverview()
+          guard redisOverview?.sampledAtMs ?? 0 > 0,
+            redisOverview?.lines.contains(where: {
+              $0.hasPrefix("redis_version: ")
+            }) == true
+          else {
+            writePerformanceMetric(
+              "REDIS_OVERVIEW_PROOF_FAILED \(redisOverviewError ?? "snapshot missing")"
+            )
+            return
+          }
+          try? await Task.sleep(for: .milliseconds(500))
+          runNativeRedisOverviewAudit(sampledAtMs: redisOverview?.sampledAtMs ?? 0)
+        } catch {
+          writePerformanceMetric("REDIS_OVERVIEW_PROOF_FAILED \(error)")
+        }
         return
       }
-      try? await Task.sleep(for: .milliseconds(500))
-      runNativeHistoryAudit()
-      return
-    }
-    if fixtures.profileGroups {
-      profileGroups = [
-        WorkbenchProfileGroup(name: "Empty", alphabetical: false),
-        WorkbenchProfileGroup(name: "Production", alphabetical: true),
-      ]
-      profiles = [
-        WorkbenchProfileItem(
-          idBytes: Data(repeating: 1, count: 16), revision: 0,
-          name: "Zebra", engine: "postgresql", group: "Production",
-          favorite: false, savedOrder: 0, host: "z.internal", port: "5432",
-          context: "db", safetyMode: "confirm_writes", environment: "production",
-          productionWarning: true, dangerousPlaintext: false, connected: true
-        ),
-        WorkbenchProfileItem(
-          idBytes: Data(repeating: 2, count: 16), revision: 0,
-          name: "Alpha", engine: "postgresql", group: "Production",
-          favorite: false, savedOrder: 1, host: "a.internal", port: "5432",
-          context: "db", safetyMode: "read_only", environment: "production",
-          productionWarning: true, dangerousPlaintext: false, connected: false
-        ),
-      ]
-      activeProfileId = profiles[0].idBytes
-      sessionData = Data(repeating: 3, count: 16)
-      sessionHealth = WorkbenchSessionHealth(
-        state: "healthy", serverReachable: true,
-        elapsedMillis: 12, authenticationStopped: false
-      )
-      status = "Profile group fixture"
-      guard profileSections.count == 2,
-        let connectedFixture = profileSections[1].profiles.last,
-        profileSections.map(\.title) == ["Empty", "Production"],
-        profileSections[0].profiles.isEmpty,
-        profileSections[1].profiles.map(\.name) == ["Alpha", "Zebra"],
-        connectedFixture.connected,
-        connectionState(connectedFixture) == "Healthy · 12 ms",
-        activeEnvironmentLabel == "Production",
-        activeSafetyLabel == "Confirm writes",
-        activeProductionWarning
-      else {
-        writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED group projection mismatch")
+      if fixtures.redisPubSubUI {
+        sessionData = Data(repeating: 1, count: 16)
+        sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+        connectedEngine = "redis"
+        redisSubscriptionSelector = "updates:*"
+        status = "Redis Pub/Sub fixture"
         return
       }
-      reconnectState = "Reconnecting · attempt 1"
-      guard connectionState(connectedFixture) == "Reconnecting · attempt 1" else {
-        writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED reconnect projection mismatch")
+      if fixtures.redisKeyView {
+        guard let client else {
+          writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED no bridge")
+          return
+        }
+        do {
+          let session = try await client.open(
+            params: WorkbenchOpenParams(
+              engine: "redis", host: "127.0.0.1", port: 6380,
+              database: "0", user: "", password: "", tlsMode: "off"
+            ))
+          sessionData = session
+          sessionHex = session.map { String(format: "%02x", $0) }.joined()
+          connectedEngine = "redis"
+          guard
+            let database = try await client.refreshCatalog(
+              session: session, parentNodeId: nil
+            ).first(where: { $0.name == "db0" })
+          else {
+            writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED db0 missing")
+            return
+          }
+          let keys = try await client.refreshCatalog(
+            session: session, parentNodeId: database.idBytes
+          )
+          let expected = Set([
+            "redis_key_string", "redis_key_hash", "redis_key_list",
+            "redis_key_set", "redis_key_sorted_set", "redis_key_stream",
+          ])
+          guard expected.isSubset(of: Set(keys.map(\.kind))),
+            let hash = keys.first(where: { $0.kind == "redis_key_hash" })
+          else {
+            writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED key kinds missing")
+            return
+          }
+          catalogSnapshot = [database] + keys
+          for key in keys where expected.contains(key.kind) {
+            _ = try await client.redisKeyView(
+              sessionId: session, catalogNodeId: key.idBytes, collectionSkip: 0
+            )
+          }
+          await openCatalogObject(nodeKey: catalogNodeKey(hash.idBytes))
+          await loadMoreRedisKey()
+          guard activeObjectTab?.redisView?.kind == "hash",
+            (activeObjectTab?.redisView?.lines.count ?? 0) > 34
+          else {
+            writePerformanceMetric(
+              "REDIS_KEY_VIEW_PROOF_FAILED native view kind=\(activeObjectTab?.redisView?.kind ?? "nil") lines=\(activeObjectTab?.redisView?.lines.count ?? 0) next=\(String(describing: activeObjectTab?.redisView?.nextSkip))"
+            )
+            return
+          }
+          try? await Task.sleep(for: .milliseconds(500))
+          runNativeRedisKeyViewAudit()
+        } catch {
+          writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED \(error)")
+        }
         return
       }
-      reconnectState = nil
-      try? await Task.sleep(for: .milliseconds(500))
-      runNativeProfileGroupAudit()
-      return
-    }
+      if let importPath = fixtures.csvImportPath {
+        guard let client else {
+          writePerformanceMetric("CSV_IMPORT_PROOF_FAILED no bridge")
+          return
+        }
+        do {
+          let session = try await client.open(
+            params: WorkbenchOpenParams(
+              engine: "postgresql", host: "127.0.0.1", port: 5433,
+              database: "db", user: "u", password: "secret", tlsMode: "off"
+            ))
+          sessionData = session
+          sessionHex = session.map { String(format: "%02x", $0) }.joined()
+          connectedEngine = "postgresql"
+          guard
+            let database = try await client.refreshCatalog(
+              session: session, parentNodeId: nil
+            ).first,
+            let schema = try await client.refreshCatalog(
+              session: session, parentNodeId: database.idBytes
+            ).first(where: { $0.name == "public" })
+          else {
+            writePerformanceMetric("CSV_IMPORT_PROOF_FAILED catalog hierarchy missing")
+            return
+          }
+          let objects = try await client.refreshCatalog(
+            session: session, parentNodeId: schema.idBytes
+          )
+          guard let object = objects.first(where: { $0.name == "import_probe" }) else {
+            writePerformanceMetric(
+              "CSV_IMPORT_PROOF_FAILED target missing objects=\(objects.map(\.name))"
+            )
+            return
+          }
+          let tab = NativeObjectTab(
+            id: dependencies.identifiers.next(), node: object, pinned: true
+          )
+          objectTabs = [tab]
+          selectedObjectTabId = tab.id
+          selectedWorkbenchKind = "object"
+          let url = URL(fileURLWithPath: importPath)
+          csvImportUrl = url
+          csvImportPreview = try await client.previewCsvImport(path: importPath)
+          csvImportMappedColumns = csvImportPreview?.headers ?? []
+          csvImportColumnTypes = ["signed", "text"]
+          csvImportPresented = true
+          await stageCsvImport()
+          guard csvImportReview?.rowCount == 2 else {
+            writePerformanceMetric(
+              "CSV_IMPORT_PROOF_FAILED \(csvImportError ?? "review missing")"
+            )
+            return
+          }
+          await applyCsvImport()
+          guard csvImportError == nil, csvImportOutcome?.contains("2 applied") == true else {
+            writePerformanceMetric(
+              "CSV_IMPORT_PROOF_FAILED \(csvImportError ?? csvImportOutcome ?? "apply missing")"
+            )
+            return
+          }
+          guard
+            let verification = try await fetchPage(
+              intent: "execute",
+              statement: "SELECT count(*)::bigint AS n FROM import_probe",
+              tab: activeQueryTab
+            ), verification.rows == [["2"]]
+          else {
+            writePerformanceMetric("CSV_IMPORT_PROOF_FAILED server count mismatch")
+            return
+          }
+          try? await Task.sleep(for: .milliseconds(500))
+          runNativeCsvImportAudit()
+        } catch {
+          writePerformanceMetric("CSV_IMPORT_PROOF_FAILED \(error)")
+        }
+        return
+      }
+      if fixtures.resultCopy {
+        guard let client else {
+          writePerformanceMetric("RESULT_COPY_PROOF_FAILED no bridge")
+          return
+        }
+        do {
+          let session = try await client.open(
+            params: WorkbenchOpenParams(
+              engine: "postgresql", host: "127.0.0.1", port: 5433,
+              database: "db", user: "u", password: "secret", tlsMode: "off"
+            ))
+          sessionData = session
+          sessionHex = session.map { String(format: "%02x", $0) }.joined()
+          connectedEngine = "postgresql"
+          activeQueryTab.resultTable = try await fetchPage(
+            intent: "execute",
+            statement: "SELECT 7::bigint AS id, 'a,b'::text AS name",
+            tab: activeQueryTab
+          )
+          activeQueryTab.selectedCell = NativeCellSelection(row: 0, column: 0)
+          await copyResult(scope: "loaded", preferredFormat: "json")
+          guard copyError == nil else {
+            writePerformanceMetric("RESULT_COPY_PROOF_FAILED \(copyError ?? "unknown")")
+            return
+          }
+          if let exportPath = fixtures.resultExportPath {
+            let bytes = try await client.exportLoadedResult(
+              resultId: activeQueryTab.resultIdData ?? Data(),
+              revision: activeQueryTab.resultRevision,
+              format: "json", path: exportPath
+            )
+            let exported = try String(contentsOfFile: exportPath, encoding: .utf8)
+            guard bytes == exported.utf8.count, exported.contains(#""id":7"#) else {
+              writePerformanceMetric("RESULT_EXPORT_PROOF_FAILED payload mismatch")
+              return
+            }
+          }
+          if let streamPath = fixtures.streamExportPath {
+            let operationId = try await client.startStreamExport(
+              sessionId: session,
+              statement: "SELECT generate_series(1, 1200)::bigint AS id",
+              format: "csv", path: streamPath)
+            let outcome = try await pollStreamExport(client: client, operationId: operationId)
+            let exported = try String(contentsOfFile: streamPath, encoding: .utf8)
+            guard outcome.phase == "completed", outcome.completedRows == 1_200,
+              exported.hasPrefix("id\n"), exported.contains("1200\n")
+            else {
+              writePerformanceMetric(
+                "RESULT_EXPORT_PROOF_FAILED stream phase=\(outcome.phase) rows=\(outcome.completedRows)"
+              )
+              return
+            }
+            _ = try await client.dismissStreamExport(operationId: operationId)
+          }
+          runNativeResultCopyAudit()
+        } catch {
+          writePerformanceMetric("RESULT_COPY_PROOF_FAILED \(error)")
+        }
+        return
+      }
+      if fixtures.queryTabs {
+        let first = NativeQueryTab(
+          id: dependencies.identifiers.next(), title: "Users", statementText: "SELECT 1;"
+        )
+        first.resultTable = WorkbenchTable(columns: ["n"], rows: [["1"]])
+        first.isRunning = true
+        first.querySummary = "first result"
+        let second = NativeQueryTab(
+          id: dependencies.identifiers.next(), title: "Orders", statementText: "SELECT 2;"
+        )
+        second.resultTable = WorkbenchTable(columns: ["n"], rows: [["2"]])
+        second.querySummary = "second result"
+        queryTabs = [first, second]
+        selectedQueryTabId = second.id
+        sessionHex = String(repeating: "a", count: 32)
+        connectedEngine = "postgresql"
+        status = "Query tabs fixture"
+        guard queryText == "SELECT 2;", resultTable?.rows == [["2"]], !isRunning,
+          querySummary == "second result",
+          first.statementText == "SELECT 1;", first.resultTable?.rows == [["1"]],
+          first.isRunning, first.querySummary == "first result"
+        else {
+          writePerformanceMetric("QUERY_TABS_PROOF_FAILED isolation mismatch")
+          return
+        }
+        try? await Task.sleep(for: .milliseconds(500))
+        runNativeQueryTabsAudit()
+        return
+      }
+      if fixtures.sqlFiles {
+        sqlFile = WorkbenchSQLFile(
+          path: "/tmp/fixture.sql", statementText: "SELECT fixture_sql_file;",
+          modifiedNanos: 1, len: 24
+        )
+        sqlFileBaseline = "SELECT fixture_sql_file;"
+        queryText = "SELECT fixture_sql_file;"
+        status = "SQL file fixture"
+        try? await Task.sleep(for: .milliseconds(500))
+        runNativeSqlFilesAudit()
+        return
+      }
+      if fixtures.savedQueries {
+        savedQueries = [
+          WorkbenchSavedQueryItem(
+            queryId: 1, name: "Recent users", engine: "postgresql",
+            statementText: "SELECT id FROM users", updatedAt: "2026-07-19 05:00:00"
+          ),
+          WorkbenchSavedQueryItem(
+            queryId: 2, name: "Scan keys", engine: "redis",
+            statementText: "SCAN 0", updatedAt: "2026-07-19 04:00:00"
+          ),
+        ]
+        savedQueriesPresented = true
+        status = "Saved queries fixture"
+        guard savedQueries.map(\.engine) == ["postgresql", "redis"],
+          savedQueries[0].statementText == "SELECT id FROM users"
+        else {
+          writePerformanceMetric("SAVED_QUERIES_PROOF_FAILED projection mismatch")
+          return
+        }
+        try? await Task.sleep(for: .milliseconds(500))
+        runNativeSavedQueriesAudit()
+        return
+      }
+      if fixtures.history {
+        historyItems = [
+          WorkbenchHistoryItem(
+            historyId: 2, engine: "postgresql", databaseName: "postgres",
+            schemaName: "public", statementText: "SELECT fixture_history",
+            outcome: "completed", createdAt: "2026-07-19 05:00:00"
+          ),
+          WorkbenchHistoryItem(
+            historyId: 1, engine: "redis", databaseName: "0",
+            schemaName: nil, statementText: nil,
+            outcome: "failed", createdAt: "2026-07-19 04:00:00"
+          ),
+        ]
+        historyPresented = true
+        status = "History fixture"
+        guard historyItems.count == 2,
+          historyItems[0].statementText == "SELECT fixture_history",
+          historyItems[1].statementText == nil
+        else {
+          writePerformanceMetric("HISTORY_PROOF_FAILED projection mismatch")
+          return
+        }
+        try? await Task.sleep(for: .milliseconds(500))
+        runNativeHistoryAudit()
+        return
+      }
+      if fixtures.profileGroups {
+        profileGroups = [
+          WorkbenchProfileGroup(name: "Empty", alphabetical: false),
+          WorkbenchProfileGroup(name: "Production", alphabetical: true),
+        ]
+        profiles = [
+          WorkbenchProfileItem(
+            idBytes: Data(repeating: 1, count: 16), revision: 0,
+            name: "Zebra", engine: "postgresql", group: "Production",
+            favorite: false, savedOrder: 0, host: "z.internal", port: "5432",
+            context: "db", safetyMode: "confirm_writes", environment: "production",
+            productionWarning: true, dangerousPlaintext: false, connected: true
+          ),
+          WorkbenchProfileItem(
+            idBytes: Data(repeating: 2, count: 16), revision: 0,
+            name: "Alpha", engine: "postgresql", group: "Production",
+            favorite: false, savedOrder: 1, host: "a.internal", port: "5432",
+            context: "db", safetyMode: "read_only", environment: "production",
+            productionWarning: true, dangerousPlaintext: false, connected: false
+          ),
+        ]
+        activeProfileId = profiles[0].idBytes
+        sessionData = Data(repeating: 3, count: 16)
+        sessionHealth = WorkbenchSessionHealth(
+          state: "healthy", serverReachable: true,
+          elapsedMillis: 12, authenticationStopped: false
+        )
+        status = "Profile group fixture"
+        guard profileSections.count == 2,
+          let connectedFixture = profileSections[1].profiles.last,
+          profileSections.map(\.title) == ["Empty", "Production"],
+          profileSections[0].profiles.isEmpty,
+          profileSections[1].profiles.map(\.name) == ["Alpha", "Zebra"],
+          connectedFixture.connected,
+          connectionState(connectedFixture) == "Healthy · 12 ms",
+          activeEnvironmentLabel == "Production",
+          activeSafetyLabel == "Confirm writes",
+          activeProductionWarning
+        else {
+          writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED group projection mismatch")
+          return
+        }
+        reconnectState = "Reconnecting · attempt 1"
+        guard connectionState(connectedFixture) == "Reconnecting · attempt 1" else {
+          writePerformanceMetric("PROFILE_GROUP_PROOF_FAILED reconnect projection mismatch")
+          return
+        }
+        reconnectState = nil
+        try? await Task.sleep(for: .milliseconds(500))
+        runNativeProfileGroupAudit()
+        return
+      }
     #endif
     guard let client else {
       bridgeError = startupError ?? "Bridge unavailable"
@@ -1237,24 +1242,24 @@ public final class WorkbenchPresentationStore {
       return
     }
     #if TABLEROCK_DEVELOPMENT_SUPPORT
-    if fixtures.activeQuery {
-      do {
-        let session = try await client.open(
-          params: WorkbenchOpenParams(
-            engine: formEngine, host: formHost, port: 5432,
-            database: formDatabase, user: formUser, password: formPassword,
-            tlsMode: "off"))
-        sessionData = session
-        sessionHex = session.map { String(format: "%02x", $0) }.joined()
-        connectedEngine = formEngine
-        status = "Scripted query running"
-        Task { [weak self] in await self?.runQuery() }
-      } catch {
-        bridgeError = "Scripted query setup failed: \(error)"
-        status = "error"
+      if fixtures.activeQuery {
+        do {
+          let session = try await client.open(
+            params: WorkbenchOpenParams(
+              engine: formEngine, host: formHost, port: 5432,
+              database: formDatabase, user: formUser, password: formPassword,
+              tlsMode: "off"))
+          sessionData = session
+          sessionHex = session.map { String(format: "%02x", $0) }.joined()
+          connectedEngine = formEngine
+          status = "Scripted query running"
+          Task { [weak self] in await self?.runQuery() }
+        } catch {
+          bridgeError = "Scripted query setup failed: \(error)"
+          status = "error"
+        }
+        return
       }
-      return
-    }
     #endif
     do {
       historyRetention = try await client.historyRetention()
@@ -1267,28 +1272,133 @@ public final class WorkbenchPresentationStore {
   }
 
   #if TABLEROCK_DEVELOPMENT_SUPPORT
-    private func installPerformanceFixtureIfRequested() {
-    guard let requested = fixtures.performanceGridRows, requested > 0
-    else { return }
-    let count = min(requested, 10_000)
-    let columns = ["id", "engine", "schema", "object", "status", "rows", "bytes", "note"]
-    let started = Date()
-    var rows: [[String]] = []
-    rows.reserveCapacity(count)
-    for index in 0..<count {
-      let status = index.isMultiple(of: 3) ? "ready" : "idle"
-      rows.append([
-        String(index), "PostgreSQL", "public", "fixture_\(index)", status,
-        String(index * 10), String(index * 128), "resident snapshot",
-      ])
+    private func installNativeWorkbenchFixture() {
+      let rootId = Data(repeating: 6, count: 16)
+      let customersNode = WorkbenchCatalogNode(
+        idBytes: Data(repeating: 7, count: 16), parentIdBytes: rootId,
+        depth: 1, name: "customers", kind: "postgresql_table",
+        childrenState: "not_applicable", expandable: false)
+      let objects = [
+        customersNode,
+        WorkbenchCatalogNode(
+          idBytes: Data(repeating: 8, count: 16), parentIdBytes: rootId,
+          depth: 1, name: "invoices", kind: "postgresql_table",
+          childrenState: "not_applicable", expandable: false),
+        WorkbenchCatalogNode(
+          idBytes: Data(repeating: 9, count: 16), parentIdBytes: rootId,
+          depth: 1, name: "orders", kind: "postgresql_table",
+          childrenState: "not_applicable", expandable: false),
+        WorkbenchCatalogNode(
+          idBytes: Data(repeating: 10, count: 16), parentIdBytes: rootId,
+          depth: 1, name: "products", kind: "postgresql_table",
+          childrenState: "not_applicable", expandable: false),
+        WorkbenchCatalogNode(
+          idBytes: Data(repeating: 12, count: 16), parentIdBytes: rootId,
+          depth: 1, name: "regions", kind: "postgresql_view",
+          childrenState: "not_applicable", expandable: false),
+        WorkbenchCatalogNode(
+          idBytes: Data(repeating: 13, count: 16), parentIdBytes: rootId,
+          depth: 1, name: "revenue_summary", kind: "postgresql_materialized_view",
+          childrenState: "not_applicable", expandable: false),
+        WorkbenchCatalogNode(
+          idBytes: Data(repeating: 14, count: 16), parentIdBytes: rootId,
+          depth: 1, name: "calculate_retention(integer)", kind: "postgresql_function",
+          childrenState: "not_applicable", expandable: false),
+      ]
+      catalogSnapshot =
+        [
+          WorkbenchCatalogNode(
+            idBytes: rootId, parentIdBytes: nil, depth: 0,
+            name: "analytics", kind: "postgresql_schema",
+            childrenState: "loaded_complete", expandable: true)
+        ] + objects
+      catalogRefreshState = .loaded
+      catalogSelection = catalogNodeKey(customersNode.idBytes)
+
+      let profile = WorkbenchProfileItem(
+        idBytes: Data(repeating: 4, count: 16), revision: 1,
+        name: "Northstar Analytics", engine: "postgresql", group: nil,
+        favorite: true, savedOrder: 0, host: "db.internal", port: "5432",
+        context: "analytics.public", safetyMode: "read_only", environment: "development",
+        productionWarning: false, dangerousPlaintext: false, connected: true)
+      profiles = [profile]
+      activeProfileId = profile.idBytes
+      sessionData = Data(repeating: 1, count: 16)
+      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+      sessionHealth = WorkbenchSessionHealth(
+        state: "healthy", serverReachable: true, elapsedMillis: 18,
+        authenticationStopped: false)
+      connectedEngine = "postgresql"
+
+      let customers = NativeObjectTab(
+        id: dependencies.identifiers.next(), node: customersNode, pinned: true)
+      customers.resultTable = WorkbenchTable(
+        columns: [
+          "customer_id", "company_name", "region", "plan", "seats",
+          "monthly_revenue", "active", "updated_at",
+        ],
+        rows: [
+          ["…8f31", "Fieldstone", "AMER", "Scale", "208", "$31,200", "true", "2026-08-12"],
+          ["…77c0", "Ion Foundry", "AMER", "Scale", "156", "$23,400", "true", "2026-08-12"],
+          ["…a91f", "Aster Works", "APAC", "Scale", "124", "$18,600", "true", "2026-08-11"],
+          ["…c773", "Cedar Systems", "AMER", "Scale", "92", "$13,800", "true", "2026-08-11"],
+          ["…09d6", "Juniper Cloud", "APAC", "Team", "64", "$8,000", "true", "2026-08-10"],
+          ["…339a", "Lumen River", "AMER", "Team", "51", "$6,375", "true", "2026-08-10"],
+          ["…a602", "Ember Labs", "EMEA", "Team", "46", "$5,750", "true", "2026-08-09"],
+          ["…28cb", "Beacon & Co.", "EMEA", "Team", "38", "$4,750", "true", "2026-08-09"],
+          ["…1a0d", "Grove Digital", "APAC", "Team", "27", "$3,375", "true", "2026-08-08"],
+          ["…ef24", "Kitehouse", "EMEA", "Starter", "16", "$720", "false", "2026-08-08"],
+          ["…4de2", "Driftline", "APAC", "Starter", "12", "$540", "false", "2026-08-07"],
+          ["…b8e4", "Harbor North", "EMEA", "Starter", "8", "$360", "true", "2026-08-07"],
+        ])
+      customers.resultIdData = Data(repeating: 8, count: 16)
+      customers.resultRevision = 1
+      customers.summary = "48,224 rows · 41 ms"
+      customers.filters = [
+        WorkbenchBrowseFilter(
+          id: dependencies.identifiers.next(), column: "active", operatorName: "eq", value: "true"),
+        WorkbenchBrowseFilter(
+          id: dependencies.identifiers.next(), column: "region", operatorName: "ne", value: "LATAM"),
+      ]
+      customers.sort = [WorkbenchBrowseSort(column: "monthly_revenue", descending: true)]
+      customers.selectedCell = NativeCellSelection(row: 2, column: 1)
+
+      let ordersNode = objects[2]
+      let orders = NativeObjectTab(
+        id: dependencies.identifiers.next(), node: ordersNode, pinned: true)
+      orders.resultTable = WorkbenchTable(
+        columns: ["order_id", "status"], rows: [["1001", "open"]])
+      objectTabs = [customers, orders]
+      activeQueryTab.title = "Revenue by region"
+      activeQueryTab.statementText =
+        "SELECT region, sum(monthly_revenue) FROM analytics.customers GROUP BY region;"
+      selectedObjectTabId = customers.id
+      selectedWorkbenchKind = "object"
+      status = "Native Workbench fixture"
     }
-    resultTable = WorkbenchTable(columns: columns, rows: rows)
-    let elapsed = Date().timeIntervalSince(started)
-    catalogSummary =
-      "Performance fixture · \(counted(count, "row")) · \(counted(columns.count, "column"))"
-    writePerformanceMetric(
-      "PERF_FIXTURE_READY rows=\(count) columns=\(columns.count) build_seconds=\(String(format: "%.6f", elapsed))"
-    )
+
+    private func installPerformanceFixtureIfRequested() {
+      guard let requested = fixtures.performanceGridRows, requested > 0
+      else { return }
+      let count = min(requested, 10_000)
+      let columns = ["id", "engine", "schema", "object", "status", "rows", "bytes", "note"]
+      let started = Date()
+      var rows: [[String]] = []
+      rows.reserveCapacity(count)
+      for index in 0..<count {
+        let status = index.isMultiple(of: 3) ? "ready" : "idle"
+        rows.append([
+          String(index), "PostgreSQL", "public", "fixture_\(index)", status,
+          String(index * 10), String(index * 128), "resident snapshot",
+        ])
+      }
+      resultTable = WorkbenchTable(columns: columns, rows: rows)
+      let elapsed = Date().timeIntervalSince(started)
+      catalogSummary =
+        "Performance fixture · \(counted(count, "row")) · \(counted(columns.count, "column"))"
+      writePerformanceMetric(
+        "PERF_FIXTURE_READY rows=\(count) columns=\(columns.count) build_seconds=\(String(format: "%.6f", elapsed))"
+      )
     }
   #endif
 

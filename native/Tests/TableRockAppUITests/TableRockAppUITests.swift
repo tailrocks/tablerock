@@ -14,6 +14,26 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testNativeWorkbenchFixtureOwnsDataPlane() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["catalog.search"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["object.header"].exists)
+    XCTAssertTrue(app.tables["results.grid"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["value.inspector"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["object.section"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["workbench.status"].exists)
+    XCTAssertEqual(
+      app.descendants(matching: .any).matching(identifier: "object.filter.active").count, 2)
+    let selectedValue = app.descendants(matching: .any)["results.cell.2.1"]
+    XCTAssertTrue(selectedValue.exists)
+    XCTAssertEqual(selectedValue.value as? String, "Aster Works")
+  }
+
+  @MainActor
   func testSlowQueryCancelsThroughRustBoundary() throws {
     let app = launch(
       scenario: "slow-until-cancelled",
@@ -314,18 +334,36 @@ final class TableRockAppUITests: XCTestCase {
 
     let addSort = app.descendants(matching: .any)["object.sort.add"]
     XCTAssertTrue(addSort.waitForExistence(timeout: 10))
-    addSort.click()
+    app.activate()
+    addSort.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     let idColumn = app.menuItems["id"]
+    if !idColumn.waitForExistence(timeout: 2) {
+      app.activate()
+      addSort.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    }
     XCTAssertTrue(idColumn.waitForExistence(timeout: 5))
-    idColumn.click()
+    idColumn.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
 
-    let sort = app.descendants(matching: .any)["object.sort.active.id"]
-    XCTAssertTrue(sort.waitForExistence(timeout: 5))
-    let direction = app.buttons["id, ascending; change direction"]
-    XCTAssertTrue(direction.exists)
-    direction.click()
-    XCTAssertTrue(app.buttons["id, descending; change direction"].waitForExistence(timeout: 5))
+    let sorted = app.descendants(matching: .any)["object.sort.add"]
+    let ascending = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "label == 'Sorted by id ascending'"), object: sorted)
+    XCTAssertEqual(XCTWaiter.wait(for: [ascending], timeout: 5), .completed)
+    sorted.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    let direction = app.menuItems["id, ascending; change direction"]
+    XCTAssertTrue(direction.waitForExistence(timeout: 5))
+    direction.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    let updatedSort = app.descendants(matching: .any)["object.sort.add"]
+    XCTAssertTrue(updatedSort.waitForExistence(timeout: 5))
+    let descending = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "label == 'Sorted by id descending'"), object: updatedSort)
+    XCTAssertEqual(XCTWaiter.wait(for: [descending], timeout: 5), .completed)
+    updatedSort.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    XCTAssertTrue(app.menuItems["id, descending; change direction"].waitForExistence(timeout: 5))
+    app.typeKey(.escape, modifierFlags: [])
 
+    let openFilter = app.descendants(matching: .any)["object.filter.editor.open"]
+    XCTAssertTrue(openFilter.waitForExistence(timeout: 5))
+    openFilter.click()
     let value = app.descendants(matching: .any)["object.filter.value"]
     XCTAssertTrue(value.waitForExistence(timeout: 5))
     value.click()
@@ -338,6 +376,9 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(filter.waitForExistence(timeout: 5))
     XCTAssertEqual(filter.label, "id Equals 2")
 
+    let moreFilters = app.descendants(matching: .any)["object.filter.more"]
+    XCTAssertTrue(moreFilters.waitForExistence(timeout: 5))
+    moreFilters.click()
     let rawWhere = app.descendants(matching: .any)["object.raw-where.editor"]
     XCTAssertTrue(rawWhere.waitForExistence(timeout: 5))
     rawWhere.click()
@@ -364,9 +405,9 @@ final class TableRockAppUITests: XCTestCase {
     loadPreset.click()
     let activePreset = app.menuItems["active"]
     XCTAssertTrue(activePreset.waitForExistence(timeout: 5))
-    activePreset.click()
+    activePreset.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     XCTAssertTrue(
-      app.descendants(matching: .any)["object.raw-where.active"].waitForExistence(timeout: 5))
+      app.descendants(matching: .any)["object.raw-where.active"].waitForExistence(timeout: 10))
   }
 
   @MainActor
@@ -539,10 +580,20 @@ final class TableRockAppUITests: XCTestCase {
     let structure = app.radioButtons["Structure"]
     XCTAssertTrue(structure.waitForExistence(timeout: 10))
     structure.click()
+    let actions = app.descendants(matching: .any)["structure.actions"]
+    XCTAssertTrue(actions.waitForExistence(timeout: 10))
+    app.activate()
+    let actionsHittable = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "hittable == true"), object: actions)
+    XCTAssertEqual(XCTWaiter.wait(for: [actionsHittable], timeout: 5), .completed)
+    actions.click()
     let open = app.descendants(matching: .any)["structure.change.open"]
+    if !open.waitForExistence(timeout: 2) {
+      app.activate()
+      actions.click()
+    }
     XCTAssertTrue(open.waitForExistence(timeout: 10))
-    XCTAssertTrue(open.isEnabled)
-    open.click()
+    open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     let object = app.textFields["structure.change.object"]
     XCTAssertTrue(object.waitForExistence(timeout: 10))
     object.click()
@@ -577,18 +628,31 @@ final class TableRockAppUITests: XCTestCase {
     let structure = app.radioButtons["Structure"]
     XCTAssertTrue(structure.waitForExistence(timeout: 10))
     structure.click()
+    let actions = app.descendants(matching: .any)["structure.actions"]
+    XCTAssertTrue(actions.waitForExistence(timeout: 10))
+    app.activate()
+    let actionsHittable = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "hittable == true"), object: actions)
+    XCTAssertEqual(XCTWaiter.wait(for: [actionsHittable], timeout: 5), .completed)
+    actions.click()
     let open = app.descendants(matching: .any)["table-operation.open"]
+    if !open.waitForExistence(timeout: 2) {
+      app.activate()
+      actions.click()
+    }
     XCTAssertTrue(open.waitForExistence(timeout: 10))
-    open.click()
+    open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     let review = app.buttons["table-operation.review"]
     XCTAssertTrue(review.waitForExistence(timeout: 10))
-    review.click()
+    app.activate()
+    review.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     XCTAssertTrue(
       app.descendants(matching: .any)["table-operation.preview"].waitForExistence(timeout: 10))
     let apply = app.buttons["table-operation.apply"]
     XCTAssertFalse(apply.isEnabled)
     let confirmation = app.textFields["table-operation.confirmation"]
-    confirmation.click()
+    app.activate()
+    confirmation.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     confirmation.typeText("fixture_table")
     XCTAssertTrue(apply.isEnabled)
     apply.click()
@@ -791,6 +855,7 @@ final class TableRockAppUITests: XCTestCase {
     app.launchArguments = ["-ApplePersistenceIgnoreState", "YES"]
     app.launch()
     app.activate()
+    addTeardownBlock { app.terminate() }
     return app
   }
 }

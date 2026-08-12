@@ -8,6 +8,7 @@ struct ResultGridWithInspector: View {
   let table: WorkbenchTable
   let minimumHeight: CGFloat
   var exposesResultPaging = false
+  var showsUtilityRail = true
 
   private var visibleRowIndices: [Int] {
     let term = model.loadedRowQuickFilter.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -27,92 +28,19 @@ struct ResultGridWithInspector: View {
       cells: visibleRowIndices.map { table.cells[$0] })
   }
 
+  private var selectedVisibleRow: Int? {
+    guard let selected = model.selectedCell?.row else { return nil }
+    return visibleRowIndices.firstIndex(of: selected)
+  }
+
   var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      // One glass chrome cluster above opaque grid content.
-      GlassEffectContainer {
-        VStack(alignment: .leading, spacing: 4) {
-          HStack(spacing: 8) {
-            ResultCopyMenu()
-            ResultExportMenu()
-            Button {
-              Task { await model.openRelationContinuumFromSelection() }
-            } label: {
-              Label("Continuum", systemImage: "arrow.triangle.branch")
-            }
-            .buttonStyle(.glassProminent)
-            .controlSize(.small)
-            .disabled(!model.canOpenRelationContinuum)
-            .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
-            .help("Row Continuum: related rows for this cell (⌘⌥→)")
-            .accessibilityIdentifier("relation.continuum.open")
-            if model.relationContinuumLoading {
-              ProgressView()
-                .controlSize(.small)
-                .accessibilityLabel("Loading related rows")
-            }
-            if model.relationContinuum != nil {
-              Button("Close Continuum") { model.closeRelationContinuum() }
-                .buttonStyle(.glass)
-                .controlSize(.small)
-                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
-                .accessibilityIdentifier("relation.continuum.close")
-            }
-            Spacer(minLength: 0)
-          }
-          HStack(spacing: 8) {
-            TextField(
-              "Filter loaded rows",
-              text: Binding(
-                get: { model.loadedRowQuickFilter },
-                set: { model.loadedRowQuickFilter = $0 })
-            )
-            .textFieldStyle(.roundedBorder)
-            .frame(minWidth: 120, maxWidth: 220)
-            .accessibilityIdentifier("results.quick-filter")
-            let loadedRowsStatus =
-              "Loaded rows only · \(visibleRowIndices.count)/\(table.rows.count)"
-            Text(loadedRowsStatus)
-              .font(.caption.monospacedDigit())
-              .foregroundStyle(.secondary)
-              .accessibilityIdentifier("results.quick-filter.status")
-              .accessibilityValue(loadedRowsStatus)
-            if exposesResultPaging && model.nextStartRow != nil {
-              Button("Load more") { Task { await model.loadMore() } }
-                .buttonStyle(.glass)
-                .controlSize(.small)
-                .accessibilityIdentifier("results.next-page")
-            }
-            if let outcome = model.copyOutcome {
-              Text(outcome)
-                .font(.caption).foregroundStyle(.secondary)
-                .accessibilityIdentifier("results.copy.outcome")
-                .accessibilityValue(outcome)
-            }
-            if let error = model.copyError {
-              Text(error).font(.caption).foregroundStyle(.red)
-            }
-            if let continuumError = model.relationContinuumError {
-              Text(continuumError)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("relation.continuum.error")
-            }
-            Spacer(minLength: 0)
-          }
-        }
-        .controlSize(.small)
-      }
-      if let selection = model.selectedCellSnapshot {
-        let presentation = GridCellPresentation.project(selection.1)
-        Text(
-          "\(selection.0.name) · \(presentation.statusFact) · R\(selection.2 + 1) C\(selection.3 + 1)"
+    VStack(alignment: .leading, spacing: 0) {
+      if showsUtilityRail {
+        ResultUtilityRail(
+          visibleRowCount: visibleRowIndices.count,
+          totalRowCount: table.rows.count,
+          exposesResultPaging: exposesResultPaging
         )
-        .font(.caption.monospacedDigit())
-        .foregroundStyle(.secondary)
-        .accessibilityIdentifier("results.selection.status")
-        .accessibilityValue(
-          "\(selection.0.name), \(presentation.accessibilityValue), row \(selection.2 + 1)")
       }
       if table.rows.isEmpty {
         ContentUnavailableView(
@@ -127,6 +55,7 @@ struct ResultGridWithInspector: View {
           CatalogGrid(
             table: visibleTable,
             sorts: model.resultSort,
+            selectedRow: selectedVisibleRow,
             performanceAutoScroll: performanceAutoScroll
           ) { row, column in
             guard visibleRowIndices.indices.contains(row) else { return }
@@ -142,6 +71,7 @@ struct ResultGridWithInspector: View {
         }
       }
     }
+    .background(Color(nsColor: .textBackgroundColor))
   }
 
   private var performanceAutoScroll: Bool {
@@ -150,6 +80,91 @@ struct ResultGridWithInspector: View {
     #else
       false
     #endif
+  }
+}
+
+private struct ResultUtilityRail: View {
+  @Environment(WorkbenchPresentationStore.self) private var model
+  let visibleRowCount: Int
+  let totalRowCount: Int
+  let exposesResultPaging: Bool
+
+  var body: some View {
+    HStack(spacing: 8) {
+      TextField(
+        "Filter loaded rows",
+        text: Binding(
+          get: { model.loadedRowQuickFilter },
+          set: { model.loadedRowQuickFilter = $0 })
+      )
+      .textFieldStyle(.roundedBorder)
+      .frame(minWidth: 120, maxWidth: 200)
+      .accessibilityIdentifier("results.quick-filter")
+      let loadedRowsStatus = "Loaded rows only · \(visibleRowCount)/\(totalRowCount)"
+      Text(loadedRowsStatus)
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .accessibilityIdentifier("results.quick-filter.status")
+        .accessibilityValue(loadedRowsStatus)
+      if let selection = model.selectedCellSnapshot {
+        let presentation = GridCellPresentation.project(selection.1)
+        Text(
+          "\(selection.0.name) · \(presentation.statusFact) · R\(selection.2 + 1) C\(selection.3 + 1)"
+        )
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .accessibilityIdentifier("results.selection.status")
+        .accessibilityValue(
+          "\(selection.0.name), \(presentation.accessibilityValue), row \(selection.2 + 1)")
+      }
+      Spacer(minLength: 0)
+      if exposesResultPaging && model.nextStartRow != nil {
+        Button("Load more") { Task { await model.loadMore() } }
+          .accessibilityIdentifier("results.next-page")
+      }
+      ResultCopyMenu()
+      ResultExportMenu()
+      Button {
+        Task { await model.openRelationContinuumFromSelection() }
+      } label: {
+        Label("Continuum", systemImage: "arrow.triangle.branch")
+      }
+      .disabled(!model.canOpenRelationContinuum)
+      .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+      .help("Row Continuum: related rows for this cell (⌘⌥→)")
+      .accessibilityIdentifier("relation.continuum.open")
+      if model.relationContinuumLoading {
+        ProgressView().accessibilityLabel("Loading related rows")
+      }
+      if model.relationContinuum != nil {
+        Button("Close Continuum") { model.closeRelationContinuum() }
+          .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+          .accessibilityIdentifier("relation.continuum.close")
+      }
+      if let outcome = model.copyOutcome {
+        Text(outcome)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .accessibilityIdentifier("results.copy.outcome")
+          .accessibilityValue(outcome)
+      }
+      if let error = model.copyError {
+        Text(error).font(.caption).foregroundStyle(.red)
+      }
+      if let continuumError = model.relationContinuumError {
+        Text(continuumError)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .accessibilityIdentifier("relation.continuum.error")
+      }
+    }
+    .font(.caption)
+    .controlSize(.small)
+    .padding(.horizontal, 10)
+    .frame(height: 38)
+    .background(Color(nsColor: .controlBackgroundColor))
+    .overlay(alignment: .bottom) { Divider() }
   }
 }
 
@@ -230,36 +245,33 @@ private struct RelationContinuumPlane: View {
   }
 }
 
-private struct ResultExportMenu: View {
+struct ResultExportMenu: View {
   @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
-    HStack(spacing: 6) {
-      exportButton("Export CSV", format: "csv")
-      Menu {
-        exportButton("TSV", format: "tsv")
-        exportButton("JSON", format: "json")
-        exportButton("Markdown", format: "markdown")
-        if model.sqlInsertCopyAvailable {
-          exportButton("SQL INSERT", format: "sql_insert")
-        }
-        Divider()
-        fullExportButton("Full Result CSV", format: "csv")
-        fullExportButton("Full Result TSV", format: "tsv")
-        fullExportButton("Full Result JSON", format: "json")
-      } label: {
-        Label("More Export Formats", systemImage: "ellipsis.circle")
+    Menu {
+      exportButton("CSV", format: "csv")
+      exportButton("TSV", format: "tsv")
+      exportButton("JSON", format: "json")
+      exportButton("Markdown", format: "markdown")
+      if model.sqlInsertCopyAvailable {
+        exportButton("SQL INSERT", format: "sql_insert")
       }
-      .accessibilityIdentifier("results.export.more")
+      Divider()
+      fullExportButton("Full Result CSV", format: "csv")
+      fullExportButton("Full Result TSV", format: "tsv")
+      fullExportButton("Full Result JSON", format: "json")
+    } label: {
+      Label("Export", systemImage: "square.and.arrow.up")
     }
     .fixedSize(horizontal: true, vertical: true)
     .disabled(model.resultIdData == nil)
-    .accessibilityHint("Atomically export all rows currently resident in this result")
+    .accessibilityIdentifier("results.export.more")
+    .accessibilityHint("Export loaded rows or stream the full result")
   }
 
   private func exportButton(_ label: String, format: String) -> some View {
     Button(label) { Task { await model.exportLoadedResult(format: format) } }
-      .buttonStyle(.glass)
       .accessibilityIdentifier("results.export.\(format)")
   }
 
@@ -269,7 +281,7 @@ private struct ResultExportMenu: View {
   }
 }
 
-private struct ResultCopyMenu: View {
+struct ResultCopyMenu: View {
   @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
@@ -284,7 +296,7 @@ private struct ResultCopyMenu: View {
         copyButtons(scope: "loaded")
       }
     } label: {
-      Label("Copy Result", systemImage: "doc.on.doc")
+      Label("Copy", systemImage: "doc.on.doc")
     }
     .disabled(model.resultIdData == nil)
     .accessibilityHint("Choose scope and Rust-formatted clipboard representation")

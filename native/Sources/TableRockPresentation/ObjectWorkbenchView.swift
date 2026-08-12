@@ -5,65 +5,23 @@ struct ObjectWorkbenchView: View {
 
   var body: some View {
     if let tab = model.selectedObjectTab {
-      VStack(alignment: .leading, spacing: 6) {
-        HStack(spacing: 8) {
-          Label(tab.title, systemImage: tab.pinned ? "pin.fill" : "eye")
-            .font(.subheadline.weight(.semibold))
-          Text(tab.kind).font(.caption.monospaced()).foregroundStyle(.secondary)
-          if !tab.kind.hasPrefix("redis_key_") {
-            Picker(
-              "Object section",
-              selection: Binding(
-                get: { tab.selectedSection },
-                set: { section in
-                  tab.selectedSection = section
-                  if section == "structure" {
-                    Task { await model.loadObjectStructure() }
-                  }
-                }
-              )
-            ) {
-              Text("Data").tag("data")
-              Text("Structure").tag("structure")
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 180)
-          }
-          Spacer(minLength: 0)
-          GlassEffectContainer {
-            HStack(spacing: 6) {
-              if !tab.pinned {
-                Button("Pin") { model.pinObjectTab(tab) }
-                  .buttonStyle(.glass)
-              }
-              Button("Refresh") { Task { await model.reloadObjectTab() } }
-                .buttonStyle(.glass)
-                .disabled(tab.isRunning)
-              if model.sqlInsertCopyAvailable {
-                Button("Import CSV") { Task { await model.chooseCsvImport() } }
-                  .buttonStyle(.glass)
-                  .accessibilityIdentifier("import.csv.open")
-                  .disabled(tab.isRunning)
-              }
-              Button("Close", role: .destructive) { model.closeObjectTab(tab) }
-                .buttonStyle(.glass)
-                .disabled(tab.isRunning)
-            }
-            .controlSize(.small)
-          }
-        }
-        if tab.isRunning { ProgressView("Loading \(tab.title)…") }
-        if let summary = tab.summary {
-          Text(summary).font(.caption).foregroundStyle(.secondary)
-        }
+      VStack(alignment: .leading, spacing: 0) {
+        ObjectWorkbenchHeader(tab: tab)
         if tab.selectedSection == "data", let table = tab.resultTable,
           !tab.kind.hasPrefix("redis_key_")
         {
-          objectSortBar(tab: tab, table: table)
-          objectFilterBar(tab: tab, table: table)
+          objectBrowseRail(tab: tab, table: table)
         }
         if let error = tab.error {
-          Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+          Label(error, systemImage: "exclamationmark.triangle")
+            .font(.caption)
+            .foregroundStyle(.red)
+            .textSelection(.enabled)
+            .padding(.horizontal, 10)
+            .frame(minHeight: 30)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.red.opacity(0.06))
+            .overlay(alignment: .bottom) { Divider() }
         }
         if let view = tab.redisView {
           redisKeyObjectView(view: view)
@@ -74,13 +32,8 @@ struct ObjectWorkbenchView: View {
         } else if tab.selectedSection == "structure" {
           objectStructureView(tab: tab)
         } else if let table = tab.resultTable {
-          ResultGridWithInspector(table: table, minimumHeight: 180)
+          ResultGridWithInspector(table: table, minimumHeight: 180, showsUtilityRail: false)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-          if tab.nextStartRow != nil {
-            Button("Load more rows") { Task { await model.loadMoreObjectRows() } }
-              .buttonStyle(.glass)
-              .controlSize(.small)
-          }
         } else if !tab.isRunning && tab.error == nil {
           ContentUnavailableView(
             "No object rows", systemImage: "tablecells",
@@ -90,9 +43,141 @@ struct ObjectWorkbenchView: View {
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .background(Color(nsColor: .textBackgroundColor))
     } else {
       ContentUnavailableView("No object tab", systemImage: "tablecells")
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+  }
+}
+
+private struct ObjectWorkbenchHeader: View {
+  @Environment(WorkbenchPresentationStore.self) private var model
+  let tab: NativeObjectTab
+
+  var body: some View {
+    HStack(spacing: 9) {
+      Image(systemName: tab.kind.hasPrefix("redis_key_") ? "key.horizontal" : "tablecells")
+        .foregroundStyle(.blue)
+      VStack(alignment: .leading, spacing: 0) {
+        HStack(spacing: 5) {
+          Text(tab.title)
+            .font(.headline)
+            .lineLimit(1)
+          if tab.pinned {
+            Image(systemName: "pin.fill")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+              .accessibilityLabel("Pinned")
+          }
+        }
+        Text(contextDetail)
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
+      Spacer(minLength: 8)
+      if tab.isRunning {
+        ProgressView()
+          .controlSize(.small)
+          .accessibilityLabel("Loading \(tab.title)")
+      }
+      if tab.resultTable != nil {
+        ResultCopyMenu()
+        ResultExportMenu()
+      }
+      Menu {
+        if !tab.pinned {
+          Button("Pin", systemImage: "pin") { model.pinObjectTab(tab) }
+        }
+        Button("Refresh", systemImage: "arrow.clockwise") {
+          Task { await model.reloadObjectTab() }
+        }
+        .disabled(tab.isRunning)
+        if model.canOpenRelationContinuum {
+          Button("Open Row Continuum", systemImage: "arrow.triangle.branch") {
+            Task { await model.openRelationContinuumFromSelection() }
+          }
+        }
+        if model.sqlInsertCopyAvailable {
+          Button("Import CSV", systemImage: "square.and.arrow.down") {
+            Task { await model.chooseCsvImport() }
+          }
+          .accessibilityIdentifier("import.csv.open")
+          .disabled(tab.isRunning)
+        }
+        if tab.selectedSection == "structure" {
+          Divider()
+          Button("Copy DDL", systemImage: "doc.on.doc") {
+            model.copyStructureDdl(tab.structure?.ddl ?? "")
+          }
+          .disabled(tab.structure?.ddl.isEmpty != false)
+          .accessibilityHint("Copies database-generated structure SQL")
+          Button("Change Structure…", systemImage: "slider.horizontal.3") {
+            model.showDdlChange()
+          }
+          .disabled(!model.canEditSelectedStructure)
+          .accessibilityIdentifier("structure.change.open")
+          Button("Table Operations…", systemImage: "wrench.and.screwdriver") {
+            model.showTableOperation()
+          }
+          .disabled(!model.canOperateSelectedTable)
+          .accessibilityIdentifier("table-operation.open")
+        }
+        Divider()
+        Button("Close", systemImage: "xmark", role: .destructive) {
+          model.closeObjectTab(tab)
+        }
+        .disabled(tab.isRunning)
+      } label: {
+        Image(systemName: "ellipsis.circle")
+      }
+      .menuStyle(.borderlessButton)
+      .accessibilityLabel("Object actions")
+      .accessibilityIdentifier(
+        tab.selectedSection == "structure" ? "structure.actions" : "object.actions")
+    }
+    .controlSize(.small)
+    .padding(.horizontal, 12)
+    .frame(height: 48)
+    .background(Color(nsColor: .windowBackgroundColor))
+    .overlay(alignment: .bottom) { Divider() }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("object.header")
+  }
+
+  private var contextDetail: String {
+    let engine = engineLabel(model.connectedEngine)
+    guard let nodes = model.catalogSnapshot,
+      let node = nodes.first(where: { $0.idBytes == tab.catalogNodeId })
+    else {
+      return "\(kindLabel(tab.kind)) · \(engine)"
+    }
+    var names: [String] = []
+    var parentId = node.parentIdBytes
+    var visited = Set<Data>()
+    while let id = parentId, !visited.contains(id),
+      let parent = nodes.first(where: { $0.idBytes == id })
+    {
+      visited.insert(id)
+      names.append(parent.name)
+      parentId = parent.parentIdBytes
+    }
+    let namespace = names.reversed().joined(separator: ".")
+    return namespace.isEmpty ? "\(kindLabel(tab.kind)) · \(engine)" : "\(namespace) · \(engine)"
+  }
+
+  private func engineLabel(_ engine: String) -> String {
+    switch engine.lowercased() {
+    case "postgresql": "PostgreSQL"
+    case "clickhouse": "ClickHouse"
+    case "redis": "Redis"
+    case "sqlite": "SQLite"
+    default: engine
+    }
+  }
+
+  private func kindLabel(_ kind: String) -> String {
+    kind.replacingOccurrences(of: "_", with: " ").capitalized
   }
 }

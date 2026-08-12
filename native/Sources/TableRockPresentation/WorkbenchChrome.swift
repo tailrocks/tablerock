@@ -278,37 +278,125 @@ struct WorkbenchStatusBar: View {
   }
 
   var body: some View {
-    HStack(spacing: 8) {
-      Text(operationWord)
-        .font(.caption2.weight(.bold).monospaced())
-        .accessibilityIdentifier("workbench.status.operation")
-      Text(factLine)
-        .font(.caption.monospacedDigit())
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-        .truncationMode(.middle)
-        .textSelection(.enabled)
-        .accessibilityIdentifier("workbench.status.facts")
-        .accessibilityValue(factLine)
-      Spacer(minLength: 0)
-      if model.changeReviewOpen {
-        Text("LEDGER \(max(model.changeLedgerEntryCount, 1))")
-          .font(.caption2.weight(.bold).monospaced())
-          .accessibilityIdentifier("workbench.status.ledger")
-          .accessibilityLabel(
-            "Change Ledger \(max(model.changeLedgerEntryCount, 1)) entries, review open")
-      }
-      if model.activeProductionWarning {
-        Text("HALO PRODUCTION")
-          .font(.caption2.weight(.bold))
-          .accessibilityLabel("Production environment")
+    Group {
+      if let tab = model.selectedObjectTab, !tab.kind.hasPrefix("redis_key_") {
+        objectStatus(tab)
+      } else {
+        HStack(spacing: 8) {
+          Text(operationWord)
+            .font(.caption2.weight(.bold).monospaced())
+            .accessibilityIdentifier("workbench.status.operation")
+          Text(factLine)
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+            .accessibilityIdentifier("workbench.status.facts")
+            .accessibilityValue(factLine)
+          Spacer(minLength: 0)
+          changeStatus
+          if model.activeProductionWarning {
+            Text("HALO PRODUCTION")
+              .font(.caption2.weight(.bold))
+              .accessibilityLabel("Production environment")
+          }
+        }
       }
     }
+    .font(.caption)
     .padding(.horizontal, 10)
-    .padding(.vertical, 5)
-    .accessibilityElement(children: .combine)
+    .frame(height: 38)
+    .background(Color(nsColor: .windowBackgroundColor))
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("workbench.status")
     .accessibilityLabel("Workbench status \(operationWord), \(factLine)")
+  }
+
+  private func objectStatus(_ tab: NativeObjectTab) -> some View {
+    HStack(spacing: 12) {
+      Picker(
+        "Object section",
+        selection: Binding(
+          get: { tab.selectedSection },
+          set: { section in
+            tab.selectedSection = section
+            if section == "structure" {
+              Task { await model.loadObjectStructure() }
+            }
+          }
+        )
+      ) {
+        Text("Data").tag("data")
+        Text("Structure").tag("structure")
+      }
+      .labelsHidden()
+      .pickerStyle(.segmented)
+      .frame(width: 136)
+      .accessibilityIdentifier("object.section")
+
+      Divider().frame(height: 16)
+      Text("\(tab.resultTable?.rows.count ?? 0) rows")
+        .monospacedDigit()
+      if let summary = tab.summary {
+        Text(summary)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
+      if tab.isRunning {
+        ProgressView()
+          .controlSize(.small)
+          .accessibilityLabel("Loading rows")
+      }
+      Spacer(minLength: 0)
+      Label(
+        "\(tab.filters.count + (tab.rawWhere == nil ? 0 : 1)) filters",
+        systemImage: "line.3.horizontal.decrease"
+      )
+      Label("\(tab.resultTable?.columns.count ?? 0) columns", systemImage: "rectangle.split.3x1")
+      HStack(spacing: 3) {
+        Button(action: {}) { Image(systemName: "chevron.left") }
+          .buttonStyle(.plain)
+          .disabled(true)
+          .accessibilityLabel("Previous page")
+        Text(tab.nextStartRow == nil ? "1 / 1" : "1 / …")
+          .monospacedDigit()
+        Button {
+          Task { await model.loadMoreObjectRows() }
+        } label: {
+          Image(systemName: "chevron.right")
+        }
+        .buttonStyle(.plain)
+        .disabled(tab.nextStartRow == nil || tab.isRunning)
+        .accessibilityLabel("Load next page")
+        .accessibilityIdentifier("object.next-page")
+      }
+      changeStatus
+    }
+  }
+
+  @ViewBuilder
+  private var changeStatus: some View {
+    if model.changeReviewOpen {
+      Button {
+        model.presentActiveReview()
+      } label: {
+        Label(
+          "\(max(model.changeLedgerEntryCount, 1)) CHANGES",
+          systemImage: "circle.fill"
+        )
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(.orange)
+      .font(.caption2.weight(.semibold))
+      .accessibilityIdentifier("workbench.status.ledger")
+      .accessibilityLabel(
+        "Change Ledger \(max(model.changeLedgerEntryCount, 1)) entries, review open")
+    } else {
+      Label("NO CHANGES", systemImage: "checkmark")
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.secondary)
+    }
   }
 }
 

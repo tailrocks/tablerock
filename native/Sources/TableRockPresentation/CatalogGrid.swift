@@ -5,17 +5,20 @@ import TableRockFeature
 struct CatalogGrid: NSViewRepresentable {
   let table: WorkbenchTable
   let sorts: [WorkbenchBrowseSort]
+  let selectedRow: Int?
   let performanceAutoScroll: Bool
   let onSelect: @MainActor (Int, Int) -> Void
 
   init(
     table: WorkbenchTable,
     sorts: [WorkbenchBrowseSort] = [],
+    selectedRow: Int? = nil,
     performanceAutoScroll: Bool,
     onSelect: @escaping @MainActor (Int, Int) -> Void = { _, _ in }
   ) {
     self.table = table
     self.sorts = sorts
+    self.selectedRow = selectedRow
     self.performanceAutoScroll = performanceAutoScroll
     self.onSelect = onSelect
   }
@@ -76,6 +79,9 @@ struct CatalogGrid: NSViewRepresentable {
       guard let grid else { return }
       coordinator?.activate(row: row, column: column, in: grid)
     }
+    if let selectedRow, table.rows.indices.contains(selectedRow) {
+      context.coordinator.synchronizeSelection(IndexSet(integer: selectedRow), in: grid)
+    }
     context.coordinator.startPerformanceScrollIfRequested(on: grid)
     return scroll
   }
@@ -97,8 +103,13 @@ struct CatalogGrid: NSViewRepresentable {
     context.coordinator.installColumns(on: grid)
     grid.reloadData()
     context.coordinator.startPerformanceScrollIfRequested(on: grid)
-    let validSelection = selectedRows.filter { $0 < table.rows.count }
-    grid.selectRowIndexes(IndexSet(validSelection), byExtendingSelection: false)
+    let validSelection: IndexSet
+    if let selectedRow, table.rows.indices.contains(selectedRow) {
+      validSelection = IndexSet(integer: selectedRow)
+    } else {
+      validSelection = IndexSet(selectedRows.filter { $0 < table.rows.count })
+    }
+    context.coordinator.synchronizeSelection(validSelection, in: grid)
   }
 
   @MainActor
@@ -129,6 +140,7 @@ struct CatalogGrid: NSViewRepresentable {
     var onSelect: @MainActor (Int, Int) -> Void
     private var performanceScrollTask: Task<Void, Never>?
     private var lastActivatedColumn = 0
+    private var isSynchronizingSelection = false
 
     init(
       _ snapshot: WorkbenchTable,
@@ -143,7 +155,8 @@ struct CatalogGrid: NSViewRepresentable {
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-      guard let tableView = notification.object as? NSTableView,
+      guard !isSynchronizingSelection,
+        let tableView = notification.object as? NSTableView,
         tableView.selectedRow >= 0
       else { return }
       let column =
@@ -151,6 +164,13 @@ struct CatalogGrid: NSViewRepresentable {
         ? tableView.clickedColumn : lastActivatedColumn
       guard snapshot.columns.indices.contains(column) else { return }
       onSelect(tableView.selectedRow, column)
+    }
+
+    func synchronizeSelection(_ selection: IndexSet, in tableView: NSTableView) {
+      guard tableView.selectedRowIndexes != selection else { return }
+      isSynchronizingSelection = true
+      defer { isSynchronizingSelection = false }
+      tableView.selectRowIndexes(selection, byExtendingSelection: false)
     }
 
     @objc func tableClicked(_ tableView: NSTableView) {
@@ -165,7 +185,7 @@ struct CatalogGrid: NSViewRepresentable {
         return
       }
       lastActivatedColumn = column
-      tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+      synchronizeSelection(IndexSet(integer: row), in: tableView)
       onSelect(row, column)
     }
 

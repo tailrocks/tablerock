@@ -65,6 +65,7 @@ struct CatalogOutline: NSViewRepresentable {
   final class Node: NSObject {
     let key: String
     let title: String
+    let symbol: String?
     let children: [Node]
     let isState: Bool
     let expandable: Bool
@@ -72,12 +73,14 @@ struct CatalogOutline: NSViewRepresentable {
     init(
       key: String,
       title: String,
+      symbol: String? = nil,
       children: [Node] = [],
       isState: Bool = false,
       expandable: Bool = false
     ) {
       self.key = key
       self.title = title
+      self.symbol = symbol
       self.children = children
       self.isState = isState
       self.expandable = expandable
@@ -131,6 +134,7 @@ struct CatalogOutline: NSViewRepresentable {
         return Node(
           key: key,
           title: record.name,
+          symbol: catalogSymbol(for: record.kind),
           children: children,
           expandable: record.expandable
         )
@@ -175,14 +179,28 @@ struct CatalogOutline: NSViewRepresentable {
         let label = NSTextField(labelWithString: "")
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
+        let image = NSImageView()
+        image.imageScaling = .scaleProportionallyDown
+        image.contentTintColor = .secondaryLabelColor
+        image.translatesAutoresizingMaskIntoConstraints = false
+        cell.imageView = image
         cell.textField = label
+        cell.addSubview(image)
         cell.addSubview(label)
         NSLayoutConstraint.activate([
-          label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+          image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+          image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+          image.widthAnchor.constraint(equalToConstant: 14),
+          image.heightAnchor.constraint(equalToConstant: 14),
+          label.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 5),
           label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
           label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
       }
+      cell.imageView?.image = node.symbol.flatMap {
+        NSImage(systemSymbolName: $0, accessibilityDescription: nil)
+      }
+      cell.imageView?.isHidden = node.symbol == nil
       cell.textField?.stringValue = node.title
       cell.setAccessibilityLabel(
         node.isState
@@ -191,6 +209,25 @@ struct CatalogOutline: NSViewRepresentable {
             ? "Catalog object \(node.title)" : "Catalog group \(node.title)")
       cell.setAccessibilityIdentifier("catalog.node.\(node.key)")
       return cell
+    }
+
+    private func catalogSymbol(for kind: String) -> String {
+      switch kind {
+      case "postgresql_database", "clickhouse_database": "cylinder"
+      case "postgresql_schema": "folder"
+      case "postgresql_table", "postgresql_foreign_table", "postgresql_partitioned_table",
+        "clickhouse_table":
+        "tablecells"
+      case "postgresql_view", "postgresql_materialized_view", "clickhouse_view",
+        "clickhouse_materialized_view":
+        "eye"
+      case "postgresql_function": "function"
+      case "postgresql_type": "curlybraces"
+      case "clickhouse_dictionary": "book.closed"
+      case "redis_logical_database": "square.stack.3d.up"
+      case "redis_namespace": "folder"
+      default: kind.hasPrefix("redis_key_") ? "key.horizontal" : "circle"
+      }
     }
 
     func outlineViewItemDidExpand(_ notification: Notification) {
@@ -247,7 +284,9 @@ struct CatalogOutline: NSViewRepresentable {
       guard let outline else { return }
       suppressExpansionCallbacks = true
       defer { suppressExpansionCallbacks = false }
-      roots.filter { !$0.children.isEmpty }.forEach { outline.expandItem($0) }
+      for root in roots where !root.children.isEmpty {
+        outline.expandItem(root)
+      }
     }
   }
 }

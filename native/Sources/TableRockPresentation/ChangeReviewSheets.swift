@@ -47,6 +47,7 @@ struct ChangeReviewPlane: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
         .background(Color(nsColor: .textBackgroundColor))
+        .accessibilityLabel(preview)
         .accessibilityIdentifier(previewAccessibilityId)
       if let safetyNote {
         Text(safetyNote)
