@@ -46,6 +46,11 @@ if rg -n -g '!verify-native-source-ownership.sh' \
   exit 1
 fi
 
+if rg -n '\bBridgeModel\b' "$APP_SOURCE" "$REPO_ROOT/native/Tests/TableRockAppTests"; then
+  echo "error: retired BridgeModel name returned" >&2
+  exit 1
+fi
+
 monolith_lines="$(wc -l <"$APP_SOURCE/TableRockApp.swift" | tr -d ' ')"
 if [[ "$monolith_lines" -gt 12231 ]]; then
   echo "error: TableRockApp.swift grew beyond the frozen 12,231-line baseline" >&2

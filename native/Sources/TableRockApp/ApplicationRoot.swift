@@ -37,13 +37,13 @@ struct TableRockApp: App {
 
 private struct WorkbenchWindowRoot: View {
   @Environment(\.openWindow) private var openWindow
-  @State private var model: BridgeModel
+  @State private var model: WorkbenchPresentationStore
   private let application: NativeApplicationModel
 
   init(application: NativeApplicationModel, windowId: UUID) {
     self.application = application
     _model = State(
-      initialValue: BridgeModel(
+      initialValue: WorkbenchPresentationStore(
         client: application.client,
         startupError: application.bridgeError,
         windowId: windowId,

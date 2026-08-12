@@ -10,7 +10,7 @@ private enum PresentationStoreError: Error {
 
 @MainActor
 @Observable
-final class BridgeModel {
+final class WorkbenchPresentationStore {
   let windowId: UUID
   var status: String = "starting…"
   var bridgeError: String?
@@ -570,7 +570,7 @@ final class BridgeModel {
 
   func initialize() async {
     if fixtures.multiWindow {
-      let other = BridgeModel(client: client, dependencies: dependencies, fixtures: fixtures)
+      let other = WorkbenchPresentationStore(client: client, dependencies: dependencies, fixtures: fixtures)
       other.queryText = "SELECT second_window;"
       other.sessionData = Data(repeating: 9, count: 16)
       guard other.windowId != windowId, sharesBridge(with: other),
@@ -1300,7 +1300,7 @@ final class BridgeModel {
     )
   }
 
-  private func sharesBridge(with other: BridgeModel) -> Bool {
+  private func sharesBridge(with other: WorkbenchPresentationStore) -> Bool {
     guard let client, let otherClient = other.client else {
       return client == nil && other.client == nil
     }

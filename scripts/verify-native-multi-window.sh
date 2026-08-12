@@ -20,7 +20,7 @@ for pattern in \
   'private let application = NativeApplicationModel\(\)' \
   'WindowGroup\(for: UUID.self\)' \
   '\.restorationBehavior\(\.automatic\)' \
-  '@State private var model: BridgeModel' \
+  '@State private var model: WorkbenchPresentationStore' \
   'window.tabbingIdentifier = "tablerock-workbench"' \
   'window.tabbingMode = \.preferred' \
   'return client === otherClient'

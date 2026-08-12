@@ -4,10 +4,10 @@ import XCTest
 @testable import TableRock
 
 @MainActor
-final class BridgeModelScenarioTests: XCTestCase {
+final class WorkbenchPresentationStoreScenarioTests: XCTestCase {
   func testImportErrorSummaryCopiesOnlyBoundedSafeRows() {
     let pasteboard = ImportErrorPasteboard()
-    let model = BridgeModel(
+    let model = WorkbenchPresentationStore(
       client: ScriptedWorkbenchBackend(scenario: "success"),
       dependencies: AppDependencies(pasteboard: pasteboard))
     model.csvImportProgress = WorkbenchCSVImportProgress(
@@ -89,7 +89,7 @@ final class BridgeModelScenarioTests: XCTestCase {
 
   func testPostgresActivityUsesTypedRowsAndConfirmedSignalOutcome() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
-    let model = BridgeModel(client: backend)
+    let model = WorkbenchPresentationStore(client: backend)
 
     await model.connectByParams()
     await model.showPostgresActivity()
@@ -104,7 +104,7 @@ final class BridgeModelScenarioTests: XCTestCase {
 
   func testPostgresRelationshipsShowCycleAndOpenRelatedTarget() async throws {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
-    let model = BridgeModel(client: backend)
+    let model = WorkbenchPresentationStore(client: backend)
 
     await model.connectByParams()
     let session = Data(repeating: 1, count: 16)
@@ -124,7 +124,7 @@ final class BridgeModelScenarioTests: XCTestCase {
 
   func testPostgresRolesUseTypedMembershipAndPrivilegeSnapshot() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
-    let model = BridgeModel(client: backend)
+    let model = WorkbenchPresentationStore(client: backend)
 
     await model.connectByParams()
     await model.showPostgresRoles()
@@ -146,7 +146,7 @@ final class BridgeModelScenarioTests: XCTestCase {
 
   func testRedisPubSubSurfacesMessagesGapsAndCancellation() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
-    let model = BridgeModel(client: backend)
+    let model = WorkbenchPresentationStore(client: backend)
     model.formEngine = "redis"
 
     await model.connectByParams()
@@ -167,7 +167,7 @@ final class BridgeModelScenarioTests: XCTestCase {
 
   func testStructureChangeFreezesPreviewAndConsumesReview() async throws {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
-    let model = BridgeModel(client: backend)
+    let model = WorkbenchPresentationStore(client: backend)
 
     await model.connectByParams()
     let session = Data(repeating: 1, count: 16)
@@ -193,7 +193,7 @@ final class BridgeModelScenarioTests: XCTestCase {
   }
 
   func testFindReplaceHonorsModesScopeAndZeroWidthRegex() {
-    let model = BridgeModel(client: ScriptedWorkbenchBackend(scenario: "success"))
+    let model = WorkbenchPresentationStore(client: ScriptedWorkbenchBackend(scenario: "success"))
 
     model.queryText = "cat scatter CAT"
     model.queryEditorSelection = NSRange(location: 0, length: 3)
@@ -227,7 +227,7 @@ final class BridgeModelScenarioTests: XCTestCase {
   }
 
   func testNamedQueryParametersRequireTypedSheetBeforeRun() async {
-    let model = BridgeModel(client: ScriptedWorkbenchBackend(scenario: "success"))
+    let model = WorkbenchPresentationStore(client: ScriptedWorkbenchBackend(scenario: "success"))
     await model.connectByParams()
     model.queryText = "SELECT :id::int"
 
@@ -250,7 +250,7 @@ final class BridgeModelScenarioTests: XCTestCase {
 
   func testTableOperationRequiresFrozenTargetAndExactConfirmation() async throws {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
-    let model = BridgeModel(client: backend)
+    let model = WorkbenchPresentationStore(client: backend)
     await model.connectByParams()
     let session = Data(repeating: 1, count: 16)
     model.catalogSnapshot = try await backend.refreshCatalog(session: session, parentNodeId: nil)
@@ -279,7 +279,7 @@ final class BridgeModelScenarioTests: XCTestCase {
 
   func testPostgresBackupUsesProbeReviewAndSupervisedStatus() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
-    let model = BridgeModel(client: backend)
+    let model = WorkbenchPresentationStore(client: backend)
 
     await model.connectByParams()
     await model.showPostgresTools()
@@ -296,7 +296,7 @@ final class BridgeModelScenarioTests: XCTestCase {
   }
 
   func testDirtyAndRunningTabsRequireExplicitResolution() {
-    let model = BridgeModel()
+    let model = WorkbenchPresentationStore()
     model.addQueryTab()
     let tab = model.queryTabs.last!
 
@@ -315,7 +315,7 @@ final class BridgeModelScenarioTests: XCTestCase {
 
   func testCorruptRestorationFailsClosed() async {
     let backend = ScriptedWorkbenchBackend(scenario: "restoration-corrupt")
-    let model = BridgeModel(client: backend)
+    let model = WorkbenchPresentationStore(client: backend)
 
     await model.initialize()
 
@@ -352,7 +352,7 @@ final class BridgeModelScenarioTests: XCTestCase {
 
   func testScriptedDirectConnectionOpensWorkbench() async {
     let backend = ScriptedWorkbenchBackend(scenario: "slow-until-cancelled")
-    let model = BridgeModel(client: backend)
+    let model = WorkbenchPresentationStore(client: backend)
 
     await model.connectByParams()
 
@@ -362,7 +362,7 @@ final class BridgeModelScenarioTests: XCTestCase {
 
   func testScriptedCancellationPublishesSemanticOutcome() async throws {
     let backend = ScriptedWorkbenchBackend(scenario: "slow-until-cancelled")
-    let model = BridgeModel(client: backend)
+    let model = WorkbenchPresentationStore(client: backend)
     model.sessionData = Data(repeating: 1, count: 16)
 
     let query = Task { await model.runQuery() }
@@ -388,8 +388,8 @@ final class BridgeModelScenarioTests: XCTestCase {
 
   func testWindowsShareBackendButOwnPresentationState() {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
-    let first = BridgeModel(client: backend)
-    let second = BridgeModel(client: backend)
+    let first = WorkbenchPresentationStore(client: backend)
+    let second = WorkbenchPresentationStore(client: backend)
 
     first.queryText = "SELECT first;"
     second.queryText = "SELECT second;"

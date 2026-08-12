@@ -2,7 +2,7 @@ import SwiftUI
 
 @MainActor
 struct WorkbenchActions {
-  let model: BridgeModel
+  let model: WorkbenchPresentationStore
 
   var canRun: Bool {
     model.queryWorkbenchSelected && model.sessionHex != nil

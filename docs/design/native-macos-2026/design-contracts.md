@@ -74,7 +74,7 @@ Forbidden concepts include:
 
 ```text
 TableRockBridge  TableRockFeature  tablerock_ffi  UniFFI  Rust
-BridgeModel      WorkbenchBackend  persistence    credential
+WorkbenchPresentationStore  WorkbenchBackend  persistence    credential
 URLSession       Network.framework
 ```
 

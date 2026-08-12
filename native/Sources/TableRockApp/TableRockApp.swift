@@ -1619,7 +1619,7 @@ struct PerformanceFixtureView: View {
 }
 
 struct ConnectionsProfileList: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     @Bindable var model = model
@@ -1851,7 +1851,7 @@ struct ConnectionsProfileList: View {
 
 /// Catalog half of the connections sidebar when a session is live.
 struct ConnectionsCatalogPane: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     @Bindable var model = model
@@ -1917,7 +1917,7 @@ struct ConnectionsCatalogPane: View {
 }
 
 struct ContentView: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     @Bindable var model = model
@@ -2165,7 +2165,7 @@ struct ContentView: View {
 /// Connected workbench: context strip · tabs · content · status bar.
 /// Content dominates; chrome is dense and non-marketing.
 struct WorkbenchShellView: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     VStack(spacing: 0) {
@@ -2196,7 +2196,7 @@ struct WorkbenchShellView: View {
 
 /// Disconnected detail: quiet invite + direct connect (not a workbench chrome).
 struct WorkbenchWelcomeView: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     @Bindable var model = model
@@ -2289,7 +2289,7 @@ struct WorkbenchWelcomeView: View {
 
 /// Dense context facts (spec context bar). Halo stays non-color text.
 struct WorkbenchContextStrip: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     HStack(spacing: 10) {
@@ -2338,7 +2338,7 @@ struct WorkbenchContextStrip: View {
 
 /// Permanent status bar: operation · rows · health words (never color alone).
 struct WorkbenchStatusBar: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   private var operationWord: String {
     if model.isRunning { return "RUNNING" }
@@ -2400,7 +2400,7 @@ struct WorkbenchStatusBar: View {
 }
 
 struct QueryWorkbenchView: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     @Bindable var model = model
@@ -2537,7 +2537,7 @@ struct QueryWorkbenchView: View {
 }
 
 private struct FindReplaceSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
@@ -2603,7 +2603,7 @@ private struct FindReplaceSheet: View {
 }
 
 private struct QueryParametersSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     @Bindable var model = model
@@ -2678,7 +2678,7 @@ private struct QueryParametersSheet: View {
 }
 
 struct ObjectWorkbenchView: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     if let tab = model.selectedObjectTab {
@@ -2775,7 +2775,7 @@ struct ObjectWorkbenchView: View {
 }
 
 private struct ObjectSortBar: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   let tab: NativeObjectTab
   let table: WorkbenchTable
 
@@ -2845,7 +2845,7 @@ private struct BrowseFilterOperatorOption: Identifiable {
 }
 
 private struct ObjectFilterBar: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   let tab: NativeObjectTab
   let table: WorkbenchTable
 
@@ -3015,7 +3015,7 @@ private struct RedisKeyObjectView: View {
 }
 
 private struct ObjectStructureView: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   let tab: NativeObjectTab
 
   var body: some View {
@@ -3144,7 +3144,7 @@ private struct ObjectStructureView: View {
 }
 
 private struct StreamExportSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -3205,7 +3205,7 @@ private struct StreamExportSheet: View {
 }
 
 private struct CsvImportSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     @Bindable var model = model
@@ -3394,7 +3394,7 @@ private struct CsvImportSheet: View {
 }
 
 private struct RedisOverviewSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -3440,7 +3440,7 @@ private struct RedisOverviewSheet: View {
 }
 
 private struct RedisSubscriptionSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     @Bindable var model = model
@@ -3610,7 +3610,7 @@ private struct ChangeReviewPlane: View {
 }
 
 private struct ProbeChangeReviewSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   @Environment(\.dismiss) private var dismiss
 
   private var nowMs: UInt64 {
@@ -3706,7 +3706,7 @@ private struct ProbeChangeReviewSheet: View {
 }
 
 private struct DdlChangeSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   @State private var applyConfirmationPresented = false
 
   private var needsDefinition: Bool {
@@ -3836,7 +3836,7 @@ private struct DdlChangeSheet: View {
 }
 
 private struct TableOperationSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     @Bindable var model = model
@@ -3954,7 +3954,7 @@ private struct PendingPostgresSignal {
 }
 
 private struct PostgresRolesSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   private var matchingRoles: [String] {
     guard let snapshot = model.postgresRoleSnapshot else { return [] }
@@ -4107,7 +4107,7 @@ private struct PostgresRolesSheet: View {
 }
 
 private struct PostgresRelationshipsSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -4165,7 +4165,7 @@ private struct PostgresRelationshipsSheet: View {
 }
 
 private struct PostgresActivitySheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   @State private var pendingSignal: PendingPostgresSignal?
 
   var body: some View {
@@ -4262,7 +4262,7 @@ private struct PostgresActivitySheet: View {
 }
 
 private struct PostgresToolsSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   private var operationActive: Bool {
     model.postgresToolStatus?.phase == "running"
@@ -4424,7 +4424,7 @@ private struct PostgresToolsSheet: View {
 }
 
 private struct ResultGridWithInspector: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   let table: WorkbenchTable
   let minimumHeight: CGFloat
   var exposesResultPaging = false
@@ -4564,7 +4564,7 @@ private struct ResultGridWithInspector: View {
 
 /// Spatial peer plane for Row Continuum (opaque content; chrome is labels only).
 private struct RelationContinuumPlane: View {
-  let state: BridgeModel.RelationContinuumState
+  let state: WorkbenchPresentationStore.RelationContinuumState
   let onClose: () -> Void
 
   var body: some View {
@@ -4694,7 +4694,7 @@ enum RelationContinuumFixtures {
 }
 
 private struct ResultExportMenu: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     HStack(spacing: 6) {
@@ -4733,7 +4733,7 @@ private struct ResultExportMenu: View {
 }
 
 private struct ResultCopyMenu: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     Menu {
@@ -5064,7 +5064,7 @@ private struct NativeValueInspector: View {
 }
 
 struct QueryTabStrip: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
     // Hierarchy: tabs are content selectors, not a row of glass pills.
@@ -5190,10 +5190,10 @@ struct QueryTabStrip: View {
 
 private struct WorkbenchTabLabel: View {
   let title: String
-  let model: BridgeModel
+  let model: WorkbenchPresentationStore
   var leadingSystemImage: String?
 
-  init(title: String, model: BridgeModel, leadingSystemImage: String? = nil) {
+  init(title: String, model: WorkbenchPresentationStore, leadingSystemImage: String? = nil) {
     self.title = title
     self.model = model
     self.leadingSystemImage = leadingSystemImage
@@ -5220,7 +5220,7 @@ private struct WorkbenchTabLabel: View {
 /// Environment Halo: production / staging / development must be unmistakable
 /// without relying on color alone (Increase Contrast / Reduce Transparency).
 private struct EnvironmentSafetyBadge: View {
-  let model: BridgeModel
+  let model: WorkbenchPresentationStore
 
   var body: some View {
     if let environment = model.activeEnvironmentLabel,
@@ -5268,7 +5268,7 @@ private struct EnvironmentSafetyBadge: View {
 }
 
 struct WorkbenchToolbar: CustomizableToolbarContent {
-  let model: BridgeModel
+  let model: WorkbenchPresentationStore
 
   var body: some CustomizableToolbarContent {
     WorkbenchConnectionToolbar(model: model)
@@ -5278,7 +5278,7 @@ struct WorkbenchToolbar: CustomizableToolbarContent {
 }
 
 struct WorkbenchFileToolbar: CustomizableToolbarContent {
-  let model: BridgeModel
+  let model: WorkbenchPresentationStore
 
   var body: some CustomizableToolbarContent {
     ToolbarItem(id: "open-sql-file", placement: .automatic) {
@@ -5317,7 +5317,7 @@ struct WorkbenchFileToolbar: CustomizableToolbarContent {
 }
 
 struct WorkbenchConnectionToolbar: CustomizableToolbarContent {
-  let model: BridgeModel
+  let model: WorkbenchPresentationStore
 
   var body: some CustomizableToolbarContent {
     ToolbarItem(id: "connection", placement: .automatic) {
@@ -5377,7 +5377,7 @@ struct WorkbenchConnectionToolbar: CustomizableToolbarContent {
 }
 
 struct WorkbenchQueryToolbar: CustomizableToolbarContent {
-  let model: BridgeModel
+  let model: WorkbenchPresentationStore
 
   var body: some CustomizableToolbarContent {
     ToolbarItem(id: "save-query", placement: .automatic) {
@@ -5421,7 +5421,7 @@ struct WorkbenchQueryToolbar: CustomizableToolbarContent {
 }
 
 struct SavedQueriesSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
@@ -5527,7 +5527,7 @@ struct SavedQueriesSheet: View {
 }
 
 struct HistorySheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
@@ -6694,7 +6694,7 @@ struct ConnectionUrlImportSheet: View {
 }
 
 struct ExternalUrlConfirmationSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   @Environment(\.dismiss) private var dismiss
   let review: ExternalUrlReview
 
@@ -6746,7 +6746,7 @@ struct ExternalUrlConfirmationSheet: View {
 }
 
 struct QuickSwitcherSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
@@ -6805,7 +6805,7 @@ struct QuickSwitcherSheet: View {
 }
 
 struct ExplainPlanSheet: View {
-  @Environment(BridgeModel.self) private var model
+  @Environment(WorkbenchPresentationStore.self) private var model
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {

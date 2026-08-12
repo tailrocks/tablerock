@@ -11,7 +11,7 @@ BUILD_LOG="$REPO_ROOT/target/design-lab-xcodebuild.log"
 UI_TEST_LOG="$REPO_ROOT/target/design-lab-ui-test.log"
 
 if rg -n \
-  'import (TableRockBridge|TableRockFeature|Network)|TableRockBridge|TableRockFeature|tablerock_ffi|UniFFI|BridgeModel|WorkbenchBackend|URLSession' \
+  'import (TableRockBridge|TableRockFeature|Network)|TableRockBridge|TableRockFeature|tablerock_ffi|UniFFI|BridgeModel|WorkbenchPresentationStore|WorkbenchBackend|URLSession' \
   "$SOURCE"; then
   echo "error: Design Lab references a forbidden production or I/O symbol" >&2
   exit 1

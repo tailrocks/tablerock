@@ -3,10 +3,10 @@ import XCTest
 @testable import TableRock
 
 @MainActor
-final class BridgeModelLifetimeTests: XCTestCase {
+final class WorkbenchPresentationStoreLifetimeTests: XCTestCase {
   func testModelDeallocatesAfterActiveOperationCancellationCompletes() async throws {
     let backend = ScriptedWorkbenchBackend(scenario: "slow-until-cancelled")
-    var model: BridgeModel? = BridgeModel(client: backend)
+    var model: WorkbenchPresentationStore? = WorkbenchPresentationStore(client: backend)
     model?.sessionData = Data(repeating: 1, count: 16)
     model?.queryText = "SELECT pg_sleep(30);"
     weak var weakModel = model
@@ -28,7 +28,7 @@ final class BridgeModelLifetimeTests: XCTestCase {
     XCTAssertNil(weakModel)
   }
 
-  private func startQuery(on model: BridgeModel) -> Task<Void, Never> {
+  private func startQuery(on model: WorkbenchPresentationStore) -> Task<Void, Never> {
     Task { await model.runQuery() }
   }
 }
