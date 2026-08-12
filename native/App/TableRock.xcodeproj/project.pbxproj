@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		03EA8F5972377B177CF3949B /* GridCellPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FE4A4192046C53B74989CB3 /* GridCellPresentationTests.swift */; };
 		08418AD3F194E697CBAEF800 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7056B74025E206D1A652A30B /* AppConfiguration.swift */; };
+		0B308D2CE229CE59FBDA96DC /* WorkbenchToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67EBE74057F33F89C0DD0F47 /* WorkbenchToolbar.swift */; };
 		0FE432AC6F178577E64C4B16 /* TableRockFeature.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		110596D97D66EBF3653855CC /* DesignLabTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 755FAB62C996DA5DAEA1C5CA /* DesignLabTable.swift */; };
 		130C119718D60FADD4F12AE4 /* WorkbenchPresentationStore+Connections.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FAC44291F44B534C09488C /* WorkbenchPresentationStore+Connections.swift */; };
@@ -253,6 +254,7 @@
 		5ED022E8C15474B31E1F1F6C /* TableRockBridgeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockBridgeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5FE4A4192046C53B74989CB3 /* GridCellPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridCellPresentationTests.swift; sourceTree = "<group>"; };
 		639CD75DC96C036A1A245DF6 /* ExternalConnectionRouteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalConnectionRouteTests.swift; sourceTree = "<group>"; };
+		67EBE74057F33F89C0DD0F47 /* WorkbenchToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchToolbar.swift; sourceTree = "<group>"; };
 		6849571B55F5705D4B99DF75 /* ExternalConnectionRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalConnectionRoute.swift; sourceTree = "<group>"; };
 		6BD9437CF2D64C61B2BCFBBD /* ProfileRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileRow.swift; sourceTree = "<group>"; };
 		6C3D340EE8465317D52F0702 /* NativeWorkbenchFixtureConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWorkbenchFixtureConfigurationTests.swift; sourceTree = "<group>"; };
@@ -557,6 +559,7 @@
 				D49B44D0E648E95C76C7830F /* WorkbenchPresentationStore+Safety.swift */,
 				8F8CE761C2DFDB59839D71A8 /* WorkbenchPresentationStore+Transfers.swift */,
 				290D911EE03932BCD4FF8060 /* WorkbenchRootView.swift */,
+				67EBE74057F33F89C0DD0F47 /* WorkbenchToolbar.swift */,
 			);
 			path = TableRockApp;
 			sourceTree = "<group>";
@@ -926,6 +929,7 @@
 				DF74204CE332FAB306D78BF8 /* WorkbenchPresentationStore+Transfers.swift in Sources */,
 				E91F2FE24A6C6E8681F532D3 /* WorkbenchPresentationStore.swift in Sources */,
 				2485FA4762A9B40F5D0FD682 /* WorkbenchRootView.swift in Sources */,
+				0B308D2CE229CE59FBDA96DC /* WorkbenchToolbar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
