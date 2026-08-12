@@ -139,6 +139,11 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+        Test Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
     sources:
       - path: ../Tests/TableRockFeatureTests
     dependencies:

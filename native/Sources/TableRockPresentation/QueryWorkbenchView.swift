@@ -74,14 +74,6 @@ struct QueryWorkbenchView: View {
                   .buttonStyle(.glass)
                   .disabled(model.redisOverviewLoading)
               }
-              Button("Review probe…") { Task { await model.stageProbeChangeReview() } }
-                .buttonStyle(.glass)
-                .disabled(
-                  model.isRunning || model.isCatalogRefreshing || model.probeChangeApplying
-                    || model.probeChangeReview != nil
-                )
-                .accessibilityIdentifier("query.review-probe")
-                .help("Stage edit-safety probe and open Change Review")
               Spacer(minLength: 0)
               if model.changeReviewOpen {
                 Text("LEDGER")

@@ -101,12 +101,6 @@ public struct ContentView: View {
       DdlChangeSheet()
     }
     .sheet(
-      isPresented: $model.probeChangePresented,
-      onDismiss: { Task { await model.closeProbeChangeReview() } }
-    ) {
-      ProbeChangeReviewSheet()
-    }
-    .sheet(
       isPresented: $model.tableOperationPresented,
       onDismiss: { Task { await model.closeTableOperation() } }
     ) {

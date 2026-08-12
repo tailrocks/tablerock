@@ -142,9 +142,6 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
     -> WorkbenchApplyOutcome
   func revokeReviewToken(tokenId: Data) throws -> Bool
-  /// Stage edit-safety probe; returns opaque review token (does not apply).
-  func stageProbeReview(sessionId: Data, nowMs: UInt64) throws -> Data
-  func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome
 }
 
 public struct WorkbenchQueryParameter: Sendable, Equatable, Identifiable {
@@ -396,18 +393,6 @@ public enum WorkbenchStatusFacts {
 /// Pure presentation facts for review gates and ledger chrome.
 /// Never constructs SQL for execution — preview text is descriptive only.
 public enum ChangeReviewPresentation {
-  /// Documented shape of UniFFI `stage_probe_review` / Rust probe DELETE plan.
-  public static let probeKindWord = "DELETE"
-  public static let probeTarget = "public.users"
-  public static let probePreview =
-    #"DELETE FROM "public"."users" WHERE "id" = $1  -- locator 1"#
-  public static let probeRollbackSummary =
-    "Single-row PostgreSQL DELETE under consume-once review; success clears the token; conflict/failure does not re-arm the same token."
-  public static let probeLedgerCount = 1
-  public static let probeAuthoritySeconds: UInt64 = 60
-  public static let probeDestructive = true
-  public static let probeIsFixtureSafetyDemo = true
-
   public static func ledgerChip(entryCount: Int, reviewOpen: Bool) -> String? {
     guard entryCount > 0 || reviewOpen else { return nil }
     let n = max(entryCount, reviewOpen ? 1 : 0)

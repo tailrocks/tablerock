@@ -366,12 +366,6 @@ extension WorkbenchBackend {
   func revokeReviewToken(tokenId: Data) throws -> Bool {
     try scriptedUnavailable("revoke")
   }
-  func stageProbeReview(sessionId: Data, nowMs: UInt64) throws -> Data {
-    try scriptedUnavailable("stage-probe")
-  }
-  func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome {
-    try scriptedUnavailable("stage-apply")
-  }
 
 }
 
@@ -379,7 +373,6 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   let scenario: String
   private var cancelled = false
   private var importReviewActive = false
-  private var probeReviewActive = false
   private var importApplyActive = false
   private var importApplyCancelled = false
   private var importApplyPollCount = 0
@@ -867,12 +860,6 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
         transaction: "committed", changeCount: 1, appliedCount: 1,
         conflictCount: 0, failedCount: 0)
     }
-    if probeReviewActive, tokenId == Data(repeating: 11, count: 16) {
-      probeReviewActive = false
-      return WorkbenchApplyOutcome(
-        transaction: "committed", changeCount: 1, appliedCount: 1,
-        conflictCount: 0, failedCount: 0)
-    }
     return try scriptedUnavailable("apply")
   }
 
@@ -885,25 +872,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       importReviewActive = false
       return wasActive
     }
-    if tokenId == Data(repeating: 11, count: 16) {
-      let wasActive = probeReviewActive
-      probeReviewActive = false
-      return wasActive
-    }
     return try scriptedUnavailable("revoke")
-  }
-
-  func stageProbeReview(sessionId: Data, nowMs: UInt64) throws -> Data {
-    guard scenario == "success", sessionId == Data(repeating: 1, count: 16), !probeReviewActive
-    else { return try scriptedUnavailable("stage-probe") }
-    _ = nowMs
-    probeReviewActive = true
-    return Data(repeating: 11, count: 16)
-  }
-
-  func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome {
-    let token = try stageProbeReview(sessionId: session, nowMs: now)
-    return try applyReviewToken(tokenId: token, nowMs: now, sessionId: session)
   }
 
   func startRedisSubscription(sessionId: Data, selector: String, pattern: Bool) throws -> Data {

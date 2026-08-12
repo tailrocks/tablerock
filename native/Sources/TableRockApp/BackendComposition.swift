@@ -1,10 +1,6 @@
 import TableRockBridge
 import TableRockFeature
 
-enum NativeBackendCompositionError: Error {
-  case developmentBackendUnavailable
-}
-
 func makeConfiguredWorkbenchBackend(_ configuration: AppConfiguration) throws
   -> any WorkbenchBackend
 {
@@ -13,11 +9,9 @@ func makeConfiguredWorkbenchBackend(_ configuration: AppConfiguration) throws
     return try makeLiveWorkbenchBackend(
       persistencePath: configuration.paths.profilesDatabase.path
     )
+  #if TABLEROCK_DEVELOPMENT_SUPPORT
   case .scripted(let scenario):
-    #if TABLEROCK_DEVELOPMENT_SUPPORT
-      return makeDevelopmentWorkbenchBackend(scenario: scenario)
-    #else
-      throw NativeBackendCompositionError.developmentBackendUnavailable
-    #endif
+    return makeDevelopmentWorkbenchBackend(scenario: scenario)
+  #endif
   }
 }

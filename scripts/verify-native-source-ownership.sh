@@ -151,6 +151,15 @@ if rg -n -g '!**/DevelopmentSupport/**' -g '!AppConfigurationDevelopmentSupport.
   exit 1
 fi
 
+if rg -n \
+  'stage_probe_review|stageProbeReview|Edit-safety probe|Review probe' \
+  "$REPO_ROOT/crates/tablerock-ffi/src/bridge.rs" \
+  "$REPO_ROOT/native/Generated" \
+  "${production_roots[@]}"; then
+  echo "error: retired destructive demo API returned to production" >&2
+  exit 1
+fi
+
 rg -o --no-filename 'TABLEROCK_FIXTURE_[A-Z0-9_]+' \
   "$APP_DEVELOPMENT_SUPPORT" "$FEATURE_DEVELOPMENT_SUPPORT" \
   "$PRESENTATION_DEVELOPMENT_SUPPORT" \

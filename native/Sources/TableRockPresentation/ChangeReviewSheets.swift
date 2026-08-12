@@ -9,7 +9,7 @@ struct ChangeReviewPlane: View {
   let destructive: Bool
   let production: Bool
   let rollbackSummary: String?
-  let fixtureNote: String?
+  let safetyNote: String?
   let previewAccessibilityId: String
 
   var body: some View {
@@ -48,11 +48,11 @@ struct ChangeReviewPlane: View {
         .padding(8)
         .background(Color(nsColor: .textBackgroundColor))
         .accessibilityIdentifier(previewAccessibilityId)
-      if let fixtureNote {
-        Text(fixtureNote)
+      if let safetyNote {
+        Text(safetyNote)
           .font(.caption2.weight(.semibold))
           .foregroundStyle(.secondary)
-          .accessibilityIdentifier("change.review.fixture")
+          .accessibilityIdentifier("change.review.safety-note")
       }
       if let rollbackSummary, !rollbackSummary.isEmpty {
         Text(rollbackSummary)
@@ -67,102 +67,6 @@ struct ChangeReviewPlane: View {
     .background(Color(nsColor: .controlBackgroundColor))
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("change.review.plane")
-  }
-}
-
-struct ProbeChangeReviewSheet: View {
-  @Environment(WorkbenchPresentationStore.self) private var model
-  @Environment(\.dismiss) private var dismiss
-
-  private var nowMs: UInt64 {
-    model.nowMilliseconds()
-  }
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      HStack(alignment: .firstTextBaseline) {
-        Text("CHANGE REVIEW")
-          .font(.caption.weight(.bold))
-          .tracking(0.6)
-        Text("LEDGER")
-          .font(.caption2.weight(.bold).monospaced())
-          .foregroundStyle(.secondary)
-        Spacer()
-        Button("Close") {
-          Task {
-            await model.closeProbeChangeReview()
-            dismiss()
-          }
-        }
-        .disabled(model.probeChangeApplying)
-        .accessibilityIdentifier("change.review.probe.close")
-      }
-      Text("Edit-safety probe")
-        .font(.title3.weight(.semibold))
-      if let review = model.probeChangeReview {
-        ChangeReviewPlane(
-          kindWord: ChangeReviewPresentation.probeKindWord,
-          title: "LEDGER · \(ChangeReviewPresentation.probeLedgerCount) entry",
-          preview: ChangeReviewPresentation.probePreview,
-          metadataFact: ChangeReviewPresentation.metadataStrip(
-            target: ChangeReviewPresentation.probeTarget,
-            expiresAtMs: review.expiresAtMs,
-            nowMs: nowMs,
-            destructive: ChangeReviewPresentation.probeDestructive,
-            extra: "safety probe"),
-          destructive: ChangeReviewPresentation.probeDestructive,
-          production: model.activeProductionWarning,
-          rollbackSummary: ChangeReviewPresentation.probeRollbackSummary,
-          fixtureNote: ChangeReviewPresentation.probeIsFixtureSafetyDemo
-            ? "Safety probe — demonstrates consume-once review; not a staged grid cell edit."
-            : nil,
-          previewAccessibilityId: "change.review.probe.preview"
-        )
-        HStack {
-          Button("Discard Review", role: .cancel) {
-            Task {
-              await model.discardProbeChangeReview()
-              dismiss()
-            }
-          }
-          .accessibilityIdentifier("change.review.probe.discard")
-          Spacer()
-          Button("Apply Reviewed Change") {
-            Task { await model.applyProbeChangeReview() }
-          }
-          .buttonStyle(.glassProminent)
-          .disabled(model.probeChangeApplying)
-          .accessibilityIdentifier("change.review.probe.apply")
-        }
-      } else if model.probeChangeOutcome == nil && model.probeChangeError == nil {
-        ContentUnavailableView(
-          "No open review",
-          systemImage: "checkmark.shield",
-          description: Text("Stage a probe from the SQL workbench to open Change Review.")
-        )
-      }
-      if model.probeChangeApplying {
-        ProgressView("Applying reviewed probe…")
-          .accessibilityIdentifier("change.review.probe.applying")
-      }
-      if let outcome = model.probeChangeOutcome {
-        Label(outcome, systemImage: "checkmark.circle.fill")
-          .font(.caption.monospaced())
-          .accessibilityIdentifier("change.review.probe.outcome")
-      }
-      if let error = model.probeChangeError {
-        Text(error)
-          .font(.caption.monospaced())
-          .textSelection(.enabled)
-          .accessibilityIdentifier("change.review.probe.error")
-      }
-      Spacer(minLength: 0)
-    }
-    .padding(20)
-    .frame(minWidth: 640, minHeight: 420)
-    .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("change.review.probe.sheet")
-    .interactiveDismissDisabled(model.probeChangeReview != nil || model.probeChangeApplying)
   }
 }
 
@@ -247,7 +151,7 @@ struct DdlChangeSheet: View {
           destructive: review.destructive,
           production: model.activeProductionWarning,
           rollbackSummary: review.rollbackSummary,
-          fixtureNote: review.destructive
+          safetyNote: review.destructive
             ? "Removes structure — second confirmation required before apply." : nil,
           previewAccessibilityId: "structure.change.preview"
         )
@@ -363,7 +267,7 @@ struct TableOperationSheet: View {
           rollbackSummary: review.destructive
             ? "Destroys table data — exact target name required."
             : "Exact target name required before apply.",
-          fixtureNote: nil,
+          safetyNote: nil,
           previewAccessibilityId: "table-operation.preview"
         )
         TextField("Exact table name", text: $model.tableOperationConfirmation)
@@ -408,4 +312,3 @@ struct TableOperationSheet: View {
     .accessibilityElement(children: .contain)
   }
 }
-

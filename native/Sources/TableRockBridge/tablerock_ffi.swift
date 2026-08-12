@@ -1024,14 +1024,6 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func stagePostgresRoleChange(request: BridgeRoleChangeRequest) throws  -> BridgeRoleChangeReview
 
     /**
-     * Stage a probe mutation + register a single-use review token for the
-     * native edit-safety demo. Returns the token id for `authorize_review_token`
-     * / `apply_review_token`. Wraps the conformance staging seam with sensible
-     * defaults (60 s expiry, `public.users`, locator 1).
-     */
-    func stageProbeReview(sessionId: Data, nowMs: UInt64) throws  -> Data
-
-    /**
      * Freezes one typed table operation behind target-specific confirmation.
      */
     func stageTableOperation(request: BridgeTableOperationRequest) throws  -> BridgeTableOperationReview
@@ -2263,23 +2255,6 @@ open func stagePostgresRoleChange(request: BridgeRoleChangeRequest)throws  -> Br
     uniffi_tablerock_ffi_fn_method_tablerockbridge_stage_postgres_role_change(
             self.uniffiCloneHandle(),
         FfiConverterTypeBridgeRoleChangeRequest_lower(request),uniffiCallStatus
-    )
-})
-}
-
-    /**
-     * Stage a probe mutation + register a single-use review token for the
-     * native edit-safety demo. Returns the token id for `authorize_review_token`
-     * / `apply_review_token`. Wraps the conformance staging seam with sensible
-     * defaults (60 s expiry, `public.users`, locator 1).
-     */
-open func stageProbeReview(sessionId: Data, nowMs: UInt64)throws  -> Data  {
-    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
-        uniffiCallStatus in
-    uniffi_tablerock_ffi_fn_method_tablerockbridge_stage_probe_review(
-            self.uniffiCloneHandle(),
-        FfiConverterData.lower(sessionId),
-        FfiConverterUInt64.lower(nowMs),uniffiCallStatus
     )
 })
 }
@@ -8200,9 +8175,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_postgres_role_change() != 21204) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_probe_review() != 53434) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_table_operation() != 20721) {

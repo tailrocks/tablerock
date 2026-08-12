@@ -2,6 +2,10 @@
 
 Date: 2026-08-09
 
+> Superseded in part by delivery evidence 727. The hard-coded probe workflow
+> described below was removed from production; real DDL, table-operation, CSV,
+> and role-change review paths remain.
+
 ## Path
 
 ```text

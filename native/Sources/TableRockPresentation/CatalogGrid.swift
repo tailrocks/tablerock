@@ -127,7 +127,7 @@ struct CatalogGrid: NSViewRepresentable {
     var sorts: [WorkbenchBrowseSort]
     var performanceAutoScroll: Bool
     var onSelect: @MainActor (Int, Int) -> Void
-    private var fixtureScrollTask: Task<Void, Never>?
+    private var performanceScrollTask: Task<Void, Never>?
     private var lastActivatedColumn = 0
 
     init(
@@ -170,7 +170,7 @@ struct CatalogGrid: NSViewRepresentable {
     }
 
     func startPerformanceScrollIfRequested(on tableView: NSTableView) {
-      guard fixtureScrollTask == nil,
+      guard performanceScrollTask == nil,
         performanceAutoScroll,
         !snapshot.rows.isEmpty
       else { return }
@@ -178,7 +178,7 @@ struct CatalogGrid: NSViewRepresentable {
       #if TABLEROCK_DEVELOPMENT_SUPPORT
         writePerformanceMetric("PERF_SCROLL_ARMED rows=\(finalRow + 1)")
       #endif
-      fixtureScrollTask = Task { @MainActor [weak tableView] in
+      performanceScrollTask = Task { @MainActor [weak tableView] in
         try? await Task.sleep(for: .milliseconds(500))
         guard let tableView, !Task.isCancelled else { return }
         let started = Date()

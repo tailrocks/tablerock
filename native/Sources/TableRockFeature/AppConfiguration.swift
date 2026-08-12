@@ -3,7 +3,9 @@ import Foundation
 public struct AppConfiguration: Sendable, Equatable {
     public enum Backend: Sendable, Equatable {
         case live
+        #if TABLEROCK_DEVELOPMENT_SUPPORT
         case scripted(scenario: String)
+        #endif
     }
 
     public let backend: Backend
@@ -92,10 +94,4 @@ public struct AppPaths: Sendable, Equatable {
     public func prepare(fileManager: FileManager = .default) throws {
         try fileManager.createDirectory(at: dataRoot, withIntermediateDirectories: true)
     }
-}
-
-public enum AppConfigurationError: Error, Equatable {
-    case absoluteTestRootRequired
-    case scriptedScenarioRequired
-    case unsupportedBackend(String)
 }

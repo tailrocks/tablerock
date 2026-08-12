@@ -164,19 +164,4 @@ final class LiveBridgeBehaviorTests: XCTestCase {
         }
     }
 
-    func testPostgreSQLReviewTokenAppliesProbe() async throws {
-        try await withBridge { bridge, configuration, session in
-            guard configuration.engine == "postgresql" else {
-                throw XCTSkip("review probe is PostgreSQL-specific")
-            }
-            let now = UInt64(Date().timeIntervalSince1970 * 1_000)
-            let token = try bridge.stageProbeReview(sessionId: session, nowMs: now)
-            let outcome = try bridge.applyReviewToken(
-                tokenId: token, nowMs: now, sessionId: session, expectedRevision: 0
-            )
-            XCTAssertGreaterThan(outcome.appliedCount, 0)
-            XCTAssertEqual(outcome.conflictCount, 0)
-            XCTAssertEqual(outcome.failedCount, 0)
-        }
-    }
 }

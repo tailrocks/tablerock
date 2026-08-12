@@ -179,7 +179,7 @@ struct CsvImportSheet: View {
               production: model.activeProductionWarning,
               rollbackSummary:
                 "Plan frozen 60s. Authority is consumed before database I/O and cannot be retried after failure.",
-              fixtureNote: review.formulaLikeCells > 0
+              safetyNote: review.formulaLikeCells > 0
                 ? "Formula-like cells insert as literal text (never formulas)." : nil,
               previewAccessibilityId: "import.csv.review.preview"
             )

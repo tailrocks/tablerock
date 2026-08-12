@@ -505,15 +505,6 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
   func revokeReviewToken(tokenId: Data) throws -> Bool {
     try bridge.revokeReviewToken(tokenId: tokenId)
   }
-
-  func stageProbeReview(sessionId: Data, nowMs: UInt64) throws -> Data {
-    try bridge.stageProbeReview(sessionId: sessionId, nowMs: nowMs)
-  }
-
-  func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome {
-    let token = try stageProbeReview(sessionId: session, nowMs: now)
-    return try applyReviewToken(tokenId: token, nowMs: now, sessionId: session)
-  }
 }
 
 public func makeLiveWorkbenchBackend(persistencePath: String) throws -> any WorkbenchBackend {

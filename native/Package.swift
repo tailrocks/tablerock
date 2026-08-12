@@ -78,7 +78,10 @@ let package = Package(
         .testTarget(
             name: "TableRockFeatureTests",
             dependencies: ["TableRockFeature"],
-            path: "Tests/TableRockFeatureTests"
+            path: "Tests/TableRockFeatureTests",
+            swiftSettings: [
+                .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
+            ]
         ),
         .testTarget(
             name: "TableRockPresentationTests",

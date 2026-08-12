@@ -70,8 +70,6 @@ run_test postgresql "$pg_port" testCatalogReturnsTypedNodesAndBrowsableObjectPag
     TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret
 run_test postgresql "$pg_port" testPostgreSQLCancellationReportsRuntimeAndTerminalWithinBudget \
     TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret
-run_test postgresql "$pg_port" testPostgreSQLReviewTokenAppliesProbe \
-    TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret
 docker rm -f "$PG" >/dev/null
 
 echo "==> ClickHouse named Swift tests"

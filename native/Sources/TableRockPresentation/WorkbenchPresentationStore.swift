@@ -120,12 +120,6 @@ public final class WorkbenchPresentationStore {
   var ddlChangeError: String?
   var ddlChangeApplying = false
   var ddlChangeCatalogNodeId: Data?
-  /// Edit-safety probe held behind explicit Change Review (not silent apply).
-  var probeChangeReview: ProbeChangeReviewState?
-  var probeChangePresented = false
-  var probeChangeOutcome: String?
-  var probeChangeError: String?
-  var probeChangeApplying = false
   var tableOperationPresented = false
   var tableOperationKind = "truncate"
   var tableOperationNewName = ""
@@ -214,10 +208,9 @@ public final class WorkbenchPresentationStore {
     dependencies.clock.nowMilliseconds()
   }
 
-  /// Pending ledger entries visible to presentation (probe review open counts as 1).
+  /// Pending ledger entries visible to presentation.
   var changeLedgerEntryCount: Int {
     var n = 0
-    if probeChangeReview != nil { n += ChangeReviewPresentation.probeLedgerCount }
     if ddlChangeReview != nil { n += 1 }
     if tableOperationReview != nil { n += 1 }
     if csvImportReview != nil { n += 1 }
@@ -226,8 +219,8 @@ public final class WorkbenchPresentationStore {
   }
 
   var changeReviewOpen: Bool {
-    probeChangeReview != nil || ddlChangeReview != nil || tableOperationReview != nil
-      || csvImportReview != nil || postgresRoleChangeReview != nil
+    ddlChangeReview != nil || tableOperationReview != nil || csvImportReview != nil
+      || postgresRoleChangeReview != nil
   }
   var activeQueryTab: NativeQueryTab {
     queryTabs.first(where: { $0.id == selectedQueryTabId }) ?? queryTabs[0]

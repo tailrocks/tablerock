@@ -23,45 +23,39 @@ final class AppConfigurationTests: XCTestCase {
             "TABLEROCK_TEST_BACKEND": "scripted",
             "TABLEROCK_TEST_SCENARIO": "slow-query",
         ])
-        if AppConfiguration.developmentSupportEnabled {
+        #if TABLEROCK_DEVELOPMENT_SUPPORT
             XCTAssertTrue(configuration.isTestMode)
             XCTAssertEqual(configuration.backend, .scripted(scenario: "slow-query"))
             XCTAssertEqual(configuration.paths.dataRoot.path, "/private/tmp/TableRockUITest-123")
             XCTAssertFalse(configuration.keychainNamespace.contains("TableRockUITest"))
             XCTAssertNotEqual(configuration.keychainNamespace, try resolve([:]).keychainNamespace)
-        } else {
+        #else
             XCTAssertFalse(configuration.isTestMode)
             XCTAssertEqual(configuration.backend, .live)
             XCTAssertEqual(
                 configuration.paths.dataRoot.path,
                 support.appendingPathComponent("TableRock").path
             )
-        }
+        #endif
     }
 
     func testFixtureIsolation() throws {
         let configuration = try resolve(["TABLEROCK_FIXTURE_QUERY_TABS": "1"])
-        if AppConfiguration.developmentSupportEnabled {
+        #if TABLEROCK_DEVELOPMENT_SUPPORT
             XCTAssertTrue(configuration.isTestMode)
             XCTAssertEqual(configuration.paths.dataRoot.path, "/private/tmp/TableRockFixture-77")
             XCTAssertFalse(configuration.paths.dataRoot.path.contains("Application Support"))
-        } else {
+        #else
             XCTAssertFalse(configuration.isTestMode)
             XCTAssertEqual(
                 configuration.paths.dataRoot.path,
                 support.appendingPathComponent("TableRock").path
             )
-        }
+        #endif
     }
 
     func testInvalidConfiguration() {
-        guard AppConfiguration.developmentSupportEnabled else {
-            XCTAssertNoThrow(try resolve([
-                "TABLEROCK_TEST_MODE": "1", "TABLEROCK_TEST_ROOT": "relative/path",
-                "TABLEROCK_TEST_BACKEND": "scripted",
-            ]))
-            return
-        }
+        #if TABLEROCK_DEVELOPMENT_SUPPORT
         XCTAssertThrowsError(try resolve([
             "TABLEROCK_TEST_MODE": "1", "TABLEROCK_TEST_ROOT": "relative/path",
         ])) { error in
@@ -73,6 +67,12 @@ final class AppConfigurationTests: XCTestCase {
         ])) { error in
             XCTAssertEqual(error as? AppConfigurationError, .scriptedScenarioRequired)
         }
+        #else
+            XCTAssertNoThrow(try resolve([
+                "TABLEROCK_TEST_MODE": "1", "TABLEROCK_TEST_ROOT": "relative/path",
+                "TABLEROCK_TEST_BACKEND": "scripted",
+            ]))
+        #endif
     }
 
     func testPreparedRoot() throws {

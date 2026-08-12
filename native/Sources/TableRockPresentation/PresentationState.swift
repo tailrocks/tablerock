@@ -41,14 +41,6 @@ struct ConnectionUrlImport: Identifiable {
   var parsing = false
 }
 
-/// Presentation state for the edit-safety probe Change Review sheet.
-struct ProbeChangeReviewState: Identifiable, Equatable {
-  let id = UUID()
-  let tokenId: Data
-  let issuedAtMs: UInt64
-  let expiresAtMs: UInt64
-}
-
 struct ExternalUrlReview: Identifiable {
   let id = UUID()
   let draft: ProfileEditorDraft

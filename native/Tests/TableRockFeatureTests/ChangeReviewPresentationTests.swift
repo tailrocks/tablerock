@@ -45,14 +45,6 @@ import Testing
   #expect(ChangeReviewPresentation.kindWord(preview: "mystery", destructive: true) == "DESTRUCTIVE")
 }
 
-@Test func changeReviewProbeContractIsDocumented() {
-  #expect(ChangeReviewPresentation.probeKindWord == "DELETE")
-  #expect(ChangeReviewPresentation.probePreview.contains("DELETE"))
-  #expect(ChangeReviewPresentation.probePreview.contains("$1"))
-  #expect(ChangeReviewPresentation.probeDestructive)
-  #expect(ChangeReviewPresentation.probeLedgerCount == 1)
-}
-
 @Test func workbenchStatusFactsIncludesLedgerChip() {
   let line = WorkbenchStatusFacts.line(
     operation: "READY",
