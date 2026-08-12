@@ -1626,56 +1626,6 @@ struct PerformanceFixtureView: View {
   }
 }
 
-/// Shared Change Review plane: kind-first opaque instrument (not glass content).
-/// Preview text is descriptive only — Rust owns execution plans and tokens.
-struct EnvironmentSafetyBadge: View {
-  let model: WorkbenchPresentationStore
-
-  var body: some View {
-    if let environment = model.activeEnvironmentLabel,
-      let safety = model.activeSafetyLabel
-    {
-      let isProduction =
-        model.activeProductionWarning
-        || environment.caseInsensitiveCompare("production") == .orderedSame
-      let isStaging = environment.caseInsensitiveCompare("staging") == .orderedSame
-      let haloWord: String = {
-        if isProduction { return "PRODUCTION" }
-        if isStaging { return "STAGING" }
-        return environment.uppercased()
-      }()
-      let haloDetail: String = {
-        if isProduction { return "writes need review" }
-        if isStaging { return "confirm before apply" }
-        return safety
-      }()
-      HStack(spacing: 6) {
-        Image(
-          systemName: isProduction
-            ? "exclamationmark.triangle.fill"
-            : isStaging ? "flag.fill" : safety == "Read only" ? "lock.fill" : "shield")
-        VStack(alignment: .leading, spacing: 0) {
-          Text("HALO \(haloWord)")
-            .font(.caption.weight(isProduction ? .bold : .semibold))
-            .textCase(.uppercase)
-          Text("\(environment) · \(safety) · \(haloDetail)")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-        }
-      }
-      .padding(.horizontal, 8)
-      .padding(.vertical, 4)
-      // Chrome halo capsule (Tahoe glass); not a content surface.
-      .glassEffect(.regular.interactive())
-      .accessibilityElement(children: .combine)
-      .accessibilityLabel(
-        "Environment halo \(haloWord), \(environment), safety \(safety), \(haloDetail)"
-      )
-      .accessibilityIdentifier("environment.halo")
-    }
-  }
-}
-
 func writePerformanceMetric(_ metric: String) {
   FileHandle.standardError.write(Data("\(metric)\n".utf8))
 }
