@@ -471,6 +471,7 @@ struct LabDataTable: View {
                 }
             }
         }
+        .defaultScrollAnchor(.topLeading)
         .background(Color(nsColor: .textBackgroundColor))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Customer result grid, 12 preview rows")
@@ -611,6 +612,7 @@ private struct LabCodeEditor: View {
                 Spacer(minLength: 200)
             }
         }
+        .defaultScrollAnchor(.topLeading)
         .background(Color(nsColor: .textBackgroundColor))
         .accessibilityLabel("SQL editor preview")
     }
