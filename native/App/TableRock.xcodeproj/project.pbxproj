@@ -16,6 +16,7 @@
 		110596D97D66EBF3653855CC /* DesignLabTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 755FAB62C996DA5DAEA1C5CA /* DesignLabTable.swift */; };
 		13640014A3CBF62723E88F3D /* SqlEditorMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3216C4DBC614A64F649BFB7E /* SqlEditorMetricsTests.swift */; };
 		13768884D32D5623AF5DE98F /* WorkbenchPresentationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF2397554F3A44294AD906B /* WorkbenchPresentationStore.swift */; };
+		13CCFB11B36AA7D0F9D0AB7F /* RelationContinuum.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D34DB93E10A8C5CEFF5C0BE /* RelationContinuum.swift */; };
 		14D023A5261B2B5CD80FDC18 /* TableRockFeature.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; };
 		161D919AE1BEF59F67B25D41 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50BA7DBEE0A6F285A3CE9CC5 /* SystemConfiguration.framework */; };
 		18FAFF073C518B43C8DDCDCA /* redis-signed-v1.hex in Resources */ = {isa = PBXBuildFile; fileRef = A68E1D5D9FB490A8CE2982A6 /* redis-signed-v1.hex */; };
@@ -81,7 +82,6 @@
 		A8098B396B8B9189C53C256D /* WorkbenchPresentationStore+Connections.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5F392DEFEA2F4EE9536AFDF /* WorkbenchPresentationStore+Connections.swift */; };
 		A9585FBDD54D9EC49648EDF4 /* TableRockPresentation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E50B6905617B0C527A51B7B /* TableRockPresentation.framework */; };
 		A9DFF2096FE41B7946911F7E /* TableRockDesignLabApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F14AA6A488E1B11AA572BD7 /* TableRockDesignLabApp.swift */; };
-		AAF4313779A370A1FCF5A800 /* RelationContinuumTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE0278B1B46E810EB8830E5 /* RelationContinuumTests.swift */; };
 		AE5AFDABD4F52A3E036A6A95 /* TableRockAppUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522462239F32BD6A1FA81F2B /* TableRockAppUITests.swift */; };
 		B1E398B44C08B80C28D66530 /* AppConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C51BE56FE33E3F86FAD4A4 /* AppConfigurationTests.swift */; };
 		B4AEDE41C1EA30A457A4B405 /* ChangeReviewSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BE03466D74FA167457E66B9 /* ChangeReviewSheets.swift */; };
@@ -322,7 +322,6 @@
 		45BD4F811FBA403DF53CAAF1 /* ConceptShells.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptShells.swift; sourceTree = "<group>"; };
 		474ED5368A7E1345CE774E9D /* postgres-signed-v1.hex */ = {isa = PBXFileReference; path = "postgres-signed-v1.hex"; sourceTree = "<group>"; };
 		4DB307557D10AEDA47511BEA /* TableRockDesignLabUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockDesignLabUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		4DE0278B1B46E810EB8830E5 /* RelationContinuumTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelationContinuumTests.swift; sourceTree = "<group>"; };
 		4E699889189DDC67A37B97FF /* WorkbenchPresentationStore+Redis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbenchPresentationStore+Redis.swift"; sourceTree = "<group>"; };
 		4FCEEC684B0A871E2A6310EA /* LiveBridgeBehaviorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveBridgeBehaviorTests.swift; sourceTree = "<group>"; };
 		50BA7DBEE0A6F285A3CE9CC5 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
@@ -335,6 +334,7 @@
 		639CD75DC96C036A1A245DF6 /* ExternalConnectionRouteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalConnectionRouteTests.swift; sourceTree = "<group>"; };
 		6849571B55F5705D4B99DF75 /* ExternalConnectionRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalConnectionRoute.swift; sourceTree = "<group>"; };
 		6D0C1A38F65F28CBDE5C94D7 /* PageV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1.swift; sourceTree = "<group>"; };
+		6D34DB93E10A8C5CEFF5C0BE /* RelationContinuum.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelationContinuum.swift; sourceTree = "<group>"; };
 		7056B74025E206D1A652A30B /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
 		71919E51510905754DE98B46 /* NativeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSettingsView.swift; sourceTree = "<group>"; };
 		74B974D7ED34ED229C8EECD1 /* PageV1FixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1FixtureTests.swift; sourceTree = "<group>"; };
@@ -560,7 +560,6 @@
 				5FE4A4192046C53B74989CB3 /* GridCellPresentationTests.swift */,
 				9414D0F2A6DF66E2DDDB2428 /* LiquidGlassLayeringTests.swift */,
 				90C435174637E2A8C0EB630B /* ProfilePresentationTests.swift */,
-				4DE0278B1B46E810EB8830E5 /* RelationContinuumTests.swift */,
 				3216C4DBC614A64F649BFB7E /* SqlEditorMetricsTests.swift */,
 				13C717EA88A43EE4A3BD7F62 /* StructuredValueTreeTests.swift */,
 				587AF293CEBFDBE9D9FAD880 /* ValueInspectorProjectionTests.swift */,
@@ -660,6 +659,7 @@
 				D8C0C4ADB7B9539A715DAEA3 /* ProfileRow.swift */,
 				D0F9A17355C5852C8DFACB7B /* QueryWorkbenchView.swift */,
 				BBEC5C70C204E7632138C282 /* RedisSheets.swift */,
+				6D34DB93E10A8C5CEFF5C0BE /* RelationContinuum.swift */,
 				BC0D4AAC3A67575DBF803AA8 /* ResultSurfaces.swift */,
 				D28B5D715AE0B1C2A35D7627 /* SqlTextEditor.swift */,
 				E0E81CBCC90A576954235426 /* TransferSheets.swift */,
@@ -1136,6 +1136,7 @@
 				8A7E92D138403700949E5FB1 /* ProfileRow.swift in Sources */,
 				6F3FDECF3B7B831B5802CB27 /* QueryWorkbenchView.swift in Sources */,
 				A4EC763E2EEB860A1662E4DE /* RedisSheets.swift in Sources */,
+				13CCFB11B36AA7D0F9D0AB7F /* RelationContinuum.swift in Sources */,
 				DF17C147FB5AD80045980A2D /* ResultSurfaces.swift in Sources */,
 				0EF8998E2A6DD0F507D237DC /* SqlTextEditor.swift in Sources */,
 				88E3EA410A4AE09D0C90D490 /* TransferSheets.swift in Sources */,
@@ -1245,7 +1246,6 @@
 				03EA8F5972377B177CF3949B /* GridCellPresentationTests.swift in Sources */,
 				519303D4F6C8A8BF6F4FABEB /* LiquidGlassLayeringTests.swift in Sources */,
 				389224D06A5BA46505A9AF47 /* ProfilePresentationTests.swift in Sources */,
-				AAF4313779A370A1FCF5A800 /* RelationContinuumTests.swift in Sources */,
 				13640014A3CBF62723E88F3D /* SqlEditorMetricsTests.swift in Sources */,
 				A40F73637B5A9903607565E6 /* StructuredValueTreeTests.swift in Sources */,
 				648FA6521CC497F9CAED7485 /* ValueInspectorProjectionTests.swift in Sources */,

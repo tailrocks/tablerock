@@ -36,7 +36,7 @@ struct ResultGridWithInspector: View {
             ResultCopyMenu()
             ResultExportMenu()
             Button {
-              model.openRelationContinuumFromSelection()
+              Task { await model.openRelationContinuumFromSelection() }
             } label: {
               Label("Continuum", systemImage: "arrow.triangle.branch")
             }
@@ -46,6 +46,11 @@ struct ResultGridWithInspector: View {
             .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
             .help("Row Continuum: related rows for this cell (⌘⌥→)")
             .accessibilityIdentifier("relation.continuum.open")
+            if model.relationContinuumLoading {
+              ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel("Loading related rows")
+            }
             if model.relationContinuum != nil {
               Button("Close Continuum") { model.closeRelationContinuum() }
                 .buttonStyle(.glass)
@@ -156,7 +161,7 @@ struct ResultGridWithInspector: View {
 
 /// Spatial peer plane for Row Continuum (opaque content; chrome is labels only).
 private struct RelationContinuumPlane: View {
-  let state: WorkbenchPresentationStore.RelationContinuumState
+  let state: RelationContinuumState
   let onClose: () -> Void
 
   var body: some View {
@@ -183,16 +188,11 @@ private struct RelationContinuumPlane: View {
       Text("\(state.directionWord) · \(state.fromColumn) = \(state.fromValue)")
         .font(.caption)
         .foregroundStyle(.secondary)
-      if state.usesFixtureData {
-        Text("FIXTURE neighbors — not live catalog truth")
-          .font(.caption2.weight(.semibold))
-          .accessibilityIdentifier("relation.continuum.fixture-badge")
-      }
       if state.rows.isEmpty {
         ContentUnavailableView(
           "No related rows",
           systemImage: "arrow.triangle.branch",
-          description: Text("No fixture neighbors for this value.")
+          description: Text("The related table returned no rows for this value.")
         )
         .frame(maxHeight: .infinity)
       } else {
@@ -233,55 +233,6 @@ private struct RelationContinuumPlane: View {
     .accessibilityIdentifier("relation.continuum.plane")
     .accessibilityLabel(
       "Relation Continuum \(state.edgeTitle), \(state.rows.count) rows, \(state.statusWord)")
-  }
-}
-
-/// Deterministic neighbor map for presentation prototype (sample-schema shaped).
-enum RelationContinuumFixtures {
-  struct Edge {
-    let fromTable: String
-    let fromColumn: String
-    let toSchema: String
-    let toTable: String
-    let toColumn: String
-  }
-
-  static func edge(forColumn column: String) -> Edge? {
-    switch column.lowercased() {
-    case "album_id":
-      return Edge(
-        fromTable: "tracks", fromColumn: "album_id",
-        toSchema: "main", toTable: "albums", toColumn: "id")
-    case "artist_id":
-      return Edge(
-        fromTable: "albums", fromColumn: "artist_id",
-        toSchema: "main", toTable: "artists", toColumn: "id")
-    default:
-      return nil
-    }
-  }
-
-  static func neighbors(edge: Edge, value: String) -> (columns: [String], rows: [[String]]) {
-    switch edge.toTable {
-    case "albums":
-      let columns = ["id", "title", "artist_id"]
-      let all: [[String]] = [
-        ["1", "Harbor Light", "1"],
-        ["2", "Stone Circle", "2"],
-      ]
-      let rows = all.filter { $0[0] == value }
-      return (columns, rows)
-    case "artists":
-      let columns = ["id", "name"]
-      let all: [[String]] = [
-        ["1", "Northwind Quartet"],
-        ["2", "Lake District Trio"],
-      ]
-      let rows = all.filter { $0[0] == value }
-      return (columns, rows)
-    default:
-      return ([], [])
-    }
   }
 }
 

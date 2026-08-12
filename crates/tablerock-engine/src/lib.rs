@@ -24,8 +24,9 @@ pub use adapter::{
     DriverSession, MutationApplyControl, PostgresActivityRow, PostgresRoleSnapshot, SessionHealth,
 };
 pub use browse_plan::{
-    BrowseDialect, BrowsePlan, BrowsePlanError, FilterOperator, FilterValue, RenderedBrowseSql,
-    SortDirection, SortKey, TypedCondition, parse_bind_text,
+    BrowseDialect, BrowsePlan, BrowsePlanError, FilterOperator, FilterValue,
+    PostgreSqlRelationBrowsePlan, RenderedBrowseSql, SortDirection, SortKey, TypedCondition,
+    parse_bind_text,
 };
 pub use catalog::{
     CatalogExactness, CatalogNodeSeed, CatalogRequest, CatalogSubtree,

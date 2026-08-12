@@ -431,6 +431,18 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
     ).workbench
   }
 
+  func submitPostgresRelationBrowse(
+    sessionId: Data, catalogNodeId: Data, selectedColumn: String, cell: WorkbenchCell
+  ) throws -> WorkbenchRelationBrowseSubmission {
+    try bridge.submitPostgresRelationBrowse(
+      request: BridgeRelationBrowseRequest(
+        sessionId: sessionId, catalogNodeId: catalogNodeId,
+        selectedColumn: selectedColumn, cellKind: cell.kind,
+        cellBytes: cell.bytes, cellTruncation: cell.truncation,
+        rowCount: 500)
+    ).workbench
+  }
+
   func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws -> WorkbenchRoleSnapshot {
     try bridge.postgresRoles(sessionId: sessionId, catalogNodeId: catalogNodeId).workbench
   }

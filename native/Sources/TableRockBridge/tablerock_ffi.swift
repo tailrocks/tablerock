@@ -465,6 +465,22 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
+    typealias FfiType = UInt8
+    typealias SwiftType = UInt8
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt8 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: UInt8, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
     typealias FfiType = UInt16
     typealias SwiftType = UInt16
@@ -1077,6 +1093,12 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Rewrites named placeholders and submits separately typed values.
      */
     func submitNamed(spec: SubmitSpec, bindings: [BridgeQueryParameter]) throws  -> Data
+
+    /**
+     * Starts a bounded related-row browse from one complete selected cell.
+     * Rust resolves the FK edge, target type, quoted SQL, and bound value.
+     */
+    func submitPostgresRelationBrowse(request: BridgeRelationBrowseRequest) throws  -> BridgeRelationBrowseSubmission
 
     func tableOperationStatus(operationId: Data) throws  -> BridgeTableOperationStatus
 
@@ -2467,6 +2489,20 @@ open func submitNamed(spec: SubmitSpec, bindings: [BridgeQueryParameter])throws 
             self.uniffiCloneHandle(),
         FfiConverterTypeSubmitSpec_lower(spec),
         FfiConverterSequenceTypeBridgeQueryParameter.lower(bindings),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Starts a bounded related-row browse from one complete selected cell.
+     * Rust resolves the FK edge, target type, quoted SQL, and bound value.
+     */
+open func submitPostgresRelationBrowse(request: BridgeRelationBrowseRequest)throws  -> BridgeRelationBrowseSubmission  {
+    return try  FfiConverterTypeBridgeRelationBrowseSubmission_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_submit_postgres_relation_browse(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeBridgeRelationBrowseRequest_lower(request),uniffiCallStatus
     )
 })
 }
@@ -4948,6 +4984,142 @@ public func FfiConverterTypeBridgeRedisSubscriptionStatus_lift(_ buf: RustBuffer
 #endif
 public func FfiConverterTypeBridgeRedisSubscriptionStatus_lower(_ value: BridgeRedisSubscriptionStatus) -> RustBuffer {
     return FfiConverterTypeBridgeRedisSubscriptionStatus.lower(value)
+}
+
+
+/**
+ * Exact selected-cell payload for Rust-owned relation browsing. Cell bytes
+ * use the versioned page encoding and are never exposed through Debug.
+ */
+public struct BridgeRelationBrowseRequest: Equatable, Hashable {
+    public var sessionId: Data
+    public var catalogNodeId: Data
+    public var selectedColumn: String
+    public var cellKind: UInt8
+    public var cellBytes: Data
+    public var cellTruncation: UInt8
+    public var rowCount: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sessionId: Data, catalogNodeId: Data, selectedColumn: String, cellKind: UInt8, cellBytes: Data, cellTruncation: UInt8, rowCount: UInt32) {
+        self.sessionId = sessionId
+        self.catalogNodeId = catalogNodeId
+        self.selectedColumn = selectedColumn
+        self.cellKind = cellKind
+        self.cellBytes = cellBytes
+        self.cellTruncation = cellTruncation
+        self.rowCount = rowCount
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRelationBrowseRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRelationBrowseRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRelationBrowseRequest {
+        return
+            try BridgeRelationBrowseRequest(
+                sessionId: FfiConverterData.read(from: &buf),
+                catalogNodeId: FfiConverterData.read(from: &buf),
+                selectedColumn: FfiConverterString.read(from: &buf),
+                cellKind: FfiConverterUInt8.read(from: &buf),
+                cellBytes: FfiConverterData.read(from: &buf),
+                cellTruncation: FfiConverterUInt8.read(from: &buf),
+                rowCount: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRelationBrowseRequest, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.sessionId, into: &buf)
+        FfiConverterData.write(value.catalogNodeId, into: &buf)
+        FfiConverterString.write(value.selectedColumn, into: &buf)
+        FfiConverterUInt8.write(value.cellKind, into: &buf)
+        FfiConverterData.write(value.cellBytes, into: &buf)
+        FfiConverterUInt8.write(value.cellTruncation, into: &buf)
+        FfiConverterUInt32.write(value.rowCount, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationBrowseRequest_lift(_ buf: RustBuffer) throws -> BridgeRelationBrowseRequest {
+    return try FfiConverterTypeBridgeRelationBrowseRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationBrowseRequest_lower(_ value: BridgeRelationBrowseRequest) -> RustBuffer {
+    return FfiConverterTypeBridgeRelationBrowseRequest.lower(value)
+}
+
+
+public struct BridgeRelationBrowseSubmission: Equatable, Hashable {
+    public var operationId: Data
+    public var direction: String
+    public var edge: BridgeRelationshipEdge
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(operationId: Data, direction: String, edge: BridgeRelationshipEdge) {
+        self.operationId = operationId
+        self.direction = direction
+        self.edge = edge
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeRelationBrowseSubmission: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeRelationBrowseSubmission: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeRelationBrowseSubmission {
+        return
+            try BridgeRelationBrowseSubmission(
+                operationId: FfiConverterData.read(from: &buf),
+                direction: FfiConverterString.read(from: &buf),
+                edge: FfiConverterTypeBridgeRelationshipEdge.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeRelationBrowseSubmission, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.operationId, into: &buf)
+        FfiConverterString.write(value.direction, into: &buf)
+        FfiConverterTypeBridgeRelationshipEdge.write(value.edge, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationBrowseSubmission_lift(_ buf: RustBuffer) throws -> BridgeRelationBrowseSubmission {
+    return try FfiConverterTypeBridgeRelationBrowseSubmission.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeRelationBrowseSubmission_lower(_ value: BridgeRelationBrowseSubmission) -> RustBuffer {
+    return FfiConverterTypeBridgeRelationBrowseSubmission.lower(value)
 }
 
 
@@ -8079,6 +8251,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_named() != 38432) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_submit_postgres_relation_browse() != 3258) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_table_operation_status() != 50789) {

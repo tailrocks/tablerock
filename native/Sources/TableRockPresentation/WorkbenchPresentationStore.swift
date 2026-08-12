@@ -263,6 +263,8 @@ public final class WorkbenchPresentationStore {
         ? activeObjectTab?.selectedCell : activeQueryTab.selectedCell
     }
     set {
+      relationContinuum = nil
+      relationContinuumError = nil
       if selectedWorkbenchKind == "object" {
         activeObjectTab?.selectedCell = newValue
       } else {
@@ -326,78 +328,12 @@ public final class WorkbenchPresentationStore {
   }
   func selectCell(row: Int, column: Int) {
     selectedCell = NativeCellSelection(row: row, column: column)
-    // Continuum stays closed until explicit open — selection alone must not navigate.
     queryStateRevision &+= 1
-  }
-
-  // MARK: - Row Continuum (presentation prototype; fixture neighbors until Rust contract)
-
-  /// Presentation-only continuum plane. Never invents live DB truth beyond fixtures.
-  struct RelationContinuumState: Equatable {
-    var edgeTitle: String
-    var directionWord: String
-    var fromColumn: String
-    var fromValue: String
-    var relatedSchema: String
-    var relatedTable: String
-    var relatedColumn: String
-    var columns: [String]
-    var rows: [[String]]
-    /// Always true until `relation_neighbors` ships in Rust.
-    var usesFixtureData: Bool
-    var statusWord: String
   }
 
   var relationContinuum: RelationContinuumState?
   var relationContinuumError: String?
-
-  var canOpenRelationContinuum: Bool {
-    guard sessionHex != nil, let snap = selectedCellSnapshot else { return false }
-    return RelationContinuumFixtures.edge(forColumn: snap.0.name) != nil
-  }
-
-  func openRelationContinuumFromSelection() {
-    relationContinuumError = nil
-    guard sessionHex != nil else {
-      relationContinuumError = "DISCONNECTED — connect before Continuum"
-      relationContinuum = nil
-      return
-    }
-    guard let snap = selectedCellSnapshot else {
-      relationContinuumError = "Select a cell that participates in a relation"
-      relationContinuum = nil
-      return
-    }
-    let column = snap.0.name
-    let value = snap.1.display
-    guard let edge = RelationContinuumFixtures.edge(forColumn: column) else {
-      relationContinuumError = "No Continuum edge for column \(column) (fixture map)"
-      relationContinuum = nil
-      return
-    }
-    let neighbors = RelationContinuumFixtures.neighbors(
-      edge: edge, value: value)
-    relationContinuum = RelationContinuumState(
-      edgeTitle: "\(edge.fromTable).\(edge.fromColumn) → \(edge.toTable).\(edge.toColumn)",
-      directionWord: "outbound",
-      fromColumn: column,
-      fromValue: value,
-      relatedSchema: edge.toSchema,
-      relatedTable: edge.toTable,
-      relatedColumn: edge.toColumn,
-      columns: neighbors.columns,
-      rows: neighbors.rows,
-      usesFixtureData: true,
-      statusWord: neighbors.rows.isEmpty ? "EMPTY" : "READY"
-    )
-    queryStateRevision &+= 1
-  }
-
-  func closeRelationContinuum() {
-    relationContinuum = nil
-    relationContinuumError = nil
-    queryStateRevision &+= 1
-  }
+  var relationContinuumLoading = false
   var queryWorkbenchSelected: Bool { selectedWorkbenchKind == "query" }
   var hasRunningWorkbench: Bool {
     queryTabs.contains(where: \.isRunning) || objectTabs.contains(where: \.isRunning)

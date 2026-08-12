@@ -224,6 +224,11 @@ extension BridgeRelationshipSnapshot {
       namespace: namespace, relation: relation, edges: edges.map(\.workbench), truncated: truncated)
   }
 }
+extension BridgeRelationBrowseSubmission {
+  var workbench: WorkbenchRelationBrowseSubmission {
+    .init(operationId: operationId, direction: direction, edge: edge.workbench)
+  }
+}
 extension BridgeRoleMembership {
   var workbench: WorkbenchRoleMembership {
     .init(

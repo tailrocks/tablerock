@@ -8,8 +8,9 @@
 use tablerock_core::{Engine, PageLimits, ResultPage};
 use tablerock_ffi::{
     BridgeCsvImportRequest, BridgeDdlChangeRequest, BridgePostgresToolRequest,
-    BridgeQueryParameter, BridgeStartupActionDraft, BridgeStreamExportRequest,
-    BridgeTableOperationRequest, OpenParams, SubmitSpec, TableRockBridge,
+    BridgeQueryParameter, BridgeRelationBrowseRequest, BridgeStartupActionDraft,
+    BridgeStreamExportRequest, BridgeTableOperationRequest, OpenParams, SubmitSpec,
+    TableRockBridge,
 };
 use testcontainers::{
     GenericImage, ImageExt,
@@ -324,6 +325,14 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
             session.clone(),
             "CREATE TABLE IF NOT EXISTS bridge_stream_import (id bigint, name text)",
         );
+        for statement in [
+            "CREATE TABLE bridge_relation_parent (id text PRIMARY KEY, label text NOT NULL)",
+            "CREATE TABLE bridge_relation_child (id bigint PRIMARY KEY, parent_id text REFERENCES bridge_relation_parent(id))",
+            "INSERT INTO bridge_relation_parent VALUES (' 0042 ', 'exact text key')",
+            "INSERT INTO bridge_relation_child VALUES (1, ' 0042 ')",
+        ] {
+            execute(&bridge, session.clone(), statement);
+        }
         let database = bridge
             .refresh_catalog(session.clone(), None)
             .unwrap()
@@ -336,12 +345,48 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
             .into_iter()
             .find(|node| node.name == "public")
             .unwrap();
-        let relation = bridge
+        let relations = bridge
             .refresh_catalog(session.clone(), Some(schema.id_bytes.clone()))
-            .unwrap()
-            .into_iter()
-            .find(|node| node.name == "bridge_ddl_review")
             .unwrap();
+        let relation = relations
+            .iter()
+            .find(|node| node.name == "bridge_ddl_review")
+            .cloned()
+            .unwrap();
+        let relation_source = relations
+            .into_iter()
+            .find(|node| node.name == "bridge_relation_child")
+            .unwrap();
+        let relation_browse = bridge
+            .submit_postgres_relation_browse(BridgeRelationBrowseRequest {
+                session_id: session.clone(),
+                catalog_node_id: relation_source.id_bytes,
+                selected_column: "parent_id".into(),
+                cell_kind: 7,
+                cell_bytes: b" 0042 ".to_vec(),
+                cell_truncation: 0,
+                row_count: 16,
+            })
+            .unwrap();
+        assert_eq!(relation_browse.direction, "outbound");
+        bridge.pump(relation_browse.operation_id.clone()).unwrap();
+        let relation_page = bridge
+            .next_events(0, 256)
+            .unwrap()
+            .events
+            .into_iter()
+            .find(|event| {
+                event.operation_id == relation_browse.operation_id && event.kind == "page"
+            })
+            .and_then(|event| event.page_bytes)
+            .unwrap();
+        let relation_page = ResultPage::decode_v1(
+            &relation_page,
+            PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
+        )
+        .unwrap();
+        assert_eq!(relation_page.cell(0, 0).unwrap().bytes(), b" 0042 ");
+        assert_eq!(relation_page.cell(0, 1).unwrap().bytes(), b"exact text key");
         let review = bridge
             .stage_ddl_change(BridgeDdlChangeRequest {
                 session_id: session.clone(),

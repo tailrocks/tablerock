@@ -390,6 +390,8 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   private var profileDrafts: [Data: WorkbenchProfileDraft] = [:]
   private var filterPresets: [WorkbenchSavedFilterPreset] = []
   private var submittedIntent: String?
+  private var pendingBrowseNodeId: Data?
+  private var pendingBrowseFilters: [WorkbenchBrowseFilter] = []
   private var postgresToolPhase = "succeeded"
   private var redisSubscriptionActive = false
   private var ddlReviewActive = false
@@ -519,18 +521,35 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       return try scriptedUnavailable("catalog")
     }
     let root = Data(repeating: 6, count: 16)
+    let customers = WorkbenchCatalogNode(
+      idBytes: Data(repeating: 8, count: 16), parentIdBytes: root, depth: 1,
+      name: "customers", kind: "postgresql_table",
+      childrenState: "not_applicable", expandable: false)
     let table = WorkbenchCatalogNode(
       idBytes: Data(repeating: 7, count: 16), parentIdBytes: root, depth: 1,
       name: "fixture_table", kind: "postgresql_table",
       childrenState: "not_applicable", expandable: false)
-    if parentNodeId == root { return [table] }
+    if parentNodeId == root { return [customers, table] }
     guard parentNodeId == nil else { return [] }
     return [
       WorkbenchCatalogNode(
         idBytes: root, parentIdBytes: nil, depth: 0, name: "public",
         kind: "postgresql_schema", childrenState: "loaded_complete", expandable: true),
-      table,
+      customers, table,
     ]
+  }
+
+  func submitCatalogBrowse(
+    session: Data, nodeId: Data, sort: [WorkbenchBrowseSort], filters: [WorkbenchBrowseFilter],
+    rawWhere: String?
+  ) throws -> Data {
+    guard scenario == "success", session == Data(repeating: 1, count: 16),
+      [Data(repeating: 7, count: 16), Data(repeating: 8, count: 16)].contains(nodeId),
+      sort.isEmpty, rawWhere == nil
+    else { return try scriptedUnavailable("browse") }
+    pendingBrowseNodeId = nodeId
+    pendingBrowseFilters = filters
+    return Data(repeating: 19, count: 16)
   }
 
   func relationStructure(sessionId: Data, catalogNodeId: Data) throws
@@ -611,6 +630,47 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
     if scenario == "history-failure-after-page" {
       return WorkbenchOperation(
         table: nil, envelope: nil, outcome: "ok", historyFailed: true)
+    }
+    if scenario == "success", let nodeId = pendingBrowseNodeId {
+      let filters = pendingBrowseFilters
+      pendingBrowseNodeId = nil
+      pendingBrowseFilters = []
+      let table: WorkbenchTable
+      if nodeId == Data(repeating: 7, count: 16) {
+        table = WorkbenchTable(
+          columns: ["id", "customer_id", "parent_id"],
+          rows: [["1001", "42", "NULL"]],
+          columnMetadata: [
+            WorkbenchColumn(name: "id", engine: 0, engineType: "int8", nullable: false),
+            WorkbenchColumn(
+              name: "customer_id", engine: 0, engineType: "int8", nullable: false),
+            WorkbenchColumn(
+              name: "parent_id", engine: 0, engineType: "int8", nullable: true),
+          ],
+          cells: [[
+            WorkbenchCell(
+              display: "1001", kind: 2, truncation: 0, originalByteCount: nil,
+              bytes: Data([0, 0, 0, 0, 0, 0, 3, 233])),
+            WorkbenchCell(
+              display: "42", kind: 2, truncation: 0, originalByteCount: nil,
+              bytes: Data([0, 0, 0, 0, 0, 0, 0, 42])),
+            WorkbenchCell(
+              display: "NULL", kind: 0, truncation: 0, originalByteCount: nil,
+              bytes: Data()),
+          ]]
+        )
+      } else if filters.count == 1, filters[0].column == "id",
+        filters[0].operatorName == "eq", filters[0].value == "42"
+      {
+        table = WorkbenchTable(
+          columns: ["id", "name"],
+          rows: [["42", "Ada"]]
+        )
+      } else {
+        table = WorkbenchTable(columns: ["id", "name"], rows: [])
+      }
+      return WorkbenchOperation(
+        table: table, envelope: nil, outcome: "completed", historyFailed: false)
     }
     if scenario == "success", submittedIntent == "explain" {
       return WorkbenchOperation(
@@ -989,6 +1049,25 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
           fromSchema: "public", fromTable: "fixture_table", fromColumn: "parent_id",
           toSchema: "public", toTable: "fixture_table", toColumn: "id"),
       ], truncated: false)
+  }
+
+  func submitPostgresRelationBrowse(
+    sessionId: Data, catalogNodeId: Data, selectedColumn: String, cell: WorkbenchCell
+  ) throws -> WorkbenchRelationBrowseSubmission {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16),
+      catalogNodeId == Data(repeating: 7, count: 16), selectedColumn == "customer_id",
+      !cell.isTruncated, cell.kind == 2,
+      cell.bytes == Data([0, 0, 0, 0, 0, 0, 0, 42])
+    else { return try scriptedUnavailable("postgres-relation-browse") }
+    let edge = WorkbenchRelationshipEdge(
+      fromSchema: "public", fromTable: "fixture_table", fromColumn: "customer_id",
+      toSchema: "public", toTable: "customers", toColumn: "id")
+    pendingBrowseNodeId = Data(repeating: 8, count: 16)
+    pendingBrowseFilters = [
+      WorkbenchBrowseFilter(column: "id", operatorName: "eq", value: "42")
+    ]
+    return WorkbenchRelationBrowseSubmission(
+      operationId: Data(repeating: 19, count: 16), direction: "outbound", edge: edge)
   }
 
   func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws -> WorkbenchRoleSnapshot {

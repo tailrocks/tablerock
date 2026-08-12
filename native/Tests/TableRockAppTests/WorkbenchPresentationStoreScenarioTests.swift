@@ -84,8 +84,9 @@ final class WorkbenchPresentationStoreScenarioTests: XCTestCase {
 
     XCTAssertTrue(health.serverReachable)
     XCTAssertEqual(health.state, "healthy")
-    XCTAssertEqual(catalog.map(\.name), ["public", "fixture_table"])
+    XCTAssertEqual(catalog.map(\.name), ["public", "customers", "fixture_table"])
     XCTAssertEqual(catalog[1].parentIdBytes, catalog[0].idBytes)
+    XCTAssertEqual(catalog[2].parentIdBytes, catalog[0].idBytes)
   }
 
   func testPostgresActivityUsesTypedRowsAndConfirmedSignalOutcome() async {
@@ -121,6 +122,35 @@ final class WorkbenchPresentationStoreScenarioTests: XCTestCase {
         $0.fromTable == $0.toTable
       }.count, 1)
     XCTAssertNil(model.postgresRelationshipsError)
+  }
+
+  func testRelationContinuumLoadsRelatedRowsThroughRustOwnedBrowse() async throws {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let model = WorkbenchPresentationStore(client: backend)
+
+    await model.connectByParams()
+    let session = Data(repeating: 1, count: 16)
+    model.catalogSnapshot = try await backend.refreshCatalog(session: session, parentNodeId: nil)
+    let source = try XCTUnwrap(
+      model.catalogSnapshot?.first(where: { $0.name == "fixture_table" }))
+    await model.openCatalogObject(nodeId: source.idBytes)
+    model.selectedCell = NativeCellSelection(row: 0, column: 1)
+
+    await model.openRelationContinuumFromSelection()
+
+    let continuum = try XCTUnwrap(model.relationContinuum)
+    XCTAssertEqual(continuum.edgeTitle, "fixture_table.customer_id → customers.id")
+    XCTAssertEqual(continuum.directionWord, "outbound")
+    XCTAssertEqual(continuum.relatedSchema, "public")
+    XCTAssertEqual(continuum.relatedTable, "customers")
+    XCTAssertEqual(continuum.relatedColumn, "id")
+    XCTAssertEqual(continuum.columns, ["id", "name"])
+    XCTAssertEqual(continuum.rows, [["42", "Ada"]])
+    XCTAssertEqual(continuum.statusWord, "READY")
+    XCTAssertNil(model.relationContinuumError)
+
+    model.selectCell(row: 0, column: 0)
+    XCTAssertNil(model.relationContinuum)
   }
 
   func testPostgresRolesUseTypedMembershipAndPrivilegeSnapshot() async {

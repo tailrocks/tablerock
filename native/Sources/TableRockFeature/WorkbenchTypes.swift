@@ -118,6 +118,9 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow]
   func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
     -> WorkbenchRelationshipSnapshot
+  func submitPostgresRelationBrowse(
+    sessionId: Data, catalogNodeId: Data, selectedColumn: String, cell: WorkbenchCell
+  ) throws -> WorkbenchRelationBrowseSubmission
   func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws -> WorkbenchRoleSnapshot
   func stagePostgresRoleChange(
     sessionId: Data, catalogNodeId: Data?, kind: String, role: String,
@@ -1246,6 +1249,17 @@ public struct WorkbenchRelationshipSnapshot: Sendable, Equatable {
     self.relation = relation
     self.edges = edges
     self.truncated = truncated
+  }
+}
+
+public struct WorkbenchRelationBrowseSubmission: Sendable, Equatable {
+  public let operationId: Data
+  public let direction: String
+  public let edge: WorkbenchRelationshipEdge
+  public init(operationId: Data, direction: String, edge: WorkbenchRelationshipEdge) {
+    self.operationId = operationId
+    self.direction = direction
+    self.edge = edge
   }
 }
 

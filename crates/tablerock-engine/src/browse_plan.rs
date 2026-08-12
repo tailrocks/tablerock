@@ -139,6 +139,35 @@ pub struct BrowsePlan {
     pub offset: u64,
 }
 
+/// Rust-owned PostgreSQL relation browse. The target type identifiers come
+/// from `pg_catalog`, are quoted independently, and the selected cell remains
+/// a bound text parameter before PostgreSQL converts it to the exact target
+/// type. This preserves UUIDs, domains, arrays, decimals, and text that merely
+/// looks numeric without concatenating cell data into SQL.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PostgreSqlRelationBrowsePlan {
+    pub schema: String,
+    pub table: String,
+    pub column: String,
+    pub type_schema: String,
+    pub type_name: String,
+    pub limit: u32,
+}
+
+impl std::fmt::Debug for PostgreSqlRelationBrowsePlan {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PostgreSqlRelationBrowsePlan")
+            .field("schema", &self.schema)
+            .field("table", &self.table)
+            .field("column", &self.column)
+            .field("type_schema", &self.type_schema)
+            .field("type_name", &self.type_name)
+            .field("limit", &self.limit)
+            .finish()
+    }
+}
+
 impl std::fmt::Debug for BrowsePlan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BrowsePlan")
@@ -321,6 +350,40 @@ impl BrowsePlan {
             sql.push_str(&format!(" LIMIT {} OFFSET {}", self.limit, self.offset));
         }
         Ok(RenderedBrowseSql { sql, parameters })
+    }
+}
+
+impl PostgreSqlRelationBrowsePlan {
+    pub fn render_sql(&self, value: String) -> Result<RenderedBrowseSql, BrowsePlanError> {
+        self.render_sql_mode(value, true)
+    }
+
+    pub fn render_sql_unbounded(
+        &self,
+        value: String,
+    ) -> Result<RenderedBrowseSql, BrowsePlanError> {
+        self.render_sql_mode(value, false)
+    }
+
+    fn render_sql_mode(
+        &self,
+        value: String,
+        paged: bool,
+    ) -> Result<RenderedBrowseSql, BrowsePlanError> {
+        if paged && self.limit == 0 {
+            return Err(BrowsePlanError::InvalidLimit);
+        }
+        let table = qualify_table(&self.schema, &self.table)?;
+        let column = quote_ident(&self.column)?;
+        let target_type = qualify_table(&self.type_schema, &self.type_name)?;
+        let mut sql = format!("SELECT * FROM {table} WHERE {column} = (($1::text)::{target_type})");
+        if paged {
+            sql.push_str(&format!(" LIMIT {} OFFSET 0", self.limit));
+        }
+        Ok(RenderedBrowseSql {
+            sql,
+            parameters: vec![FilterValue::Text(value)],
+        })
     }
 }
 
@@ -623,5 +686,50 @@ mod tests {
             parse_bind_text("hello"),
             FilterValue::Text(s) if s == "hello"
         ));
+    }
+
+    #[test]
+    fn postgres_relation_browse_casts_bound_text_to_catalog_type() {
+        let plan = PostgreSqlRelationBrowsePlan {
+            schema: "crm".into(),
+            table: "customers".into(),
+            column: "id".into(),
+            type_schema: "pg_catalog".into(),
+            type_name: "uuid".into(),
+            limit: 500,
+        };
+
+        let rendered = plan.render_sql(" 42 ".into()).unwrap();
+
+        assert_eq!(
+            rendered.sql,
+            "SELECT * FROM \"crm\".\"customers\" WHERE \"id\" = (($1::text)::\"pg_catalog\".\"uuid\") LIMIT 500 OFFSET 0"
+        );
+        assert!(matches!(
+            rendered.parameters.as_slice(),
+            [FilterValue::Text(value)] if value == " 42 "
+        ));
+        assert!(!rendered.sql.contains(" 42 "));
+    }
+
+    #[test]
+    fn postgres_relation_browse_quotes_hostile_catalog_names() {
+        let plan = PostgreSqlRelationBrowsePlan {
+            schema: "crm".into(),
+            table: "customers".into(),
+            column: "id".into(),
+            type_schema: "custom".into(),
+            type_name: "evil\"; DROP TABLE users; --".into(),
+            limit: 1,
+        };
+
+        let rendered = plan.render_sql("value".into()).unwrap();
+
+        assert!(
+            rendered
+                .sql
+                .contains("\"custom\".\"evil\"\"; DROP TABLE users; --\"")
+        );
+        assert_eq!(rendered.parameters.len(), 1);
     }
 }

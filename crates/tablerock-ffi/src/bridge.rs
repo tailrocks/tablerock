@@ -38,15 +38,16 @@ use tablerock_engine::{
     AdapterFailureClass, BrowseDialect, BrowsePlan, CatalogRequest, ClickHouseCompression,
     ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession, ClickHouseTlsMode,
     DriverPageRequest, DriverRuntime, DriverSession, EngineService, EngineServiceUpdate,
-    FilterOperator, KeychainReadPort, MutationApplyControl, OpCliReader, PostgresConnectConfig,
-    PostgresProbeQuery, PostgresSession, PostgresTlsMode, RedisConnectConfig,
-    RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession, RedisSubscriptionKind,
-    RedisSubscriptionOptions, RedisTlsMode, ResolvedSecret, SecretPromptPort,
-    SecretResolutionError, SortDirection, SortKey, SqliteSession, SshAgentAuth, SshAuthMaterial,
-    SshHostKeyPolicy, SshPasswordAuth, SshPublicKeyAuth, SshTunnelConfig, TypedCondition,
-    ensure_sample_sqlite_database, load_relation_structure as load_structure_snapshot,
-    open_local_forward_tunnel, parse_bind_text, resolve_for_connect_with_ports,
-    run_clickhouse_startup_actions, run_postgres_startup_actions, run_redis_startup_actions,
+    FilterOperator, KeychainReadPort, MutationApplyControl, OpCliReader,
+    PostgreSqlRelationBrowsePlan, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
+    PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol,
+    RedisSession, RedisSubscriptionKind, RedisSubscriptionOptions, RedisTlsMode, ResolvedSecret,
+    SecretPromptPort, SecretResolutionError, SortDirection, SortKey, SqliteSession, SshAgentAuth,
+    SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth, SshPublicKeyAuth, SshTunnelConfig,
+    TypedCondition, ensure_sample_sqlite_database,
+    load_relation_structure as load_structure_snapshot, open_local_forward_tunnel, parse_bind_text,
+    resolve_for_connect_with_ports, run_clickhouse_startup_actions, run_postgres_startup_actions,
+    run_redis_startup_actions,
 };
 use tablerock_files::{
     CsvStreamLimits, CsvTable, CsvValueType, StreamExportFormat, StreamExporter,
@@ -521,6 +522,41 @@ pub struct BridgeRelationshipSnapshot {
     pub relation: String,
     pub edges: Vec<BridgeRelationshipEdge>,
     pub truncated: bool,
+}
+
+/// Exact selected-cell payload for Rust-owned relation browsing. Cell bytes
+/// use the versioned page encoding and are never exposed through Debug.
+#[derive(Clone, uniffi::Record)]
+pub struct BridgeRelationBrowseRequest {
+    pub session_id: Vec<u8>,
+    pub catalog_node_id: Vec<u8>,
+    pub selected_column: String,
+    pub cell_kind: u8,
+    pub cell_bytes: Vec<u8>,
+    pub cell_truncation: u8,
+    pub row_count: u32,
+}
+
+impl std::fmt::Debug for BridgeRelationBrowseRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BridgeRelationBrowseRequest")
+            .field("session_id", &"<redacted>")
+            .field("catalog_node_id", &"<redacted>")
+            .field("selected_column", &self.selected_column)
+            .field("cell_kind", &self.cell_kind)
+            .field("cell_bytes", &"<redacted>")
+            .field("cell_truncation", &self.cell_truncation)
+            .field("row_count", &self.row_count)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRelationBrowseSubmission {
+    pub operation_id: Vec<u8>,
+    pub direction: String,
+    pub edge: BridgeRelationshipEdge,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -1687,6 +1723,15 @@ impl TableRockBridge {
         catalog_node_id: Vec<u8>,
     ) -> Result<BridgeRelationshipSnapshot, BridgeError> {
         catch_entry(|| self.postgres_relationships_inner(session_id, catalog_node_id))
+    }
+
+    /// Starts a bounded related-row browse from one complete selected cell.
+    /// Rust resolves the FK edge, target type, quoted SQL, and bound value.
+    pub fn submit_postgres_relation_browse(
+        &self,
+        request: BridgeRelationBrowseRequest,
+    ) -> Result<BridgeRelationBrowseSubmission, BridgeError> {
+        catch_entry(|| self.submit_postgres_relation_browse_inner(request))
     }
 
     /// Loads a bounded PostgreSQL role snapshot, optionally scoped to one relation.
@@ -5472,6 +5517,211 @@ impl TableRockBridge {
                 })
                 .collect(),
             truncated,
+        })
+    }
+
+    fn submit_postgres_relation_browse_inner(
+        &self,
+        request: BridgeRelationBrowseRequest,
+    ) -> Result<BridgeRelationBrowseSubmission, BridgeError> {
+        self.ensure_runtime_inner()?;
+        if !(1..=1_000).contains(&request.row_count) {
+            return Err(BridgeError::rejected(
+                "relation-browse-bounds",
+                "relation browse row count must be 1 to 1000",
+            ));
+        }
+        if request.selected_column.len() > MAX_BROWSE_IDENTIFIER_BYTES {
+            return Err(BridgeError::rejected(
+                "relation-browse-column",
+                "selected column must be at most 1024 bytes",
+            ));
+        }
+        let value = relation_cell_text(
+            request.cell_kind,
+            &request.cell_bytes,
+            request.cell_truncation,
+        )?;
+        let session_id = session_from_bytes(&request.session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let catalog_node_id = catalog_node_from_bytes(&request.catalog_node_id).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let (driver, namespace, relation) = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            if registered.engine != Engine::PostgreSql {
+                return Err(BridgeError::rejected(
+                    "relation-browse-engine",
+                    "relation browse requires a PostgreSQL session",
+                ));
+            }
+            let node = inner
+                .catalog_nodes
+                .get(&(session_id, catalog_node_id))
+                .ok_or_else(|| {
+                    BridgeError::rejected(
+                        "unknown-catalog-node",
+                        "catalog node is stale or unknown",
+                    )
+                })?;
+            if !matches!(node.kind(), CatalogNodeKind::PostgreSqlObject(_)) {
+                return Err(BridgeError::rejected(
+                    "relation-browse-kind",
+                    "relation browse requires a PostgreSQL relation",
+                ));
+            }
+            let parent = node
+                .parent_id()
+                .and_then(|id| inner.catalog_nodes.get(&(session_id, id)))
+                .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (driver, parent.name().to_owned(), node.name().to_owned())
+        };
+        let (graph, truncated) = self
+            .runtime
+            .block_on(driver.postgres_relationships(&namespace, &relation))?
+            .map_err(|error| BridgeError::rejected("relation-browse-graph", error.to_string()))?;
+        if truncated {
+            return Err(BridgeError::rejected(
+                "relation-browse-graph",
+                "relationship graph is incomplete",
+            ));
+        }
+        let mut candidates = graph.edges.iter().filter_map(|edge| {
+            if edge.from_schema == namespace
+                && edge.from_table == relation
+                && edge.from_column == request.selected_column
+            {
+                Some((
+                    edge.clone(),
+                    "outbound",
+                    edge.to_schema.clone(),
+                    edge.to_table.clone(),
+                    edge.to_column.clone(),
+                ))
+            } else if edge.to_schema == namespace
+                && edge.to_table == relation
+                && edge.to_column == request.selected_column
+            {
+                Some((
+                    edge.clone(),
+                    "inbound",
+                    edge.from_schema.clone(),
+                    edge.from_table.clone(),
+                    edge.from_column.clone(),
+                ))
+            } else {
+                None
+            }
+        });
+        let candidate = candidates.next().ok_or_else(|| {
+            BridgeError::rejected(
+                "relation-browse-edge",
+                "selected column has no foreign-key relation",
+            )
+        })?;
+        if candidates.next().is_some() {
+            return Err(BridgeError::rejected(
+                "relation-browse-ambiguous",
+                "selected column participates in multiple foreign-key relations",
+            ));
+        }
+        let (edge, direction, target_schema, target_table, target_column) = candidate;
+        let (type_schema, type_name, key_column_count) = self
+            .runtime
+            .block_on(driver.postgres_relation_browse_target(
+                &edge.from_schema,
+                &edge.from_table,
+                &edge.from_column,
+                &edge.to_schema,
+                &edge.to_table,
+                &edge.to_column,
+                direction == "inbound",
+            ))?
+            .map_err(|error| BridgeError::rejected("relation-browse-type", error.to_string()))?
+            .ok_or_else(|| {
+                BridgeError::rejected("relation-browse-type", "related column type is unavailable")
+            })?;
+        if key_column_count != 1 {
+            return Err(BridgeError::rejected(
+                "relation-browse-composite",
+                "composite foreign keys require a complete row identity",
+            ));
+        }
+        let plan = PostgreSqlRelationBrowsePlan {
+            schema: target_schema.clone(),
+            table: target_table.clone(),
+            column: target_column,
+            type_schema,
+            type_name,
+            limit: request.row_count,
+        };
+        let rendered = plan
+            .render_sql(value.clone())
+            .map_err(|error| BridgeError::rejected("relation-browse-plan", error.to_string()))?;
+        let export_replay = plan
+            .render_sql_unbounded(value)
+            .map_err(|error| BridgeError::rejected("relation-export-plan", error.to_string()))?;
+        let operation_bytes = self.submit_inner_with_parameters(
+            SubmitSpec {
+                intent: "browse_object".into(),
+                session_id: request.session_id,
+                statement: Some(rendered.sql),
+                result_id: None,
+                start_row: None,
+                row_count: Some(request.row_count),
+                expected_revision: 0,
+            },
+            rendered.parameters,
+        )?;
+        let operation_id = operation_from_bytes(&operation_bytes).map_err(|_| {
+            BridgeError::rejected("operation-id", "bridge generated invalid operation id")
+        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        inner.operation_copy_identity.insert(
+            operation_id,
+            CopyIdentity {
+                schema: target_schema,
+                table: target_table,
+                identity_columns: Vec::new(),
+                insertable: false,
+            },
+        );
+        inner.operation_catalog_export_replay.insert(
+            operation_id,
+            CatalogExportReplay {
+                session_id,
+                engine: Engine::PostgreSql,
+                statement: export_replay.sql,
+                parameters: export_replay.parameters,
+            },
+        );
+        Ok(BridgeRelationBrowseSubmission {
+            operation_id: operation_bytes,
+            direction: direction.into(),
+            edge: BridgeRelationshipEdge {
+                from_schema: edge.from_schema,
+                from_table: edge.from_table,
+                from_column: edge.from_column,
+                to_schema: edge.to_schema,
+                to_table: edge.to_table,
+                to_column: edge.to_column,
+            },
         })
     }
 
@@ -10006,6 +10256,76 @@ fn starts_with_explain_keyword(statement: &str) -> bool {
             .is_none_or(|next| next.is_ascii_whitespace() || next == '(')
 }
 
+fn relation_cell_text(kind: u8, bytes: &[u8], truncation: u8) -> Result<String, BridgeError> {
+    if truncation != 0 {
+        return Err(BridgeError::rejected(
+            "relation-browse-cell",
+            "relation browse requires a complete cell value",
+        ));
+    }
+    if bytes.len() > MAX_BROWSE_VALUE_BYTES {
+        return Err(BridgeError::rejected(
+            "relation-browse-cell",
+            "relation browse cell must be at most 65536 bytes",
+        ));
+    }
+    let malformed =
+        || BridgeError::rejected("relation-browse-cell", "selected cell encoding is invalid");
+    match kind {
+        0 => Err(BridgeError::rejected(
+            "relation-browse-null",
+            "NULL does not reference a related row",
+        )),
+        1 if bytes == [0] => Ok("false".into()),
+        1 if bytes == [1] => Ok("true".into()),
+        1 => Err(malformed()),
+        2 if bytes.len() == 8 => {
+            Ok(i64::from_be_bytes(bytes.try_into().map_err(|_| malformed())?).to_string())
+        }
+        2 => Err(malformed()),
+        3 if bytes.len() == 8 => {
+            Ok(u64::from_be_bytes(bytes.try_into().map_err(|_| malformed())?).to_string())
+        }
+        3 => Err(malformed()),
+        4 if bytes.len() == 8 => {
+            let value = f64::from_bits(u64::from_be_bytes(
+                bytes.try_into().map_err(|_| malformed())?,
+            ));
+            Ok(if value.is_nan() {
+                "NaN".into()
+            } else if value == f64::INFINITY {
+                "Infinity".into()
+            } else if value == f64::NEG_INFINITY {
+                "-Infinity".into()
+            } else {
+                value.to_string()
+            })
+        }
+        4 => Err(malformed()),
+        5..=7 => std::str::from_utf8(bytes)
+            .map(str::to_owned)
+            .map_err(|_| malformed()),
+        9 => {
+            const HEX: &[u8; 16] = b"0123456789abcdef";
+            let mut encoded = String::with_capacity(bytes.len().saturating_mul(2) + 2);
+            encoded.push_str("\\x");
+            for byte in bytes {
+                encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+                encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+            Ok(encoded)
+        }
+        8 | 10 | 11 => Err(BridgeError::rejected(
+            "relation-browse-cell",
+            "structured, invalid, or unknown cells cannot drive relation browse",
+        )),
+        _ => Err(BridgeError::rejected(
+            "relation-browse-cell",
+            "selected cell kind is unsupported",
+        )),
+    }
+}
+
 fn parse_bridge_query_parameter(
     binding: BridgeQueryParameter,
 ) -> Result<(tablerock_engine::FilterValue, &'static str), BridgeError> {
@@ -10065,5 +10385,44 @@ fn parse_bridge_query_parameter(
             "named-parameter-kind",
             "parameter kind must be text, integer, float, boolean, or null",
         )),
+    }
+}
+
+#[cfg(test)]
+mod relation_browse_tests {
+    use super::*;
+
+    #[test]
+    fn relation_cell_conversion_preserves_exact_text_and_binary() {
+        assert_eq!(relation_cell_text(7, b" 0042 ", 0).unwrap(), " 0042 ");
+        assert_eq!(
+            relation_cell_text(9, &[0x00, 0xaf, 0xff], 0).unwrap(),
+            "\\x00afff"
+        );
+    }
+
+    #[test]
+    fn relation_cell_conversion_decodes_typed_page_scalars() {
+        assert_eq!(relation_cell_text(1, &[1], 0).unwrap(), "true");
+        assert_eq!(
+            relation_cell_text(2, &(-42_i64).to_be_bytes(), 0).unwrap(),
+            "-42"
+        );
+        assert_eq!(
+            relation_cell_text(3, &u64::MAX.to_be_bytes(), 0).unwrap(),
+            u64::MAX.to_string()
+        );
+        assert_eq!(
+            relation_cell_text(4, &f64::INFINITY.to_bits().to_be_bytes(), 0).unwrap(),
+            "Infinity"
+        );
+    }
+
+    #[test]
+    fn relation_cell_conversion_rejects_null_truncation_and_unknown() {
+        assert!(relation_cell_text(0, &[], 0).is_err());
+        assert!(relation_cell_text(7, b"partial", 1).is_err());
+        assert!(relation_cell_text(8, b"{\"projected\":true}", 0).is_err());
+        assert!(relation_cell_text(11, b"opaque", 0).is_err());
     }
 }
