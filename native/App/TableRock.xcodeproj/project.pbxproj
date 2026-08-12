@@ -16,6 +16,7 @@
 		14D023A5261B2B5CD80FDC18 /* TableRockFeature.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; };
 		161D919AE1BEF59F67B25D41 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50BA7DBEE0A6F285A3CE9CC5 /* SystemConfiguration.framework */; };
 		18FAFF073C518B43C8DDCDCA /* redis-signed-v1.hex in Resources */ = {isa = PBXBuildFile; fileRef = A68E1D5D9FB490A8CE2982A6 /* redis-signed-v1.hex */; };
+		2485FA4762A9B40F5D0FD682 /* WorkbenchRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 290D911EE03932BCD4FF8060 /* WorkbenchRootView.swift */; };
 		2555D1DC3BB267F4EA3B912B /* DesignLabModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEB5E3AF9306E47AB8CAD2E1 /* DesignLabModelTests.swift */; };
 		2CBE0A9311B7732E3BD27C71 /* TableRockFeature.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; };
 		2D7C822345D3585CEB388AC5 /* DesignLabComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 458733A3A628C9289EB6B3DB /* DesignLabComponents.swift */; };
@@ -219,6 +220,7 @@
 		2007E6448343CED0B5816844 /* CatalogGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogGrid.swift; sourceTree = "<group>"; };
 		26D5DF8DF8C2847671DFFB6C /* CatalogOutline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogOutline.swift; sourceTree = "<group>"; };
 		278D2E3A88447819988515D3 /* ApplicationRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationRoot.swift; sourceTree = "<group>"; };
+		290D911EE03932BCD4FF8060 /* WorkbenchRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchRootView.swift; sourceTree = "<group>"; };
 		2919168F670129A9DE843433 /* StructuredValueTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredValueTree.swift; sourceTree = "<group>"; };
 		2F14AA6A488E1B11AA572BD7 /* TableRockDesignLabApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableRockDesignLabApp.swift; sourceTree = "<group>"; };
 		3216C4DBC614A64F649BFB7E /* SqlEditorMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SqlEditorMetricsTests.swift; sourceTree = "<group>"; };
@@ -545,6 +547,7 @@
 				DB3CB9A296443783125050FE /* WorkbenchPresentationStore+Restoration.swift */,
 				D49B44D0E648E95C76C7830F /* WorkbenchPresentationStore+Safety.swift */,
 				8F8CE761C2DFDB59839D71A8 /* WorkbenchPresentationStore+Transfers.swift */,
+				290D911EE03932BCD4FF8060 /* WorkbenchRootView.swift */,
 			);
 			path = TableRockApp;
 			sourceTree = "<group>";
@@ -910,6 +913,7 @@
 				37E68BEAAC8F67DDA8DDE18C /* WorkbenchPresentationStore+Safety.swift in Sources */,
 				DF74204CE332FAB306D78BF8 /* WorkbenchPresentationStore+Transfers.swift in Sources */,
 				E91F2FE24A6C6E8681F532D3 /* WorkbenchPresentationStore.swift in Sources */,
+				2485FA4762A9B40F5D0FD682 /* WorkbenchRootView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
