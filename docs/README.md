@@ -18,6 +18,12 @@ drives the whole program.
 [`support-matrix.md`](support-matrix.md) records only configurations exercised
 by repository evidence and names the unproven boundaries.
 
+## Design exploration
+
+- [Native macOS 2026 phase 0 audit](design/native-macos-2026/phase-0-architecture-and-drift.md)
+  — current architecture, drift, clean-room reference boundary, design-lab
+  isolation contract, and the mandatory operator gate.
+
 ## Product specification
 
 Screen-by-screen behavior, written before and independent of implementation:
