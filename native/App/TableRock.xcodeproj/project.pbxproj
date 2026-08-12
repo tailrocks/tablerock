@@ -64,6 +64,7 @@
 		A65A1363D7D503413C15A4A1 /* WorkbenchStatusFactsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7DDBBBFFBDE47B37C5CA82C /* WorkbenchStatusFactsTests.swift */; };
 		A9DFF2096FE41B7946911F7E /* TableRockDesignLabApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F14AA6A488E1B11AA572BD7 /* TableRockDesignLabApp.swift */; };
 		AAF4313779A370A1FCF5A800 /* RelationContinuumTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE0278B1B46E810EB8830E5 /* RelationContinuumTests.swift */; };
+		AE429A4A328408DCDD444DEC /* EditorSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01F716E43632357896B6C52C /* EditorSheets.swift */; };
 		AE5AFDABD4F52A3E036A6A95 /* TableRockAppUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522462239F32BD6A1FA81F2B /* TableRockAppUITests.swift */; };
 		AFDFB9A4ABFF8D346A9DB4B0 /* ConnectionsProfileList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 957C32C81C6C4BCCABFFFD37 /* ConnectionsProfileList.swift */; };
 		B1E398B44C08B80C28D66530 /* AppConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C51BE56FE33E3F86FAD4A4 /* AppConfigurationTests.swift */; };
@@ -208,6 +209,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		01F716E43632357896B6C52C /* EditorSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorSheets.swift; sourceTree = "<group>"; };
 		060C4F13C160B84E22851EB6 /* WorkbenchBridgeConversions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchBridgeConversions.swift; sourceTree = "<group>"; };
 		090283225DAF932866B612E0 /* PresentationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresentationState.swift; sourceTree = "<group>"; };
 		0F2C76DDF73A5760AD61701F /* ApplicationPorts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationPorts.swift; sourceTree = "<group>"; };
@@ -523,6 +525,7 @@
 				8DF4E47C74A6EA2E7CE6ACC1 /* ConnectionsCatalogPane.swift */,
 				F2383F7968C0CB87D8CB7D83 /* ConnectionSheets.swift */,
 				957C32C81C6C4BCCABFFFD37 /* ConnectionsProfileList.swift */,
+				01F716E43632357896B6C52C /* EditorSheets.swift */,
 				1EF16C90DF01B501DA35D669 /* LibrarySheets.swift */,
 				AA0F98710C17A489C2A8ABBC /* NativeFindReplaceEngine.swift */,
 				8B5BEECCE6354A4B2929C3C6 /* ObjectWorkbenchView.swift */,
@@ -889,6 +892,7 @@
 				451C6F000145F0E9AA5EC5F5 /* ConnectionSheets.swift in Sources */,
 				E04BA777910E414DF689C9AA /* ConnectionsCatalogPane.swift in Sources */,
 				AFDFB9A4ABFF8D346A9DB4B0 /* ConnectionsProfileList.swift in Sources */,
+				AE429A4A328408DCDD444DEC /* EditorSheets.swift in Sources */,
 				45AFEBCFC2E2040410C736D2 /* LibrarySheets.swift in Sources */,
 				F0096BD881F735E05161A4D5 /* NativeFindReplaceEngine.swift in Sources */,
 				BFA198B5FC8267D98ABD6330 /* ObjectWorkbenchView.swift in Sources */,
