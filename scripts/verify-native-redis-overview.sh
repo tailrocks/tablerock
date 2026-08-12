@@ -21,7 +21,7 @@ trap cleanup EXIT
 
 for pattern in \
   'TABLEROCK_FIXTURE_REDIS_OVERVIEW' \
-  'private struct RedisOverviewSheet' \
+  'struct RedisOverviewSheet: View' \
   'REDIS_OVERVIEW_PROOF_PASSED'
 do
   native_source_has_fixed "$pattern" || { echo "error: missing native Redis overview: $pattern" >&2; exit 1; }
