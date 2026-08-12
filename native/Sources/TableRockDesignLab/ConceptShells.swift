@@ -27,7 +27,6 @@ struct LabConceptHost: View {
         .accessibilityIdentifier("design-lab-concept")
         .accessibilityLabel("\(concept.title), \(surface.title)")
         .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: concept)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: surface)
     }
 
     private var reduceMotion: Bool {
@@ -47,7 +46,7 @@ private struct LabNativeWorkbench: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $session.workbenchColumnVisibility) {
             Group {
                 if showsCatalog {
                     LabCatalogSidebar()

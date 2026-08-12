@@ -97,6 +97,26 @@ enum LabAccessibilityMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum LabObjectMode: String, CaseIterable, Identifiable, Sendable {
+    case data
+    case structure
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+}
+
+enum LabPresentationRoute: String, CaseIterable, Identifiable, Sendable {
+    case standard
+    case structure
+    case connectionSheet = "connection-sheet"
+    case safeEdit = "safe-edit"
+    case queryHistory = "query-history"
+    case safeReview = "safe-review"
+    case queryError = "query-error"
+
+    var id: String { rawValue }
+}
+
 struct LabLaunchConfiguration: Equatable, Sendable {
     var concept: LabConcept = .nativeWorkbench
     var surface: LabSurface = .dataGrid
@@ -105,6 +125,8 @@ struct LabLaunchConfiguration: Equatable, Sendable {
     var engine: LabEngine = .postgresql
     var fixture: LabFixtureScenario = .populated
     var windowSize: LabWindowSize = .typical
+    var presentation: LabPresentationRoute = .standard
+    var windowSizeExplicit = false
     var inactiveCapture = false
     var captureMode = false
 
@@ -144,6 +166,11 @@ struct LabLaunchConfiguration: Equatable, Sendable {
         if let value = value(after: "--window-size"),
            let windowSize = LabWindowSize(rawValue: value) {
             configuration.windowSize = windowSize
+            configuration.windowSizeExplicit = true
+        }
+        if let value = value(after: "--presentation"),
+           let presentation = LabPresentationRoute(rawValue: value) {
+            configuration.presentation = presentation
         }
         configuration.inactiveCapture = arguments.contains("--inactive")
         configuration.captureMode = arguments.contains("--capture")
@@ -194,6 +221,16 @@ struct LabChange: Identifiable, Equatable, Sendable {
     let field: String
     let before: String
     let after: String
+}
+
+struct LabQueryHistoryEntry: Identifiable, Equatable, Sendable {
+    let id: String
+    let title: String
+    let statement: String
+    let executedAt: String
+    let duration: String
+    let rowCount: String
+    let engine: LabEngine
 }
 
 enum LabFixtures {
@@ -286,4 +323,34 @@ enum LabFixtures {
     ORDER BY monthly_revenue DESC
     LIMIT 100;
     """
+
+    static let queryHistory = [
+        LabQueryHistoryEntry(
+            id: "history-revenue",
+            title: "Revenue by region",
+            statement: query,
+            executedAt: "Today at 09:47",
+            duration: "126 ms",
+            rowCount: "100 rows",
+            engine: .postgresql
+        ),
+        LabQueryHistoryEntry(
+            id: "history-latency",
+            title: "Recent slow queries",
+            statement: "SELECT query, total_exec_time FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;",
+            executedAt: "Today at 09:31",
+            duration: "84 ms",
+            rowCount: "20 rows",
+            engine: .postgresql
+        ),
+        LabQueryHistoryEntry(
+            id: "history-orders",
+            title: "Open orders",
+            statement: "SELECT * FROM analytics.orders WHERE status = 'open' ORDER BY created_at DESC LIMIT 100;",
+            executedAt: "Yesterday at 17:22",
+            duration: "93 ms",
+            rowCount: "100 rows",
+            engine: .postgresql
+        ),
+    ]
 }

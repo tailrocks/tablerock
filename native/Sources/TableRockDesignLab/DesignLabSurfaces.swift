@@ -437,11 +437,25 @@ struct LabDataGridSurface: View {
     var body: some View {
         VStack(spacing: 0) {
             LabObjectHeader(title: gridTitle, detail: gridDetail, symbol: "tablecells") {
-                Button("Add Row", systemImage: "plus") {}
+                if session.objectMode == .data {
+                    Button("Edit Selected", systemImage: "pencil") {
+                        session.editSheetPresented = true
+                    }
+                    .disabled(session.selectedRow == nil)
+                    .accessibilityIdentifier("design-lab-edit-selected")
+                } else {
+                    Button("Open Data", systemImage: "tablecells") {
+                        session.objectMode = .data
+                    }
+                }
                 Button("Export", systemImage: "square.and.arrow.up") {}
             }
-            LabFilterRail()
-            LabDataTable(compact: compact)
+            if session.objectMode == .data {
+                LabFilterRail()
+                LabDataTable(compact: compact)
+            } else {
+                LabStructureSurface(compact: compact)
+            }
             LabStatusBar()
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -450,11 +464,10 @@ struct LabDataGridSurface: View {
     private var gridTitle: String {
         if session.fixture == .longIdentifiers {
             "enterprise_customer_subscription_entitlements_archive"
+        } else if session.engine == .redis {
+            "customer:session:*"
         } else {
-            switch session.engine {
-            case .redis: "customer:session:*"
-            default: "customers"
-            }
+            session.selectedCatalogItem.name
         }
     }
 
@@ -505,6 +518,8 @@ private struct LabObjectHeader<Actions: View>: View {
 }
 
 private struct LabFilterRail: View {
+    @EnvironmentObject private var session: LabSession
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal.decrease")
@@ -515,9 +530,26 @@ private struct LabFilterRail: View {
                 .buttonStyle(.plain)
                 .labSecondaryForeground()
             Spacer()
-            Text("Sorted by monthly_revenue ↓")
-                .font(.caption2)
-                .labSecondaryForeground()
+            Menu {
+                Button("Company Name, A to Z") {
+                    session.setSort(columnID: "name", ascending: true)
+                }
+                Button("Company Name, Z to A") {
+                    session.setSort(columnID: "name", ascending: false)
+                }
+                Divider()
+                Button("Monthly Revenue, High to Low") {
+                    session.setSort(columnID: "mrr", ascending: false)
+                }
+                Button("Monthly Revenue, Low to High") {
+                    session.setSort(columnID: "mrr", ascending: true)
+                }
+            } label: {
+                Label("Sorted by \(session.sortDescription)", systemImage: "arrow.up.arrow.down")
+                    .font(.caption2)
+            }
+            .menuStyle(.borderlessButton)
+            .accessibilityIdentifier("design-lab-sort-menu")
             Button(action: {}) { Image(systemName: "xmark.circle") }
                 .buttonStyle(.plain)
                 .help("Clear filters")
@@ -562,19 +594,75 @@ struct LabDataTable: View {
 
     var body: some View {
         LabNativeDataTable(
-            rows: displayedRows,
+            rows: session.displayedRows,
             columns: Array(columns),
             selectedRowID: $session.selectedRowID,
+            sortColumnID: $session.sortColumnID,
+            sortAscending: $session.sortAscending,
             openInspector: { session.inspectorPresented = true },
-            openQuery: { session.show(.sqlResults) },
-            reviewChanges: { session.reviewSheetPresented = true }
+            openQuery: { session.openSavedQuery() },
+            reviewChanges: { session.presentReview() }
         )
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Customer result grid, \(displayedRows.count) preview rows")
+        .accessibilityLabel("Customer result grid, \(session.displayedRows.count) preview rows")
     }
+}
 
-    private var displayedRows: [LabRow] {
-        session.fixtureRows
+private struct LabStructureSurface: View {
+    @EnvironmentObject private var session: LabSession
+
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Table(LabFixtures.columns) {
+                TableColumn("Column") { column in
+                    HStack(spacing: 7) {
+                        Image(systemName: column.id == "id" ? "key.fill" : "textformat")
+                            .foregroundStyle(column.id == "id" ? Color.orange : .secondary)
+                        Text(column.title)
+                            .font(.body.monospaced())
+                    }
+                }
+                TableColumn("Type") { column in
+                    Text(column.type).font(.body.monospaced())
+                }
+                TableColumn("Nullable") { column in
+                    Text(column.id == "updated" ? "YES" : "NO")
+                }
+                TableColumn("Default") { column in
+                    Text(column.id == "updated" ? "now()" : "—")
+                        .font(.body.monospaced())
+                }
+            }
+            .accessibilityLabel("\(session.selectedCatalogItem.name) columns")
+            .accessibilityIdentifier("design-lab-structure-table")
+            .frame(minWidth: 500)
+
+            if !compact {
+                Divider()
+                List {
+                    Section("Indexes") {
+                        Label("customers_pkey", systemImage: "key.fill")
+                        Label("customers_region_idx", systemImage: "list.bullet.rectangle")
+                    }
+                    Section("Constraints") {
+                        Label("PRIMARY KEY · customer_id", systemImage: "checkmark.seal")
+                        Label("FOREIGN KEY · region_id", systemImage: "link")
+                    }
+                    Section("Relations") {
+                        Label("orders.customer_id", systemImage: "arrow.right")
+                        Label("invoices.customer_id", systemImage: "arrow.right")
+                    }
+                }
+                .listStyle(.sidebar)
+                .frame(width: 300)
+                .accessibilityLabel("Structure details")
+            }
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("design-lab-structure")
     }
 }
 
@@ -584,9 +672,9 @@ struct LabSQLResultsSurface: View {
     var compact = false
 
     var body: some View {
-        VSplitView {
+        VStack(spacing: 0) {
             VStack(spacing: 0) {
-                LabObjectHeader(title: "Revenue by region", detail: "Query 2 · Northstar Analytics", symbol: "chevron.left.forwardslash.chevron.right") {
+                LabObjectHeader(title: session.queryTitle, detail: "Query · \(session.engine.connectionName)", symbol: "chevron.left.forwardslash.chevron.right") {
                     Button("Explain", systemImage: "chart.xyaxis.line") {}
                     Button("Run", systemImage: "play.fill") { session.runQuery() }
                         .buttonStyle(.borderedProminent)
@@ -595,7 +683,9 @@ struct LabSQLResultsSurface: View {
                 }
                 LabCodeEditor()
             }
-            .frame(minHeight: compact ? 210 : 250)
+            .frame(minHeight: compact ? 210 : 250, maxHeight: .infinity)
+
+            Divider()
 
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
@@ -608,9 +698,20 @@ struct LabSQLResultsSurface: View {
                     .pickerStyle(.segmented)
                     .frame(width: 210)
                     Spacer()
-                    Label("100 rows", systemImage: "tablecells")
-                    Text("126 ms")
-                    LabBadge(text: "SUCCESS", tint: .green, symbol: "checkmark.circle.fill")
+                    if let queryErrorText = session.queryErrorText {
+                        Text(queryErrorText)
+                            .foregroundStyle(.red)
+                        LabBadge(text: "NOT RUN", tint: .red, symbol: "exclamationmark.circle")
+                    } else if session.queryExecuted {
+                        Label(session.queryRunCount == 0 ? "100 rows" : "12 rows", systemImage: "tablecells")
+                        Text(session.queryRunCount == 0 ? "126 ms" : "41 ms")
+                        LabBadge(text: "SUCCESS", tint: .green, symbol: "checkmark.circle.fill")
+                            .accessibilityIdentifier("design-lab-query-success")
+                    } else {
+                        Text("Enter SQL and press ⌘↩")
+                            .foregroundStyle(.secondary)
+                        LabBadge(text: "NOT RUN", tint: .secondary, symbol: "circle.dashed")
+                    }
                 }
                 .font(.caption)
                 .padding(.horizontal, 10)
@@ -619,58 +720,61 @@ struct LabSQLResultsSurface: View {
                 .overlay(alignment: .bottom) { Divider() }
                 LabDataTable(compact: compact)
             }
-            .frame(minHeight: 240)
+            .frame(minHeight: 240, maxHeight: .infinity)
         }
         .background(Color(nsColor: .textBackgroundColor))
     }
 }
 
 private struct LabCodeEditor: View {
-    private let lines = LabFixtures.query.split(separator: "\n", omittingEmptySubsequences: false)
+    @EnvironmentObject private var session: LabSession
+    @FocusState private var editorFocused: Bool
+
+    private var lineCount: Int {
+        max(session.queryText.split(separator: "\n", omittingEmptySubsequences: false).count, 1)
+    }
 
     var body: some View {
-        ScrollView([.horizontal, .vertical]) {
-            HStack(alignment: .top, spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
+            ScrollView(.vertical) {
                 VStack(alignment: .trailing, spacing: 0) {
-                    ForEach(lines.indices, id: \.self) { index in
-                        Text(String(index + 1))
-                            .frame(height: 22)
+                    ForEach(0..<lineCount, id: \.self) { index in
+                        Text(String(index + 1)).frame(height: 22)
                     }
                 }
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 12)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.7))
-
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                        Text(String(line))
-                            .font(.system(size: 13, design: .monospaced))
-                            .foregroundStyle(sqlColor(for: String(line)))
-                            .frame(height: 22, alignment: .leading)
-                    }
-                }
-                .padding(12)
-                Spacer(minLength: 200)
             }
-        }
-        .defaultScrollAnchor(.topLeading)
-        .background(Color(nsColor: .textBackgroundColor))
-        .accessibilityLabel("SQL editor preview")
-    }
+            .scrollDisabled(true)
+            .frame(width: 48)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.7))
 
-    private func sqlColor(for line: String) -> Color {
-        let trimmed = line.trimmingCharacters(in: .whitespaces).uppercased()
-        if ["SELECT", "FROM", "WHERE", "ORDER", "LIMIT"].contains(where: trimmed.hasPrefix) {
-            return .purple
+            TextEditor(text: $session.queryText)
+                .focused($editorFocused)
+                .font(.system(size: 13, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .accessibilityLabel("SQL query editor")
+                .accessibilityIdentifier("design-lab-query-editor")
         }
-        return .primary
+        .background(Color(nsColor: .textBackgroundColor))
+        .task {
+            guard session.queryTitle == "Untitled Query" else { return }
+            editorFocused = true
+        }
     }
 }
 
 struct LabChangeReviewSurface: View {
+    @EnvironmentObject private var session: LabSession
+
     var compact = false
+
+    private var changes: [LabChange] {
+        session.stagedChanges
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -678,7 +782,7 @@ struct LabChangeReviewSurface: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Review Changes")
                         .font(.title2.weight(.semibold))
-                    Text("Northstar Analytics · analytics.public · 4 staged operations")
+                    Text("Northstar Analytics · analytics.public · \(changes.count) staged operation\(changes.count == 1 ? "" : "s")")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -691,53 +795,74 @@ struct LabChangeReviewSurface: View {
             .background(Color(nsColor: .windowBackgroundColor))
             .overlay(alignment: .bottom) { Divider() }
 
-            HSplitView {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("STAGED OPERATIONS")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text("2 updates · 1 insert · 1 delete")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+            if changes.isEmpty {
+                ContentUnavailableView(
+                    "No Pending Changes",
+                    systemImage: "checkmark.circle",
+                    description: Text("Edit a row to stage a safe change for review.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                HStack(spacing: 0) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("STAGED OPERATIONS")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(changeSummary)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            ForEach(changes) { change in
+                                LabReviewChangeRow(change: change)
+                            }
                         }
-                        ForEach(LabFixtures.changes) { change in
-                            LabReviewChangeRow(change: change)
-                        }
+                        .padding(16)
                     }
-                    .padding(16)
-                }
-                .frame(minWidth: 440)
+                    .frame(minWidth: 440, maxWidth: .infinity)
 
-                if !compact {
-                    LabSQLPreview()
-                        .frame(minWidth: 330, idealWidth: 420)
+                    if !compact {
+                        Divider()
+                        LabSQLPreview(changes: changes)
+                            .frame(width: 400)
+                    }
                 }
             }
 
             Divider()
             HStack {
-                Button("Back to Editing") {}
-                Button("Discard All", role: .destructive) {}
+                Button("Back to Editing") { session.show(.dataGrid) }
+                Button("Discard All", role: .destructive) { session.discardChanges() }
+                    .disabled(changes.isEmpty)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 1) {
-                    Text("4 changes will run in one transaction")
+                    Text("\(changes.count) change\(changes.count == 1 ? "" : "s") will run in one transaction")
                         .font(.caption.weight(.medium))
                     Text("Rollback on any failure")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                Button("Apply Changes", systemImage: "checkmark") {}
+                Button("Review & Apply", systemImage: "checkmark") {
+                    session.presentReview()
+                }
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
+                    .disabled(changes.isEmpty)
             }
             .padding(.horizontal, 16)
             .frame(height: 58)
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var changeSummary: String {
+        let updates = changes.count { $0.kind == .update }
+        let inserts = changes.count { $0.kind == .insert }
+        let deletes = changes.count { $0.kind == .delete }
+        return "\(updates) update\(updates == 1 ? "" : "s") · \(inserts) insert\(inserts == 1 ? "" : "s") · \(deletes) delete\(deletes == 1 ? "" : "s")"
     }
 }
 
@@ -775,6 +900,8 @@ private struct LabReviewChangeRow: View {
 }
 
 private struct LabSQLPreview: View {
+    let changes: [LabChange]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -788,27 +915,26 @@ private struct LabSQLPreview: View {
             .padding(.horizontal, 12)
             .frame(height: 42)
             Divider()
-            Text("""
-            BEGIN;
-
-            UPDATE analytics.customers
-            SET plan = 'Scale', seats = 124
-            WHERE customer_id = '…a91f';
-
-            INSERT INTO analytics.customers
-              (company_name, region, plan)
-            VALUES ('Morrow Studio', 'APAC', 'Team');
-
-            DELETE FROM analytics.customers
-            WHERE customer_id = '…4de2';
-
-            COMMIT;
-            """)
+            Text(sqlPreview)
             .font(.system(size: 12, design: .monospaced))
             .textSelection(.enabled)
             .padding(14)
             Spacer()
         }
         .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private var sqlPreview: String {
+        let statements = changes.map { change in
+            switch change.kind {
+            case .update:
+                "UPDATE analytics.customers\nSET \(change.field) = '\(change.after)'\nWHERE customer_id = $1;"
+            case .insert:
+                "INSERT INTO analytics.customers\n  (\(change.field)) VALUES ('\(change.after)');"
+            case .delete:
+                "DELETE FROM analytics.customers\nWHERE customer_id = $1;"
+            }
+        }
+        return (["BEGIN;"] + statements + ["COMMIT;"]).joined(separator: "\n\n")
     }
 }

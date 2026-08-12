@@ -9,6 +9,7 @@ DERIVED_DATA="$REPO_ROOT/target/design-lab-derived-data"
 APP_BUNDLE="$DERIVED_DATA/Build/Products/Debug/TableRockDesignLab.app"
 APP_EXECUTABLE="$APP_BUNDLE/Contents/MacOS/TableRockDesignLab"
 OUT_DIR="${1:-$REPO_ROOT/docs/evidence/design-lab/captures}"
+CAPTURE_SCOPE="${2:-full}"
 CURRENT_PID=""
 CAPTURE_MANIFEST="$OUT_DIR/CAPTURES.tsv"
 
@@ -44,7 +45,7 @@ find "$OUT_DIR" -maxdepth 1 -type f \( \
   -name '*.png' -o -name '*.log' -o -name 'CAPTURES.tsv' -o \
   -name 'MANIFEST.tsv' -o -name 'SHA256SUMS' \
 \) -delete
-printf 'file\tconcept\tsurface\tappearance\taccessibility\tengine\tfixture\twindow_size\tactivity\texpected_points\tpixel_width\tpixel_height\tlaunch_arguments\n' \
+printf 'file\tconcept\tsurface\tpresentation\tappearance\taccessibility\tengine\tfixture\twindow_size\tactivity\texpected_points\tpixel_width\tpixel_height\tlaunch_arguments\n' \
   >"$CAPTURE_MANIFEST"
 
 window_id_for_pid() {
@@ -81,7 +82,11 @@ capture() {
   local fixture="${6:-populated}"
   local window_size="${7:-typical}"
   local activity="${8:-active}"
+  local presentation="${9:-standard}"
   local name="${concept}__${surface}__${appearance}__${accessibility}__${engine}__${fixture}__${window_size}__${activity}"
+  if [[ "$presentation" != "standard" ]]; then
+    name="${name}__${presentation}"
+  fi
   local log="$OUT_DIR/$name.log"
   local image="$OUT_DIR/$name.png"
   local expected_points=""
@@ -108,6 +113,10 @@ capture() {
   elif [[ "$activity" != "active" ]]; then
     echo "error: unknown activity $activity" >&2
     exit 1
+  fi
+
+  if [[ "$presentation" != "standard" ]]; then
+    launch_arguments+=(--presentation "$presentation")
   fi
 
   open -n -F --stdout "$log" --stderr "$log" "$APP_BUNDLE" --args \
@@ -156,8 +165,8 @@ capture() {
   pixel_width="$(sips -g pixelWidth "$image" | awk '/pixelWidth/ {print $2}')"
   pixel_height="$(sips -g pixelHeight "$image" | awk '/pixelHeight/ {print $2}')"
   printf -v launch_text '%q ' "${launch_arguments[@]}"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$(basename "$image")" "$concept" "$surface" "$appearance" \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$(basename "$image")" "$concept" "$surface" "$presentation" "$appearance" \
     "$accessibility" "$engine" "$fixture" "$window_size" "$activity" \
     "$expected_points" "$pixel_width" "$pixel_height" "${launch_text% }" \
     >>"$CAPTURE_MANIFEST"
@@ -168,29 +177,62 @@ capture() {
   echo "captured $name"
 }
 
-for concept in "${concepts[@]}"; do
-  for surface in "${surfaces[@]}"; do
-    capture "$concept" "$surface" light system
+if [[ "$CAPTURE_SCOPE" == "full" ]]; then
+  for concept in "${concepts[@]}"; do
+    for surface in "${surfaces[@]}"; do
+      capture "$concept" "$surface" light system
+    done
+    for surface in data-grid sql-results; do
+      capture "$concept" "$surface" dark system
+    done
+    capture "$concept" data-grid light system postgresql populated typical inactive
   done
-  for surface in data-grid sql-results; do
-    capture "$concept" "$surface" dark system
+
+  for accessibility in reduce-transparency increase-contrast reduce-motion; do
+    capture native-workbench data-grid light "$accessibility"
   done
-  capture "$concept" data-grid light system postgresql populated typical inactive
-done
 
-for accessibility in reduce-transparency increase-contrast reduce-motion; do
-  capture native-workbench data-grid light "$accessibility"
-done
+  capture native-workbench data-grid light system postgresql populated minimum active
+  capture native-workbench data-grid light system postgresql populated expanded active
 
-capture native-workbench data-grid light system postgresql populated minimum active
-capture native-workbench data-grid light system postgresql populated expanded active
+  for fixture in empty loading connection-error large-result long-identifiers selected-cell pending-change destructive-review; do
+    capture native-workbench data-grid light system postgresql "$fixture" typical active
+  done
 
-for fixture in empty loading connection-error large-result long-identifiers selected-cell pending-change destructive-review; do
-  capture native-workbench data-grid light system postgresql "$fixture" typical active
-done
-
-capture native-workbench data-grid light system clickhouse populated typical active
-capture native-workbench data-grid light system redis populated typical active
+  capture native-workbench data-grid light system clickhouse populated typical active
+  capture native-workbench data-grid light system redis populated typical active
+  MATRIX_DESCRIPTION='25 light surfaces + 10 dark work surfaces + 5 inactive windows + 3 accessibility previews + 2 alternate sizes + 8 scenarios + 2 alternate engines'
+elif [[ "$CAPTURE_SCOPE" == "refined" ]]; then
+  capture native-workbench connections light system
+  capture native-workbench connections light system postgresql populated typical active connection-sheet
+  capture native-workbench setup light system
+  capture native-workbench data-grid light system
+  capture native-workbench data-grid dark system
+  capture native-workbench data-grid light system postgresql populated typical active structure
+  capture native-workbench data-grid light system postgresql populated typical active safe-edit
+  capture native-workbench sql-results light system
+  capture native-workbench sql-results dark system
+  capture native-workbench sql-results light system postgresql populated typical active query-error
+  capture native-workbench sql-results light system postgresql populated typical active query-history
+  capture native-workbench change-review light system postgresql pending-change
+  capture native-workbench data-grid light system postgresql populated typical active safe-review
+  capture native-workbench data-grid light system postgresql destructive-review
+  for fixture in empty loading connection-error selected-cell; do
+    capture native-workbench data-grid light system postgresql "$fixture"
+  done
+  for accessibility in reduce-transparency increase-contrast reduce-motion; do
+    capture native-workbench data-grid light "$accessibility"
+  done
+  capture native-workbench data-grid light system postgresql populated minimum
+  capture native-workbench data-grid light system postgresql populated expanded
+  capture native-workbench data-grid light system postgresql populated typical inactive
+  capture native-workbench data-grid light system clickhouse
+  capture native-workbench data-grid light system redis
+  MATRIX_DESCRIPTION='Native Workbench refined flows + sheets + error/states + light/dark + accessibility + sizing + inactive + three engines'
+else
+  echo "error: unknown capture scope $CAPTURE_SCOPE (expected full or refined)" >&2
+  exit 1
+fi
 
 find "$OUT_DIR" -name '*.log' -empty -delete
 shasum -a 256 "$OUT_DIR"/*.png >"$OUT_DIR/SHA256SUMS"
@@ -200,7 +242,7 @@ shasum -a 256 "$OUT_DIR"/*.png >"$OUT_DIR/SHA256SUMS"
   printf 'host\t%s\n' "$(sw_vers -productVersion) ($(sw_vers -buildVersion))"
   printf 'xcode\t%s\n' "$(xcodebuild -version | tr '\n' ' ')"
   printf 'sdk\t%s\n' "$(xcrun --sdk macosx --show-sdk-version)"
-  printf 'matrix\t25 light surfaces + 10 dark work surfaces + 5 inactive windows + 3 accessibility previews + 2 alternate sizes + 8 scenarios + 2 alternate engines\n'
+  printf 'matrix\t%s\n' "$MATRIX_DESCRIPTION"
   printf 'capture_count\t%s\n' "$(find "$OUT_DIR" -maxdepth 1 -name '*.png' | wc -l | tr -d ' ')"
 } >"$OUT_DIR/MANIFEST.tsv"
 

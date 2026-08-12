@@ -38,12 +38,12 @@ final class LabApplicationDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(150))
             openInitialWindowIfNeeded()
+            sizeInitialWindow()
             // AppKit can finish applying a previous close-window restoration
             // after SwiftUI creates its first scene. Re-check once restoration
             // has settled so repeated test and capture launches stay visible.
             try? await Task.sleep(for: .milliseconds(900))
             openInitialWindowIfNeeded()
-            try? await Task.sleep(for: .milliseconds(150))
             sizeInitialWindow()
         }
     }
@@ -71,8 +71,49 @@ final class LabApplicationDelegate: NSObject, NSApplicationDelegate {
         guard let window = NSApplication.shared.windows.first(where: { $0.isVisible }) else {
             return
         }
-        window.setContentSize(launch.windowSize.dimensions)
-        window.center()
+        if launch.captureMode || launch.windowSizeExplicit {
+            window.setContentSize(launch.windowSize.dimensions)
+            window.center()
+            return
+        }
+
+        if let restoredSize = LabWindowSizing.restoredContentSize() {
+            window.setContentSize(restoredSize)
+            window.center()
+        } else {
+            window.setContentSize(LabWindowSize.typical.dimensions)
+            window.center()
+        }
+    }
+}
+
+@MainActor
+enum LabWindowSizing {
+    private static let widthKey = "TableRockDesignLab.NativeWorkbench.width"
+    private static let heightKey = "TableRockDesignLab.NativeWorkbench.height"
+
+    static func resize(to size: LabWindowSize) {
+        guard let window = NSApplication.shared.keyWindow
+            ?? NSApplication.shared.mainWindow
+            ?? NSApplication.shared.windows.first(where: { $0.isVisible })
+        else { return }
+
+        window.setContentSize(size.dimensions)
+        UserDefaults.standard.set(size.dimensions.width, forKey: widthKey)
+        UserDefaults.standard.set(size.dimensions.height, forKey: heightKey)
+    }
+
+    static func restoredContentSize() -> CGSize? {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: widthKey) != nil,
+              defaults.object(forKey: heightKey) != nil
+        else { return nil }
+        let width = defaults.double(forKey: widthKey)
+        let height = defaults.double(forKey: heightKey)
+        guard width >= LabWindowSize.minimum.dimensions.width,
+              height >= LabWindowSize.minimum.dimensions.height
+        else { return nil }
+        return CGSize(width: width, height: height)
     }
 }
 
@@ -80,30 +121,41 @@ struct LabRootView: View {
     @ObservedObject var session: LabSession
 
     var body: some View {
-        VStack(spacing: 0) {
-            if !session.captureMode {
-                LabControlBar(session: session)
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                if !session.captureMode {
+                    LabControlBar(session: session)
+                }
+
+                LabConceptHost(concept: session.concept, surface: session.surface)
+                    .id("\(session.concept.rawValue)-\(session.surface.rawValue)")
             }
 
-            LabConceptHost(concept: session.concept, surface: session.surface)
-                .id("\(session.concept.rawValue)-\(session.surface.rawValue)")
+            if session.inspectorPresented {
+                Divider()
+                LabValueInspector()
+                    .frame(width: 270)
+            }
         }
         .preferredColorScheme(preferredColorScheme)
         .environment(\.labAccessibilityPreview, session.accessibility)
         .background(Color(nsColor: .windowBackgroundColor))
         .toolbarRole(.editor)
         .toolbar { LabAppToolbar(session: session) }
-        .inspector(isPresented: $session.inspectorPresented) {
-            LabValueInspector()
-                .frame(minWidth: 240, idealWidth: 280, maxWidth: 340)
-                .environmentObject(session)
-        }
         .sheet(isPresented: $session.connectionSheetPresented) {
             LabConnectionSetupSheet()
                 .environmentObject(session)
         }
+        .sheet(isPresented: $session.editSheetPresented) {
+            LabSafeEditSheet()
+                .environmentObject(session)
+        }
+        .sheet(isPresented: $session.historySheetPresented) {
+            LabQueryHistorySheet()
+                .environmentObject(session)
+        }
         .sheet(isPresented: $session.reviewSheetPresented) {
-            LabDestructiveReviewSheet()
+            LabChangeReviewSheet()
                 .environmentObject(session)
         }
         .task {
@@ -218,11 +270,18 @@ private struct LabAppToolbar: ToolbarContent {
             .accessibilityIdentifier("design-lab-new-connection")
 
             Button {
-                session.show(.sqlResults)
+                session.createQuery()
             } label: {
                 Label("New Query", systemImage: "plus.rectangle.on.rectangle")
             }
             .accessibilityIdentifier("design-lab-new-query")
+
+            Button {
+                session.historySheetPresented = true
+            } label: {
+                Label("Query History", systemImage: "clock.arrow.circlepath")
+            }
+            .accessibilityIdentifier("design-lab-query-history")
 
             Button {
                 session.inspectorPresented.toggle()
@@ -232,11 +291,12 @@ private struct LabAppToolbar: ToolbarContent {
             .accessibilityIdentifier("design-lab-toggle-inspector")
 
             Button {
-                session.reviewSheetPresented = true
+                session.presentReview()
             } label: {
                 Label("Review Changes", systemImage: "checklist")
             }
             .accessibilityIdentifier("design-lab-review-changes")
+            .disabled(session.pendingChangeCount == 0)
         }
     }
 }

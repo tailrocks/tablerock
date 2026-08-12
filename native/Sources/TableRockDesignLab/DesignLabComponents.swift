@@ -210,7 +210,10 @@ struct LabContextToolbar: View {
     var body: some View {
         HStack(spacing: 8) {
             if !compact {
-                LabIconButton(title: "Toggle navigation", symbol: "sidebar.left")
+                LabIconButton(title: "Toggle navigation", symbol: "sidebar.left") {
+                    session.workbenchColumnVisibility =
+                        session.workbenchColumnVisibility == .detailOnly ? .all : .detailOnly
+                }
                 Divider().frame(height: 20)
             }
 
@@ -251,7 +254,10 @@ struct LabContextToolbar: View {
                 session.catalogPresented = true
             }
             LabIconButton(title: "New query", symbol: "plus.rectangle.on.rectangle") {
-                session.show(.sqlResults)
+                session.createQuery()
+            }
+            LabIconButton(title: "Query history", symbol: "clock.arrow.circlepath") {
+                session.historySheetPresented = true
             }
 
             if !compact {
@@ -391,17 +397,17 @@ struct LabCatalogSidebar: View {
                                 depth: 1,
                                 selected: item.id == "customers"
                             )
+                            .accessibilityIdentifier("design-lab-catalog-\(item.id)")
                             .contentShape(.rect)
                             .onTapGesture {
-                                session.show(.dataGrid)
+                                session.openObject(item.id)
                             }
                             .contextMenu {
-                                Button("Open \(item.name)") { session.show(.dataGrid) }
-                                Button("Open in New Query") { session.show(.sqlResults) }
+                                Button("Open \(item.name)") { session.openObject(item.id) }
+                                Button("Open in New Query") { session.openSavedQuery() }
                                 Divider()
                                 Button("Inspect Structure") {
-                                    session.show(.dataGrid)
-                                    session.inspectorPresented = true
+                                    session.showStructure(for: item.id)
                                 }
                             }
                         }
@@ -756,9 +762,10 @@ struct LabStatusBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Picker("View", selection: .constant("Data")) {
-                Text("Data").tag("Data")
-                Text("Structure").tag("Structure")
+            Picker("View", selection: objectModeSelection) {
+                ForEach(LabObjectMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
             }
             .labelsHidden()
             .pickerStyle(.segmented)
@@ -810,6 +817,20 @@ struct LabStatusBar: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .top) { Divider() }
     }
+
+    private var objectModeSelection: Binding<LabObjectMode> {
+        Binding(
+            get: { session.objectMode },
+            set: { mode in
+                // AppKit sends segmented-control changes while SwiftUI is
+                // reconciling this footer. Publish on the next main turn so
+                // replacing the table/structure body cannot re-enter update.
+                DispatchQueue.main.async {
+                    session.objectMode = mode
+                }
+            }
+        )
+    }
 }
 
 struct LabValueInspector: View {
@@ -817,6 +838,25 @@ struct LabValueInspector: View {
     @EnvironmentObject private var session: LabSession
 
     var body: some View {
+        Group {
+            if session.objectMode == .structure {
+                structureInspector
+            } else {
+                valueInspector
+            }
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .labPrimaryForeground()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            session.objectMode == .structure
+                ? "Structure inspector"
+                : "Selected value inspector"
+        )
+        .accessibilityIdentifier("design-lab-inspector")
+    }
+
+    private var valueInspector: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("INSPECTOR")
@@ -868,11 +908,45 @@ struct LabValueInspector: View {
             }
             .padding(12)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
-        .labPrimaryForeground()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Selected value inspector")
-        .accessibilityIdentifier("design-lab-inspector")
+    }
+
+    private var structureInspector: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("STRUCTURE")
+                    .font(.system(size: preview == .increaseContrast ? 13 : 10, weight: .bold))
+                    .labSecondaryForeground()
+                Spacer()
+                Button { session.inspectorPresented = false } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 40)
+            Divider()
+
+            VStack(alignment: .leading, spacing: 14) {
+                Label(session.selectedCatalogItem.name, systemImage: session.selectedCatalogItem.symbol)
+                    .font(.headline)
+                LabeledContent("Kind", value: session.selectedCatalogItem.kind)
+                LabeledContent("Rows", value: session.selectedCatalogItem.detail)
+                Divider()
+                Text("PRIMARY KEY")
+                    .font(.caption2.weight(.bold))
+                    .labSecondaryForeground()
+                Text("customer_id · UUID")
+                    .font(.caption.monospaced())
+                Text("RELATIONS")
+                    .font(.caption2.weight(.bold))
+                    .labSecondaryForeground()
+                Label("orders.customer_id", systemImage: "link")
+                    .font(.caption.monospaced())
+                Label("invoices.customer_id", systemImage: "link")
+                    .font(.caption.monospaced())
+                Spacer()
+            }
+            .padding(12)
+        }
+        .accessibilityIdentifier("design-lab-structure-inspector")
     }
 
     private var selectedColumn: String {

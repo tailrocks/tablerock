@@ -32,6 +32,8 @@ struct LabNativeDataTable: NSViewRepresentable {
     let rows: [LabRow]
     let columns: [LabColumn]
     @Binding var selectedRowID: Int?
+    @Binding var sortColumnID: String
+    @Binding var sortAscending: Bool
     let openInspector: () -> Void
     let openQuery: () -> Void
     let reviewChanges: () -> Void
@@ -65,8 +67,16 @@ struct LabNativeDataTable: NSViewRepresentable {
             tableColumn.width = column.width
             tableColumn.minWidth = 72
             tableColumn.maxWidth = max(column.width * 2, 220)
+            tableColumn.sortDescriptorPrototype = NSSortDescriptor(
+                key: column.id,
+                ascending: column.id != "mrr"
+            )
             table.addTableColumn(tableColumn)
         }
+
+        table.sortDescriptors = [
+            NSSortDescriptor(key: sortColumnID, ascending: sortAscending),
+        ]
 
         let scrollView = NSScrollView()
         scrollView.identifier = NSUserInterfaceItemIdentifier("design-lab-grid-scroll")
@@ -79,7 +89,7 @@ struct LabNativeDataTable: NSViewRepresentable {
         scrollView.backgroundColor = .textBackgroundColor
 
         context.coordinator.tableView = table
-        context.coordinator.restoreSelection()
+        context.coordinator.scheduleSelectionRestore()
         return scrollView
     }
 
@@ -88,15 +98,27 @@ struct LabNativeDataTable: NSViewRepresentable {
         guard let table = scrollView.documentView as? NSTableView else { return }
         if context.coordinator.renderedRows != rows {
             context.coordinator.renderedRows = rows
+            context.coordinator.isSynchronizingFromSwiftUI = true
             table.reloadData()
+            context.coordinator.isSynchronizingFromSwiftUI = false
         }
-        context.coordinator.restoreSelection()
+        if table.sortDescriptors.first?.key != sortColumnID
+            || table.sortDescriptors.first?.ascending != sortAscending {
+            context.coordinator.isSynchronizingFromSwiftUI = true
+            table.sortDescriptors = [
+                NSSortDescriptor(key: sortColumnID, ascending: sortAscending),
+            ]
+            context.coordinator.isSynchronizingFromSwiftUI = false
+        }
+        context.coordinator.scheduleSelectionRestore()
     }
 
     @MainActor
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         var parent: LabNativeDataTable
         var renderedRows: [LabRow]
+        var isSynchronizingFromSwiftUI = false
+        var selectionRestoreScheduled = false
         weak var tableView: NSTableView?
 
         init(parent: LabNativeDataTable) {
@@ -126,13 +148,17 @@ struct LabNativeDataTable: NSViewRepresentable {
             let value = parent.rows[row].values[columnIndex]
             cell.textField?.stringValue = value
             cell.textField?.alignment = alignment(for: parent.columns[columnIndex].id)
+            cell.textField?.identifier = NSUserInterfaceItemIdentifier(
+                "design-lab-cell-\(parent.rows[row].id)-\(parent.columns[columnIndex].id)"
+            )
             cell.toolTip = value
             cell.setAccessibilityLabel("\(parent.columns[columnIndex].title), \(value)")
             return cell
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {
-            guard let tableView,
+            guard !isSynchronizingFromSwiftUI,
+                  let tableView,
                   tableView.selectedRow >= 0,
                   tableView.selectedRow < parent.rows.count
             else { return }
@@ -141,6 +167,23 @@ struct LabNativeDataTable: NSViewRepresentable {
                 parent.selectedRowID = rowID
             }
             parent.openInspector()
+        }
+
+        func tableView(
+            _ tableView: NSTableView,
+            sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]
+        ) {
+            guard !isSynchronizingFromSwiftUI,
+                  let descriptor = tableView.sortDescriptors.first,
+                  let key = descriptor.key,
+                  parent.columns.contains(where: { $0.id == key })
+            else { return }
+            if parent.sortColumnID != key {
+                parent.sortColumnID = key
+            }
+            if parent.sortAscending != descriptor.ascending {
+                parent.sortAscending = descriptor.ascending
+            }
         }
 
         func makeContextMenu() -> NSMenu {
@@ -159,8 +202,20 @@ struct LabNativeDataTable: NSViewRepresentable {
                   let index = parent.rows.firstIndex(where: { $0.id == selectedRowID })
             else { return }
             guard tableView.selectedRow != index else { return }
+            isSynchronizingFromSwiftUI = true
             tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
             tableView.scrollRowToVisible(index)
+            isSynchronizingFromSwiftUI = false
+        }
+
+        func scheduleSelectionRestore() {
+            guard !selectionRestoreScheduled else { return }
+            selectionRestoreScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                selectionRestoreScheduled = false
+                restoreSelection()
+            }
         }
 
         @objc private func inspect() {
