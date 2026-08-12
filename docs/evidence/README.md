@@ -551,6 +551,7 @@ How to read an evidence document:
 - 676 — [Native application ports extraction](delivery/676-native-application-ports-extraction.md)
 - 677 — [Native application runtime extraction](delivery/677-native-application-runtime-extraction.md)
 - 678 — [Native application root extraction](delivery/678-native-application-root-extraction.md)
+- 679 — [Native command ownership](delivery/679-native-command-ownership.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

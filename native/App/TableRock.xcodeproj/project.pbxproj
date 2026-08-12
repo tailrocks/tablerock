@@ -61,6 +61,7 @@
 		CAFEA2165C108D50B1189555 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50BA7DBEE0A6F285A3CE9CC5 /* SystemConfiguration.framework */; };
 		CBCBBC8A4821862458D905EE /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = D2CD044701909D9865A79995 /* libiconv.tbd */; };
 		CD7AE7D1A93F077E529087AA /* ChangeReviewPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D4F7741E9DE06B844834E2B /* ChangeReviewPresentationTests.swift */; };
+		CE3F361CE4393A1BB51A1637 /* WorkbenchCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4187B078084E36F107491A35 /* WorkbenchCommands.swift */; };
 		CF5C36BA9F78E77F67B742D2 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4593C9F33EA2B77A8CB555A4 /* Security.framework */; };
 		D05697BE1E109F55DE2C39B2 /* DesignLabSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA12356E610CE9E7EEB4BD2B /* DesignLabSession.swift */; };
 		D1B7CEC71C3AD071161CE23F /* TableRockBridge.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; };
@@ -185,6 +186,7 @@
 		3B603D771219E813A92103B1 /* BridgeModelScenarioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeModelScenarioTests.swift; sourceTree = "<group>"; };
 		3B6D49A4F3A0FB6BC7BC659E /* TableRockDesignLabTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockDesignLabTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3BD1F73B0512F5C88FF9C25C /* TableRockAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4187B078084E36F107491A35 /* WorkbenchCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchCommands.swift; sourceTree = "<group>"; };
 		4458632FEA057E87DB3BB33C /* clickhouse-signed-v1.hex */ = {isa = PBXFileReference; path = "clickhouse-signed-v1.hex"; sourceTree = "<group>"; };
 		458733A3A628C9289EB6B3DB /* DesignLabComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabComponents.swift; sourceTree = "<group>"; };
 		4593C9F33EA2B77A8CB555A4 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
@@ -450,6 +452,7 @@
 				9E8F4B2D8575F664883970CD /* ApplicationRuntime.swift */,
 				92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */,
 				D00166DA6649C44AF44DC6CA /* WorkbenchBridgeConversions.swift */,
+				4187B078084E36F107491A35 /* WorkbenchCommands.swift */,
 			);
 			path = TableRockApp;
 			sourceTree = "<group>";
@@ -784,6 +787,7 @@
 				4E9E25C3BE62B8507E68FC45 /* ApplicationRuntime.swift in Sources */,
 				F42BEA2AD4B262850D8C3D96 /* TableRockApp.swift in Sources */,
 				2F1FCE7D6A6B5A253B35595D /* WorkbenchBridgeConversions.swift in Sources */,
+				CE3F361CE4393A1BB51A1637 /* WorkbenchCommands.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
