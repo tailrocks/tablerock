@@ -16,7 +16,7 @@ struct TableRockDesignLabApp: App {
     var body: some Scene {
         WindowGroup("TableRock Design Lab") {
             LabRootView(session: session)
-                .frame(minWidth: 980, minHeight: 680)
+                .frame(minWidth: 1280, minHeight: 760)
                 .environmentObject(session)
         }
         .defaultSize(
@@ -25,6 +25,7 @@ struct TableRockDesignLabApp: App {
         )
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
+        .restorationBehavior(.disabled)
         .commands { LabCommands(session: session) }
     }
 }
@@ -37,9 +38,22 @@ final class LabApplicationDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(150))
             openInitialWindowIfNeeded()
+            // AppKit can finish applying a previous close-window restoration
+            // after SwiftUI creates its first scene. Re-check once restoration
+            // has settled so repeated test and capture launches stay visible.
+            try? await Task.sleep(for: .milliseconds(900))
+            openInitialWindowIfNeeded()
             try? await Task.sleep(for: .milliseconds(150))
             sizeInitialWindow()
         }
+    }
+
+    func applicationShouldSaveApplicationState(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationShouldRestoreApplicationState(_ sender: NSApplication) -> Bool {
+        false
     }
 
     private func openInitialWindowIfNeeded() {
@@ -190,6 +204,7 @@ private struct LabAppToolbar: ToolbarContent {
             } label: {
                 Label(session.engine.connectionName, systemImage: session.engine.symbol)
             }
+            .accessibilityLabel("Database engine and connection")
             .accessibilityIdentifier("design-lab-engine-menu")
             .help("Database engine and connection")
         }

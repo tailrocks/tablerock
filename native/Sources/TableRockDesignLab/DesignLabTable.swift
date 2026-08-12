@@ -1,6 +1,33 @@
 import AppKit
 import SwiftUI
 
+private final class LabSelectionTableView: NSTableView {
+    override func mouseDown(with event: NSEvent) {
+        let clickedRow = row(at: convert(event.locationInWindow, from: nil))
+        super.mouseDown(with: event)
+        selectClickedRowIfNeeded(clickedRow)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        let clickedRow = row(at: convert(event.locationInWindow, from: nil))
+        selectClickedRowIfNeeded(clickedRow)
+        super.rightMouseDown(with: event)
+    }
+
+    private func selectClickedRowIfNeeded(_ row: Int) {
+        guard row >= 0, selectedRow != row else { return }
+        selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+    }
+}
+
+private final class LabTableCellView: NSTableCellView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Keep labels accessible while letting NSTableView own pointer
+        // selection and context-menu behavior for the whole row.
+        nil
+    }
+}
+
 struct LabNativeDataTable: NSViewRepresentable {
     let rows: [LabRow]
     let columns: [LabColumn]
@@ -14,8 +41,12 @@ struct LabNativeDataTable: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let table = NSTableView()
+        let table = LabSelectionTableView()
         table.identifier = NSUserInterfaceItemIdentifier("design-lab-native-grid")
+        table.setAccessibilityLabel("Customer result grid")
+        table.setAccessibilityHelp(
+            "Select rows, resize or reorder columns, and open row actions."
+        )
         table.usesAlternatingRowBackgroundColors = true
         table.allowsMultipleSelection = false
         table.allowsColumnReordering = true
@@ -39,6 +70,7 @@ struct LabNativeDataTable: NSViewRepresentable {
 
         let scrollView = NSScrollView()
         scrollView.identifier = NSUserInterfaceItemIdentifier("design-lab-grid-scroll")
+        scrollView.setAccessibilityLabel("Customer result grid")
         scrollView.documentView = table
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
@@ -54,17 +86,22 @@ struct LabNativeDataTable: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let table = scrollView.documentView as? NSTableView else { return }
-        table.reloadData()
+        if context.coordinator.renderedRows != rows {
+            context.coordinator.renderedRows = rows
+            table.reloadData()
+        }
         context.coordinator.restoreSelection()
     }
 
     @MainActor
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         var parent: LabNativeDataTable
+        var renderedRows: [LabRow]
         weak var tableView: NSTableView?
 
         init(parent: LabNativeDataTable) {
             self.parent = parent
+            renderedRows = parent.rows
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int {
@@ -99,7 +136,10 @@ struct LabNativeDataTable: NSViewRepresentable {
                   tableView.selectedRow >= 0,
                   tableView.selectedRow < parent.rows.count
             else { return }
-            parent.selectedRowID = parent.rows[tableView.selectedRow].id
+            let rowID = parent.rows[tableView.selectedRow].id
+            if parent.selectedRowID != rowID {
+                parent.selectedRowID = rowID
+            }
             parent.openInspector()
         }
 
@@ -118,6 +158,7 @@ struct LabNativeDataTable: NSViewRepresentable {
                   let selectedRowID = parent.selectedRowID,
                   let index = parent.rows.firstIndex(where: { $0.id == selectedRowID })
             else { return }
+            guard tableView.selectedRow != index else { return }
             tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
             tableView.scrollRowToVisible(index)
         }
@@ -135,7 +176,7 @@ struct LabNativeDataTable: NSViewRepresentable {
         }
 
         private func makeCell(identifier: NSUserInterfaceItemIdentifier) -> NSTableCellView {
-            let cell = NSTableCellView()
+            let cell = LabTableCellView()
             cell.identifier = identifier
             let label = NSTextField(labelWithString: "")
             label.font = .monospacedSystemFont(ofSize: 12, weight: .regular)

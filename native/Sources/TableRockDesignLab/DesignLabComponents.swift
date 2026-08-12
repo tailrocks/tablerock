@@ -240,7 +240,9 @@ struct LabContextToolbar: View {
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.visible)
-            .accessibilityLabel("Database context, Northstar Analytics, production")
+            .accessibilityLabel(
+                "Database context, \(session.engine.connectionName), production"
+            )
 
             Spacer(minLength: 8)
 
@@ -269,7 +271,12 @@ struct LabTabStrip: View {
 
     var body: some View {
         HStack(spacing: 1) {
-            LabDocumentTab(title: "customers", symbol: "tablecells", selected: !sqlSelected, dirty: true) {
+            LabDocumentTab(
+                title: "customers",
+                symbol: "tablecells",
+                selected: !sqlSelected,
+                dirty: session.pendingChangeCount > 0
+            ) {
                 session.show(.dataGrid)
             }
             LabDocumentTab(title: "Revenue by region", symbol: "chevron.left.forwardslash.chevron.right", selected: sqlSelected) {
@@ -361,57 +368,65 @@ struct LabCatalogSidebar: View {
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.75), in: .rect(cornerRadius: 7))
             .padding(10)
 
-            HStack {
-                Text("analytics")
-                    .font(.caption.weight(.semibold))
-                Spacer()
-                Text("public")
-                    .font(.caption2)
-                    .labSecondaryForeground()
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 6)
+            if session.fixtureSupportsSelection {
+                HStack {
+                    Text("analytics")
+                        .font(.caption.weight(.semibold))
+                    Spacer()
+                    Text("public")
+                        .font(.caption2)
+                        .labSecondaryForeground()
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    LabTreeRow(title: "Tables", symbol: "folder", depth: 0, expanded: true)
-                    ForEach(LabFixtures.catalog.prefix(compact ? 4 : 6)) { item in
-                        LabTreeRow(
-                            title: item.name,
-                            detail: compact ? nil : item.detail,
-                            symbol: item.symbol,
-                            depth: 1,
-                            selected: item.id == "customers"
-                        )
-                        .contentShape(.rect)
-                        .onTapGesture {
-                            session.show(.dataGrid)
-                        }
-                        .contextMenu {
-                            Button("Open \(item.name)") { session.show(.dataGrid) }
-                            Button("Open in New Query") { session.show(.sqlResults) }
-                            Divider()
-                            Button("Inspect Structure") {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        LabTreeRow(title: "Tables", symbol: "folder", depth: 0, expanded: true)
+                        ForEach(LabFixtures.catalog.prefix(compact ? 4 : 6)) { item in
+                            LabTreeRow(
+                                title: item.name,
+                                detail: compact ? nil : item.detail,
+                                symbol: item.symbol,
+                                depth: 1,
+                                selected: item.id == "customers"
+                            )
+                            .contentShape(.rect)
+                            .onTapGesture {
                                 session.show(.dataGrid)
-                                session.inspectorPresented = true
+                            }
+                            .contextMenu {
+                                Button("Open \(item.name)") { session.show(.dataGrid) }
+                                Button("Open in New Query") { session.show(.sqlResults) }
+                                Divider()
+                                Button("Inspect Structure") {
+                                    session.show(.dataGrid)
+                                    session.inspectorPresented = true
+                                }
                             }
                         }
+                        LabTreeRow(title: "Functions", detail: "18", symbol: "function", depth: 0)
+                        LabTreeRow(title: "Types", detail: "7", symbol: "curlybraces", depth: 0)
                     }
-                    LabTreeRow(title: "Functions", detail: "18", symbol: "function", depth: 0)
-                    LabTreeRow(title: "Types", detail: "7", symbol: "curlybraces", depth: 0)
+                    .padding(.horizontal, 6)
                 }
-                .padding(.horizontal, 6)
+            } else {
+                ContentUnavailableView {
+                    Label(catalogStateTitle, systemImage: catalogStateSymbol)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             Divider()
             HStack {
                 Label {
-                    Text("Connected").labPrimaryForeground()
+                    Text(connectionStateTitle).labPrimaryForeground()
                 } icon: {
-                    Image(systemName: "circle.fill").foregroundStyle(.green)
+                    Image(systemName: connectionStateSymbol)
+                        .foregroundStyle(connectionStateColor)
                 }
                 Spacer()
-                Text("18 ms")
+                Text(connectionStateDetail)
                     .labSecondaryForeground()
             }
             .font(.caption2)
@@ -420,6 +435,52 @@ struct LabCatalogSidebar: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Database catalog")
+    }
+
+    private var catalogStateTitle: String {
+        switch session.fixture {
+        case .empty: "No objects in public"
+        case .loading: "Loading catalog"
+        case .connectionError: "Catalog unavailable"
+        default: "Catalog"
+        }
+    }
+
+    private var catalogStateSymbol: String {
+        switch session.fixture {
+        case .empty: "tray"
+        case .loading: "arrow.triangle.2.circlepath"
+        case .connectionError: "exclamationmark.icloud"
+        default: "books.vertical"
+        }
+    }
+
+    private var connectionStateTitle: String {
+        switch session.fixture {
+        case .loading: "Connecting"
+        case .connectionError: "Unavailable"
+        default: "Connected"
+        }
+    }
+
+    private var connectionStateSymbol: String {
+        session.fixture == .loading ? "circle.dotted" : "circle.fill"
+    }
+
+    private var connectionStateColor: Color {
+        switch session.fixture {
+        case .loading: .orange
+        case .connectionError: .red
+        default: .green
+        }
+    }
+
+    private var connectionStateDetail: String {
+        switch session.fixture {
+        case .loading: "Waiting"
+        case .connectionError: "Offline"
+        default: "18 ms"
+        }
     }
 }
 
@@ -727,14 +788,20 @@ struct LabStatusBar: View {
             }
             .buttonStyle(.plain)
 
-            if reviewEmphasis {
-                Button("Review 4 Changes", systemImage: "checklist") {
+            if session.pendingChangeCount > 0 && reviewEmphasis {
+                Button("Review \(session.pendingChangeCount) Changes", systemImage: "checklist") {
                     session.reviewSheetPresented = true
                 }
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
+            } else if session.pendingChangeCount > 0 {
+                LabBadge(
+                    text: "\(session.pendingChangeCount) CHANGE\(session.pendingChangeCount == 1 ? "" : "S")",
+                    tint: .orange,
+                    symbol: "circle.fill"
+                )
             } else {
-                LabBadge(text: "4 CHANGES", tint: .orange, symbol: "circle.fill")
+                LabBadge(text: "NO CHANGES", tint: .secondary, symbol: "checkmark")
             }
         }
         .font(.caption)
@@ -778,6 +845,8 @@ struct LabValueInspector: View {
                         .help("Copy value")
                 }
                 Text(selectedValue)
+                    .accessibilityLabel(selectedValue)
+                    .accessibilityIdentifier("design-lab-inspector-value")
                     .font(.body.monospaced())
                     .fontWeight(preview == .increaseContrast ? .semibold : .regular)
                     .labPrimaryForeground()
@@ -840,6 +909,8 @@ private struct LabInspectorField: View {
 }
 
 struct LabChangeLedger: View {
+    @EnvironmentObject private var session: LabSession
+
     var compact = false
 
     var body: some View {
@@ -848,7 +919,7 @@ struct LabChangeLedger: View {
                 Label("Pending Changes", systemImage: "checklist")
                     .font(.headline)
                 Spacer()
-                Text("4")
+                Text(String(displayedChangeCount))
                     .font(.caption.weight(.bold))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
@@ -858,9 +929,16 @@ struct LabChangeLedger: View {
             .frame(height: 46)
             Divider()
 
-            ScrollView {
-                VStack(spacing: 8) {
-                    ForEach(LabFixtures.changes) { change in
+            if displayedChangeCount == 0 {
+                ContentUnavailableView(
+                    "No Pending Changes",
+                    systemImage: "checkmark.circle",
+                    description: Text("Edits appear here before execution.")
+                )
+            } else {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(visibleChanges) { change in
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
                                 LabBadge(text: change.kind.rawValue, tint: change.kind == .delete ? .red : .orange)
@@ -886,9 +964,10 @@ struct LabChangeLedger: View {
                         .padding(9)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 8))
+                        }
                     }
+                    .padding(10)
                 }
-                .padding(10)
             }
 
             Divider()
@@ -903,14 +982,26 @@ struct LabChangeLedger: View {
                 .font(.caption.weight(.semibold))
                 HStack {
                     Button("Discard") {}
+                        .disabled(displayedChangeCount == 0)
                     Spacer()
                     Button("Review & Apply") {}
                         .buttonStyle(.borderedProminent)
                         .tint(.orange)
+                        .disabled(displayedChangeCount == 0)
                 }
             }
             .padding(12)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var displayedChangeCount: Int {
+        session.surface == .changeReview
+            ? LabFixtures.changes.count
+            : session.pendingChangeCount
+    }
+
+    private var visibleChanges: [LabChange] {
+        Array(LabFixtures.changes.prefix(displayedChangeCount))
     }
 }

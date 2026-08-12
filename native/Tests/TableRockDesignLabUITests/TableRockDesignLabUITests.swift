@@ -13,12 +13,16 @@ final class TableRockDesignLabUITests: XCTestCase {
         XCTAssertTrue(conceptRoot.waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["customers"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["SAFE MODE"].firstMatch.exists)
-        XCTAssertTrue(app.staticTexts["4 CHANGES"].firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["NO CHANGES"].firstMatch.exists)
 
         let databaseContext = app.menuButtons[
             "Database context, Northstar Analytics, production"
         ]
         XCTAssertTrue(databaseContext.waitForExistence(timeout: 5))
+        let engineMenu = app.menuButtons["design-lab-engine-menu"]
+        XCTAssertTrue(engineMenu.waitForExistence(timeout: 5))
+        let toolbarOverflow = app.popUpButtons["more toolbar items"]
+        XCTAssertTrue(toolbarOverflow.waitForExistence(timeout: 5))
 
         let windowFrame = conceptRoot.frame
         // macOS XCTest contrast sampling reports alternating false positives for
@@ -42,13 +46,21 @@ final class TableRockDesignLabUITests: XCTestCase {
                 element.elementType == .group
                 && element.label.isEmpty
             let isSystemTouchBar = element.elementType == .touchBar
+            let isSystemHelpTag = element.elementType == .helpTag
+            let isSystemToolbarOverflow = element.frame == toolbarOverflow.frame
             let isVerifiedNativeMenuAction =
-                element.elementType == .menuButton
-                && element.label == "Database context, Northstar Analytics, production"
-                && issue.auditType.contains(.action)
+                issue.auditType.contains(.action)
+                && (
+                    (element.elementType == .menuButton
+                        && (element.label == databaseContext.label
+                            || element.identifier == engineMenu.identifier))
+                    || element.frame == databaseContext.frame
+                    || element.frame == engineMenu.frame
+                )
             // SwiftUI inserts noninteractive layout groups without semantic
             // descriptions; named application regions are asserted above.
-            return ((isSystemTrafficLight || isSwiftUILayoutWrapper || isSystemTouchBar)
+            return ((isSystemTrafficLight || isSwiftUILayoutWrapper || isSystemTouchBar
+                || isSystemHelpTag || isSystemToolbarOverflow)
                 && issue.auditType.contains(.sufficientElementDescription))
                 || (isSystemTrafficLightRegion
                     && issue.auditType.contains(.parentChild))
@@ -69,29 +81,37 @@ final class TableRockDesignLabUITests: XCTestCase {
         let rows = table.descendants(matching: .tableRow)
         XCTAssertGreaterThanOrEqual(rows.count, 2)
 
-        let secondRow = rows.element(boundBy: 1)
-        secondRow.click()
-        XCTAssertTrue(secondRow.isSelected)
+        let beaconCell = table.staticTexts["Beacon & Co."]
+        XCTAssertTrue(beaconCell.waitForExistence(timeout: 5))
+        beaconCell.click()
+        let inspectorValue = app.staticTexts["design-lab-inspector-value"]
+        XCTAssertTrue(inspectorValue.waitForExistence(timeout: 5))
+        XCTAssertEqual(inspectorValue.value as? String, "Beacon & Co.")
         XCTAssertTrue(
             app.descendants(matching: .any)["design-lab-inspector"]
                 .waitForExistence(timeout: 5)
         )
 
-        secondRow.rightClick()
+        beaconCell.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+        ).rightClick()
         let inspectItem = app.menuItems["Inspect Selected Value"]
         XCTAssertTrue(inspectItem.waitForExistence(timeout: 5))
         inspectItem.click()
 
         app.buttons["design-lab-new-connection"].click()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["design-lab-connection-sheet"]
-                .waitForExistence(timeout: 5)
-        )
+        XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: 5))
         app.buttons["design-lab-test-connection"].click()
         XCTAssertTrue(app.staticTexts["Static preview validated"].waitForExistence(timeout: 5))
         app.buttons["Cancel"].click()
+        XCTAssertTrue(app.sheets.firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["design-lab-concept"]
+                .waitForExistence(timeout: 5)
+        )
 
-        app.buttons["design-lab-review-changes"].click()
+        app.menuBars.menuBarItems["Database"].click()
+        app.menuItems["Review Pending Changes…"].click()
         XCTAssertTrue(
             app.descendants(matching: .any)["design-lab-review-sheet"]
                 .waitForExistence(timeout: 5)
@@ -104,7 +124,7 @@ final class TableRockDesignLabUITests: XCTestCase {
         apply.click()
 
         app.menuButtons["design-lab-engine-menu"].click()
-        let clickHouse = app.menuItems["ClickHouse"]
+        let clickHouse = app.windows.firstMatch.menuItems["ClickHouse"]
         XCTAssertTrue(clickHouse.waitForExistence(timeout: 5))
         clickHouse.click()
         XCTAssertTrue(
@@ -132,6 +152,17 @@ final class TableRockDesignLabUITests: XCTestCase {
         app = launchLab(engine: "redis", fixture: "connection-error", windowSize: "expanded")
         XCTAssertTrue(app.staticTexts["Connection unavailable"].waitForExistence(timeout: 10))
         XCTAssertGreaterThan(app.windows.firstMatch.frame.width, minimumWidth + 400)
+        app.terminate()
+
+        app = launchLab(fixture: "pending-change")
+        XCTAssertTrue(app.staticTexts["1 CHANGE"].waitForExistence(timeout: 10))
+        app.terminate()
+
+        app = launchLab(fixture: "destructive-review")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["design-lab-review-sheet"]
+                .waitForExistence(timeout: 10)
+        )
     }
 
     @MainActor

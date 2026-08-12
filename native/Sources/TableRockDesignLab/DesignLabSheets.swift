@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct LabConnectionSetupSheet: View {
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var session: LabSession
 
     @State private var name = "Northstar Analytics"
@@ -49,7 +48,7 @@ struct LabConnectionSetupSheet: View {
             .navigationTitle("New Connection")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { session.connectionSheetPresented = false }
                 }
                 ToolbarItemGroup(placement: .confirmationAction) {
                     Button("Test Connection") {
@@ -57,7 +56,7 @@ struct LabConnectionSetupSheet: View {
                     }
                     .accessibilityIdentifier("design-lab-test-connection")
                     Button("Save & Open") {
-                        dismiss()
+                        session.connectionSheetPresented = false
                         session.show(.dataGrid)
                     }
                     .buttonStyle(.borderedProminent)
@@ -66,12 +65,13 @@ struct LabConnectionSetupSheet: View {
             }
         }
         .frame(minWidth: 620, minHeight: 560)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("New connection setup")
         .accessibilityIdentifier("design-lab-connection-sheet")
     }
 }
 
 struct LabDestructiveReviewSheet: View {
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var session: LabSession
 
     @State private var confirmation = ""
@@ -128,13 +128,13 @@ struct LabDestructiveReviewSheet: View {
 
             HStack {
                 Button("Discard Changes", role: .destructive) {
-                    dismiss()
+                    session.reviewSheetPresented = false
                     session.show(.dataGrid)
                 }
                 Spacer()
-                Button("Back to Editing") { dismiss() }
+                Button("Back to Editing") { session.reviewSheetPresented = false }
                 Button("Apply on PRODUCTION", role: .destructive) {
-                    dismiss()
+                    session.reviewSheetPresented = false
                     session.show(.dataGrid)
                 }
                 .disabled(confirmation != "APPLY")
@@ -145,6 +145,8 @@ struct LabDestructiveReviewSheet: View {
         }
         .frame(minWidth: 680, minHeight: 590)
         .interactiveDismissDisabled(confirmation.isEmpty == false)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Destructive change review")
         .accessibilityIdentifier("design-lab-review-sheet")
     }
 }

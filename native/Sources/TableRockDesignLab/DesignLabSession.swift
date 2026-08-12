@@ -72,7 +72,7 @@ enum LabWindowSize: String, CaseIterable, Identifiable, Sendable {
 
     var dimensions: CGSize {
         switch self {
-        case .minimum: CGSize(width: 980, height: 680)
+        case .minimum: CGSize(width: 1_280, height: 760)
         case .typical: CGSize(width: 1_440, height: 900)
         case .expanded: CGSize(width: 1_720, height: 1_040)
         }
@@ -86,7 +86,13 @@ final class LabSession: ObservableObject {
     @Published var appearance: LabAppearance
     @Published var accessibility: LabAccessibilityMode
     @Published var engine: LabEngine
-    @Published var fixture: LabFixtureScenario
+    @Published var fixture: LabFixtureScenario {
+        didSet {
+            selectedRowID = fixtureRows.first?.id
+            inspectorPresented = surface == .dataGrid && fixtureSupportsSelection
+            reviewSheetPresented = fixture == .destructiveReview
+        }
+    }
     @Published var selectedRowID: Int?
     @Published var inspectorPresented: Bool
     @Published var connectionSheetPresented = false
@@ -109,19 +115,38 @@ final class LabSession: ObservableObject {
         captureMode = launch.captureMode
         windowSize = launch.windowSize
         inactiveCapture = launch.inactiveCapture
-        selectedRowID = launch.fixture == .empty ? nil : LabFixtures.rows.first?.id
+        selectedRowID = launch.fixture == .largeResult
+            ? LabFixtures.largeResultRows.first?.id
+            : (launch.fixture == .empty ? nil : LabFixtures.rows.first?.id)
         inspectorPresented = launch.surface == .dataGrid
+            && ![.empty, .loading, .connectionError].contains(launch.fixture)
         reviewSheetPresented = launch.fixture == .destructiveReview
+    }
+
+    var fixtureRows: [LabRow] {
+        fixture == .largeResult ? LabFixtures.largeResultRows : LabFixtures.rows
+    }
+
+    var fixtureSupportsSelection: Bool {
+        ![.empty, .loading, .connectionError].contains(fixture)
+    }
+
+    var pendingChangeCount: Int {
+        switch fixture {
+        case .pendingChange: 1
+        case .destructiveReview: LabFixtures.changes.count
+        default: 0
+        }
     }
 
     var selectedRow: LabRow? {
         guard let selectedRowID else { return nil }
-        return LabFixtures.rows.first { $0.id == selectedRowID }
+        return fixtureRows.first { $0.id == selectedRowID }
     }
 
     func show(_ surface: LabSurface) {
         self.surface = surface
-        inspectorPresented = surface == .dataGrid
+        inspectorPresented = surface == .dataGrid && fixtureSupportsSelection
     }
 
     func openConnection(_ connection: LabConnection) {

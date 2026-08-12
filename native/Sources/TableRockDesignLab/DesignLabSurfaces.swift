@@ -574,7 +574,7 @@ struct LabDataTable: View {
     }
 
     private var displayedRows: [LabRow] {
-        session.fixture == .largeResult ? LabFixtures.largeResultRows : LabFixtures.rows
+        session.fixtureRows
     }
 }
 

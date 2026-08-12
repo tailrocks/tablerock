@@ -73,6 +73,6 @@ import Testing
         .destructiveReview,
     ])
     #expect(Set(LabWindowSize.allCases) == [.minimum, .typical, .expanded])
-    #expect(LabWindowSize.minimum.dimensions.width >= 980)
+    #expect(LabWindowSize.minimum.dimensions == .init(width: 1_280, height: 760))
     #expect(LabWindowSize.expanded.dimensions.width > LabWindowSize.typical.dimensions.width)
 }

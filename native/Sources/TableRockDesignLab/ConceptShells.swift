@@ -352,11 +352,19 @@ private struct LabGridCanvas: View {
                             LabBadge(text: "PRODUCTION", tint: .orange, symbol: "exclamationmark.triangle.fill")
                             Divider().frame(height: 18)
                             Label("48,224 rows", systemImage: "tablecells")
-                            Label("4 changes", systemImage: "checklist")
+                            if session.pendingChangeCount > 0 {
+                                Label(
+                                    "\(session.pendingChangeCount) changes",
+                                    systemImage: "checklist"
+                                )
                                 .foregroundStyle(.orange)
-                            Button("Review") { session.reviewSheetPresented = true }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.orange)
+                                Button("Review") { session.reviewSheetPresented = true }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.orange)
+                            } else {
+                                Label("No pending changes", systemImage: "checkmark.circle")
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .font(.caption)
                     }

@@ -82,11 +82,14 @@ The word list is defense in depth, not the module boundary itself.
 
 ## Capture contract
 
-- Fixed 1440×900 content size at 2× display scale when available.
-- One filename per concept, surface, appearance, and accessibility mode.
-- At minimum: all five surfaces for each concept in light; the Data Grid and
-  SQL + Results surfaces in dark; the lead Data Grid in all three explicit
-  accessibility previews.
+- Window sizes are fixed at 1280×760 minimum, 1440×900 typical, and 1720×1040
+  expanded content points; captures record actual pixel dimensions.
+- One filename per concept, surface, appearance, accessibility mode, engine,
+  fixture, window size, and activity state.
+- The 55-capture gate matrix includes all five light surfaces per concept,
+  two dark work surfaces per concept, one inactive window per concept, three
+  explicit accessibility previews, two alternate sizes, eight fixture
+  scenarios, and two alternate engines.
 - No real connection names, credentials, SQL, values, usernames, hostnames, or
   application data may appear.
 - Capture manifest records git revision, host, Xcode/SDK, launch arguments,
