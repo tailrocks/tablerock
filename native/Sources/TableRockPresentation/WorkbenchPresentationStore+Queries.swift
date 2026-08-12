@@ -138,10 +138,15 @@ extension WorkbenchPresentationStore {
   func runQuery() async {
     let tab = activeQueryTab
     let sql = tab.statementText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !sql.isEmpty else { return }
+    guard !sql.isEmpty else {
+      tab.queryError = "Enter SQL before running."
+      tab.selectedResultSection = "messages"
+      return
+    }
     tab.querySummary = nil
     tab.queryError = nil
     tab.resultTable = nil
+    tab.selectedResultSection = "results"
     do {
       if connectedEngine != "redis" {
         let names = try await client?.inspectNamedParameters(statement: sql) ?? []
@@ -164,6 +169,7 @@ extension WorkbenchPresentationStore {
       }
     } catch {
       tab.queryError = "Query failed: \(error)"
+      tab.selectedResultSection = "messages"
     }
   }
 
@@ -171,6 +177,7 @@ extension WorkbenchPresentationStore {
     guard let statement = parameterizedStatement, !isRunning else { return }
     let tab = activeQueryTab
     queryParameterError = nil
+    tab.selectedResultSection = "results"
     do {
       if let table = try await fetchPage(
         intent: "execute", statement: statement, tab: tab,
@@ -189,6 +196,7 @@ extension WorkbenchPresentationStore {
       queryParameterBindings = []
     } catch {
       queryParameterError = "Parameterized query failed: \(error)"
+      tab.selectedResultSection = "messages"
     }
   }
 
@@ -204,6 +212,7 @@ extension WorkbenchPresentationStore {
     let sql = tab.statementText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !sql.isEmpty else {
       tab.queryError = "EXPLAIN needs SQL in the active editor"
+      tab.selectedResultSection = "messages"
       return
     }
     tab.querySummary = nil
@@ -219,9 +228,10 @@ extension WorkbenchPresentationStore {
       tab.resultTable = table
       tab.explainPlan = table.rows.compactMap(\.first).joined(separator: "\n")
       tab.querySummary = "explain · \(counted(table.rows.count, "line"))"
-      explainPresented = true
+      tab.selectedResultSection = "plan"
     } catch {
       tab.queryError = "Explain failed: \(error)"
+      tab.selectedResultSection = "messages"
     }
   }
 
@@ -246,4 +256,5 @@ extension WorkbenchPresentationStore {
     } catch {
       copyError = "Copy explain plan failed: \(error)"
     }
-  }}
+  }
+}

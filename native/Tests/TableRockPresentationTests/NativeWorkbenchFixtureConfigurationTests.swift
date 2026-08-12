@@ -1,14 +1,51 @@
 #if TABLEROCK_DEVELOPMENT_SUPPORT
 
   import XCTest
+  import TableRockFeature
 
   @testable import TableRockPresentation
 
   final class NativeWorkbenchFixtureConfigurationTests: XCTestCase {
+    @MainActor
+    func testEmptyQueryRunSelectsExplicitMessagesState() async {
+      let configuration = NativeWorkbenchFixtureConfiguration.from(environment: [:])
+      let store = WorkbenchPresentationStore(client: nil, fixtures: configuration)
+      store.queryText = "  \n"
+
+      await store.runQuery()
+
+      XCTAssertEqual(store.queryError, "Enter SQL before running.")
+      XCTAssertEqual(store.activeQueryTab.selectedResultSection, "messages")
+    }
+
+    @MainActor
+    func testMixedWorkspaceOrderReconcilesLiveTabsWithoutDuplicates() {
+      let configuration = NativeWorkbenchFixtureConfiguration.from(environment: [:])
+      let store = WorkbenchPresentationStore(client: nil, fixtures: configuration)
+      let query = store.queryTabs[0]
+      let object = NativeObjectTab(
+        id: UUID(),
+        node: WorkbenchCatalogNode(
+          idBytes: Data(repeating: 1, count: 16), parentIdBytes: nil,
+          depth: 0, name: "customers", kind: "postgresql_table",
+          childrenState: "not_applicable", expandable: false))
+      let trailingQuery = NativeQueryTab(id: UUID(), title: "Trailing", statementText: "")
+      store.objectTabs = [object]
+      store.queryTabs.append(trailingQuery)
+      store.workspaceTabOrder = [
+        .object(object.id), .query(query.id), .object(object.id), .query(UUID()),
+      ]
+
+      XCTAssertEqual(
+        store.orderedWorkspaceTabs,
+        [.object(object.id), .query(query.id), .query(trailingQuery.id)])
+    }
+
     func testEmptyEnvironmentDisablesEveryFixture() {
       let configuration = NativeWorkbenchFixtureConfiguration.from(environment: [:])
 
       XCTAssertFalse(configuration.nativeWorkbench)
+      XCTAssertFalse(configuration.nativeWorkbenchQuery)
       XCTAssertFalse(configuration.multiWindow)
       XCTAssertFalse(configuration.objectTabs)
       XCTAssertFalse(configuration.dataMovementUI)
@@ -40,6 +77,7 @@
     func testEnvironmentProjectsEveryFixtureValue() {
       let booleanKeys = [
         "TABLEROCK_FIXTURE_NATIVE_WORKBENCH",
+        "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_QUERY",
         "TABLEROCK_FIXTURE_MULTI_WINDOW",
         "TABLEROCK_FIXTURE_OBJECT_TABS",
         "TABLEROCK_FIXTURE_DATA_MOVEMENT_UI",
@@ -72,6 +110,7 @@
       let configuration = NativeWorkbenchFixtureConfiguration.from(environment: environment)
 
       XCTAssertTrue(configuration.nativeWorkbench)
+      XCTAssertTrue(configuration.nativeWorkbenchQuery)
       XCTAssertTrue(configuration.multiWindow)
       XCTAssertTrue(configuration.objectTabs)
       XCTAssertTrue(configuration.dataMovementUI)

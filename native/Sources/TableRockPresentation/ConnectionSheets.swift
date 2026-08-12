@@ -249,39 +249,3 @@ struct QuickSwitcherSheet: View {
     .frame(minWidth: 560, minHeight: 420)
   }
 }
-
-struct ExplainPlanSheet: View {
-  @Environment(WorkbenchPresentationStore.self) private var model
-  @Environment(\.dismiss) private var dismiss
-
-  var body: some View {
-    NavigationStack {
-      VStack(spacing: 0) {
-        HStack {
-          Spacer()
-          Button("Copy") { model.copyExplainPlan() }
-            .accessibilityIdentifier("explain.copy")
-        }
-        .padding(.horizontal)
-        ScrollView {
-          Text(model.activeExplainPlan ?? "No plan")
-            .font(.system(.body, design: .monospaced))
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .accessibilityIdentifier("explain.plan")
-        }
-      }
-      .navigationTitle("Explain Plan")
-      .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Done") {
-            model.explainPresented = false
-            dismiss()
-          }
-        }
-      }
-    }
-    .frame(minWidth: 640, minHeight: 480)
-  }
-}

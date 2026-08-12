@@ -56,6 +56,18 @@ enum QuickSwitcherTarget {
   case savedQuery(Int64)
 }
 
+enum NativeWorkspaceTabReference: Hashable, Identifiable {
+  case query(UUID)
+  case object(UUID)
+
+  var id: String {
+    switch self {
+    case .query(let id): "query:\(id.uuidString.lowercased())"
+    case .object(let id): "object:\(id.uuidString.lowercased())"
+    }
+  }
+}
+
 struct QuickSwitcherItem: Identifiable {
   let id: String
   let title: String
@@ -125,6 +137,7 @@ final class NativeQueryTab: Identifiable {
   var copyError: String?
   var quickFilter = ""
   var explainPlan: String?
+  var selectedResultSection = "results"
   var editorSelection = NSRange(location: 0, length: 0)
   var findScopeRange: NSRange?
   var lastFindMatch: NSRange?

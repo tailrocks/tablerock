@@ -35,6 +35,7 @@ extension WorkbenchPresentationStore {
         )
         queryTabs = [tab]
         selectedQueryTabId = tab.id
+        workspaceTabOrder = [.query(tab.id)]
         return
       }
       guard applySessionIntent(record.intent) else {
@@ -73,6 +74,7 @@ extension WorkbenchPresentationStore {
     guard !restored.isEmpty, Int(intent.selectedTab) < restored.count else { return false }
     queryTabs = restored
     selectedQueryTabId = restored[Int(intent.selectedTab)].id
+    workspaceTabOrder = restored.map { .query($0.id) }
     formDatabase = intent.database
     return true
   }
@@ -93,6 +95,7 @@ extension WorkbenchPresentationStore {
       tab.isRunning = false
     }
     objectTabs = []
+    workspaceTabOrder = queryTabs.map { .query($0.id) }
     selectedObjectTabId = nil
     selectedWorkbenchKind = "query"
     queryStateRevision &+= 1

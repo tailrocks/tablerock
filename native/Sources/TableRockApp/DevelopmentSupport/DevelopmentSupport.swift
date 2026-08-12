@@ -41,9 +41,8 @@ struct NativeAppearanceFixture: Sendable {
     )
   }()
 
-  var isActive: Bool {
-    scheme != nil || increasedContrast || reduceTransparency || reduceMotion
-      || differentiateWithoutColor
+  var showsFixtureLabel: Bool {
+    increasedContrast || reduceTransparency || reduceMotion || differentiateWithoutColor
   }
 
   var label: String {
@@ -60,11 +59,20 @@ struct NativeAppearanceFixture: Sendable {
 
   @MainActor
   func applyApplicationAppearance() {
-    guard increasedContrast else { return }
-    let name: NSAppearance.Name =
-      scheme == .dark
-      ? .accessibilityHighContrastDarkAqua
-      : .accessibilityHighContrastAqua
+    let name: NSAppearance.Name
+    if increasedContrast {
+      name =
+        scheme == .dark
+        ? .accessibilityHighContrastDarkAqua
+        : .accessibilityHighContrastAqua
+    } else if let scheme {
+      name =
+        scheme == .dark
+        ? .darkAqua
+        : .aqua
+    } else {
+      return
+    }
     NSApplication.shared.appearance = NSAppearance(named: name)
   }
 }
@@ -87,7 +95,7 @@ struct NativeAppearanceFixtureModifier: ViewModifier {
         }
       }
       .overlay(alignment: .bottomTrailing) {
-        if fixture.isActive {
+        if fixture.showsFixtureLabel {
           Text("Fixture · \(fixture.label)")
             .font(.caption2)
             .padding(4)

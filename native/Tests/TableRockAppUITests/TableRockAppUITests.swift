@@ -34,6 +34,32 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testNativeWorkbenchFixtureOwnsQueryPlane() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_QUERY": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["query.header"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.textViews["query.editor"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["query.result-section"].exists)
+    XCTAssertTrue(app.tables["results.grid"].exists)
+    XCTAssertTrue(app.buttons["query.run"].exists)
+    let customersTab = app.buttons["customers"]
+    let queryTab = app.buttons["Revenue by region"]
+    let ordersTab = app.buttons["orders"]
+    XCTAssertTrue(customersTab.waitForExistence(timeout: 10))
+    XCTAssertTrue(queryTab.exists)
+    XCTAssertTrue(ordersTab.exists)
+    XCTAssertLessThan(customersTab.frame.minX, queryTab.frame.minX)
+    XCTAssertLessThan(queryTab.frame.minX, ordersTab.frame.minX)
+    let status = app.staticTexts["query.status"]
+    XCTAssertTrue(status.exists)
+    XCTAssertEqual(status.value as? String, "100 rows · 126 ms · success")
+  }
+
+  @MainActor
   func testSlowQueryCancelsThroughRustBoundary() throws {
     let app = launch(
       scenario: "slow-until-cancelled",
@@ -472,7 +498,7 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
-  func testExplainRunsThroughRustIntentAndOpensPlanViewer() throws {
+  func testExplainRunsThroughRustIntentAndOpensPlanPlane() throws {
     let app = launch(scenario: "success")
     let connect = app.buttons["connection.direct.connect"]
     XCTAssertTrue(connect.waitForExistence(timeout: 10))

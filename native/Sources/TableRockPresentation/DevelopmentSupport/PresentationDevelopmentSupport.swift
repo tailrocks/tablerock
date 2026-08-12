@@ -6,6 +6,7 @@
 
   struct NativeWorkbenchFixtureConfiguration: Sendable, Equatable {
     let nativeWorkbench: Bool
+    let nativeWorkbenchQuery: Bool
     let multiWindow: Bool
     let objectTabs: Bool
     let dataMovementUI: Bool
@@ -38,6 +39,7 @@
     static func from(environment: [String: String]) -> NativeWorkbenchFixtureConfiguration {
       NativeWorkbenchFixtureConfiguration(
         nativeWorkbench: environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH"] == "1",
+        nativeWorkbenchQuery: environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_QUERY"] == "1",
         multiWindow: environment["TABLEROCK_FIXTURE_MULTI_WINDOW"] == "1",
         objectTabs: environment["TABLEROCK_FIXTURE_OBJECT_TABS"] == "1",
         dataMovementUI: environment["TABLEROCK_FIXTURE_DATA_MOVEMENT_UI"] == "1",

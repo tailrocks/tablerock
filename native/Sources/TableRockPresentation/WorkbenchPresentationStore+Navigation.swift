@@ -14,6 +14,7 @@ extension WorkbenchPresentationStore {
       statementText: ""
     )
     queryTabs.append(tab)
+    workspaceTabOrder.append(.query(tab.id))
     selectedQueryTabId = tab.id
     selectedWorkbenchKind = "query"
     Task { await persistSessionIntent() }
@@ -53,6 +54,7 @@ extension WorkbenchPresentationStore {
       return
     }
     queryTabs.remove(at: index)
+    workspaceTabOrder.removeAll(where: { $0 == .query(tab.id) })
     if selectedQueryTabId == tab.id {
       selectedQueryTabId = queryTabs[min(index, queryTabs.count - 1)].id
     }
@@ -99,6 +101,7 @@ extension WorkbenchPresentationStore {
     objectTabs.last(where: { !$0.pinned })?.pinned = true
     let tab = NativeObjectTab(id: dependencies.identifiers.next(), node: node)
     objectTabs.append(tab)
+    workspaceTabOrder.append(.object(tab.id))
     selectedObjectTabId = tab.id
     selectedWorkbenchKind = "object"
     await loadObjectTab(tab)
@@ -129,6 +132,7 @@ extension WorkbenchPresentationStore {
     }
     guard let index = objectTabs.firstIndex(where: { $0.id == tab.id }) else { return }
     objectTabs.remove(at: index)
+    workspaceTabOrder.removeAll(where: { $0 == .object(tab.id) })
     if selectedObjectTabId == tab.id {
       if objectTabs.isEmpty {
         selectedObjectTabId = nil

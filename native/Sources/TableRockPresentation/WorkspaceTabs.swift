@@ -8,83 +8,15 @@ struct QueryTabStrip: View {
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: 1) {
-        ForEach(model.queryTabs) { tab in
-          let selected = model.queryWorkbenchSelected && tab.id == model.selectedQueryTabId
-          HStack(spacing: 0) {
-            WorkbenchDocumentTab(
-              title: tab.title,
-              symbol: "chevron.left.forwardslash.chevron.right",
-              selected: selected,
-              dirty: tab.statementText != tab.sqlFileBaseline,
-              running: tab.isRunning
-            ) {
-              model.selectQueryTab(tab)
+        ForEach(model.orderedWorkspaceTabs) { reference in
+          switch reference {
+          case .query(let id):
+            if let tab = model.queryTabs.first(where: { $0.id == id }) {
+              QueryDocumentTab(tab: tab)
             }
-            .accessibilityIdentifier("query.tab.\(tab.id.uuidString.lowercased())")
-            .accessibilityValue(selected ? "Selected" : "Not selected")
-
-            Menu {
-              Button("Rename…") { model.beginRenameQueryTab(tab) }
-              Button("Close", role: .destructive) { model.requestCloseQueryTab(tab) }
-                .accessibilityIdentifier("query.tab.close")
-                .disabled(model.queryTabs.count == 1 || tab.isRunning)
-            } label: {
-              Image(systemName: "xmark")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.tertiary)
-                .frame(width: 18, height: 28)
-            }
-            .menuStyle(.borderlessButton)
-            .accessibilityIdentifier("query.tab.actions.\(tab.id.uuidString.lowercased())")
-            .accessibilityLabel("Actions for \(tab.title)")
-          }
-          .padding(.trailing, 2)
-          .background(selected ? Color(nsColor: .controlBackgroundColor) : .clear)
-          .clipShape(.rect(cornerRadius: 7))
-          .overlay {
-            if selected {
-              RoundedRectangle(cornerRadius: 7)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-            }
-          }
-        }
-
-        ForEach(model.objectTabs) { tab in
-          let selected = !model.queryWorkbenchSelected && tab.id == model.selectedObjectTabId
-          HStack(spacing: 0) {
-            WorkbenchDocumentTab(
-              title: tab.title,
-              symbol: "tablecells",
-              selected: selected,
-              dirty: model.changeReviewOpen && selected,
-              running: tab.isRunning
-            ) {
-              model.selectObjectTab(tab)
-            }
-            .accessibilityIdentifier("object.tab.\(tab.id.uuidString.lowercased())")
-            .accessibilityValue(selected ? "Selected" : "Not selected")
-
-            Menu {
-              if !tab.pinned { Button("Pin") { model.pinObjectTab(tab) } }
-              Button("Refresh") { Task { await model.reloadObjectTab() } }
-              Button("Close", role: .destructive) { model.closeObjectTab(tab) }
-                .disabled(tab.isRunning)
-            } label: {
-              Image(systemName: "xmark")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.tertiary)
-                .frame(width: 18, height: 28)
-            }
-            .menuStyle(.borderlessButton)
-            .accessibilityLabel("Actions for object \(tab.title)")
-          }
-          .padding(.trailing, 2)
-          .background(selected ? Color(nsColor: .controlBackgroundColor) : .clear)
-          .clipShape(.rect(cornerRadius: 7))
-          .overlay {
-            if selected {
-              RoundedRectangle(cornerRadius: 7)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+          case .object(let id):
+            if let tab = model.objectTabs.first(where: { $0.id == id }) {
+              ObjectDocumentTab(tab: tab)
             }
           }
         }
@@ -108,6 +40,104 @@ struct QueryTabStrip: View {
     .background(Color(nsColor: .windowBackgroundColor))
     .overlay(alignment: .bottom) { Divider() }
     .accessibilityIdentifier("workbench.tab-strip")
+  }
+}
+
+private struct QueryDocumentTab: View {
+  @Environment(WorkbenchPresentationStore.self) private var model
+  let tab: NativeQueryTab
+
+  private var selected: Bool {
+    model.queryWorkbenchSelected && tab.id == model.selectedQueryTabId
+  }
+
+  var body: some View {
+    HStack(spacing: 0) {
+      WorkbenchDocumentTab(
+        title: tab.title,
+        symbol: "chevron.left.forwardslash.chevron.right",
+        selected: selected,
+        dirty: tab.statementText != tab.sqlFileBaseline,
+        running: tab.isRunning
+      ) {
+        model.selectQueryTab(tab)
+      }
+      .accessibilityIdentifier("query.tab.\(tab.id.uuidString.lowercased())")
+      .accessibilityValue(selected ? "Selected" : "Not selected")
+
+      Menu {
+        Button("Rename…") { model.beginRenameQueryTab(tab) }
+        Button("Close", role: .destructive) { model.requestCloseQueryTab(tab) }
+          .accessibilityIdentifier("query.tab.close")
+          .disabled(model.queryTabs.count == 1 || tab.isRunning)
+      } label: {
+        Image(systemName: "xmark")
+          .font(.system(size: 8, weight: .bold))
+          .foregroundStyle(.tertiary)
+          .frame(width: 18, height: 28)
+      }
+      .menuStyle(.borderlessButton)
+      .accessibilityIdentifier("query.tab.actions.\(tab.id.uuidString.lowercased())")
+      .accessibilityLabel("Actions for \(tab.title)")
+    }
+    .modifier(SelectedDocumentTabBackground(selected: selected))
+  }
+}
+
+private struct ObjectDocumentTab: View {
+  @Environment(WorkbenchPresentationStore.self) private var model
+  let tab: NativeObjectTab
+
+  private var selected: Bool {
+    !model.queryWorkbenchSelected && tab.id == model.selectedObjectTabId
+  }
+
+  var body: some View {
+    HStack(spacing: 0) {
+      WorkbenchDocumentTab(
+        title: tab.title,
+        symbol: "tablecells",
+        selected: selected,
+        dirty: model.changeReviewOpen && selected,
+        running: tab.isRunning
+      ) {
+        model.selectObjectTab(tab)
+      }
+      .accessibilityIdentifier("object.tab.\(tab.id.uuidString.lowercased())")
+      .accessibilityValue(selected ? "Selected" : "Not selected")
+
+      Menu {
+        if !tab.pinned { Button("Pin") { model.pinObjectTab(tab) } }
+        Button("Refresh") { Task { await model.reloadObjectTab() } }
+        Button("Close", role: .destructive) { model.closeObjectTab(tab) }
+          .disabled(tab.isRunning)
+      } label: {
+        Image(systemName: "xmark")
+          .font(.system(size: 8, weight: .bold))
+          .foregroundStyle(.tertiary)
+          .frame(width: 18, height: 28)
+      }
+      .menuStyle(.borderlessButton)
+      .accessibilityLabel("Actions for object \(tab.title)")
+    }
+    .modifier(SelectedDocumentTabBackground(selected: selected))
+  }
+}
+
+private struct SelectedDocumentTabBackground: ViewModifier {
+  let selected: Bool
+
+  func body(content: Content) -> some View {
+    content
+      .padding(.trailing, 2)
+      .background(selected ? Color(nsColor: .controlBackgroundColor) : .clear)
+      .clipShape(.rect(cornerRadius: 7))
+      .overlay {
+        if selected {
+          RoundedRectangle(cornerRadius: 7)
+            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        }
+      }
   }
 }
 

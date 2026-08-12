@@ -26,7 +26,6 @@ public final class WorkbenchPresentationStore {
   var externalUrlReview: ExternalUrlReview?
   var quickSwitcherPresented = false
   var quickSwitcherSearch = ""
-  var explainPresented = false
   #if TABLEROCK_DEVELOPMENT_SUPPORT
     var externalUrlFixtureConsumed = false
   #endif
@@ -177,6 +176,7 @@ public final class WorkbenchPresentationStore {
   var queryTabs: [NativeQueryTab]
   var selectedQueryTabId: UUID
   var objectTabs: [NativeObjectTab] = []
+  var workspaceTabOrder: [NativeWorkspaceTabReference] = []
   var selectedObjectTabId: UUID?
   var selectedWorkbenchKind = "query"
   var pendingQueryTabClose: NativeQueryTab?
@@ -225,7 +225,6 @@ public final class WorkbenchPresentationStore {
   var activeQueryTab: NativeQueryTab {
     queryTabs.first(where: { $0.id == selectedQueryTabId }) ?? queryTabs[0]
   }
-  var activeExplainPlan: String? { activeQueryTab.explainPlan }
   var activeQueryTabForPresentation: NativeQueryTab { activeQueryTab }
   var activeObjectTab: NativeObjectTab? {
     guard let selectedObjectTabId else { return nil }
@@ -348,6 +347,30 @@ public final class WorkbenchPresentationStore {
   var relationContinuumError: String?
   var relationContinuumLoading = false
   var queryWorkbenchSelected: Bool { selectedWorkbenchKind == "query" }
+  var orderedWorkspaceTabs: [NativeWorkspaceTabReference] {
+    let queryIds = Set(queryTabs.map(\.id))
+    let objectIds = Set(objectTabs.map(\.id))
+    var seen = Set<NativeWorkspaceTabReference>()
+    var result = workspaceTabOrder.filter { reference in
+      let exists =
+        switch reference {
+        case .query(let id): queryIds.contains(id)
+        case .object(let id): objectIds.contains(id)
+        }
+      return exists && seen.insert(reference).inserted
+    }
+    result.append(
+      contentsOf: queryTabs.compactMap { tab in
+        let reference = NativeWorkspaceTabReference.query(tab.id)
+        return seen.insert(reference).inserted ? reference : nil
+      })
+    result.append(
+      contentsOf: objectTabs.compactMap { tab in
+        let reference = NativeWorkspaceTabReference.object(tab.id)
+        return seen.insert(reference).inserted ? reference : nil
+      })
+    return result
+  }
   var hasRunningWorkbench: Bool {
     queryTabs.contains(where: \.isRunning) || objectTabs.contains(where: \.isRunning)
       || redisSubscriptionIsActive
@@ -514,6 +537,7 @@ public final class WorkbenchPresentationStore {
       )
       queryTabs = [tab]
       selectedQueryTabId = tab.id
+      workspaceTabOrder = [.query(tab.id)]
       installPerformanceFixtureIfRequested()
     }
 
@@ -551,13 +575,14 @@ public final class WorkbenchPresentationStore {
       )
       queryTabs = [tab]
       selectedQueryTabId = tab.id
+      workspaceTabOrder = [.query(tab.id)]
     }
   #endif
 
   public func initialize() async {
     #if TABLEROCK_DEVELOPMENT_SUPPORT
-      if fixtures.nativeWorkbench {
-        installNativeWorkbenchFixture()
+      if fixtures.nativeWorkbench || fixtures.nativeWorkbenchQuery {
+        installNativeWorkbenchFixture(selectsQuery: fixtures.nativeWorkbenchQuery)
         return
       }
       if fixtures.multiWindow {
@@ -1272,7 +1297,7 @@ public final class WorkbenchPresentationStore {
   }
 
   #if TABLEROCK_DEVELOPMENT_SUPPORT
-    private func installNativeWorkbenchFixture() {
+    private func installNativeWorkbenchFixture(selectsQuery: Bool) {
       let rootId = Data(repeating: 6, count: 16)
       let customersNode = WorkbenchCatalogNode(
         idBytes: Data(repeating: 7, count: 16), parentIdBytes: rootId,
@@ -1371,9 +1396,25 @@ public final class WorkbenchPresentationStore {
       objectTabs = [customers, orders]
       activeQueryTab.title = "Revenue by region"
       activeQueryTab.statementText =
-        "SELECT region, sum(monthly_revenue) FROM analytics.customers GROUP BY region;"
+        """
+        SELECT
+          company_name,
+          region,
+          plan,
+          monthly_revenue
+        FROM analytics.customers
+        WHERE active = true
+          AND monthly_revenue >= 5_000
+        ORDER BY monthly_revenue DESC
+        LIMIT 100;
+        """
+      activeQueryTab.resultTable = customers.resultTable
+      activeQueryTab.resultIdData = Data(repeating: 15, count: 16)
+      activeQueryTab.resultRevision = 1
+      activeQueryTab.querySummary = "100 rows · 126 ms · success"
+      workspaceTabOrder = [.object(customers.id), .query(activeQueryTab.id), .object(orders.id)]
       selectedObjectTabId = customers.id
-      selectedWorkbenchKind = "object"
+      selectedWorkbenchKind = selectsQuery ? "query" : "object"
       status = "Native Workbench fixture"
     }
 

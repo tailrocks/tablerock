@@ -65,9 +65,6 @@ public struct ContentView: View {
     .sheet(isPresented: $model.quickSwitcherPresented) {
       QuickSwitcherSheet()
     }
-    .sheet(isPresented: $model.explainPresented) {
-      ExplainPlanSheet()
-    }
     .sheet(isPresented: $model.historyPresented) {
       HistorySheet()
     }

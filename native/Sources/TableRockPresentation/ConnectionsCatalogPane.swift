@@ -116,6 +116,8 @@ struct ConnectionsCatalogPane: View {
         Image(systemName: connectionSymbol)
           .foregroundStyle(connectionColor)
         Text(connectionTitle)
+          .accessibilityIdentifier("connection.status")
+          .accessibilityValue(connectionTitle)
         Spacer()
         if let elapsed = model.sessionHealth?.elapsedMillis {
           Text("\(elapsed) ms")

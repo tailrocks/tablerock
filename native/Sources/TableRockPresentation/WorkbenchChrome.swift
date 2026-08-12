@@ -279,7 +279,9 @@ struct WorkbenchStatusBar: View {
 
   var body: some View {
     Group {
-      if let tab = model.selectedObjectTab, !tab.kind.hasPrefix("redis_key_") {
+      if !model.queryWorkbenchSelected, let tab = model.selectedObjectTab,
+        !tab.kind.hasPrefix("redis_key_")
+      {
         objectStatus(tab)
       } else {
         HStack(spacing: 8) {
