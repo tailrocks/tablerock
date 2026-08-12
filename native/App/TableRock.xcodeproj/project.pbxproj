@@ -72,6 +72,7 @@
 		F212B359F604BAA292F4664F /* ColumnHeaderPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6AFA7C53FF20F48FF62523 /* ColumnHeaderPresentationTests.swift */; };
 		F3E6C5EB63188CF0940F0330 /* WorkbenchTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD18301D71E2140043B680F /* WorkbenchTypes.swift */; };
 		F42BEA2AD4B262850D8C3D96 /* TableRockApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */; };
+		FE135630C789CBC06C06930C /* PresentationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC6A08042DF578C0DAE913EA /* PresentationModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -232,6 +233,7 @@
 		F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TableRockFeature.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5A94F4528ED04C3B8016BDA /* AppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependencies.swift; sourceTree = "<group>"; };
 		F9C1E6469A2ACF82CA630D65 /* BridgeModelLifetimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeModelLifetimeTests.swift; sourceTree = "<group>"; };
+		FC6A08042DF578C0DAE913EA /* PresentationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresentationModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -450,6 +452,7 @@
 				0F2C76DDF73A5760AD61701F /* ApplicationPorts.swift */,
 				278D2E3A88447819988515D3 /* ApplicationRoot.swift */,
 				9E8F4B2D8575F664883970CD /* ApplicationRuntime.swift */,
+				FC6A08042DF578C0DAE913EA /* PresentationModels.swift */,
 				92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */,
 				D00166DA6649C44AF44DC6CA /* WorkbenchBridgeConversions.swift */,
 				4187B078084E36F107491A35 /* WorkbenchCommands.swift */,
@@ -785,6 +788,7 @@
 				57441F98AF5BC1313E70A603 /* ApplicationPorts.swift in Sources */,
 				E27DCDE16F7AF51AC934408D /* ApplicationRoot.swift in Sources */,
 				4E9E25C3BE62B8507E68FC45 /* ApplicationRuntime.swift in Sources */,
+				FE135630C789CBC06C06930C /* PresentationModels.swift in Sources */,
 				F42BEA2AD4B262850D8C3D96 /* TableRockApp.swift in Sources */,
 				2F1FCE7D6A6B5A253B35595D /* WorkbenchBridgeConversions.swift in Sources */,
 				CE3F361CE4393A1BB51A1637 /* WorkbenchCommands.swift in Sources */,
