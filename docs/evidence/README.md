@@ -585,6 +585,7 @@ How to read an evidence document:
 - 710 — [Native result-grid adapter extraction](delivery/710-native-result-grid-adapter-extraction.md)
 - 711 — [Native workbench-root extraction](delivery/711-native-workbench-root-extraction.md)
 - 712 — [Native editor-sheet extraction](delivery/712-native-editor-sheet-extraction.md)
+- 713 — [Native transfer-sheet extraction](delivery/713-native-transfer-sheet-extraction.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)
