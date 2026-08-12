@@ -10,6 +10,7 @@
 		03EA8F5972377B177CF3949B /* GridCellPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FE4A4192046C53B74989CB3 /* GridCellPresentationTests.swift */; };
 		08418AD3F194E697CBAEF800 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7056B74025E206D1A652A30B /* AppConfiguration.swift */; };
 		0FE432AC6F178577E64C4B16 /* TableRockFeature.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		110596D97D66EBF3653855CC /* DesignLabTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 755FAB62C996DA5DAEA1C5CA /* DesignLabTable.swift */; };
 		13640014A3CBF62723E88F3D /* SqlEditorMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3216C4DBC614A64F649BFB7E /* SqlEditorMetricsTests.swift */; };
 		14D023A5261B2B5CD80FDC18 /* TableRockFeature.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; };
 		161D919AE1BEF59F67B25D41 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50BA7DBEE0A6F285A3CE9CC5 /* SystemConfiguration.framework */; };
@@ -19,6 +20,7 @@
 		2D7C822345D3585CEB388AC5 /* DesignLabComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 458733A3A628C9289EB6B3DB /* DesignLabComponents.swift */; };
 		2F1FCE7D6A6B5A253B35595D /* WorkbenchBridgeConversions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00166DA6649C44AF44DC6CA /* WorkbenchBridgeConversions.swift */; };
 		31FD459BCAEED3A74451B50A /* BridgeModelLifetimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9C1E6469A2ACF82CA630D65 /* BridgeModelLifetimeTests.swift */; };
+		33DF28A8745CE4D2AB361285 /* DesignLabSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5DE1C0623177FAED382554 /* DesignLabSheets.swift */; };
 		380B133C98CE25877F7D65A4 /* TableRockDesignLabUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E5CCD8819F1EA50EB026040 /* TableRockDesignLabUITests.swift */; };
 		389224D06A5BA46505A9AF47 /* ProfilePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C435174637E2A8C0EB630B /* ProfilePresentationTests.swift */; };
 		3B37984F65F6FF7B9A3F3D3C /* DesignLabModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E66D615292CDDBE99DD23B93 /* DesignLabModel.swift */; };
@@ -58,6 +60,7 @@
 		CBCBBC8A4821862458D905EE /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = D2CD044701909D9865A79995 /* libiconv.tbd */; };
 		CD7AE7D1A93F077E529087AA /* ChangeReviewPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D4F7741E9DE06B844834E2B /* ChangeReviewPresentationTests.swift */; };
 		CF5C36BA9F78E77F67B742D2 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4593C9F33EA2B77A8CB555A4 /* Security.framework */; };
+		D05697BE1E109F55DE2C39B2 /* DesignLabSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA12356E610CE9E7EEB4BD2B /* DesignLabSession.swift */; };
 		D1B7CEC71C3AD071161CE23F /* TableRockBridge.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; };
 		D796F83A9C02E834BFEDD256 /* tablerock_ffiFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 112B6599B620D3174144D9B5 /* tablerock_ffiFFI.xcframework */; };
 		E0946F568BF416413F94CAF8 /* AppDependenciesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 170A6205E293BBDD55598B6C /* AppDependenciesTests.swift */; };
@@ -173,6 +176,7 @@
 		3216C4DBC614A64F649BFB7E /* SqlEditorMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SqlEditorMetricsTests.swift; sourceTree = "<group>"; };
 		389BF5258A746A4D8C3BFA05 /* TableRock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TableRock.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3A34ED7C245BB8AF855C9333 /* BridgeLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeLifecycleTests.swift; sourceTree = "<group>"; };
+		3B5DE1C0623177FAED382554 /* DesignLabSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabSheets.swift; sourceTree = "<group>"; };
 		3B603D771219E813A92103B1 /* BridgeModelScenarioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeModelScenarioTests.swift; sourceTree = "<group>"; };
 		3B6D49A4F3A0FB6BC7BC659E /* TableRockDesignLabTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockDesignLabTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3BD1F73B0512F5C88FF9C25C /* TableRockAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -195,6 +199,7 @@
 		6D0C1A38F65F28CBDE5C94D7 /* PageV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1.swift; sourceTree = "<group>"; };
 		7056B74025E206D1A652A30B /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
 		74B974D7ED34ED229C8EECD1 /* PageV1FixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageV1FixtureTests.swift; sourceTree = "<group>"; };
+		755FAB62C996DA5DAEA1C5CA /* DesignLabTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabTable.swift; sourceTree = "<group>"; };
 		7D4F7741E9DE06B844834E2B /* ChangeReviewPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangeReviewPresentationTests.swift; sourceTree = "<group>"; };
 		7F24F1E2FB76DDA5D0255906 /* TableRockAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		88E4D5C7A42F17282F830DEA /* DesignLabSurfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabSurfaces.swift; sourceTree = "<group>"; };
@@ -207,6 +212,7 @@
 		A61EA4DB356144BD42272270 /* TableRockBridge.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TableRockBridge.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		A68E1D5D9FB490A8CE2982A6 /* redis-signed-v1.hex */ = {isa = PBXFileReference; path = "redis-signed-v1.hex"; sourceTree = "<group>"; };
 		C7DDBBBFFBDE47B37C5CA82C /* WorkbenchStatusFactsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchStatusFactsTests.swift; sourceTree = "<group>"; };
+		CA12356E610CE9E7EEB4BD2B /* DesignLabSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabSession.swift; sourceTree = "<group>"; };
 		D00166DA6649C44AF44DC6CA /* WorkbenchBridgeConversions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchBridgeConversions.swift; sourceTree = "<group>"; };
 		D2CD044701909D9865A79995 /* libiconv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libiconv.tbd; path = usr/lib/libiconv.tbd; sourceTree = SDKROOT; };
 		DCD18301D71E2140043B680F /* WorkbenchTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchTypes.swift; sourceTree = "<group>"; };
@@ -334,7 +340,10 @@
 				45BD4F811FBA403DF53CAAF1 /* ConceptShells.swift */,
 				458733A3A628C9289EB6B3DB /* DesignLabComponents.swift */,
 				E66D615292CDDBE99DD23B93 /* DesignLabModel.swift */,
+				CA12356E610CE9E7EEB4BD2B /* DesignLabSession.swift */,
+				3B5DE1C0623177FAED382554 /* DesignLabSheets.swift */,
 				88E4D5C7A42F17282F830DEA /* DesignLabSurfaces.swift */,
+				755FAB62C996DA5DAEA1C5CA /* DesignLabTable.swift */,
 				2F14AA6A488E1B11AA572BD7 /* TableRockDesignLabApp.swift */,
 			);
 			path = TableRockDesignLab;
@@ -781,7 +790,10 @@
 				61CEE8F0FA0BC89145C18C68 /* ConceptShells.swift in Sources */,
 				2D7C822345D3585CEB388AC5 /* DesignLabComponents.swift in Sources */,
 				3B37984F65F6FF7B9A3F3D3C /* DesignLabModel.swift in Sources */,
+				D05697BE1E109F55DE2C39B2 /* DesignLabSession.swift in Sources */,
+				33DF28A8745CE4D2AB361285 /* DesignLabSheets.swift in Sources */,
 				99978E26D7AA36C611286B3E /* DesignLabSurfaces.swift in Sources */,
+				110596D97D66EBF3653855CC /* DesignLabTable.swift in Sources */,
 				A9DFF2096FE41B7946911F7E /* TableRockDesignLabApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

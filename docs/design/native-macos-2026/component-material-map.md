@@ -7,7 +7,7 @@
 | Context toolbar | Connection/database context and global actions | SwiftUI toolbar-style controls | Regular glass at the top-level container |
 | Catalog sidebar | Search and hierarchical navigation | Sidebar list/outline conventions | System sidebar material; opaque fallback under Reduce Transparency |
 | Tab strip | Object/query ownership and close state | Native tab/document conventions | Opaque underlay with restrained selected fill |
-| Data grid | Headers, rows, selection, sort, resize affordance | AppKit-table semantics represented in lab SwiftUI | Opaque content background only |
+| Data grid | Headers, rows, selection, reorder and resize affordances | Narrow `NSViewRepresentable` boundary around `NSTableView` | Opaque content background only |
 | SQL editor | Monospaced input, line numbers, selection, completion anchor | Native text-editor semantics | Opaque content background only |
 | Result pane | Execution state, messages, result tabs, data | Split-view content | Opaque content background only |
 | Value inspector | Typed value detail and copy affordances | Inspector conventions | Opaque or system background; never decorative glass |

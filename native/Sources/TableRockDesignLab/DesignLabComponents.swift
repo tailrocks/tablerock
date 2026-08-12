@@ -117,6 +117,7 @@ struct LabIconButton: View {
     let symbol: String
     var selected = false
     var prominent = false
+    var action: () -> Void = {}
 
     var body: some View {
         Group {
@@ -151,7 +152,7 @@ struct LabIconButton: View {
     }
 
     private var button: some View {
-        Button(action: {}) {
+        Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
                 .frame(width: 28, height: 26)
@@ -202,6 +203,8 @@ struct LabBadge: View {
 }
 
 struct LabContextToolbar: View {
+    @EnvironmentObject private var session: LabSession
+
     var compact = false
 
     var body: some View {
@@ -212,16 +215,17 @@ struct LabContextToolbar: View {
             }
 
             Menu {
-                Button("Northstar Analytics") {}
-                Button("Atlas Events") {}
+                Button("Northstar Analytics") { session.engine = .postgresql }
+                Button("Atlas Events") { session.engine = .clickHouse }
+                Button("Arbor Cache") { session.engine = .redis }
                 Divider()
-                Button("Manage Connections…") {}
+                Button("Manage Connections…") { session.show(.connections) }
             } label: {
                 HStack(spacing: 7) {
-                    Image(systemName: "cylinder.split.1x2")
+                    Image(systemName: session.engine.symbol)
                         .foregroundStyle(.blue)
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Northstar Analytics")
+                        Text(session.engine.connectionName)
                             .font(.caption.weight(.semibold))
                         Text("analytics · public")
                             .font(.caption2)
@@ -241,8 +245,12 @@ struct LabContextToolbar: View {
             Spacer(minLength: 8)
 
             LabIconButton(title: "Refresh", symbol: "arrow.clockwise")
-            LabIconButton(title: "Search", symbol: "magnifyingglass")
-            LabIconButton(title: "New query", symbol: "plus.rectangle.on.rectangle")
+            LabIconButton(title: "Search", symbol: "magnifyingglass") {
+                session.catalogPresented = true
+            }
+            LabIconButton(title: "New query", symbol: "plus.rectangle.on.rectangle") {
+                session.show(.sqlResults)
+            }
 
             if !compact {
                 Divider().frame(height: 20)
@@ -255,14 +263,24 @@ struct LabContextToolbar: View {
 }
 
 struct LabTabStrip: View {
+    @EnvironmentObject private var session: LabSession
+
     var sqlSelected = false
 
     var body: some View {
         HStack(spacing: 1) {
-            LabDocumentTab(title: "customers", symbol: "tablecells", selected: !sqlSelected, dirty: true)
-            LabDocumentTab(title: "Revenue by region", symbol: "chevron.left.forwardslash.chevron.right", selected: sqlSelected)
-            LabDocumentTab(title: "orders", symbol: "tablecells")
-            Button(action: {}) {
+            LabDocumentTab(title: "customers", symbol: "tablecells", selected: !sqlSelected, dirty: true) {
+                session.show(.dataGrid)
+            }
+            LabDocumentTab(title: "Revenue by region", symbol: "chevron.left.forwardslash.chevron.right", selected: sqlSelected) {
+                session.show(.sqlResults)
+            }
+            LabDocumentTab(title: "orders", symbol: "tablecells") {
+                session.show(.dataGrid)
+            }
+            Button {
+                session.show(.sqlResults)
+            } label: {
                 Image(systemName: "plus")
                     .frame(width: 28, height: 28)
             }
@@ -285,9 +303,10 @@ private struct LabDocumentTab: View {
     let symbol: String
     var selected = false
     var dirty = false
+    var action: () -> Void = {}
 
     var body: some View {
-        Button(action: {}) {
+        Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: symbol)
                     .font(.caption)
@@ -323,6 +342,8 @@ private struct LabDocumentTab: View {
 }
 
 struct LabCatalogSidebar: View {
+    @EnvironmentObject private var session: LabSession
+
     var compact = false
 
     var body: some View {
@@ -362,6 +383,19 @@ struct LabCatalogSidebar: View {
                             depth: 1,
                             selected: item.id == "customers"
                         )
+                        .contentShape(.rect)
+                        .onTapGesture {
+                            session.show(.dataGrid)
+                        }
+                        .contextMenu {
+                            Button("Open \(item.name)") { session.show(.dataGrid) }
+                            Button("Open in New Query") { session.show(.sqlResults) }
+                            Divider()
+                            Button("Inspect Structure") {
+                                session.show(.dataGrid)
+                                session.inspectorPresented = true
+                            }
+                        }
                     }
                     LabTreeRow(title: "Functions", detail: "18", symbol: "function", depth: 0)
                     LabTreeRow(title: "Types", detail: "7", symbol: "curlybraces", depth: 0)
@@ -440,6 +474,8 @@ struct LabTreeRow: View {
 }
 
 struct LabModeRail: View {
+    @EnvironmentObject private var session: LabSession
+
     let surface: LabSurface
 
     var body: some View {
@@ -450,7 +486,9 @@ struct LabModeRail: View {
                 .padding(.bottom, 8)
 
             ForEach(LabSurface.allCases) { item in
-                Button(action: {}) {
+                Button {
+                    session.show(item)
+                } label: {
                     Image(systemName: item.symbol)
                         .font(.system(size: 14, weight: .medium))
                         .frame(width: 30, height: 30)
@@ -651,6 +689,7 @@ struct LabConnectionProfilesColumn: View {
 
 struct LabStatusBar: View {
     @Environment(\.labAccessibilityPreview) private var preview
+    @EnvironmentObject private var session: LabSession
 
     var reviewEmphasis = false
 
@@ -689,7 +728,9 @@ struct LabStatusBar: View {
             .buttonStyle(.plain)
 
             if reviewEmphasis {
-                Button("Review 4 Changes", systemImage: "checklist") {}
+                Button("Review 4 Changes", systemImage: "checklist") {
+                    session.reviewSheetPresented = true
+                }
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
             } else {
@@ -706,6 +747,7 @@ struct LabStatusBar: View {
 
 struct LabValueInspector: View {
     @Environment(\.labAccessibilityPreview) private var preview
+    @EnvironmentObject private var session: LabSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -714,7 +756,7 @@ struct LabValueInspector: View {
                     .font(.system(size: preview == .increaseContrast ? 13 : 10, weight: .bold))
                     .labSecondaryForeground()
                 Spacer()
-                Button(action: {}) { Image(systemName: "xmark") }
+                Button { session.inspectorPresented = false } label: { Image(systemName: "xmark") }
                     .buttonStyle(.plain)
             }
             .padding(.horizontal, 12)
@@ -724,7 +766,7 @@ struct LabValueInspector: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("company_name").font(.caption.weight(.semibold))
+                        Text(selectedColumn).font(.caption.weight(.semibold))
                         Text("TEXT · NOT NULL")
                             .font(.caption)
                             .fontWeight(preview == .increaseContrast ? .semibold : .regular)
@@ -735,7 +777,7 @@ struct LabValueInspector: View {
                         .buttonStyle(.plain)
                         .help("Copy value")
                 }
-                Text("Aster Works")
+                Text(selectedValue)
                     .font(.body.monospaced())
                     .fontWeight(preview == .increaseContrast ? .semibold : .regular)
                     .labPrimaryForeground()
@@ -749,10 +791,10 @@ struct LabValueInspector: View {
                 Text("ROW DETAILS")
                     .font(.system(size: preview == .increaseContrast ? 13 : 10, weight: .bold))
                     .labSecondaryForeground()
-                LabInspectorField(name: "customer_id", value: "…a91f")
-                LabInspectorField(name: "region", value: "APAC")
-                LabInspectorField(name: "plan", value: "Scale")
-                LabInspectorField(name: "active", value: "true")
+                LabInspectorField(name: "customer_id", value: rowValue(0))
+                LabInspectorField(name: "region", value: rowValue(2))
+                LabInspectorField(name: "plan", value: rowValue(3))
+                LabInspectorField(name: "active", value: rowValue(6))
                 Spacer()
             }
             .padding(12)
@@ -761,6 +803,22 @@ struct LabValueInspector: View {
         .labPrimaryForeground()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Selected value inspector")
+        .accessibilityIdentifier("design-lab-inspector")
+    }
+
+    private var selectedColumn: String {
+        session.engine == .redis ? "value" : "company_name"
+    }
+
+    private var selectedValue: String {
+        rowValue(1)
+    }
+
+    private func rowValue(_ index: Int) -> String {
+        guard let values = session.selectedRow?.values,
+              values.indices.contains(index)
+        else { return "No selection" }
+        return values[index]
     }
 }
 

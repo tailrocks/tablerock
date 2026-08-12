@@ -15,6 +15,10 @@ import Testing
         "--surface", "sql-results",
         "--appearance", "dark",
         "--accessibility", "reduce-transparency",
+        "--engine", "clickhouse",
+        "--fixture", "long-identifiers",
+        "--window-size", "expanded",
+        "--inactive",
         "--capture",
     ])
 
@@ -22,6 +26,10 @@ import Testing
     #expect(configuration.surface == .sqlResults)
     #expect(configuration.appearance == .dark)
     #expect(configuration.accessibility == .reduceTransparency)
+    #expect(configuration.engine == .clickHouse)
+    #expect(configuration.fixture == .longIdentifiers)
+    #expect(configuration.windowSize == .expanded)
+    #expect(configuration.inactiveCapture)
     #expect(configuration.captureMode)
 }
 
@@ -40,7 +48,31 @@ import Testing
     #expect(LabFixtures.catalog.count == 6)
     #expect(LabFixtures.columns.count == 8)
     #expect(LabFixtures.rows.count == 12)
+    #expect(LabFixtures.largeResultRows.count == 240)
     #expect(LabFixtures.changes.count == 4)
     #expect(LabFixtures.rows.allSatisfy { $0.values.count == LabFixtures.columns.count })
+    #expect(LabFixtures.largeResultRows.allSatisfy {
+        $0.values.count == LabFixtures.columns.count
+    })
     #expect(Set(LabFixtures.rows.map(\.id)).count == LabFixtures.rows.count)
+    #expect(Set(LabFixtures.largeResultRows.map(\.id)).count == LabFixtures.largeResultRows.count)
+}
+
+@Test func deterministicRoutesCoverRequiredEnginesStatesAndWindowSizes() {
+    #expect(Set(LabEngine.allCases) == [.postgresql, .clickHouse, .redis])
+    #expect(LabFixtureScenario.allCases.count == 9)
+    #expect(Set(LabFixtureScenario.allCases) == [
+        .populated,
+        .empty,
+        .loading,
+        .connectionError,
+        .largeResult,
+        .longIdentifiers,
+        .selectedCell,
+        .pendingChange,
+        .destructiveReview,
+    ])
+    #expect(Set(LabWindowSize.allCases) == [.minimum, .typical, .expanded])
+    #expect(LabWindowSize.minimum.dimensions.width >= 980)
+    #expect(LabWindowSize.expanded.dimensions.width > LabWindowSize.typical.dimensions.width)
 }

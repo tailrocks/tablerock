@@ -102,6 +102,10 @@ struct LabLaunchConfiguration: Equatable, Sendable {
     var surface: LabSurface = .dataGrid
     var appearance: LabAppearance = .system
     var accessibility: LabAccessibilityMode = .system
+    var engine: LabEngine = .postgresql
+    var fixture: LabFixtureScenario = .populated
+    var windowSize: LabWindowSize = .typical
+    var inactiveCapture = false
     var captureMode = false
 
     static func parse(_ arguments: [String]) -> LabLaunchConfiguration {
@@ -129,6 +133,19 @@ struct LabLaunchConfiguration: Equatable, Sendable {
            let accessibility = LabAccessibilityMode(rawValue: value) {
             configuration.accessibility = accessibility
         }
+        if let value = value(after: "--engine"),
+           let engine = LabEngine(rawValue: value) {
+            configuration.engine = engine
+        }
+        if let value = value(after: "--fixture"),
+           let fixture = LabFixtureScenario(rawValue: value) {
+            configuration.fixture = fixture
+        }
+        if let value = value(after: "--window-size"),
+           let windowSize = LabWindowSize(rawValue: value) {
+            configuration.windowSize = windowSize
+        }
+        configuration.inactiveCapture = arguments.contains("--inactive")
         configuration.captureMode = arguments.contains("--capture")
         return configuration
     }
@@ -244,6 +261,11 @@ enum LabFixtures {
         LabRow(id: 10472, values: ["…ef24", "Kitehouse", "EMEA", "Starter", "16", "$720", "false", "2026-08-12 06:55"]),
         LabRow(id: 10471, values: ["…339a", "Lumen River", "AMER", "Team", "51", "$6,375", "true", "2026-08-12 06:40"]),
     ]
+
+    static let largeResultRows: [LabRow] = (0..<240).map { offset in
+        let source = rows[offset % rows.count]
+        return LabRow(id: 50_000 - offset, values: source.values)
+    }
 
     static let changes = [
         LabChange(id: "change-1", kind: .update, object: "customers · 10482", field: "plan", before: "Team", after: "Scale"),

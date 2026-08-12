@@ -38,6 +38,8 @@ struct LabConceptHost: View {
 // Lead concept: faithful clean-room adaptation of the operator-preferred
 // native workbench composition visible in public TablePro materials.
 private struct LabNativeWorkbench: View {
+    @EnvironmentObject private var session: LabSession
+
     let surface: LabSurface
 
     private var showsCatalog: Bool {
@@ -45,21 +47,20 @@ private struct LabNativeWorkbench: View {
     }
 
     var body: some View {
-        HSplitView {
-            if showsCatalog {
-                LabCatalogSidebar()
-                    .frame(minWidth: 210, idealWidth: 232, maxWidth: 280)
-                    .background { LabChromeBackground() }
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Database catalog pane")
-            } else {
-                LabConnectionNavigator(surface: surface)
-                    .frame(minWidth: 200, idealWidth: 220, maxWidth: 250)
-                    .background { LabChromeBackground() }
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Connection navigator pane")
+        NavigationSplitView {
+            Group {
+                if showsCatalog {
+                    LabCatalogSidebar()
+                        .accessibilityLabel("Database catalog pane")
+                } else {
+                    LabConnectionNavigator(surface: surface)
+                        .accessibilityLabel("Connection navigator pane")
+                }
             }
-
+            .background { LabChromeBackground() }
+            .navigationSplitViewColumnWidth(min: 210, ideal: 232, max: 280)
+            .accessibilityElement(children: .contain)
+        } detail: {
             VStack(spacing: 0) {
                 LabContextToolbar()
                     .background { LabChromeBackground() }
@@ -69,31 +70,23 @@ private struct LabNativeWorkbench: View {
                     LabTabStrip(sqlSelected: surface == .sqlResults)
                 }
 
-                HSplitView {
-                    LabSurfaceContent(
-                        surface: surface,
-                        compact: surface == .dataGrid
-                    )
-                        .frame(minWidth: 590)
-                        .accessibilityElement(children: .contain)
-                        .accessibilityLabel("Primary work surface")
-
-                    if surface == .dataGrid {
-                        LabValueInspector()
-                            .frame(minWidth: 220, idealWidth: 248, maxWidth: 300)
-                            .accessibilityElement(children: .contain)
-                            .accessibilityLabel("Selected value inspector pane")
-                    }
-                }
+                LabSurfaceContent(surface: surface, compact: false)
+                    .frame(minWidth: 590)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Primary work surface")
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Workbench pane")
         }
+        .navigationSplitViewStyle(.balanced)
+        .searchable(text: $session.searchText, placement: .sidebar, prompt: "Search objects")
         .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 
 private struct LabConnectionNavigator: View {
+    @EnvironmentObject private var session: LabSession
+
     let surface: LabSurface
 
     var body: some View {
@@ -102,7 +95,7 @@ private struct LabConnectionNavigator: View {
                 Text("TableRock")
                     .font(.headline)
                 Spacer()
-                Button(action: {}) { Image(systemName: "plus") }
+                Button { session.connectionSheetPresented = true } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain)
                     .help("New connection")
             }
@@ -127,12 +120,17 @@ private struct LabConnectionNavigator: View {
                 .padding(.top, 10)
 
             ForEach([LabSurface.connections, .setup]) { item in
-                Label(item.title, systemImage: item.symbol)
-                    .font(.caption)
-                    .padding(.horizontal, 9)
-                    .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
-                    .background(item == surface ? Color.accentColor.opacity(0.14) : .clear, in: .rect(cornerRadius: 7))
-                    .padding(.horizontal, 6)
+                Button {
+                    session.show(item)
+                } label: {
+                    Label(item.title, systemImage: item.symbol)
+                        .font(.caption)
+                        .padding(.horizontal, 9)
+                        .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                        .background(item == surface ? Color.accentColor.opacity(0.14) : .clear, in: .rect(cornerRadius: 7))
+                        .padding(.horizontal, 6)
+                }
+                .buttonStyle(.plain)
             }
 
             Text("RECENT")
@@ -141,13 +139,18 @@ private struct LabConnectionNavigator: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 14)
             ForEach(LabFixtures.connections) { connection in
-                HStack(spacing: 7) {
-                    Image(systemName: connection.symbol).foregroundStyle(.secondary)
-                    Text(connection.name).lineLimit(1)
+                Button {
+                    session.openConnection(connection)
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: connection.symbol).foregroundStyle(.secondary)
+                        Text(connection.name).lineLimit(1)
+                    }
+                    .font(.caption)
+                    .padding(.horizontal, 12)
+                    .frame(height: 29)
                 }
-                .font(.caption)
-                .padding(.horizontal, 12)
-                .frame(height: 29)
+                .buttonStyle(.plain)
             }
             Spacer()
             Divider()
@@ -159,6 +162,8 @@ private struct LabConnectionNavigator: View {
 }
 
 private struct LabQueryStudio: View {
+    @EnvironmentObject private var session: LabSession
+
     let surface: LabSurface
 
     var body: some View {
@@ -181,10 +186,14 @@ private struct LabQueryStudio: View {
                     }
                     Spacer()
                     if surface != .sqlResults {
-                        Button("Open Catalog", systemImage: "books.vertical") {}
+                        Button("Open Catalog", systemImage: "books.vertical") {
+                            session.catalogPresented.toggle()
+                        }
                     }
                     LabBadge(text: "PRODUCTION", tint: .orange, symbol: "exclamationmark.triangle.fill")
-                    LabIconButton(title: "Command palette", symbol: "command")
+                    LabIconButton(title: "Command palette", symbol: "command") {
+                        session.show(.connections)
+                    }
                 }
                 .padding(.horizontal, 14)
                 .frame(height: 52)
@@ -212,7 +221,7 @@ private struct LabQueryStudio: View {
                 Divider()
                 LabCatalogSidebar(compact: true)
             }
-            .frame(width: surface == .sqlResults ? 210 : 0)
+            .frame(width: surface == .sqlResults && session.catalogPresented ? 210 : 0)
             .clipped()
             .background(Color(nsColor: .windowBackgroundColor))
             .overlay(alignment: .leading) { if surface == .sqlResults { Divider() } }
@@ -222,6 +231,8 @@ private struct LabQueryStudio: View {
 }
 
 private struct LabColumnObservatory: View {
+    @EnvironmentObject private var session: LabSession
+
     let surface: LabSurface
 
     var body: some View {
@@ -257,8 +268,12 @@ private struct LabColumnObservatory: View {
                     }
                     Spacer()
                     LabBadge(text: "SAFE MODE", tint: .green, symbol: "lock.shield.fill")
-                    LabIconButton(title: "Search", symbol: "magnifyingglass")
-                    LabIconButton(title: "More actions", symbol: "ellipsis")
+                    LabIconButton(title: "Search", symbol: "magnifyingglass") {
+                        session.catalogPresented.toggle()
+                    }
+                    LabIconButton(title: "More actions", symbol: "ellipsis") {
+                        session.reviewSheetPresented = true
+                    }
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 50)
@@ -282,6 +297,8 @@ private struct LabColumnObservatory: View {
 }
 
 private struct LabGridCanvas: View {
+    @EnvironmentObject private var session: LabSession
+
     let surface: LabSurface
 
     var body: some View {
@@ -293,7 +310,9 @@ private struct LabGridCanvas: View {
                 HStack(alignment: .top) {
                     GlassEffectContainer(spacing: 12) {
                         HStack(spacing: 8) {
-                            LabIconButton(title: "Navigation", symbol: "sidebar.left")
+                            LabIconButton(title: "Navigation", symbol: "sidebar.left") {
+                                session.show(.connections)
+                            }
                             Divider().frame(height: 20)
                             Image(systemName: "cylinder.split.1x2")
                                 .foregroundStyle(.blue)
@@ -311,9 +330,13 @@ private struct LabGridCanvas: View {
 
                     GlassEffectContainer(spacing: 8) {
                         HStack(spacing: 7) {
-                            LabIconButton(title: "Search", symbol: "magnifyingglass")
+                            LabIconButton(title: "Search", symbol: "magnifyingglass") {
+                                session.catalogPresented.toggle()
+                            }
                             LabIconButton(title: "Refresh", symbol: "arrow.clockwise")
-                            LabIconButton(title: "New query", symbol: "plus.rectangle.on.rectangle", prominent: true)
+                            LabIconButton(title: "New query", symbol: "plus.rectangle.on.rectangle", prominent: true) {
+                                session.show(.sqlResults)
+                            }
                         }
                     }
                     .modifier(LabFloatingGlassModifier())
@@ -331,7 +354,7 @@ private struct LabGridCanvas: View {
                             Label("48,224 rows", systemImage: "tablecells")
                             Label("4 changes", systemImage: "checklist")
                                 .foregroundStyle(.orange)
-                            Button("Review") {}
+                            Button("Review") { session.reviewSheetPresented = true }
                                 .buttonStyle(.borderedProminent)
                                 .tint(.orange)
                         }
@@ -366,6 +389,8 @@ private struct LabFloatingGlassModifier: ViewModifier {
 }
 
 private struct LabChangeDesk: View {
+    @EnvironmentObject private var session: LabSession
+
     let surface: LabSurface
 
     var body: some View {

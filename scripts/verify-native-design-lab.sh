@@ -50,7 +50,7 @@ xcodebuild \
   -configuration Debug \
   -destination 'platform=macOS' \
   -derivedDataPath "$DERIVED_DATA" \
-  -only-testing:TableRockDesignLabUITests/TableRockDesignLabUITests/testLeadDataGridExposesNamedRegionsAndPassesSemanticAudit \
+  -only-testing:TableRockDesignLabUITests/TableRockDesignLabUITests \
   test | tee "$UI_TEST_LOG"
 
 echo "Design Lab isolation verified"

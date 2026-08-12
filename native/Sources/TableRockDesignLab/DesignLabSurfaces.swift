@@ -1,11 +1,42 @@
 import SwiftUI
 
 struct LabSurfaceContent: View {
+    @EnvironmentObject private var session: LabSession
+
     let surface: LabSurface
     var compact = false
 
     @ViewBuilder
     var body: some View {
+        Group {
+            switch session.fixture {
+            case .empty:
+                LabScenarioStateView(
+                    title: "No objects yet",
+                    detail: "Choose a database context or create a connection.",
+                    symbol: "tray"
+                )
+            case .loading:
+                LabScenarioStateView(
+                    title: "Loading \(session.engine.title) metadata",
+                    detail: "The static scenario keeps content work outside rendering.",
+                    symbol: "arrow.triangle.2.circlepath",
+                    loading: true
+                )
+            case .connectionError:
+                LabScenarioStateView(
+                    title: "Connection unavailable",
+                    detail: "TLS negotiation failed. Credentials and values remain redacted.",
+                    symbol: "exclamationmark.icloud"
+                )
+            default:
+                surfaceContent
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var surfaceContent: some View {
         switch surface {
         case .connections:
             LabConnectionsSurface(compact: compact)
@@ -21,7 +52,28 @@ struct LabSurfaceContent: View {
     }
 }
 
+private struct LabScenarioStateView: View {
+    let title: String
+    let detail: String
+    let symbol: String
+    var loading = false
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(title, systemImage: symbol)
+        } description: {
+            Text(detail)
+        } actions: {
+            if loading { ProgressView().controlSize(.small) }
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+        .accessibilityIdentifier("design-lab-scenario-state")
+    }
+}
+
 struct LabConnectionsSurface: View {
+    @EnvironmentObject private var session: LabSession
+
     var compact = false
 
     var body: some View {
@@ -35,7 +87,9 @@ struct LabConnectionsSurface: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("New Connection", systemImage: "plus") {}
+                Button("New Connection", systemImage: "plus") {
+                    session.connectionSheetPresented = true
+                }
                     .buttonStyle(.borderedProminent)
             }
             .padding(.horizontal, compact ? 16 : 24)
@@ -70,9 +124,19 @@ struct LabConnectionsSurface: View {
                             spacing: 12
                         ) {
                             ForEach(LabFixtures.connections) { connection in
-                                LabConnectionCard(connection: connection)
+                                Button {
+                                    session.openConnection(connection)
+                                } label: {
+                                    LabConnectionCard(connection: connection)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            LabNewConnectionCard()
+                            Button {
+                                session.connectionSheetPresented = true
+                            } label: {
+                                LabNewConnectionCard()
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
@@ -112,10 +176,10 @@ private struct LabConnectionCard: View {
                 }
                 Spacer()
                 Menu("More", systemImage: "ellipsis") {
-                    Text("Edit")
-                    Text("Duplicate")
+                    Button("Edit") {}
+                    Button("Duplicate") {}
                     Divider()
-                    Text("Remove")
+                    Button("Remove", role: .destructive) {}
                 }
                 .menuStyle(.borderlessButton)
                 .labelStyle(.iconOnly)
@@ -168,6 +232,8 @@ private struct LabNewConnectionCard: View {
 }
 
 struct LabConnectionSetupSurface: View {
+    @EnvironmentObject private var session: LabSession
+
     var compact = false
 
     var body: some View {
@@ -226,8 +292,12 @@ struct LabConnectionSetupSurface: View {
             HStack {
                 Button("Cancel") {}
                 Spacer()
-                Button("Test Connection", systemImage: "wave.3.right") {}
-                Button("Save & Connect", systemImage: "arrow.right") {}
+                Button("Test Connection", systemImage: "wave.3.right") {
+                    session.connectionSheetPresented = true
+                }
+                Button("Save & Connect", systemImage: "arrow.right") {
+                    session.show(.dataGrid)
+                }
                     .buttonStyle(.borderedProminent)
             }
             .padding(.horizontal, 18)
@@ -360,11 +430,13 @@ private struct LabConnectionSummary: View {
 }
 
 struct LabDataGridSurface: View {
+    @EnvironmentObject private var session: LabSession
+
     var compact = false
 
     var body: some View {
         VStack(spacing: 0) {
-            LabObjectHeader(title: "customers", detail: "analytics.public · PostgreSQL", symbol: "tablecells") {
+            LabObjectHeader(title: gridTitle, detail: gridDetail, symbol: "tablecells") {
                 Button("Add Row", systemImage: "plus") {}
                 Button("Export", systemImage: "square.and.arrow.up") {}
             }
@@ -373,6 +445,25 @@ struct LabDataGridSurface: View {
             LabStatusBar()
         }
         .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private var gridTitle: String {
+        if session.fixture == .longIdentifiers {
+            "enterprise_customer_subscription_entitlements_archive"
+        } else {
+            switch session.engine {
+            case .redis: "customer:session:*"
+            default: "customers"
+            }
+        }
+    }
+
+    private var gridDetail: String {
+        switch session.engine {
+        case .postgresql: "analytics.public · PostgreSQL"
+        case .clickHouse: "analytics.events · ClickHouse"
+        case .redis: "database 0 · Redis"
+        }
     }
 }
 
@@ -461,6 +552,8 @@ private struct LabFilterToken: View {
 }
 
 struct LabDataTable: View {
+    @EnvironmentObject private var session: LabSession
+
     var compact = false
 
     private var columns: ArraySlice<LabColumn> {
@@ -468,96 +561,26 @@ struct LabDataTable: View {
     }
 
     var body: some View {
-        ScrollView([.horizontal, .vertical]) {
-            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(LabFixtures.rows) { row in
-                        LabDataRow(row: row, columns: Array(columns))
-                    }
-                } header: {
-                    LabDataHeader(columns: Array(columns))
-                }
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Customer rows and columns")
-        }
-        .defaultScrollAnchor(.topLeading)
-        .background(Color(nsColor: .textBackgroundColor))
+        LabNativeDataTable(
+            rows: displayedRows,
+            columns: Array(columns),
+            selectedRowID: $session.selectedRowID,
+            openInspector: { session.inspectorPresented = true },
+            openQuery: { session.show(.sqlResults) },
+            reviewChanges: { session.reviewSheetPresented = true }
+        )
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Customer result grid, 12 preview rows")
+        .accessibilityLabel("Customer result grid, \(displayedRows.count) preview rows")
     }
-}
 
-private struct LabDataHeader: View {
-    @Environment(\.labAccessibilityPreview) private var preview
-
-    let columns: [LabColumn]
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Text("#")
-                .frame(width: 44, alignment: .trailing)
-                .padding(.trailing, 8)
-            ForEach(columns) { column in
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 4) {
-                        Text(column.title).fontWeight(.semibold)
-                        if column.id == "mrr" { Image(systemName: "arrow.down").font(.caption2) }
-                    }
-                    Text(column.type)
-                        .font(.caption2.weight(preview == .increaseContrast ? .semibold : .medium))
-                        .labTertiaryForeground()
-                }
-                .frame(width: column.width, alignment: .leading)
-                .padding(.horizontal, 8)
-                .overlay(alignment: .trailing) { Divider() }
-            }
-        }
-        .font(.caption)
-        .frame(height: 36)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .overlay(alignment: .bottom) { Divider() }
-    }
-}
-
-private struct LabDataRow: View {
-    @Environment(\.labAccessibilityPreview) private var preview
-    @Environment(\.colorScheme) private var colorScheme
-
-    let row: LabRow
-    let columns: [LabColumn]
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Text(String(row.id))
-                .font(.system(size: preview == .increaseContrast ? 13 : 10, weight: preview == .increaseContrast ? .bold : .regular, design: .monospaced))
-                .labPrimaryForeground()
-                .frame(width: 44, alignment: .trailing)
-                .padding(.trailing, 8)
-            ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
-                Text(row.values[index])
-                    .font(.caption.monospaced())
-                    .fontWeight(preview == .increaseContrast ? .medium : .regular)
-                    .foregroundStyle(
-                        preview == .increaseContrast
-                            ? (colorScheme == .dark ? Color.white : Color.black)
-                            : (column.id == "active" ? Color.green : Color.primary)
-                    )
-                    .lineLimit(1)
-                    .frame(width: column.width, alignment: column.id == "seats" || column.id == "mrr" ? .trailing : .leading)
-                    .padding(.horizontal, 8)
-                    .overlay(alignment: .trailing) { Divider().opacity(0.45) }
-            }
-        }
-        .frame(height: 29)
-        .background(row.id == 10482 ? Color.accentColor.opacity(0.13) : (row.id.isMultiple(of: 2) ? Color.primary.opacity(0.025) : .clear))
-        .overlay(alignment: .bottom) { Divider().opacity(0.45) }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Row \(row.id)")
+    private var displayedRows: [LabRow] {
+        session.fixture == .largeResult ? LabFixtures.largeResultRows : LabFixtures.rows
     }
 }
 
 struct LabSQLResultsSurface: View {
+    @EnvironmentObject private var session: LabSession
+
     var compact = false
 
     var body: some View {
@@ -565,7 +588,7 @@ struct LabSQLResultsSurface: View {
             VStack(spacing: 0) {
                 LabObjectHeader(title: "Revenue by region", detail: "Query 2 · Northstar Analytics", symbol: "chevron.left.forwardslash.chevron.right") {
                     Button("Explain", systemImage: "chart.xyaxis.line") {}
-                    Button("Run", systemImage: "play.fill") {}
+                    Button("Run", systemImage: "play.fill") { session.runQuery() }
                         .buttonStyle(.borderedProminent)
                         .tint(.green)
                         .keyboardShortcut(.return, modifiers: .command)
