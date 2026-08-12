@@ -83,6 +83,7 @@
 		D9A3C363D749C1BC7F7B7A30 /* WorkbenchPresentationStore+Queries.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A269C1E6DE37AC12AE9BE6D /* WorkbenchPresentationStore+Queries.swift */; };
 		DDC9BA30762293C857D2E7C2 /* LiveWorkbenchBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A26451C4541B1336030C1D39 /* LiveWorkbenchBackend.swift */; };
 		DF74204CE332FAB306D78BF8 /* WorkbenchPresentationStore+Transfers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8CE761C2DFDB59839D71A8 /* WorkbenchPresentationStore+Transfers.swift */; };
+		E04BA777910E414DF689C9AA /* ConnectionsCatalogPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF4E47C74A6EA2E7CE6ACC1 /* ConnectionsCatalogPane.swift */; };
 		E0946F568BF416413F94CAF8 /* AppDependenciesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 170A6205E293BBDD55598B6C /* AppDependenciesTests.swift */; };
 		E1C6D3B67FC986686DCD30FE /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = D2CD044701909D9865A79995 /* libiconv.tbd */; };
 		E27DCDE16F7AF51AC934408D /* ApplicationRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 278D2E3A88447819988515D3 /* ApplicationRoot.swift */; };
@@ -250,6 +251,7 @@
 		88E4D5C7A42F17282F830DEA /* DesignLabSurfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignLabSurfaces.swift; sourceTree = "<group>"; };
 		8C42185AD707FA2A7890B1E5 /* TableRockFeatureTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TableRockFeatureTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8DDD84D96580B56E321211AA /* WorkbenchPresentationStore+Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbenchPresentationStore+Library.swift"; sourceTree = "<group>"; };
+		8DF4E47C74A6EA2E7CE6ACC1 /* ConnectionsCatalogPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionsCatalogPane.swift; sourceTree = "<group>"; };
 		8F8CE761C2DFDB59839D71A8 /* WorkbenchPresentationStore+Transfers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WorkbenchPresentationStore+Transfers.swift"; sourceTree = "<group>"; };
 		90C435174637E2A8C0EB630B /* ProfilePresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePresentationTests.swift; sourceTree = "<group>"; };
 		92101DDF0D23E6A46E7476D0 /* TableRockApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableRockApp.swift; sourceTree = "<group>"; };
@@ -500,6 +502,7 @@
 				0F2C76DDF73A5760AD61701F /* ApplicationPorts.swift */,
 				278D2E3A88447819988515D3 /* ApplicationRoot.swift */,
 				9E8F4B2D8575F664883970CD /* ApplicationRuntime.swift */,
+				8DF4E47C74A6EA2E7CE6ACC1 /* ConnectionsCatalogPane.swift */,
 				F2383F7968C0CB87D8CB7D83 /* ConnectionSheets.swift */,
 				957C32C81C6C4BCCABFFFD37 /* ConnectionsProfileList.swift */,
 				1EF16C90DF01B501DA35D669 /* LibrarySheets.swift */,
@@ -858,6 +861,7 @@
 				E27DCDE16F7AF51AC934408D /* ApplicationRoot.swift in Sources */,
 				4E9E25C3BE62B8507E68FC45 /* ApplicationRuntime.swift in Sources */,
 				451C6F000145F0E9AA5EC5F5 /* ConnectionSheets.swift in Sources */,
+				E04BA777910E414DF689C9AA /* ConnectionsCatalogPane.swift in Sources */,
 				AFDFB9A4ABFF8D346A9DB4B0 /* ConnectionsProfileList.swift in Sources */,
 				45AFEBCFC2E2040410C736D2 /* LibrarySheets.swift in Sources */,
 				FE135630C789CBC06C06930C /* PresentationModels.swift in Sources */,
