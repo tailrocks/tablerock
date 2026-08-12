@@ -1080,7 +1080,7 @@ func makeConfiguredWorkbenchBackend(_ configuration: AppConfiguration) throws
 {
   switch configuration.backend {
   case .live:
-    return try LiveWorkbenchBackend(
+    return try makeLiveWorkbenchBackend(
       persistencePath: configuration.paths.profilesDatabase.path
     )
   case .scripted(let scenario):

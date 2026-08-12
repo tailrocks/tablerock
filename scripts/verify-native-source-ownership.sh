@@ -65,6 +65,14 @@ if jq -e '
   echo "error: Swift Package production app depends on Design Lab" >&2
   exit 1
 fi
+if [[ "$(jq -r '
+  [.targets[] | select(.name == "TableRockBridge")][0].dependencies
+  | map(.byName?[0] // .target?[0] // .product?[0] // "")
+  | sort | join("\n")
+' <<<"$package_json")" != $'TableRockFeature\ntablerock_ffiFFI' ]]; then
+  echo "error: Swift Package Bridge dependencies drifted" >&2
+  exit 1
+fi
 
 ruby - "$PROJECT_SPEC" <<'RUBY'
 require "yaml"
@@ -77,6 +85,12 @@ abort "error: Xcode Design Lab target has dependencies" unless lab_dependencies.
 app_dependencies = targets.fetch("TableRock").fetch("dependencies", [])
 if app_dependencies.any? { |entry| entry["target"] == "TableRockDesignLab" }
   abort "error: Xcode production app depends on Design Lab"
+end
+
+bridge_dependencies = targets.fetch("TableRockBridge").fetch("dependencies", [])
+bridge_target_names = bridge_dependencies.map { |entry| entry["target"] }.compact
+unless bridge_target_names == ["TableRockFeature"]
+  abort "error: Xcode Bridge must depend only on the Feature target"
 end
 
 if targets.key?("TableRockPresentation")

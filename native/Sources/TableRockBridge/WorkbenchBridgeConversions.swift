@@ -1,5 +1,4 @@
 import Foundation
-import TableRockBridge
 import TableRockFeature
 
 // Generated UniFFI records stop here. Presentation consumes only immutable

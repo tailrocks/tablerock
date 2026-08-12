@@ -31,22 +31,9 @@ fi
 echo "==> Building Rust facade (release)"
 cargo build -p tablerock-ffi --release
 
-echo "==> Building UniFFI bridge module (direct swiftc, no SwiftPM)"
+echo "==> Building feature module (direct swiftc, no SwiftPM)"
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
-( cd "$NATIVE" \
-  && swiftc -emit-module -module-name TableRockBridge \
-       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
-       -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
-       -emit-module-path "$BUILD/TableRockBridge.swiftmodule" \
-       Sources/TableRockBridge/tablerock_ffi.swift Sources/TableRockBridge/PageV1.swift \
-  && swiftc -c -module-name TableRockBridge \
-       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
-       -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
-       Sources/TableRockBridge/tablerock_ffi.swift Sources/TableRockBridge/PageV1.swift \
-  && mv tablerock_ffi.o PageV1.o "$BUILD/" )
-
-echo "==> Building SwiftUI app (direct swiftc)"
 ( cd "$NATIVE" \
   && swiftc -emit-module -module-name TableRockFeature \
        -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
@@ -57,12 +44,30 @@ echo "==> Building SwiftUI app (direct swiftc)"
        -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
        -target "$TARGET_arm64" Sources/TableRockFeature/*.swift \
   && mv AppConfiguration.o AppDependencies.o ExternalConnectionRoute.o \
-       StructuredValueTree.o WorkbenchTypes.o "$BUILD/" \
+       StructuredValueTree.o WorkbenchTypes.o "$BUILD/" )
+
+echo "==> Building UniFFI bridge module (direct swiftc, no SwiftPM)"
+( cd "$NATIVE" \
+  && swiftc -emit-module -module-name TableRockBridge \
+       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
+       -emit-module-path "$BUILD/TableRockBridge.swiftmodule" \
+       Sources/TableRockBridge/*.swift \
+  && swiftc -parse-as-library -c -module-name TableRockBridge \
+       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
+       Sources/TableRockBridge/*.swift \
+  && mv LiveWorkbenchBackend.o PageV1.o WorkbenchBridgeConversions.o \
+       tablerock_ffi.o "$BUILD/" )
+
+echo "==> Building SwiftUI app (direct swiftc)"
+( cd "$NATIVE" \
   && swiftc -parse-as-library \
        -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
        -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
        Sources/TableRockApp/*.swift \
        "$BUILD/tablerock_ffi.o" "$BUILD/PageV1.o" \
+       "$BUILD/LiveWorkbenchBackend.o" "$BUILD/WorkbenchBridgeConversions.o" \
        "$BUILD/AppConfiguration.o" "$BUILD/AppDependencies.o" \
        "$BUILD/ExternalConnectionRoute.o" \
        "$BUILD/StructuredValueTree.o" "$BUILD/WorkbenchTypes.o" \

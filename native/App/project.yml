@@ -46,6 +46,7 @@ targets:
     sources:
       - path: ../Sources/TableRockBridge
     dependencies:
+      - target: TableRockFeature
       - framework: ../../target/xcframework/tablerock_ffiFFI.xcframework
         embed: false
 

@@ -1,8 +1,7 @@
 import Foundation
-import TableRockBridge
 import TableRockFeature
 
-actor LiveWorkbenchBackend: WorkbenchBackend {
+private actor LiveWorkbenchBackend: WorkbenchBackend {
   private let bridge: TableRockBridge
   private var eventCursor: UInt64 = 0
 
@@ -503,4 +502,8 @@ actor LiveWorkbenchBackend: WorkbenchBackend {
     let token = try stageProbeReview(sessionId: session, nowMs: now)
     return try applyReviewToken(tokenId: token, nowMs: now, sessionId: session)
   }
+}
+
+public func makeLiveWorkbenchBackend(persistencePath: String) throws -> any WorkbenchBackend {
+  try LiveWorkbenchBackend(persistencePath: persistencePath)
 }

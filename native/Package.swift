@@ -24,7 +24,7 @@ let package = Package(
         ),
         .target(
             name: "TableRockBridge",
-            dependencies: ["tablerock_ffiFFI"],
+            dependencies: ["tablerock_ffiFFI", "TableRockFeature"],
             path: "Sources/TableRockBridge",
             linkerSettings: [
                 // Link the host release dylib built by cargo.
