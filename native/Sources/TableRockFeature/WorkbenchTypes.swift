@@ -1,5 +1,13 @@
 import Foundation
 
+public protocol WorkbenchCodedError: Error {
+  var workbenchCode: String? { get }
+}
+
+public func workbenchErrorCode(_ error: any Error) -> String? {
+  (error as? any WorkbenchCodedError)?.workbenchCode
+}
+
 public protocol WorkbenchBackend: Actor, Sendable {
   func listProfiles() throws -> [WorkbenchProfileItem]
   func searchProfiles(_ search: String?) throws -> [WorkbenchProfileItem]

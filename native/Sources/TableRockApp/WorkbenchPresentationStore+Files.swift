@@ -1,5 +1,4 @@
 import Foundation
-import TableRockBridge
 import TableRockFeature
 
 @MainActor
@@ -66,13 +65,13 @@ extension WorkbenchPresentationStore {
       sqlFileError = nil
       confirmExternalOverwrite = false
       profileActionOutcome = "Saved \(url.lastPathComponent)"
-    } catch let error as BridgeError {
-      if case .Rejected(code: "sql-file-external-change", message: _) = error {
+    } catch {
+      if workbenchErrorCode(error) == "sql-file-external-change" {
         confirmExternalOverwrite = true
       } else {
         sqlFileError = "Save SQL file failed: \(error)"
       }
-    } catch { sqlFileError = "Save SQL file failed: \(error)" }
+    }
   }
 
   func reloadSqlFile() async {

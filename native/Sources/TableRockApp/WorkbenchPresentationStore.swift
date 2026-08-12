@@ -1,7 +1,6 @@
 import AppKit
 import Observation
 import SwiftUI
-import TableRockBridge
 import TableRockFeature
 
 @MainActor

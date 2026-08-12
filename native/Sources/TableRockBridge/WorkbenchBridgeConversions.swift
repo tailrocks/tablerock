@@ -1,6 +1,13 @@
 import Foundation
 import TableRockFeature
 
+extension BridgeError: WorkbenchCodedError {
+  public var workbenchCode: String? {
+    guard case .Rejected(let code, _) = self else { return nil }
+    return code
+  }
+}
+
 // Generated UniFFI records stop here. Presentation consumes only immutable
 // application facts from TableRockFeature.
 extension BridgeProfileItem {
