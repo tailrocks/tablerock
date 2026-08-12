@@ -188,7 +188,7 @@ jobs:
     strategy:
       matrix:
         target: [aarch64-apple-darwin, x86_64-apple-darwin, aarch64-unknown-linux-gnu, x86_64-unknown-linux-gnu]
-    uses: tailrocks/velnor-actions/.github/workflows/package-signer.yml@dbd534fa00cf7b610f7ebde13c8352ab6ce280e4 # 2026.8.9
+    uses: tailrocks/velnor-actions/.github/workflows/package-signer.yml@1e062d5bbe329873047ee8a8e79bba0811e53b65 # 2026.8.8
     with:
       artifact-name: package-subjects
       subject-path: tablerock-${{ needs.package-record.outputs.version }}-${{ matrix.target }}.tar.gz
@@ -197,7 +197,7 @@ jobs:
   sign-app:
     needs: package-record
     permissions: {attestations: write, contents: read, id-token: write}
-    uses: tailrocks/velnor-actions/.github/workflows/package-signer.yml@dbd534fa00cf7b610f7ebde13c8352ab6ce280e4 # 2026.8.9
+    uses: tailrocks/velnor-actions/.github/workflows/package-signer.yml@1e062d5bbe329873047ee8a8e79bba0811e53b65 # 2026.8.8
     with:
       artifact-name: package-subjects
       subject-path: tablerock-app-${{ needs.package-record.outputs.version }}-aarch64-apple-darwin.zip
