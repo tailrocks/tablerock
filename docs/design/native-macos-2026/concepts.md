@@ -1,10 +1,10 @@
 # Native macOS concepts
 
-Selection status: Native Workbench selected by the operator on 2026-08-12 for
-Design Lab refinement. See [native concept selection](decision-native-workbench.md).
-Production implementation remains unapproved until the second operator gate.
+Selection status: Native Workbench selected and explicitly confirmed by the
+operator on 2026-08-12 as the production design. See
+[native concept selection](decision-native-workbench.md).
 
-## 1. Native Workbench — selected for refinement
+## 1. Native Workbench — confirmed for production
 
 The closest clean-room adaptation of the operator-preferred TablePro public
 interface: floating leading catalog, compact context toolbar, document tabs,

@@ -1,8 +1,10 @@
 # Native concept selection
 
-Status: refinement complete; operator confirmation pending; production not authorized
+Status: confirmed for production implementation
 
 Decision date: 2026-08-12  
+Confirmation date: 2026-08-12
+
 Decision owner: operator
 
 ## Decision
@@ -31,21 +33,30 @@ operator direction established TablePro's coherent native macOS workbench as
 the preferred visual and interaction reference; Native Workbench is the
 clean-room concept that most directly fits that direction.
 
-## Authority boundary
+## Refined-concept confirmation
 
-This decision authorizes only presentation refinement inside
-`TableRockDesignLab`, using static invented data and local state. It does not
-authorize production UI edits, migration, backend wiring, persistence, network
-access, database access, or reuse of Design Lab fixtures in production.
-
-After refinement, the second gate must present runtime captures, interaction
-evidence, component/material ownership, accessibility results, differences,
-and unresolved limits. Production work may begin only after the operator then
-states explicitly:
+After reviewing the runnable refined Design Lab concept and its Phase 11
+evidence, the operator stated exactly:
 
 > This native concept is the production design TableRock should implement.
 
-That second gate is now open with the exact build and evidence in the
+The confirmation applies to the exact Native Workbench implementation captured
+from commit `73dfd349084a9d13a0f0437656542a318f69e4df` and presented by the
+Phase 11 gate at commit `53f33c42474355a09805c2b43df3a0a9426f5ce5`.
+
+No remix, exception, or requested visual change accompanied the confirmation.
+
+## Authority boundary
+
+This decision now authorizes production architecture planning, refactoring, and
+visual migration to the confirmed Native Workbench. Production must preserve
+Rust ownership, synchronous UniFFI, safety/redaction below presentation, and
+the existing functional contracts.
+
+The Design Lab remains reference evidence only. Production must not depend on
+its fixtures, state, or source. Approved parts must be deliberately implemented
+in production-owned files behind the final ownership boundaries. The confirmed
+build and evidence remain available in the
 [Native Workbench refined confirmation gate](../../evidence/design-lab/native-workbench-refined/README.md).
 
 ## Clean-room provenance

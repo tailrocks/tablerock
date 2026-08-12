@@ -1,6 +1,6 @@
 # Native Design Lab operator gate
 
-Status: **SELECTED — refined confirmation gate open**
+Status: **CONFIRMED — production migration authorized**
 
 Captured revision: `f0820edc01be011ca241654d783ad6ee46ee35c6`  
 Captured: 2026-08-12 on macOS 26.5.2, Xcode 26.6, macOS SDK 26.5
@@ -175,6 +175,7 @@ used. The operator-rejected Sketch artifact had no influence.
 Native Workbench selected. See the recorded
 [decision](../../design/native-macos-2026/decision-native-workbench.md).
 
-Phase 10 refinement is complete in Design Lab only. Production UI refactor or
-migration remains blocked pending the exact confirmation in the
-[refined-concept gate](native-workbench-refined/README.md).
+Phase 10 refinement is complete. The operator explicitly confirmed the refined
+concept on 2026-08-12. Production migration is authorized subject to the
+architecture, safety, accessibility, and verification boundaries recorded in
+the [decision](../../design/native-macos-2026/decision-native-workbench.md).
