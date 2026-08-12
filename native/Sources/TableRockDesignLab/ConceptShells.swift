@@ -9,7 +9,7 @@ struct LabConceptHost: View {
 
     @ViewBuilder
     var body: some View {
-        Group {
+        ZStack {
             switch concept {
             case .nativeWorkbench:
                 LabNativeWorkbench(surface: surface)
@@ -23,6 +23,9 @@ struct LabConceptHost: View {
                 LabChangeDesk(surface: surface)
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("design-lab-concept")
+        .accessibilityLabel("\(concept.title), \(surface.title)")
         .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: concept)
         .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: surface)
     }
@@ -46,16 +49,20 @@ private struct LabNativeWorkbench: View {
             if showsCatalog {
                 LabCatalogSidebar()
                     .frame(minWidth: 210, idealWidth: 232, maxWidth: 280)
-                    .background(.bar)
+                    .background { LabChromeBackground() }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Database catalog pane")
             } else {
                 LabConnectionNavigator(surface: surface)
                     .frame(minWidth: 200, idealWidth: 220, maxWidth: 250)
-                    .background(.bar)
+                    .background { LabChromeBackground() }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Connection navigator pane")
             }
 
             VStack(spacing: 0) {
                 LabContextToolbar()
-                    .background(.bar)
+                    .background { LabChromeBackground() }
                     .overlay(alignment: .bottom) { Divider() }
 
                 if showsCatalog {
@@ -63,15 +70,24 @@ private struct LabNativeWorkbench: View {
                 }
 
                 HSplitView {
-                    LabSurfaceContent(surface: surface)
+                    LabSurfaceContent(
+                        surface: surface,
+                        compact: surface == .dataGrid
+                    )
                         .frame(minWidth: 590)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Primary work surface")
 
                     if surface == .dataGrid {
                         LabValueInspector()
                             .frame(minWidth: 220, idealWidth: 248, maxWidth: 300)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityLabel("Selected value inspector pane")
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Workbench pane")
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }

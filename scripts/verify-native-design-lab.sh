@@ -8,6 +8,7 @@ NATIVE="$REPO_ROOT/native"
 SOURCE="$NATIVE/Sources/TableRockDesignLab"
 DERIVED_DATA="$REPO_ROOT/target/design-lab-derived-data"
 BUILD_LOG="$REPO_ROOT/target/design-lab-xcodebuild.log"
+UI_TEST_LOG="$REPO_ROOT/target/design-lab-ui-test.log"
 
 if rg -n \
   'import (TableRockBridge|TableRockFeature|Network)|TableRockBridge|TableRockFeature|tablerock_ffi|UniFFI|BridgeModel|WorkbenchBackend|URLSession' \
@@ -42,5 +43,14 @@ if ! rg -q "Target 'TableRockDesignLab'.*\(no dependencies\)" "$BUILD_LOG"; then
   echo "error: Xcode did not prove a dependency-free Design Lab graph" >&2
   exit 1
 fi
+
+xcodebuild \
+  -project "$NATIVE/App/TableRock.xcodeproj" \
+  -scheme TableRockDesignLab \
+  -configuration Debug \
+  -destination 'platform=macOS' \
+  -derivedDataPath "$DERIVED_DATA" \
+  -only-testing:TableRockDesignLabUITests/TableRockDesignLabUITests/testLeadDataGridExposesNamedRegionsAndPassesSemanticAudit \
+  test | tee "$UI_TEST_LOG"
 
 echo "Design Lab isolation verified"

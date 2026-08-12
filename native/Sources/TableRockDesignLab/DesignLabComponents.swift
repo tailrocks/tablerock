@@ -1,5 +1,60 @@
 import SwiftUI
 
+private enum LabForegroundLevel {
+    case primary
+    case secondary
+    case tertiary
+
+    var color: Color {
+        switch self {
+        case .primary: Color(nsColor: .labelColor)
+        case .secondary: Color(nsColor: .secondaryLabelColor)
+        case .tertiary: Color(nsColor: .tertiaryLabelColor)
+        }
+    }
+}
+
+private struct LabAdaptiveForeground: ViewModifier {
+    @Environment(\.labAccessibilityPreview) private var preview
+    @Environment(\.colorScheme) private var colorScheme
+
+    let level: LabForegroundLevel
+
+    func body(content: Content) -> some View {
+        content.foregroundStyle(
+            preview == .increaseContrast
+                ? (colorScheme == .dark ? Color.white : Color.black)
+                : level.color
+        )
+    }
+}
+
+extension View {
+    func labPrimaryForeground() -> some View {
+        modifier(LabAdaptiveForeground(level: .primary))
+    }
+
+    func labSecondaryForeground() -> some View {
+        modifier(LabAdaptiveForeground(level: .secondary))
+    }
+
+    func labTertiaryForeground() -> some View {
+        modifier(LabAdaptiveForeground(level: .tertiary))
+    }
+}
+
+struct LabChromeBackground: View {
+    @Environment(\.labAccessibilityPreview) private var preview
+
+    var body: some View {
+        if preview == .reduceTransparency || preview == .increaseContrast {
+            Color(nsColor: .windowBackgroundColor)
+        } else {
+            Rectangle().fill(.bar)
+        }
+    }
+}
+
 struct LabGlassPanel<Content: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
     @Environment(\.accessibilityDifferentiateWithoutColor) private var systemDifferentiate
@@ -106,6 +161,9 @@ struct LabIconButton: View {
 }
 
 struct LabBadge: View {
+    @Environment(\.labAccessibilityPreview) private var preview
+    @Environment(\.colorScheme) private var colorScheme
+
     let text: String
     var tint: Color = .secondary
     var symbol: String?
@@ -118,11 +176,28 @@ struct LabBadge: View {
             Text(text)
         }
         .font(.caption2.weight(.semibold))
-        .foregroundStyle(tint)
+        .foregroundStyle(foregroundColor)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
-        .background(tint.opacity(0.11), in: .capsule)
+        .background(backgroundColor, in: .capsule)
+        .overlay {
+            if preview == .increaseContrast {
+                Capsule().stroke(foregroundColor, lineWidth: 1.5)
+            }
+        }
         .accessibilityElement(children: .combine)
+    }
+
+    private var foregroundColor: Color {
+        preview == .increaseContrast
+            ? (colorScheme == .dark ? .white : .black)
+            : tint
+    }
+
+    private var backgroundColor: Color {
+        preview == .increaseContrast
+            ? Color(nsColor: .controlBackgroundColor)
+            : tint.opacity(0.11)
     }
 }
 
@@ -137,10 +212,10 @@ struct LabContextToolbar: View {
             }
 
             Menu {
-                Text("Northstar Analytics")
-                Text("Atlas Events")
+                Button("Northstar Analytics") {}
+                Button("Atlas Events") {}
                 Divider()
-                Text("Manage Connections…")
+                Button("Manage Connections…") {}
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "cylinder.split.1x2")
@@ -161,6 +236,7 @@ struct LabContextToolbar: View {
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.visible)
+            .accessibilityLabel("Database context, Northstar Analytics, production")
 
             Spacer(minLength: 8)
 
@@ -203,28 +279,37 @@ struct LabTabStrip: View {
 }
 
 private struct LabDocumentTab: View {
+    @Environment(\.labAccessibilityPreview) private var preview
+
     let title: String
     let symbol: String
     var selected = false
     var dirty = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: symbol)
-                .font(.caption)
-                .foregroundStyle(selected ? Color.accentColor : .secondary)
-            Text(title)
-                .font(.caption)
-            if dirty {
-                Circle()
-                    .fill(.orange)
-                    .frame(width: 6, height: 6)
-                    .accessibilityLabel("Has pending changes")
+        Button(action: {}) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.caption)
+                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(preview == .increaseContrast ? .semibold : .regular)
+                    .labPrimaryForeground()
+                if dirty {
+                    Circle()
+                        .fill(.orange)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                }
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.tertiary)
             }
-            Image(systemName: "xmark")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.tertiary)
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(dirty ? "Pending changes" : "No pending changes")
         .padding(.horizontal, 10)
         .frame(height: 28)
         .background(selected ? Color(nsColor: .controlBackgroundColor) : .clear, in: .rect(cornerRadius: 7))
@@ -244,13 +329,10 @@ struct LabCatalogSidebar: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
                 Text("Search objects")
-                    .foregroundStyle(.secondary)
                 Spacer()
                 Text("⌘K")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
             }
             .font(.caption)
             .padding(.horizontal, 10)
@@ -264,7 +346,7 @@ struct LabCatalogSidebar: View {
                 Spacer()
                 Text("public")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .labSecondaryForeground()
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 6)
@@ -289,11 +371,14 @@ struct LabCatalogSidebar: View {
 
             Divider()
             HStack {
-                Label("Connected", systemImage: "circle.fill")
-                    .foregroundStyle(.green)
+                Label {
+                    Text("Connected").labPrimaryForeground()
+                } icon: {
+                    Image(systemName: "circle.fill").foregroundStyle(.green)
+                }
                 Spacer()
                 Text("18 ms")
-                    .foregroundStyle(.secondary)
+                    .labSecondaryForeground()
             }
             .font(.caption2)
             .padding(.horizontal, 12)
@@ -305,6 +390,8 @@ struct LabCatalogSidebar: View {
 }
 
 struct LabTreeRow: View {
+    @Environment(\.labAccessibilityPreview) private var preview
+
     let title: String
     var detail: String?
     let symbol: String
@@ -318,7 +405,7 @@ struct LabTreeRow: View {
                 Image(systemName: expanded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 8, weight: .bold))
                     .frame(width: 10)
-                    .foregroundStyle(.secondary)
+                    .labSecondaryForeground()
             } else {
                 Spacer().frame(width: 10)
             }
@@ -328,12 +415,19 @@ struct LabTreeRow: View {
                 .frame(width: 14)
             Text(title)
                 .font(.caption)
+                .fontWeight(preview == .increaseContrast ? .semibold : .regular)
+                .labPrimaryForeground()
                 .lineLimit(1)
             Spacer(minLength: 4)
             if let detail {
                 Text(detail)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(
+                        .system(
+                            size: preview == .increaseContrast ? 13 : 10,
+                            weight: preview == .increaseContrast ? .bold : .regular
+                        )
+                    )
+                    .labTertiaryForeground()
                     .lineLimit(1)
             }
         }
@@ -556,6 +650,8 @@ struct LabConnectionProfilesColumn: View {
 }
 
 struct LabStatusBar: View {
+    @Environment(\.labAccessibilityPreview) private var preview
+
     var reviewEmphasis = false
 
     var body: some View {
@@ -570,15 +666,24 @@ struct LabStatusBar: View {
 
             Divider().frame(height: 16)
             Text("12 of 48,224 rows")
+                .fontWeight(preview == .increaseContrast ? .semibold : .regular)
+                .labPrimaryForeground()
             Text("41 ms")
-                .foregroundStyle(.secondary)
+                .fontWeight(preview == .increaseContrast ? .semibold : .regular)
+                .labSecondaryForeground()
             Spacer()
             Label("2 filters", systemImage: "line.3.horizontal.decrease")
+                .fontWeight(preview == .increaseContrast ? .semibold : .regular)
+                .labPrimaryForeground()
             Label("8 columns", systemImage: "rectangle.split.3x1")
+                .fontWeight(preview == .increaseContrast ? .semibold : .regular)
+                .labPrimaryForeground()
             HStack(spacing: 2) {
                 Button(action: {}) { Image(systemName: "chevron.left") }
                 Text("1 / 483")
                     .monospacedDigit()
+                    .fontWeight(preview == .increaseContrast ? .semibold : .regular)
+                    .labPrimaryForeground()
                 Button(action: {}) { Image(systemName: "chevron.right") }
             }
             .buttonStyle(.plain)
@@ -600,12 +705,14 @@ struct LabStatusBar: View {
 }
 
 struct LabValueInspector: View {
+    @Environment(\.labAccessibilityPreview) private var preview
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("INSPECTOR")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: preview == .increaseContrast ? 13 : 10, weight: .bold))
+                    .labSecondaryForeground()
                 Spacer()
                 Button(action: {}) { Image(systemName: "xmark") }
                     .buttonStyle(.plain)
@@ -618,7 +725,10 @@ struct LabValueInspector: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("company_name").font(.caption.weight(.semibold))
-                        Text("TEXT · NOT NULL").font(.caption2).foregroundStyle(.secondary)
+                        Text("TEXT · NOT NULL")
+                            .font(.caption)
+                            .fontWeight(preview == .increaseContrast ? .semibold : .regular)
+                            .labSecondaryForeground()
                     }
                     Spacer()
                     Button(action: {}) { Image(systemName: "doc.on.doc") }
@@ -627,14 +737,18 @@ struct LabValueInspector: View {
                 }
                 Text("Aster Works")
                     .font(.body.monospaced())
-                    .textSelection(.enabled)
+                    .fontWeight(preview == .increaseContrast ? .semibold : .regular)
+                    .labPrimaryForeground()
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(nsColor: .textBackgroundColor), in: .rect(cornerRadius: 7))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7)
+                            .stroke(Color(nsColor: .separatorColor))
+                    }
 
                 Text("ROW DETAILS")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: preview == .increaseContrast ? 13 : 10, weight: .bold))
+                    .labSecondaryForeground()
                 LabInspectorField(name: "customer_id", value: "…a91f")
                 LabInspectorField(name: "region", value: "APAC")
                 LabInspectorField(name: "plan", value: "Scale")
@@ -644,18 +758,24 @@ struct LabValueInspector: View {
             .padding(12)
         }
         .background(Color(nsColor: .controlBackgroundColor))
+        .labPrimaryForeground()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Selected value inspector")
     }
 }
 
 private struct LabInspectorField: View {
+    @Environment(\.labAccessibilityPreview) private var preview
+
     let name: String
     let value: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(name).font(.caption2).foregroundStyle(.secondary)
+            Text(name)
+                .font(.caption)
+                .fontWeight(preview == .increaseContrast ? .semibold : .regular)
+                .labSecondaryForeground()
             Text(value).font(.caption.monospaced())
         }
     }

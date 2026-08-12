@@ -166,6 +166,17 @@ targets:
     dependencies:
       - target: TableRockDesignLab
 
+  TableRockDesignLabUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    sources:
+      - path: ../Tests/TableRockDesignLabUITests
+    dependencies:
+      - target: TableRockDesignLab
+
 schemes:
   TableRock:
     build:
@@ -198,5 +209,6 @@ schemes:
       config: Debug
       targets:
         - TableRockDesignLabTests
+        - TableRockDesignLabUITests
     archive:
       config: Release

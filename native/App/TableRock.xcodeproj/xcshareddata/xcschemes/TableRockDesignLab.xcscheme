@@ -64,6 +64,17 @@
                ReferencedContainer = "container:TableRock.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "D77D560A6386BE510F7DBA47"
+               BuildableName = "TableRockDesignLabUITests.xctest"
+               BlueprintName = "TableRockDesignLabUITests"
+               ReferencedContainer = "container:TableRock.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

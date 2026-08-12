@@ -320,7 +320,7 @@ private struct LabToggleField: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.callout)
-                Text(detail).font(.caption2).foregroundStyle(.secondary)
+                Text(detail).font(.caption2).labSecondaryForeground()
             }
             Spacer()
             Toggle(label, isOn: .constant(enabled))
@@ -377,6 +377,8 @@ struct LabDataGridSurface: View {
 }
 
 private struct LabObjectHeader<Actions: View>: View {
+    @Environment(\.labAccessibilityPreview) private var preview
+
     let title: String
     let detail: String
     let symbol: String
@@ -395,7 +397,10 @@ private struct LabObjectHeader<Actions: View>: View {
                 .foregroundStyle(.blue)
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.headline)
-                Text(detail).font(.caption2).foregroundStyle(.secondary)
+                Text(detail)
+                    .font(.caption2)
+                    .fontWeight(preview == .increaseContrast ? .semibold : .regular)
+                    .labSecondaryForeground()
             }
             Spacer()
             actions
@@ -412,16 +417,16 @@ private struct LabFilterRail: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal.decrease")
-                .foregroundStyle(.secondary)
+                .labSecondaryForeground()
             LabFilterToken(text: "active", relation: "is", value: "true")
             LabFilterToken(text: "region", relation: "is not", value: "LATAM")
             Button("Add filter", systemImage: "plus") {}
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .labSecondaryForeground()
             Spacer()
             Text("Sorted by monthly_revenue ↓")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .labSecondaryForeground()
             Button(action: {}) { Image(systemName: "xmark.circle") }
                 .buttonStyle(.plain)
                 .help("Clear filters")
@@ -435,17 +440,20 @@ private struct LabFilterRail: View {
 }
 
 private struct LabFilterToken: View {
+    @Environment(\.labAccessibilityPreview) private var preview
+
     let text: String
     let relation: String
     let value: String
 
     var body: some View {
         HStack(spacing: 4) {
-            Text(text).fontWeight(.semibold)
-            Text(relation).foregroundStyle(.secondary)
-            Text(value)
-            Image(systemName: "xmark").font(.system(size: 7, weight: .bold)).foregroundStyle(.tertiary)
+            Text(text).fontWeight(.semibold).labPrimaryForeground()
+            Text(relation).labSecondaryForeground()
+            Text(value).labPrimaryForeground()
+            Image(systemName: "xmark").font(.system(size: 7, weight: .bold)).labTertiaryForeground()
         }
+        .fontWeight(preview == .increaseContrast ? .semibold : .regular)
         .padding(.horizontal, 7)
         .frame(height: 24)
         .background(Color.accentColor.opacity(0.1), in: .rect(cornerRadius: 6))
@@ -456,7 +464,7 @@ struct LabDataTable: View {
     var compact = false
 
     private var columns: ArraySlice<LabColumn> {
-        LabFixtures.columns.prefix(compact ? 6 : 8)
+        LabFixtures.columns.prefix(compact ? 5 : 8)
     }
 
     var body: some View {
@@ -470,6 +478,8 @@ struct LabDataTable: View {
                     LabDataHeader(columns: Array(columns))
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Customer rows and columns")
         }
         .defaultScrollAnchor(.topLeading)
         .background(Color(nsColor: .textBackgroundColor))
@@ -479,6 +489,8 @@ struct LabDataTable: View {
 }
 
 private struct LabDataHeader: View {
+    @Environment(\.labAccessibilityPreview) private var preview
+
     let columns: [LabColumn]
 
     var body: some View {
@@ -493,8 +505,8 @@ private struct LabDataHeader: View {
                         if column.id == "mrr" { Image(systemName: "arrow.down").font(.caption2) }
                     }
                     Text(column.type)
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(.tertiary)
+                        .font(.caption2.weight(preview == .increaseContrast ? .semibold : .medium))
+                        .labTertiaryForeground()
                 }
                 .frame(width: column.width, alignment: .leading)
                 .padding(.horizontal, 8)
@@ -509,20 +521,28 @@ private struct LabDataHeader: View {
 }
 
 private struct LabDataRow: View {
+    @Environment(\.labAccessibilityPreview) private var preview
+    @Environment(\.colorScheme) private var colorScheme
+
     let row: LabRow
     let columns: [LabColumn]
 
     var body: some View {
         HStack(spacing: 0) {
             Text(String(row.id))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.tertiary)
+                .font(.system(size: preview == .increaseContrast ? 13 : 10, weight: preview == .increaseContrast ? .bold : .regular, design: .monospaced))
+                .labPrimaryForeground()
                 .frame(width: 44, alignment: .trailing)
                 .padding(.trailing, 8)
             ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
                 Text(row.values[index])
                     .font(.caption.monospaced())
-                    .foregroundStyle(column.id == "active" ? Color.green : .primary)
+                    .fontWeight(preview == .increaseContrast ? .medium : .regular)
+                    .foregroundStyle(
+                        preview == .increaseContrast
+                            ? (colorScheme == .dark ? Color.white : Color.black)
+                            : (column.id == "active" ? Color.green : Color.primary)
+                    )
                     .lineLimit(1)
                     .frame(width: column.width, alignment: column.id == "seats" || column.id == "mrr" ? .trailing : .leading)
                     .padding(.horizontal, 8)
@@ -532,7 +552,7 @@ private struct LabDataRow: View {
         .frame(height: 29)
         .background(row.id == 10482 ? Color.accentColor.opacity(0.13) : (row.id.isMultiple(of: 2) ? Color.primary.opacity(0.025) : .clear))
         .overlay(alignment: .bottom) { Divider().opacity(0.45) }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Row \(row.id)")
     }
 }
