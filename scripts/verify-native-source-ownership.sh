@@ -83,7 +83,7 @@ unless bridge_target_names == ["TableRockFeature"]
   abort "error: Xcode Bridge must depend only on the Feature target"
 end
 
-  if targets.key?("TableRockPresentation")
+if targets.key?("TableRockPresentation")
   presentation_dependencies = targets.fetch("TableRockPresentation").fetch("dependencies", [])
   names = presentation_dependencies.map { |entry| entry["target"] }.compact
   unless names == ["TableRockFeature"]
@@ -92,7 +92,14 @@ end
   unless app_dependencies.any? { |entry| entry["target"] == "TableRockPresentation" }
     abort "error: Xcode production app does not depend on Presentation"
   end
+end
+
+%w[TableRockFeature TableRockPresentation TableRockBridge].each do |name|
+  dependency = app_dependencies.find { |entry| entry["target"] == name }
+  unless dependency && dependency["embed"] == false
+    abort "error: Xcode production app embeds static target #{name}"
   end
+end
 
 development_condition = "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
 %w[TableRockFeature TableRockPresentation TableRock].each do |name|

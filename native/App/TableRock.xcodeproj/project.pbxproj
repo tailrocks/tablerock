@@ -12,7 +12,6 @@
 		0840FF71536F8CBCD2279506 /* LibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFFEA4B02C4D144A47C1B0E5 /* LibrarySheets.swift */; };
 		08418AD3F194E697CBAEF800 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7056B74025E206D1A652A30B /* AppConfiguration.swift */; };
 		0EF8998E2A6DD0F507D237DC /* SqlTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D28B5D715AE0B1C2A35D7627 /* SqlTextEditor.swift */; };
-		0FE432AC6F178577E64C4B16 /* TableRockFeature.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		13640014A3CBF62723E88F3D /* SqlEditorMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3216C4DBC614A64F649BFB7E /* SqlEditorMetricsTests.swift */; };
 		13768884D32D5623AF5DE98F /* WorkbenchPresentationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF2397554F3A44294AD906B /* WorkbenchPresentationStore.swift */; };
 		13CCFB11B36AA7D0F9D0AB7F /* RelationContinuum.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D34DB93E10A8C5CEFF5C0BE /* RelationContinuum.swift */; };
@@ -42,7 +41,6 @@
 		64238C449B50C4352FFB4EAA /* DevelopmentSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 227E57D8B55249CB89D356A7 /* DevelopmentSupport.swift */; };
 		643C8E197A17CF05848EA0FF /* CatalogOutline.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA486664BDC15F73284EBBE /* CatalogOutline.swift */; };
 		648FA6521CC497F9CAED7485 /* ValueInspectorProjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 587AF293CEBFDBE9D9FAD880 /* ValueInspectorProjectionTests.swift */; };
-		649DD63D9AC98840E6A86737 /* TableRockBridge.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		64A945F6CE46EEA9211525B9 /* TableRockPresentation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E50B6905617B0C527A51B7B /* TableRockPresentation.framework */; };
 		64C1CC6DD4CA40E9AE6CCC4E /* NativeFindReplaceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA874B8672A5136E8E711B13 /* NativeFindReplaceEngine.swift */; };
 		686762278D02E5B39276A5D8 /* PageV1FixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74B974D7ED34ED229C8EECD1 /* PageV1FixtureTests.swift */; };
@@ -115,7 +113,6 @@
 		F0C4A98C0FFD104B381390F9 /* WorkbenchPresentationStore+Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBEF16FC5014C8DE1F954306 /* WorkbenchPresentationStore+Library.swift */; };
 		F212B359F604BAA292F4664F /* ColumnHeaderPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6AFA7C53FF20F48FF62523 /* ColumnHeaderPresentationTests.swift */; };
 		F3E6C5EB63188CF0940F0330 /* WorkbenchTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD18301D71E2140043B680F /* WorkbenchTypes.swift */; };
-		FA18408CC213F157ECA81042 /* TableRockPresentation.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2E50B6905617B0C527A51B7B /* TableRockPresentation.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -247,19 +244,6 @@
 			dstSubfolderSpec = 10;
 			files = (
 				B85A1683438F04B41F2AB2F8 /* TableRockBridge.framework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A571B746FAFCD66D4870F56F /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				0FE432AC6F178577E64C4B16 /* TableRockFeature.framework in Embed Frameworks */,
-				FA18408CC213F157ECA81042 /* TableRockPresentation.framework in Embed Frameworks */,
-				649DD63D9AC98840E6A86737 /* TableRockBridge.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -782,7 +766,6 @@
 			buildPhases = (
 				33FB86FCEF8181BDB50E6DB1 /* Sources */,
 				FE1AD7B3D96F69AF9AD595E0 /* Frameworks */,
-				A571B746FAFCD66D4870F56F /* Embed Frameworks */,
 			);
 			buildRules = (
 			);

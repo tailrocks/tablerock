@@ -19,6 +19,12 @@ test -f "$EXECUTABLE"
 test -f "$BRIDGE"
 mkdir -p "$OUT"
 
+if [[ -d "$APP/Contents/Frameworks" ]] &&
+  find "$APP/Contents/Frameworks" -mindepth 1 -print -quit | grep -q .; then
+  echo "error: canonical app embeds dependencies from its static target graph" >&2
+  exit 1
+fi
+
 plutil -convert json -o "$OUT/app-info.json" "$APP/Contents/Info.plist"
 lipo -archs "$EXECUTABLE" > "$OUT/app-architectures.txt"
 lipo -archs "$BRIDGE" > "$OUT/bridge-architectures.txt"
