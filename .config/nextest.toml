@@ -10,5 +10,5 @@ test-group = 'real-server'
 # this preserves the 30-second bound instead of masking scheduler contention
 # with retries or a larger timeout.
 [[profile.default.overrides]]
-filter = 'binary_id(tablerock-cli::pty_lifecycle)'
+filter = 'binary_id(tablerock-cli::pty_lifecycle) | test(/run::tests::(busy_ingress_does_not_starve_terminal_input|returned_error_restores_terminal_modes_in_real_pty|panic_restores_terminal_modes_in_real_pty)/)'
 threads-required = "num-test-threads"
