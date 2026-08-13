@@ -167,7 +167,7 @@ struct WorkbenchContextStrip: View {
               .font(.caption.weight(.semibold))
             Text(model.activeProfile?.context ?? model.connectedEngine.uppercased())
               .font(.caption2)
-              .foregroundStyle(.secondary)
+              .foregroundStyle(.primary)
           }
           if model.activeProductionWarning {
             Text("PRODUCTION")
