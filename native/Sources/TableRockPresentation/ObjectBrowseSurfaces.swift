@@ -31,8 +31,18 @@ func objectStructureView(tab: NativeObjectTab) -> some View {
 }
 
 private struct ObjectStructureView: View {
-  @Environment(WorkbenchPresentationStore.self) private var model
   let tab: NativeObjectTab
+
+  private struct ColumnRow: Identifiable {
+    let id: Int
+    let column: WorkbenchRelationColumn
+  }
+
+  private var columnRows: [ColumnRow] {
+    tab.structure.map { structure in
+      structure.columns.enumerated().map { ColumnRow(id: $0.offset, column: $0.element) }
+    } ?? []
+  }
 
   var body: some View {
     if tab.structureLoading {
@@ -44,78 +54,40 @@ private struct ObjectStructureView: View {
         description: Text(error)
       )
     } else if let structure = tab.structure {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 14) {
-          HStack {
-            Text("\(structure.namespace).\(structure.relation)")
-              .font(.title3.bold())
-              .textSelection(.enabled)
-            Spacer()
-          }
-          GroupBox("Columns") {
-            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
-              GridRow {
-                Text("Name").bold()
-                Text("Type").bold()
-                Text("Nullability").bold()
-                Text("Default").bold()
-                Text("Keys").bold()
-                Text("Comment").bold()
-              }
-              Divider()
-              ForEach(structure.columns.indices, id: \.self) { index in
-                let column = structure.columns[index]
-                GridRow {
-                  Text(column.name)
-                  Text(column.dataType)
-                  Text(column.nullable ? "NULL" : "NOT NULL")
-                  Text(column.defaultExpression ?? "—")
-                  Text(
-                    [
-                      column.primaryKey ? "PRIMARY" : nil,
-                      column.sortingKey ? "SORTING" : nil,
-                    ].compactMap { $0 }.joined(separator: ", "))
-                  Text(column.comment ?? "—")
-                }
-                .textSelection(.enabled)
-              }
-            }
-            .padding(6)
-          }
-          if !structure.facts.isEmpty {
-            GroupBox("Engine facts") {
-              Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 7) {
-                ForEach(structure.facts.indices, id: \.self) { index in
-                  GridRow {
-                    Text(structure.facts[index].name).bold()
-                    Text(
-                      structure.facts[index].value.isEmpty
-                        ? "—" : structure.facts[index].value
-                    )
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                  }
-                }
-              }
-              .padding(6)
+      HSplitView {
+        Table(columnRows) {
+          TableColumn("Column") { row in
+            HStack(spacing: 7) {
+              Image(systemName: columnSymbol(row.column))
+                .foregroundStyle(row.column.primaryKey ? Color.orange : .secondary)
+                .accessibilityHidden(true)
+              Text(row.column.name)
+                .font(.body.monospaced())
             }
           }
-          structureSection(
-            "Indexes",
-            rows: structure.indexes.map {
-              ("\($0.kind) · \($0.name)", $0.definition)
-            }
-          )
-          structureSection(
-            "Constraints",
-            rows: structure.constraints.map {
-              ("\($0.kind) · \($0.name)", $0.definition)
-            }
-          )
+          TableColumn("Type") { row in
+            Text(row.column.dataType)
+              .font(.body.monospaced())
+          }
+          TableColumn("Nullable") { row in
+            Text(row.column.nullable ? "YES" : "NO")
+          }
+          TableColumn("Default") { row in
+            Text(row.column.defaultExpression ?? "—")
+              .font(.body.monospaced())
+          }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(4)
+        .tableStyle(.inset(alternatesRowBackgrounds: true))
+        .frame(minWidth: 500)
+        .accessibilityLabel("\(structure.relation) columns")
+        .accessibilityIdentifier("structure.columns")
+
+        StructureDetailsList(structure: structure)
+          .frame(minWidth: 240, idealWidth: 300, maxWidth: 360)
       }
+      .background(Color(nsColor: .textBackgroundColor))
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier("object.structure")
     } else {
       ContentUnavailableView(
         "Structure not loaded", systemImage: "list.bullet.rectangle",
@@ -124,22 +96,189 @@ private struct ObjectStructureView: View {
     }
   }
 
-  private func structureSection(_ title: String, rows: [(String, String)]) -> some View {
-    GroupBox(title) {
-      if rows.isEmpty {
-        Text("None").foregroundStyle(.secondary).padding(6)
-      } else {
-        VStack(alignment: .leading, spacing: 8) {
-          ForEach(rows.indices, id: \.self) { index in
-            Text(rows[index].0).bold()
-            Text(rows[index].1)
-              .font(.system(.caption, design: .monospaced))
-              .textSelection(.enabled)
+  private func columnSymbol(_ column: WorkbenchRelationColumn) -> String {
+    if column.primaryKey { return "key.fill" }
+    if column.sortingKey { return "arrow.up.arrow.down" }
+    return "textformat"
+  }
+
+}
+
+private struct StructureDetailsList: View {
+  let structure: WorkbenchRelationStructure
+
+  var body: some View {
+    List {
+      Section("Indexes") {
+        if structure.indexes.isEmpty {
+          Text("None").foregroundStyle(.secondary)
+        } else {
+          ForEach(structure.indexes.indices, id: \.self) { index in
+            structureRow(
+              structure.indexes[index].name,
+              detail: structure.indexes[index].definition,
+              symbol: structure.indexes[index].kind.localizedCaseInsensitiveContains("primary")
+                ? "key.fill" : "list.bullet.rectangle"
+            )
           }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(6)
+      }
+      Section("Constraints") {
+        if structure.constraints.isEmpty {
+          Text("None").foregroundStyle(.secondary)
+        } else {
+          ForEach(structure.constraints.indices, id: \.self) { index in
+            structureRow(
+              "\(structure.constraints[index].kind) · \(structure.constraints[index].name)",
+              detail: structure.constraints[index].definition,
+              symbol: "checkmark.seal"
+            )
+          }
+        }
+      }
+      if !structure.facts.isEmpty {
+        Section("Engine") {
+          ForEach(structure.facts.indices, id: \.self) { index in
+            structureRow(
+              structure.facts[index].name,
+              detail: structure.facts[index].value.isEmpty ? "—" : structure.facts[index].value,
+              symbol: "cylinder"
+            )
+          }
+        }
       }
     }
+    .listStyle(.sidebar)
+    .accessibilityLabel("Structure details")
+    .accessibilityIdentifier("structure.details")
+  }
+
+  private func structureRow(_ title: String, detail: String, symbol: String) -> some View {
+    HStack(alignment: .top, spacing: 8) {
+      Image(systemName: symbol)
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .lineLimit(1)
+        Text(detail)
+          .font(.caption.monospaced())
+          .foregroundStyle(.secondary)
+          .lineLimit(2)
+          .textSelection(.enabled)
+      }
+    }
+    .accessibilityElement(children: .combine)
+  }
+}
+
+struct NativeStructureInspector: View {
+  let tab: NativeObjectTab
+
+  private var structure: WorkbenchRelationStructure? { tab.structure }
+
+  private var primaryColumns: [WorkbenchRelationColumn] {
+    structure?.columns.filter(\.primaryKey) ?? []
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack {
+        Text("STRUCTURE")
+          .font(.system(size: 10, weight: .bold))
+          .foregroundStyle(.secondary)
+        Spacer()
+        Button {
+          tab.selectedSection = "data"
+        } label: {
+          Image(systemName: "xmark")
+        }
+        .buttonStyle(.plain)
+        .help("Close structure")
+        .accessibilityLabel("Close structure")
+        .accessibilityIdentifier("structure.inspector.close")
+      }
+      .padding(.horizontal, 12)
+      .frame(height: 40)
+      Divider()
+
+      ScrollView {
+        VStack(alignment: .leading, spacing: 14) {
+          Label(tab.title, systemImage: "tablecells")
+            .font(.headline)
+          LabeledContent("Kind", value: kindLabel(tab.kind))
+          if let structure {
+            LabeledContent("Engine", value: engineLabel(structure.engine))
+            LabeledContent("Namespace", value: structure.namespace)
+            LabeledContent("Columns", value: "\(structure.columns.count)")
+          }
+          if let rows = tab.summary?.split(separator: "·").first {
+            LabeledContent(
+              "Rows", value: String(rows).trimmingCharacters(in: .whitespaces))
+          }
+          Divider()
+          inspectorSection("PRIMARY KEY") {
+            if primaryColumns.isEmpty {
+              Text("None").foregroundStyle(.secondary)
+            } else {
+              ForEach(primaryColumns.indices, id: \.self) { index in
+                Text("\(primaryColumns[index].name) · \(primaryColumns[index].dataType)")
+                  .font(.caption.monospaced())
+                  .textSelection(.enabled)
+              }
+            }
+          }
+          if let facts = structure?.facts, !facts.isEmpty {
+            inspectorSection("ENGINE FACTS") {
+              ForEach(facts.indices, id: \.self) { index in
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(facts[index].name)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                  Text(facts[index].value.isEmpty ? "—" : facts[index].value)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                }
+              }
+            }
+          }
+          Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+    }
+    .background(Color(nsColor: .controlBackgroundColor))
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Structure inspector for \(tab.title)")
+    .accessibilityIdentifier("structure.inspector")
+  }
+
+  private func inspectorSection<Content: View>(
+    _ title: String,
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(title)
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(.secondary)
+      content()
+    }
+  }
+
+  private func engineLabel(_ engine: String) -> String {
+    switch engine.lowercased() {
+    case "postgresql": "PostgreSQL"
+    case "clickhouse": "ClickHouse"
+    case "redis": "Redis"
+    default: engine
+    }
+  }
+
+  private func kindLabel(_ kind: String) -> String {
+    kind.replacingOccurrences(of: "postgresql_", with: "")
+      .replacingOccurrences(of: "clickhouse_", with: "")
+      .replacingOccurrences(of: "_", with: " ")
+      .capitalized
   }
 }

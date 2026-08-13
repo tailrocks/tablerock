@@ -9,6 +9,9 @@
     let nativeWorkbenchQuery: Bool
     let nativeWorkbenchConnections: Bool
     let nativeWorkbenchSetup: Bool
+    let nativeWorkbenchStructure: Bool
+    let nativeWorkbenchSafeReview: Bool
+    let nativeWorkbenchDestructiveReview: Bool
     let multiWindow: Bool
     let objectTabs: Bool
     let dataMovementUI: Bool
@@ -45,6 +48,12 @@
         nativeWorkbenchConnections:
           environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_CONNECTIONS"] == "1",
         nativeWorkbenchSetup: environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SETUP"] == "1",
+        nativeWorkbenchStructure:
+          environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STRUCTURE"] == "1",
+        nativeWorkbenchSafeReview:
+          environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SAFE_REVIEW"] == "1",
+        nativeWorkbenchDestructiveReview:
+          environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_DESTRUCTIVE_REVIEW"] == "1",
         multiWindow: environment["TABLEROCK_FIXTURE_MULTI_WINDOW"] == "1",
         objectTabs: environment["TABLEROCK_FIXTURE_OBJECT_TABS"] == "1",
         dataMovementUI: environment["TABLEROCK_FIXTURE_DATA_MOVEMENT_UI"] == "1",
@@ -229,7 +238,7 @@
   }
 
   @MainActor
-  func runNativeStructureAudit() {
+  func runNativeStructureAudit(structure: WorkbenchRelationStructure) {
     let roots = NSApplication.shared.windows.filter(\.isVisible).compactMap(\.contentView)
     func descendants(of view: NSView) -> [NSView] {
       [view] + view.subviews.flatMap(descendants)
@@ -238,7 +247,11 @@
       .compactMap { ($0 as? NSTextField)?.stringValue }
       .joined(separator: "|")
     let copied = NSPasteboard.general.string(forType: .string) ?? ""
-    guard labels.contains("id|bigint|NOT NULL"), labels.contains("name|text|NULL"),
+    let id = structure.columns.first(where: { $0.name == "id" })
+    let name = structure.columns.first(where: { $0.name == "name" })
+    guard structure.engine == "postgresql",
+      id?.dataType.lowercased() == "bigint", id?.nullable == false,
+      name?.dataType.lowercased() == "text", name?.nullable == true,
       labels.contains("structure_probe_pkey"),
       copied.contains(#"CREATE TABLE "public"."structure_probe""#)
     else {
@@ -251,7 +264,7 @@
   }
 
   @MainActor
-  func runNativeClickHouseStructureAudit() {
+  func runNativeClickHouseStructureAudit(structure: WorkbenchRelationStructure) {
     let roots = NSApplication.shared.windows.filter(\.isVisible).compactMap(\.contentView)
     func descendants(of view: NSView) -> [NSView] {
       [view] + view.subviews.flatMap(descendants)
@@ -260,8 +273,10 @@
       .compactMap { ($0 as? NSTextField)?.stringValue }
       .joined(separator: "|")
     let copied = NSPasteboard.general.string(forType: .string) ?? ""
-    guard labels.contains("id|UInt64|NOT NULL"),
-      labels.contains("PRIMARY, SORTING"), labels.contains("identity"),
+    let id = structure.columns.first(where: { $0.name == "id" })
+    guard structure.engine == "clickhouse",
+      id?.dataType == "UInt64", id?.nullable == false,
+      id?.primaryKey == true, id?.sortingKey == true, id?.comment == "identity",
       labels.contains("MergeTree"), labels.contains("toYYYYMM(created_at)"),
       copied.contains("CREATE TABLE db.structure_probe")
     else {

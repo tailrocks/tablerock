@@ -1,6 +1,82 @@
 import SwiftUI
 import TableRockFeature
 
+private struct ChangeReviewBadge: View {
+  let text: String
+  let destructive: Bool
+
+  var body: some View {
+    Label(text, systemImage: destructive ? "trash.fill" : "lock.shield.fill")
+      .font(.caption2.weight(.bold))
+      .foregroundStyle(destructive ? Color.red : .green)
+      .padding(.horizontal, 10)
+      .padding(.vertical, 4)
+      .background((destructive ? Color.red : .green).opacity(0.1), in: Capsule())
+      .accessibilityIdentifier(
+        destructive ? "change.review.destructive" : "change.review.safe")
+  }
+}
+
+private struct ChangeReviewHeader: View {
+  let destructive: Bool
+  let title: String
+  let summary: String
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 14) {
+      Image(systemName: destructive ? "exclamationmark.triangle.fill" : "checkmark.shield.fill")
+        .font(.title)
+        .foregroundStyle(destructive ? Color.red : .green)
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+          .font(.title2.weight(.semibold))
+        Text(summary)
+          .foregroundStyle(.secondary)
+      }
+      Spacer(minLength: 12)
+      ChangeReviewBadge(
+        text: destructive ? "DESTRUCTIVE" : "SAFE CHANGE",
+        destructive: destructive
+      )
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("change.review.header")
+  }
+}
+
+private struct ChangeReviewEntry: View {
+  let kind: String
+  let title: String
+  let preview: String
+  let destructive: Bool
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 12) {
+      Text(kind.uppercased())
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(destructive ? Color.red : .orange)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background((destructive ? Color.red : .orange).opacity(0.1), in: Capsule())
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+          .fontWeight(.semibold)
+        Text(preview)
+          .font(.callout.monospaced())
+          .textSelection(.enabled)
+          .accessibilityLabel("Change preview")
+          .accessibilityValue(preview)
+          .accessibilityIdentifier("change.review.entry.preview")
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.vertical, 6)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("change.review.entry")
+  }
+}
+
 struct ChangeReviewPlane: View {
   let kindWord: String
   let title: String
@@ -13,42 +89,28 @@ struct ChangeReviewPlane: View {
   let previewAccessibilityId: String
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Text(kindWord)
-          .font(.caption.weight(.bold).monospaced())
-          .tracking(0.4)
-          .accessibilityIdentifier("change.review.kind")
-        VStack(alignment: .leading, spacing: 2) {
-          Text(title)
-            .font(.caption.weight(.bold))
-            .tracking(0.4)
-          Text(metadataFact)
-            .font(.caption2.monospaced())
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-            .accessibilityIdentifier("change.review.metadata")
-        }
-        Spacer(minLength: 4)
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .top) {
+        ChangeReviewEntry(
+          kind: kindWord,
+          title: title,
+          preview: preview,
+          destructive: destructive
+        )
+        .accessibilityIdentifier(previewAccessibilityId)
+        Spacer(minLength: 8)
         if production {
-          Text("HALO PRODUCTION")
+          Text("PRODUCTION")
             .font(.caption2.weight(.bold))
+            .foregroundStyle(.red)
             .accessibilityLabel("Production — writes need review")
         }
-        if destructive {
-          Text("DESTRUCTIVE")
-            .font(.caption2.weight(.bold).monospaced())
-            .accessibilityIdentifier("change.review.destructive")
-        }
       }
-      Text(preview)
-        .font(.system(.body, design: .monospaced))
+      Text(metadataFact)
+        .font(.caption2.monospaced())
+        .foregroundStyle(.secondary)
         .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .background(Color(nsColor: .textBackgroundColor))
-        .accessibilityLabel(preview)
-        .accessibilityIdentifier(previewAccessibilityId)
+        .accessibilityIdentifier("change.review.metadata")
       if let safetyNote {
         Text(safetyNote)
           .font(.caption2.weight(.semibold))
@@ -63,9 +125,9 @@ struct ChangeReviewPlane: View {
           .accessibilityIdentifier("change.review.rollback")
       }
     }
-    .padding(10)
+    .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color(nsColor: .controlBackgroundColor))
+    .background(Color(nsColor: .textBackgroundColor))
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("change.review.plane")
   }
@@ -73,7 +135,7 @@ struct ChangeReviewPlane: View {
 
 struct DdlChangeSheet: View {
   @Environment(WorkbenchPresentationStore.self) private var model
-  @State private var applyConfirmationPresented = false
+  @State private var destructiveConfirmation = ""
 
   private var needsDefinition: Bool {
     ["add_column", "create_index", "add_constraint"].contains(model.ddlChangeKind)
@@ -81,20 +143,32 @@ struct DdlChangeSheet: View {
 
   var body: some View {
     @Bindable var model = model
-    VStack(alignment: .leading, spacing: 14) {
+    Group {
+      if let review = model.ddlChangeReview {
+        reviewSurface(review)
+      } else {
+        editorSurface
+      }
+    }
+    .frame(minWidth: 680, minHeight: 590)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("structure.change.sheet")
+    .interactiveDismissDisabled(model.ddlChangeReview != nil || model.ddlChangeApplying)
+    .onChange(of: model.ddlChangeReview != nil) { _, reviewing in
+      if !reviewing { destructiveConfirmation = "" }
+    }
+  }
+
+  private var editorSurface: some View {
+    @Bindable var model = model
+    return VStack(alignment: .leading, spacing: 14) {
       HStack {
-        Text("CHANGE REVIEW")
-          .font(.caption.weight(.bold))
-          .tracking(0.6)
-        Text("STRUCTURE")
-          .font(.caption2.weight(.bold).monospaced())
-          .foregroundStyle(.secondary)
+        Label("Structure change", systemImage: "tablecells.badge.ellipsis")
+          .font(.title2.weight(.semibold))
         Spacer()
         Button("Close") { Task { await model.closeDdlChange() } }
           .disabled(model.ddlChangeApplying)
       }
-      Text("Structure change")
-        .font(.title3.weight(.semibold))
       Form {
         Picker("Operation", selection: $model.ddlChangeKind) {
           Text("Add column").tag("add_column")
@@ -132,39 +206,7 @@ struct DdlChangeSheet: View {
                   .isEmpty)
           )
           .accessibilityIdentifier("structure.change.review")
-        Button("Discard Review", role: .cancel) {
-          Task { await model.discardDdlChangeReview() }
-        }
-        .disabled(model.ddlChangeReview == nil || model.ddlChangeApplying)
         Spacer()
-      }
-      if let review = model.ddlChangeReview {
-        ChangeReviewPlane(
-          kindWord: ChangeReviewPresentation.kindWord(
-            preview: review.preview, destructive: review.destructive, fallback: "DDL"),
-          title: "LEDGER · frozen structure plan",
-          preview: review.preview,
-          metadataFact: ChangeReviewPresentation.metadataStrip(
-            target: nil,
-            expiresAtMs: review.expiresAtMs,
-            nowMs: model.nowMilliseconds(),
-            destructive: review.destructive),
-          destructive: review.destructive,
-          production: model.activeProductionWarning,
-          rollbackSummary: review.rollbackSummary,
-          safetyNote: review.destructive
-            ? "Removes structure — second confirmation required before apply." : nil,
-          previewAccessibilityId: "structure.change.preview"
-        )
-        HStack {
-          Button("Discard Review", role: .cancel) {
-            Task { await model.discardDdlChangeReview() }
-          }
-          Spacer()
-          Button("Apply Reviewed Change…") { applyConfirmationPresented = true }
-            .buttonStyle(.glassProminent)
-            .accessibilityIdentifier("structure.change.apply-review")
-        }
       }
       if model.ddlChangeApplying { ProgressView("Applying structure change…") }
       if let outcome = model.ddlChangeOutcome {
@@ -178,25 +220,86 @@ struct DdlChangeSheet: View {
       Spacer()
     }
     .padding(20)
-    .frame(minWidth: 680, minHeight: 520)
-    .accessibilityElement(children: .contain)
-    .interactiveDismissDisabled(model.ddlChangeReview != nil || model.ddlChangeApplying)
-    .confirmationDialog(
-      model.ddlChangeReview?.destructive == true
-        ? "Apply destructive structure change?" : "Apply structure change?",
-      isPresented: $applyConfirmationPresented,
-      presenting: model.ddlChangeReview
-    ) { review in
+  }
+
+  private func reviewSurface(_ review: WorkbenchDdlChangeReview) -> some View {
+    VStack(spacing: 0) {
+      ChangeReviewHeader(
+        destructive: review.destructive,
+        title: review.destructive ? "Review destructive change" : "Review staged change",
+        summary: review.destructive
+          ? "One frozen structure operation can remove database structure."
+          : "One safe structure operation will use reviewed, one-time authority."
+      )
+      .padding(22)
+
+      Divider()
+
+      List {
+        ChangeReviewEntry(
+          kind: ChangeReviewPresentation.kindWord(
+            preview: review.preview, destructive: review.destructive, fallback: "DDL"),
+          title: model.selectedObjectTab?.title ?? "Selected relation",
+          preview: review.preview,
+          destructive: review.destructive
+        )
+        .accessibilityIdentifier("structure.change.preview")
+
+        Section("Review authority") {
+          Text(
+            ChangeReviewPresentation.metadataStrip(
+              target: nil,
+              expiresAtMs: review.expiresAtMs,
+              nowMs: model.nowMilliseconds(),
+              destructive: review.destructive)
+          )
+          .font(.caption.monospaced())
+          .textSelection(.enabled)
+          Text(review.rollbackSummary)
+            .font(.caption)
+            .textSelection(.enabled)
+            .accessibilityIdentifier("change.review.rollback")
+        }
+      }
+      .listStyle(.inset)
+
+      Divider()
+
       if review.destructive {
-        Button("Apply Destructive Change", role: .destructive) {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Type APPLY to enable the destructive action.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          TextField("APPLY", text: $destructiveConfirmation)
+            .textFieldStyle(.roundedBorder)
+            .accessibilityIdentifier("structure.change.confirmation")
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 14)
+      }
+
+      HStack {
+        Button("Discard Change", role: .destructive) {
+          Task { await model.closeDdlChange() }
+        }
+        Spacer()
+        Button("Back to Editing") {
+          Task { await model.discardDdlChangeReview() }
+        }
+        Button(
+          review.destructive
+            ? (model.activeProductionWarning
+              ? "Apply on PRODUCTION" : "Apply Destructive Change")
+            : "Apply Change",
+          role: review.destructive ? .destructive : nil
+        ) {
           Task { await model.applyDdlChange() }
         }
-      } else {
-        Button("Apply Structure Change") { Task { await model.applyDdlChange() } }
+        .disabled(review.destructive && destructiveConfirmation != "APPLY")
+        .keyboardShortcut(.defaultAction)
+        .accessibilityIdentifier("structure.change.apply-review")
       }
-      Button("Cancel", role: .cancel) {}
-    } message: { review in
-      Text("\(review.preview)\n\n\(review.rollbackSummary)")
+      .padding(22)
     }
   }
 }
@@ -206,21 +309,30 @@ struct TableOperationSheet: View {
 
   var body: some View {
     @Bindable var model = model
-    VStack(alignment: .leading, spacing: 14) {
+    Group {
+      if let review = model.tableOperationReview {
+        reviewSurface(review)
+      } else {
+        editorSurface
+      }
+    }
+    .frame(minWidth: 680, minHeight: 590)
+    .interactiveDismissDisabled(model.tableOperationReview != nil || model.tableOperationApplying)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("table-operation.sheet")
+  }
+
+  private var editorSurface: some View {
+    @Bindable var model = model
+    return VStack(alignment: .leading, spacing: 14) {
       HStack {
-        Text("CHANGE REVIEW")
-          .font(.caption.weight(.bold))
-          .tracking(0.6)
-        Text("TABLE OP")
-          .font(.caption2.weight(.bold).monospaced())
-          .foregroundStyle(.secondary)
+        Label("Table operation", systemImage: "wrench.and.screwdriver")
+          .font(.title2.weight(.semibold))
         Spacer()
         Button("Close") { Task { await model.closeTableOperation() } }
           .disabled(model.tableOperationApplying)
           .accessibilityIdentifier("table-operation.close")
       }
-      Text("Table operation")
-        .font(.title3.weight(.semibold))
       Picker("Operation", selection: $model.tableOperationKind) {
         if model.connectedEngine == "postgresql" {
           Text("Rename table").tag("rename")
@@ -251,41 +363,6 @@ struct TableOperationSheet: View {
                 .isEmpty)
         )
         .accessibilityIdentifier("table-operation.review")
-      if let review = model.tableOperationReview {
-        ChangeReviewPlane(
-          kindWord: ChangeReviewPresentation.kindWord(
-            preview: review.preview, destructive: review.destructive, fallback: "TABLE"),
-          title: "LEDGER · frozen table operation",
-          preview: review.preview,
-          metadataFact: ChangeReviewPresentation.metadataStrip(
-            target: review.target,
-            expiresAtMs: review.expiresAtMs,
-            nowMs: model.nowMilliseconds(),
-            destructive: review.destructive,
-            extra: "type \(review.confirmation) to authorize"),
-          destructive: review.destructive,
-          production: model.activeProductionWarning,
-          rollbackSummary: review.destructive
-            ? "Destroys table data — exact target name required."
-            : "Exact target name required before apply.",
-          safetyNote: nil,
-          previewAccessibilityId: "table-operation.preview"
-        )
-        TextField("Exact table name", text: $model.tableOperationConfirmation)
-          .accessibilityIdentifier("table-operation.confirmation")
-        HStack {
-          Button("Discard Review", role: .cancel) {
-            Task { await model.resetTableOperationReview() }
-          }
-          Spacer()
-          Button(review.destructive ? "Apply Destructive Operation" : "Apply Operation") {
-            Task { await model.applyTableOperation() }
-          }
-          .buttonStyle(.glassProminent)
-          .disabled(model.tableOperationConfirmation != review.confirmation)
-          .accessibilityIdentifier("table-operation.apply")
-        }
-      }
       if model.tableOperationApplying {
         ProgressView(model.tableOperationStatus?.summary ?? "Starting table operation…")
           .accessibilityIdentifier("table-operation.progress")
@@ -308,8 +385,89 @@ struct TableOperationSheet: View {
       Spacer()
     }
     .padding(20)
-    .frame(minWidth: 680, minHeight: 500)
-    .interactiveDismissDisabled(model.tableOperationReview != nil || model.tableOperationApplying)
-    .accessibilityElement(children: .contain)
+  }
+
+  private func reviewSurface(_ review: WorkbenchTableOperationReview) -> some View {
+    @Bindable var model = model
+    return VStack(spacing: 0) {
+      ChangeReviewHeader(
+        destructive: review.destructive,
+        title: review.destructive ? "Review destructive operation" : "Review table operation",
+        summary: review.destructive
+          ? "One frozen operation can remove or replace table data."
+          : "One reviewed table operation will use one-time authority."
+      )
+      .padding(22)
+
+      Divider()
+
+      List {
+        ChangeReviewEntry(
+          kind: ChangeReviewPresentation.kindWord(
+            preview: review.preview, destructive: review.destructive, fallback: "TABLE"),
+          title: review.target,
+          preview: review.preview,
+          destructive: review.destructive
+        )
+        .accessibilityIdentifier("table-operation.preview")
+
+        Section("Review authority") {
+          Text(
+            ChangeReviewPresentation.metadataStrip(
+              target: review.target,
+              expiresAtMs: review.expiresAtMs,
+              nowMs: model.nowMilliseconds(),
+              destructive: review.destructive,
+              extra: "exact target required")
+          )
+          .font(.caption.monospaced())
+          .textSelection(.enabled)
+          Text(
+            review.destructive
+              ? "This can destroy table data. Rust consumes authority before database I/O."
+              : "Rust consumes authority before database I/O."
+          )
+          .font(.caption)
+          .textSelection(.enabled)
+        }
+      }
+      .listStyle(.inset)
+
+      Divider()
+
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Type \(review.confirmation) to enable this operation.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        TextField("Exact table name", text: $model.tableOperationConfirmation)
+          .textFieldStyle(.roundedBorder)
+          .accessibilityIdentifier("table-operation.confirmation")
+      }
+      .padding(.horizontal, 22)
+      .padding(.top, 14)
+
+      HStack {
+        Button("Discard Operation", role: .destructive) {
+          Task { await model.closeTableOperation() }
+        }
+        Spacer()
+        Button("Back to Editing") {
+          Task { await model.resetTableOperationReview() }
+        }
+        Button(
+          review.destructive
+            ? (model.activeProductionWarning
+              ? "Apply on PRODUCTION" : "Apply Destructive Operation")
+            : "Apply Operation",
+          role: review.destructive ? .destructive : nil
+        ) {
+          Task { await model.applyTableOperation() }
+        }
+        .disabled(model.tableOperationConfirmation != review.confirmation)
+        .keyboardShortcut(.defaultAction)
+        .accessibilityIdentifier("table-operation.apply")
+      }
+      .padding(22)
+    }
   }
 }

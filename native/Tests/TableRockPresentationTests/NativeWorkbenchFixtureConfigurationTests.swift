@@ -48,6 +48,9 @@
       XCTAssertFalse(configuration.nativeWorkbenchQuery)
       XCTAssertFalse(configuration.nativeWorkbenchConnections)
       XCTAssertFalse(configuration.nativeWorkbenchSetup)
+      XCTAssertFalse(configuration.nativeWorkbenchStructure)
+      XCTAssertFalse(configuration.nativeWorkbenchSafeReview)
+      XCTAssertFalse(configuration.nativeWorkbenchDestructiveReview)
       XCTAssertFalse(configuration.multiWindow)
       XCTAssertFalse(configuration.objectTabs)
       XCTAssertFalse(configuration.dataMovementUI)
@@ -82,6 +85,9 @@
         "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_QUERY",
         "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_CONNECTIONS",
         "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SETUP",
+        "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STRUCTURE",
+        "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SAFE_REVIEW",
+        "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_DESTRUCTIVE_REVIEW",
         "TABLEROCK_FIXTURE_MULTI_WINDOW",
         "TABLEROCK_FIXTURE_OBJECT_TABS",
         "TABLEROCK_FIXTURE_DATA_MOVEMENT_UI",
@@ -117,6 +123,9 @@
       XCTAssertTrue(configuration.nativeWorkbenchQuery)
       XCTAssertTrue(configuration.nativeWorkbenchConnections)
       XCTAssertTrue(configuration.nativeWorkbenchSetup)
+      XCTAssertTrue(configuration.nativeWorkbenchStructure)
+      XCTAssertTrue(configuration.nativeWorkbenchSafeReview)
+      XCTAssertTrue(configuration.nativeWorkbenchDestructiveReview)
       XCTAssertTrue(configuration.multiWindow)
       XCTAssertTrue(configuration.objectTabs)
       XCTAssertTrue(configuration.dataMovementUI)

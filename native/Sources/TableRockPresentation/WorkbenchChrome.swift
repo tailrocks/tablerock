@@ -25,7 +25,13 @@ struct WorkbenchShellView: View {
         WorkbenchStatusBar()
       }
 
-      if let snapshot = model.selectedCellSnapshot {
+      if let tab = model.selectedObjectTab,
+        tab.selectedSection == "structure"
+      {
+        Divider()
+        NativeStructureInspector(tab: tab)
+          .frame(width: 270)
+      } else if let snapshot = model.selectedCellSnapshot {
         Divider()
         NativeValueInspector(
           column: snapshot.0,

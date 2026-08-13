@@ -329,6 +329,12 @@ struct NativeValueInspector: View {
 
   @State private var hexExpanded: Bool = true
 
+  private struct InspectorRow: Identifiable {
+    let id: Int
+    let column: WorkbenchColumn
+    let cell: WorkbenchCell
+  }
+
   private var presentation: GridCellPresentation {
     GridCellPresentation.project(cell)
   }
@@ -368,50 +374,46 @@ struct NativeValueInspector: View {
     cell.bytes.count > 64
   }
 
+  private var typeFact: String {
+    "\(column.engineType.uppercased()) · \(column.nullable ? "NULLABLE" : "NOT NULL")"
+  }
+
+  private var selectedDisplay: String {
+    if presentation.isNull { return "NULL" }
+    return cell.display.isEmpty ? "Empty" : cell.display
+  }
+
+  private var rowDetails: [InspectorRow] {
+    guard let table = model.resultTable,
+      table.cells.indices.contains(row)
+    else { return [] }
+    return table.columnMetadata.indices.compactMap { index in
+      guard index != columnIndex,
+        table.cells[row].indices.contains(index)
+      else { return nil }
+      return InspectorRow(
+        id: index,
+        column: table.columnMetadata[index],
+        cell: table.cells[row][index]
+      )
+    }
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
       Divider()
       ScrollView {
-        VStack(alignment: .leading, spacing: 8) {
-          Text(metadataFact)
-            .font(.caption2.monospaced())
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-            .accessibilityIdentifier("value.inspector.metadata")
-
-          if cell.isTruncated {
-            Label(
-              cell.originalByteCount.map { "Truncated — original \($0) B" }
-                ?? "Truncated value",
-              systemImage: "scissors"
-            )
-            .font(.caption.weight(.semibold))
-            .accessibilityIdentifier("value.inspector.truncated")
-          }
-
-          primarySurface
-
-          if structuredTreeFailed {
-            Text(
-              "JSON tree unavailable — payload is not valid JSON within tree bounds. Text and hex remain."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("value.inspector.tree.unavailable")
-          }
-
-          if let structuredRows {
-            treeSection(structuredRows)
-          }
-
-          hexSection
+        VStack(alignment: .leading, spacing: 14) {
+          selectedColumnSection
+          rowDetailsSection
+          technicalDetails
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
-    .background(Color(nsColor: .textBackgroundColor))
+    .background(Color(nsColor: .controlBackgroundColor))
     .onAppear {
       // Large blobs start collapsed; binary and small values keep hex open.
       hexExpanded = prefersHexPrimary || !hexNeedsDisclosure
@@ -424,114 +426,129 @@ struct NativeValueInspector: View {
   }
 
   private var header: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Text(presentation.kindGlyph)
-        .font(.caption.weight(.bold).monospaced())
-        .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(presentation.kindLabel.uppercased())
-          .font(.caption.weight(.bold))
-          .tracking(0.5)
-          .accessibilityIdentifier("value.inspector.kind")
-        Text(column.name)
-          .font(.caption.monospaced())
-          .textSelection(.enabled)
-          .lineLimit(2)
-          .accessibilityIdentifier("value.inspector.column")
+    HStack {
+      Text("INSPECTOR")
+        .font(.system(size: 10, weight: .bold))
+        .foregroundStyle(.secondary)
+      Spacer()
+      Button {
+        model.selectedCell = nil
+      } label: {
+        Image(systemName: "xmark")
       }
-      Spacer(minLength: 4)
-      VStack(alignment: .trailing, spacing: 4) {
-        HStack(spacing: 6) {
-          Text(ValueInspectorProjection.locationFact(row: row, columnIndex: columnIndex))
-            .font(.caption2.monospacedDigit())
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("value.inspector.location")
-          Button {
-            model.selectedCell = nil
-          } label: {
-            Image(systemName: "xmark")
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel("Close inspector")
-          .accessibilityIdentifier("value.inspector.close")
-        }
-        HStack(spacing: 6) {
-          Button("Copy Text") { copyToPasteboard(cell.display) }
-            .buttonStyle(.borderless)
-            .controlSize(.mini)
-            .disabled(presentation.isNull && cell.display.isEmpty)
-            .accessibilityIdentifier("value.inspector.copy.text")
-          Button("Copy Hex") { copyToPasteboard(hexLinear) }
-            .buttonStyle(.borderless)
-            .controlSize(.mini)
-            .disabled(cell.bytes.isEmpty)
-            .accessibilityIdentifier("value.inspector.copy.hex")
-        }
-      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Close inspector")
+      .accessibilityIdentifier("value.inspector.close")
     }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 8)
+    .padding(.horizontal, 12)
+    .frame(height: 40)
   }
 
-  @ViewBuilder
-  private var primarySurface: some View {
-    if presentation.isNull {
-      VStack(alignment: .leading, spacing: 4) {
-        Text("∅")
-          .font(.title2.monospaced())
-        Text("NULL")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
-        // Keep raw display text in the hierarchy for audit / selection.
-        Text(cell.display.isEmpty ? "NULL" : cell.display)
-          .font(.system(.body, design: .monospaced))
-          .textSelection(.enabled)
-          .opacity(cell.display.isEmpty ? 0 : 1)
-          .accessibilityIdentifier("value.inspector.text")
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .accessibilityElement(children: .combine)
-      .accessibilityLabel("NULL value")
-    } else if presentation.kindLabel == "Text" && presentation.title == "·" {
-      VStack(alignment: .leading, spacing: 4) {
-        Text("·")
-          .font(.title2.monospaced())
-        Text("Empty text")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
-        Text(cell.display)
-          .font(.system(.body, design: .monospaced))
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .accessibilityIdentifier("value.inspector.text")
-      }
-    } else if prefersHexPrimary {
-      VStack(alignment: .leading, spacing: 6) {
-        sectionLabel("BYTES")
-        Text(hexDump.isEmpty ? "Empty" : hexDump)
-          .font(.system(.caption, design: .monospaced))
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .accessibilityIdentifier("value.inspector.hex")
-        if !cell.display.isEmpty {
-          sectionLabel("LABEL")
-          Text(cell.display)
-            .font(.system(.caption, design: .monospaced))
+  private var selectedColumnSection: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(column.name)
+            .font(.caption.weight(.semibold))
             .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("value.inspector.text")
+            .lineLimit(2)
+            .accessibilityIdentifier("value.inspector.column")
+          Text(typeFact)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(typeFact)
+            .accessibilityIdentifier("value.inspector.kind")
+        }
+        Spacer(minLength: 4)
+        Menu {
+          Button("Copy Value") { copyToPasteboard(cell.display) }
+            .disabled(presentation.isNull && cell.display.isEmpty)
+          Button("Copy Hex") { copyToPasteboard(hexLinear) }
+            .disabled(cell.bytes.isEmpty)
+            .accessibilityIdentifier("value.inspector.copy.hex")
+        } label: {
+          Image(systemName: "doc.on.doc")
+        }
+        .menuStyle(.borderlessButton)
+        .help("Copy value")
+        .accessibilityLabel("Copy value options")
+        .accessibilityIdentifier("value.inspector.copy.text")
+      }
+
+      Text(selectedDisplay)
+        .font(.body.monospaced())
+        .textSelection(.enabled)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay {
+          RoundedRectangle(cornerRadius: 7)
+            .stroke(Color(nsColor: .separatorColor))
+        }
+        .accessibilityIdentifier("value.inspector.text")
+        .accessibilityLabel(presentation.accessibilityValue)
+    }
+  }
+
+  private var rowDetailsSection: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      sectionLabel("ROW DETAILS")
+      if rowDetails.isEmpty {
+        Text("No additional columns")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else {
+        ForEach(rowDetails) { detail in
+          VStack(alignment: .leading, spacing: 2) {
+            Text(detail.column.name)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(GridCellPresentation.project(detail.cell).accessibilityValue)
+              .font(.caption.monospaced())
+              .textSelection(.enabled)
+          }
+          .accessibilityElement(children: .combine)
+          .accessibilityIdentifier("value.inspector.row.\(detail.id)")
         }
       }
-    } else {
-      VStack(alignment: .leading, spacing: 6) {
-        sectionLabel("TEXT")
-        Text(cell.display.isEmpty ? "Empty" : cell.display)
-          .font(.system(.body, design: .monospaced))
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .accessibilityIdentifier("value.inspector.text")
-      }
     }
+    .accessibilityIdentifier("value.inspector.row-details")
+  }
+
+  private var technicalDetails: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      sectionLabel("VALUE DETAILS")
+      Text(metadataFact)
+        .font(.caption2.monospaced())
+        .foregroundStyle(.secondary)
+        .textSelection(.enabled)
+        .accessibilityIdentifier("value.inspector.metadata")
+
+      if cell.isTruncated {
+        Label(
+          cell.originalByteCount.map { "Truncated — original \($0) B" }
+            ?? "Truncated value",
+          systemImage: "scissors"
+        )
+        .font(.caption.weight(.semibold))
+        .accessibilityIdentifier("value.inspector.truncated")
+      }
+
+      if structuredTreeFailed {
+        Text(
+          "JSON tree unavailable — payload is not valid JSON within tree bounds. Text and hex remain."
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .accessibilityIdentifier("value.inspector.tree.unavailable")
+      }
+
+      if let structuredRows {
+        treeSection(structuredRows)
+      }
+
+      hexSection
+    }
+    .accessibilityIdentifier("value.inspector.details")
   }
 
   private func treeSection(_ rows: [StructuredValueTreeRow]) -> some View {
@@ -561,50 +578,42 @@ struct NativeValueInspector: View {
   }
 
   private var hexSection: some View {
-    // Binary already surfaces dump as primary. Other kinds keep linear hex always
-    // painted (audit + copy), with multi-line dump progressive when large.
-    Group {
-      if prefersHexPrimary {
-        EmptyView()
-      } else {
-        VStack(alignment: .leading, spacing: 4) {
-          HStack(spacing: 6) {
-            Text("HEX")
-              .font(.caption2.weight(.semibold))
-              .tracking(0.4)
-              .foregroundStyle(.secondary)
-            Text("\(cell.bytes.count) B")
-              .font(.caption2.monospacedDigit())
-              .foregroundStyle(.secondary)
-          }
-          // Always-visible compact hex — required for fixture audits and quick scan.
-          Text(hexLinear.isEmpty ? "Empty" : hexLinear)
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 6) {
+        Text("HEX")
+          .font(.caption2.weight(.semibold))
+          .tracking(0.4)
+          .foregroundStyle(.secondary)
+        Text("\(cell.bytes.count) B")
+          .font(.caption2.monospacedDigit())
+          .foregroundStyle(.secondary)
+      }
+      // Always-visible compact hex preserves binary inspection and fixture audits.
+      Text(hexLinear.isEmpty ? "Empty" : hexLinear)
+        .font(.system(.caption, design: .monospaced))
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("value.inspector.hex")
+      if hexNeedsDisclosure {
+        DisclosureGroup(isExpanded: $hexExpanded) {
+          Text(hexDump)
             .font(.system(.caption, design: .monospaced))
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("value.inspector.hex")
-          if hexNeedsDisclosure {
-            DisclosureGroup(isExpanded: $hexExpanded) {
-              Text(hexDump)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 2)
-                .accessibilityIdentifier("value.inspector.hex.dump")
-            } label: {
-              Text("Dump")
-                .font(.caption2)
-            }
-            .accessibilityIdentifier("value.inspector.hex.group")
-          } else if !hexDump.isEmpty, hexDump.contains("\n") {
-            Text(hexDump)
-              .font(.system(.caption2, design: .monospaced))
-              .foregroundStyle(.secondary)
-              .textSelection(.enabled)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .accessibilityIdentifier("value.inspector.hex.dump")
-          }
+            .padding(.top, 2)
+            .accessibilityIdentifier("value.inspector.hex.dump")
+        } label: {
+          Text("Dump")
+            .font(.caption2)
         }
+        .accessibilityIdentifier("value.inspector.hex.group")
+      } else if !hexDump.isEmpty, hexDump.contains("\n") {
+        Text(hexDump)
+          .font(.system(.caption2, design: .monospaced))
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityIdentifier("value.inspector.hex.dump")
       }
     }
   }

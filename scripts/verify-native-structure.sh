@@ -34,9 +34,10 @@ rg -q 'pub fn relation_structure' "$FFI" || {
 for pattern in \
   'private struct ObjectStructureView' \
   'Text\("Structure"\).tag\("structure"\)' \
-  'GroupBox\("Columns"\)' \
-  '"Indexes"' \
-  '"Constraints"'
+  'Table\(columnRows\)' \
+  'Section\("Indexes"\)' \
+  'Section\("Constraints"\)' \
+  'accessibilityIdentifier\("structure\.inspector"\)'
 do
   native_source_has_regex "$pattern" || { echo "error: missing native structure UI: $pattern" >&2; exit 1; }
 done

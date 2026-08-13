@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 final class TableRockAppUITests: XCTestCase {
@@ -24,6 +25,10 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(app.descendants(matching: .any)["object.header"].exists)
     XCTAssertTrue(app.tables["results.grid"].exists)
     XCTAssertTrue(app.descendants(matching: .any)["value.inspector"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["value.inspector.row-details"].exists)
+    XCTAssertEqual(
+      app.descendants(matching: .any)["value.inspector.kind"].value as? String,
+      "TEXT · NOT NULL")
     XCTAssertTrue(app.descendants(matching: .any)["object.section"].exists)
     XCTAssertTrue(app.descendants(matching: .any)["workbench.status"].exists)
     XCTAssertEqual(
@@ -31,6 +36,59 @@ final class TableRockAppUITests: XCTestCase {
     let selectedValue = app.descendants(matching: .any)["results.cell.2.1"]
     XCTAssertTrue(selectedValue.exists)
     XCTAssertEqual(selectedValue.value as? String, "Aster Works")
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsStructurePlane() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STRUCTURE": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["object.structure"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["structure.columns"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["structure.details"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["structure.inspector"].exists)
+    XCTAssertGreaterThan(
+      app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label CONTAINS 'customers_pkey'"))
+        .count,
+      0)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsSafeReview() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SAFE_REVIEW": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["structure.change.sheet"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["change.review.safe"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["structure.change.preview"].exists)
+    XCTAssertTrue(app.buttons["structure.change.apply-review"].isEnabled)
+    XCTAssertFalse(app.textFields["structure.change.confirmation"].exists)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsDestructiveReview() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_DESTRUCTIVE_REVIEW": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["structure.change.sheet"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["change.review.destructive"].exists)
+    let confirmation = app.textFields["structure.change.confirmation"]
+    XCTAssertTrue(confirmation.exists)
+    let apply = app.buttons["structure.change.apply-review"]
+    XCTAssertFalse(apply.isEnabled)
+    confirmation.click()
+    confirmation.typeText("APPLY")
+    XCTAssertTrue(apply.isEnabled)
   }
 
   @MainActor
@@ -618,43 +676,35 @@ final class TableRockAppUITests: XCTestCase {
     let app = launch(scenario: "success")
     connectTemporarily(app)
     let refresh = app.buttons["catalog.refresh"]
-    XCTAssertTrue(refresh.waitForExistence(timeout: 10))
-    refresh.click()
+    activateAndClick(refresh, in: app)
     let table = app.staticTexts["fixture_table"]
     XCTAssertTrue(table.waitForExistence(timeout: 10))
+    app.activate()
     table.doubleClick()
     let structure = app.radioButtons["Structure"]
-    XCTAssertTrue(structure.waitForExistence(timeout: 10))
-    structure.click()
+    activateAndClick(structure, in: app)
     let actions = app.descendants(matching: .any)["structure.actions"]
-    XCTAssertTrue(actions.waitForExistence(timeout: 10))
-    app.activate()
-    let actionsHittable = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "hittable == true"), object: actions)
-    XCTAssertEqual(XCTWaiter.wait(for: [actionsHittable], timeout: 5), .completed)
-    actions.click()
+    activateAndClick(actions, in: app)
     let open = app.descendants(matching: .any)["structure.change.open"]
     if !open.waitForExistence(timeout: 2) {
       app.activate()
       actions.click()
     }
     XCTAssertTrue(open.waitForExistence(timeout: 10))
-    open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    activateAndClick(open, in: app)
     let object = app.textFields["structure.change.object"]
-    XCTAssertTrue(object.waitForExistence(timeout: 10))
-    object.click()
+    activateAndClick(object, in: app)
     object.typeText("reviewed_column")
     let definition = app.textFields["structure.change.definition"]
-    definition.click()
+    activateAndClick(definition, in: app)
     definition.typeText("text")
-    app.buttons["structure.change.review"].click()
+    activateAndClick(app.buttons["structure.change.review"], in: app)
     let preview = app.descendants(matching: .any)["structure.change.preview"]
     XCTAssertTrue(preview.waitForExistence(timeout: 10))
-    XCTAssertTrue((preview.value as? String ?? preview.label).contains("reviewed_column"))
-    app.buttons["structure.change.apply-review"].click()
-    let confirm = app.sheets.buttons["Apply Structure Change"]
-    XCTAssertTrue(confirm.waitForExistence(timeout: 10))
-    confirm.click()
+    let previewValue = app.descendants(matching: .any)["change.review.entry.preview"]
+    XCTAssertTrue(previewValue.waitForExistence(timeout: 10))
+    XCTAssertTrue((previewValue.value as? String ?? previewValue.label).contains("reviewed_column"))
+    activateAndClick(app.buttons["structure.change.apply-review"], in: app)
     XCTAssertTrue(
       app.descendants(matching: .any)["structure.change.outcome"].waitForExistence(timeout: 10))
   }
@@ -664,32 +714,24 @@ final class TableRockAppUITests: XCTestCase {
     let app = launch(scenario: "success")
     connectTemporarily(app)
     let refresh = app.buttons["catalog.refresh"]
-    XCTAssertTrue(refresh.waitForExistence(timeout: 10))
-    refresh.click()
+    activateAndClick(refresh, in: app)
     let table = app.staticTexts["fixture_table"]
     XCTAssertTrue(table.waitForExistence(timeout: 10))
+    app.activate()
     table.doubleClick()
     let structure = app.radioButtons["Structure"]
-    XCTAssertTrue(structure.waitForExistence(timeout: 10))
-    structure.click()
+    activateAndClick(structure, in: app)
     let actions = app.descendants(matching: .any)["structure.actions"]
-    XCTAssertTrue(actions.waitForExistence(timeout: 10))
-    app.activate()
-    let actionsHittable = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "hittable == true"), object: actions)
-    XCTAssertEqual(XCTWaiter.wait(for: [actionsHittable], timeout: 5), .completed)
-    actions.click()
+    activateAndClick(actions, in: app)
     let open = app.descendants(matching: .any)["table-operation.open"]
     if !open.waitForExistence(timeout: 2) {
       app.activate()
       actions.click()
     }
     XCTAssertTrue(open.waitForExistence(timeout: 10))
-    open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    activateAndClick(open, in: app)
     let review = app.buttons["table-operation.review"]
-    XCTAssertTrue(review.waitForExistence(timeout: 10))
-    app.activate()
-    review.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    activateAndClick(review, in: app)
     XCTAssertTrue(
       app.descendants(matching: .any)["table-operation.preview"].waitForExistence(timeout: 10))
     let apply = app.buttons["table-operation.apply"]
@@ -894,19 +936,73 @@ final class TableRockAppUITests: XCTestCase {
     ].merging(environment) { _, fixture in fixture }
     app.launchArguments = ["-ApplePersistenceIgnoreState", "YES"]
     app.launch()
-    app.activate()
+    assertWorkbenchWindowIsFrontmost(app)
     addTeardownBlock { app.terminate() }
     return app
   }
 
   @MainActor
+  private func assertWorkbenchWindowIsFrontmost(_ app: XCUIApplication) {
+    let workbench = app.windows["window.workbench"]
+    for _ in 0..<3 {
+      app.activate()
+      NSRunningApplication.runningApplications(withBundleIdentifier: "app.tablerock.TableRock")
+        .max(by: { $0.processIdentifier < $1.processIdentifier })?
+        .activate(options: [.activateAllWindows])
+      if workbench.waitForExistence(timeout: 3) {
+        return
+      }
+    }
+    XCTFail("TableRock launched without a frontmost workbench window")
+  }
+
+  @MainActor
   private func connectTemporarily(_ app: XCUIApplication) {
-    let open = app.buttons["connection.direct.open"]
-    XCTAssertTrue(open.waitForExistence(timeout: 10))
-    open.click()
+    assertWorkbenchWindowIsFrontmost(app)
+    let opens = app.buttons.matching(identifier: "connection.direct.open")
+    XCTAssertTrue(opens.firstMatch.waitForExistence(timeout: 10))
+    let open = opens.allElementsBoundByIndex.first(where: \.isHittable) ?? opens.firstMatch
+    app.activate()
+    open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    if !connect.waitForExistence(timeout: 3) {
+      app.activate()
+      open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    }
+    XCTAssertTrue(connect.waitForExistence(timeout: 7))
     XCTAssertTrue(connect.isEnabled)
-    connect.click()
+    app.activate()
+    let hittable = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "hittable == true"), object: connect)
+    XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: 3), .completed)
+    connect.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+
+    let dismissed = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == false"), object: connect)
+    if XCTWaiter.wait(for: [dismissed], timeout: 3) != .completed,
+      connect.exists,
+      connect.isEnabled
+    {
+      app.activate()
+      connect.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    }
+    let connected = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == false"), object: connect)
+    XCTAssertEqual(XCTWaiter.wait(for: [connected], timeout: 10), .completed)
+  }
+
+  @MainActor
+  private func activateAndClick(
+    _ element: XCUIElement,
+    in app: XCUIApplication,
+    timeout: TimeInterval = 10
+  ) {
+    assertWorkbenchWindowIsFrontmost(app)
+    app.activate()
+    XCTAssertTrue(element.waitForExistence(timeout: timeout))
+    let hittable = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "hittable == true"), object: element)
+    XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: timeout), .completed)
+    element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
   }
 }

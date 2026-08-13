@@ -50,7 +50,8 @@ for pattern in \
   'accessibilityIdentifier\("value\.inspector"\)' \
   'ValueInspectorProjection\.metadataFact\(' \
   'accessibilityIdentifier\("value\.inspector\.kind"\)' \
-  'sectionLabel\("TEXT"\)' \
+  'sectionLabel\("ROW DETAILS"\)' \
+  'accessibilityIdentifier\("value\.inspector\.row-details"\)' \
   'Text\("HEX"\)' \
   'sectionLabel\("JSON TREE"\)' \
   'StructuredValueTree.decode\(cell.bytes\)' \

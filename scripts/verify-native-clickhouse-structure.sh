@@ -29,7 +29,8 @@ do
 done
 for pattern in \
   'TABLEROCK_FIXTURE_CLICKHOUSE_STRUCTURE' \
-  'GroupBox("Engine facts")' \
+  'Section("Engine")' \
+  'accessibilityIdentifier("structure.details")' \
   'CLICKHOUSE_STRUCTURE_PROOF_PASSED'
 do
   native_source_has_fixed "$pattern" || { echo "error: missing native ClickHouse structure projection: $pattern" >&2; exit 1; }

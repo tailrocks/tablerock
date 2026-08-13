@@ -589,8 +589,18 @@ public final class WorkbenchPresentationStore {
         installNativeConnectionFixture(setup: fixtures.nativeWorkbenchSetup)
         return
       }
-      if fixtures.nativeWorkbench || fixtures.nativeWorkbenchQuery {
+      if fixtures.nativeWorkbench || fixtures.nativeWorkbenchQuery
+        || fixtures.nativeWorkbenchStructure || fixtures.nativeWorkbenchSafeReview
+        || fixtures.nativeWorkbenchDestructiveReview
+      {
         installNativeWorkbenchFixture(selectsQuery: fixtures.nativeWorkbenchQuery)
+        if fixtures.nativeWorkbenchStructure {
+          installNativeWorkbenchStructureFixture()
+        } else if fixtures.nativeWorkbenchSafeReview {
+          installNativeWorkbenchReviewFixture(destructive: false)
+        } else if fixtures.nativeWorkbenchDestructiveReview {
+          installNativeWorkbenchReviewFixture(destructive: true)
+        }
         return
       }
       if fixtures.multiWindow {
@@ -828,7 +838,7 @@ public final class WorkbenchPresentationStore {
           }
           copyStructureDdl(tab.structure!.ddl)
           try? await Task.sleep(for: .milliseconds(500))
-          runNativeStructureAudit()
+          runNativeStructureAudit(structure: tab.structure!)
         } catch {
           writePerformanceMetric("STRUCTURE_PROOF_FAILED \(error)")
         }
@@ -885,7 +895,7 @@ public final class WorkbenchPresentationStore {
           }
           copyStructureDdl(tab.structure!.ddl)
           try? await Task.sleep(for: .milliseconds(500))
-          runNativeClickHouseStructureAudit()
+          runNativeClickHouseStructureAudit(structure: tab.structure!)
         } catch {
           writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED \(error)")
         }
@@ -1432,6 +1442,18 @@ public final class WorkbenchPresentationStore {
           ["…ef24", "Kitehouse", "EMEA", "Starter", "16", "$720", "false", "2026-08-08"],
           ["…4de2", "Driftline", "APAC", "Starter", "12", "$540", "false", "2026-08-07"],
           ["…b8e4", "Harbor North", "EMEA", "Starter", "8", "$360", "true", "2026-08-07"],
+        ],
+        columnMetadata: [
+          WorkbenchColumn(name: "customer_id", engine: 0, engineType: "uuid", nullable: false),
+          WorkbenchColumn(name: "company_name", engine: 0, engineType: "text", nullable: false),
+          WorkbenchColumn(name: "region", engine: 0, engineType: "text", nullable: false),
+          WorkbenchColumn(name: "plan", engine: 0, engineType: "text", nullable: false),
+          WorkbenchColumn(name: "seats", engine: 0, engineType: "int4", nullable: false),
+          WorkbenchColumn(
+            name: "monthly_revenue", engine: 0, engineType: "numeric", nullable: false),
+          WorkbenchColumn(name: "active", engine: 0, engineType: "bool", nullable: false),
+          WorkbenchColumn(
+            name: "updated_at", engine: 0, engineType: "timestamptz", nullable: true),
         ])
       customers.resultIdData = Data(repeating: 8, count: 16)
       customers.resultRevision = 1
@@ -1473,6 +1495,95 @@ public final class WorkbenchPresentationStore {
       selectedObjectTabId = customers.id
       selectedWorkbenchKind = selectsQuery ? "query" : "object"
       status = "Native Workbench fixture"
+    }
+
+    private func installNativeWorkbenchStructureFixture() {
+      guard let tab = selectedObjectTab else { return }
+      tab.structure = WorkbenchRelationStructure(
+        engine: "postgresql",
+        namespace: "analytics.public",
+        relation: "customers",
+        columns: [
+          WorkbenchRelationColumn(
+            name: "customer_id", dataType: "UUID", nullable: false,
+            defaultExpression: nil, comment: nil, primaryKey: true, sortingKey: false),
+          WorkbenchRelationColumn(
+            name: "company_name", dataType: "TEXT", nullable: false,
+            defaultExpression: nil, comment: nil, primaryKey: false, sortingKey: false),
+          WorkbenchRelationColumn(
+            name: "region", dataType: "TEXT", nullable: false,
+            defaultExpression: nil, comment: nil, primaryKey: false, sortingKey: false),
+          WorkbenchRelationColumn(
+            name: "plan", dataType: "TEXT", nullable: false,
+            defaultExpression: nil, comment: nil, primaryKey: false, sortingKey: false),
+          WorkbenchRelationColumn(
+            name: "seats", dataType: "INT4", nullable: false,
+            defaultExpression: nil, comment: nil, primaryKey: false, sortingKey: false),
+          WorkbenchRelationColumn(
+            name: "monthly_revenue", dataType: "NUMERIC", nullable: false,
+            defaultExpression: nil, comment: nil, primaryKey: false, sortingKey: false),
+          WorkbenchRelationColumn(
+            name: "active", dataType: "BOOL", nullable: false,
+            defaultExpression: nil, comment: nil, primaryKey: false, sortingKey: false),
+          WorkbenchRelationColumn(
+            name: "updated_at", dataType: "TIMESTAMPTZ", nullable: true,
+            defaultExpression: "now()", comment: nil, primaryKey: false, sortingKey: false),
+        ],
+        indexes: [
+          WorkbenchRelationIndex(
+            kind: "PRIMARY", name: "customers_pkey",
+            definition: "PRIMARY KEY (customer_id)"),
+          WorkbenchRelationIndex(
+            kind: "BTREE", name: "customers_region_idx",
+            definition: "CREATE INDEX ON customers (region)"),
+        ],
+        constraints: [
+          WorkbenchRelationConstraint(
+            kind: "PRIMARY KEY", name: "customers_pkey",
+            definition: "PRIMARY KEY (customer_id)"),
+          WorkbenchRelationConstraint(
+            kind: "CHECK", name: "customers_seats_check",
+            definition: "CHECK (seats >= 0)"),
+        ],
+        facts: [
+          WorkbenchRelationFact(name: "Persistence", value: "permanent"),
+          WorkbenchRelationFact(name: "Access method", value: "heap"),
+        ],
+        ddl: "CREATE TABLE analytics.public.customers (…)"
+      )
+      tab.selectedSection = "structure"
+      status = "Native Workbench structure fixture"
+    }
+
+    private func installNativeWorkbenchReviewFixture(destructive: Bool) {
+      guard let tab = selectedObjectTab else { return }
+      if destructive {
+        let profile = WorkbenchProfileItem(
+          idBytes: Data(repeating: 4, count: 16), revision: 1,
+          name: "Northstar Analytics", engine: "postgresql", group: "Production",
+          favorite: true, savedOrder: 0, host: "db.internal", port: "5432",
+          context: "analytics.public", safetyMode: "confirm_writes",
+          environment: "production", productionWarning: true,
+          dangerousPlaintext: false, connected: true)
+        profiles = [profile]
+        activeProfileId = profile.idBytes
+      }
+      ddlChangeCatalogNodeId = tab.catalogNodeId
+      ddlChangeReview = WorkbenchDdlChangeReview(
+        tokenId: Data(repeating: destructive ? 19 : 18, count: 16),
+        preview: destructive
+          ? "ALTER TABLE analytics.public.customers DROP COLUMN legacy_status"
+          : "ALTER TABLE analytics.public.customers ADD COLUMN account_tier TEXT",
+        destructive: destructive,
+        rollbackSummary: destructive
+          ? "Dropped data cannot be reconstructed automatically."
+          : "Rollback removes account_tier before dependent writes.",
+        expiresAtMs: dependencies.clock.nowMilliseconds() + 60_000)
+      ddlChangePresented = true
+      status =
+        destructive
+        ? "Native Workbench destructive review fixture"
+        : "Native Workbench safe review fixture"
     }
 
     private func installPerformanceFixtureIfRequested() {
