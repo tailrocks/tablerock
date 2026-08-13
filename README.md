@@ -2,7 +2,7 @@
 
 TableRock is a terminal-first, multi-model database workbench for
 PostgreSQL, ClickHouse, and Redis. The first product is a Rust CLI/TUI. A
-native macOS developer preview uses SwiftUI/AppKit over the same Rust core.
+native macOS application uses SwiftUI/AppKit over the same Rust core.
 
 ## Direction
 
@@ -26,10 +26,10 @@ native macOS developer preview uses SwiftUI/AppKit over the same Rust core.
 ## Status
 
 The Rust contracts, services, persistence, three real-server adapters, TUI, and
-a substantial native macOS workflow slice are implemented. Tested server lines
+a substantial native macOS workflow are implemented. Tested server lines
 are PostgreSQL 17.10/18.4, Redis 7.4.9/8.8.0, and ClickHouse 25.8/26.3 LTS.
-Unsigned preview packages and an ad-hoc-signed native app are published through
-the Homebrew tap. The exact tested boundaries are in the
+Ad-hoc-signed validation builds are available through the documented local
+build path. The exact tested boundaries are in the
 [support matrix](docs/support-matrix.md).
 
 TableRock does not yet claim complete functional parity or production native

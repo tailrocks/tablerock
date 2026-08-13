@@ -90,9 +90,8 @@ stapled app, and records its SHA-256. It fails closed when any signing/notary
 secret is absent. Never use the development dylib/SwiftPM/direct-`swiftc` path
 for a release claim.
 
-Plan 020's locally runnable native vertical slice is complete. Plan 019's
-Developer ID/notarization distribution gate remains blocked and is inherited by
-Plan 021 release evidence; it does not prevent local development or verification.
+The production native workbench is locally runnable. Developer ID signing and
+notarization remain operator-gated; that does not prevent local verification.
 
 ```bash
 ./scripts/build-native-app.sh
