@@ -6,6 +6,7 @@ final class NativeApplicationModel {
   let client: (any WorkbenchBackend)?
   let bridgeError: String?
   let dependencies: AppDependencies
+  let disablesWindowRestoration: Bool
   #if TABLEROCK_DEVELOPMENT_SUPPORT
   let launchConfiguration: NativeLaunchConfiguration
   let appearanceFixture: NativeAppearanceFixture
@@ -18,8 +19,12 @@ final class NativeApplicationModel {
 
   init() {
     #if TABLEROCK_DEVELOPMENT_SUPPORT
+    disablesWindowRestoration =
+      ProcessInfo.processInfo.environment["TABLEROCK_TEST_MODE"] == "1"
     launchConfiguration = .current
     appearanceFixture = .current
+    #else
+    disablesWindowRestoration = false
     #endif
     var configuredDependencies = AppDependencies(
       filePanels: SystemFilePanelPort(),

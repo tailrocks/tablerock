@@ -321,8 +321,9 @@ final class TableRockAppUITests: XCTestCase {
     let editor = app.textViews["query.editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     editor.click()
-    app.typeKey("a", modifierFlags: .command)
-    app.typeText("SELECT :id")
+    editor.typeKey("a", modifierFlags: .command)
+    editor.typeText("SELECT :id")
+    XCTAssertTrue((editor.value as? String ?? "").contains(":id"))
     app.buttons["query.run"].click()
 
     let value = app.textFields["query-parameters.value.id"]
@@ -629,9 +630,11 @@ final class TableRockAppUITests: XCTestCase {
     let loadPreset = app.descendants(matching: .any)["object.filter-preset.load"]
     XCTAssertTrue(loadPreset.isEnabled)
     loadPreset.click()
-    let activePreset = app.menuItems["active"]
-    XCTAssertTrue(activePreset.waitForExistence(timeout: 5))
-    activePreset.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    let savedPreset = app.menuItems.matching(
+      NSPredicate(format: "identifier BEGINSWITH 'object.filter-preset.load.'")
+    ).firstMatch
+    XCTAssertTrue(savedPreset.waitForExistence(timeout: 5))
+    savedPreset.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     XCTAssertTrue(
       app.descendants(matching: .any)["object.raw-where.active"].waitForExistence(timeout: 10))
   }

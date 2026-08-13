@@ -38,7 +38,9 @@ struct TableRockApp: App {
     .defaultSize(width: 1_440, height: 900)
     .windowStyle(.hiddenTitleBar)
     .windowToolbarStyle(.unified)
-    .restorationBehavior(.automatic)
+    .restorationBehavior(
+      application.disablesWindowRestoration ? .disabled : .automatic
+    )
     .commands {
       WorkbenchCommands()
     }
