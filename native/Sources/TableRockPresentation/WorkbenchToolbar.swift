@@ -7,25 +7,16 @@ struct WorkbenchToolbar: CustomizableToolbarContent {
 
   var body: some CustomizableToolbarContent {
     ToolbarItem(id: "connection", placement: .navigation) {
-      Menu {
-        ForEach(model.profiles, id: \.idBytes) { profile in
-          Button {
-            Task { await model.connect(profile) }
-          } label: {
-            Label(
-              profile.name,
-              systemImage: profile.idBytes == model.activeProfileId ? "checkmark" : "cylinder"
-            )
-          }
-        }
-      } label: {
-        Label(
-          model.activeProfile?.name ?? "Connections",
-          systemImage: model.sessionHex == nil ? "cylinder" : "cylinder.split.1x2"
-        )
-      }
+      NativeActionMenu(
+        title: "",
+        systemImage: model.sessionHex == nil ? "cylinder" : "cylinder.split.1x2",
+        accessibilityLabel: "Database connection, \(model.activeProfile?.name ?? "Connections")",
+        accessibilityHint: "Switch database connection",
+        identifier: "toolbar.connection",
+        isEnabled: !model.profiles.isEmpty,
+        entries: connectionEntries
+      )
       .help("Database connection")
-      .accessibilityIdentifier("toolbar.connection")
     }
 
     ToolbarItem(id: "new-connection", placement: .primaryAction) {
@@ -75,6 +66,18 @@ struct WorkbenchToolbar: CustomizableToolbarContent {
       }
       .disabled(!model.changeReviewOpen)
       .accessibilityIdentifier("toolbar.review")
+    }
+  }
+
+  private var connectionEntries: [NativeActionMenuEntry] {
+    model.profiles.map { profile in
+      .command(
+        title: profile.name,
+        systemImage: "cylinder",
+        state: profile.idBytes == model.activeProfileId ? .on : .off
+      ) {
+        Task { await model.connect(profile) }
+      }
     }
   }
 }

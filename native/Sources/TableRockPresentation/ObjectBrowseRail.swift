@@ -89,38 +89,14 @@ private struct ObjectBrowseRail: View {
       .accessibilityLabel("Raw WHERE and filter presets")
       .accessibilityIdentifier("object.filter.more")
 
-      Menu {
-        if !availableColumns.isEmpty {
-          Section("Add sort") {
-            ForEach(availableColumns, id: \.self) { column in
-              Button(column) { Task { await model.addObjectSort(column: column) } }
-            }
-          }
-        }
-        if !tab.sort.isEmpty {
-          Section("Active sort") {
-            ForEach(tab.sort) { key in
-              Button("\(key.column), \(key.descending ? "descending" : "ascending")") {
-                Task { await model.toggleObjectSort(column: key.column) }
-              }
-              .accessibilityLabel(
-                "\(key.column), \(key.descending ? "descending" : "ascending"); change direction"
-              )
-              .accessibilityIdentifier("object.sort.active.\(key.column)")
-              Button("Remove \(key.column)", role: .destructive) {
-                Task { await model.removeObjectSort(column: key.column) }
-              }
-            }
-          }
-        }
-      } label: {
-        Label(sortSummary, systemImage: "arrow.up.arrow.down")
-          .font(.caption2)
-      }
-      .menuStyle(.borderlessButton)
-      .disabled(tab.isRunning || (availableColumns.isEmpty && tab.sort.isEmpty))
-      .accessibilityLabel(sortSummary)
-      .accessibilityIdentifier("object.sort.add")
+      NativeActionMenu(
+        title: sortSummary,
+        systemImage: "arrow.up.arrow.down",
+        accessibilityLabel: sortSummary,
+        identifier: "object.sort.add",
+        isEnabled: !tab.isRunning && (!availableColumns.isEmpty || !tab.sort.isEmpty),
+        entries: sortEntries
+      )
 
       if !tab.filters.isEmpty {
         Button {
@@ -160,6 +136,35 @@ private struct ObjectBrowseRail: View {
     return tab.sort.count == 1
       ? "Sorted by \(first.column) \(direction)"
       : "Sorted by \(first.column) +\(tab.sort.count - 1)"
+  }
+
+  private var sortEntries: [NativeActionMenuEntry] {
+    var entries: [NativeActionMenuEntry] = []
+    if !availableColumns.isEmpty {
+      entries.append(.section("Add sort"))
+      entries += availableColumns.map { column in
+        .command(title: column) { Task { await model.addObjectSort(column: column) } }
+      }
+    }
+    if !tab.sort.isEmpty {
+      entries.append(.section("Active sort"))
+      for key in tab.sort {
+        entries.append(
+          .command(
+            title: "\(key.column), \(key.descending ? "descending" : "ascending")",
+            accessibilityLabel:
+              "\(key.column), \(key.descending ? "descending" : "ascending"); change direction",
+            identifier: "object.sort.active.\(key.column)"
+          ) {
+            Task { await model.toggleObjectSort(column: key.column) }
+          })
+        entries.append(
+          .command(title: "Remove \(key.column)") {
+            Task { await model.removeObjectSort(column: key.column) }
+          })
+      }
+    }
+    return entries
   }
 }
 

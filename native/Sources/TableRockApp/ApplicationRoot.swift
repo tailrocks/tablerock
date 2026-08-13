@@ -165,5 +165,66 @@ private final class NativeWindowAttachmentView: NSView {
     window.tabbingIdentifier = "tablerock-workbench"
     window.tabbingMode = .preferred
     window.tab.title = window.title
+    Task { @MainActor [weak self] in
+      await Task.yield()
+      self?.configureAccessibilityHierarchy()
+    }
+  }
+
+  private func configureAccessibilityHierarchy() {
+    var current = superview
+    var root: NSView?
+    while let view = current {
+      if view.isAccessibilityElement(), view.accessibilityRole() == .group {
+        view.setAccessibilityLabel("TableRock workbench")
+        root = view
+        break
+      }
+      current = view.superview
+    }
+    guard let root,
+      let splitGroup = firstAccessibilityElement(
+        withRole: .splitGroup,
+        below: root.accessibilityChildren() ?? []
+      )
+    else { return }
+
+    let columns = accessibilityChildren(of: splitGroup).filter {
+      accessibilityRole(of: $0) == .group
+    }
+    for (index, column) in columns.enumerated()
+    where accessibilityLabel(of: column)?.isEmpty != false {
+      setAccessibilityLabel(index == 0 ? "Navigation sidebar" : "Workspace", on: column)
+    }
+  }
+
+  private func firstAccessibilityElement(
+    withRole role: NSAccessibility.Role,
+    below initialElements: [Any]
+  ) -> Any? {
+    var elements = initialElements
+    for _ in 0..<4 {
+      if let match = elements.first(where: { accessibilityRole(of: $0) == role }) {
+        return match
+      }
+      elements = elements.flatMap(accessibilityChildren)
+    }
+    return nil
+  }
+
+  private func accessibilityRole(of element: Any) -> NSAccessibility.Role? {
+    (element as? any NSAccessibilityProtocol)?.accessibilityRole()
+  }
+
+  private func accessibilityLabel(of element: Any) -> String? {
+    (element as? any NSAccessibilityProtocol)?.accessibilityLabel()
+  }
+
+  private func accessibilityChildren(of element: Any) -> [Any] {
+    (element as? any NSAccessibilityProtocol)?.accessibilityChildren() ?? []
+  }
+
+  private func setAccessibilityLabel(_ label: String, on element: Any) {
+    (element as? any NSAccessibilityProtocol)?.setAccessibilityLabel(label)
   }
 }

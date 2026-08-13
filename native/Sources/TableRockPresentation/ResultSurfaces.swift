@@ -51,27 +51,33 @@ struct ResultGridWithInspector: View {
         .frame(minHeight: minimumHeight)
         .accessibilityIdentifier("results.grid.empty")
       } else {
-        HSplitView {
-          CatalogGrid(
-            table: visibleTable,
-            sorts: model.resultSort,
-            selectedRow: selectedVisibleRow,
-            performanceAutoScroll: performanceAutoScroll
-          ) { row, column in
-            guard visibleRowIndices.indices.contains(row) else { return }
-            model.selectCell(row: visibleRowIndices[row], column: column)
-          }
-          .frame(minWidth: 280, minHeight: 100, idealHeight: minimumHeight)
-          if let continuum = model.relationContinuum {
+        if let continuum = model.relationContinuum {
+          HSplitView {
+            resultGrid
             RelationContinuumPlane(state: continuum) {
               model.closeRelationContinuum()
             }
             .frame(minWidth: 220, idealWidth: 320, maxWidth: 480)
           }
+        } else {
+          resultGrid
         }
       }
     }
     .background(Color(nsColor: .textBackgroundColor))
+  }
+
+  private var resultGrid: some View {
+    CatalogGrid(
+      table: visibleTable,
+      sorts: model.resultSort,
+      selectedRow: selectedVisibleRow,
+      performanceAutoScroll: performanceAutoScroll
+    ) { row, column in
+      guard visibleRowIndices.indices.contains(row) else { return }
+      model.selectCell(row: visibleRowIndices[row], column: column)
+    }
+    .frame(minWidth: 280, minHeight: 100, idealHeight: minimumHeight)
   }
 
   private var performanceAutoScroll: Bool {
@@ -252,35 +258,45 @@ struct ResultExportMenu: View {
   @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
-    Menu {
-      exportButton("CSV", format: "csv")
-      exportButton("TSV", format: "tsv")
-      exportButton("JSON", format: "json")
-      exportButton("Markdown", format: "markdown")
-      if model.sqlInsertCopyAvailable {
-        exportButton("SQL INSERT", format: "sql_insert")
-      }
-      Divider()
-      fullExportButton("Full Result CSV", format: "csv")
-      fullExportButton("Full Result TSV", format: "tsv")
-      fullExportButton("Full Result JSON", format: "json")
-    } label: {
-      Label("Export", systemImage: "square.and.arrow.up")
-    }
+    NativeActionMenu(
+      title: "Export",
+      systemImage: "square.and.arrow.up",
+      accessibilityLabel: "Export result",
+      accessibilityHint: "Export loaded rows or stream the full result",
+      identifier: "results.export.more",
+      isEnabled: model.resultIdData != nil,
+      entries: exportEntries
+    )
     .fixedSize(horizontal: true, vertical: true)
-    .disabled(model.resultIdData == nil)
-    .accessibilityIdentifier("results.export.more")
-    .accessibilityHint("Export loaded rows or stream the full result")
   }
 
-  private func exportButton(_ label: String, format: String) -> some View {
-    Button(label) { Task { await model.exportLoadedResult(format: format) } }
-      .accessibilityIdentifier("results.export.\(format)")
+  private var exportEntries: [NativeActionMenuEntry] {
+    var entries = [
+      exportEntry("CSV", format: "csv"),
+      exportEntry("TSV", format: "tsv"),
+      exportEntry("JSON", format: "json"),
+      exportEntry("Markdown", format: "markdown"),
+    ]
+    if model.sqlInsertCopyAvailable {
+      entries.append(exportEntry("SQL INSERT", format: "sql_insert"))
+    }
+    entries.append(.separator)
+    entries.append(fullExportEntry("Full Result CSV", format: "csv"))
+    entries.append(fullExportEntry("Full Result TSV", format: "tsv"))
+    entries.append(fullExportEntry("Full Result JSON", format: "json"))
+    return entries
   }
 
-  private func fullExportButton(_ label: String, format: String) -> some View {
-    Button(label) { Task { await model.exportFullResult(format: format) } }
-      .accessibilityIdentifier("results.export.full.\(format)")
+  private func exportEntry(_ title: String, format: String) -> NativeActionMenuEntry {
+    .command(title: title, identifier: "results.export.\(format)") {
+      Task { await model.exportLoadedResult(format: format) }
+    }
+  }
+
+  private func fullExportEntry(_ title: String, format: String) -> NativeActionMenuEntry {
+    .command(title: title, identifier: "results.export.full.\(format)") {
+      Task { await model.exportFullResult(format: format) }
+    }
   }
 }
 
@@ -311,35 +327,39 @@ struct ResultCopyMenu: View {
   @Environment(WorkbenchPresentationStore.self) private var model
 
   var body: some View {
-    Menu {
-      Section("Selected cell") {
-        copyButtons(scope: "cell")
-      }
-      Section("Selected row") {
-        copyButtons(scope: "row")
-      }
-      Section("Loaded result") {
-        copyButtons(scope: "loaded")
-      }
-    } label: {
-      Label("Copy", systemImage: "doc.on.doc")
-    }
-    .disabled(model.resultIdData == nil)
-    .accessibilityHint("Choose scope and Rust-formatted clipboard representation")
+    NativeActionMenu(
+      title: "Copy",
+      systemImage: "doc.on.doc",
+      accessibilityLabel: "Copy result",
+      accessibilityHint: "Choose scope and Rust-formatted clipboard representation",
+      isEnabled: model.resultIdData != nil,
+      entries: copyEntries
+    )
   }
 
-  @ViewBuilder
-  private func copyButtons(scope: String) -> some View {
-    Button("TSV") { Task { await model.copyResult(scope: scope, preferredFormat: "tsv") } }
-    Button("CSV") { Task { await model.copyResult(scope: scope, preferredFormat: "csv") } }
-    Button("JSON") { Task { await model.copyResult(scope: scope, preferredFormat: "json") } }
-    Button("Markdown") {
-      Task { await model.copyResult(scope: scope, preferredFormat: "markdown") }
-    }
-    if model.sqlInsertCopyAvailable {
-      Button("SQL INSERT") {
-        Task { await model.copyResult(scope: scope, preferredFormat: "sql_insert") }
+  private var copyEntries: [NativeActionMenuEntry] {
+    ["cell", "row", "loaded"].flatMap { scope in
+      var entries: [NativeActionMenuEntry] = [
+        .section(scope == "loaded" ? "Loaded result" : "Selected \(scope)"),
+        copyEntry("TSV", scope: scope, format: "tsv"),
+        copyEntry("CSV", scope: scope, format: "csv"),
+        copyEntry("JSON", scope: scope, format: "json"),
+        copyEntry("Markdown", scope: scope, format: "markdown"),
+      ]
+      if model.sqlInsertCopyAvailable {
+        entries.append(copyEntry("SQL INSERT", scope: scope, format: "sql_insert"))
       }
+      return entries
+    }
+  }
+
+  private func copyEntry(
+    _ title: String,
+    scope: String,
+    format: String
+  ) -> NativeActionMenuEntry {
+    .command(title: title) {
+      Task { await model.copyResult(scope: scope, preferredFormat: format) }
     }
   }
 }
@@ -486,19 +506,28 @@ struct NativeValueInspector: View {
             .accessibilityIdentifier("value.inspector.kind")
         }
         Spacer(minLength: 4)
-        Menu {
-          Button("Copy Value") { copyToPasteboard(cell.display) }
-            .disabled(presentation.isNull && cell.display.isEmpty)
-          Button("Copy Hex") { copyToPasteboard(hexLinear) }
-            .disabled(cell.bytes.isEmpty)
-            .accessibilityIdentifier("value.inspector.copy.hex")
-        } label: {
-          Image(systemName: "doc.on.doc")
-        }
-        .menuStyle(.borderlessButton)
-        .help("Copy value")
-        .accessibilityLabel("Copy value options")
-        .accessibilityIdentifier("value.inspector.copy.text")
+        NativeActionMenu(
+          title: "",
+          systemImage: "doc.on.doc",
+          accessibilityLabel: "Copy value options",
+          accessibilityHint: "Copy value",
+          identifier: "value.inspector.copy.text",
+          entries: [
+            .command(
+              title: "Copy Value",
+              isEnabled: !presentation.isNull || !cell.display.isEmpty
+            ) {
+              copyToPasteboard(cell.display)
+            },
+            .command(
+              title: "Copy Hex",
+              identifier: "value.inspector.copy.hex",
+              isEnabled: !cell.bytes.isEmpty
+            ) {
+              copyToPasteboard(hexLinear)
+            },
+          ]
+        )
       }
 
       Text(selectedDisplay)
@@ -529,12 +558,16 @@ struct NativeValueInspector: View {
             Text(detail.column.name)
               .font(.caption)
               .foregroundStyle(.secondary)
+              .accessibilityLabel(
+                "\(detail.column.name), "
+                  + GridCellPresentation.project(detail.cell).accessibilityValue
+              )
+              .accessibilityIdentifier("value.inspector.row.\(detail.id)")
             Text(GridCellPresentation.project(detail.cell).accessibilityValue)
               .font(.caption.monospaced())
               .textSelection(.enabled)
+              .accessibilityHidden(true)
           }
-          .accessibilityElement(children: .combine)
-          .accessibilityIdentifier("value.inspector.row.\(detail.id)")
         }
       }
     }

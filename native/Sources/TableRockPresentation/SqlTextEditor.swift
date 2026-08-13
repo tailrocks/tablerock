@@ -56,6 +56,7 @@ struct SqlTextEditor: NSViewRepresentable {
     scroll.rulersVisible = true
     let ruler = SqlLineNumberRulerView(scrollView: scroll, orientation: .verticalRuler)
     ruler.clientView = editor
+    ruler.setAccessibilityLabel("Line numbers")
     scroll.verticalRulerView = ruler
     context.coordinator.ruler = ruler
     return scroll

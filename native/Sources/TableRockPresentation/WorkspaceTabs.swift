@@ -65,22 +65,26 @@ private struct QueryDocumentTab: View {
       .accessibilityIdentifier("query.tab.\(tab.id.uuidString.lowercased())")
       .accessibilityValue(selected ? "Selected" : "Not selected")
 
-      Menu {
-        Button("Rename…") { model.beginRenameQueryTab(tab) }
-        Button("Close", role: .destructive) { model.requestCloseQueryTab(tab) }
-          .accessibilityIdentifier("query.tab.close")
-          .disabled(model.queryTabs.count == 1 || tab.isRunning)
+      Button(role: .destructive) {
+        model.requestCloseQueryTab(tab)
       } label: {
         Image(systemName: "xmark")
           .font(.system(size: 8, weight: .bold))
           .foregroundStyle(.tertiary)
           .frame(width: 18, height: 28)
       }
-      .menuStyle(.borderlessButton)
+      .buttonStyle(.plain)
+      .disabled(model.queryTabs.count == 1 || tab.isRunning)
       .accessibilityIdentifier("query.tab.actions.\(tab.id.uuidString.lowercased())")
-      .accessibilityLabel("Actions for \(tab.title)")
+      .accessibilityLabel("Close \(tab.title)")
     }
     .modifier(SelectedDocumentTabBackground(selected: selected))
+    .contextMenu {
+      Button("Rename…") { model.beginRenameQueryTab(tab) }
+      Button("Close", role: .destructive) { model.requestCloseQueryTab(tab) }
+        .accessibilityIdentifier("query.tab.close")
+        .disabled(model.queryTabs.count == 1 || tab.isRunning)
+    }
   }
 }
 
@@ -106,21 +110,25 @@ private struct ObjectDocumentTab: View {
       .accessibilityIdentifier("object.tab.\(tab.id.uuidString.lowercased())")
       .accessibilityValue(selected ? "Selected" : "Not selected")
 
-      Menu {
-        if !tab.pinned { Button("Pin") { model.pinObjectTab(tab) } }
-        Button("Refresh") { Task { await model.reloadObjectTab() } }
-        Button("Close", role: .destructive) { model.closeObjectTab(tab) }
-          .disabled(tab.isRunning)
+      Button(role: .destructive) {
+        model.closeObjectTab(tab)
       } label: {
         Image(systemName: "xmark")
           .font(.system(size: 8, weight: .bold))
           .foregroundStyle(.tertiary)
           .frame(width: 18, height: 28)
       }
-      .menuStyle(.borderlessButton)
-      .accessibilityLabel("Actions for object \(tab.title)")
+      .buttonStyle(.plain)
+      .disabled(tab.isRunning)
+      .accessibilityLabel("Close \(tab.title)")
     }
     .modifier(SelectedDocumentTabBackground(selected: selected))
+    .contextMenu {
+      if !tab.pinned { Button("Pin") { model.pinObjectTab(tab) } }
+      Button("Refresh") { Task { await model.reloadObjectTab() } }
+      Button("Close", role: .destructive) { model.closeObjectTab(tab) }
+        .disabled(tab.isRunning)
+    }
   }
 }
 

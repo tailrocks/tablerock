@@ -147,26 +147,13 @@ struct WorkbenchContextStrip: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      Menu {
-        ForEach(model.profiles, id: \.idBytes) { profile in
-          Button {
-            Task { await model.connect(profile) }
-          } label: {
-            Label(
-              profile.name,
-              systemImage: profile.idBytes == model.activeProfileId
-                ? "checkmark" : engineSymbol(profile.engine)
-            )
-          }
-        }
-        Divider()
-        Button("Disconnect", systemImage: "bolt.slash") {
-          Task { await model.disconnectActive() }
-        }
+      Button {
+        Task { await model.showQuickSwitcher() }
       } label: {
         HStack(spacing: 7) {
           Image(systemName: engineSymbol(model.connectedEngine))
             .foregroundStyle(.blue)
+            .accessibilityHidden(true)
           VStack(alignment: .leading, spacing: 0) {
             Text(model.activeProfile?.name ?? model.connectedEngine)
               .font(.caption.weight(.semibold))
@@ -183,8 +170,8 @@ struct WorkbenchContextStrip: View {
         .padding(.horizontal, 8)
         .frame(height: 32)
       }
-      .menuStyle(.borderlessButton)
-      .menuIndicator(.visible)
+      .buttonStyle(.glass)
+      .help("Switch database connection")
       .accessibilityIdentifier("workbench.context.connection")
       .accessibilityLabel(
         "Database context, \(model.activeProfile?.name ?? model.connectedEngine)"
@@ -206,15 +193,6 @@ struct WorkbenchContextStrip: View {
       .help("Refresh catalog")
       .disabled(model.isRunning || model.isCatalogRefreshing)
       .accessibilityIdentifier("workbench.catalog.refresh")
-
-      Button {
-        Task { await model.showQuickSwitcher() }
-      } label: {
-        Image(systemName: "magnifyingglass")
-      }
-      .buttonStyle(.glass)
-      .help("Quick switcher")
-      .accessibilityLabel("Quick switcher")
 
       Button {
         model.addQueryTab()
@@ -348,7 +326,7 @@ struct WorkbenchStatusBar: View {
         .monospacedDigit()
       if let summary = tab.summary {
         Text(summary)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(Color(nsColor: .textColor))
           .lineLimit(1)
       }
       if tab.isRunning, tab.resultTable != nil || tab.redisView != nil {
