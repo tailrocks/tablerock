@@ -278,22 +278,17 @@ final class TableRockAppUITests: XCTestCase {
       environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_CONNECTIONS": "1"])
 
     XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["toolbar.connection"].exists)
     XCTAssertTrue(
-      app.descendants(matching: .any)["toolbar.connection"].waitForExistence(timeout: 10))
+      app.descendants(matching: .any)["sidebar.profile.04040404040404040404040404040404"].exists)
     XCTAssertTrue(
-      app.descendants(matching: .any)["sidebar.profile.04040404040404040404040404040404"]
-        .waitForExistence(timeout: 10))
+      app.descendants(matching: .any)["profile.04040404040404040404040404040404"].exists)
     XCTAssertTrue(
-      app.descendants(matching: .any)["profile.04040404040404040404040404040404"]
-        .waitForExistence(timeout: 10))
+      app.descendants(matching: .any)["profile.05050505050505050505050505050505"].exists)
     XCTAssertTrue(
-      app.descendants(matching: .any)["profile.05050505050505050505050505050505"]
-        .waitForExistence(timeout: 10))
-    XCTAssertTrue(
-      app.descendants(matching: .any)["profile.06060606060606060606060606060606"]
-        .waitForExistence(timeout: 10))
-    XCTAssertTrue(app.buttons["profile.add"].waitForExistence(timeout: 10))
-    XCTAssertTrue(app.buttons["profile.url-import"].waitForExistence(timeout: 10))
+      app.descendants(matching: .any)["profile.06060606060606060606060606060606"].exists)
+    XCTAssertTrue(app.buttons["profile.add"].exists)
+    XCTAssertTrue(app.buttons["profile.url-import"].exists)
     XCTAssertFalse(app.descendants(matching: .any)["connection.status"].exists)
   }
 
@@ -608,8 +603,7 @@ final class TableRockAppUITests: XCTestCase {
     app.activate()
     addSort.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     let idColumn = app.menuItems["id"]
-    if !idColumn.waitForExistence(timeout: 5) {
-      app.typeKey(.escape, modifierFlags: [])
+    if !idColumn.waitForExistence(timeout: 2) {
       app.activate()
       addSort.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     }
@@ -1118,12 +1112,15 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   private func assertWorkbenchWindowIsFrontmost(_ app: XCUIApplication) {
     let workbench = app.windows["window.workbench"]
-    for _ in 0..<3 {
+    for attempt in 0..<3 {
+      if attempt > 0 {
+        relaunchApplication(app)
+      }
       app.activate()
       NSRunningApplication.runningApplications(withBundleIdentifier: "app.tablerock.TableRock")
         .max(by: { $0.processIdentifier < $1.processIdentifier })?
         .activate(options: [.activateAllWindows])
-      if workbench.waitForExistence(timeout: 10) {
+      if workbench.waitForExistence(timeout: 5) {
         return
       }
     }
