@@ -4,13 +4,16 @@ Operating rules for anyone (human or agent) changing this repository.
 `CONTRIBUTING.md` holds the human-facing summary; this file is authoritative
 where they overlap.
 
-## Trunk-only workflow
+## Pull-request workflow
 
-- Work directly on `main` only.
-- Never create, switch to, or publish another branch.
-- Never open a pull request.
-- Keep `main` buildable through small, forward-only checkpoint commits. Do not
-  rewrite published history; repair forward.
+- Never push directly to `main`. All changes enter `main` through a pull
+  request.
+- Keep all work for the current native goal on
+  `codex/native-design-lab-gate` and in its single pull request.
+- Never create, switch to, or publish another branch for this goal, and never
+  open a duplicate or concurrent pull request for it.
+- Keep the pull-request branch buildable through small, forward-only checkpoint
+  commits. Do not rewrite published history; repair forward.
 - These rules also apply to required TermRock changes. Jackin remains a
   read-only reference.
 
