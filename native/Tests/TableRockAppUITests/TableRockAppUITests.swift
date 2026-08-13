@@ -343,12 +343,7 @@ final class TableRockAppUITests: XCTestCase {
   func testProfileCreationSavesAndAppearsThroughUserControls() throws {
     let app = launch(scenario: "success")
 
-    let add = app.buttons["profile.add"]
-    XCTAssertTrue(add.waitForExistence(timeout: 10))
-    add.click()
-
-    let name = app.textFields["profile.editor.name"]
-    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    let name = openProfileEditor(in: app)
     name.click()
     name.typeText("Created fixture")
 
@@ -1070,12 +1065,7 @@ final class TableRockAppUITests: XCTestCase {
       }
     }
     app.activate()
-    let newWindow = app.menuItems["New Window"]
-    if newWindow.waitForExistence(timeout: 2), newWindow.isEnabled {
-      newWindow.click()
-    } else {
-      app.typeKey("n", modifierFlags: .command)
-    }
+    app.typeKey("n", modifierFlags: .command)
     if workbench.waitForExistence(timeout: 5) {
       return
     }
@@ -1084,58 +1074,72 @@ final class TableRockAppUITests: XCTestCase {
 
   @MainActor
   private func connectTemporarily(_ app: XCUIApplication) {
-    let connect = app.buttons["connection.direct.connect"]
     for attempt in 0..<2 {
+      if attempt > 0 {
+        restartApplication(app)
+      }
       assertWorkbenchWindowIsFrontmost(app)
       let opens = app.buttons.matching(identifier: "connection.direct.open")
       if !opens.firstMatch.waitForExistence(timeout: 5) {
-        openAdditionalWorkbenchWindow(app)
         continue
       }
       let open = opens.allElementsBoundByIndex.first(where: \.isHittable) ?? opens.firstMatch
       app.activate()
       open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
-      if connect.waitForExistence(timeout: 5) {
-        break
-      }
-      if attempt == 0 {
-        app.typeKey(.escape, modifierFlags: [])
-        openAdditionalWorkbenchWindow(app)
-      }
-    }
-    XCTAssertTrue(connect.waitForExistence(timeout: 7))
-    guard connect.exists else { return }
-    XCTAssertTrue(connect.isEnabled)
-    app.activate()
-    let hittable = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "hittable == true"), object: connect)
-    XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: 3), .completed)
-    connect.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
-
-    let dismissed = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "exists == false"), object: connect)
-    if XCTWaiter.wait(for: [dismissed], timeout: 3) != .completed,
-      connect.exists,
-      connect.isEnabled
-    {
+      let connect = app.buttons["connection.direct.connect"]
+      guard connect.waitForExistence(timeout: 5), connect.isEnabled else { continue }
       app.activate()
+      let hittable = XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "hittable == true"), object: connect)
+      guard XCTWaiter.wait(for: [hittable], timeout: 3) == .completed else { continue }
       connect.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+
+      let dismissed = XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "exists == false"), object: connect)
+      if XCTWaiter.wait(for: [dismissed], timeout: 3) != .completed,
+        connect.exists,
+        connect.isEnabled
+      {
+        app.activate()
+        connect.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+      }
+      let connected = XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "exists == false"), object: connect)
+      guard XCTWaiter.wait(for: [connected], timeout: 10) == .completed else { continue }
+      let status = app.descendants(matching: .any)["connection.status"]
+      guard status.waitForExistence(timeout: 5) else { continue }
+      app.activate()
+      status.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+      return
     }
-    let connected = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "exists == false"), object: connect)
-    XCTAssertEqual(XCTWaiter.wait(for: [connected], timeout: 10), .completed)
+    XCTFail("Temporary connection did not reach a focused connected workbench")
   }
 
   @MainActor
-  private func openAdditionalWorkbenchWindow(_ app: XCUIApplication) {
-    app.activate()
-    let newWindow = app.menuItems["New Window"]
-    if newWindow.waitForExistence(timeout: 2), newWindow.isEnabled {
-      newWindow.click()
-    } else {
-      app.typeKey("n", modifierFlags: .command)
+  private func restartApplication(_ app: XCUIApplication) {
+    app.terminate()
+    app.launch()
+    assertWorkbenchWindowIsFrontmost(app)
+  }
+
+  @MainActor
+  private func openProfileEditor(in app: XCUIApplication) -> XCUIElement {
+    let name = app.textFields["profile.editor.name"]
+    for attempt in 0..<2 {
+      if attempt > 0 {
+        restartApplication(app)
+      }
+      assertWorkbenchWindowIsFrontmost(app)
+      let add = app.buttons["profile.add"]
+      guard add.waitForExistence(timeout: 5), add.isHittable else { continue }
+      app.activate()
+      add.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+      if name.waitForExistence(timeout: 5) {
+        return name
+      }
     }
-    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 5))
+    XCTFail("Profile editor did not open in a stable workbench window")
+    return name
   }
 
   @MainActor
