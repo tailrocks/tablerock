@@ -37,6 +37,13 @@ if [[ -d "$PRESENTATION_SOURCE" ]] && rg -n \
   exit 1
 fi
 
+if rg -n --pcre2 '[[:alnum:]_\)\]]!(?!=)' \
+  "$APP_SOURCE" "$FEATURE_SOURCE" "$BRIDGE_SOURCE" "$PRESENTATION_SOURCE" \
+  -g '*.swift' -g '!tablerock_ffi.swift'; then
+  echo "error: handwritten native Swift force-unwraps changing state" >&2
+  exit 1
+fi
+
 if rg -n -g '!verify-native-source-ownership.sh' \
   'SOURCE=.*TableRockApp\.swift' "$REPO_ROOT/scripts"; then
   echo "error: native verifier is coupled to the former monolith file" >&2

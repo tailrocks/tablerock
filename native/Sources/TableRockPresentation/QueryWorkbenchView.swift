@@ -215,7 +215,7 @@ private struct QueryResultPlane: View {
         .accessibilityIdentifier("query.result-section")
 
         Spacer(minLength: 8)
-        if tab.resultTable != nil {
+        if let resultTable = tab.resultTable {
           Button {
             quickFilterPresented = true
           } label: {
@@ -228,7 +228,7 @@ private struct QueryResultPlane: View {
           .accessibilityLabel("Filter loaded rows")
           .accessibilityIdentifier("query.quick-filter.open")
           .popover(isPresented: $quickFilterPresented, arrowEdge: .bottom) {
-            QueryLoadedRowFilter(table: tab.resultTable!)
+            QueryLoadedRowFilter(table: resultTable)
           }
           if tab.nextStartRow != nil {
             Button("Load more") { Task { await model.loadMore() } }
