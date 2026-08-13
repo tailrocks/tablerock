@@ -68,7 +68,7 @@ struct ConnectionsCatalogPane: View {
       .padding(.horizontal, 12)
       .padding(.bottom, 6)
 
-      if model.isCatalogRefreshing {
+      if model.isCatalogRefreshing, model.catalogSnapshot != nil {
         ProgressView("Refreshing catalog…")
           .controlSize(.small)
           .padding(.horizontal, 10)
@@ -94,6 +94,7 @@ struct ConnectionsCatalogPane: View {
         case .loading:
           ProgressView("Loading catalog…")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("catalog.loading")
         case .failed(let message):
           ContentUnavailableView(
             "Catalog failed",
@@ -101,6 +102,7 @@ struct ConnectionsCatalogPane: View {
             description: Text(message)
           )
           .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .accessibilityIdentifier("catalog.error")
         default:
           ContentUnavailableView(
             "Catalog not loaded",
@@ -108,6 +110,7 @@ struct ConnectionsCatalogPane: View {
             description: Text("Refresh to list database objects.")
           )
           .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .accessibilityIdentifier("catalog.empty")
         }
       }
 

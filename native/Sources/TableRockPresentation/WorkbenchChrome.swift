@@ -190,7 +190,7 @@ struct WorkbenchContextStrip: View {
         "Database context, \(model.activeProfile?.name ?? model.connectedEngine)"
       )
 
-      if model.isCatalogRefreshing {
+      if model.isCatalogRefreshing, model.catalogSnapshot != nil {
         ProgressView()
           .controlSize(.small)
           .accessibilityLabel("Refreshing catalog")
@@ -351,7 +351,7 @@ struct WorkbenchStatusBar: View {
           .foregroundStyle(.secondary)
           .lineLimit(1)
       }
-      if tab.isRunning {
+      if tab.isRunning, tab.resultTable != nil || tab.redisView != nil {
         ProgressView()
           .controlSize(.small)
           .accessibilityLabel("Loading rows")

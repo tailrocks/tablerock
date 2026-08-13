@@ -4,6 +4,9 @@ import TableRockFeature
 @MainActor
 extension WorkbenchPresentationStore {
   func persistSessionIntent() async {
+    #if TABLEROCK_DEVELOPMENT_SUPPORT
+      guard !fixtures.nativeWorkbenchRoute else { return }
+    #endif
     guard let client, let profileId = activeProfileId,
       let selected = queryTabs.firstIndex(where: { $0.id == selectedQueryTabId })
     else { return }

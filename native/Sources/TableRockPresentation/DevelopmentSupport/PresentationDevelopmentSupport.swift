@@ -4,6 +4,22 @@
   import SwiftUI
   import TableRockFeature
 
+  enum NativeWorkbenchFixtureEngine: String, Sendable, CaseIterable {
+    case postgresql
+    case clickhouse
+    case redis
+  }
+
+  enum NativeWorkbenchFixtureState: String, Sendable, CaseIterable {
+    case populated
+    case empty
+    case loading
+    case connectionError = "connection-error"
+    case longIdentifiers = "long-identifiers"
+    case largeResult = "large-result"
+    case queryError = "query-error"
+  }
+
   struct NativeWorkbenchFixtureConfiguration: Sendable, Equatable {
     let nativeWorkbench: Bool
     let nativeWorkbenchQuery: Bool
@@ -12,6 +28,8 @@
     let nativeWorkbenchStructure: Bool
     let nativeWorkbenchSafeReview: Bool
     let nativeWorkbenchDestructiveReview: Bool
+    let nativeWorkbenchEngine: NativeWorkbenchFixtureEngine?
+    let nativeWorkbenchState: NativeWorkbenchFixtureState?
     let multiWindow: Bool
     let objectTabs: Bool
     let dataMovementUI: Bool
@@ -39,6 +57,12 @@
     let performanceAutoScroll: Bool
     let externalURL: String?
 
+    var nativeWorkbenchRoute: Bool {
+      nativeWorkbench || nativeWorkbenchQuery || nativeWorkbenchStructure
+        || nativeWorkbenchSafeReview || nativeWorkbenchDestructiveReview
+        || nativeWorkbenchEngine != nil || nativeWorkbenchState != nil
+    }
+
     static let current = from(environment: ProcessInfo.processInfo.environment)
 
     static func from(environment: [String: String]) -> NativeWorkbenchFixtureConfiguration {
@@ -54,6 +78,10 @@
           environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SAFE_REVIEW"] == "1",
         nativeWorkbenchDestructiveReview:
           environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_DESTRUCTIVE_REVIEW"] == "1",
+        nativeWorkbenchEngine: environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_ENGINE"]
+          .flatMap(NativeWorkbenchFixtureEngine.init(rawValue:)),
+        nativeWorkbenchState: environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE"]
+          .flatMap(NativeWorkbenchFixtureState.init(rawValue:)),
         multiWindow: environment["TABLEROCK_FIXTURE_MULTI_WINDOW"] == "1",
         objectTabs: environment["TABLEROCK_FIXTURE_OBJECT_TABS"] == "1",
         dataMovementUI: environment["TABLEROCK_FIXTURE_DATA_MOVEMENT_UI"] == "1",
@@ -289,7 +317,7 @@
   }
 
   @MainActor
-  func runNativeRedisKeyViewAudit() {
+  func runNativeRedisKeyViewAudit(view: WorkbenchRedisKeyView) {
     let roots = NSApplication.shared.windows.filter(\.isVisible).compactMap(\.contentView)
     func descendants(of view: NSView) -> [NSView] {
       [view] + view.subviews.flatMap(descendants)
@@ -297,7 +325,9 @@
     let labels = roots.flatMap(descendants)
       .compactMap { ($0 as? NSTextField)?.stringValue }
       .joined(separator: "|")
-    guard labels.contains("type: Hash"), labels.contains("field-39 = value-39")
+    guard view.kind == "hash",
+      view.lines.contains(where: { $0.contains("field-39 = value-39") }),
+      labels.contains("type: Hash"), labels.contains("field-0 = value-0")
     else {
       writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED labels=\(labels)")
       return

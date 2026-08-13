@@ -591,9 +591,13 @@ public final class WorkbenchPresentationStore {
       }
       if fixtures.nativeWorkbench || fixtures.nativeWorkbenchQuery
         || fixtures.nativeWorkbenchStructure || fixtures.nativeWorkbenchSafeReview
-        || fixtures.nativeWorkbenchDestructiveReview
+        || fixtures.nativeWorkbenchDestructiveReview || fixtures.nativeWorkbenchEngine != nil
+        || fixtures.nativeWorkbenchState != nil
       {
-        installNativeWorkbenchFixture(selectsQuery: fixtures.nativeWorkbenchQuery)
+        installNativeWorkbenchFixture(
+          selectsQuery: fixtures.nativeWorkbenchQuery,
+          engine: fixtures.nativeWorkbenchEngine ?? .postgresql,
+          state: fixtures.nativeWorkbenchState ?? .populated)
         if fixtures.nativeWorkbenchStructure {
           installNativeWorkbenchStructureFixture()
         } else if fixtures.nativeWorkbenchSafeReview {
@@ -984,8 +988,8 @@ public final class WorkbenchPresentationStore {
           }
           await openCatalogObject(nodeKey: catalogNodeKey(hash.idBytes))
           await loadMoreRedisKey()
-          guard activeObjectTab?.redisView?.kind == "hash",
-            (activeObjectTab?.redisView?.lines.count ?? 0) > 34
+          guard let redisView = activeObjectTab?.redisView,
+            redisView.kind == "hash", redisView.lines.count > 34
           else {
             writePerformanceMetric(
               "REDIS_KEY_VIEW_PROOF_FAILED native view kind=\(activeObjectTab?.redisView?.kind ?? "nil") lines=\(activeObjectTab?.redisView?.lines.count ?? 0) next=\(String(describing: activeObjectTab?.redisView?.nextSkip))"
@@ -993,7 +997,7 @@ public final class WorkbenchPresentationStore {
             return
           }
           try? await Task.sleep(for: .milliseconds(500))
-          runNativeRedisKeyViewAudit()
+          runNativeRedisKeyViewAudit(view: redisView)
         } catch {
           writePerformanceMetric("REDIS_KEY_VIEW_PROOF_FAILED \(error)")
         }
@@ -1364,44 +1368,64 @@ public final class WorkbenchPresentationStore {
       )
     }
 
-    private func installNativeWorkbenchFixture(selectsQuery: Bool) {
+    private func installNativeWorkbenchFixture(
+      selectsQuery: Bool,
+      engine: NativeWorkbenchFixtureEngine = .postgresql,
+      state: NativeWorkbenchFixtureState = .populated
+    ) {
+      if engine == .redis {
+        installNativeWorkbenchRedisFixture(selectsQuery: selectsQuery, state: state)
+        return
+      }
+
+      let clickHouse = engine == .clickhouse
+      let objectName =
+        state == .longIdentifiers
+        ? "customer_engagement_retention_cohort_materialized_rollup_by_billing_region"
+        : "customers"
+      let tableKind = clickHouse ? "clickhouse_table" : "postgresql_table"
+      let viewKind = clickHouse ? "clickhouse_view" : "postgresql_view"
+      let materializedViewKind =
+        clickHouse ? "clickhouse_materialized_view" : "postgresql_materialized_view"
+      let specializedKind = clickHouse ? "clickhouse_dictionary" : "postgresql_function"
       let rootId = Data(repeating: 6, count: 16)
       let customersNode = WorkbenchCatalogNode(
         idBytes: Data(repeating: 7, count: 16), parentIdBytes: rootId,
-        depth: 1, name: "customers", kind: "postgresql_table",
+        depth: 1, name: objectName, kind: tableKind,
         childrenState: "not_applicable", expandable: false)
       let objects = [
         customersNode,
         WorkbenchCatalogNode(
           idBytes: Data(repeating: 8, count: 16), parentIdBytes: rootId,
-          depth: 1, name: "invoices", kind: "postgresql_table",
+          depth: 1, name: "invoices", kind: tableKind,
           childrenState: "not_applicable", expandable: false),
         WorkbenchCatalogNode(
           idBytes: Data(repeating: 9, count: 16), parentIdBytes: rootId,
-          depth: 1, name: "orders", kind: "postgresql_table",
+          depth: 1, name: "orders", kind: tableKind,
           childrenState: "not_applicable", expandable: false),
         WorkbenchCatalogNode(
           idBytes: Data(repeating: 10, count: 16), parentIdBytes: rootId,
-          depth: 1, name: "products", kind: "postgresql_table",
+          depth: 1, name: "products", kind: tableKind,
           childrenState: "not_applicable", expandable: false),
         WorkbenchCatalogNode(
           idBytes: Data(repeating: 12, count: 16), parentIdBytes: rootId,
-          depth: 1, name: "regions", kind: "postgresql_view",
+          depth: 1, name: "regions", kind: viewKind,
           childrenState: "not_applicable", expandable: false),
         WorkbenchCatalogNode(
           idBytes: Data(repeating: 13, count: 16), parentIdBytes: rootId,
-          depth: 1, name: "revenue_summary", kind: "postgresql_materialized_view",
+          depth: 1, name: "revenue_summary", kind: materializedViewKind,
           childrenState: "not_applicable", expandable: false),
         WorkbenchCatalogNode(
           idBytes: Data(repeating: 14, count: 16), parentIdBytes: rootId,
-          depth: 1, name: "calculate_retention(integer)", kind: "postgresql_function",
+          depth: 1, name: clickHouse ? "customer_segments" : "calculate_retention(integer)",
+          kind: specializedKind,
           childrenState: "not_applicable", expandable: false),
       ]
       catalogSnapshot =
         [
           WorkbenchCatalogNode(
             idBytes: rootId, parentIdBytes: nil, depth: 0,
-            name: "analytics", kind: "postgresql_schema",
+            name: "analytics", kind: clickHouse ? "clickhouse_database" : "postgresql_schema",
             childrenState: "loaded_complete", expandable: true)
         ] + objects
       catalogRefreshState = .loaded
@@ -1409,9 +1433,12 @@ public final class WorkbenchPresentationStore {
 
       let profile = WorkbenchProfileItem(
         idBytes: Data(repeating: 4, count: 16), revision: 1,
-        name: "Northstar Analytics", engine: "postgresql", group: nil,
-        favorite: true, savedOrder: 0, host: "db.internal", port: "5432",
-        context: "analytics.public", safetyMode: "read_only", environment: "development",
+        name: clickHouse ? "Atlas Events" : "Northstar Analytics", engine: engine.rawValue,
+        group: nil, favorite: true, savedOrder: 0,
+        host: clickHouse ? "events.cluster" : "db.internal",
+        port: clickHouse ? "9440" : "5432",
+        context: clickHouse ? "analytics.events" : "analytics.public",
+        safetyMode: "read_only", environment: "development",
         productionWarning: false, dangerousPlaintext: false, connected: true)
       profiles = [profile]
       activeProfileId = profile.idBytes
@@ -1420,7 +1447,7 @@ public final class WorkbenchPresentationStore {
       sessionHealth = WorkbenchSessionHealth(
         state: "healthy", serverReachable: true, elapsedMillis: 18,
         authenticationStopped: false)
-      connectedEngine = "postgresql"
+      connectedEngine = engine.rawValue
 
       let customers = NativeObjectTab(
         id: dependencies.identifiers.next(), node: customersNode, pinned: true)
@@ -1445,15 +1472,27 @@ public final class WorkbenchPresentationStore {
         ],
         columnMetadata: [
           WorkbenchColumn(name: "customer_id", engine: 0, engineType: "uuid", nullable: false),
-          WorkbenchColumn(name: "company_name", engine: 0, engineType: "text", nullable: false),
-          WorkbenchColumn(name: "region", engine: 0, engineType: "text", nullable: false),
-          WorkbenchColumn(name: "plan", engine: 0, engineType: "text", nullable: false),
-          WorkbenchColumn(name: "seats", engine: 0, engineType: "int4", nullable: false),
           WorkbenchColumn(
-            name: "monthly_revenue", engine: 0, engineType: "numeric", nullable: false),
-          WorkbenchColumn(name: "active", engine: 0, engineType: "bool", nullable: false),
+            name: "company_name", engine: 0, engineType: clickHouse ? "String" : "text",
+            nullable: false),
           WorkbenchColumn(
-            name: "updated_at", engine: 0, engineType: "timestamptz", nullable: true),
+            name: "region", engine: 0,
+            engineType: clickHouse ? "LowCardinality(String)" : "text", nullable: false),
+          WorkbenchColumn(
+            name: "plan", engine: 0,
+            engineType: clickHouse ? "LowCardinality(String)" : "text", nullable: false),
+          WorkbenchColumn(
+            name: "seats", engine: 0, engineType: clickHouse ? "UInt32" : "int4",
+            nullable: false),
+          WorkbenchColumn(
+            name: "monthly_revenue", engine: 0,
+            engineType: clickHouse ? "Decimal(12,2)" : "numeric", nullable: false),
+          WorkbenchColumn(
+            name: "active", engine: 0, engineType: clickHouse ? "Bool" : "bool",
+            nullable: false),
+          WorkbenchColumn(
+            name: "updated_at", engine: 0,
+            engineType: clickHouse ? "DateTime64(3)" : "timestamptz", nullable: true),
         ])
       customers.resultIdData = Data(repeating: 8, count: 16)
       customers.resultRevision = 1
@@ -1494,7 +1533,207 @@ public final class WorkbenchPresentationStore {
       workspaceTabOrder = [.object(customers.id), .query(activeQueryTab.id), .object(orders.id)]
       selectedObjectTabId = customers.id
       selectedWorkbenchKind = selectsQuery ? "query" : "object"
-      status = "Native Workbench fixture"
+      installNativeWorkbenchStateFixture(state)
+      status = "Native Workbench \(engine.rawValue) \(state.rawValue) fixture"
+    }
+
+    private func installNativeWorkbenchStateFixture(_ state: NativeWorkbenchFixtureState) {
+      guard let tab = selectedObjectTab else { return }
+      switch state {
+      case .populated, .longIdentifiers:
+        break
+      case .empty:
+        if let table = tab.resultTable {
+          let empty = WorkbenchTable(
+            columns: table.columns, rows: [], columnMetadata: table.columnMetadata, cells: [])
+          tab.resultTable = empty
+          activeQueryTab.resultTable = empty
+        }
+        tab.selectedCell = nil
+        tab.summary = "0 rows · 12 ms"
+      case .loading:
+        tab.resultTable = nil
+        tab.selectedCell = nil
+        tab.isRunning = true
+        tab.summary = nil
+        catalogSnapshot = nil
+        catalogRefreshState = .loading(nodeKey: nil)
+      case .connectionError:
+        tab.resultTable = nil
+        tab.selectedCell = nil
+        tab.summary = nil
+        tab.error = "Connection lost while loading this object. Reconnect, then retry."
+        catalogSnapshot = nil
+        catalogRefreshState = .failed(
+          message: "Server unavailable. Check the host and TLS settings.")
+        sessionHealth = WorkbenchSessionHealth(
+          state: "unavailable", serverReachable: false, elapsedMillis: nil,
+          authenticationStopped: false)
+      case .largeResult:
+        guard let table = tab.resultTable else { return }
+        let rows = (0..<1_500).map { index in
+          let region = ["AMER", "APAC", "EMEA"][index % 3]
+          let plan = ["Scale", "Team", "Starter"][index % 3]
+          let active = index.isMultiple(of: 7) ? "false" : "true"
+          let day = String(format: "%02d", 1 + index % 12)
+          return [
+            String(format: "…%04x", index), "Customer \(index + 1)", region, plan,
+            String(8 + index % 240), "$\((index + 1) * 125)", active, "2026-08-\(day)",
+          ]
+        }
+        let large = WorkbenchTable(
+          columns: table.columns, rows: rows, columnMetadata: table.columnMetadata)
+        tab.resultTable = large
+        activeQueryTab.resultTable = large
+        tab.selectedCell = NativeCellSelection(row: 2, column: 1)
+        tab.summary = "1,500 of 48,224 rows · 86 ms"
+      case .queryError:
+        selectedWorkbenchKind = "query"
+        activeQueryTab.resultTable = nil
+        activeQueryTab.statementText =
+          """
+          SELECT
+            company_name,
+            region,
+            plan,
+            monthly_revenue_total
+          FROM analytics.customers
+          WHERE active = true
+            AND monthly_revenue >= 5_000
+          ORDER BY monthly_revenue DESC
+          LIMIT 100;
+          """
+        activeQueryTab.queryError =
+          "Column monthly_revenue_total does not exist at line 5, column 3."
+        activeQueryTab.querySummary = nil
+        activeQueryTab.selectedResultSection = "messages"
+      }
+    }
+
+    private func installNativeWorkbenchRedisFixture(
+      selectsQuery: Bool,
+      state: NativeWorkbenchFixtureState
+    ) {
+      let databaseId = Data(repeating: 6, count: 16)
+      let namespaceId = Data(repeating: 16, count: 16)
+      let keyName =
+        state == .longIdentifiers
+        ? "customer:session:regional-rollout:experiment-assignment:2026-08-13:apac"
+        : "customer:session:10482"
+      let keyNode = WorkbenchCatalogNode(
+        idBytes: Data(repeating: 7, count: 16), parentIdBytes: namespaceId,
+        depth: 2, name: keyName, kind: "redis_key_hash",
+        childrenState: "not_applicable", expandable: false)
+      let secondKey = WorkbenchCatalogNode(
+        idBytes: Data(repeating: 8, count: 16), parentIdBytes: namespaceId,
+        depth: 2, name: "customer:feature-flags", kind: "redis_key_set",
+        childrenState: "not_applicable", expandable: false)
+      catalogSnapshot = [
+        WorkbenchCatalogNode(
+          idBytes: databaseId, parentIdBytes: nil, depth: 0,
+          name: "db0", kind: "redis_logical_database",
+          childrenState: "loaded_complete", expandable: true),
+        WorkbenchCatalogNode(
+          idBytes: namespaceId, parentIdBytes: databaseId, depth: 1,
+          name: "customer", kind: "redis_namespace",
+          childrenState: "loaded_complete", expandable: true),
+        keyNode,
+        secondKey,
+      ]
+      catalogRefreshState = .loaded
+      catalogSelection = catalogNodeKey(keyNode.idBytes)
+
+      let profile = WorkbenchProfileItem(
+        idBytes: Data(repeating: 6, count: 16), revision: 1,
+        name: "Arbor Cache", engine: "redis", group: nil,
+        favorite: true, savedOrder: 0, host: "127.0.0.1", port: "6379",
+        context: "database 0", safetyMode: "read_only", environment: "development",
+        productionWarning: false, dangerousPlaintext: false, connected: true)
+      profiles = [profile]
+      activeProfileId = profile.idBytes
+      sessionData = Data(repeating: 3, count: 16)
+      sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+      sessionHealth = WorkbenchSessionHealth(
+        state: "healthy", serverReachable: true, elapsedMillis: 3,
+        authenticationStopped: false)
+      connectedEngine = "redis"
+
+      let keyTab = NativeObjectTab(
+        id: dependencies.identifiers.next(), node: keyNode, pinned: true)
+      keyTab.redisView = WorkbenchRedisKeyView(
+        kind: "hash",
+        lines: [
+          "type: Hash",
+          "ttl: ExpiresIn(3600s)",
+          "HSCAN page skip=0 take=7 (end)",
+          "customer_id = …a91f",
+          "company_name = Aster Works",
+          "region = APAC",
+          "plan = Scale",
+          "active = true",
+          "last_seen_at = 2026-08-13T09:42:18Z",
+          "feature_flags = billing-v2, insights",
+        ],
+        nextSkip: nil)
+      keyTab.summary = "hash · 7 fields · TTL 1h"
+      objectTabs = [keyTab]
+      selectedObjectTabId = keyTab.id
+
+      activeQueryTab.title = "Redis command"
+      activeQueryTab.statementText = "SCAN 0 MATCH customer:* COUNT 100"
+      activeQueryTab.resultTable = WorkbenchTable(
+        columns: ["cursor", "key"],
+        rows: [["0", keyName], ["0", secondKey.name]],
+        columnMetadata: [
+          WorkbenchColumn(name: "cursor", engine: 2, engineType: "integer", nullable: false),
+          WorkbenchColumn(name: "key", engine: 2, engineType: "bytes", nullable: false),
+        ])
+      activeQueryTab.querySummary = "2 keys · 4 ms · complete"
+      workspaceTabOrder = [.object(keyTab.id), .query(activeQueryTab.id)]
+      selectedWorkbenchKind = selectsQuery ? "query" : "object"
+
+      switch state {
+      case .populated, .longIdentifiers:
+        break
+      case .empty:
+        keyTab.redisView = WorkbenchRedisKeyView(
+          kind: "hash",
+          lines: [
+            "type: Hash", "ttl: Persistent", "HSCAN page skip=0 take=0 (end)", "HSCAN: empty",
+          ],
+          nextSkip: nil)
+        keyTab.summary = "hash · empty"
+      case .loading:
+        keyTab.redisView = nil
+        keyTab.isRunning = true
+        catalogSnapshot = nil
+        catalogRefreshState = .loading(nodeKey: nil)
+      case .connectionError:
+        keyTab.redisView = nil
+        keyTab.summary = nil
+        keyTab.error = "Redis connection closed while reading this key. Reconnect, then retry."
+        catalogSnapshot = nil
+        catalogRefreshState = .failed(
+          message: "Redis server unavailable at 127.0.0.1:6379.")
+        sessionHealth = WorkbenchSessionHealth(
+          state: "unavailable", serverReachable: false, elapsedMillis: nil,
+          authenticationStopped: false)
+      case .largeResult:
+        keyTab.redisView = WorkbenchRedisKeyView(
+          kind: "hash",
+          lines: ["type: Hash", "ttl: Persistent", "HSCAN page skip=0 take=32 (more)"]
+            + (0..<32).map { "field-\($0) = value-\($0)" },
+          nextSkip: 32)
+        keyTab.summary = "hash · 32+ fields"
+      case .queryError:
+        selectedWorkbenchKind = "query"
+        activeQueryTab.statementText = "SCNA 0 MATCH customer:* COUNT 100"
+        activeQueryTab.resultTable = nil
+        activeQueryTab.queryError = "ERR unknown command 'SCNA'. Use SCAN for bounded key browsing."
+        activeQueryTab.querySummary = nil
+        activeQueryTab.selectedResultSection = "messages"
+      }
+      status = "Native Workbench redis \(state.rawValue) fixture"
     }
 
     private func installNativeWorkbenchStructureFixture() {

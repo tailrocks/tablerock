@@ -54,8 +54,19 @@ xcrun xctrace record --template 'Time Profiler' --time-limit 10s \
   --output "$OUT_DIR/page-decode.trace" --no-prompt --launch -- \
   /usr/bin/env "${environment[@]}" "$BUILD/PageDecodeBenchmark" \
   >"$OUT_DIR/xctrace.log" 2>&1
-xcrun xctrace export --input "$OUT_DIR/page-decode.trace" --toc \
-  --output "$OUT_DIR/page-decode-toc.xml" >/dev/null
+trace_ready=""
+for _ in $(seq 1 20); do
+  if xcrun xctrace export --input "$OUT_DIR/page-decode.trace" --toc \
+      --output "$OUT_DIR/page-decode-toc.xml" >/dev/null 2>&1; then
+    trace_ready="1"
+    break
+  fi
+  sleep 0.25
+done
+if [[ -z "$trace_ready" ]]; then
+  echo "error: recorded xctrace did not become exportable" >&2
+  exit 1
+fi
 
 /usr/bin/env "${environment[@]}" TABLEROCK_BENCH_HOLD_SECONDS=30 \
   "$BUILD/PageDecodeBenchmark" >"$OUT_DIR/benchmark.log" 2>&1 &

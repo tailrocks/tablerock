@@ -92,6 +92,105 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testNativeWorkbenchFixtureProjectsClickHouseTruth() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_ENGINE": "clickhouse"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["value.inspector"].exists)
+    XCTAssertEqual(
+      app.descendants(matching: .any)["value.inspector.kind"].value as? String,
+      "STRING · NOT NULL")
+    XCTAssertTrue(
+      app.descendants(matching: .any)["workbench.context.connection"].label
+        .localizedCaseInsensitiveContains("Atlas Events"))
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsRedisTruth() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_ENGINE": "redis"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["redis.key.view"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.descendants(matching: .any)["value.inspector"].exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["workbench.context.connection"].label
+        .localizedCaseInsensitiveContains("Arbor Cache"))
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsLoadingState() throws {
+    let loading = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "loading"])
+    XCTAssertTrue(
+      loading.descendants(matching: .any)["object.loading"].waitForExistence(timeout: 10))
+    XCTAssertTrue(loading.descendants(matching: .any)["catalog.loading"].exists)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsConnectionErrorState() throws {
+    let connectionError = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "connection-error"])
+    XCTAssertTrue(
+      connectionError.descendants(matching: .any)["object.error"].waitForExistence(timeout: 10))
+    XCTAssertTrue(connectionError.descendants(matching: .any)["catalog.error"].exists)
+    XCTAssertEqual(
+      connectionError.descendants(matching: .any)["connection.status"].value as? String,
+      "Unavailable")
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsEmptyState() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "empty"])
+
+    XCTAssertTrue(
+      app.descendants(matching: .any)["results.grid.empty"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsLongIdentifierState() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "long-identifiers"])
+    let title = "customer_engagement_retention_cohort_materialized_rollup_by_billing_region"
+
+    XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsLargeResultState() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "large-result"])
+
+    XCTAssertTrue(app.tables["results.grid"].waitForExistence(timeout: 20))
+    XCTAssertTrue(
+      app.staticTexts["1,500 of 48,224 rows · 86 ms"].waitForExistence(timeout: 20))
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsQueryErrorState() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "query-error"])
+
+    XCTAssertTrue(
+      app.descendants(matching: .any)["query.messages"].waitForExistence(timeout: 10))
+    XCTAssertEqual(
+      app.staticTexts["query.status"].value as? String,
+      "Column monthly_revenue_total does not exist at line 5, column 3.")
+    XCTAssertEqual(app.alerts.count, 0)
+  }
+
+  @MainActor
   func testNativeWorkbenchFixtureOwnsQueryPlane() throws {
     let app = launch(
       scenario: "success",

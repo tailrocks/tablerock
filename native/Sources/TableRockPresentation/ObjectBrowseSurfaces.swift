@@ -9,20 +9,48 @@ func redisKeyObjectView(view: WorkbenchRedisKeyView) -> some View {
 private struct RedisKeyObjectView: View {
   let view: WorkbenchRedisKeyView
 
+  private var entryCount: Int {
+    view.lines.count(where: { !isMetadata($0) })
+  }
+
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack {
         Label("Redis \(view.kind)", systemImage: "key.horizontal")
-          .font(.title3.bold())
-        ForEach(view.lines.indices, id: \.self) { index in
-          Text(view.lines[index])
-            .font(.system(.body, design: .monospaced))
-            .textSelection(.enabled)
-        }
+          .font(.headline)
+        Spacer()
+        Text("\(entryCount) \(entryCount == 1 ? "entry" : "entries")")
+          .font(.caption.monospacedDigit())
+          .foregroundStyle(.secondary)
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(8)
+      .padding(.horizontal, 12)
+      .frame(height: 38)
+      .background(Color(nsColor: .controlBackgroundColor))
+      Divider()
+
+      if entryCount == 0 {
+        ContentUnavailableView(
+          "Empty Redis value", systemImage: "key.horizontal",
+          description: Text("This key has no visible value entries."))
+      } else {
+        List(Array(view.lines.enumerated()), id: \.offset) { _, line in
+          Text(line)
+            .font(isMetadata(line) ? .caption.monospaced() : .body.monospaced())
+            .foregroundStyle(isMetadata(line) ? .secondary : .primary)
+            .textSelection(.enabled)
+            .accessibilityLabel(isMetadata(line) ? "Redis metadata, \(line)" : line)
+        }
+        .listStyle(.inset)
+      }
     }
+    .background(Color(nsColor: .textBackgroundColor))
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("redis.key.view")
+  }
+
+  private func isMetadata(_ line: String) -> Bool {
+    line.hasPrefix("type: ") || line.hasPrefix("ttl: ") || line.contains("SCAN page ")
+      || line.hasSuffix("SCAN: empty") || line.hasPrefix("… more")
   }
 }
 

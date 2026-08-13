@@ -12,7 +12,7 @@ struct ObjectWorkbenchView: View {
         {
           objectBrowseRail(tab: tab, table: table)
         }
-        if let error = tab.error {
+        if let error = tab.error, tab.resultTable != nil || tab.redisView != nil {
           Label(error, systemImage: "exclamationmark.triangle")
             .font(.caption)
             .foregroundStyle(.red)
@@ -34,12 +34,24 @@ struct ObjectWorkbenchView: View {
         } else if let table = tab.resultTable {
           ResultGridWithInspector(table: table, minimumHeight: 180, showsUtilityRail: false)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if tab.isRunning {
+          ProgressView("Loading \(tab.title)…")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("object.loading")
+        } else if let error = tab.error {
+          ContentUnavailableView(
+            "Object unavailable", systemImage: "exclamationmark.triangle",
+            description: Text(error)
+          )
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .accessibilityIdentifier("object.error")
         } else if !tab.isRunning && tab.error == nil {
           ContentUnavailableView(
             "No object rows", systemImage: "tablecells",
             description: Text("Refresh to browse this object again.")
           )
           .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .accessibilityIdentifier("object.empty")
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -77,7 +89,7 @@ private struct ObjectWorkbenchHeader: View {
           .lineLimit(1)
       }
       Spacer(minLength: 8)
-      if tab.isRunning {
+      if tab.isRunning, tab.resultTable != nil || tab.redisView != nil {
         ProgressView()
           .controlSize(.small)
           .accessibilityLabel("Loading \(tab.title)")

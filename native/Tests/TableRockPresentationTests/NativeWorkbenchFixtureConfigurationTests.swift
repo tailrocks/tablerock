@@ -51,6 +51,9 @@
       XCTAssertFalse(configuration.nativeWorkbenchStructure)
       XCTAssertFalse(configuration.nativeWorkbenchSafeReview)
       XCTAssertFalse(configuration.nativeWorkbenchDestructiveReview)
+      XCTAssertNil(configuration.nativeWorkbenchEngine)
+      XCTAssertNil(configuration.nativeWorkbenchState)
+      XCTAssertFalse(configuration.nativeWorkbenchRoute)
       XCTAssertFalse(configuration.multiWindow)
       XCTAssertFalse(configuration.objectTabs)
       XCTAssertFalse(configuration.dataMovementUI)
@@ -116,6 +119,8 @@
       environment["TABLEROCK_FIXTURE_STREAM_EXPORT_PATH"] = "/tmp/stream.csv"
       environment["TABLEROCK_FIXTURE_GRID_ROWS"] = "4096"
       environment["TABLEROCK_FIXTURE_EXTERNAL_URL"] = "tablerock://connect?url=fixture"
+      environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_ENGINE"] = "clickhouse"
+      environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE"] = "large-result"
 
       let configuration = NativeWorkbenchFixtureConfiguration.from(environment: environment)
 
@@ -126,6 +131,9 @@
       XCTAssertTrue(configuration.nativeWorkbenchStructure)
       XCTAssertTrue(configuration.nativeWorkbenchSafeReview)
       XCTAssertTrue(configuration.nativeWorkbenchDestructiveReview)
+      XCTAssertEqual(configuration.nativeWorkbenchEngine, .clickhouse)
+      XCTAssertEqual(configuration.nativeWorkbenchState, .largeResult)
+      XCTAssertTrue(configuration.nativeWorkbenchRoute)
       XCTAssertTrue(configuration.multiWindow)
       XCTAssertTrue(configuration.objectTabs)
       XCTAssertTrue(configuration.dataMovementUI)
@@ -159,6 +167,89 @@
         environment: ["TABLEROCK_FIXTURE_QUERY_TABS": "true"])
 
       XCTAssertFalse(configuration.queryTabs)
+    }
+
+    func testUnknownNativeWorkbenchRouteValuesFailClosed() {
+      let configuration = NativeWorkbenchFixtureConfiguration.from(
+        environment: [
+          "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_ENGINE": "mysql",
+          "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "surprise",
+        ])
+
+      XCTAssertNil(configuration.nativeWorkbenchEngine)
+      XCTAssertNil(configuration.nativeWorkbenchState)
+    }
+
+    @MainActor
+    func testNativeWorkbenchEngineStateMatrixProjectsExplicitModels() async {
+      for engine in NativeWorkbenchFixtureEngine.allCases {
+        for state in NativeWorkbenchFixtureState.allCases {
+          let configuration = NativeWorkbenchFixtureConfiguration.from(
+            environment: [
+              "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_ENGINE": engine.rawValue,
+              "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": state.rawValue,
+            ])
+          let store = WorkbenchPresentationStore(client: nil, fixtures: configuration)
+
+          await store.initialize()
+
+          XCTAssertEqual(store.connectedEngine, engine.rawValue)
+          switch state {
+          case .populated, .longIdentifiers:
+            if engine == .redis {
+              XCTAssertNotNil(store.selectedObjectTab?.redisView)
+            } else {
+              XCTAssertNotNil(store.selectedObjectTab?.resultTable)
+            }
+          case .empty:
+            if engine == .redis {
+              XCTAssertEqual(store.selectedObjectTab?.redisView?.lines.last, "HSCAN: empty")
+            } else {
+              XCTAssertEqual(store.selectedObjectTab?.resultTable?.rows, [])
+            }
+          case .loading:
+            XCTAssertTrue(store.selectedObjectTab?.isRunning == true)
+            XCTAssertEqual(store.catalogRefreshState, .loading(nodeKey: nil))
+          case .connectionError:
+            XCTAssertNotNil(store.selectedObjectTab?.error)
+            XCTAssertEqual(store.sessionHealth?.serverReachable, false)
+          case .largeResult:
+            if engine == .redis {
+              XCTAssertEqual(store.selectedObjectTab?.redisView?.nextSkip, 32)
+            } else {
+              XCTAssertEqual(store.selectedObjectTab?.resultTable?.rows.count, 1_500)
+            }
+          case .queryError:
+            XCTAssertTrue(store.queryWorkbenchSelected)
+            XCTAssertEqual(store.activeQueryTab.selectedResultSection, "messages")
+            XCTAssertNotNil(store.activeQueryTab.queryError)
+            XCTAssertTrue(
+              store.activeQueryTab.statementText.contains(
+                engine == .redis ? "SCNA" : "monthly_revenue_total"))
+            XCTAssertNil(store.activeQueryTab.querySummary)
+          }
+        }
+      }
+    }
+
+    @MainActor
+    func testNativeWorkbenchEngineRoutesProjectEngineSpecificModels() async {
+      for engine in NativeWorkbenchFixtureEngine.allCases {
+        let configuration = NativeWorkbenchFixtureConfiguration.from(
+          environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_ENGINE": engine.rawValue])
+        let store = WorkbenchPresentationStore(client: nil, fixtures: configuration)
+
+        await store.initialize()
+
+        XCTAssertEqual(store.connectedEngine, engine.rawValue)
+        XCTAssertEqual(store.activeProfile?.engine, engine.rawValue)
+        if engine == .redis {
+          XCTAssertEqual(store.selectedObjectTab?.redisView?.kind, "hash")
+          XCTAssertTrue(store.selectedObjectTab?.kind.hasPrefix("redis_key_") == true)
+        } else {
+          XCTAssertNotNil(store.selectedObjectTab?.resultTable)
+        }
+      }
     }
   }
 
