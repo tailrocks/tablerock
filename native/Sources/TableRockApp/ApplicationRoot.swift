@@ -14,21 +14,24 @@ struct TableRockApp: App {
 
   var body: some Scene {
     WindowGroup(for: UUID.self) { $windowId in
-      #if TABLEROCK_DEVELOPMENT_SUPPORT
-      switch application.launchConfiguration.surface {
-      case .accessibilityAudit:
-        NativeAccessibilityFixtureView()
-          .frame(minWidth: 1_280, minHeight: 680)
-      case .profileEditor:
-        NativeProfileEditorFixtureView()
-      case .performanceGrid, .workbench:
-        WorkbenchWindowRoot(
-          application: application, windowId: windowId
-        )
+      Group {
+        #if TABLEROCK_DEVELOPMENT_SUPPORT
+        switch application.launchConfiguration.surface {
+        case .accessibilityAudit:
+          NativeAccessibilityFixtureView()
+            .frame(minWidth: 1_280, minHeight: 680)
+        case .profileEditor:
+          NativeProfileEditorFixtureView()
+        case .performanceGrid, .workbench:
+          WorkbenchWindowRoot(
+            application: application, windowId: windowId
+          )
+        }
+        #else
+          WorkbenchWindowRoot(application: application, windowId: windowId)
+        #endif
       }
-      #else
-        WorkbenchWindowRoot(application: application, windowId: windowId)
-      #endif
+      .background(NativeWindowConfiguration())
     } defaultValue: {
       application.dependencies.identifiers.next()
     }
@@ -74,7 +77,6 @@ private struct WorkbenchWindowRoot: View {
     } else {
       ContentView()
         .environment(model)
-        .background(NativeWindowConfiguration())
         .modifier(
           NativeAppearanceFixtureModifier(
             fixture: application.appearanceFixture
@@ -94,7 +96,6 @@ private struct WorkbenchWindowRoot: View {
   private var productionWorkbench: some View {
     ContentView()
       .environment(model)
-      .background(NativeWindowConfiguration())
       .frame(minWidth: 1_280, minHeight: 680)
       .onOpenURL { url in
         Task { await model.receiveExternalURL(url) }
@@ -119,15 +120,26 @@ private struct WorkbenchWindowRoot: View {
 }
 
 private struct NativeWindowConfiguration: NSViewRepresentable {
-  func makeNSView(context: Context) -> NSView { NSView() }
+  func makeNSView(context: Context) -> NativeWindowAttachmentView {
+    NativeWindowAttachmentView()
+  }
 
-  func updateNSView(_ view: NSView, context: Context) {
-    Task { @MainActor in
-      guard let window = view.window else { return }
-      window.setAccessibilityIdentifier("window.workbench")
-      window.tabbingIdentifier = "tablerock-workbench"
-      window.tabbingMode = .preferred
-      window.tab.title = window.title
-    }
+  func updateNSView(_ view: NativeWindowAttachmentView, context: Context) {
+    view.configureWindow()
+  }
+}
+
+private final class NativeWindowAttachmentView: NSView {
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    configureWindow()
+  }
+
+  func configureWindow() {
+    guard let window else { return }
+    window.setAccessibilityIdentifier("window.workbench")
+    window.tabbingIdentifier = "tablerock-workbench"
+    window.tabbingMode = .preferred
+    window.tab.title = window.title
   }
 }
