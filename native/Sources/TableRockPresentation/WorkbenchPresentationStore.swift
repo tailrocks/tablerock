@@ -590,6 +590,14 @@ public final class WorkbenchPresentationStore {
 
   public func initialize() async {
     #if TABLEROCK_DEVELOPMENT_SUPPORT
+      if fixtures.nativeWorkbenchConnections || fixtures.nativeWorkbenchSetup
+        || fixtures.nativeWorkbenchRoute
+      {
+        // Keep the initial disconnected root stable until SwiftUI has attached
+        // its owning window; replacing it in the first render can suppress the
+        // scene under direct LaunchServices and XCUITest launches.
+        try? await Task.sleep(for: .milliseconds(500))
+      }
       if fixtures.nativeWorkbenchConnections || fixtures.nativeWorkbenchSetup {
         installNativeConnectionFixture(setup: fixtures.nativeWorkbenchSetup)
         return
