@@ -182,6 +182,8 @@ private struct ConnectionsBrowserView: View {
               model.directConnectionPresented = true
             }
             .accessibilityIdentifier("connection.direct.open")
+            Button("Import…") { model.beginConnectionUrlImport() }
+              .accessibilityIdentifier("profile.url-import")
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
