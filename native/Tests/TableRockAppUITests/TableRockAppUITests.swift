@@ -57,7 +57,8 @@ final class TableRockAppUITests: XCTestCase {
       environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH": "1"])
 
     XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
-    XCTAssertTrue(app.descendants(matching: .any)["catalog.search"].exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["catalog.search"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.descendants(matching: .any)["object.header"].exists)
     XCTAssertTrue(app.tables["results.grid"].exists)
     XCTAssertTrue(app.descendants(matching: .any)["value.inspector"].exists)
