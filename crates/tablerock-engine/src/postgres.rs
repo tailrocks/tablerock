@@ -38,7 +38,8 @@ use tokio_postgres_rustls::MakeRustlsConnect;
 use zeroize::Zeroize;
 
 use crate::{
-    CatalogExactness, CatalogRequest, CatalogSubtree, ServerDescribe,
+    CatalogExactness, CatalogRequest, CatalogSubtree, PostgresRelationBrowseRequest,
+    PostgresRelationBrowseSide, PostgresRelationBrowseTarget, ServerDescribe,
     catalog::{catalog_name_list, catalog_seed},
     temporal::format_date_from_unix_days,
 };
@@ -1066,14 +1067,9 @@ impl PostgresSession {
     /// selected cell cannot represent their full relation identity.
     pub async fn relation_browse_target(
         &self,
-        from_schema: &str,
-        from_table: &str,
-        from_column: &str,
-        to_schema: &str,
-        to_table: &str,
-        to_column: &str,
-        browse_source: bool,
-    ) -> Result<Option<(String, String, u32)>, PostgresError> {
+        request: PostgresRelationBrowseRequest<'_>,
+    ) -> Result<Option<PostgresRelationBrowseTarget>, PostgresError> {
+        let edge = request.edge();
         let row = self
             .client
             .query_opt(
@@ -1100,20 +1096,23 @@ impl PostgresSession {
                    AND tn.nspname = $4 AND tc.relname = $5 AND ta.attname = $6 \
                  ORDER BY con.conname LIMIT 1",
                 &[
-                    &from_schema,
-                    &from_table,
-                    &from_column,
-                    &to_schema,
-                    &to_table,
-                    &to_column,
+                    &edge.from_schema,
+                    &edge.from_table,
+                    &edge.from_column,
+                    &edge.to_schema,
+                    &edge.to_table,
+                    &edge.to_column,
                 ],
             )
             .await
             .map_err(|error| map_tokio_postgres_error(&error))?;
         row.map(|row| {
-            let type_offset = if browse_source { 0 } else { 2 };
+            let type_offset = match request.side() {
+                PostgresRelationBrowseSide::Source => 0,
+                PostgresRelationBrowseSide::Target => 2,
+            };
             let width: i32 = row.try_get(4).map_err(|_| PostgresError::Protocol)?;
-            Ok((
+            Ok(PostgresRelationBrowseTarget::new(
                 row.try_get(type_offset)
                     .map_err(|_| PostgresError::Protocol)?,
                 row.try_get(type_offset + 1)

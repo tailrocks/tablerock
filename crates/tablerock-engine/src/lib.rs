@@ -21,7 +21,8 @@ mod temporal;
 
 pub use adapter::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
-    DriverSession, MutationApplyControl, PostgresActivityRow, PostgresRoleSnapshot, SessionHealth,
+    DriverSession, MutationApplyControl, PostgresActivityRow, PostgresRelationBrowseRequest,
+    PostgresRelationBrowseSide, PostgresRelationBrowseTarget, PostgresRoleSnapshot, SessionHealth,
 };
 pub use browse_plan::{
     BrowseDialect, BrowsePlan, BrowsePlanError, FilterOperator, FilterValue,

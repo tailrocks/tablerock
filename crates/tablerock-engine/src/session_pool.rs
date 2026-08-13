@@ -7,8 +7,8 @@ use tokio::sync::RwLock;
 
 use crate::{
     AdapterError, AdapterFailureClass, CatalogRequest, CatalogSubtree, DriverFuture,
-    DriverPageRequest, DriverPageStream, DriverSession, LocalForwardTunnel, ServerDescribe,
-    SessionHealth,
+    DriverPageRequest, DriverPageStream, DriverSession, LocalForwardTunnel,
+    PostgresRelationBrowseRequest, PostgresRelationBrowseTarget, ServerDescribe, SessionHealth,
 };
 
 /// Upper bound for concurrent registered sessions (ServiceLimits scale).
@@ -287,29 +287,13 @@ impl DriverSession for SessionSlot {
 
     fn postgres_relation_browse_target<'a>(
         &'a self,
-        from_schema: &'a str,
-        from_table: &'a str,
-        from_column: &'a str,
-        to_schema: &'a str,
-        to_table: &'a str,
-        to_column: &'a str,
-        browse_source: bool,
-    ) -> DriverFuture<'a, Result<Option<(String, String, u32)>, AdapterError>> {
+        request: PostgresRelationBrowseRequest<'a>,
+    ) -> DriverFuture<'a, Result<Option<PostgresRelationBrowseTarget>, AdapterError>> {
         Box::pin(async move {
             let guard = self.state.read().await;
             match &*guard {
                 SessionState::Open(session) => {
-                    session
-                        .postgres_relation_browse_target(
-                            from_schema,
-                            from_table,
-                            from_column,
-                            to_schema,
-                            to_table,
-                            to_column,
-                            browse_source,
-                        )
-                        .await
+                    session.postgres_relation_browse_target(request).await
                 }
                 SessionState::Closed => Err(AdapterError::new(
                     self.engine,

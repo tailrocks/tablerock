@@ -19,6 +19,7 @@ use tablerock_core::{
 use tablerock_engine::{
     AdapterError, AdapterFailureClass, CatalogExactness, CatalogNodeSeed, CatalogRequest,
     CatalogSubtree, DriverFuture, DriverPageRequest, DriverPageStream, DriverSession,
+    PostgresRelationBrowseRequest, PostgresRelationBrowseSide, PostgresRelationBrowseTarget,
     ServerDescribe, SessionHealth,
 };
 use tablerock_ffi::{
@@ -260,40 +261,52 @@ impl DriverSession for FixedPageSession {
 
     fn postgres_relation_browse_target<'a>(
         &'a self,
-        from_schema: &'a str,
-        from_table: &'a str,
-        from_column: &'a str,
-        to_schema: &'a str,
-        to_table: &'a str,
-        to_column: &'a str,
-        browse_source: bool,
-    ) -> DriverFuture<'a, Result<Option<(String, String, u32)>, AdapterError>> {
+        request: PostgresRelationBrowseRequest<'a>,
+    ) -> DriverFuture<'a, Result<Option<PostgresRelationBrowseTarget>, AdapterError>> {
         Box::pin(async move {
-            if browse_source {
+            let edge = request.edge();
+            if request.side() == PostgresRelationBrowseSide::Source {
                 assert_eq!(
                     (
-                        from_schema,
-                        from_table,
-                        from_column,
-                        to_schema,
-                        to_table,
-                        to_column,
+                        edge.from_schema.as_str(),
+                        edge.from_table.as_str(),
+                        edge.from_column.as_str(),
+                        edge.to_schema.as_str(),
+                        edge.to_table.as_str(),
+                        edge.to_column.as_str(),
                     ),
                     ("billing", "invoices", "user_id", "public", "users", "id")
                 );
-                return Ok(Some(("pg_catalog".into(), "int4".into(), 1)));
+                return Ok(Some(PostgresRelationBrowseTarget::new(
+                    "pg_catalog".into(),
+                    "int4".into(),
+                    1,
+                )));
             }
-            assert_eq!((from_schema, from_table), ("public", "users"));
-            assert_eq!((to_schema, to_table), ("crm", "customers"));
-            assert!(!browse_source);
-            let width = if from_column == "composite_id" {
-                assert_eq!(to_column, "composite_id");
+            assert_eq!(
+                (edge.from_schema.as_str(), edge.from_table.as_str()),
+                ("public", "users")
+            );
+            assert_eq!(
+                (edge.to_schema.as_str(), edge.to_table.as_str()),
+                ("crm", "customers")
+            );
+            assert_eq!(request.side(), PostgresRelationBrowseSide::Target);
+            let width = if edge.from_column == "composite_id" {
+                assert_eq!(edge.to_column, "composite_id");
                 2
             } else {
-                assert_eq!((from_column, to_column), ("customer_id", "id"));
+                assert_eq!(
+                    (edge.from_column.as_str(), edge.to_column.as_str()),
+                    ("customer_id", "id")
+                );
                 1
             };
-            Ok(Some(("pg_catalog".into(), "int8".into(), width)))
+            Ok(Some(PostgresRelationBrowseTarget::new(
+                "pg_catalog".into(),
+                "int8".into(),
+                width,
+            )))
         })
     }
 
