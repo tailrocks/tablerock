@@ -19,7 +19,9 @@ trap cleanup EXIT
 for pattern in \
   'private let application = NativeApplicationModel\(\)' \
   'WindowGroup\(for: UUID.self\)' \
-  '\.restorationBehavior\(\.automatic\)' \
+  'application\.disablesWindowRestoration \? \.disabled : \.automatic' \
+  'ProcessInfo\.processInfo\.environment\["TABLEROCK_TEST_MODE"\] == "1"' \
+  'disablesWindowRestoration = false' \
   '@State private var model: WorkbenchPresentationStore' \
   'window.tabbingIdentifier = "tablerock-workbench"' \
   'window.tabbingMode = \.preferred' \
