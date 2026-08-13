@@ -1,6 +1,6 @@
 # Tested support matrix
 
-Status: 2026-07-21. This matrix records exercised configurations, not a wider
+Status: 2026-08-14. This matrix records exercised configurations, not a wider
 compatibility promise. A configuration absent from the **Runtime proof** column
 is unproven.
 
@@ -22,7 +22,7 @@ an ignored test is not silently treated as proof.
 |---|---|---|---|
 | TUI runtime | Linux x86_64 self-hosted runner; `TERM=xterm-256color` PTY contract | Full CI, real PTY lifecycle, input, rendering, and three-engine integration | Other terminal emulators, `tmux`, SSH presentation, Linux arm64 runtime, and macOS terminal runtime |
 | CLI release packages | Linux x86_64/arm64 and macOS x86_64/arm64 targets | Cross-build and package validation | Cross-built targets do not establish runtime compatibility |
-| Native macOS runtime | macOS 26.4 arm64, Xcode 26.6, Swift 6.3.3 | Xcode unit/UI suites, accessibility audit, archive, Instruments time/RSS trace, and leak gate | Earlier macOS releases and Intel runtime |
+| Native macOS runtime | macOS 26.5.2 arm64, Xcode 26.6, Swift 6.3.3 | Xcode unit/UI suites, accessibility audit, archive, Instruments time/RSS trace, and leak gate | Earlier macOS releases and Intel runtime |
 | Native universal archive | arm64 and x86_64 slices | Both slices compile and the universal archive is inspected | x86_64 execution remains unproven |
 | 1Password CLI | 2.35.0 | Scheduled native gate installs the current stable cask and verifies the `op read --no-newline` plus global `--account` command surface used by TableRock | Authenticated account access is operator-owned and is not exercised in CI |
 

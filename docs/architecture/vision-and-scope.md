@@ -5,9 +5,9 @@
 Agent-driven development increases the amount of software work running without
 continuous human attention. Humans still need a fast, inspectable surface for
 understanding project databases, validating changes, and intervening safely.
-Existing polished clients are primarily desktop applications. TableRock starts
-with the terminal so it works beside agents, containers, remote shells, and
-normal CLI workflows.
+Existing polished clients are primarily desktop applications. TableRock serves
+both native macOS work and terminal workflows beside agents, containers, and
+remote shells.
 
 ## Product
 
@@ -20,7 +20,7 @@ The first complete loop is:
 
 1. Create a PostgreSQL, ClickHouse, or Redis profile.
 2. Enter host, port, database, username, and one password (prompt-on-connect
-   or acknowledged local save first; 1Password and Keychain staged later),
+  or an approved stored-reference source),
    choose TLS mode, group, environment tag, and safety, then test.
 3. Connect and select database/schema/logical database as supported.
 4. Browse objects or Redis keys.
@@ -65,7 +65,6 @@ forced into one relational abstraction.
 TableRock consumes the independent
 [`termrock`](https://github.com/tailrocks/termrock) component project. It never
 imports `jackin❯` product crates. Every missing reusable interactive primitive
-is designed, tested, documented, committed, and pushed directly to TermRock
-`main` before TableRock consumes its exact revision; no branch or pull request
-is used. Database state and policy remain TableRock-owned. Secret handling stays
-in TableRock.
+is designed, tested, documented, reviewed, and merged in TermRock before
+TableRock consumes its exact revision. Database state and policy remain
+TableRock-owned. Secret handling stays in TableRock.

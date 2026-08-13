@@ -28,11 +28,11 @@ its adoption requirements are defined.
 
 - TableRock owns PostgreSQL, ClickHouse, and Redis connection, exploration,
   query, result, edit, history, and safety behavior.
-- The first UI is a Rust CLI/TUI.
+- The implemented clients are a Rust CLI/TUI and a native macOS application.
 - The TUI uses The Elm Architecture, TermRock, Ratatui, and Crossterm.
 - The native macOS UI uses SwiftUI/AppKit over embedded Rust through
-  synchronous UniFFI and ships first as a direct notarized Developer ID
-  application.
+  synchronous UniFFI; its production distribution path is a direct notarized
+  Developer ID application.
 - Shared terminal components come from the independent
   [`termrock`](https://github.com/tailrocks/termrock) crate; TableRock does not
   import `jackin` product internals.

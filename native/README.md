@@ -1,4 +1,10 @@
-# Native / UniFFI package
+# Native macOS application
+
+This directory contains TableRock's selected production macOS workbench:
+SwiftUI application structure and Liquid Glass chrome, AppKit catalog/grid/text
+controls, and a thin synchronous UniFFI projection of the Rust-owned service.
+Development fixtures live behind explicit test/development configuration and
+are not alternate product interfaces.
 
 Rust facade: `crates/tablerock-ffi`  
 Generated Swift: `Generated/` (committed; regenerate with script)  
@@ -156,17 +162,20 @@ JSON, and Markdown representations. Object tabs also offer SQL INSERT when Rust
 has retained base-table identity. SQL UPDATE stays absent until stable key facts
 are proven; TableRock never emits an unsafe placeholder `WHERE` clause.
 
-Result grids also export all currently loaded rows through a native save panel
-as CSV, TSV, JSON, Markdown, or identity-gated SQL INSERT. Rust owns typed
-formatting and atomic replacement; Swift balances security-scoped file access.
-This is bounded resident export, not yet full-result streaming export.
+Result grids export resident rows through a native save panel as CSV, TSV,
+JSON, Markdown, or identity-gated SQL INSERT. PostgreSQL and ClickHouse query
+and object results also support full-result CSV/TSV/JSON export: Rust replays
+the frozen query or browse plan in bounded pages, reports progress, handles
+cancellation, and atomically publishes only a complete destination. Swift owns
+only the save panel and balanced security-scoped file access.
 
-Writable PostgreSQL and ClickHouse object tabs expose bounded CSV import with a
-native preview, editable target-column mapping, explicit Text/Integer/Float/
+Writable PostgreSQL and ClickHouse object tabs expose streaming CSV import with
+a native preview, editable target-column mapping, explicit Text/Integer/Float/
 Boolean typing, formula-literal warning, and a consume-once reviewed apply.
-Rust owns file limits, parsing, catalog target identity, typed mutation plans,
-review expiry, and authorization. PostgreSQL is live-proven; broader types,
-ClickHouse live apply, JSON, large-file streaming, and progress/cancel remain.
+Rust owns bounded scanning, a fingerprint-bound private spool, catalog target
+identity, typed mutation batches, review expiry, progress, cancellation, and
+authorization. PostgreSQL transactional apply and ClickHouse progressive apply
+are live-proven. JSON import and broader database-type mapping remain open.
 
 PostgreSQL and ClickHouse object tabs provide a native Data/Structure switch.
 Structure uses the same bounded typed Rust snapshot as the TUI. PostgreSQL

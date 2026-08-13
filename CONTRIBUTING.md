@@ -5,20 +5,21 @@ this file is the contributor-facing summary. Before adding application code,
 dependencies, configuration schemas, or public APIs, confirm the relevant
 [roadmap](ROADMAP.md) checkpoint and its adoption requirements are approved.
 
-## Trunk-only delivery
+## Pull-request delivery
 
-- Work directly on `main`; do not create or switch to another branch.
-- Do not open pull requests. Never force-push or rewrite published `main`; fix
-  mistakes forward.
+- Never push directly to `main`. Use the one branch and pull request authorized
+  by [`AGENTS.md`](AGENTS.md); do not create a duplicate or concurrent branch or
+  pull request for the same goal.
+- Keep published branch history forward-only. Merge current `main` into the
+  branch when it falls behind; do not force-push or rewrite published history.
 - Keep each checkpoint commit focused, buildable, and safe to publish.
 - Use a Conventional Commit subject, DCO sign-off (`git commit -s`), and the
   `Co-authored-by: Codex <codex@openai.com>` trailer for Codex-authored work.
 - Run the checks required by the changed surface before committing, then push
   the commit immediately unless the operator explicitly says to hold it.
-- When a reusable component/API is missing, implement, test, document, commit,
-  and push it directly to TermRock `main` with no branch or pull request; then
-  pin that exact revision from TableRock `main`. Jackin is never modified as
-  part of TableRock delivery.
+- Required TermRock changes follow the same reviewed delivery rule, land before
+  TableRock updates its exact revision pin, and remain product-neutral. Jackin
+  is never modified as part of TableRock delivery.
 
 ## Changes
 

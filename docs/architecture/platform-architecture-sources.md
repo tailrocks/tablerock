@@ -312,10 +312,11 @@ migration, update, crash recovery, and uninstall.
 The full quality matrix is in
 [32-quality-and-verification.md](quality-and-verification.md).
 
-## Trunk-only execution
+## Pull-request execution
 
-All implementation occurs through small forward commits directly on `main`.
-No branch or pull request exists. A reusable TermRock primitive lands, passes
-its own evidence, and is pushed to TermRock `main`; a later TableRock `main`
-commit pins that exact revision. Rejected paths and failed evidence are recorded
-in decision history because no review-thread archive exists.
+All TableRock implementation occurs through small forward commits on the one
+authorized pull-request branch. Nothing pushes directly to `main`, and no
+duplicate branch or pull request exists for the same goal. A reusable TermRock
+primitive receives its own review and evidence before a later TableRock
+checkpoint pins that exact revision. Rejected paths and failed evidence remain
+recorded in repository decision history rather than only in review discussion.

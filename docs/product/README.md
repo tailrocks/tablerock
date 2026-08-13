@@ -15,14 +15,15 @@ Read `../architecture/` when the question is "how may it be implemented".
 
 ## Product in one paragraph
 
-TableRock is a terminal-first database workbench for PostgreSQL, ClickHouse,
-and Redis. Two clients share one Rust core: a CLI/TUI built on TermRock, and a
-native macOS app built on SwiftUI/AppKit with Liquid Glass. The operator
-creates connections, organizes them in groups, connects, browses schemas and
-objects in a sidebar, views and edits table data in a grid with staged
-changes and SQL preview, and runs SQL in tabs with autocomplete. The interface
-structure follows the workflows the TablePro macOS application establishes as
-market expectations; every screen here is TableRock's own requirement.
+TableRock is a native macOS and terminal database workbench for PostgreSQL,
+ClickHouse, and Redis. Two clients share one Rust core: a CLI/TUI built on
+TermRock, and a native macOS app built on SwiftUI/AppKit with Liquid Glass. The
+operator creates connections, organizes them in groups, connects, browses
+schemas and objects in a sidebar, views and edits table data in a grid with
+staged changes and SQL preview, and runs SQL in tabs with autocomplete. The
+interface structure follows the workflows the TablePro macOS application
+establishes as market expectations; every screen here is TableRock's own
+requirement.
 
 ## Screens
 
@@ -55,10 +56,11 @@ Every screen in this spec exists twice:
 | Behavior owner | Rust core (in-process) | Same Rust core (embedded via UniFFI) |
 | Scope | All product behavior | Presentation and OS integration only |
 
-The TUI ships first (ROADMAP phases 1-11). The native app follows (phases
-12-15) and projects the same Rust commands, events, and pages. A screen
-specification is not done until its TUI behavior is defined; its native
-projection reuses the same Rust contract.
+The TUI established the shared service contract in ROADMAP phases 1-11; the
+native app projects that contract through phases 12-15. Both are implemented
+clients, and each screen records client-specific proof and remaining gaps. A
+screen specification is complete only when its shared behavior and each claimed
+client projection are proven.
 
 ## Rules for these documents
 

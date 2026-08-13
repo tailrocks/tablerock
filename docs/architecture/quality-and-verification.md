@@ -53,11 +53,11 @@ TableRock advances its pin:
 - benchmark and allocation evidence for grid/editor/scroll hot paths;
 - generated documentation and compatibility metadata;
 - Jackin build/tests when an existing TermRock contract changes;
-- DCO-signed direct commit pushed to TermRock `main`, never a branch or pull
-  request.
+- DCO-signed reviewed TermRock change under that repository's contribution
+  rules.
 
-TableRock then pins the full TermRock revision in a separate buildable direct
-`main` commit and runs its own complete suite.
+TableRock then pins the full TermRock revision in a separate buildable
+pull-request checkpoint and runs its own complete suite.
 
 ## Core properties
 

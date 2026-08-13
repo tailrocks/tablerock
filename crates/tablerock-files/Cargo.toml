@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Bounded atomic import and export services for TableRock"
 
 [dependencies]
 sha2.workspace = true

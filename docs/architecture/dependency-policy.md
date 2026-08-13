@@ -11,8 +11,9 @@ dependency or API.
 Before adoption and at every implementation checkpoint, verify the current
 release, enabled features, MSRV, maintenance status, advisories, licenses, and
 duplicate graph. Daily CI rejects outdated workspace dependencies and audits the
-complete graph. Trunk-only policy means agents apply every detected update
-directly to `main`, never through an automated pull request.
+complete graph. Detected updates use the normal single-branch pull-request
+workflow; automation may report them but cannot bypass adoption evidence or
+open a separate pull request.
 
 ## 2026-07-17 refresh
 

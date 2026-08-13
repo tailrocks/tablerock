@@ -213,11 +213,12 @@ compatibility cost does not justify preserving known-old design.
 
 ## Execution order
 
-Work directly on `main` through small forward-only checkpoints. Start with a
-current-state audit, not status labels:
+Work through small forward-only checkpoints on the single authorized
+pull-request branch. Start with a current-state audit, not status labels:
 
-1. Verify worktree ownership, `HEAD == origin/main`, remote CI, toolchain, and
-   plan drift. Preserve unrelated user changes.
+1. Verify worktree ownership, the authorized branch and remote match, current
+   `origin/main` is merged, remote CI is known, and toolchain/plan drift is
+   understood. Preserve unrelated user changes.
 2. Build a requirement matrix for every file under `plans/`, roadmap Phases
    0–15, every
    applicable parity-ledger row, and every named deliverable/test/evidence
