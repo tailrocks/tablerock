@@ -2,6 +2,13 @@ import AppKit
 import SwiftUI
 import TableRockPresentation
 
+private enum NativeWindowMetrics {
+  static let minimumWidth: CGFloat = 760
+  static let minimumHeight: CGFloat = 520
+  static let defaultWidth: CGFloat = 1_440
+  static let defaultHeight: CGFloat = 900
+}
+
 @main
 struct TableRockApp: App {
   private let application = NativeApplicationModel()
@@ -19,7 +26,10 @@ struct TableRockApp: App {
         switch application.launchConfiguration.surface {
         case .accessibilityAudit:
           NativeAccessibilityFixtureView()
-            .frame(minWidth: 1_280, minHeight: 680)
+            .frame(
+              minWidth: NativeWindowMetrics.minimumWidth,
+              minHeight: NativeWindowMetrics.minimumHeight
+            )
         case .profileEditor:
           NativeProfileEditorFixtureView()
         case .performanceGrid, .workbench:
@@ -35,7 +45,10 @@ struct TableRockApp: App {
     } defaultValue: {
       application.dependencies.identifiers.next()
     }
-    .defaultSize(width: 1_440, height: 900)
+    .defaultSize(
+      width: NativeWindowMetrics.defaultWidth,
+      height: NativeWindowMetrics.defaultHeight
+    )
     .windowStyle(.hiddenTitleBar)
     .windowToolbarStyle(.unified)
     .restorationBehavior(
@@ -74,7 +87,10 @@ private struct WorkbenchWindowRoot: View {
     #if TABLEROCK_DEVELOPMENT_SUPPORT
     if application.launchConfiguration.surface == .performanceGrid {
       PerformanceFixtureView(model: model)
-        .frame(minWidth: 1_280, minHeight: 680)
+        .frame(
+          minWidth: NativeWindowMetrics.minimumWidth,
+          minHeight: NativeWindowMetrics.minimumHeight
+        )
         .task { await openFixtureWindowIfNeeded() }
     } else {
       ContentView()
@@ -84,7 +100,10 @@ private struct WorkbenchWindowRoot: View {
             fixture: application.appearanceFixture
           )
         )
-        .frame(minWidth: 1_280, minHeight: 680)
+        .frame(
+          minWidth: NativeWindowMetrics.minimumWidth,
+          minHeight: NativeWindowMetrics.minimumHeight
+        )
         .task { await launchFixturesIfNeeded() }
         .onOpenURL { url in
           Task { await model.receiveExternalURL(url) }
@@ -98,7 +117,10 @@ private struct WorkbenchWindowRoot: View {
   private var productionWorkbench: some View {
     ContentView()
       .environment(model)
-      .frame(minWidth: 1_280, minHeight: 680)
+      .frame(
+        minWidth: NativeWindowMetrics.minimumWidth,
+        minHeight: NativeWindowMetrics.minimumHeight
+      )
       .onOpenURL { url in
         Task { await model.receiveExternalURL(url) }
       }

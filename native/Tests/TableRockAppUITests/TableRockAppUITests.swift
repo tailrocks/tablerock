@@ -1052,7 +1052,23 @@ final class TableRockAppUITests: XCTestCase {
     addTeardownBlock { app.terminate() }
     relaunchApplication(app)
     assertWorkbenchWindowIsFrontmost(app)
+    assertWorkbenchFitsVisibleScreen(app)
     return app
+  }
+
+  @MainActor
+  private func assertWorkbenchFitsVisibleScreen(_ app: XCUIApplication) {
+    let workbench = app.windows["window.workbench"]
+    let frame = workbench.frame
+    let tolerance: CGFloat = 1
+    let fitsAvailableScreen = NSScreen.screens.contains { screen in
+      frame.width <= screen.visibleFrame.width + tolerance
+        && frame.height <= screen.visibleFrame.height + tolerance
+    }
+    XCTAssertTrue(
+      fitsAvailableScreen,
+      "Workbench frame \(frame) exceeds every visible screen frame"
+    )
   }
 
   @MainActor
@@ -1110,8 +1126,11 @@ final class TableRockAppUITests: XCTestCase {
       let status = app.descendants(matching: .any)["connection.status"]
       guard status.waitForExistence(timeout: 5) else { continue }
       app.activate()
-      status.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
-      return
+      let reachable = XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "hittable == true"), object: status)
+      if XCTWaiter.wait(for: [reachable], timeout: 3) == .completed {
+        return
+      }
     }
     XCTFail("Temporary connection did not reach a focused connected workbench")
   }

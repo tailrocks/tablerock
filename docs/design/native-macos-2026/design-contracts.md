@@ -24,7 +24,8 @@ behavior.
 - Sheets own connection setup, row editing, and reviewed apply.
 
 Minimum, typical, and expanded windows preserve a usable catalog and primary
-content plane. Inspectors may collapse before primary work becomes unusable.
+content plane. The production window supports a 760-by-520-point minimum;
+inspectors and secondary regions collapse before primary work becomes unusable.
 
 ## Engine truth
 
