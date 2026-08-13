@@ -4,6 +4,8 @@
 "github:rhysd/actionlint" = "v1.7.12"
 "github:rustsec/rustsec" = "cargo-audit/v0.22.2"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.140"
+"aqua:1password/cli" = "2.35.0"
+"aqua:BurntSushi/ripgrep" = "15.2.0"
 "github:yonaskolb/XcodeGen" = "2.46.0"
 
 [settings]

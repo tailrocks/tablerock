@@ -39,7 +39,7 @@ jobs:
 
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
-          install_args: rust
+          install_args: rust aqua:1password/cli aqua:BurntSushi/ripgrep
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache Cargo registry
@@ -68,9 +68,6 @@ jobs:
 
       - name: Install script prerequisites
         run: |
-          brew update
-          brew install ripgrep
-          brew install --cask 1password-cli
           test "$(rg --version | head -n 1)" = "ripgrep 15.2.0"
           test "$(op --version)" = "2.35.0"
           op read --help | grep -F -- '--no-newline'
