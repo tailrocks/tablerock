@@ -796,14 +796,26 @@ struct PostgresToolConnection {
     password: Arc<Zeroizing<String>>,
 }
 
-struct OpenDriverSession {
+struct DriverSessionRegistration {
     engine: Engine,
-    session: Box<dyn DriverSession>,
-    saved_profile_id: Option<ProfileId>,
+    profile_id: Option<ProfileId>,
     safety: ProfileSafetyMode,
     database: Option<BoundedText>,
     postgres_tool_connection: Option<PostgresToolConnection>,
     ssh_tunnel: Option<tablerock_engine::LocalForwardTunnel>,
+}
+
+impl DriverSessionRegistration {
+    fn new(engine: Engine, safety: ProfileSafetyMode) -> Self {
+        Self {
+            engine,
+            profile_id: None,
+            safety,
+            database: None,
+            postgres_tool_connection: None,
+            ssh_tunnel: None,
+        }
+    }
 }
 
 struct PostgresToolTask {
@@ -2528,15 +2540,10 @@ impl TableRockBridge {
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| {
-            self.open_driver_session_inner(OpenDriverSession {
-                engine,
+            self.open_driver_session_inner(
                 session,
-                saved_profile_id: None,
-                safety: ProfileSafetyMode::ConfirmWrites,
-                database: None,
-                postgres_tool_connection: None,
-                ssh_tunnel: None,
-            })
+                DriverSessionRegistration::new(engine, ProfileSafetyMode::ConfirmWrites),
+            )
         })
     }
 
@@ -2549,15 +2556,13 @@ impl TableRockBridge {
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| {
-            self.open_driver_session_inner(OpenDriverSession {
-                engine,
+            self.open_driver_session_inner(
                 session,
-                saved_profile_id: Some(profile_id),
-                safety: ProfileSafetyMode::ConfirmWrites,
-                database: None,
-                postgres_tool_connection: None,
-                ssh_tunnel: None,
-            })
+                DriverSessionRegistration {
+                    profile_id: Some(profile_id),
+                    ..DriverSessionRegistration::new(engine, ProfileSafetyMode::ConfirmWrites)
+                },
+            )
         })
     }
 
@@ -7553,30 +7558,32 @@ impl TableRockBridge {
             }
         })??;
 
-        self.open_driver_session_inner(OpenDriverSession {
-            engine,
+        self.open_driver_session_inner(
             session,
-            saved_profile_id,
-            safety,
-            database: Some(database),
-            postgres_tool_connection,
-            ssh_tunnel,
-        })
+            DriverSessionRegistration {
+                engine,
+                profile_id: saved_profile_id,
+                safety,
+                database: Some(database),
+                postgres_tool_connection,
+                ssh_tunnel,
+            },
+        )
     }
 
     fn open_driver_session_inner(
         &self,
-        request: OpenDriverSession,
+        session: Box<dyn DriverSession>,
+        registration: DriverSessionRegistration,
     ) -> Result<Vec<u8>, BridgeError> {
-        let OpenDriverSession {
+        let DriverSessionRegistration {
             engine,
-            session,
-            saved_profile_id,
+            profile_id: saved_profile_id,
             safety,
             database,
             postgres_tool_connection,
             ssh_tunnel,
-        } = request;
+        } = registration;
         self.ensure_runtime_inner()?;
         let mut guard = self
             .inner
