@@ -57,11 +57,16 @@ final class TableRockAppUITests: XCTestCase {
       environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH": "1"])
 
     XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    let inspector = app.buttons["toolbar.inspector"]
+    XCTAssertTrue(inspector.waitForExistence(timeout: 10))
+    inspector.click()
     XCTAssertTrue(
       app.descendants(matching: .any)["catalog.search"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.descendants(matching: .any)["object.header"].exists)
     XCTAssertTrue(app.tables["results.grid"].exists)
-    XCTAssertTrue(app.descendants(matching: .any)["value.inspector"].exists)
+    inspector.click()
+    XCTAssertTrue(
+      app.descendants(matching: .any)["value.inspector"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.descendants(matching: .any)["value.inspector.row-details"].exists)
     XCTAssertEqual(
       app.descendants(matching: .any)["value.inspector.kind"].value as? String,
