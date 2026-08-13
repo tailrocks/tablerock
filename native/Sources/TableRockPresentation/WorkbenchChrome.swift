@@ -424,7 +424,7 @@ struct EnvironmentSafetyBadge: View {
         Text(safetyWord)
       }
       .font(.caption2.weight(.semibold))
-      .foregroundStyle(isProduction ? Color.orange : Color.green)
+      .foregroundStyle(.primary)
       .padding(.horizontal, 7)
       .padding(.vertical, 3)
       .background(
