@@ -301,7 +301,7 @@ public struct ContentView: View {
 }
 
 enum WorkbenchResponsiveLayout {
-  static let navigationCollapseWidth: CGFloat = 980
+  static let navigationCollapseWidth: CGFloat = 1_200
   static let inspectorMinimumWidth: CGFloat = 240
   static let inspectorIdealWidth: CGFloat = 270
 

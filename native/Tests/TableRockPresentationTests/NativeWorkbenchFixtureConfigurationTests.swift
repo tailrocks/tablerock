@@ -9,7 +9,7 @@
     func testResponsiveWorkbenchCollapsesSidebarOnlyForNarrowInspector() {
       XCTAssertTrue(
         WorkbenchResponsiveLayout.shouldCollapseSidebar(
-          availableWidth: WorkbenchResponsiveLayout.navigationCollapseWidth - 1,
+          availableWidth: 1_100,
           sessionActive: true,
           trailingInspectorVisible: true
         ))
