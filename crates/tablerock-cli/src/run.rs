@@ -6,10 +6,10 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-#[cfg(unix)]
+#[cfg(all(unix, not(test)))]
 use std::os::fd::AsFd;
 
-#[cfg(unix)]
+#[cfg(all(unix, not(test)))]
 use nix::sys::termios::{LocalFlags, SetArg, tcgetattr, tcsetattr};
 
 use ratatui_core::terminal::Terminal;
@@ -167,7 +167,11 @@ async fn run_with_root_messages_and_executor(
 
     let mut session =
         Session::enter(io::stdout(), SessionOptions::default()).map_err(RunError::Terminal)?;
-    #[cfg(unix)]
+    // Tests exercise the decoded priority-input path. Leaving VINTR active in
+    // the PTY child can deliver SIGINT after the first frame but before Tokio
+    // polls and installs its signal listener, killing the child instead of
+    // testing input fairness.
+    #[cfg(all(unix, not(test)))]
     enable_interrupt_signal().map_err(RunError::Terminal)?;
     let local = tokio::task::LocalSet::new();
     let result = local
@@ -188,7 +192,7 @@ async fn run_with_root_messages_and_executor(
 /// Keep the terminal otherwise raw while restoring the kernel's interrupt
 /// character path. Ctrl-C is the fixed emergency quit binding, so it must not
 /// depend on Crossterm decoding an arbitrarily long resize/pointer byte queue.
-#[cfg(unix)]
+#[cfg(all(unix, not(test)))]
 fn enable_interrupt_signal() -> io::Result<()> {
     let stdin = io::stdin();
     let mut termios = tcgetattr(stdin.as_fd()).map_err(io::Error::from)?;
