@@ -766,12 +766,17 @@ public final class WorkbenchPresentationStore {
         return
       }
       if fixtures.inputMethodEditor {
+        sessionData = Data(repeating: 5, count: 16)
+        sessionHex = sessionData?.map { String(format: "%02x", $0) }.joined()
+        connectedEngine = "postgresql"
+        selectedWorkbenchKind = "query"
         activeQueryTab.statementText = "SELECT "
         status = "Preparing IME fixture"
         try? await Task.sleep(for: .milliseconds(500))
         guard let root = NSApplication.shared.windows.first(where: { $0.isVisible })?.contentView
         else {
           status = "IME fixture failed: no window"
+          activeQueryTab.querySummary = status
           return
         }
         func descendants(of view: NSView) -> [NSView] {
@@ -779,6 +784,7 @@ public final class WorkbenchPresentationStore {
         }
         guard let editor = descendants(of: root).compactMap({ $0 as? NSTextView }).first else {
           status = "IME fixture failed: no editor"
+          activeQueryTab.querySummary = status
           return
         }
         editor.window?.makeFirstResponder(editor)
@@ -788,6 +794,7 @@ public final class WorkbenchPresentationStore {
           replacementRange: NSRange(location: NSNotFound, length: 0))
         guard editor.hasMarkedText() else {
           status = "IME fixture failed: no marked text"
+          activeQueryTab.querySummary = status
           return
         }
         let composed = editor.string
@@ -795,10 +802,12 @@ public final class WorkbenchPresentationStore {
         try? await Task.sleep(for: .milliseconds(250))
         guard editor.hasMarkedText(), editor.string == composed else {
           status = "IME fixture failed: composition replaced"
+          activeQueryTab.querySummary = status
           writePerformanceMetric("IME_PROOF_FAILED composition_replaced=true")
           return
         }
         status = "IME composition preserved"
+        activeQueryTab.querySummary = status
         writePerformanceMetric("IME_PROOF_PASSED marked_text_survived_model_update=true")
         return
       }

@@ -218,6 +218,7 @@ private struct QueryResultPlane: View {
           }
           ResultCopyMenu()
           ResultExportMenu()
+          ResultTransferFeedback()
           Button {
             Task { await model.openRelationContinuumFromSelection() }
           } label: {

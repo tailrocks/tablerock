@@ -148,16 +148,7 @@ private struct ResultUtilityRail: View {
           .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
           .accessibilityIdentifier("relation.continuum.close")
       }
-      if let outcome = model.copyOutcome {
-        Text(outcome)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .accessibilityIdentifier("results.copy.outcome")
-          .accessibilityValue(outcome)
-      }
-      if let error = model.copyError {
-        Text(error).font(.caption).foregroundStyle(.red)
-      }
+      ResultTransferFeedback()
       if let continuumError = model.relationContinuumError {
         Text(continuumError)
           .font(.caption)
@@ -290,6 +281,29 @@ struct ResultExportMenu: View {
   private func fullExportButton(_ label: String, format: String) -> some View {
     Button(label) { Task { await model.exportFullResult(format: format) } }
       .accessibilityIdentifier("results.export.full.\(format)")
+  }
+}
+
+struct ResultTransferFeedback: View {
+  @Environment(WorkbenchPresentationStore.self) private var model
+
+  var body: some View {
+    if let outcome = model.copyOutcome {
+      Text(outcome)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .accessibilityIdentifier("results.copy.outcome")
+        .accessibilityValue(outcome)
+    }
+    if let error = model.copyError {
+      Text(error)
+        .font(.caption)
+        .foregroundStyle(.red)
+        .lineLimit(1)
+        .accessibilityIdentifier("results.copy.error")
+        .accessibilityValue(error)
+    }
   }
 }
 
@@ -504,6 +518,7 @@ struct NativeValueInspector: View {
   private var rowDetailsSection: some View {
     VStack(alignment: .leading, spacing: 10) {
       sectionLabel("ROW DETAILS")
+        .accessibilityIdentifier("value.inspector.row-details")
       if rowDetails.isEmpty {
         Text("No additional columns")
           .font(.caption)
@@ -523,12 +538,12 @@ struct NativeValueInspector: View {
         }
       }
     }
-    .accessibilityIdentifier("value.inspector.row-details")
   }
 
   private var technicalDetails: some View {
     VStack(alignment: .leading, spacing: 8) {
       sectionLabel("VALUE DETAILS")
+        .accessibilityIdentifier("value.inspector.details")
       Text(metadataFact)
         .font(.caption2.monospaced())
         .foregroundStyle(.secondary)
@@ -560,12 +575,12 @@ struct NativeValueInspector: View {
 
       hexSection
     }
-    .accessibilityIdentifier("value.inspector.details")
   }
 
   private func treeSection(_ rows: [StructuredValueTreeRow]) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       sectionLabel("JSON TREE")
+        .accessibilityIdentifier("value.inspector.tree")
       VStack(alignment: .leading, spacing: 3) {
         ForEach(rows) { treeRow in
           HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -586,7 +601,6 @@ struct NativeValueInspector: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .accessibilityIdentifier("value.inspector.tree")
   }
 
   private var hexSection: some View {

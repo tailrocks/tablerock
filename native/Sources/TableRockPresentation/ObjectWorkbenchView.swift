@@ -97,6 +97,7 @@ private struct ObjectWorkbenchHeader: View {
       if tab.resultTable != nil {
         ResultCopyMenu()
         ResultExportMenu()
+        ResultTransferFeedback()
       }
       Menu {
         if !tab.pinned {
