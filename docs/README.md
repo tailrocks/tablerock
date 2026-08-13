@@ -18,6 +18,16 @@ drives the whole program.
 [`support-matrix.md`](support-matrix.md) records only configurations exercised
 by repository evidence and names the unproven boundaries.
 
+## Native macOS design
+
+- [Production Native Workbench decision](design/native-macos-2026/decision-native-workbench.md)
+  — selected structure, ownership boundary, and clean-room provenance.
+- [Experience brief](design/native-macos-2026/experience-brief.md) ·
+  [information architecture](design/native-macos-2026/information-architecture.md) ·
+  [component/material map](design/native-macos-2026/component-material-map.md) ·
+  [design contracts](design/native-macos-2026/design-contracts.md) ·
+  [research provenance](design/native-macos-2026/research-provenance.md)
+
 ## Product specification
 
 Screen-by-screen behavior, written before and independent of implementation:

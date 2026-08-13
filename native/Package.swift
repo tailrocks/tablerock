@@ -13,6 +13,7 @@ let package = Package(
     products: [
         .library(name: "TableRockBridge", targets: ["TableRockBridge"]),
         .library(name: "TableRockFeature", targets: ["TableRockFeature"]),
+        .library(name: "TableRockPresentation", targets: ["TableRockPresentation"]),
     ],
     targets: [
         // System library target wrapping the UniFFI C header + module map.
@@ -23,7 +24,7 @@ let package = Package(
         ),
         .target(
             name: "TableRockBridge",
-            dependencies: ["tablerock_ffiFFI"],
+            dependencies: ["tablerock_ffiFFI", "TableRockFeature"],
             path: "Sources/TableRockBridge",
             linkerSettings: [
                 // Link the host release dylib built by cargo.
@@ -37,14 +38,28 @@ let package = Package(
         ),
         .target(
             name: "TableRockFeature",
-            path: "Sources/TableRockFeature"
+            path: "Sources/TableRockFeature",
+            swiftSettings: [
+                .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
+            ]
+        ),
+        .target(
+            name: "TableRockPresentation",
+            dependencies: ["TableRockFeature"],
+            path: "Sources/TableRockPresentation",
+            swiftSettings: [
+                .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
+            ]
         ),
         // Native macOS app (plan 020 checkpoint 1). SwiftUI + AppKit on macOS 26;
         // links the cargo release dylib transitively through TableRockBridge.
         .executableTarget(
             name: "TableRockApp",
-            dependencies: ["TableRockBridge", "TableRockFeature"],
-            path: "Sources/TableRockApp"
+            dependencies: ["TableRockBridge", "TableRockFeature", "TableRockPresentation"],
+            path: "Sources/TableRockApp",
+            swiftSettings: [
+                .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
+            ]
         ),
         .testTarget(
             name: "TableRockBridgeTests",
@@ -55,7 +70,18 @@ let package = Package(
         .testTarget(
             name: "TableRockFeatureTests",
             dependencies: ["TableRockFeature"],
-            path: "Tests/TableRockFeatureTests"
+            path: "Tests/TableRockFeatureTests",
+            swiftSettings: [
+                .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
+            ]
+        ),
+        .testTarget(
+            name: "TableRockPresentationTests",
+            dependencies: ["TableRockPresentation"],
+            path: "Tests/TableRockPresentationTests",
+            swiftSettings: [
+                .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
+            ]
         ),
     ]
 )

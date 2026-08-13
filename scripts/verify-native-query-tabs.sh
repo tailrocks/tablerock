@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 APP="$REPO_ROOT/native/dist/TableRock.app"
 EXECUTABLE="$APP/Contents/MacOS/TableRock"
 APP_PID=""
@@ -22,14 +23,19 @@ for pattern in \
   'Close query tab with unsaved changes\?' \
   'func persistSessionIntent\(\) async' \
   'func restoreSessionIntent\(profileId: Data\) async' \
-  'BridgeWorkspaceTab\(title:' \
   'QueryTabStrip\(\)'
 do
-  rg -q "$pattern" "$SOURCE" || {
+  native_source_has_regex "$pattern" || {
     echo "error: missing native query-tab contract: $pattern" >&2
     exit 1
   }
 done
+
+native_production_source_has_regex \
+  'var bridgeRecord: BridgeWorkspaceTab \{ \.init\(title:' || {
+  echo "error: missing native workspace-tab bridge conversion" >&2
+  exit 1
+}
 
 pgrep -f "^$EXECUTABLE$" >/dev/null && {
   echo "error: TableRock already running" >&2

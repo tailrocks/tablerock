@@ -97,10 +97,10 @@ dismissal remain keyboard reachable.
 
 | | TUI | Native macOS |
 |---|---|---|
-| Shell | TermRock `SplitPane`, `Tabs`, `StatusBar` | `WorkbenchShellView`: context strip · tabs · content · status |
+| Shell | TermRock `SplitPane`, `Tabs`, `StatusBar` | `NavigationSplitView` + `WorkbenchShellView`: persistent catalog · context strip · document tabs · opaque content · status · optional full-height inspector |
 | Context bar | one-line context region | `WorkbenchContextStrip` + toolbar Liquid Glass |
 | Catalog | TermRock `Tree` | `NSOutlineView` via representable |
-| Tab strip | TermRock `Tabs` | `QueryTabStrip` (selected glassProminent / plain) |
+| Tab strip | TermRock `Tabs` | `QueryTabStrip` (opaque selected document tab / plain unselected tab) |
 | Status | TermRock `StatusBar` | `WorkbenchStatusBar` + `WorkbenchStatusFacts` |
 
 ## Failure truth

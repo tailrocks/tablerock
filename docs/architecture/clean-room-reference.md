@@ -1,72 +1,54 @@
-# Clean-Room Reference Policy
+# External Product Reference Policy
 
-The reference boundary is deliberately stricter than the minimum license
-question. TableRock learns which problems exist without inheriting another
-product's implementation or distinctive expression.
+TableRock may study external database clients to improve product direction and
+interface quality. Public documentation, screenshots, product behavior,
+workflows, interaction patterns, screen composition, and visual concepts may
+inform TableRock design. Common native macOS patterns may be adapted directly
+through Apple's platform components and guidance.
 
-## TablePro
+## Source-code boundary
 
-The [TablePro repository](https://github.com/TableProApp/TablePro) currently
-uses the [GNU AGPL-3.0 license](https://github.com/TableProApp/TablePro/blob/main/LICENSE).
-Its public documentation and screen structure may establish connection,
-catalog, tab, grid, editor, result, and edit workflows as market expectations
-(operator revision 2026-07-18). Its source is never an implementation source
-for Apache-2.0 TableRock.
+Never read external application source code for implementation guidance. Never
+copy, translate, structurally port, or derive TableRock implementation from
+external source code, tests, or source comments. Implement behavior from
+TableRock requirements, official database and library documentation, Apple
+platform documentation, and TableRock-owned tests.
 
-Do not copy or translate TablePro source, tests, comments, identifiers, assets,
-text, layout measurements, or plugin architecture. Screen *structure* (a
-sidebar catalog beside tabbed content, a filter bar above a grid) is a common
-workflow pattern; screen *expression* (geometry, strings, icons, colors,
-shortcuts) is copied from nothing and derived only from TableRock's product
-specification. TablePro solves a broad many-driver Apple-client problem;
-TableRock deliberately starts with three built-in Rust adapters.
+Publicly observable product ideas and design concepts may be adapted when they
+serve TableRock. External branding and proprietary assets remain excluded
+unless their license or owner clearly permits reuse.
 
-## TablePlus
+## References
 
-TablePlus is proprietary. Evidence is limited to its
-[public documentation](https://docs.tableplus.com/) and commonplace market
-expectations. Do not inspect or reverse engineer its implementation or derive
-detailed designs from it.
+### TablePro
 
-## Zedis
+TablePro is the primary external reference for database-workbench workflows and
+native macOS interface direction. Its public documentation, product behavior,
+and screenshots may inform requirements and design. Its AGPL source code,
+tests, and source comments must not inform or enter TableRock implementation.
 
-[Zedis](https://github.com/vicanso/zedis) uses
-[Apache-2.0](https://github.com/vicanso/zedis/blob/main/LICENSE), but the
-operator requires concepts-only use. Its public feature documentation may
-establish Redis needs such as incremental discovery, type views, TTL context,
-commands, current status, and production-aware safety. Do not copy its source,
-tests, assets, text, geometry, colors, or key bindings.
+### TablePlus
 
-## Allowed evidence
+TablePlus may inform simplicity, density, navigation, and native interaction
+ideas through publicly observable behavior and documentation. Its proprietary
+implementation must not be copied or reverse engineered.
 
-- public user documentation and public feature lists;
-- high-level public screenshots only to establish that a workflow exists;
-- official PostgreSQL, ClickHouse, Redis, Apple, 1Password, and Ratatui docs;
-- selected Rust crate docs and source under their normal dependency review;
-- direct experiments and integration fixtures written for TableRock.
+### Zedis
 
-## Prohibited use
+Zedis may inform Redis workflows and typed-keyspace interaction concepts. Its
+source code and tests must not be used as implementation material.
 
-- copy, translate, mechanically transform, or closely paraphrase reference code;
-- port reference state types, protocols, tests, fixtures, UI strings, or layouts;
-- reuse screenshots, icons, colors, product text, or key maps;
-- accept performance/version claims without independent measurement;
-- treat a permissive license as permission to ignore this operator policy.
+## Provenance
 
-## Implementation provenance
-
-Every implementation commit influenced by a reference records this block in
-its commit body and links the TableRock requirement/test that independently
-defines the behavior:
+When an external product materially influences a change, record:
 
 ```text
-External concept: <broad behavior>
-Public source: <documentation URL>
-TableRock requirement: <research/issue link>
-Implementation source: official protocol/library docs and TableRock tests
-Copied code/assets/text: none
+External reference: <product and public URL>
+Observed idea: <workflow, interaction, or design concept>
+TableRock adaptation: <requirement or design decision>
+Implementation sources: <official platform/database/library docs and TableRock tests>
+Copied source code: none
 ```
 
-For close behavior, perform an independent review from the TableRock
-requirement and diff without consulting the external implementation. Direct
-work on `main` does not weaken this provenance gate.
+Historical evidence written under the former stricter policy remains valid as
+a record of how those checkpoints were produced.

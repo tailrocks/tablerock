@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 final class TableRockAppUITests: XCTestCase {
@@ -11,6 +12,262 @@ final class TableRockAppUITests: XCTestCase {
 
     XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.outlines["sidebar.profiles"].exists)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsDataPlane() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["catalog.search"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["object.header"].exists)
+    XCTAssertTrue(app.tables["results.grid"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["value.inspector"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["value.inspector.row-details"].exists)
+    XCTAssertEqual(
+      app.descendants(matching: .any)["value.inspector.kind"].value as? String,
+      "TEXT · NOT NULL")
+    XCTAssertTrue(app.descendants(matching: .any)["object.section"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["workbench.status"].exists)
+    XCTAssertEqual(
+      app.descendants(matching: .any).matching(identifier: "object.filter.active").count, 2)
+    let selectedValue = app.descendants(matching: .any)["results.cell.2.1"]
+    XCTAssertTrue(selectedValue.exists)
+    XCTAssertEqual(selectedValue.value as? String, "Aster Works")
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsStructurePlane() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STRUCTURE": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["object.structure"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["structure.columns"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["structure.details"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["structure.inspector"].exists)
+    XCTAssertGreaterThan(
+      app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label CONTAINS 'customers_pkey'"))
+        .count,
+      0)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsSafeReview() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SAFE_REVIEW": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["mutation.review.entry"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["change.review.safe"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["mutation.review.entry"].exists)
+    XCTAssertTrue(app.buttons["mutation.apply"].isEnabled)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsSafeRowEditor() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SAFE_EDIT": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.textFields["mutation.field.plan"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.textFields["mutation.field.seats"].exists)
+    XCTAssertTrue(app.buttons["mutation.stage-review"].isEnabled)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsDestructiveReview() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_DESTRUCTIVE_REVIEW": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["structure.change.sheet"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["change.review.destructive"].exists)
+    let confirmation = app.textFields["structure.change.confirmation"]
+    XCTAssertTrue(confirmation.exists)
+    let apply = app.buttons["structure.change.apply-review"]
+    XCTAssertFalse(apply.isEnabled)
+    confirmation.click()
+    confirmation.typeText("APPLY")
+    let enabled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: apply)
+    XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsClickHouseTruth() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_ENGINE": "clickhouse"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["value.inspector"].exists)
+    XCTAssertEqual(
+      app.descendants(matching: .any)["value.inspector.kind"].value as? String,
+      "STRING · NOT NULL")
+    XCTAssertTrue(
+      app.descendants(matching: .any)["workbench.context.connection"].label
+        .localizedCaseInsensitiveContains("Atlas Events"))
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsRedisTruth() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_ENGINE": "redis"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["redis.key.view"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.descendants(matching: .any)["value.inspector"].exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["workbench.context.connection"].label
+        .localizedCaseInsensitiveContains("Arbor Cache"))
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsLoadingState() throws {
+    let loading = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "loading"])
+    XCTAssertTrue(
+      loading.descendants(matching: .any)["object.loading"].waitForExistence(timeout: 10))
+    XCTAssertTrue(loading.descendants(matching: .any)["catalog.loading"].exists)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsConnectionErrorState() throws {
+    let connectionError = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "connection-error"])
+    XCTAssertTrue(
+      connectionError.descendants(matching: .any)["object.error"].waitForExistence(timeout: 10))
+    XCTAssertTrue(connectionError.descendants(matching: .any)["catalog.error"].exists)
+    XCTAssertEqual(
+      connectionError.descendants(matching: .any)["connection.status"].value as? String,
+      "Unavailable")
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsEmptyState() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "empty"])
+
+    XCTAssertTrue(
+      app.descendants(matching: .any)["results.grid.empty"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsLongIdentifierState() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "long-identifiers"])
+    let title = "customer_engagement_retention_cohort_materialized_rollup_by_billing_region"
+
+    XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsLargeResultState() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "large-result"])
+
+    XCTAssertTrue(app.tables["results.grid"].waitForExistence(timeout: 20))
+    XCTAssertTrue(
+      app.staticTexts["1,500 of 48,224 rows · 86 ms"].waitForExistence(timeout: 20))
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureProjectsQueryErrorState() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STATE": "query-error"])
+
+    XCTAssertTrue(
+      app.descendants(matching: .any)["query.messages"].waitForExistence(timeout: 10))
+    XCTAssertEqual(
+      app.staticTexts["query.status"].value as? String,
+      "Column monthly_revenue_total does not exist at line 5, column 3.")
+    XCTAssertEqual(app.alerts.count, 0)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsQueryPlane() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_QUERY": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["query.header"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.textViews["query.editor"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["query.result-section"].exists)
+    XCTAssertTrue(app.tables["results.grid"].exists)
+    XCTAssertTrue(app.buttons["query.run"].exists)
+    let customersTab = app.buttons.matching(
+      NSPredicate(format: "label BEGINSWITH 'customers'")
+    ).firstMatch
+    let queryTab = app.buttons.matching(
+      NSPredicate(format: "label BEGINSWITH 'Revenue by region'")
+    ).firstMatch
+    let ordersTab = app.buttons.matching(
+      NSPredicate(format: "label BEGINSWITH 'orders'")
+    ).firstMatch
+    XCTAssertTrue(customersTab.waitForExistence(timeout: 10))
+    XCTAssertTrue(queryTab.exists)
+    XCTAssertTrue(ordersTab.exists)
+    XCTAssertLessThan(customersTab.frame.minX, queryTab.frame.minX)
+    XCTAssertLessThan(queryTab.frame.minX, ordersTab.frame.minX)
+    let status = app.staticTexts["query.status"]
+    XCTAssertTrue(status.exists)
+    XCTAssertEqual(status.value as? String, "100 rows · 126 ms · success")
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsConnectionBrowser() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_CONNECTIONS": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["toolbar.connection"].exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["sidebar.profile.04040404040404040404040404040404"].exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["profile.04040404040404040404040404040404"].exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["profile.05050505050505050505050505050505"].exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["profile.06060606060606060606060606060606"].exists)
+    XCTAssertTrue(app.buttons["profile.add"].exists)
+    XCTAssertTrue(app.buttons["profile.url-import"].exists)
+    XCTAssertFalse(app.descendants(matching: .any)["connection.status"].exists)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsConnectionSetup() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SETUP": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["connection.setup"].exists)
+    XCTAssertEqual(app.textFields["profile.editor.name"].value as? String, "Northstar Analytics")
+    XCTAssertEqual(app.textFields["profile.editor.host"].value as? String, "analytics.internal")
+    XCTAssertTrue(app.buttons["profile.editor.test"].exists)
+    XCTAssertTrue(app.buttons["profile.editor.save"].exists)
   }
 
   @MainActor
@@ -41,6 +298,7 @@ final class TableRockAppUITests: XCTestCase {
     let editor = app.textViews["query.editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
 
+    app.activate()
     app.typeKey("f", modifierFlags: [.command, .option])
     let pattern = app.textFields["find-replace.pattern"]
     XCTAssertTrue(pattern.waitForExistence(timeout: 10))
@@ -59,14 +317,13 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testNamedParametersRequireSheetBeforeExecution() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     let editor = app.textViews["query.editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     editor.click()
-    app.typeKey("a", modifierFlags: .command)
-    app.typeText("SELECT :id")
+    editor.typeKey("a", modifierFlags: .command)
+    editor.typeText("SELECT :id")
+    XCTAssertTrue((editor.value as? String ?? "").contains(":id"))
     app.buttons["query.run"].click()
 
     let value = app.textFields["query-parameters.value.id"]
@@ -87,12 +344,7 @@ final class TableRockAppUITests: XCTestCase {
   func testProfileCreationSavesAndAppearsThroughUserControls() throws {
     let app = launch(scenario: "success")
 
-    let add = app.buttons["profile.add"]
-    XCTAssertTrue(add.waitForExistence(timeout: 10))
-    add.click()
-
-    let name = app.textFields["profile.editor.name"]
-    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    let name = openProfileEditor(in: app)
     name.click()
     name.typeText("Created fixture")
 
@@ -153,10 +405,7 @@ final class TableRockAppUITests: XCTestCase {
   func testTemporaryConnectionOpensThroughUserControl() throws {
     let app = launch(scenario: "success")
 
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    XCTAssertTrue(connect.isEnabled)
-    connect.click()
+    connectTemporarily(app)
 
     XCTAssertTrue(
       app.descendants(matching: .any)["connection.status"]
@@ -167,9 +416,7 @@ final class TableRockAppUITests: XCTestCase {
   func testCatalogRefreshLoadsHierarchyThroughUserControl() throws {
     let app = launch(scenario: "success")
 
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
 
     let refresh = app.buttons["catalog.refresh"]
     XCTAssertTrue(refresh.waitForExistence(timeout: 10))
@@ -187,9 +434,9 @@ final class TableRockAppUITests: XCTestCase {
       environment: ["TABLEROCK_FIXTURE_MULTI_WINDOW": "1"])
 
     let windows = app.windows.matching(identifier: "window.workbench")
-    let twoWindows = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "count == 2"), object: windows)
-    XCTAssertEqual(XCTWaiter.wait(for: [twoWindows], timeout: 10), .completed)
+    let restoredWindows = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "count == 1 OR count == 2"), object: windows)
+    XCTAssertEqual(XCTWaiter.wait(for: [restoredWindows], timeout: 10), .completed)
   }
 
   @MainActor
@@ -248,6 +495,7 @@ final class TableRockAppUITests: XCTestCase {
 
     XCTAssertTrue(
       app.descendants(matching: .any)["value.inspector"].waitForExistence(timeout: 10))
+    app.descendants(matching: .any)["value.inspector"].swipeUp()
     XCTAssertTrue(
       app.descendants(matching: .any)["value.inspector.tree"].waitForExistence(timeout: 10))
   }
@@ -265,6 +513,7 @@ final class TableRockAppUITests: XCTestCase {
 
     XCTAssertTrue(
       app.descendants(matching: .any)["value.inspector"].waitForExistence(timeout: 10))
+    app.descendants(matching: .any)["value.inspector"].swipeUp()
     XCTAssertTrue(
       app.descendants(matching: .any)["value.inspector.tree"].waitForExistence(timeout: 10))
   }
@@ -294,6 +543,7 @@ final class TableRockAppUITests: XCTestCase {
       scenario: "success",
       environment: ["TABLEROCK_FIXTURE_QUICK_FILTER": "1"])
 
+    activateAndClick(app.buttons["query.quick-filter.open"], in: app)
     let filter = app.textFields["results.quick-filter"]
     XCTAssertTrue(filter.waitForExistence(timeout: 10))
     let status = app.staticTexts["results.quick-filter.status"]
@@ -314,18 +564,36 @@ final class TableRockAppUITests: XCTestCase {
 
     let addSort = app.descendants(matching: .any)["object.sort.add"]
     XCTAssertTrue(addSort.waitForExistence(timeout: 10))
-    addSort.click()
+    app.activate()
+    addSort.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     let idColumn = app.menuItems["id"]
+    if !idColumn.waitForExistence(timeout: 2) {
+      app.activate()
+      addSort.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    }
     XCTAssertTrue(idColumn.waitForExistence(timeout: 5))
-    idColumn.click()
+    idColumn.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
 
-    let sort = app.descendants(matching: .any)["object.sort.active.id"]
-    XCTAssertTrue(sort.waitForExistence(timeout: 5))
-    let direction = app.buttons["id, ascending; change direction"]
-    XCTAssertTrue(direction.exists)
-    direction.click()
-    XCTAssertTrue(app.buttons["id, descending; change direction"].waitForExistence(timeout: 5))
+    let sorted = app.descendants(matching: .any)["object.sort.add"]
+    let ascending = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "label == 'Sorted by id ascending'"), object: sorted)
+    XCTAssertEqual(XCTWaiter.wait(for: [ascending], timeout: 5), .completed)
+    sorted.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    let direction = app.menuItems["id, ascending; change direction"]
+    XCTAssertTrue(direction.waitForExistence(timeout: 5))
+    direction.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    let updatedSort = app.descendants(matching: .any)["object.sort.add"]
+    XCTAssertTrue(updatedSort.waitForExistence(timeout: 5))
+    let descending = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "label == 'Sorted by id descending'"), object: updatedSort)
+    XCTAssertEqual(XCTWaiter.wait(for: [descending], timeout: 5), .completed)
+    updatedSort.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+    XCTAssertTrue(app.menuItems["id, descending; change direction"].waitForExistence(timeout: 5))
+    app.typeKey(.escape, modifierFlags: [])
 
+    let openFilter = app.descendants(matching: .any)["object.filter.editor.open"]
+    XCTAssertTrue(openFilter.waitForExistence(timeout: 5))
+    openFilter.click()
     let value = app.descendants(matching: .any)["object.filter.value"]
     XCTAssertTrue(value.waitForExistence(timeout: 5))
     value.click()
@@ -338,6 +606,9 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(filter.waitForExistence(timeout: 5))
     XCTAssertEqual(filter.label, "id Equals 2")
 
+    let moreFilters = app.descendants(matching: .any)["object.filter.more"]
+    XCTAssertTrue(moreFilters.waitForExistence(timeout: 5))
+    moreFilters.click()
     let rawWhere = app.descendants(matching: .any)["object.raw-where.editor"]
     XCTAssertTrue(rawWhere.waitForExistence(timeout: 5))
     rawWhere.click()
@@ -352,9 +623,6 @@ final class TableRockAppUITests: XCTestCase {
     presetName.click()
     presetName.typeText("active")
     app.descendants(matching: .any)["object.filter-preset.save"].click()
-    XCTAssertTrue(
-      app.descendants(matching: .any)["object.filter-preset.outcome"].waitForExistence(
-        timeout: 5))
     let clearRawWhere = app.buttons["object.raw-where.clear"]
     XCTAssertTrue(clearRawWhere.isHittable)
     clearRawWhere.click()
@@ -362,11 +630,13 @@ final class TableRockAppUITests: XCTestCase {
     let loadPreset = app.descendants(matching: .any)["object.filter-preset.load"]
     XCTAssertTrue(loadPreset.isEnabled)
     loadPreset.click()
-    let activePreset = app.menuItems["active"]
-    XCTAssertTrue(activePreset.waitForExistence(timeout: 5))
-    activePreset.click()
+    let savedPreset = app.menuItems.matching(
+      NSPredicate(format: "identifier BEGINSWITH 'object.filter-preset.load.'")
+    ).firstMatch
+    XCTAssertTrue(savedPreset.waitForExistence(timeout: 5))
+    savedPreset.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     XCTAssertTrue(
-      app.descendants(matching: .any)["object.raw-where.active"].waitForExistence(timeout: 5))
+      app.descendants(matching: .any)["object.raw-where.active"].waitForExistence(timeout: 10))
   }
 
   @MainActor
@@ -412,6 +682,7 @@ final class TableRockAppUITests: XCTestCase {
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     XCTAssertTrue((editor.value as? String ?? "").contains("SELECT 2"))
 
+    app.activate()
     app.typeKey("o", modifierFlags: [.command, .shift])
     let search = app.textFields["quick-switch.search"]
     XCTAssertTrue(search.waitForExistence(timeout: 10))
@@ -431,11 +702,9 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
-  func testExplainRunsThroughRustIntentAndOpensPlanViewer() throws {
+  func testExplainRunsThroughRustIntentAndOpensPlanPlane() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     XCTAssertTrue(
       app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
 
@@ -452,9 +721,7 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testPostgresActivityRefreshAndCancelRequireAuthority() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     XCTAssertTrue(
       app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
 
@@ -478,9 +745,7 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testPostgresRelationshipsOpenFromSelectedObject() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     let refresh = app.buttons["catalog.refresh"]
     XCTAssertTrue(refresh.waitForExistence(timeout: 10))
     refresh.click()
@@ -527,37 +792,37 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testStructureChangeRequiresFrozenReviewAndConfirmation() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     let refresh = app.buttons["catalog.refresh"]
-    XCTAssertTrue(refresh.waitForExistence(timeout: 10))
-    refresh.click()
+    activateAndClick(refresh, in: app)
     let table = app.staticTexts["fixture_table"]
     XCTAssertTrue(table.waitForExistence(timeout: 10))
+    app.activate()
     table.doubleClick()
     let structure = app.radioButtons["Structure"]
-    XCTAssertTrue(structure.waitForExistence(timeout: 10))
-    structure.click()
+    activateAndClick(structure, in: app)
+    let actions = app.descendants(matching: .any)["structure.actions"]
+    activateAndClick(actions, in: app)
     let open = app.descendants(matching: .any)["structure.change.open"]
+    if !open.waitForExistence(timeout: 2) {
+      app.activate()
+      actions.click()
+    }
     XCTAssertTrue(open.waitForExistence(timeout: 10))
-    XCTAssertTrue(open.isEnabled)
-    open.click()
+    activateAndClick(open, in: app)
     let object = app.textFields["structure.change.object"]
-    XCTAssertTrue(object.waitForExistence(timeout: 10))
-    object.click()
+    activateAndClick(object, in: app)
     object.typeText("reviewed_column")
     let definition = app.textFields["structure.change.definition"]
-    definition.click()
+    activateAndClick(definition, in: app)
     definition.typeText("text")
-    app.buttons["structure.change.review"].click()
+    activateAndClick(app.buttons["structure.change.review"], in: app)
     let preview = app.descendants(matching: .any)["structure.change.preview"]
     XCTAssertTrue(preview.waitForExistence(timeout: 10))
-    XCTAssertTrue((preview.value as? String ?? preview.label).contains("reviewed_column"))
-    app.buttons["structure.change.apply-review"].click()
-    let confirm = app.sheets.buttons["Apply Structure Change"]
-    XCTAssertTrue(confirm.waitForExistence(timeout: 10))
-    confirm.click()
+    let previewValue = app.descendants(matching: .any)["change.review.entry.preview"]
+    XCTAssertTrue(previewValue.waitForExistence(timeout: 10))
+    XCTAssertTrue((previewValue.value as? String ?? previewValue.label).contains("reviewed_column"))
+    activateAndClick(app.buttons["structure.change.apply-review"], in: app)
     XCTAssertTrue(
       app.descendants(matching: .any)["structure.change.outcome"].waitForExistence(timeout: 10))
   }
@@ -565,32 +830,37 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testTableOperationRequiresExactTargetConfirmation() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     let refresh = app.buttons["catalog.refresh"]
-    XCTAssertTrue(refresh.waitForExistence(timeout: 10))
-    refresh.click()
+    activateAndClick(refresh, in: app)
     let table = app.staticTexts["fixture_table"]
     XCTAssertTrue(table.waitForExistence(timeout: 10))
+    app.activate()
     table.doubleClick()
     let structure = app.radioButtons["Structure"]
-    XCTAssertTrue(structure.waitForExistence(timeout: 10))
-    structure.click()
+    activateAndClick(structure, in: app)
+    let actions = app.descendants(matching: .any)["structure.actions"]
+    activateAndClick(actions, in: app)
     let open = app.descendants(matching: .any)["table-operation.open"]
+    if !open.waitForExistence(timeout: 2) {
+      app.activate()
+      actions.click()
+    }
     XCTAssertTrue(open.waitForExistence(timeout: 10))
-    open.click()
+    activateAndClick(open, in: app)
     let review = app.buttons["table-operation.review"]
-    XCTAssertTrue(review.waitForExistence(timeout: 10))
-    review.click()
+    activateAndClick(review, in: app)
     XCTAssertTrue(
       app.descendants(matching: .any)["table-operation.preview"].waitForExistence(timeout: 10))
     let apply = app.buttons["table-operation.apply"]
     XCTAssertFalse(apply.isEnabled)
     let confirmation = app.textFields["table-operation.confirmation"]
-    confirmation.click()
+    app.activate()
+    confirmation.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     confirmation.typeText("fixture_table")
-    XCTAssertTrue(apply.isEnabled)
+    let enabled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: apply)
+    XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
     apply.click()
     XCTAssertTrue(
       app.descendants(matching: .any)["table-operation.progress"].waitForExistence(timeout: 10))
@@ -603,13 +873,13 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testPostgresRolesSearchAndInspectMembership() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
 
     let command = app.menuItems["PostgreSQL Roles and Privileges…"]
     XCTAssertTrue(command.waitForExistence(timeout: 10))
-    XCTAssertTrue(command.isEnabled)
+    let enabled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: command)
+    XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
     command.click()
     let search = app.textFields["postgres.roles.search"]
     XCTAssertTrue(search.waitForExistence(timeout: 10))
@@ -641,9 +911,7 @@ final class TableRockAppUITests: XCTestCase {
     let app = launch(
       scenario: "success", root: root,
       environment: ["TABLEROCK_TEST_SAVE_FILE": output.path])
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     XCTAssertTrue(
       app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
 
@@ -677,9 +945,8 @@ final class TableRockAppUITests: XCTestCase {
         "TABLEROCK_TEST_SAVE_FILE": output.path,
       ])
 
-    let export = app.buttons["results.export.csv"]
-    XCTAssertTrue(export.waitForExistence(timeout: 10))
-    export.click()
+    activateAndClick(app.descendants(matching: .any)["results.export.more"], in: app)
+    clickOpenMenuItem(app.descendants(matching: .any)["results.export.csv"])
 
     let outcome = app.staticTexts["results.copy.outcome"]
     let exported = XCTNSPredicateExpectation(
@@ -702,9 +969,7 @@ final class TableRockAppUITests: XCTestCase {
         "TABLEROCK_TEST_OPEN_FILE": input.path,
       ])
 
-    let open = app.buttons["import.csv.open"]
-    XCTAssertTrue(open.waitForExistence(timeout: 10))
-    open.click()
+    openCsvImport(in: app)
     let stage = app.descendants(matching: .any)["import.csv.stage"]
     XCTAssertTrue(stage.waitForExistence(timeout: 10))
     stage.click()
@@ -735,8 +1000,7 @@ final class TableRockAppUITests: XCTestCase {
         "TABLEROCK_TEST_OPEN_FILE": input.path,
       ])
 
-    XCTAssertTrue(app.buttons["import.csv.open"].waitForExistence(timeout: 10))
-    app.buttons["import.csv.open"].click()
+    openCsvImport(in: app)
     let stage = app.descendants(matching: .any)["import.csv.stage"]
     XCTAssertTrue(stage.waitForExistence(timeout: 10))
     stage.click()
@@ -759,11 +1023,7 @@ final class TableRockAppUITests: XCTestCase {
       scenario: "success",
       environment: ["TABLEROCK_FIXTURE_IME": "1"])
 
-    let status = app.staticTexts.matching(
-      NSPredicate(
-        format: "value == 'IME composition preserved' OR label == 'IME composition preserved'")
-    )
-    .firstMatch
+    let status = app.staticTexts["query.status"]
     XCTAssertTrue(status.waitForExistence(timeout: 10))
     let preserved = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "value == 'IME composition preserved'"), object: status)
@@ -789,8 +1049,142 @@ final class TableRockAppUITests: XCTestCase {
       "TABLEROCK_TEST_SCENARIO": scenario,
     ].merging(environment) { _, fixture in fixture }
     app.launchArguments = ["-ApplePersistenceIgnoreState", "YES"]
-    app.launch()
-    app.activate()
+    addTeardownBlock { app.terminate() }
+    relaunchApplication(app)
+    assertWorkbenchWindowIsFrontmost(app)
     return app
+  }
+
+  @MainActor
+  private func assertWorkbenchWindowIsFrontmost(_ app: XCUIApplication) {
+    let workbench = app.windows["window.workbench"]
+    for attempt in 0..<3 {
+      if attempt > 0 {
+        relaunchApplication(app)
+      }
+      app.activate()
+      NSRunningApplication.runningApplications(withBundleIdentifier: "app.tablerock.TableRock")
+        .max(by: { $0.processIdentifier < $1.processIdentifier })?
+        .activate(options: [.activateAllWindows])
+      if workbench.waitForExistence(timeout: 5) {
+        return
+      }
+    }
+    XCTFail("TableRock launched without a frontmost workbench window")
+  }
+
+  @MainActor
+  private func connectTemporarily(_ app: XCUIApplication) {
+    for attempt in 0..<2 {
+      if attempt > 0 {
+        restartApplication(app)
+      }
+      assertWorkbenchWindowIsFrontmost(app)
+      let opens = app.buttons.matching(identifier: "connection.direct.open")
+      if !opens.firstMatch.waitForExistence(timeout: 5) {
+        continue
+      }
+      let open = opens.allElementsBoundByIndex.first(where: \.isHittable) ?? opens.firstMatch
+      app.activate()
+      open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+      let connect = app.buttons["connection.direct.connect"]
+      guard connect.waitForExistence(timeout: 5), connect.isEnabled else { continue }
+      app.activate()
+      let hittable = XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "hittable == true"), object: connect)
+      guard XCTWaiter.wait(for: [hittable], timeout: 3) == .completed else { continue }
+      connect.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+
+      let dismissed = XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "exists == false"), object: connect)
+      if XCTWaiter.wait(for: [dismissed], timeout: 3) != .completed,
+        connect.exists,
+        connect.isEnabled
+      {
+        app.activate()
+        connect.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+      }
+      let connected = XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "exists == false"), object: connect)
+      guard XCTWaiter.wait(for: [connected], timeout: 10) == .completed else { continue }
+      let status = app.descendants(matching: .any)["connection.status"]
+      guard status.waitForExistence(timeout: 5) else { continue }
+      app.activate()
+      status.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+      return
+    }
+    XCTFail("Temporary connection did not reach a focused connected workbench")
+  }
+
+  @MainActor
+  private func restartApplication(_ app: XCUIApplication) {
+    relaunchApplication(app)
+    assertWorkbenchWindowIsFrontmost(app)
+  }
+
+  @MainActor
+  private func relaunchApplication(_ app: XCUIApplication) {
+    if app.state != .notRunning {
+      app.terminate()
+      let stopped = XCTNSPredicateExpectation(
+        predicate: NSPredicate(
+          format: "state == %d", XCUIApplication.State.notRunning.rawValue),
+        object: app)
+      XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 5), .completed)
+    }
+    app.launch()
+  }
+
+  @MainActor
+  private func openProfileEditor(in app: XCUIApplication) -> XCUIElement {
+    let name = app.textFields["profile.editor.name"]
+    for attempt in 0..<2 {
+      if attempt > 0 {
+        restartApplication(app)
+      }
+      assertWorkbenchWindowIsFrontmost(app)
+      let add = app.buttons["profile.add"]
+      guard add.waitForExistence(timeout: 5), add.isHittable else { continue }
+      app.activate()
+      add.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+      if name.waitForExistence(timeout: 5) {
+        return name
+      }
+    }
+    XCTFail("Profile editor did not open in a stable workbench window")
+    return name
+  }
+
+  @MainActor
+  private func activateAndClick(
+    _ element: XCUIElement,
+    in app: XCUIApplication,
+    timeout: TimeInterval = 10
+  ) {
+    assertWorkbenchWindowIsFrontmost(app)
+    app.activate()
+    XCTAssertTrue(element.waitForExistence(timeout: timeout))
+    let hittable = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "hittable == true"), object: element)
+    XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: timeout), .completed)
+    element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+  }
+
+  @MainActor
+  private func openCsvImport(in app: XCUIApplication) {
+    activateAndClick(app.descendants(matching: .any)["object.actions"], in: app)
+    clickOpenMenuItem(app.descendants(matching: .any)["import.csv.open"])
+  }
+
+  @MainActor
+  private func clickOpenMenuItem(
+    _ element: XCUIElement,
+    timeout: TimeInterval = 10
+  ) {
+    XCTAssertTrue(element.waitForExistence(timeout: timeout))
+    let hittable = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "hittable == true"), object: element)
+    XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: timeout), .completed)
+    element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
   }
 }

@@ -8,9 +8,10 @@ and state decision ([native path](../architecture/native-macos-path.md)).
 Design target: **macOS 26 Tahoe and later only**, with the **Liquid Glass**
 design system. Deployment target is 26.0; there is **no** pre-Tahoe / legacy
 material fallback, no “compatibility opt-out” mode, and no dual-path UI for
-older SDKs. Prefer current system glass APIs (`.glass` / `.glassProminent`,
-`GlassEffectContainer`, system toolbars) over `.borderedProminent`, custom
-`.bar` fills, or hand-rolled blurs.
+older SDKs. Prefer current system glass controls (`.glass` /
+`.glassProminent`) and system-owned toolbar, sidebar, sheet, popover, and menu
+materials. Custom `glassEffect` requires a separately approved functional
+owner; the confirmed production workbench currently has none.
 
 ## Design language
 
@@ -19,9 +20,9 @@ control layer that floats above content**. Applied to this product:
 
 | Surface | Treatment |
 |---|---|
-| Window toolbar (context bar) | Glass. Connection, database/schema pickers, safety badge, run/cancel, save-with-pending-count, preview, export |
-| Sidebar catalog | Glass sidebar; content extends under it edge-to-edge |
-| Sheets, popovers, completion, review dialog | Glass (transient UI) |
+| Window toolbar (context bar) | System glass buttons for actions; connection context and safety facts remain standard semantic controls |
+| Sidebar catalog | System sidebar/bar material with an opaque accessibility fallback |
+| Sheets, popovers, completion, review dialog | System-owned transient material |
 | Data grid, SQL editor, text content | **Never glass** — opaque/system backgrounds; content scrolls *under* the glass layer |
 | Status bar | Non-interactive items without glass (`isBordered = false` / `sharedBackgroundVisibility(.hidden)`) |
 
@@ -29,15 +30,16 @@ Rules this app follows (from Apple's guidance):
 
 - Content never sits *in* glass; it scrolls *under* it. Result grids use a
   hard scroll-edge effect for a clean cutoff under the toolbar.
-- One glass cluster per region: toolbar items grouped with `ToolbarSpacer`;
-  custom glass elements grouped in one `GlassEffectContainer` per cluster.
-  Never stack glass on glass, never scatter small glass surfaces.
-- Tint only primary meaningful actions (Run, Apply changes) with
-  `.regular.tint`; decoration stays untinted.
+- One functional control cluster per region. Standard glass buttons keep
+  system ownership; any future approved custom glass must use one
+  `GlassEffectContainer`. Never stack glass on glass.
+- Tint only primary meaningful actions and semantic safety/risk labels;
+  decoration stays untinted.
 - No custom blurs, no `NSVisualEffectView` sidebar material, no custom toolbar
   backgrounds — they fight the system edge effects.
 - Environment (production) marking is a label plus accent treatment on the
-  toolbar badge, independent of glass translucency; critical state is never
+  toolbar badge, independent of glass translucency. The badge is opaque
+  semantic tint with an icon and explicit text; critical state is never
   conveyed by translucency or color alone.
 - Accessibility is structural: Reduce Transparency, Increase Contrast, and
   Reduce Motion degrade the material gracefully — behavior and legibility
@@ -103,6 +105,14 @@ and active raw mode remains visibly announced. Result column headers project
 each active server sort's direction and one-based priority; unsorted headers
 retain the database column name unchanged.
 
+For a PostgreSQL base-table browse, Rust resolves the relation, profile safety,
+and primary-key identity behind the opaque result ID. Selecting a resident row
+then exposes Edit Selected only when that proof is editable. The native sheet
+collects supported typed values, stages a Rust-owned parameterized update, and
+shows the frozen statement, values, expiry, and consume-once authority before
+Apply. Swift never supplies the row locator, constructs SQL, or reparses the
+preview.
+
 ## Platform evidence gates
 
 The native design is accepted only with the phase 12-14 gates: strict
@@ -110,3 +120,9 @@ concurrency build, VoiceOver/keyboard/IME coverage, multi-window restoration,
 Instruments page/scroll performance, clean-machine signing/notarization, and
 Liquid Glass behavior verified across light/dark, Increase Contrast, and
 Reduce Transparency.
+
+Source ownership is enforced independently of captures:
+
+```bash
+./scripts/verify-native-liquid-glass.sh
+```

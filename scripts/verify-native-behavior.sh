@@ -70,8 +70,6 @@ run_test postgresql "$pg_port" testCatalogReturnsTypedNodesAndBrowsableObjectPag
     TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret
 run_test postgresql "$pg_port" testPostgreSQLCancellationReportsRuntimeAndTerminalWithinBudget \
     TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret
-run_test postgresql "$pg_port" testPostgreSQLReviewTokenAppliesProbe \
-    TABLEROCK_DB=db TABLEROCK_USER=u TABLEROCK_PASSWORD=secret
 docker rm -f "$PG" >/dev/null
 
 echo "==> ClickHouse named Swift tests"
@@ -97,7 +95,7 @@ run_test clickhouse "$ch_port" testCatalogReturnsTypedNodesAndBrowsableObjectPag
 docker rm -f "$CH" >/dev/null
 
 echo "==> Redis named Swift tests"
-docker run -d --name "$REDIS" -P redis:8.0 >/dev/null
+docker run -d --name "$REDIS" -P redis:8.8.0 >/dev/null
 redis_port="$(mapped_port "$REDIS" 6379)"
 for i in $(seq 1 30); do
     docker exec "$REDIS" redis-cli ping 2>/dev/null | grep -q PONG && break

@@ -7,8 +7,9 @@
 
 use tablerock_core::{Engine, PageLimits, ResultPage};
 use tablerock_ffi::{
-    BridgeCsvImportRequest, BridgeDdlChangeRequest, BridgePostgresToolRequest,
-    BridgeQueryParameter, BridgeStartupActionDraft, BridgeStreamExportRequest,
+    BridgeCsvImportRequest, BridgeDdlChangeRequest, BridgeMutationAssignment,
+    BridgeMutationReviewRequest, BridgePostgresToolRequest, BridgeQueryParameter,
+    BridgeRelationBrowseRequest, BridgeStartupActionDraft, BridgeStreamExportRequest,
     BridgeTableOperationRequest, OpenParams, SubmitSpec, TableRockBridge,
 };
 use testcontainers::{
@@ -324,6 +325,14 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
             session.clone(),
             "CREATE TABLE IF NOT EXISTS bridge_stream_import (id bigint, name text)",
         );
+        for statement in [
+            "CREATE TABLE bridge_relation_parent (id text PRIMARY KEY, label text NOT NULL)",
+            "CREATE TABLE bridge_relation_child (id bigint PRIMARY KEY, parent_id text REFERENCES bridge_relation_parent(id))",
+            "INSERT INTO bridge_relation_parent VALUES (' 0042 ', 'exact text key')",
+            "INSERT INTO bridge_relation_child VALUES (1, ' 0042 ')",
+        ] {
+            execute(&bridge, session.clone(), statement);
+        }
         let database = bridge
             .refresh_catalog(session.clone(), None)
             .unwrap()
@@ -336,12 +345,48 @@ async fn bridge_postgres_open_probe_fetch_shutdown() {
             .into_iter()
             .find(|node| node.name == "public")
             .unwrap();
-        let relation = bridge
+        let relations = bridge
             .refresh_catalog(session.clone(), Some(schema.id_bytes.clone()))
-            .unwrap()
-            .into_iter()
-            .find(|node| node.name == "bridge_ddl_review")
             .unwrap();
+        let relation = relations
+            .iter()
+            .find(|node| node.name == "bridge_ddl_review")
+            .cloned()
+            .unwrap();
+        let relation_source = relations
+            .into_iter()
+            .find(|node| node.name == "bridge_relation_child")
+            .unwrap();
+        let relation_browse = bridge
+            .submit_postgres_relation_browse(BridgeRelationBrowseRequest {
+                session_id: session.clone(),
+                catalog_node_id: relation_source.id_bytes,
+                selected_column: "parent_id".into(),
+                cell_kind: 7,
+                cell_bytes: b" 0042 ".to_vec(),
+                cell_truncation: 0,
+                row_count: 16,
+            })
+            .unwrap();
+        assert_eq!(relation_browse.direction, "outbound");
+        bridge.pump(relation_browse.operation_id.clone()).unwrap();
+        let relation_page = bridge
+            .next_events(0, 256)
+            .unwrap()
+            .events
+            .into_iter()
+            .find(|event| {
+                event.operation_id == relation_browse.operation_id && event.kind == "page"
+            })
+            .and_then(|event| event.page_bytes)
+            .unwrap();
+        let relation_page = ResultPage::decode_v1(
+            &relation_page,
+            PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
+        )
+        .unwrap();
+        assert_eq!(relation_page.cell(0, 0).unwrap().bytes(), b" 0042 ");
+        assert_eq!(relation_page.cell(0, 1).unwrap().bytes(), b"exact text key");
         let review = bridge
             .stage_ddl_change(BridgeDdlChangeRequest {
                 session_id: session.clone(),
@@ -1045,6 +1090,146 @@ async fn bridge_postgres_apply_delete_by_review_token() {
     .await
     .unwrap();
     assert!(outcome.change_count >= 1);
+}
+
+#[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]
+#[tokio::test]
+async fn bridge_postgres_browse_stages_and_applies_selected_row_update() {
+    let container = GenericImage::new("postgres", "18.4-alpine")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .start()
+        .await
+        .unwrap();
+    let port = container.get_host_port_ipv4(5432.tcp()).await.unwrap();
+    let host = container.get_host().await.unwrap().to_string();
+
+    tokio::task::spawn_blocking(move || {
+        let bridge = TableRockBridge::new_for_test();
+        let session = open_when_ready(&bridge, "postgresql", &host, port, "postgres", "postgres");
+        execute(
+            &bridge,
+            session.clone(),
+            "CREATE TABLE bridge_native_update (id bigint PRIMARY KEY, plan text NOT NULL, seats integer NOT NULL)",
+        );
+        execute(
+            &bridge,
+            session.clone(),
+            "INSERT INTO bridge_native_update VALUES (7, 'Scale', 124)",
+        );
+        let database = bridge
+            .refresh_catalog(session.clone(), None)
+            .unwrap()
+            .into_iter()
+            .find(|node| node.name == "postgres")
+            .unwrap();
+        let schema = bridge
+            .refresh_catalog(session.clone(), Some(database.id_bytes))
+            .unwrap()
+            .into_iter()
+            .find(|node| node.name == "public")
+            .unwrap();
+        let relation = bridge
+            .refresh_catalog(session.clone(), Some(schema.id_bytes))
+            .unwrap()
+            .into_iter()
+            .find(|node| node.name == "bridge_native_update")
+            .unwrap();
+        let operation = bridge
+            .submit_catalog_browse(session.clone(), relation.id_bytes, 16)
+            .unwrap();
+        bridge.pump(operation.clone()).unwrap();
+        let page_bytes = bridge
+            .next_events(0, 256)
+            .unwrap()
+            .events
+            .into_iter()
+            .find(|event| event.operation_id == operation && event.kind == "page")
+            .and_then(|event| event.page_bytes)
+            .unwrap();
+        let page = ResultPage::decode_v1(
+            &page_bytes,
+            PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
+        )
+        .unwrap();
+        let result_id = page.envelope().result_id().to_bytes().to_vec();
+        let revision = page.envelope().revision().get();
+        let editability = bridge
+            .mutation_editability(session.clone(), result_id.clone())
+            .unwrap();
+        assert!(editability.editable, "{editability:?}");
+        assert_eq!(editability.identity_columns, ["id"]);
+        let identity_assignment = bridge
+            .stage_row_update(BridgeMutationReviewRequest {
+                session_id: session.clone(),
+                result_id: result_id.clone(),
+                revision,
+                row: 0,
+                assignments: vec![BridgeMutationAssignment {
+                    column: "id".into(),
+                    kind: "signed".into(),
+                    value: Some(b"8".to_vec()),
+                }],
+                now_ms: 900,
+            })
+            .unwrap_err();
+        assert_eq!(
+            identity_assignment.to_string(),
+            "mutation-assignment: stable identity columns cannot be assigned"
+        );
+        let review = bridge
+            .stage_row_update(BridgeMutationReviewRequest {
+                session_id: session.clone(),
+                result_id,
+                revision,
+                row: 0,
+                assignments: vec![
+                    BridgeMutationAssignment {
+                        column: "plan".into(),
+                        kind: "text".into(),
+                        value: Some(b"Enterprise".to_vec()),
+                    },
+                    BridgeMutationAssignment {
+                        column: "seats".into(),
+                        kind: "signed".into(),
+                        value: Some(b"148".to_vec()),
+                    },
+                ],
+                now_ms: 1_000,
+            })
+            .unwrap();
+        assert_eq!(review.target, "public.bridge_native_update");
+        assert_eq!(review.lines.len(), 1);
+        assert_eq!(review.lines[0].kind, "update");
+        assert_eq!(review.lines[0].parameters, ["Enterprise", "148", "7"]);
+        assert_eq!(
+            review.lines[0].preview,
+            "UPDATE \"public\".\"bridge_native_update\" SET \"plan\" = $1, \"seats\" = $2 WHERE \"id\" = $3"
+        );
+        let outcome = bridge
+            .apply_review_token(review.token_id, 2_000, session.clone(), 0)
+            .unwrap();
+        assert_eq!(outcome.applied_count, 1);
+        assert_eq!(outcome.conflict_count, 0);
+        let verified = execute(
+            &bridge,
+            session.clone(),
+            "SELECT plan, seats FROM bridge_native_update WHERE id = 7",
+        );
+        let verified = ResultPage::decode_v1(
+            &verified,
+            PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
+        )
+        .unwrap();
+        assert_eq!(verified.cell(0, 0).unwrap().bytes(), b"Enterprise");
+        assert_eq!(verified.cell(0, 1).unwrap().bytes(), &148_i64.to_be_bytes());
+        bridge.shutdown(false, 5_000).unwrap();
+    })
+    .await
+    .unwrap();
 }
 
 #[ignore = "real-server test: runs in CI real-servers job with --include-ignored"]

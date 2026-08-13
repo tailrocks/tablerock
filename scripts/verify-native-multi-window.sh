@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 APP="$REPO_ROOT/native/dist/TableRock.app"
 EXECUTABLE="$APP/Contents/MacOS/TableRock"
 APP_PID=""
@@ -18,13 +19,15 @@ trap cleanup EXIT
 for pattern in \
   'private let application = NativeApplicationModel\(\)' \
   'WindowGroup\(for: UUID.self\)' \
-  '\.restorationBehavior\(\.automatic\)' \
-  '@State private var model: BridgeModel' \
+  'application\.disablesWindowRestoration \? \.disabled : \.automatic' \
+  'ProcessInfo\.processInfo\.environment\["TABLEROCK_TEST_MODE"\] == "1"' \
+  'disablesWindowRestoration = false' \
+  '@State private var model: WorkbenchPresentationStore' \
   'window.tabbingIdentifier = "tablerock-workbench"' \
   'window.tabbingMode = \.preferred' \
   'return client === otherClient'
 do
-  rg -q "$pattern" "$SOURCE" || {
+  native_source_has_regex "$pattern" || {
     echo "error: missing native multi-window contract: $pattern" >&2
     exit 1
   }

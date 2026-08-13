@@ -113,6 +113,9 @@ jobs:
             xcodegen generate --spec native/App/project.yml
           git diff --exit-code -- native/App/TableRock.xcodeproj native/App/TableRock-Info.plist
 
+      - name: Verify native source ownership
+        run: ./scripts/verify-native-source-ownership.sh
+
       - name: Run canonical Release test plan
         run: |
           mkdir -p artifacts

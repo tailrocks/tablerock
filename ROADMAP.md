@@ -277,6 +277,13 @@ native production is closed (evidence 658:
 accessibility matrix and signed/notarized clean-machine release remain open or
 externally blocked (Developer ID credentials — plan 019).
 
+Native selected-row PostgreSQL update now crosses the production UniFFI seam:
+Rust proves base-table primary-key identity, freezes a typed parameterized plan,
+and owns consume-once review/apply. The selected-row sheet, Change Review, and
+real PostgreSQL Docker apply proof close that narrow vertical slice. Native
+insert/delete, unique-key-only editability, richer null/binary/structured
+editors, and ClickHouse/Redis editing remain open parity work.
+
 Project remaining supported profiles, tabs, history, query/edit/review,
 engine-specific views, import/export, files, settings, restoration,
 multi-window behavior, VoiceOver, keyboard, appearance, IME, signing, hardened

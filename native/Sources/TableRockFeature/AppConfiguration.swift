@@ -3,12 +3,22 @@ import Foundation
 public struct AppConfiguration: Sendable, Equatable {
     public enum Backend: Sendable, Equatable {
         case live
+        #if TABLEROCK_DEVELOPMENT_SUPPORT
         case scripted(scenario: String)
+        #endif
     }
 
     public let backend: Backend
     public let paths: AppPaths
     public let isTestMode: Bool
+
+    static var developmentSupportEnabled: Bool {
+        #if TABLEROCK_DEVELOPMENT_SUPPORT
+        true
+        #else
+        false
+        #endif
+    }
 
     public var keychainNamespace: String {
         let root = Data(paths.dataRoot.path.utf8).base64EncodedString()
@@ -21,8 +31,9 @@ public struct AppConfiguration: Sendable, Equatable {
         temporaryRoot: URL,
         processIdentifier: Int32
     ) throws -> Self {
+        #if TABLEROCK_DEVELOPMENT_SUPPORT
         let explicitTest = environment["TABLEROCK_TEST_MODE"] == "1"
-        let fixtureTest = environment.keys.contains { $0.hasPrefix("TABLEROCK_FIXTURE_") }
+        let fixtureTest = containsNativeFixtureRoute(environment)
         let isTestMode = explicitTest || fixtureTest
         let dataRoot: URL
         if explicitTest {
@@ -52,6 +63,13 @@ public struct AppConfiguration: Sendable, Equatable {
         case let value?:
             throw AppConfigurationError.unsupportedBackend(value)
         }
+        #else
+        let isTestMode = false
+        let dataRoot = applicationSupportRoot.appendingPathComponent(
+            "TableRock", isDirectory: true
+        )
+        let backend = Backend.live
+        #endif
         return Self(backend: backend, paths: AppPaths(dataRoot: dataRoot), isTestMode: isTestMode)
     }
 }
@@ -76,10 +94,4 @@ public struct AppPaths: Sendable, Equatable {
     public func prepare(fileManager: FileManager = .default) throws {
         try fileManager.createDirectory(at: dataRoot, withIntermediateDirectories: true)
     }
-}
-
-public enum AppConfigurationError: Error, Equatable {
-    case absoluteTestRootRequired
-    case scriptedScenarioRequired
-    case unsupportedBackend(String)
 }

@@ -38,7 +38,8 @@ use tokio_postgres_rustls::MakeRustlsConnect;
 use zeroize::Zeroize;
 
 use crate::{
-    CatalogExactness, CatalogRequest, CatalogSubtree, ServerDescribe,
+    CatalogExactness, CatalogRequest, CatalogSubtree, PostgresRelationBrowseRequest,
+    PostgresRelationBrowseSide, PostgresRelationBrowseTarget, ServerDescribe,
     catalog::{catalog_name_list, catalog_seed},
     temporal::format_date_from_unix_days,
 };
@@ -1059,6 +1060,67 @@ impl PostgresSession {
             });
         }
         Ok((graph, truncated))
+    }
+
+    /// Revalidate one exact FK edge and return its target catalog type plus
+    /// constraint width. The caller rejects composite keys because one
+    /// selected cell cannot represent their full relation identity.
+    pub async fn relation_browse_target(
+        &self,
+        request: PostgresRelationBrowseRequest<'_>,
+    ) -> Result<Option<PostgresRelationBrowseTarget>, PostgresError> {
+        let edge = request.edge();
+        let row = self
+            .client
+            .query_opt(
+                "SELECT stypens.nspname::text, styp.typname::text, \
+                        ttypens.nspname::text, ttyp.typname::text, \
+                        pg_catalog.cardinality(con.conkey)::int4 \
+                 FROM pg_catalog.pg_constraint con \
+                 JOIN pg_catalog.pg_class sc ON sc.oid = con.conrelid \
+                 JOIN pg_catalog.pg_namespace sn ON sn.oid = sc.relnamespace \
+                 JOIN pg_catalog.pg_class tc ON tc.oid = con.confrelid \
+                 JOIN pg_catalog.pg_namespace tn ON tn.oid = tc.relnamespace \
+                 JOIN LATERAL unnest(con.conkey, con.confkey) \
+                   WITH ORDINALITY AS keys(source_attnum, target_attnum, ordinal) ON true \
+                 JOIN pg_catalog.pg_attribute sa \
+                   ON sa.attrelid = sc.oid AND sa.attnum = keys.source_attnum \
+                 JOIN pg_catalog.pg_attribute ta \
+                   ON ta.attrelid = tc.oid AND ta.attnum = keys.target_attnum \
+                 JOIN pg_catalog.pg_type styp ON styp.oid = sa.atttypid \
+                 JOIN pg_catalog.pg_namespace stypens ON stypens.oid = styp.typnamespace \
+                 JOIN pg_catalog.pg_type ttyp ON ttyp.oid = ta.atttypid \
+                 JOIN pg_catalog.pg_namespace ttypens ON ttypens.oid = ttyp.typnamespace \
+                 WHERE con.contype = 'f' \
+                   AND sn.nspname = $1 AND sc.relname = $2 AND sa.attname = $3 \
+                   AND tn.nspname = $4 AND tc.relname = $5 AND ta.attname = $6 \
+                 ORDER BY con.conname LIMIT 1",
+                &[
+                    &edge.from_schema,
+                    &edge.from_table,
+                    &edge.from_column,
+                    &edge.to_schema,
+                    &edge.to_table,
+                    &edge.to_column,
+                ],
+            )
+            .await
+            .map_err(|error| map_tokio_postgres_error(&error))?;
+        row.map(|row| {
+            let type_offset = match request.side() {
+                PostgresRelationBrowseSide::Source => 0,
+                PostgresRelationBrowseSide::Target => 2,
+            };
+            let width: i32 = row.try_get(4).map_err(|_| PostgresError::Protocol)?;
+            Ok(PostgresRelationBrowseTarget::new(
+                row.try_get(type_offset)
+                    .map_err(|_| PostgresError::Protocol)?,
+                row.try_get(type_offset + 1)
+                    .map_err(|_| PostgresError::Protocol)?,
+                u32::try_from(width).map_err(|_| PostgresError::Protocol)?,
+            ))
+        })
+        .transpose()
     }
 
     /// Execute a reviewed DDL plan (identifiers quoted; never free SQL).

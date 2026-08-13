@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 ENGINE="$REPO_ROOT/crates/tablerock-engine/src/clickhouse.rs"
 APP="$REPO_ROOT/native/dist/TableRock.app"
 EXECUTABLE="$APP/Contents/MacOS/TableRock"
@@ -28,10 +29,11 @@ do
 done
 for pattern in \
   'TABLEROCK_FIXTURE_CLICKHOUSE_STRUCTURE' \
-  'GroupBox("Engine facts")' \
+  'Section("Engine")' \
+  'accessibilityIdentifier("structure.details")' \
   'CLICKHOUSE_STRUCTURE_PROOF_PASSED'
 do
-  rg -Fq "$pattern" "$SOURCE" || { echo "error: missing native ClickHouse structure projection: $pattern" >&2; exit 1; }
+  native_source_has_fixed "$pattern" || { echo "error: missing native ClickHouse structure projection: $pattern" >&2; exit 1; }
 done
 
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true

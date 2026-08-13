@@ -34,13 +34,18 @@ its adoption requirements are defined.
   [`termrock`](https://github.com/tailrocks/termrock) crate; TableRock does not
   import `jackin` product internals.
 
-## Clean-room rule
+## External product references
 
-TablePro, TablePlus, and Zedis may establish that a broad problem or workflow
-exists. Never copy or translate their source, tests, comments, identifiers,
-assets, product text, screenshots, layout measurements, colors, or key
-bindings. Implement from this repository's requirements, official database
-documentation, selected library documentation, and direct tests.
+TablePro, TablePlus, and Zedis may inform product ideas, workflows, interaction
+design, screen composition, and visual direction. Public screenshots and
+documentation may be used as design references, including when adapting
+commonplace native macOS patterns.
+
+Never copy, translate, or derive implementation from their source code, tests,
+or source comments. Implement behavior from this repository's requirements,
+official database documentation, selected library documentation, and direct
+tests. Do not import third-party branding or proprietary assets without clear
+permission.
 
 Record external-reference provenance in every influenced implementation commit
 and its accompanying requirement/test documentation.

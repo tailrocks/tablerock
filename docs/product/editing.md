@@ -18,10 +18,21 @@ A result is editable only when it comes from one base table with stable row
 identity (primary or unique key). Joins, aggregates, and key-less results are
 read-only and say why. Unknown or truncated values are never editable.
 
+The first native production path is deliberately narrower: a selected
+PostgreSQL base-table row is editable only after Rust proves a primary-key
+identity from the catalog browse result. Identity columns, null cells, binary
+cells, and values that are unknown, invalid, structured, or truncated are not
+offered by that sheet. Unique-key-only relations and richer native value
+editors remain part of the broader parity requirement; presentation code must
+not guess their semantics from engine type names.
+
 ## Staging
 
 - **Edit a cell**: inline editor typed to the column (bool, number, temporal,
   enum, JSON, bytes, …). Accepting stages the change; it does not execute.
+- **Native selected-row update**: Edit Selected opens a typed sheet for the
+  writable values in one PostgreSQL row. Stage for Review freezes only changed
+  fields; Back revokes the old authority before returning to the draft.
 - **Add a row**: a new editable row appears in the grid; default values and
   generated columns are marked, not invented.
 - **Delete rows**: selected rows stage for deletion.
@@ -115,7 +126,7 @@ observation.
 
 | | TUI | Native macOS |
 |---|---|---|
-| Cell editor | in-grid typed editors | native in-cell editors |
+| Cell editor | in-grid typed editors | selected-row typed sheet for PostgreSQL updates; richer in-cell parity remains |
 | Markers | gutter glyphs + row treatment | row background + badge, label on focus |
 | Review dialog | modal with `DiffView`-style list | **Change Review** sheet plane: kind · monospaced preview · DESTRUCTIVE word · expiry · Apply/Discard |
 | Apply | explicit action + shortcut | Apply inside review only (consume-once token); never silent write from chrome |

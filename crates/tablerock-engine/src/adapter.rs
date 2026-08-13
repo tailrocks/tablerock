@@ -13,7 +13,7 @@ use std::{
 use tablerock_core::{
     ApplicationCode, AuthorizedMutationPlan, BoundedBytes, BoundedText, CancelDispatch, Engine,
     FailureClass, OperationId, OperationSafety, OperatorAction, OutcomeCertainty, PageIdentity,
-    PageLimits, ResultPage, SafeCode, SafeDiagnostic, Severity, StatementText,
+    PageLimits, RelationshipEdge, ResultPage, SafeCode, SafeDiagnostic, Severity, StatementText,
 };
 
 use crate::{
@@ -469,6 +469,71 @@ impl PostgresActivityRow {
     }
 }
 
+/// Side of a PostgreSQL foreign-key edge selected as the browse destination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostgresRelationBrowseSide {
+    Source,
+    Target,
+}
+
+/// Exact foreign-key edge and destination side to revalidate before browsing.
+#[derive(Debug, Clone, Copy)]
+pub struct PostgresRelationBrowseRequest<'a> {
+    edge: &'a RelationshipEdge,
+    side: PostgresRelationBrowseSide,
+}
+
+impl<'a> PostgresRelationBrowseRequest<'a> {
+    #[must_use]
+    pub const fn new(edge: &'a RelationshipEdge, side: PostgresRelationBrowseSide) -> Self {
+        Self { edge, side }
+    }
+
+    #[must_use]
+    pub const fn edge(self) -> &'a RelationshipEdge {
+        self.edge
+    }
+
+    #[must_use]
+    pub const fn side(self) -> PostgresRelationBrowseSide {
+        self.side
+    }
+}
+
+/// Revalidated catalog type and foreign-key width for relation browsing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostgresRelationBrowseTarget {
+    type_schema: String,
+    type_name: String,
+    key_column_count: u32,
+}
+
+impl PostgresRelationBrowseTarget {
+    #[must_use]
+    pub const fn new(type_schema: String, type_name: String, key_column_count: u32) -> Self {
+        Self {
+            type_schema,
+            type_name,
+            key_column_count,
+        }
+    }
+
+    #[must_use]
+    pub fn type_schema(&self) -> &str {
+        &self.type_schema
+    }
+
+    #[must_use]
+    pub fn type_name(&self) -> &str {
+        &self.type_name
+    }
+
+    #[must_use]
+    pub const fn key_column_count(&self) -> u32 {
+        self.key_column_count
+    }
+}
+
 pub trait DriverSession: Send + Sync {
     fn engine(&self) -> Engine;
 
@@ -609,6 +674,23 @@ pub trait DriverSession: Send + Sync {
         })
     }
 
+    /// PostgreSQL-only stable row identity for editable relation results.
+    ///
+    /// Empty means the relation has no primary key and must remain read-only.
+    fn postgres_primary_key_columns<'a>(
+        &'a self,
+        schema: &'a str,
+        relation: &'a str,
+    ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
+        let _ = (schema, relation);
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
     /// PostgreSQL-only bounded foreign-key graph around one relation.
     fn postgres_relationships<'a>(
         &'a self,
@@ -616,6 +698,21 @@ pub trait DriverSession: Send + Sync {
         relation: &'a str,
     ) -> DriverFuture<'a, Result<(tablerock_core::RelationshipGraph, bool), AdapterError>> {
         let _ = (schema, relation);
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
+    /// PostgreSQL-only target type and FK width for one exact relationship
+    /// edge. Returned type schema/name are raw identifiers for caller quoting.
+    fn postgres_relation_browse_target<'a>(
+        &'a self,
+        request: PostgresRelationBrowseRequest<'a>,
+    ) -> DriverFuture<'a, Result<Option<PostgresRelationBrowseTarget>, AdapterError>> {
+        let _ = request;
         Box::pin(async {
             Err(AdapterError::new(
                 self.engine(),
@@ -1036,6 +1133,18 @@ impl DriverSession for PostgresSession {
         })
     }
 
+    fn postgres_primary_key_columns<'a>(
+        &'a self,
+        schema: &'a str,
+        relation: &'a str,
+    ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::relation_primary_key_columns(self, schema, relation)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
     fn postgres_relationships<'a>(
         &'a self,
         schema: &'a str,
@@ -1043,6 +1152,17 @@ impl DriverSession for PostgresSession {
     ) -> DriverFuture<'a, Result<(tablerock_core::RelationshipGraph, bool), AdapterError>> {
         Box::pin(async move {
             PostgresSession::relationship_snapshot(self, schema, relation)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
+    fn postgres_relation_browse_target<'a>(
+        &'a self,
+        request: PostgresRelationBrowseRequest<'a>,
+    ) -> DriverFuture<'a, Result<Option<PostgresRelationBrowseTarget>, AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::relation_browse_target(self, request)
                 .await
                 .map_err(map_postgres)
         })

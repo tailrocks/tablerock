@@ -16,37 +16,39 @@ use std::{
 
 use tablerock_core::{
     BoundedBytes, BoundedText, ByteLimit, CatalogChildrenState, CatalogNode, CatalogNodeId,
-    CatalogNodeKind, ClickHouseObjectKind, CommandBudget, CommandBudgetLimits, CommandEnvelope,
-    CommandIntent, CommandScope, CopyFormat, CopyTable, DangerousPlaintext, DdlKind, DdlPlan,
-    DdlTarget, Engine, EnvironmentReference, EnvironmentTag, FieldValue, IdParts,
-    KeychainReference, MutationChange, MutationId, MutationPlan, MutationPlanLimits,
-    MutationReviewRegistry, MutationTarget, OnePasswordReference, OperationId, OperationOutcome,
-    OperationScope, OwnedValue, PageIdentity, PageKey, PageLimits, PageRequest, PageWarning,
-    PlaintextAcknowledgement, PostgreSqlObjectKind, ProfileAggregate, ProfileConnectionSnapshot,
-    ProfileDurability, ProfileEndpointPart, ProfileGroupName, ProfileId, ProfileIdentity,
-    ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName, ProfileOrganization,
-    ProfilePolicy, ProfilePreferences, ProfileProperty, ProfilePropertyBinding, ProfilePropertySet,
-    ProfileSafetyMode, ProfileSearchTerm, ProfileTag, ReconnectDecision, ReconnectPreference,
-    RedisKeyKind, ResultStore, ResultStoreLimits, ReviewTokenId, ReviewedRoleChangePlan, Revision,
-    RoleChangeKind, RoleChangePlan, SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset,
-    SecretSource, SecretSourceKind, ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode,
-    StartupAction, StartupActionSet, StartupSafetyClass, StatementText, SupportBundle,
-    SupportPlatform, TlsPolicy, copy_cell_from_page, format_copy_table, is_safe_preset_name,
+    CatalogNodeKind, CellRef, ClickHouseObjectKind, CommandBudget, CommandBudgetLimits,
+    CommandEnvelope, CommandIntent, CommandScope, CopyFormat, CopyTable, DangerousPlaintext,
+    DdlKind, DdlPlan, DdlTarget, EditabilityFacts, Engine, EnvironmentReference, EnvironmentTag,
+    FieldValue, IdParts, KeychainReference, MutationChange, MutationId, MutationPlan,
+    MutationPlanLimits, MutationReviewRegistry, MutationTarget, OnePasswordReference, OperationId,
+    OperationOutcome, OperationScope, OwnedValue, PageIdentity, PageKey, PageLimits, PageRequest,
+    PageWarning, PlaintextAcknowledgement, PostgreSqlObjectKind, ProfileAggregate,
+    ProfileConnectionSnapshot, ProfileDurability, ProfileEndpointPart, ProfileGroupName, ProfileId,
+    ProfileIdentity, ProfileLimits, ProfileListFilter, ProfileListRequest, ProfileName,
+    ProfileOrganization, ProfilePolicy, ProfilePreferences, ProfileProperty,
+    ProfilePropertyBinding, ProfilePropertySet, ProfileSafetyMode, ProfileSearchTerm, ProfileTag,
+    ReconnectDecision, ReconnectPreference, RedisKeyKind, ResultStore, ResultStoreLimits,
+    ReviewTokenId, ReviewedRoleChangePlan, Revision, RoleChangeKind, RoleChangePlan,
+    SavedFilterCondition, SavedFilterLibrary, SavedFilterPreset, SecretSource, SecretSourceKind,
+    ServiceCoordinator, ServiceLimits, SessionId, ShutdownMode, StartupAction, StartupActionSet,
+    StartupSafetyClass, StatementText, SupportBundle, SupportPlatform, TlsPolicy, Truncation,
+    ValueKind, ValueRef, copy_cell_from_page, format_copy_table, is_safe_preset_name,
     page_to_export_strings, parse_connection_url, reconnect_decision, rewrite_named_params,
 };
 use tablerock_engine::{
     AdapterFailureClass, BrowseDialect, BrowsePlan, CatalogRequest, ClickHouseCompression,
     ClickHouseConnectConfig, ClickHouseProbeQuery, ClickHouseSession, ClickHouseTlsMode,
     DriverPageRequest, DriverRuntime, DriverSession, EngineService, EngineServiceUpdate,
-    FilterOperator, KeychainReadPort, MutationApplyControl, OpCliReader, PostgresConnectConfig,
-    PostgresProbeQuery, PostgresSession, PostgresTlsMode, RedisConnectConfig,
-    RedisConnectionSecurity, RedisCredentials, RedisProtocol, RedisSession, RedisSubscriptionKind,
-    RedisSubscriptionOptions, RedisTlsMode, ResolvedSecret, SecretPromptPort,
-    SecretResolutionError, SortDirection, SortKey, SqliteSession, SshAgentAuth, SshAuthMaterial,
-    SshHostKeyPolicy, SshPasswordAuth, SshPublicKeyAuth, SshTunnelConfig, TypedCondition,
-    ensure_sample_sqlite_database, load_relation_structure as load_structure_snapshot,
-    open_local_forward_tunnel, parse_bind_text, resolve_for_connect_with_ports,
-    run_clickhouse_startup_actions, run_postgres_startup_actions, run_redis_startup_actions,
+    FilterOperator, KeychainReadPort, MutationApplyControl, OpCliReader,
+    PostgreSqlRelationBrowsePlan, PostgresConnectConfig, PostgresProbeQuery, PostgresSession,
+    PostgresTlsMode, RedisConnectConfig, RedisConnectionSecurity, RedisCredentials, RedisProtocol,
+    RedisSession, RedisSubscriptionKind, RedisSubscriptionOptions, RedisTlsMode, ResolvedSecret,
+    SecretPromptPort, SecretResolutionError, SortDirection, SortKey, SqliteSession, SshAgentAuth,
+    SshAuthMaterial, SshHostKeyPolicy, SshPasswordAuth, SshPublicKeyAuth, SshTunnelConfig,
+    TypedCondition, ensure_sample_sqlite_database,
+    load_relation_structure as load_structure_snapshot, open_local_forward_tunnel, parse_bind_text,
+    resolve_for_connect_with_ports, run_clickhouse_startup_actions, run_postgres_startup_actions,
+    run_redis_startup_actions,
 };
 use tablerock_files::{
     CsvStreamLimits, CsvTable, CsvValueType, StreamExportFormat, StreamExporter,
@@ -197,6 +199,100 @@ impl std::fmt::Debug for BridgeBrowseFilter {
             .field("column", &self.column)
             .field("operator", &self.operator)
             .field("value", &self.value.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
+}
+
+/// One operator-entered assignment for a reviewed row update.
+///
+/// `kind` is the Rust value family (`boolean`, `signed`, `unsigned`, `float`,
+/// `decimal`, `temporal`, `text`, `binary`, or `null`). Value bytes never
+/// appear in Debug output.
+#[derive(Clone, uniffi::Record)]
+pub struct BridgeMutationAssignment {
+    pub column: String,
+    pub kind: String,
+    pub value: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for BridgeMutationAssignment {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BridgeMutationAssignment")
+            .field("column", &self.column)
+            .field("kind", &self.kind)
+            .field("value", &self.value.as_ref().map(|value| value.len()))
+            .finish()
+    }
+}
+
+/// A selected resident row plus its requested assignments. Rust resolves the
+/// base relation and primary-key locator from the opaque result id.
+#[derive(Clone, uniffi::Record)]
+pub struct BridgeMutationReviewRequest {
+    pub session_id: Vec<u8>,
+    pub result_id: Vec<u8>,
+    pub revision: u64,
+    pub row: u64,
+    pub assignments: Vec<BridgeMutationAssignment>,
+    pub now_ms: u64,
+}
+
+impl std::fmt::Debug for BridgeMutationReviewRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BridgeMutationReviewRequest")
+            .field("session_id_bytes", &self.session_id.len())
+            .field("result_id_bytes", &self.result_id.len())
+            .field("revision", &self.revision)
+            .field("row", &self.row)
+            .field("assignments", &self.assignments.len())
+            .field("now_ms", &self.now_ms)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeMutationEditability {
+    pub editable: bool,
+    pub reason: Option<String>,
+    pub identity_columns: Vec<String>,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct BridgeMutationReviewLine {
+    pub kind: String,
+    pub preview: String,
+    pub parameters: Vec<String>,
+}
+
+impl std::fmt::Debug for BridgeMutationReviewLine {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BridgeMutationReviewLine")
+            .field("kind", &self.kind)
+            .field("preview", &self.preview)
+            .field("parameters", &self.parameters.len())
+            .finish()
+    }
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct BridgeMutationReview {
+    pub token_id: Vec<u8>,
+    pub target: String,
+    pub expires_at_ms: u64,
+    pub lines: Vec<BridgeMutationReviewLine>,
+}
+
+impl std::fmt::Debug for BridgeMutationReview {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BridgeMutationReview")
+            .field("token_id_bytes", &self.token_id.len())
+            .field("target", &self.target)
+            .field("expires_at_ms", &self.expires_at_ms)
+            .field("lines", &self.lines.len())
             .finish()
     }
 }
@@ -523,6 +619,41 @@ pub struct BridgeRelationshipSnapshot {
     pub truncated: bool,
 }
 
+/// Exact selected-cell payload for Rust-owned relation browsing. Cell bytes
+/// use the versioned page encoding and are never exposed through Debug.
+#[derive(Clone, uniffi::Record)]
+pub struct BridgeRelationBrowseRequest {
+    pub session_id: Vec<u8>,
+    pub catalog_node_id: Vec<u8>,
+    pub selected_column: String,
+    pub cell_kind: u8,
+    pub cell_bytes: Vec<u8>,
+    pub cell_truncation: u8,
+    pub row_count: u32,
+}
+
+impl std::fmt::Debug for BridgeRelationBrowseRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BridgeRelationBrowseRequest")
+            .field("session_id", &"<redacted>")
+            .field("catalog_node_id", &"<redacted>")
+            .field("selected_column", &self.selected_column)
+            .field("cell_kind", &self.cell_kind)
+            .field("cell_bytes", &"<redacted>")
+            .field("cell_truncation", &self.cell_truncation)
+            .field("row_count", &self.row_count)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BridgeRelationBrowseSubmission {
+    pub operation_id: Vec<u8>,
+    pub direction: String,
+    pub edge: BridgeRelationshipEdge,
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct BridgeRoleMembership {
     pub role: String,
@@ -665,6 +796,28 @@ struct PostgresToolConnection {
     password: Arc<Zeroizing<String>>,
 }
 
+struct DriverSessionRegistration {
+    engine: Engine,
+    profile_id: Option<ProfileId>,
+    safety: ProfileSafetyMode,
+    database: Option<BoundedText>,
+    postgres_tool_connection: Option<PostgresToolConnection>,
+    ssh_tunnel: Option<tablerock_engine::LocalForwardTunnel>,
+}
+
+impl DriverSessionRegistration {
+    fn new(engine: Engine, safety: ProfileSafetyMode) -> Self {
+        Self {
+            engine,
+            profile_id: None,
+            safety,
+            database: None,
+            postgres_tool_connection: None,
+            ssh_tunnel: None,
+        }
+    }
+}
+
 struct PostgresToolTask {
     session_id: SessionId,
     kind: String,
@@ -773,6 +926,7 @@ struct RegisteredSession {
     session_id: SessionId,
     context_id: tablerock_core::ContextId,
     engine: Engine,
+    safety: ProfileSafetyMode,
     database: BoundedText,
     postgres_tool_connection: Option<PostgresToolConnection>,
     /// Keeps a native-profile SSH forward alive for exactly this session.
@@ -822,6 +976,7 @@ impl Drop for BridgeInner {
 
 #[derive(Clone)]
 struct CopyIdentity {
+    session_id: SessionId,
     schema: String,
     table: String,
     identity_columns: Vec<String>,
@@ -1625,6 +1780,26 @@ impl TableRockBridge {
         })
     }
 
+    /// Resolves whether one opaque catalog result is editable. Rust owns the
+    /// base-relation, profile-safety, and stable-identity proof.
+    pub fn mutation_editability(
+        &self,
+        session_id: Vec<u8>,
+        result_id: Vec<u8>,
+    ) -> Result<BridgeMutationEditability, BridgeError> {
+        catch_entry(|| self.mutation_editability_inner(session_id, result_id))
+    }
+
+    /// Freezes one selected-row update behind a consume-once review token.
+    /// The locator is read from the resident typed result, never supplied by
+    /// presentation text.
+    pub fn stage_row_update(
+        &self,
+        request: BridgeMutationReviewRequest,
+    ) -> Result<BridgeMutationReview, BridgeError> {
+        catch_entry(|| self.stage_row_update_inner(request))
+    }
+
     /// Loads a bounded typed structure snapshot for one cached catalog object.
     pub fn relation_structure(
         &self,
@@ -1687,6 +1862,15 @@ impl TableRockBridge {
         catalog_node_id: Vec<u8>,
     ) -> Result<BridgeRelationshipSnapshot, BridgeError> {
         catch_entry(|| self.postgres_relationships_inner(session_id, catalog_node_id))
+    }
+
+    /// Starts a bounded related-row browse from one complete selected cell.
+    /// Rust resolves the FK edge, target type, quoted SQL, and bound value.
+    pub fn submit_postgres_relation_browse(
+        &self,
+        request: BridgeRelationBrowseRequest,
+    ) -> Result<BridgeRelationBrowseSubmission, BridgeError> {
+        catch_entry(|| self.submit_postgres_relation_browse_inner(request))
     }
 
     /// Loads a bounded PostgreSQL role snapshot, optionally scoped to one relation.
@@ -1939,27 +2123,6 @@ impl TableRockBridge {
         request: BridgeCsvImportRequest,
     ) -> Result<BridgeCsvImportReview, BridgeError> {
         catch_entry(|| self.stage_csv_import_inner(request))
-    }
-
-    /// Stage a probe mutation + register a single-use review token for the
-    /// native edit-safety demo. Returns the token id for `authorize_review_token`
-    /// / `apply_review_token`. Wraps the conformance staging seam with sensible
-    /// defaults (60 s expiry, `public.users`, locator 1).
-    pub fn stage_probe_review(
-        &self,
-        session_id: Vec<u8>,
-        now_ms: u64,
-    ) -> Result<Vec<u8>, BridgeError> {
-        catch_entry(|| {
-            self.insert_reviewed_probe_inner(
-                session_id,
-                now_ms,
-                now_ms + 60_000,
-                now_ms,
-                "users".into(),
-                1,
-            )
-        })
     }
 
     /// Submits a command and returns a 16-byte operation id.
@@ -2376,7 +2539,12 @@ impl TableRockBridge {
         engine: Engine,
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
-        catch_entry(|| self.open_driver_session_inner(engine, session, None, None, None, None))
+        catch_entry(|| {
+            self.open_driver_session_inner(
+                session,
+                DriverSessionRegistration::new(engine, ProfileSafetyMode::ConfirmWrites),
+            )
+        })
     }
 
     /// Registers a test driver under an existing saved-profile identity.
@@ -2388,7 +2556,13 @@ impl TableRockBridge {
         session: Box<dyn DriverSession>,
     ) -> Result<Vec<u8>, BridgeError> {
         catch_entry(|| {
-            self.open_driver_session_inner(engine, session, Some(profile_id), None, None, None)
+            self.open_driver_session_inner(
+                session,
+                DriverSessionRegistration {
+                    profile_id: Some(profile_id),
+                    ..DriverSessionRegistration::new(engine, ProfileSafetyMode::ConfirmWrites)
+                },
+            )
         })
     }
 
@@ -3249,7 +3423,7 @@ impl TableRockBridge {
                 |_| BridgeError::rejected("bad-profile-id", "profile id must be 16 bytes"),
             )?)
             .map_err(|error| BridgeError::rejected("bad-profile-id", error.to_string()))?;
-        let (mut params, ssh_config, startup_actions) = {
+        let (mut params, ssh_config, startup_actions, safety) = {
             let guard = self
                 .inner
                 .lock()
@@ -3443,6 +3617,7 @@ impl TableRockBridge {
                 },
                 ssh_config,
                 aggregate.startup_actions().clone(),
+                connection.safety_mode(),
             )
         };
         let tunnel = if let Some(config) = ssh_config {
@@ -3460,7 +3635,13 @@ impl TableRockBridge {
         } else {
             None
         };
-        self.open_inner_for_profile(params, Some(profile_id), tunnel, Some(startup_actions))
+        self.open_inner_for_profile(
+            params,
+            Some(profile_id),
+            tunnel,
+            Some(startup_actions),
+            safety,
+        )
     }
 
     fn get_profile_draft_inner(
@@ -4626,7 +4807,7 @@ impl TableRockBridge {
         let catalog_node_id = catalog_node_from_bytes(&catalog_node_id_bytes).map_err(|_| {
             BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
         })?;
-        let (rendered, export_replay, copy_identity, engine) = {
+        let (rendered, export_replay, mut copy_identity, engine, driver) = {
             let guard = self
                 .inner
                 .lock()
@@ -4813,14 +4994,28 @@ impl TableRockBridge {
                 rendered,
                 export_replay,
                 CopyIdentity {
+                    session_id,
                     schema,
                     table,
                     identity_columns: Vec::new(),
                     insertable,
                 },
                 registered.engine,
+                inner
+                    .service
+                    .session(session_id)
+                    .ok_or(BridgeError::UnknownSession)?,
             )
         };
+        if engine == Engine::PostgreSql && copy_identity.insertable {
+            copy_identity.identity_columns = self
+                .runtime
+                .block_on(
+                    driver
+                        .postgres_primary_key_columns(&copy_identity.schema, &copy_identity.table),
+                )?
+                .unwrap_or_default();
+        }
         let replay_statement = export_replay.sql;
         let replay_parameters = export_replay.parameters;
         let operation_bytes = self.submit_inner_with_parameters(
@@ -4856,6 +5051,222 @@ impl TableRockBridge {
             },
         );
         Ok(operation_bytes)
+    }
+
+    fn mutation_editability_inner(
+        &self,
+        session_id_bytes: Vec<u8>,
+        result_id_bytes: Vec<u8>,
+    ) -> Result<BridgeMutationEditability, BridgeError> {
+        self.ensure_runtime_inner()?;
+        let session_id = session_from_bytes(&session_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let result_id = result_from_bytes(&result_id_bytes)
+            .map_err(|_| BridgeError::rejected("bad-result-id", "result id must be 16 bytes"))?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+        let registered = inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        let Some(identity) = inner.copy_identities.get(&result_id) else {
+            return Ok(BridgeMutationEditability {
+                editable: false,
+                reason: Some("no base table".into()),
+                identity_columns: Vec::new(),
+            });
+        };
+        if identity.session_id != session_id {
+            return Err(BridgeError::rejected(
+                "mutation-result-scope",
+                "result belongs to another session",
+            ));
+        }
+        let facts = EditabilityFacts::classify(
+            registered.safety,
+            !identity.insertable,
+            Some(&identity.schema),
+            Some(&identity.table),
+            &identity.identity_columns,
+        );
+        Ok(BridgeMutationEditability {
+            editable: facts.is_editable(),
+            reason: facts.reason().map(|reason| reason.label().to_owned()),
+            identity_columns: facts.identity_columns().to_vec(),
+        })
+    }
+
+    fn stage_row_update_inner(
+        &self,
+        request: BridgeMutationReviewRequest,
+    ) -> Result<BridgeMutationReview, BridgeError> {
+        self.ensure_runtime_inner()?;
+        if request.assignments.is_empty() || request.assignments.len() > 60 {
+            return Err(BridgeError::rejected(
+                "mutation-assignments",
+                "row update requires 1 to 60 assignments",
+            ));
+        }
+        let session_id = session_from_bytes(&request.session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let result_id = result_from_bytes(&request.result_id)
+            .map_err(|_| BridgeError::rejected("bad-result-id", "result id must be 16 bytes"))?;
+        let revision = Revision::from_wire_u64(request.revision);
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        let registered = inner
+            .sessions
+            .get(&session_id)
+            .ok_or(BridgeError::UnknownSession)?;
+        let identity = inner
+            .copy_identities
+            .get(&result_id)
+            .ok_or_else(|| BridgeError::rejected("mutation-result", "result has no base table"))?;
+        if identity.session_id != session_id {
+            return Err(BridgeError::rejected(
+                "mutation-result-scope",
+                "result belongs to another session",
+            ));
+        }
+        let facts = EditabilityFacts::classify(
+            registered.safety,
+            !identity.insertable,
+            Some(&identity.schema),
+            Some(&identity.table),
+            &identity.identity_columns,
+        );
+        if !facts.is_editable() {
+            return Err(BridgeError::rejected(
+                "mutation-editability",
+                facts
+                    .reason()
+                    .map_or("result is read only", |reason| reason.label()),
+            ));
+        }
+        let pages = inner
+            .results
+            .resident_pages(result_id, revision)
+            .ok_or(BridgeError::UnknownPage)?;
+        let page = pages
+            .iter()
+            .find(|page| {
+                let envelope = page.envelope();
+                request.row >= envelope.start_row()
+                    && request.row
+                        < envelope
+                            .start_row()
+                            .saturating_add(u64::from(envelope.row_count()))
+            })
+            .ok_or_else(|| BridgeError::rejected("mutation-row", "row is not resident"))?;
+        let local_row = u32::try_from(request.row.saturating_sub(page.envelope().start_row()))
+            .map_err(|_| BridgeError::rejected("mutation-row", "row index is out of range"))?;
+        let column_names = page
+            .columns()
+            .iter()
+            .map(|column| column.name().to_owned())
+            .collect::<Vec<_>>();
+        let locator = identity
+            .identity_columns
+            .iter()
+            .map(|name| {
+                let column = column_names
+                    .iter()
+                    .position(|candidate| candidate == name)
+                    .ok_or_else(|| {
+                        BridgeError::rejected(
+                            "mutation-identity",
+                            "stable identity column is absent from the result",
+                        )
+                    })?;
+                let column = u32::try_from(column).map_err(|_| {
+                    BridgeError::rejected("mutation-identity", "column index is out of range")
+                })?;
+                let cell = page.cell(local_row, column).map_err(|error| {
+                    BridgeError::rejected("mutation-identity", error.to_string())
+                })?;
+                Ok(FieldValue::new(
+                    bounded_mutation_text(name, "mutation-identity")?,
+                    owned_mutation_value_from_cell(cell)?,
+                ))
+            })
+            .collect::<Result<Vec<_>, BridgeError>>()?;
+        let mut seen = BTreeSet::new();
+        let assignments = request
+            .assignments
+            .into_iter()
+            .map(|assignment| {
+                if !seen.insert(assignment.column.clone()) {
+                    return Err(BridgeError::rejected(
+                        "mutation-assignment",
+                        "assignment columns must be unique",
+                    ));
+                }
+                if !column_names.contains(&assignment.column) {
+                    return Err(BridgeError::rejected(
+                        "mutation-assignment",
+                        "assignment column is absent from the result",
+                    ));
+                }
+                if identity.identity_columns.contains(&assignment.column) {
+                    return Err(BridgeError::rejected(
+                        "mutation-assignment",
+                        "stable identity columns cannot be assigned",
+                    ));
+                }
+                Ok(FieldValue::new(
+                    bounded_mutation_text(&assignment.column, "mutation-assignment")?,
+                    owned_mutation_assignment(&assignment)?,
+                ))
+            })
+            .collect::<Result<Vec<_>, BridgeError>>()?;
+        let target = MutationTarget::PostgreSqlRelation {
+            database: registered.database.clone(),
+            schema: bounded_mutation_text(&identity.schema, "mutation-target")?,
+            relation: bounded_mutation_text(&identity.table, "mutation-target")?,
+        };
+        let change = MutationChange::UpdateRow {
+            locator,
+            assignments,
+        };
+        let preview = mutation_review_line(&target, &change)?;
+        let token_id = inner.ids.review_token();
+        let expires_at_ms = request
+            .now_ms
+            .checked_add(60_000)
+            .ok_or_else(|| BridgeError::rejected("mutation-review", "review expiry overflow"))?;
+        let plan = MutationPlan::new(
+            inner.ids.mutation(),
+            OperationScope::new(
+                registered.profile_id,
+                registered.session_id,
+                registered.context_id,
+            ),
+            registered.context_revision,
+            target,
+            vec![change],
+            MutationPlanLimits::new(256, 64, 256 * 1024, 1024 * 1024, 60_000)
+                .map_err(|error| BridgeError::rejected("mutation-limits", error.to_string()))?,
+        )
+        .map_err(|error| BridgeError::rejected("mutation-plan", error.to_string()))?;
+        let reviewed = plan
+            .review(token_id, request.now_ms, expires_at_ms)
+            .map_err(|error| BridgeError::rejected("mutation-review", error.to_string()))?;
+        inner
+            .reviews
+            .insert(reviewed, request.now_ms)
+            .map_err(|error| BridgeError::rejected("mutation-review", error.to_string()))?;
+        Ok(BridgeMutationReview {
+            token_id: review_token_bytes(token_id),
+            target: format!("{}.{}", identity.schema, identity.table),
+            expires_at_ms,
+            lines: vec![preview],
+        })
     }
 
     fn relation_structure_inner(
@@ -5472,6 +5883,211 @@ impl TableRockBridge {
                 })
                 .collect(),
             truncated,
+        })
+    }
+
+    fn submit_postgres_relation_browse_inner(
+        &self,
+        request: BridgeRelationBrowseRequest,
+    ) -> Result<BridgeRelationBrowseSubmission, BridgeError> {
+        self.ensure_runtime_inner()?;
+        if !(1..=1_000).contains(&request.row_count) {
+            return Err(BridgeError::rejected(
+                "relation-browse-bounds",
+                "relation browse row count must be 1 to 1000",
+            ));
+        }
+        if request.selected_column.len() > MAX_BROWSE_IDENTIFIER_BYTES {
+            return Err(BridgeError::rejected(
+                "relation-browse-column",
+                "selected column must be at most 1024 bytes",
+            ));
+        }
+        let value = relation_cell_text(
+            request.cell_kind,
+            &request.cell_bytes,
+            request.cell_truncation,
+        )?;
+        let session_id = session_from_bytes(&request.session_id)
+            .map_err(|_| BridgeError::rejected("bad-session-id", "session id must be 16 bytes"))?;
+        let catalog_node_id = catalog_node_from_bytes(&request.catalog_node_id).map_err(|_| {
+            BridgeError::rejected("bad-catalog-node-id", "catalog node id must be 16 bytes")
+        })?;
+        let (driver, namespace, relation) = {
+            let guard = self
+                .inner
+                .lock()
+                .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+            let inner = guard.as_ref().ok_or(BridgeError::RuntimeUnavailable)?;
+            let registered = inner
+                .sessions
+                .get(&session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            if registered.engine != Engine::PostgreSql {
+                return Err(BridgeError::rejected(
+                    "relation-browse-engine",
+                    "relation browse requires a PostgreSQL session",
+                ));
+            }
+            let node = inner
+                .catalog_nodes
+                .get(&(session_id, catalog_node_id))
+                .ok_or_else(|| {
+                    BridgeError::rejected(
+                        "unknown-catalog-node",
+                        "catalog node is stale or unknown",
+                    )
+                })?;
+            if !matches!(node.kind(), CatalogNodeKind::PostgreSqlObject(_)) {
+                return Err(BridgeError::rejected(
+                    "relation-browse-kind",
+                    "relation browse requires a PostgreSQL relation",
+                ));
+            }
+            let parent = node
+                .parent_id()
+                .and_then(|id| inner.catalog_nodes.get(&(session_id, id)))
+                .ok_or_else(|| BridgeError::rejected("catalog-parent", "object parent is stale"))?;
+            let driver = inner
+                .service
+                .session(session_id)
+                .ok_or(BridgeError::UnknownSession)?;
+            (driver, parent.name().to_owned(), node.name().to_owned())
+        };
+        let (graph, truncated) = self
+            .runtime
+            .block_on(driver.postgres_relationships(&namespace, &relation))?
+            .map_err(|error| BridgeError::rejected("relation-browse-graph", error.to_string()))?;
+        if truncated {
+            return Err(BridgeError::rejected(
+                "relation-browse-graph",
+                "relationship graph is incomplete",
+            ));
+        }
+        let mut candidates = graph.edges.iter().filter_map(|edge| {
+            if edge.from_schema == namespace
+                && edge.from_table == relation
+                && edge.from_column == request.selected_column
+            {
+                Some((
+                    edge.clone(),
+                    "outbound",
+                    edge.to_schema.clone(),
+                    edge.to_table.clone(),
+                    edge.to_column.clone(),
+                ))
+            } else if edge.to_schema == namespace
+                && edge.to_table == relation
+                && edge.to_column == request.selected_column
+            {
+                Some((
+                    edge.clone(),
+                    "inbound",
+                    edge.from_schema.clone(),
+                    edge.from_table.clone(),
+                    edge.from_column.clone(),
+                ))
+            } else {
+                None
+            }
+        });
+        let candidate = candidates.next().ok_or_else(|| {
+            BridgeError::rejected(
+                "relation-browse-edge",
+                "selected column has no foreign-key relation",
+            )
+        })?;
+        if candidates.next().is_some() {
+            return Err(BridgeError::rejected(
+                "relation-browse-ambiguous",
+                "selected column participates in multiple foreign-key relations",
+            ));
+        }
+        let (edge, direction, target_schema, target_table, target_column) = candidate;
+        let browse_side = if direction == "inbound" {
+            tablerock_engine::PostgresRelationBrowseSide::Source
+        } else {
+            tablerock_engine::PostgresRelationBrowseSide::Target
+        };
+        let target = self
+            .runtime
+            .block_on(driver.postgres_relation_browse_target(
+                tablerock_engine::PostgresRelationBrowseRequest::new(&edge, browse_side),
+            ))?
+            .map_err(|error| BridgeError::rejected("relation-browse-type", error.to_string()))?
+            .ok_or_else(|| {
+                BridgeError::rejected("relation-browse-type", "related column type is unavailable")
+            })?;
+        if target.key_column_count() != 1 {
+            return Err(BridgeError::rejected(
+                "relation-browse-composite",
+                "composite foreign keys require a complete row identity",
+            ));
+        }
+        let plan = PostgreSqlRelationBrowsePlan {
+            schema: target_schema.clone(),
+            table: target_table.clone(),
+            column: target_column,
+            type_schema: target.type_schema().to_owned(),
+            type_name: target.type_name().to_owned(),
+            limit: request.row_count,
+        };
+        let rendered = plan
+            .render_sql(value.clone())
+            .map_err(|error| BridgeError::rejected("relation-browse-plan", error.to_string()))?;
+        let export_replay = plan
+            .render_sql_unbounded(value)
+            .map_err(|error| BridgeError::rejected("relation-export-plan", error.to_string()))?;
+        let operation_bytes = self.submit_inner_with_parameters(
+            SubmitSpec {
+                intent: "browse_object".into(),
+                session_id: request.session_id,
+                statement: Some(rendered.sql),
+                result_id: None,
+                start_row: None,
+                row_count: Some(request.row_count),
+                expected_revision: 0,
+            },
+            rendered.parameters,
+        )?;
+        let operation_id = operation_from_bytes(&operation_bytes).map_err(|_| {
+            BridgeError::rejected("operation-id", "bridge generated invalid operation id")
+        })?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| BridgeError::rejected("inner-lock", "bridge mutex poisoned"))?;
+        let inner = guard.as_mut().ok_or(BridgeError::RuntimeUnavailable)?;
+        inner.operation_copy_identity.insert(
+            operation_id,
+            CopyIdentity {
+                session_id,
+                schema: target_schema,
+                table: target_table,
+                identity_columns: Vec::new(),
+                insertable: false,
+            },
+        );
+        inner.operation_catalog_export_replay.insert(
+            operation_id,
+            CatalogExportReplay {
+                session_id,
+                engine: Engine::PostgreSql,
+                statement: export_replay.sql,
+                parameters: export_replay.parameters,
+            },
+        );
+        Ok(BridgeRelationBrowseSubmission {
+            operation_id: operation_bytes,
+            direction: direction.into(),
+            edge: BridgeRelationshipEdge {
+                from_schema: edge.from_schema,
+                from_table: edge.from_table,
+                from_column: edge.from_column,
+                to_schema: edge.to_schema,
+                to_table: edge.to_table,
+                to_column: edge.to_column,
+            },
         })
     }
 
@@ -6768,7 +7384,7 @@ impl TableRockBridge {
     }
 
     fn open_inner(&self, params: OpenParams) -> Result<Vec<u8>, BridgeError> {
-        self.open_inner_for_profile(params, None, None, None)
+        self.open_inner_for_profile(params, None, None, None, ProfileSafetyMode::ConfirmWrites)
     }
 
     fn open_inner_for_profile(
@@ -6777,6 +7393,7 @@ impl TableRockBridge {
         saved_profile_id: Option<ProfileId>,
         ssh_tunnel: Option<tablerock_engine::LocalForwardTunnel>,
         startup_actions: Option<StartupActionSet>,
+        safety: ProfileSafetyMode,
     ) -> Result<Vec<u8>, BridgeError> {
         self.ensure_runtime_inner()?;
         let engine = parse_engine(&params.engine)?;
@@ -6942,24 +7559,31 @@ impl TableRockBridge {
         })??;
 
         self.open_driver_session_inner(
-            engine,
             session,
-            saved_profile_id,
-            Some(database),
-            postgres_tool_connection,
-            ssh_tunnel,
+            DriverSessionRegistration {
+                engine,
+                profile_id: saved_profile_id,
+                safety,
+                database: Some(database),
+                postgres_tool_connection,
+                ssh_tunnel,
+            },
         )
     }
 
     fn open_driver_session_inner(
         &self,
-        engine: Engine,
         session: Box<dyn DriverSession>,
-        saved_profile_id: Option<ProfileId>,
-        database: Option<BoundedText>,
-        postgres_tool_connection: Option<PostgresToolConnection>,
-        ssh_tunnel: Option<tablerock_engine::LocalForwardTunnel>,
+        registration: DriverSessionRegistration,
     ) -> Result<Vec<u8>, BridgeError> {
+        let DriverSessionRegistration {
+            engine,
+            profile_id: saved_profile_id,
+            safety,
+            database,
+            postgres_tool_connection,
+            ssh_tunnel,
+        } = registration;
         self.ensure_runtime_inner()?;
         let mut guard = self
             .inner
@@ -7016,6 +7640,7 @@ impl TableRockBridge {
                 session_id,
                 context_id,
                 engine,
+                safety,
                 database: database.unwrap_or_else(|| {
                     BoundedText::copy_from_str(
                         match engine {
@@ -9982,6 +10607,217 @@ const fn engine_label(engine: Engine) -> &'static str {
     }
 }
 
+fn bounded_mutation_text(value: &str, code: &'static str) -> Result<BoundedText, BridgeError> {
+    BoundedText::copy_from_str(value, ByteLimit::new(64 * 1024))
+        .map_err(|error| BridgeError::rejected(code, error.to_string()))
+}
+
+fn owned_mutation_assignment(
+    assignment: &BridgeMutationAssignment,
+) -> Result<OwnedValue, BridgeError> {
+    let bytes = assignment.value.as_deref().unwrap_or_default();
+    let text = || {
+        std::str::from_utf8(bytes)
+            .map_err(|_| BridgeError::rejected("mutation-value", "value must be valid UTF-8"))
+    };
+    match assignment.kind.as_str() {
+        "null" if assignment.value.is_none() || bytes.is_empty() => Ok(OwnedValue::null()),
+        "boolean" => match text()?.to_ascii_lowercase().as_str() {
+            "true" => Ok(OwnedValue::boolean(true)),
+            "false" => Ok(OwnedValue::boolean(false)),
+            _ => Err(BridgeError::rejected(
+                "mutation-value",
+                "boolean value must be true or false",
+            )),
+        },
+        "signed" => text()?
+            .parse::<i64>()
+            .map(OwnedValue::signed)
+            .map_err(|_| BridgeError::rejected("mutation-value", "invalid signed integer")),
+        "unsigned" => text()?
+            .parse::<u64>()
+            .map(OwnedValue::unsigned)
+            .map_err(|_| BridgeError::rejected("mutation-value", "invalid unsigned integer")),
+        "float" => text()?
+            .parse::<f64>()
+            .map(|value| OwnedValue::float64_bits(value.to_bits()))
+            .map_err(|_| BridgeError::rejected("mutation-value", "invalid floating-point value")),
+        "decimal" => Ok(OwnedValue::decimal(bounded_mutation_text(
+            text()?,
+            "mutation-value",
+        )?)),
+        "temporal" => OwnedValue::temporal(
+            bounded_mutation_text(text()?, "mutation-value")?,
+            Truncation::Complete,
+        )
+        .map_err(|error| BridgeError::rejected("mutation-value", error.to_string())),
+        "text" => OwnedValue::text(
+            bounded_mutation_text(text()?, "mutation-value")?,
+            Truncation::Complete,
+        )
+        .map_err(|error| BridgeError::rejected("mutation-value", error.to_string())),
+        "binary" => OwnedValue::binary(
+            BoundedBytes::copy_from_slice(bytes, ByteLimit::new(64 * 1024))
+                .map_err(|error| BridgeError::rejected("mutation-value", error.to_string()))?,
+            Truncation::Complete,
+        )
+        .map_err(|error| BridgeError::rejected("mutation-value", error.to_string())),
+        _ => Err(BridgeError::rejected(
+            "mutation-value-kind",
+            "unsupported or incomplete mutation value kind",
+        )),
+    }
+}
+
+fn owned_mutation_value_from_cell(cell: CellRef<'_>) -> Result<OwnedValue, BridgeError> {
+    if !matches!(cell.truncation(), Truncation::Complete) {
+        return Err(BridgeError::rejected(
+            "mutation-identity",
+            "truncated values cannot locate a row",
+        ));
+    }
+    let bytes = cell.bytes();
+    let text = || {
+        std::str::from_utf8(bytes).map_err(|_| {
+            BridgeError::rejected("mutation-identity", "identity value must be valid UTF-8")
+        })
+    };
+    let exact_u64 = || {
+        <[u8; 8]>::try_from(bytes)
+            .map(u64::from_be_bytes)
+            .map_err(|_| BridgeError::rejected("mutation-identity", "invalid numeric identity"))
+    };
+    match cell.kind() {
+        ValueKind::Null => Err(BridgeError::rejected(
+            "mutation-identity",
+            "null values cannot locate a row",
+        )),
+        ValueKind::Boolean if bytes == [0] => Ok(OwnedValue::boolean(false)),
+        ValueKind::Boolean if bytes == [1] => Ok(OwnedValue::boolean(true)),
+        ValueKind::Boolean => Err(BridgeError::rejected(
+            "mutation-identity",
+            "invalid boolean identity",
+        )),
+        ValueKind::Signed => Ok(OwnedValue::signed(i64::from_be_bytes(
+            <[u8; 8]>::try_from(bytes).map_err(|_| {
+                BridgeError::rejected("mutation-identity", "invalid signed identity")
+            })?,
+        ))),
+        ValueKind::Unsigned => Ok(OwnedValue::unsigned(exact_u64()?)),
+        ValueKind::Float64 => Ok(OwnedValue::float64_bits(exact_u64()?)),
+        ValueKind::Decimal => Ok(OwnedValue::decimal(bounded_mutation_text(
+            text()?,
+            "mutation-identity",
+        )?)),
+        ValueKind::Temporal => OwnedValue::temporal(
+            bounded_mutation_text(text()?, "mutation-identity")?,
+            Truncation::Complete,
+        )
+        .map_err(|error| BridgeError::rejected("mutation-identity", error.to_string())),
+        ValueKind::Text => OwnedValue::text(
+            bounded_mutation_text(text()?, "mutation-identity")?,
+            Truncation::Complete,
+        )
+        .map_err(|error| BridgeError::rejected("mutation-identity", error.to_string())),
+        ValueKind::Binary => OwnedValue::binary(
+            BoundedBytes::copy_from_slice(bytes, ByteLimit::new(64 * 1024))
+                .map_err(|error| BridgeError::rejected("mutation-identity", error.to_string()))?,
+            Truncation::Complete,
+        )
+        .map_err(|error| BridgeError::rejected("mutation-identity", error.to_string())),
+        ValueKind::Structured | ValueKind::Invalid | ValueKind::Unknown => Err(
+            BridgeError::rejected("mutation-identity", "identity value is not executable"),
+        ),
+    }
+}
+
+fn display_mutation_value(value: &OwnedValue) -> String {
+    match value.as_ref() {
+        ValueRef::Null => "NULL".into(),
+        ValueRef::Boolean(value) => value.to_string(),
+        ValueRef::Signed(value) => value.to_string(),
+        ValueRef::Unsigned(value) => value.to_string(),
+        ValueRef::Float64Bits(bits) => f64::from_bits(bits).to_string(),
+        ValueRef::Decimal(value)
+        | ValueRef::Temporal { value, .. }
+        | ValueRef::Text { value, .. }
+        | ValueRef::Structured { value, .. } => value.to_owned(),
+        ValueRef::Binary { value, .. } => format!("<{} bytes>", value.len()),
+        ValueRef::Invalid { payload, .. } | ValueRef::Unknown { payload, .. } => {
+            format!("<{} unavailable bytes>", payload.len())
+        }
+    }
+}
+
+fn mutation_review_line(
+    target: &MutationTarget,
+    change: &MutationChange,
+) -> Result<BridgeMutationReviewLine, BridgeError> {
+    let MutationTarget::PostgreSqlRelation {
+        schema, relation, ..
+    } = target
+    else {
+        return Err(BridgeError::rejected(
+            "mutation-preview",
+            "native row update preview requires PostgreSQL",
+        ));
+    };
+    let MutationChange::UpdateRow {
+        locator,
+        assignments,
+    } = change
+    else {
+        return Err(BridgeError::rejected(
+            "mutation-preview",
+            "native row update preview requires an update",
+        ));
+    };
+    let qualified = format!(
+        "{}.{}",
+        tablerock_engine::quote_ident(schema.as_str())
+            .map_err(|error| BridgeError::rejected("mutation-preview", error.to_string()))?,
+        tablerock_engine::quote_ident(relation.as_str())
+            .map_err(|error| BridgeError::rejected("mutation-preview", error.to_string()))?,
+    );
+    let set_parts = assignments
+        .iter()
+        .enumerate()
+        .map(|(index, field)| {
+            tablerock_engine::quote_ident(field.field())
+                .map(|column| format!("{column} = ${}", index + 1))
+                .map_err(|error| BridgeError::rejected("mutation-preview", error.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let where_start = assignments.len() + 1;
+    let where_parts = locator
+        .iter()
+        .enumerate()
+        .map(|(index, field)| {
+            tablerock_engine::quote_ident(field.field())
+                .map(|column| format!("{column} = ${}", where_start + index))
+                .map_err(|error| BridgeError::rejected("mutation-preview", error.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut parameters = assignments
+        .iter()
+        .map(|field| display_mutation_value(field.value()))
+        .collect::<Vec<_>>();
+    parameters.extend(
+        locator
+            .iter()
+            .map(|field| display_mutation_value(field.value())),
+    );
+    Ok(BridgeMutationReviewLine {
+        kind: "update".into(),
+        preview: format!(
+            "UPDATE {qualified} SET {} WHERE {}",
+            set_parts.join(", "),
+            where_parts.join(" AND ")
+        ),
+        parameters,
+    })
+}
+
 fn parse_engine(name: &str) -> Result<Engine, BridgeError> {
     match name.to_ascii_lowercase().as_str() {
         "postgresql" | "postgres" | "pg" => Ok(Engine::PostgreSql),
@@ -10004,6 +10840,76 @@ fn starts_with_explain_keyword(statement: &str) -> bool {
             .chars()
             .next()
             .is_none_or(|next| next.is_ascii_whitespace() || next == '(')
+}
+
+fn relation_cell_text(kind: u8, bytes: &[u8], truncation: u8) -> Result<String, BridgeError> {
+    if truncation != 0 {
+        return Err(BridgeError::rejected(
+            "relation-browse-cell",
+            "relation browse requires a complete cell value",
+        ));
+    }
+    if bytes.len() > MAX_BROWSE_VALUE_BYTES {
+        return Err(BridgeError::rejected(
+            "relation-browse-cell",
+            "relation browse cell must be at most 65536 bytes",
+        ));
+    }
+    let malformed =
+        || BridgeError::rejected("relation-browse-cell", "selected cell encoding is invalid");
+    match kind {
+        0 => Err(BridgeError::rejected(
+            "relation-browse-null",
+            "NULL does not reference a related row",
+        )),
+        1 if bytes == [0] => Ok("false".into()),
+        1 if bytes == [1] => Ok("true".into()),
+        1 => Err(malformed()),
+        2 if bytes.len() == 8 => {
+            Ok(i64::from_be_bytes(bytes.try_into().map_err(|_| malformed())?).to_string())
+        }
+        2 => Err(malformed()),
+        3 if bytes.len() == 8 => {
+            Ok(u64::from_be_bytes(bytes.try_into().map_err(|_| malformed())?).to_string())
+        }
+        3 => Err(malformed()),
+        4 if bytes.len() == 8 => {
+            let value = f64::from_bits(u64::from_be_bytes(
+                bytes.try_into().map_err(|_| malformed())?,
+            ));
+            Ok(if value.is_nan() {
+                "NaN".into()
+            } else if value == f64::INFINITY {
+                "Infinity".into()
+            } else if value == f64::NEG_INFINITY {
+                "-Infinity".into()
+            } else {
+                value.to_string()
+            })
+        }
+        4 => Err(malformed()),
+        5..=7 => std::str::from_utf8(bytes)
+            .map(str::to_owned)
+            .map_err(|_| malformed()),
+        9 => {
+            const HEX: &[u8; 16] = b"0123456789abcdef";
+            let mut encoded = String::with_capacity(bytes.len().saturating_mul(2) + 2);
+            encoded.push_str("\\x");
+            for byte in bytes {
+                encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+                encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+            Ok(encoded)
+        }
+        8 | 10 | 11 => Err(BridgeError::rejected(
+            "relation-browse-cell",
+            "structured, invalid, or unknown cells cannot drive relation browse",
+        )),
+        _ => Err(BridgeError::rejected(
+            "relation-browse-cell",
+            "selected cell kind is unsupported",
+        )),
+    }
 }
 
 fn parse_bridge_query_parameter(
@@ -10065,5 +10971,78 @@ fn parse_bridge_query_parameter(
             "named-parameter-kind",
             "parameter kind must be text, integer, float, boolean, or null",
         )),
+    }
+}
+
+#[cfg(test)]
+mod relation_browse_tests {
+    use super::*;
+
+    #[test]
+    fn relation_cell_conversion_preserves_exact_text_and_binary() {
+        assert_eq!(relation_cell_text(7, b" 0042 ", 0).unwrap(), " 0042 ");
+        assert_eq!(
+            relation_cell_text(9, &[0x00, 0xaf, 0xff], 0).unwrap(),
+            "\\x00afff"
+        );
+    }
+
+    #[test]
+    fn relation_cell_conversion_decodes_typed_page_scalars() {
+        assert_eq!(relation_cell_text(1, &[1], 0).unwrap(), "true");
+        assert_eq!(
+            relation_cell_text(2, &(-42_i64).to_be_bytes(), 0).unwrap(),
+            "-42"
+        );
+        assert_eq!(
+            relation_cell_text(3, &u64::MAX.to_be_bytes(), 0).unwrap(),
+            u64::MAX.to_string()
+        );
+        assert_eq!(
+            relation_cell_text(4, &f64::INFINITY.to_bits().to_be_bytes(), 0).unwrap(),
+            "Infinity"
+        );
+    }
+
+    #[test]
+    fn relation_cell_conversion_rejects_null_truncation_and_unknown() {
+        assert!(relation_cell_text(0, &[], 0).is_err());
+        assert!(relation_cell_text(7, b"partial", 1).is_err());
+        assert!(relation_cell_text(8, b"{\"projected\":true}", 0).is_err());
+        assert!(relation_cell_text(11, b"opaque", 0).is_err());
+    }
+}
+
+#[cfg(test)]
+mod mutation_bridge_tests {
+    use super::*;
+
+    #[test]
+    fn mutation_assignments_parse_typed_values_and_redact_debug() {
+        let signed = BridgeMutationAssignment {
+            column: "seats".into(),
+            kind: "signed".into(),
+            value: Some(b"-42".to_vec()),
+        };
+        assert!(matches!(
+            owned_mutation_assignment(&signed).unwrap().as_ref(),
+            ValueRef::Signed(-42)
+        ));
+
+        let secret = BridgeMutationAssignment {
+            column: "plan".into(),
+            kind: "text".into(),
+            value: Some(b"secret-value".to_vec()),
+        };
+        let debug = format!("{secret:?}");
+        assert!(debug.contains("Some(12)"));
+        assert!(!debug.contains("secret-value"));
+
+        let invalid_null = BridgeMutationAssignment {
+            column: "plan".into(),
+            kind: "null".into(),
+            value: Some(b"not-null".to_vec()),
+        };
+        assert!(owned_mutation_assignment(&invalid_null).is_err());
     }
 }

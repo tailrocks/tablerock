@@ -31,39 +31,68 @@ fi
 echo "==> Building Rust facade (release)"
 cargo build -p tablerock-ffi --release
 
-echo "==> Building UniFFI bridge module (direct swiftc, no SwiftPM)"
+echo "==> Building feature module (direct swiftc, no SwiftPM)"
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
 ( cd "$NATIVE" \
-  && swiftc -emit-module -module-name TableRockBridge \
-       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
-       -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
-       -emit-module-path "$BUILD/TableRockBridge.swiftmodule" \
-       Sources/TableRockBridge/tablerock_ffi.swift Sources/TableRockBridge/PageV1.swift \
-  && swiftc -c -module-name TableRockBridge \
-       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
-       -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
-       Sources/TableRockBridge/tablerock_ffi.swift Sources/TableRockBridge/PageV1.swift \
-  && mv tablerock_ffi.o PageV1.o "$BUILD/" )
-
-echo "==> Building SwiftUI app (direct swiftc)"
-( cd "$NATIVE" \
   && swiftc -emit-module -module-name TableRockFeature \
        -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -D TABLEROCK_DEVELOPMENT_SUPPORT \
        -target "$TARGET_arm64" \
        -emit-module-path "$BUILD/TableRockFeature.swiftmodule" \
        Sources/TableRockFeature/*.swift \
   && swiftc -parse-as-library -c -module-name TableRockFeature \
        -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -D TABLEROCK_DEVELOPMENT_SUPPORT \
        -target "$TARGET_arm64" Sources/TableRockFeature/*.swift \
-  && mv AppConfiguration.o AppDependencies.o ExternalConnectionRoute.o \
-       StructuredValueTree.o WorkbenchTypes.o "$BUILD/" \
-  && swiftc -parse-as-library \
+  && mv AppConfiguration.o AppConfigurationDevelopmentSupport.o \
+       AppDependencies.o ExternalConnectionRoute.o \
+       StructuredValueTree.o WorkbenchTypes.o "$BUILD/" )
+
+echo "==> Building UniFFI bridge module (direct swiftc, no SwiftPM)"
+( cd "$NATIVE" \
+  && swiftc -emit-module -module-name TableRockBridge \
        -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
        -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
-       Sources/TableRockApp/*.swift \
+       -emit-module-path "$BUILD/TableRockBridge.swiftmodule" \
+       Sources/TableRockBridge/*.swift \
+  && swiftc -parse-as-library -c -module-name TableRockBridge \
+       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
+       Sources/TableRockBridge/*.swift \
+  && mv LiveWorkbenchBackend.o PageV1.o WorkbenchBridgeConversions.o \
+       tablerock_ffi.o "$BUILD/" )
+
+echo "==> Building presentation module (direct swiftc, no SwiftPM)"
+( cd "$NATIVE" \
+  && swiftc -emit-module -module-name TableRockPresentation \
+       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -D TABLEROCK_DEVELOPMENT_SUPPORT \
+       -I "$BUILD" -target "$TARGET_arm64" \
+       -emit-module-path "$BUILD/TableRockPresentation.swiftmodule" \
+       Sources/TableRockPresentation/*.swift \
+       Sources/TableRockPresentation/DevelopmentSupport/*.swift \
+  && swiftc -parse-as-library -whole-module-optimization -c \
+       -module-name TableRockPresentation \
+       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -D TABLEROCK_DEVELOPMENT_SUPPORT \
+       -I "$BUILD" -target "$TARGET_arm64" \
+       Sources/TableRockPresentation/*.swift \
+       Sources/TableRockPresentation/DevelopmentSupport/*.swift \
+       -o "$BUILD/TableRockPresentation.o" )
+
+echo "==> Building SwiftUI app (direct swiftc)"
+( cd "$NATIVE" \
+  && swiftc -parse-as-library \
+       -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+       -D TABLEROCK_DEVELOPMENT_SUPPORT \
+       -I "$BUILD" -I Generated -Xcc -I -Xcc Generated -target "$TARGET_arm64" \
+       Sources/TableRockApp/*.swift Sources/TableRockApp/DevelopmentSupport/*.swift \
+       "$BUILD/TableRockPresentation.o" \
        "$BUILD/tablerock_ffi.o" "$BUILD/PageV1.o" \
+       "$BUILD/LiveWorkbenchBackend.o" "$BUILD/WorkbenchBridgeConversions.o" \
        "$BUILD/AppConfiguration.o" "$BUILD/AppDependencies.o" \
+       "$BUILD/AppConfigurationDevelopmentSupport.o" \
        "$BUILD/ExternalConnectionRoute.o" \
        "$BUILD/StructuredValueTree.o" "$BUILD/WorkbenchTypes.o" \
        -L "$REPO_ROOT/target/release" -ltablerock_ffi \

@@ -7,8 +7,8 @@ use tokio::sync::RwLock;
 
 use crate::{
     AdapterError, AdapterFailureClass, CatalogRequest, CatalogSubtree, DriverFuture,
-    DriverPageRequest, DriverPageStream, DriverSession, LocalForwardTunnel, ServerDescribe,
-    SessionHealth,
+    DriverPageRequest, DriverPageStream, DriverSession, LocalForwardTunnel,
+    PostgresRelationBrowseRequest, PostgresRelationBrowseTarget, ServerDescribe, SessionHealth,
 };
 
 /// Upper bound for concurrent registered sessions (ServiceLimits scale).
@@ -247,6 +247,25 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn postgres_primary_key_columns<'a>(
+        &'a self,
+        schema: &'a str,
+        relation: &'a str,
+    ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => {
+                    session.postgres_primary_key_columns(schema, relation).await
+                }
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn postgres_relationships<'a>(
         &'a self,
         schema: &'a str,
@@ -257,6 +276,24 @@ impl DriverSession for SessionSlot {
             match &*guard {
                 SessionState::Open(session) => {
                     session.postgres_relationships(schema, relation).await
+                }
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
+    fn postgres_relation_browse_target<'a>(
+        &'a self,
+        request: PostgresRelationBrowseRequest<'a>,
+    ) -> DriverFuture<'a, Result<Option<PostgresRelationBrowseTarget>, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => {
+                    session.postgres_relation_browse_target(request).await
                 }
                 SessionState::Closed => Err(AdapterError::new(
                     self.engine,

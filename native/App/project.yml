@@ -34,8 +34,29 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+        Test Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
     sources:
       - path: ../Sources/TableRockFeature
+
+  TableRockPresentation:
+    type: framework.static
+    platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+        Test Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+    sources:
+      - path: ../Sources/TableRockPresentation
+    dependencies:
+      - target: TableRockFeature
 
   TableRockBridge:
     type: framework.static
@@ -46,6 +67,7 @@ targets:
     sources:
       - path: ../Sources/TableRockBridge
     dependencies:
+      - target: TableRockFeature
       - framework: ../../target/xcframework/tablerock_ffiFFI.xcframework
         embed: false
 
@@ -56,6 +78,7 @@ targets:
       - path: ../Sources/TableRockApp
     dependencies:
       - target: TableRockFeature
+      - target: TableRockPresentation
       - target: TableRockBridge
       - framework: ../../target/xcframework/tablerock_ffiFFI.xcframework
         embed: false
@@ -83,6 +106,12 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.tablerock.TableRock
         PRODUCT_NAME: TableRock
         ENABLE_HARDENED_RUNTIME: YES
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+        Test Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+          ENABLE_HARDENED_RUNTIME: NO
 
   TableRockFeatureTests:
     type: bundle.unit-test
@@ -90,9 +119,31 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+        Test Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
     sources:
       - path: ../Tests/TableRockFeatureTests
     dependencies:
+      - target: TableRockFeature
+
+  TableRockPresentationTests:
+    type: bundle.unit-test
+    platform: macOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+        Test Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+    sources:
+      - path: ../Tests/TableRockPresentationTests
+    dependencies:
+      - target: TableRockPresentation
       - target: TableRockFeature
 
   TableRockBridgeTests:
@@ -133,6 +184,7 @@ targets:
       - path: ../Tests/TableRockAppTests
     dependencies:
       - target: TableRock
+      - target: TableRockPresentation
 
 schemes:
   TableRock:
@@ -140,6 +192,7 @@ schemes:
       targets:
         TableRock: all
         TableRockFeatureTests: [test]
+        TableRockPresentationTests: [test]
         TableRockBridgeTests: [test]
         TableRockAppTests: [test]
         TableRockAppUITests: [test]

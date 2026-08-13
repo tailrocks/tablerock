@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 ADAPTER="$REPO_ROOT/crates/tablerock-engine/src/adapter.rs"
 APP="$REPO_ROOT/native/dist/TableRock.app"
 EXECUTABLE="$APP/Contents/MacOS/TableRock"
@@ -20,10 +21,10 @@ trap cleanup EXIT
 
 for pattern in \
   'TABLEROCK_FIXTURE_REDIS_OVERVIEW' \
-  'private struct RedisOverviewSheet' \
+  'struct RedisOverviewSheet: View' \
   'REDIS_OVERVIEW_PROOF_PASSED'
 do
-  rg -Fq "$pattern" "$SOURCE" || { echo "error: missing native Redis overview: $pattern" >&2; exit 1; }
+  native_source_has_fixed "$pattern" || { echo "error: missing native Redis overview: $pattern" >&2; exit 1; }
 done
 for pattern in \
   'redis_info_lines' \
@@ -34,7 +35,7 @@ do
 done
 
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-docker run -d --name "$CONTAINER" -p 6380:6379 redis:8.0 >/dev/null
+docker run -d --name "$CONTAINER" -p 6380:6379 redis:8.8.0 >/dev/null
 for i in $(seq 1 30); do
   docker exec "$CONTAINER" redis-cli PING 2>/dev/null | rg -q '^PONG$' && break
   sleep 1

@@ -187,6 +187,14 @@ Requirements:
 - the TableRock versioned columnar byte-arena encoding is the sole native page
   format; Arrow is not part of this architecture.
 
+Catalog browse results may additionally carry a Rust-private base-relation and
+stable-identity association. Native presentation receives only an editability
+fact and identity-column names for affordance suppression. When staging a row
+update, Rust verifies session/result/revision scope, locates the absolute row in
+resident typed pages, derives the locator values itself, and creates the
+reviewed mutation plan. Row position or visible text is never accepted as row
+identity.
+
 ## Cancellation and ambiguous outcomes
 
 Cancellation is a state machine, not a dropped task:

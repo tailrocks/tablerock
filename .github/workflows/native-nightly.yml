@@ -87,6 +87,9 @@ jobs:
           git diff --exit-code -- native/Generated native/Sources/TableRockBridge/tablerock_ffi.swift
           SKIP_BINDINGS=1 ./scripts/build-xcframework.sh
 
+      - name: Verify native source ownership
+        run: ./scripts/verify-native-source-ownership.sh
+
       - name: Run canonical Xcode nightly plan
         run: |
           mkdir -p artifacts

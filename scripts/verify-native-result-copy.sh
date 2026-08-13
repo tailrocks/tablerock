@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 CORE="$REPO_ROOT/crates/tablerock-core/src/copy_projection.rs"
 FFI="$REPO_ROOT/crates/tablerock-ffi/src/bridge.rs"
 TUI="$REPO_ROOT/crates/tablerock-tui/src/model/copy_format.rs"
@@ -55,9 +56,9 @@ for pattern in \
   'ResultExportMenu\(\)' \
   'startAccessingSecurityScopedResource\(\)' \
   'selectedWorkbenchKind == "object"' \
-  'if !model.queryWorkbenchSelected'
+  '\.disabled\(!model\.queryWorkbenchSelected\)'
 do
-  rg -q "$pattern" "$SOURCE" || { echo "error: missing native copy contract: $pattern" >&2; exit 1; }
+  native_source_has_regex "$pattern" || { echo "error: missing native copy contract: $pattern" >&2; exit 1; }
 done
 
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true

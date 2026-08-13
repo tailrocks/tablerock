@@ -3,7 +3,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FFI="$REPO_ROOT/crates/tablerock-ffi/src/bridge.rs"
-SOURCE="$REPO_ROOT/native/Sources/TableRockApp/TableRockApp.swift"
+# shellcheck source=lib/native-source-verifier.sh
+source "$REPO_ROOT/scripts/lib/native-source-verifier.sh"
 BINDING="$REPO_ROOT/native/Sources/TableRockBridge/tablerock_ffi.swift"
 
 for pattern in \
@@ -22,7 +23,7 @@ for pattern in \
   'table-operation.progress' \
   'table-operation.cancel-unavailable'
 do
-  rg -q "$pattern" "$SOURCE" || { echo "error: missing native maintenance state: $pattern" >&2; exit 1; }
+  native_source_has_regex "$pattern" || { echo "error: missing native maintenance state: $pattern" >&2; exit 1; }
 done
 
 rg -q 'open func startTableOperation' "$BINDING" || {

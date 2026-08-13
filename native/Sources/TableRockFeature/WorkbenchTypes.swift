@@ -1,5 +1,13 @@
 import Foundation
 
+public protocol WorkbenchCodedError: Error {
+  var workbenchCode: String? { get }
+}
+
+public func workbenchErrorCode(_ error: any Error) -> String? {
+  (error as? any WorkbenchCodedError)?.workbenchCode
+}
+
 public protocol WorkbenchBackend: Actor, Sendable {
   func listProfiles() throws -> [WorkbenchProfileItem]
   func searchProfiles(_ search: String?) throws -> [WorkbenchProfileItem]
@@ -110,6 +118,9 @@ public protocol WorkbenchBackend: Actor, Sendable {
   func postgresActivity(sessionId: Data) throws -> [WorkbenchPostgresActivityRow]
   func postgresRelationships(sessionId: Data, catalogNodeId: Data) throws
     -> WorkbenchRelationshipSnapshot
+  func submitPostgresRelationBrowse(
+    sessionId: Data, catalogNodeId: Data, selectedColumn: String, cell: WorkbenchCell
+  ) throws -> WorkbenchRelationBrowseSubmission
   func postgresRoles(sessionId: Data, catalogNodeId: Data?) throws -> WorkbenchRoleSnapshot
   func stagePostgresRoleChange(
     sessionId: Data, catalogNodeId: Data?, kind: String, role: String,
@@ -128,12 +139,15 @@ public protocol WorkbenchBackend: Actor, Sendable {
   ) throws -> Data
   func postgresToolStatus(operationId: Data) throws -> WorkbenchPostgresToolStatus
   func cancelPostgresTool(operationId: Data) throws -> Bool
+  func mutationEditability(sessionId: Data, resultId: Data) throws
+    -> WorkbenchMutationEditability
+  func stageRowUpdate(
+    sessionId: Data, resultId: Data, revision: UInt64, row: UInt64,
+    assignments: [WorkbenchMutationAssignment], nowMs: UInt64
+  ) throws -> WorkbenchMutationReview
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
     -> WorkbenchApplyOutcome
   func revokeReviewToken(tokenId: Data) throws -> Bool
-  /// Stage edit-safety probe; returns opaque review token (does not apply).
-  func stageProbeReview(sessionId: Data, nowMs: UInt64) throws -> Data
-  func stageAndApply(session: Data, now: UInt64) throws -> WorkbenchApplyOutcome
 }
 
 public struct WorkbenchQueryParameter: Sendable, Equatable, Identifiable {
@@ -146,6 +160,61 @@ public struct WorkbenchQueryParameter: Sendable, Equatable, Identifiable {
     self.name = name
     self.kind = kind
     self.value = value
+  }
+}
+
+public struct WorkbenchMutationAssignment: Sendable, Equatable, Identifiable {
+  public let column: String
+  public let kind: String
+  public let value: Data?
+  public var id: String { column }
+
+  public init(column: String, kind: String, value: Data?) {
+    self.column = column
+    self.kind = kind
+    self.value = value
+  }
+}
+
+public struct WorkbenchMutationEditability: Sendable, Equatable {
+  public let editable: Bool
+  public let reason: String?
+  public let identityColumns: [String]
+
+  public init(editable: Bool, reason: String?, identityColumns: [String]) {
+    self.editable = editable
+    self.reason = reason
+    self.identityColumns = identityColumns
+  }
+}
+
+public struct WorkbenchMutationReviewLine: Sendable, Equatable, Identifiable {
+  public let kind: String
+  public let preview: String
+  public let parameters: [String]
+  public var id: String { "\(kind):\(preview)" }
+
+  public init(kind: String, preview: String, parameters: [String]) {
+    self.kind = kind
+    self.preview = preview
+    self.parameters = parameters
+  }
+}
+
+public struct WorkbenchMutationReview: Sendable, Equatable {
+  public let tokenId: Data
+  public let target: String
+  public let expiresAtMs: UInt64
+  public let lines: [WorkbenchMutationReviewLine]
+
+  public init(
+    tokenId: Data, target: String, expiresAtMs: UInt64,
+    lines: [WorkbenchMutationReviewLine]
+  ) {
+    self.tokenId = tokenId
+    self.target = target
+    self.expiresAtMs = expiresAtMs
+    self.lines = lines
   }
 }
 
@@ -385,18 +454,6 @@ public enum WorkbenchStatusFacts {
 /// Pure presentation facts for review gates and ledger chrome.
 /// Never constructs SQL for execution — preview text is descriptive only.
 public enum ChangeReviewPresentation {
-  /// Documented shape of UniFFI `stage_probe_review` / Rust probe DELETE plan.
-  public static let probeKindWord = "DELETE"
-  public static let probeTarget = "public.users"
-  public static let probePreview =
-    #"DELETE FROM "public"."users" WHERE "id" = $1  -- locator 1"#
-  public static let probeRollbackSummary =
-    "Single-row PostgreSQL DELETE under consume-once review; success clears the token; conflict/failure does not re-arm the same token."
-  public static let probeLedgerCount = 1
-  public static let probeAuthoritySeconds: UInt64 = 60
-  public static let probeDestructive = true
-  public static let probeIsFixtureSafetyDemo = true
-
   public static func ledgerChip(entryCount: Int, reviewOpen: Bool) -> String? {
     guard entryCount > 0 || reviewOpen else { return nil }
     let n = max(entryCount, reviewOpen ? 1 : 0)
@@ -1238,6 +1295,17 @@ public struct WorkbenchRelationshipSnapshot: Sendable, Equatable {
     self.relation = relation
     self.edges = edges
     self.truncated = truncated
+  }
+}
+
+public struct WorkbenchRelationBrowseSubmission: Sendable, Equatable {
+  public let operationId: Data
+  public let direction: String
+  public let edge: WorkbenchRelationshipEdge
+  public init(operationId: Data, direction: String, edge: WorkbenchRelationshipEdge) {
+    self.operationId = operationId
+    self.direction = direction
+    self.edge = edge
   }
 }
 

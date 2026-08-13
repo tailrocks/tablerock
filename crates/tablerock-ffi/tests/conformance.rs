@@ -13,19 +13,21 @@ use std::sync::{
 use tablerock_core::{
     BoundedText, ByteLimit, CancelDispatch, CatalogChildrenState, CatalogNodeKind, ColumnMetadata,
     Engine, EngineType, IdParts, OperationId, OwnedValue, PageDelivery, PageFacts, PageIdentity,
-    PageLimits, PageWarnings, ProfileId, ResultId, ResultPage, Revision, RowTotal,
+    PageLimits, PageWarnings, ProfileId, RelationshipEdge, RelationshipGraph, ResultId, ResultPage,
+    Revision, RowTotal,
 };
 use tablerock_engine::{
     AdapterError, AdapterFailureClass, CatalogExactness, CatalogNodeSeed, CatalogRequest,
     CatalogSubtree, DriverFuture, DriverPageRequest, DriverPageStream, DriverSession,
+    PostgresRelationBrowseRequest, PostgresRelationBrowseSide, PostgresRelationBrowseTarget,
     ServerDescribe, SessionHealth,
 };
 use tablerock_ffi::{
     BridgeBrowseFilter, BridgeBrowseSort, BridgeCatalogStreamExportRequest, BridgeColumnLayoutItem,
     BridgeCsvImportRequest, BridgeError, BridgeProfileOrderItem, BridgeQueryParameter,
-    BridgeSavedFilterPreset, BridgeSessionIntent, BridgeStartupActionDraft,
-    BridgeStreamExportRequest, BridgeTableOperationRequest, BridgeWorkspaceTab, SubmitSpec,
-    TableRockBridge,
+    BridgeRelationBrowseRequest, BridgeSavedFilterPreset, BridgeSessionIntent,
+    BridgeStartupActionDraft, BridgeStreamExportRequest, BridgeTableOperationRequest,
+    BridgeWorkspaceTab, SubmitSpec, TableRockBridge,
 };
 
 struct OnePageStream(Option<ResultPage>);
@@ -197,6 +199,114 @@ impl DriverSession for FixedPageSession {
                 }
             }
             Ok(())
+        })
+    }
+
+    fn postgres_relationships<'a>(
+        &'a self,
+        schema: &'a str,
+        relation: &'a str,
+    ) -> DriverFuture<'a, Result<(RelationshipGraph, bool), AdapterError>> {
+        Box::pin(async move {
+            assert_eq!((schema, relation), ("public", "users"));
+            Ok((
+                RelationshipGraph {
+                    edges: vec![
+                        RelationshipEdge {
+                            from_schema: "public".into(),
+                            from_table: "users".into(),
+                            from_column: "customer_id".into(),
+                            to_schema: "crm".into(),
+                            to_table: "customers".into(),
+                            to_column: "id".into(),
+                        },
+                        RelationshipEdge {
+                            from_schema: "public".into(),
+                            from_table: "users".into(),
+                            from_column: "composite_id".into(),
+                            to_schema: "crm".into(),
+                            to_table: "customers".into(),
+                            to_column: "composite_id".into(),
+                        },
+                        RelationshipEdge {
+                            from_schema: "billing".into(),
+                            from_table: "invoices".into(),
+                            from_column: "user_id".into(),
+                            to_schema: "public".into(),
+                            to_table: "users".into(),
+                            to_column: "id".into(),
+                        },
+                        RelationshipEdge {
+                            from_schema: "public".into(),
+                            from_table: "users".into(),
+                            from_column: "ambiguous_id".into(),
+                            to_schema: "crm".into(),
+                            to_table: "customers".into(),
+                            to_column: "id".into(),
+                        },
+                        RelationshipEdge {
+                            from_schema: "public".into(),
+                            from_table: "users".into(),
+                            from_column: "ambiguous_id".into(),
+                            to_schema: "sales".into(),
+                            to_table: "accounts".into(),
+                            to_column: "id".into(),
+                        },
+                    ],
+                },
+                false,
+            ))
+        })
+    }
+
+    fn postgres_relation_browse_target<'a>(
+        &'a self,
+        request: PostgresRelationBrowseRequest<'a>,
+    ) -> DriverFuture<'a, Result<Option<PostgresRelationBrowseTarget>, AdapterError>> {
+        Box::pin(async move {
+            let edge = request.edge();
+            if request.side() == PostgresRelationBrowseSide::Source {
+                assert_eq!(
+                    (
+                        edge.from_schema.as_str(),
+                        edge.from_table.as_str(),
+                        edge.from_column.as_str(),
+                        edge.to_schema.as_str(),
+                        edge.to_table.as_str(),
+                        edge.to_column.as_str(),
+                    ),
+                    ("billing", "invoices", "user_id", "public", "users", "id")
+                );
+                return Ok(Some(PostgresRelationBrowseTarget::new(
+                    "pg_catalog".into(),
+                    "int4".into(),
+                    1,
+                )));
+            }
+            assert_eq!(
+                (edge.from_schema.as_str(), edge.from_table.as_str()),
+                ("public", "users")
+            );
+            assert_eq!(
+                (edge.to_schema.as_str(), edge.to_table.as_str()),
+                ("crm", "customers")
+            );
+            assert_eq!(request.side(), PostgresRelationBrowseSide::Target);
+            let width = if edge.from_column == "composite_id" {
+                assert_eq!(edge.to_column, "composite_id");
+                2
+            } else {
+                assert_eq!(
+                    (edge.from_column.as_str(), edge.to_column.as_str()),
+                    ("customer_id", "id")
+                );
+                1
+            };
+            Ok(Some(PostgresRelationBrowseTarget::new(
+                "pg_catalog".into(),
+                "int8".into(),
+                width,
+            )))
         })
     }
 
@@ -1169,6 +1279,103 @@ fn catalog_browse_plan_is_rust_rendered_with_typed_values() {
         );
         assert!(!statements[0].0.contains("private"));
     }
+}
+
+#[test]
+fn relation_browse_resolves_edge_and_catalog_type_below_presentation() {
+    let (_, page) = sample_page(Engine::PostgreSql, 189, &[7]);
+    let bridge = TableRockBridge::new_for_test();
+    let (session_id, statements) = open_fixed_observed(&bridge, Engine::PostgreSql, page);
+    let database = bridge
+        .refresh_catalog(session_id.clone(), None)
+        .unwrap()
+        .remove(0);
+    let schema = bridge
+        .refresh_catalog(session_id.clone(), Some(database.id_bytes))
+        .unwrap()
+        .remove(0);
+    let source = bridge
+        .refresh_catalog(session_id.clone(), Some(schema.id_bytes))
+        .unwrap()
+        .remove(0);
+
+    let submission = bridge
+        .submit_postgres_relation_browse(BridgeRelationBrowseRequest {
+            session_id: session_id.clone(),
+            catalog_node_id: source.id_bytes.clone(),
+            selected_column: "customer_id".into(),
+            cell_kind: 2,
+            cell_bytes: 42_i64.to_be_bytes().to_vec(),
+            cell_truncation: 0,
+            row_count: 500,
+        })
+        .unwrap();
+
+    assert_eq!(submission.direction, "outbound");
+    assert_eq!(submission.edge.to_schema, "crm");
+    assert_eq!(submission.edge.to_table, "customers");
+    assert_eq!(submission.edge.to_column, "id");
+    bridge.pump(submission.operation_id).unwrap();
+    let statement_guard = statements.lock().unwrap();
+    assert_eq!(statement_guard.len(), 1);
+    assert_eq!(statement_guard[0].1, 1);
+    assert_eq!(
+        statement_guard[0].0,
+        "SELECT * FROM \"crm\".\"customers\" WHERE \"id\" = (($1::text)::\"pg_catalog\".\"int8\") LIMIT 500 OFFSET 0"
+    );
+    assert!(!statement_guard[0].0.contains("42"));
+    drop(statement_guard);
+
+    let composite = bridge
+        .submit_postgres_relation_browse(BridgeRelationBrowseRequest {
+            session_id: session_id.clone(),
+            catalog_node_id: source.id_bytes.clone(),
+            selected_column: "composite_id".into(),
+            cell_kind: 2,
+            cell_bytes: 42_i64.to_be_bytes().to_vec(),
+            cell_truncation: 0,
+            row_count: 500,
+        })
+        .unwrap_err();
+    assert!(
+        matches!(composite, BridgeError::Rejected { ref code, .. } if code == "relation-browse-composite")
+    );
+
+    let ambiguous = bridge
+        .submit_postgres_relation_browse(BridgeRelationBrowseRequest {
+            session_id: session_id.clone(),
+            catalog_node_id: source.id_bytes.clone(),
+            selected_column: "ambiguous_id".into(),
+            cell_kind: 2,
+            cell_bytes: 42_i64.to_be_bytes().to_vec(),
+            cell_truncation: 0,
+            row_count: 500,
+        })
+        .unwrap_err();
+    assert!(
+        matches!(ambiguous, BridgeError::Rejected { ref code, .. } if code == "relation-browse-ambiguous")
+    );
+
+    let incoming = bridge
+        .submit_postgres_relation_browse(BridgeRelationBrowseRequest {
+            session_id,
+            catalog_node_id: source.id_bytes,
+            selected_column: "id".into(),
+            cell_kind: 2,
+            cell_bytes: 7_i64.to_be_bytes().to_vec(),
+            cell_truncation: 0,
+            row_count: 500,
+        })
+        .unwrap();
+    assert_eq!(incoming.direction, "inbound");
+    // The deterministic session reuses one ResultId; second-page admission is
+    // expected to fail after the statement has been captured.
+    let _ = bridge.pump(incoming.operation_id);
+    let statements = statements.lock().unwrap();
+    assert_eq!(
+        statements.last().unwrap().0,
+        "SELECT * FROM \"billing\".\"invoices\" WHERE \"user_id\" = (($1::text)::\"pg_catalog\".\"int4\") LIMIT 500 OFFSET 0"
+    );
 }
 
 #[test]

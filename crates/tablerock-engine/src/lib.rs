@@ -21,11 +21,13 @@ mod temporal;
 
 pub use adapter::{
     AdapterError, AdapterFailureClass, DriverFuture, DriverPageRequest, DriverPageStream,
-    DriverSession, MutationApplyControl, PostgresActivityRow, PostgresRoleSnapshot, SessionHealth,
+    DriverSession, MutationApplyControl, PostgresActivityRow, PostgresRelationBrowseRequest,
+    PostgresRelationBrowseSide, PostgresRelationBrowseTarget, PostgresRoleSnapshot, SessionHealth,
 };
 pub use browse_plan::{
-    BrowseDialect, BrowsePlan, BrowsePlanError, FilterOperator, FilterValue, RenderedBrowseSql,
-    SortDirection, SortKey, TypedCondition, parse_bind_text,
+    BrowseDialect, BrowsePlan, BrowsePlanError, FilterOperator, FilterValue,
+    PostgreSqlRelationBrowsePlan, RenderedBrowseSql, SortDirection, SortKey, TypedCondition,
+    parse_bind_text,
 };
 pub use catalog::{
     CatalogExactness, CatalogNodeSeed, CatalogRequest, CatalogSubtree,
