@@ -879,7 +879,9 @@ final class TableRockAppUITests: XCTestCase {
 
     let command = app.menuItems["PostgreSQL Roles and Privileges…"]
     XCTAssertTrue(command.waitForExistence(timeout: 10))
-    XCTAssertTrue(command.isEnabled)
+    let enabled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: command)
+    XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
     command.click()
     let search = app.textFields["postgres.roles.search"]
     XCTAssertTrue(search.waitForExistence(timeout: 10))
