@@ -54,6 +54,11 @@ jobs:
           install_args: rust
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install native verification tools
+        run: |
+          brew install ripgrep
+          test "$(rg --version | head -n 1)" = "ripgrep 15.2.0"
+
       - name: Cache Cargo registry
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
