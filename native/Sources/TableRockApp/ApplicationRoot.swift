@@ -2,6 +2,13 @@ import AppKit
 import SwiftUI
 import TableRockPresentation
 
+private enum NativeWindowMetrics {
+  static let minimumWidth: CGFloat = 760
+  static let minimumHeight: CGFloat = 520
+  static let defaultWidth: CGFloat = 1_440
+  static let defaultHeight: CGFloat = 900
+}
+
 @main
 struct TableRockApp: App {
   private let application = NativeApplicationModel()
@@ -19,7 +26,10 @@ struct TableRockApp: App {
         switch application.launchConfiguration.surface {
         case .accessibilityAudit:
           NativeAccessibilityFixtureView()
-            .frame(minWidth: 1_280, minHeight: 680)
+            .frame(
+              minWidth: NativeWindowMetrics.minimumWidth,
+              minHeight: NativeWindowMetrics.minimumHeight
+            )
         case .profileEditor:
           NativeProfileEditorFixtureView()
         case .performanceGrid, .workbench:
@@ -35,7 +45,10 @@ struct TableRockApp: App {
     } defaultValue: {
       application.dependencies.identifiers.next()
     }
-    .defaultSize(width: 1_440, height: 900)
+    .defaultSize(
+      width: NativeWindowMetrics.defaultWidth,
+      height: NativeWindowMetrics.defaultHeight
+    )
     .windowStyle(.hiddenTitleBar)
     .windowToolbarStyle(.unified)
     .restorationBehavior(
@@ -74,7 +87,10 @@ private struct WorkbenchWindowRoot: View {
     #if TABLEROCK_DEVELOPMENT_SUPPORT
     if application.launchConfiguration.surface == .performanceGrid {
       PerformanceFixtureView(model: model)
-        .frame(minWidth: 1_280, minHeight: 680)
+        .frame(
+          minWidth: NativeWindowMetrics.minimumWidth,
+          minHeight: NativeWindowMetrics.minimumHeight
+        )
         .task { await openFixtureWindowIfNeeded() }
     } else {
       ContentView()
@@ -84,7 +100,10 @@ private struct WorkbenchWindowRoot: View {
             fixture: application.appearanceFixture
           )
         )
-        .frame(minWidth: 1_280, minHeight: 680)
+        .frame(
+          minWidth: NativeWindowMetrics.minimumWidth,
+          minHeight: NativeWindowMetrics.minimumHeight
+        )
         .task { await launchFixturesIfNeeded() }
         .onOpenURL { url in
           Task { await model.receiveExternalURL(url) }
@@ -98,7 +117,10 @@ private struct WorkbenchWindowRoot: View {
   private var productionWorkbench: some View {
     ContentView()
       .environment(model)
-      .frame(minWidth: 1_280, minHeight: 680)
+      .frame(
+        minWidth: NativeWindowMetrics.minimumWidth,
+        minHeight: NativeWindowMetrics.minimumHeight
+      )
       .onOpenURL { url in
         Task { await model.receiveExternalURL(url) }
       }
@@ -143,5 +165,66 @@ private final class NativeWindowAttachmentView: NSView {
     window.tabbingIdentifier = "tablerock-workbench"
     window.tabbingMode = .preferred
     window.tab.title = window.title
+    Task { @MainActor [weak self] in
+      await Task.yield()
+      self?.configureAccessibilityHierarchy()
+    }
+  }
+
+  private func configureAccessibilityHierarchy() {
+    var current = superview
+    var root: NSView?
+    while let view = current {
+      if view.isAccessibilityElement(), view.accessibilityRole() == .group {
+        view.setAccessibilityLabel("TableRock workbench")
+        root = view
+        break
+      }
+      current = view.superview
+    }
+    guard let root,
+      let splitGroup = firstAccessibilityElement(
+        withRole: .splitGroup,
+        below: root.accessibilityChildren() ?? []
+      )
+    else { return }
+
+    let columns = accessibilityChildren(of: splitGroup).filter {
+      accessibilityRole(of: $0) == .group
+    }
+    for (index, column) in columns.enumerated()
+    where accessibilityLabel(of: column)?.isEmpty != false {
+      setAccessibilityLabel(index == 0 ? "Navigation sidebar" : "Workspace", on: column)
+    }
+  }
+
+  private func firstAccessibilityElement(
+    withRole role: NSAccessibility.Role,
+    below initialElements: [Any]
+  ) -> Any? {
+    var elements = initialElements
+    for _ in 0..<4 {
+      if let match = elements.first(where: { accessibilityRole(of: $0) == role }) {
+        return match
+      }
+      elements = elements.flatMap(accessibilityChildren)
+    }
+    return nil
+  }
+
+  private func accessibilityRole(of element: Any) -> NSAccessibility.Role? {
+    (element as? any NSAccessibilityProtocol)?.accessibilityRole()
+  }
+
+  private func accessibilityLabel(of element: Any) -> String? {
+    (element as? any NSAccessibilityProtocol)?.accessibilityLabel()
+  }
+
+  private func accessibilityChildren(of element: Any) -> [Any] {
+    (element as? any NSAccessibilityProtocol)?.accessibilityChildren() ?? []
+  }
+
+  private func setAccessibilityLabel(_ label: String, on element: Any) {
+    (element as? any NSAccessibilityProtocol)?.setAccessibilityLabel(label)
   }
 }

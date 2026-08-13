@@ -99,56 +99,13 @@ private struct ObjectWorkbenchHeader: View {
         ResultExportMenu()
         ResultTransferFeedback()
       }
-      Menu {
-        if !tab.pinned {
-          Button("Pin", systemImage: "pin") { model.pinObjectTab(tab) }
-        }
-        Button("Refresh", systemImage: "arrow.clockwise") {
-          Task { await model.reloadObjectTab() }
-        }
-        .disabled(tab.isRunning)
-        if model.canOpenRelationContinuum {
-          Button("Open Row Continuum", systemImage: "arrow.triangle.branch") {
-            Task { await model.openRelationContinuumFromSelection() }
-          }
-        }
-        if model.sqlInsertCopyAvailable {
-          Button("Import CSV", systemImage: "square.and.arrow.down") {
-            Task { await model.chooseCsvImport() }
-          }
-          .accessibilityIdentifier("import.csv.open")
-          .disabled(tab.isRunning)
-        }
-        if tab.selectedSection == "structure" {
-          Divider()
-          Button("Copy DDL", systemImage: "doc.on.doc") {
-            model.copyStructureDdl(tab.structure?.ddl ?? "")
-          }
-          .disabled(tab.structure?.ddl.isEmpty != false)
-          .accessibilityHint("Copies database-generated structure SQL")
-          Button("Change Structure…", systemImage: "slider.horizontal.3") {
-            model.showDdlChange()
-          }
-          .disabled(!model.canEditSelectedStructure)
-          .accessibilityIdentifier("structure.change.open")
-          Button("Table Operations…", systemImage: "wrench.and.screwdriver") {
-            model.showTableOperation()
-          }
-          .disabled(!model.canOperateSelectedTable)
-          .accessibilityIdentifier("table-operation.open")
-        }
-        Divider()
-        Button("Close", systemImage: "xmark", role: .destructive) {
-          model.closeObjectTab(tab)
-        }
-        .disabled(tab.isRunning)
-      } label: {
-        Image(systemName: "ellipsis.circle")
-      }
-      .menuStyle(.borderlessButton)
-      .accessibilityLabel("Object actions")
-      .accessibilityIdentifier(
-        tab.selectedSection == "structure" ? "structure.actions" : "object.actions")
+      NativeActionMenu(
+        title: "",
+        systemImage: "ellipsis.circle",
+        accessibilityLabel: "Object actions",
+        identifier: tab.selectedSection == "structure" ? "structure.actions" : "object.actions",
+        entries: objectActionEntries
+      )
     }
     .controlSize(.small)
     .padding(.horizontal, 12)
@@ -157,6 +114,73 @@ private struct ObjectWorkbenchHeader: View {
     .overlay(alignment: .bottom) { Divider() }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("object.header")
+  }
+
+  private var objectActionEntries: [NativeActionMenuEntry] {
+    var entries: [NativeActionMenuEntry] = []
+    if !tab.pinned {
+      entries.append(.command(title: "Pin", systemImage: "pin") { model.pinObjectTab(tab) })
+    }
+    entries.append(
+      .command(
+        title: "Refresh",
+        systemImage: "arrow.clockwise",
+        isEnabled: !tab.isRunning
+      ) {
+        Task { await model.reloadObjectTab() }
+      })
+    if model.canOpenRelationContinuum {
+      entries.append(
+        .command(title: "Open Row Continuum", systemImage: "arrow.triangle.branch") {
+          Task { await model.openRelationContinuumFromSelection() }
+        })
+    }
+    if model.sqlInsertCopyAvailable {
+      entries.append(
+        .command(
+          title: "Import CSV",
+          systemImage: "square.and.arrow.down",
+          identifier: "import.csv.open",
+          isEnabled: !tab.isRunning
+        ) {
+          Task { await model.chooseCsvImport() }
+        })
+    }
+    if tab.selectedSection == "structure" {
+      entries.append(.separator)
+      entries.append(
+        .command(
+          title: "Copy DDL",
+          systemImage: "doc.on.doc",
+          isEnabled: tab.structure?.ddl.isEmpty == false
+        ) {
+          model.copyStructureDdl(tab.structure?.ddl ?? "")
+        })
+      entries.append(
+        .command(
+          title: "Change Structure…",
+          systemImage: "slider.horizontal.3",
+          identifier: "structure.change.open",
+          isEnabled: model.canEditSelectedStructure
+        ) {
+          model.showDdlChange()
+        })
+      entries.append(
+        .command(
+          title: "Table Operations…",
+          systemImage: "wrench.and.screwdriver",
+          identifier: "table-operation.open",
+          isEnabled: model.canOperateSelectedTable
+        ) {
+          model.showTableOperation()
+        })
+    }
+    entries.append(.separator)
+    entries.append(
+      .command(title: "Close", systemImage: "xmark", isEnabled: !tab.isRunning) {
+        model.closeObjectTab(tab)
+      })
+    return entries
   }
 
   private var contextDetail: String {

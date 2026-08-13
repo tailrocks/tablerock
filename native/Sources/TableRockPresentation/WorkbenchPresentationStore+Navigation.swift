@@ -91,6 +91,7 @@ extension WorkbenchPresentationStore {
       "postgresql_foreign_table", "postgresql_partitioned_table", "postgresql_sequence",
       "clickhouse_table", "clickhouse_view", "clickhouse_materialized_view",
       "clickhouse_dictionary",
+      "sqlite_table",
       "redis_key_unknown", "redis_key_string", "redis_key_hash",
       "redis_key_list", "redis_key_set", "redis_key_sorted_set",
       "redis_key_stream",

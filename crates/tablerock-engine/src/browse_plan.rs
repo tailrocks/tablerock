@@ -1,7 +1,7 @@
 //! Typed browse-plan builder — the only place UI state becomes SQL.
 //!
 //! Identifiers go through [`quote_ident`]. Filter values are NEVER concatenated;
-//! they become `$n` placeholders with a parallel typed parameter list.
+//! they become driver-native placeholders with a parallel typed parameter list.
 //! Raw WHERE fragments are parenthesized and AND-composed; embedded `$n` tokens
 //! that collide with plan parameters are rejected (fail closed).
 
@@ -19,6 +19,7 @@ pub enum SortDirection {
 pub enum BrowseDialect {
     PostgreSql,
     ClickHouse,
+    Sqlite,
 }
 
 /// One sort key: column identifier + direction.
@@ -185,7 +186,7 @@ impl std::fmt::Debug for BrowsePlan {
     }
 }
 
-/// Rendered SQL + positional parameters (1-based `$n` order).
+/// Rendered SQL + positional parameters in 1-based placeholder order.
 #[derive(Clone, PartialEq)]
 pub struct RenderedBrowseSql {
     pub sql: String,
@@ -219,7 +220,7 @@ impl std::fmt::Display for BrowsePlanError {
             Self::UnexpectedValue => "filter operator does not take a value",
             Self::EmptyRawWhere => "raw WHERE fragment is empty",
             Self::RawWhereParameterCollision => {
-                "raw WHERE must not contain $n placeholders (fail closed)"
+                "raw WHERE must not contain driver parameter placeholders (fail closed)"
             }
             Self::InvalidLimit => "limit must be at least 1",
         })
@@ -272,7 +273,12 @@ impl BrowsePlan {
         if paged && self.limit == 0 {
             return Err(BrowsePlanError::InvalidLimit);
         }
-        let qualified = qualify_table(&self.schema, &self.table)?;
+        let qualified = match dialect {
+            BrowseDialect::Sqlite => quote_ident(&self.table)?,
+            BrowseDialect::PostgreSql | BrowseDialect::ClickHouse => {
+                qualify_table(&self.schema, &self.table)?
+            }
+        };
         let mut sql = format!("SELECT * FROM {qualified}");
         let mut parameters = Vec::new();
         let mut where_parts: Vec<String> = Vec::new();
@@ -287,6 +293,7 @@ impl BrowsePlan {
                 let n = parameters.len();
                 let placeholder = match (&parameters[n - 1], dialect) {
                     (_, BrowseDialect::PostgreSql) => format!("${n}"),
+                    (_, BrowseDialect::Sqlite) => format!("?{n}"),
                     (FilterValue::Text(_), BrowseDialect::ClickHouse) => {
                         format!("{{p{n}:String}}")
                     }
@@ -303,7 +310,16 @@ impl BrowsePlan {
                         format!("{{p{n}:Nullable(String)}}")
                     }
                 };
-                where_parts.push(format!("{col} {} {placeholder}", filter.operator.sql()));
+                let condition = match (filter.operator, dialect) {
+                    (FilterOperator::ILike, BrowseDialect::Sqlite) => {
+                        format!("LOWER({col}) LIKE LOWER({placeholder})")
+                    }
+                    (FilterOperator::NotILike, BrowseDialect::Sqlite) => {
+                        format!("LOWER({col}) NOT LIKE LOWER({placeholder})")
+                    }
+                    _ => format!("{col} {} {placeholder}", filter.operator.sql()),
+                };
+                where_parts.push(condition);
             } else {
                 if filter.value.is_some() {
                     return Err(BrowsePlanError::UnexpectedValue);
@@ -320,6 +336,7 @@ impl BrowsePlan {
             // Fail closed on any $n-like token so we never renumber ambiguously.
             if contains_dollar_param(trimmed)
                 || (dialect == BrowseDialect::ClickHouse && contains_clickhouse_plan_param(trimmed))
+                || (dialect == BrowseDialect::Sqlite && trimmed.contains('?'))
             {
                 return Err(BrowsePlanError::RawWhereParameterCollision);
             }
@@ -536,6 +553,57 @@ mod tests {
         assert_eq!(rendered.parameters.len(), 4);
         assert!(!rendered.sql.contains("private"));
         assert!(!rendered.sql.contains("9.5"));
+    }
+
+    #[test]
+    fn sqlite_browse_uses_unqualified_table_and_bound_parameters() {
+        let mut plan = base();
+        plan.schema = "sample-file.db".into();
+        plan.filters = vec![TypedCondition {
+            column: "name".into(),
+            operator: FilterOperator::Eq,
+            value: Some(FilterValue::Text("private".into())),
+        }];
+        let rendered = plan.render_sql_for(BrowseDialect::Sqlite).unwrap();
+        assert_eq!(
+            rendered.sql,
+            "SELECT * FROM \"users\" WHERE \"name\" = ?1 LIMIT 500 OFFSET 0"
+        );
+        assert_eq!(rendered.parameters.len(), 1);
+        assert!(!rendered.sql.contains("sample-file.db"));
+        assert!(!rendered.sql.contains("private"));
+    }
+
+    #[test]
+    fn sqlite_ilike_has_explicit_case_insensitive_rendering() {
+        let mut plan = base();
+        plan.filters = vec![TypedCondition {
+            column: "name".into(),
+            operator: FilterOperator::ILike,
+            value: Some(FilterValue::Text("%NORTHWIND%".into())),
+        }];
+        let rendered = plan.render_sql_for(BrowseDialect::Sqlite).unwrap();
+        assert!(rendered.sql.contains("LOWER(\"name\") LIKE LOWER(?1)"));
+    }
+
+    #[test]
+    fn sqlite_hostile_identifier_is_quoted_not_injected() {
+        let mut plan = base();
+        plan.table = "\"; DROP TABLE artists; --".into();
+        let rendered = plan.render_sql_for(BrowseDialect::Sqlite).unwrap();
+        let expected_table = quote_ident("\"; DROP TABLE artists; --").unwrap();
+        assert!(rendered.sql.contains(&format!("FROM {expected_table}")));
+        assert_eq!(rendered.sql.matches("FROM ").count(), 1);
+    }
+
+    #[test]
+    fn sqlite_raw_where_cannot_collide_with_plan_parameters() {
+        let mut plan = base();
+        plan.raw_where = Some("id = ?1".into());
+        assert_eq!(
+            plan.render_sql_for(BrowseDialect::Sqlite),
+            Err(BrowsePlanError::RawWhereParameterCollision)
+        );
     }
 
     #[test]

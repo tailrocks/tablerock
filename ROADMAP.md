@@ -1,15 +1,17 @@
 # Roadmap
 
-TableRock builds one Rust-owned PostgreSQL, ClickHouse, and Redis workbench,
-first as a TermRock/Ratatui TUI and later as a native SwiftUI/AppKit macOS
-application. Phase 0 decisions were approved on 2026-07-16. The
+TableRock builds one Rust-owned PostgreSQL, ClickHouse, and Redis workbench with
+a TermRock/Ratatui TUI and a native SwiftUI/AppKit macOS application. The TUI
+established the first shared service contract; both clients are now implemented.
+Phase 0 decisions were approved on 2026-07-16. The
 screen-by-screen product baseline lives in
 [docs/product](docs/product/README.md); it was added on 2026-07-18 and is the
 authority for what each screen does.
 
-All delivery is direct, forward-only work on `main`. Never create a branch or
-pull request. Each checkpoint must build, pass its evidence gate, update its
-documentation, and remain honest about incomplete parity.
+All TableRock delivery enters `main` through the single pull-request branch
+named by [`AGENTS.md`](AGENTS.md). Checkpoint commits stay forward-only and are
+pushed immediately. Each checkpoint must build, pass its evidence gate, update
+its documentation, and remain honest about incomplete parity.
 
 Completed checkpoints are not narrated here. Each one records an evidence
 document; browse them in the [evidence index](docs/evidence/README.md).
@@ -271,11 +273,11 @@ distribution remains the separately recorded Phase 12/14 operator gate.
 
 ## Phase 14 — native parity and release evidence
 
-**Status: in progress** (plan 021). Shared durable operator store for CLI and
-native production is closed (evidence 658:
-`~/Library/Application Support/TableRock/profiles.db`). Hosted live/IME/full
-accessibility matrix and signed/notarized clean-machine release remain open or
-externally blocked (Developer ID credentials — plan 019).
+**Status: in progress.** The selected production Native Workbench design and
+shared durable operator store for CLI and native production are implemented
+(evidence 658: `~/Library/Application Support/TableRock/profiles.db`). Hosted
+live/IME/full accessibility matrix and signed/notarized clean-machine release
+remain open or externally blocked (Developer ID credentials — plan 019).
 
 Native selected-row PostgreSQL update now crosses the production UniFFI seam:
 Rust proves base-table primary-key identity, freezes a typed parameterized plan,
@@ -292,9 +294,9 @@ through the shared Rust contracts.
 
 ## Phase 15 — close and maintain parity
 
-**Status: partial** (plan 021). Safe support-bundle foundation and checkpoint
+**Status: partial.** Safe support-bundle foundation and checkpoint
 CI exist; full ledger audit, VoiceOver matrix, and signed release proof are not
-complete. Continue compatibility work through small buildable `main` commits;
+complete. Continue compatibility work through small buildable pull-request commits;
 never hide an unsupported or regressed capability behind a parity claim.
 
 ---

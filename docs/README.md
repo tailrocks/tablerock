@@ -1,8 +1,9 @@
 # TableRock Documentation
 
-TableRock is a terminal-first, multi-model database workbench for PostgreSQL,
-ClickHouse, and Redis. These documents are the single source of truth for what
-is being built, why, and what has been proven so far.
+TableRock is a native macOS and terminal database workbench for PostgreSQL,
+ClickHouse, and Redis. Both clients project one Rust-owned service and safety
+model. These documents are the single source of truth for what is being built,
+why, and what has been proven so far.
 
 Three layers, read in this order:
 
@@ -89,7 +90,7 @@ Dependencies and delivery:
 - [Dependency evaluation](architecture/dependency-evaluation.md) ·
   [Dependency policy](architecture/dependency-policy.md)
 - [Quality and verification](architecture/quality-and-verification.md)
-- [Main-branch delivery](architecture/main-branch-delivery.md) — trunk-only,
+- [Pull-request delivery](architecture/main-branch-delivery.md) — single-branch,
   forward-only workflow.
 
 ## Evidence

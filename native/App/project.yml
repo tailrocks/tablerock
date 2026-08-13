@@ -78,8 +78,11 @@ targets:
       - path: ../Sources/TableRockApp
     dependencies:
       - target: TableRockFeature
+        embed: false
       - target: TableRockPresentation
+        embed: false
       - target: TableRockBridge
+        embed: false
       - framework: ../../target/xcframework/tablerock_ffiFFI.xcframework
         embed: false
       - sdk: SystemConfiguration.framework

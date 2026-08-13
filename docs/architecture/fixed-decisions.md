@@ -8,7 +8,7 @@ activate a parallel approach.
 |---|---|
 | Product | standalone TableRock repository and product |
 | Scope | PostgreSQL, ClickHouse, and Redis only |
-| First UI | Rust CLI/TUI using TermRock and Ratatui |
+| Clients | Rust CLI/TUI using TermRock/Ratatui and native macOS using SwiftUI/AppKit |
 | TUI pattern | The Elm Architecture; one root Model/Message/Update/Effect/View path |
 | Shared widgets | TermRock only; missing neutral primitives land there first |
 | Terminal backend | Crossterm 0.29 through TermRock's adapter plus one CLI EventStream |
@@ -27,8 +27,8 @@ activate a parallel approach.
 | Safety | Rust-enforced ReadOnly/ConfirmWrites plus specific destructive confirmation |
 | References | concepts and screen-structure only; no copied expression/source |
 | Connection form | first version: engine, name, group, environment tag, host, port, database, user, password, TLS mode only |
-| Password | one password field per profile; prompt-on-connect and acknowledged local plaintext first; 1Password/Keychain/env staged later |
-| Delivery | direct forward commits on `main`; no branches or pull requests |
+| Password | one secret source per profile; prompt, 1Password, environment, Keychain, and acknowledged local plaintext are explicit variants |
+| Delivery | one authorized pull-request branch; forward checkpoint commits; no direct `main` pushes or duplicate pull requests |
 | Automation | AI/MCP/external-agent database access excluded |
 
 ## Product and profile identity

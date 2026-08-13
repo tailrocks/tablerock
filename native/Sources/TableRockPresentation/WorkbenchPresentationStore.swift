@@ -850,19 +850,19 @@ public final class WorkbenchPresentationStore {
           selectedObjectTabId = tab.id
           selectedWorkbenchKind = "object"
           await loadObjectStructure()
-          guard tab.structure?.columns.count == 3,
-            tab.structure?.indexes.contains(where: { $0.name == "structure_probe_pkey" }) == true,
-            tab.structure?.constraints.contains(where: { $0.name == "structure_probe_name_check" })
-              == true
+          guard let structure = tab.structure,
+            structure.columns.count == 3,
+            structure.indexes.contains(where: { $0.name == "structure_probe_pkey" }),
+            structure.constraints.contains(where: { $0.name == "structure_probe_name_check" })
           else {
             writePerformanceMetric(
               "STRUCTURE_PROOF_FAILED \(tab.structureError ?? "snapshot mismatch")"
             )
             return
           }
-          copyStructureDdl(tab.structure!.ddl)
+          copyStructureDdl(structure.ddl)
           try? await Task.sleep(for: .milliseconds(500))
-          runNativeStructureAudit(structure: tab.structure!)
+          runNativeStructureAudit(structure: structure)
         } catch {
           writePerformanceMetric("STRUCTURE_PROOF_FAILED \(error)")
         }
@@ -904,22 +904,23 @@ public final class WorkbenchPresentationStore {
           selectedObjectTabId = tab.id
           selectedWorkbenchKind = "object"
           await loadObjectStructure()
-          guard tab.structure?.engine == "clickhouse",
-            tab.structure?.columns.count == 3,
-            tab.structure?.columns.first(where: { $0.name == "id" })?.primaryKey == true,
-            tab.structure?.columns.first(where: { $0.name == "id" })?.sortingKey == true,
-            tab.structure?.facts.contains(where: {
+          guard let structure = tab.structure,
+            structure.engine == "clickhouse",
+            structure.columns.count == 3,
+            structure.columns.first(where: { $0.name == "id" })?.primaryKey == true,
+            structure.columns.first(where: { $0.name == "id" })?.sortingKey == true,
+            structure.facts.contains(where: {
               $0.name == "Engine" && $0.value == "MergeTree"
-            }) == true
+            })
           else {
             writePerformanceMetric(
               "CLICKHOUSE_STRUCTURE_PROOF_FAILED \(tab.structureError ?? "snapshot mismatch")"
             )
             return
           }
-          copyStructureDdl(tab.structure!.ddl)
+          copyStructureDdl(structure.ddl)
           try? await Task.sleep(for: .milliseconds(500))
-          runNativeClickHouseStructureAudit(structure: tab.structure!)
+          runNativeClickHouseStructureAudit(structure: structure)
         } catch {
           writePerformanceMetric("CLICKHOUSE_STRUCTURE_PROOF_FAILED \(error)")
         }

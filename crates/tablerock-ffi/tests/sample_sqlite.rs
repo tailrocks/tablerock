@@ -14,7 +14,7 @@ use tablerock_core::{
     sample_sqlite_database_path,
 };
 use tablerock_engine::ensure_sample_sqlite_database;
-use tablerock_ffi::{SubmitSpec, TableRockBridge};
+use tablerock_ffi::{BridgeBrowseFilter, SubmitSpec, TableRockBridge};
 use tablerock_persistence::{OPERATOR_PROFILES_DB_FILE, TEST_ROOT_ENV};
 
 fn unique_root() -> PathBuf {
@@ -126,6 +126,44 @@ fn prepare_sample_via_bridge_save_and_open() {
             .any(|n| n.name == "artists" || n.name == "tracks" || n.name == "orders"),
         "demo tables missing: {tables:?}"
     );
+
+    // The bundled sample is a real workbench path: opening a catalog table and
+    // filtering it must use the same typed browse route as server databases.
+    let artists = tables
+        .iter()
+        .find(|node| node.name == "artists")
+        .expect("artists catalog node");
+    let browse_operation = bridge
+        .submit_catalog_browse_with_plan(
+            session.clone(),
+            artists.id_bytes.clone(),
+            Vec::new(),
+            vec![BridgeBrowseFilter {
+                column: "name".into(),
+                operator: "eq".into(),
+                value: Some("Northwind Quartet".into()),
+            }],
+            None,
+            64,
+        )
+        .expect("submit typed SQLite catalog browse");
+    bridge
+        .pump(browse_operation.clone())
+        .expect("pump SQLite catalog browse");
+    let browse_page_bytes = bridge
+        .next_events(0, 64)
+        .expect("browse events")
+        .events
+        .iter()
+        .find(|event| event.operation_id == browse_operation && event.kind == "page")
+        .and_then(|event| event.page_bytes.clone())
+        .expect("page event for SQLite catalog browse");
+    let browse_page = ResultPage::decode_v1(
+        &browse_page_bytes,
+        PageLimits::new(500, 64, 4 * 1024 * 1024, 64 * 1024),
+    )
+    .expect("decode SQLite browse page");
+    assert_eq!(browse_page.envelope().row_count(), 1);
 
     // Bridge execute starter SQL → non-empty page (not direct SqliteSession).
     let operation = bridge

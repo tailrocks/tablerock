@@ -1153,6 +1153,7 @@ impl TableRockBridge {
                 Engine::Redis => unreachable!("Redis rejected above"),
                 Engine::Sqlite => DriverPageRequest::SqliteStatement {
                     statement,
+                    parameters: Vec::new(),
                     limits,
                     max_cell_bytes: 64 * 1024,
                 },
@@ -1267,6 +1268,7 @@ impl TableRockBridge {
             }
             Engine::Sqlite => DriverPageRequest::SqliteStatement {
                 statement,
+                parameters: replay.parameters,
                 limits,
                 max_cell_bytes: 64 * 1024,
             },
@@ -4846,6 +4848,7 @@ impl TableRockBridge {
                             | PostgreSqlObjectKind::Sequence
                     )
                 ) | (Engine::ClickHouse, CatalogNodeKind::ClickHouseObject(_))
+                    | (Engine::Sqlite, CatalogNodeKind::SqliteTable)
             );
             if !supported {
                 return Err(BridgeError::rejected(
@@ -4867,7 +4870,11 @@ impl TableRockBridge {
                     CatalogNodeKind::ClickHouseObject(ClickHouseObjectKind::Table)
                 )
             );
-            let schema = parent.name().to_owned();
+            let schema = if registered.engine == Engine::Sqlite {
+                "main".to_owned()
+            } else {
+                parent.name().to_owned()
+            };
             let table = node.name().to_owned();
             if sort.len() > 16 {
                 return Err(BridgeError::rejected(
@@ -4964,7 +4971,7 @@ impl TableRockBridge {
                 Engine::PostgreSql => BrowseDialect::PostgreSql,
                 Engine::ClickHouse => BrowseDialect::ClickHouse,
                 Engine::Redis => unreachable!("Redis catalog nodes are not browsable tables"),
-                Engine::Sqlite => BrowseDialect::PostgreSql, // quote_ident style reused
+                Engine::Sqlite => BrowseDialect::Sqlite,
             };
             if raw_where
                 .as_ref()
@@ -7942,6 +7949,7 @@ impl TableRockBridge {
                         },
                         (Engine::Sqlite, _) => DriverPageRequest::SqliteStatement {
                             statement: text.clone(),
+                            parameters: parameters.clone(),
                             limits,
                             max_cell_bytes,
                         },

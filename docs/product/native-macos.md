@@ -55,6 +55,10 @@ Rules this app follows (from Apple's guidance):
 - Data-dense controls stay AppKit: `NSOutlineView` (catalog), `NSTableView`
   (grid), `NSTextView`/TextKit (SQL editor) via `NSViewRepresentable`.
   SwiftUI `Table`/`List` do not replace them at workbench scale.
+- Compact action menus use one shared `NSPopUpButton` adapter because SwiftUI
+  `Menu` exposes actionless `AXMenuButton` elements on the macOS 26 baseline.
+  AppKit owns target/action, menu dismissal, keyboard behavior, and the AX
+  contract; the command closures still dispatch into the presentation store.
 - Toolbar is user-customizable (`.toolbar(id:)`), with `ToolbarSpacer`
   separating connection, editing, and action clusters.
 - Dense professional layout preserved with `controlSize(.small)` /
@@ -94,8 +98,12 @@ Copy Text / Copy Hex are presentation-only pasteboard actions over Rust-owned
 bytes.
 At the minimum supported workbench width, the result grid and inspector both
 retain operable widths; selecting a cell must never collapse the inspector out
-of the accessibility hierarchy. Sheets contain their independently actionable
-controls rather than replacing those descendants with one container element.
+of the accessibility hierarchy. Below 980 points, showing a trailing value or
+structure inspector auto-collapses the leading catalog; the system sidebar
+control can reopen it, and widening the window or closing the inspector restores
+an automatically collapsed catalog. Sheets contain their independently
+actionable controls rather than replacing those descendants with one container
+element.
 
 Table-like object tabs expose ordered server sorting, typed parameterized
 filters, and an explicitly labeled raw-WHERE editor. Raw fragments are capped
@@ -120,6 +128,13 @@ concurrency build, VoiceOver/keyboard/IME coverage, multi-window restoration,
 Instruments page/scroll performance, clean-machine signing/notarization, and
 Liquid Glass behavior verified across light/dark, Increase Contrast, and
 Reduce Transparency.
+
+Production XCUITests run `performAccessibilityAudit(for: .all)` against both
+the populated object/inspector workbench and the populated query/result
+workbench. The only accepted framework-only findings are the unlabeled empty
+system Touch Bar, the standard full-screen button's mismatched decorative
+glyph, and SwiftUI's immutable split wrapper when its direct child has
+TableRock's exact pane label; every app-owned finding remains fatal.
 
 Source ownership is enforced independently of captures:
 

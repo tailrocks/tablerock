@@ -33,7 +33,7 @@
 
 ## Semantic tokens
 
-The lab uses system colors and fonts plus role names—not copied product tokens:
+TableRock uses system colors and fonts plus role names—not copied product tokens:
 
 | Role | Contract |
 |---|---|

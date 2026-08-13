@@ -8,7 +8,7 @@ Use **TableRock** for the product and `tablerock` for the CLI/package prefix:
 Repository: tailrocks/tablerock
 CLI:        tablerock
 Crates:     tablerock-core, tablerock-engine, tablerock-tui, tablerock-cli
-Future app: TableRock for macOS
+macOS app:  TableRock
 ```
 
 The name connects the primary grid/table experience with Tailrocks while

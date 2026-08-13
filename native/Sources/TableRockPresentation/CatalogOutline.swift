@@ -96,6 +96,7 @@ struct CatalogOutline: NSViewRepresentable {
     var onOpen: @MainActor (String) -> Void
     weak var outline: NSOutlineView?
     private var suppressExpansionCallbacks = false
+    private var previousSelectedRow = -1
 
     init(
       table: [WorkbenchCatalogNode],
@@ -182,6 +183,7 @@ struct CatalogOutline: NSViewRepresentable {
         let image = NSImageView()
         image.imageScaling = .scaleProportionallyDown
         image.contentTintColor = .secondaryLabelColor
+        image.setAccessibilityElement(false)
         image.translatesAutoresizingMaskIntoConstraints = false
         cell.imageView = image
         cell.textField = label
@@ -202,6 +204,13 @@ struct CatalogOutline: NSViewRepresentable {
       }
       cell.imageView?.isHidden = node.symbol == nil
       cell.textField?.stringValue = node.title
+      let selected = outlineView.selectedRow == outlineView.row(forItem: node)
+      cell.imageView?.contentTintColor =
+        selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
+      cell.textField?.textColor =
+        selected
+        ? .alternateSelectedControlTextColor
+        : node.isState ? .secondaryLabelColor : .textColor
       cell.setAccessibilityLabel(
         node.isState
           ? "Catalog state \(node.title)"
@@ -239,6 +248,15 @@ struct CatalogOutline: NSViewRepresentable {
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
+      let selectedRow = outline?.selectedRow ?? -1
+      let changedRows = IndexSet([previousSelectedRow, selectedRow].filter { $0 >= 0 })
+      if let outline, !changedRows.isEmpty {
+        outline.reloadData(
+          forRowIndexes: changedRows,
+          columnIndexes: IndexSet(integer: 0)
+        )
+      }
+      previousSelectedRow = selectedRow
       guard let outline, outline.selectedRow >= 0,
         let node = outline.item(atRow: outline.selectedRow) as? Node
       else {

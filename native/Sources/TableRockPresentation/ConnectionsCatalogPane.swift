@@ -141,7 +141,6 @@ struct ConnectionsCatalogPane: View {
       .padding(.horizontal, 12)
       .frame(height: 32)
     }
-    .background(.bar)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Database catalog pane")
   }

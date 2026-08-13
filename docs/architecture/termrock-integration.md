@@ -216,10 +216,10 @@ Every new or changed TermRock primitive must have:
 5. no Tokio/database/process dependency in TermRock;
 6. a performance budget for grids/editors or other hot paths;
 7. Jackin compatibility verification when an existing API changes;
-8. a buildable DCO-signed commit pushed directly to TermRock `main`, with no
-   branch or pull request;
+8. a buildable DCO-signed reviewed TermRock change under that repository's
+   contribution rules;
 9. an exact-revision TableRock pin plus committed lockfile in a later buildable
-   TableRock `main` checkpoint.
+   TableRock pull-request checkpoint.
 
 ## Delivery sequence
 

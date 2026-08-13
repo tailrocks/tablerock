@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     AdapterError, AdapterFailureClass, CatalogExactness, CatalogNodeSeed, CatalogRequest,
-    CatalogSubtree, DriverFuture, DriverPageRequest, DriverPageStream, DriverSession,
+    CatalogSubtree, DriverFuture, DriverPageRequest, DriverPageStream, DriverSession, FilterValue,
     ServerDescribe, SessionHealth,
 };
 
@@ -160,9 +160,29 @@ impl SqliteSession {
         sql: &str,
         max_rows: u32,
     ) -> Result<(Vec<String>, Vec<Vec<String>>), SqliteError> {
+        self.query_rows_with_parameters(sql, Vec::new(), max_rows)
+            .await
+    }
+
+    async fn query_rows_with_parameters(
+        &self,
+        sql: &str,
+        parameters: Vec<FilterValue>,
+        max_rows: u32,
+    ) -> Result<(Vec<String>, Vec<Vec<String>>), SqliteError> {
+        let parameters = parameters
+            .into_iter()
+            .map(|value| match value {
+                FilterValue::Text(value) => turso::Value::Text(value),
+                FilterValue::Integer(value) => turso::Value::Integer(value),
+                FilterValue::Float(value) => turso::Value::Real(value),
+                FilterValue::Boolean(value) => turso::Value::Integer(i64::from(value)),
+                FilterValue::Null => turso::Value::Null,
+            })
+            .collect::<Vec<_>>();
         let conn = self.connection.lock().await;
         let mut rows = conn
-            .query(sql, ())
+            .query(sql, parameters)
             .await
             .map_err(|e| SqliteError::Query(e.to_string()))?;
         let mut headers: Vec<String> = Vec::new();
@@ -219,12 +239,18 @@ impl DriverSession for SqliteSession {
         request: DriverPageRequest,
     ) -> DriverFuture<'a, Result<Box<dyn DriverPageStream>, AdapterError>> {
         Box::pin(async move {
-            let (sql, limits, max_cell) = match request {
+            let (sql, parameters, limits, max_cell) = match request {
                 DriverPageRequest::SqliteStatement {
                     statement,
+                    parameters,
                     limits,
                     max_cell_bytes,
-                } => (statement.as_str().to_owned(), limits, max_cell_bytes),
+                } => (
+                    statement.as_str().to_owned(),
+                    parameters,
+                    limits,
+                    max_cell_bytes,
+                ),
                 _ => {
                     return Err(AdapterError::new(
                         Engine::Sqlite,
@@ -234,7 +260,7 @@ impl DriverSession for SqliteSession {
             };
             let max_rows = limits.max_rows().min(500);
             let (headers, body) = self
-                .query_rows(&sql, max_rows)
+                .query_rows_with_parameters(&sql, parameters, max_rows)
                 .await
                 .map_err(AdapterError::from)?;
             Ok(Box::new(SqlitePageStream {

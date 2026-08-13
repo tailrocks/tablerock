@@ -2,10 +2,11 @@
 
 ## Delivery model
 
-This is a trunk-only, evidence-gated program. Work directly on `main`; never
-create a branch or pull request. A phase is a dependency map, not permission to
-batch months of changes into one commit. Each approved checkpoint is a small,
-buildable, documented, tested, DCO-signed forward commit.
+This is a pull-request, evidence-gated program. All TableRock work stays on the
+single authorized branch and pull request named by `AGENTS.md`; nothing pushes
+directly to `main`. A phase is a dependency map, not permission to batch months
+of changes into one commit. Each approved checkpoint is a small, buildable,
+documented, tested, DCO-signed forward commit.
 
 Phase 0 was approved on 2026-07-16. This plan now authorizes dependency-ordered
 implementation checkpoints; approval alone adds no application code or
@@ -46,8 +47,8 @@ Before each future implementation commit:
 - failure, cancellation, security, and unsupported states are specified;
 - relevant local/real-server/render/performance evidence passes;
 - documentation and support claims match the result;
-- the commit is created and pushed directly on `main` following
-  [33-main-branch-delivery.md](main-branch-delivery.md).
+- the commit is created and pushed to the authorized pull-request branch
+  following the [pull-request delivery policy](main-branch-delivery.md).
 
 If a checkpoint fails, record evidence and make the next forward repair. Do not
 hide failure by rewriting published `main` history.

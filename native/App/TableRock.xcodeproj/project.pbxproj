@@ -12,7 +12,6 @@
 		0840FF71536F8CBCD2279506 /* LibrarySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFFEA4B02C4D144A47C1B0E5 /* LibrarySheets.swift */; };
 		08418AD3F194E697CBAEF800 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7056B74025E206D1A652A30B /* AppConfiguration.swift */; };
 		0EF8998E2A6DD0F507D237DC /* SqlTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D28B5D715AE0B1C2A35D7627 /* SqlTextEditor.swift */; };
-		0FE432AC6F178577E64C4B16 /* TableRockFeature.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		13640014A3CBF62723E88F3D /* SqlEditorMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3216C4DBC614A64F649BFB7E /* SqlEditorMetricsTests.swift */; };
 		13768884D32D5623AF5DE98F /* WorkbenchPresentationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAF2397554F3A44294AD906B /* WorkbenchPresentationStore.swift */; };
 		13CCFB11B36AA7D0F9D0AB7F /* RelationContinuum.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D34DB93E10A8C5CEFF5C0BE /* RelationContinuum.swift */; };
@@ -24,6 +23,7 @@
 		2CBE0A9311B7732E3BD27C71 /* TableRockFeature.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; };
 		389224D06A5BA46505A9AF47 /* ProfilePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C435174637E2A8C0EB630B /* ProfilePresentationTests.swift */; };
 		3BC1F892B2D11CFFFFA88C3F /* PageV1BoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BD73D03EAEEE2DE99D6F35 /* PageV1BoundaryTests.swift */; };
+		3EE2EB3D56BEDC5E650E079B /* NativeActionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD751CF459C406C35849FFDF /* NativeActionMenu.swift */; };
 		411EB8166C56FC0EBE4C8394 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4593C9F33EA2B77A8CB555A4 /* Security.framework */; };
 		44AA1BFAFD6E6CC7BF238C6C /* ExternalConnectionRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6849571B55F5705D4B99DF75 /* ExternalConnectionRoute.swift */; };
 		46D95AB82D38919C1A1D839D /* TableRockFeature.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F539F1D25C4EAFDEB145B441 /* TableRockFeature.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -41,7 +41,6 @@
 		64238C449B50C4352FFB4EAA /* DevelopmentSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 227E57D8B55249CB89D356A7 /* DevelopmentSupport.swift */; };
 		643C8E197A17CF05848EA0FF /* CatalogOutline.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA486664BDC15F73284EBBE /* CatalogOutline.swift */; };
 		648FA6521CC497F9CAED7485 /* ValueInspectorProjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 587AF293CEBFDBE9D9FAD880 /* ValueInspectorProjectionTests.swift */; };
-		649DD63D9AC98840E6A86737 /* TableRockBridge.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A61EA4DB356144BD42272270 /* TableRockBridge.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		64A945F6CE46EEA9211525B9 /* TableRockPresentation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E50B6905617B0C527A51B7B /* TableRockPresentation.framework */; };
 		64C1CC6DD4CA40E9AE6CCC4E /* NativeFindReplaceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA874B8672A5136E8E711B13 /* NativeFindReplaceEngine.swift */; };
 		686762278D02E5B39276A5D8 /* PageV1FixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74B974D7ED34ED229C8EECD1 /* PageV1FixtureTests.swift */; };
@@ -114,7 +113,6 @@
 		F0C4A98C0FFD104B381390F9 /* WorkbenchPresentationStore+Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBEF16FC5014C8DE1F954306 /* WorkbenchPresentationStore+Library.swift */; };
 		F212B359F604BAA292F4664F /* ColumnHeaderPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6AFA7C53FF20F48FF62523 /* ColumnHeaderPresentationTests.swift */; };
 		F3E6C5EB63188CF0940F0330 /* WorkbenchTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD18301D71E2140043B680F /* WorkbenchTypes.swift */; };
-		FA18408CC213F157ECA81042 /* TableRockPresentation.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 2E50B6905617B0C527A51B7B /* TableRockPresentation.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -250,19 +248,6 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A571B746FAFCD66D4870F56F /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				0FE432AC6F178577E64C4B16 /* TableRockFeature.framework in Embed Frameworks */,
-				FA18408CC213F157ECA81042 /* TableRockPresentation.framework in Embed Frameworks */,
-				649DD63D9AC98840E6A86737 /* TableRockBridge.framework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -347,6 +332,7 @@
 		D8C0C4ADB7B9539A715DAEA3 /* ProfileRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileRow.swift; sourceTree = "<group>"; };
 		D9277D71A1F78ECF973208B3 /* WorkbenchCodedErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchCodedErrorTests.swift; sourceTree = "<group>"; };
 		DCD18301D71E2140043B680F /* WorkbenchTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchTypes.swift; sourceTree = "<group>"; };
+		DD751CF459C406C35849FFDF /* NativeActionMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeActionMenu.swift; sourceTree = "<group>"; };
 		E0E81CBCC90A576954235426 /* TransferSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferSheets.swift; sourceTree = "<group>"; };
 		E25AD0385D015297CBBA9D78 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		E73CE4C8DC427BC49C2EEEDE /* PresentationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresentationModels.swift; sourceTree = "<group>"; };
@@ -575,6 +561,7 @@
 				8C2D9605C0712BE7AC21EFE9 /* ConnectionsProfileList.swift */,
 				A274B93027DD332E3205F2FE /* EditorSheets.swift */,
 				EFFEA4B02C4D144A47C1B0E5 /* LibrarySheets.swift */,
+				DD751CF459C406C35849FFDF /* NativeActionMenu.swift */,
 				BA874B8672A5136E8E711B13 /* NativeFindReplaceEngine.swift */,
 				71919E51510905754DE98B46 /* NativeSettingsView.swift */,
 				11BA530197FCC8321D440BDA /* ObjectBrowseRail.swift */,
@@ -779,7 +766,6 @@
 			buildPhases = (
 				33FB86FCEF8181BDB50E6DB1 /* Sources */,
 				FE1AD7B3D96F69AF9AD595E0 /* Frameworks */,
-				A571B746FAFCD66D4870F56F /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -984,6 +970,7 @@
 				B4C02ABF88B1158FA8998D65 /* ConnectionsProfileList.swift in Sources */,
 				61A213D4EA69601FF0437D15 /* EditorSheets.swift in Sources */,
 				0840FF71536F8CBCD2279506 /* LibrarySheets.swift in Sources */,
+				3EE2EB3D56BEDC5E650E079B /* NativeActionMenu.swift in Sources */,
 				64C1CC6DD4CA40E9AE6CCC4E /* NativeFindReplaceEngine.swift in Sources */,
 				C4C14241E8701F02307CF78C /* NativeSettingsView.swift in Sources */,
 				E2B89FA90507981BED7CC40E /* ObjectBrowseRail.swift in Sources */,

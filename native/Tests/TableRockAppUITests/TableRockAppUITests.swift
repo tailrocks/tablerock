@@ -15,6 +15,42 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testProductionWorkbenchPassesAccessibilityAudit() throws {
+    for fixture in [
+      "TABLEROCK_FIXTURE_NATIVE_WORKBENCH",
+      "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_QUERY",
+    ] {
+      let app = launch(scenario: "success", environment: [fixture: "1"])
+      app.windows["window.workbench"].hover()
+      try app.performAccessibilityAudit(for: .all) { issue in
+        // macOS exposes its empty system Touch Bar as an application sibling but
+        // gives it no public AppKit labeling surface. Keep every app-owned issue fatal.
+        let systemTouchBarIssue =
+          issue.auditType == .sufficientElementDescription
+          && issue.element?.elementType == .touchBar
+          && issue.element?.children(matching: .any).count == 0
+        let fullScreenGlyph =
+          app.windows["window.workbench"].buttons["_XCUI:FullScreenWindow"]
+          .children(matching: .group).firstMatch
+        let systemFullScreenGlyphIssue =
+          issue.auditType == .parentChild
+          && issue.element?.elementType == .group
+          && fullScreenGlyph.exists
+          && issue.element?.frame == fullScreenGlyph.frame
+        let labeledSwiftUISplitWrapper =
+          issue.auditType == .sufficientElementDescription
+          && issue.element?.elementType == .group
+          && ["Query editor pane", "Query result pane"].contains { label in
+            issue.element?.children(matching: .group)
+              .matching(NSPredicate(format: "label == %@", label)).count == 1
+          }
+        return systemTouchBarIssue || systemFullScreenGlyphIssue || labeledSwiftUISplitWrapper
+      }
+      app.terminate()
+    }
+  }
+
+  @MainActor
   func testNativeWorkbenchFixtureOwnsDataPlane() throws {
     let app = launch(
       scenario: "success",
@@ -650,11 +686,8 @@ final class TableRockAppUITests: XCTestCase {
     editor.click()
     editor.typeText(" -- dirty")
 
-    let actions = app.descendants(matching: .any)["Actions for Orders"]
-    XCTAssertTrue(actions.waitForExistence(timeout: 10))
-    actions.click()
-    let close = app.descendants(matching: .any)["query.tab.close"]
-    XCTAssertTrue(close.waitForExistence(timeout: 5))
+    let close = app.buttons["Close Orders"]
+    XCTAssertTrue(close.waitForExistence(timeout: 10))
     close.click()
 
     XCTAssertTrue(
@@ -667,10 +700,9 @@ final class TableRockAppUITests: XCTestCase {
 
     let removed = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "exists == false"),
-      object: app.descendants(matching: .any)["Actions for Orders"])
+      object: close)
     XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 10), .completed)
-    XCTAssertTrue(
-      app.descendants(matching: .any)["Actions for Users"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["Close Users"].waitForExistence(timeout: 10))
   }
 
   @MainActor
@@ -975,6 +1007,9 @@ final class TableRockAppUITests: XCTestCase {
     stage.click()
     let apply = app.descendants(matching: .any)["import.csv.apply"]
     XCTAssertTrue(apply.waitForExistence(timeout: 10))
+    let applyEnabled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: apply)
+    XCTAssertEqual(XCTWaiter.wait(for: [applyEnabled], timeout: 10), .completed)
     apply.click()
 
     let progress = app.descendants(matching: .any)["import.csv.progress"]
@@ -1006,6 +1041,9 @@ final class TableRockAppUITests: XCTestCase {
     stage.click()
     let apply = app.descendants(matching: .any)["import.csv.apply"]
     XCTAssertTrue(apply.waitForExistence(timeout: 10))
+    let applyEnabled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: apply)
+    XCTAssertEqual(XCTWaiter.wait(for: [applyEnabled], timeout: 10), .completed)
     apply.click()
     let cancel = app.descendants(matching: .any)["import.csv.cancel"]
     XCTAssertTrue(cancel.waitForExistence(timeout: 10))
@@ -1052,7 +1090,23 @@ final class TableRockAppUITests: XCTestCase {
     addTeardownBlock { app.terminate() }
     relaunchApplication(app)
     assertWorkbenchWindowIsFrontmost(app)
+    assertWorkbenchFitsVisibleScreen(app)
     return app
+  }
+
+  @MainActor
+  private func assertWorkbenchFitsVisibleScreen(_ app: XCUIApplication) {
+    let workbench = app.windows["window.workbench"]
+    let frame = workbench.frame
+    let tolerance: CGFloat = 1
+    let fitsAvailableScreen = NSScreen.screens.contains { screen in
+      frame.width <= screen.visibleFrame.width + tolerance
+        && frame.height <= screen.visibleFrame.height + tolerance
+    }
+    XCTAssertTrue(
+      fitsAvailableScreen,
+      "Workbench frame \(frame) exceeds every visible screen frame"
+    )
   }
 
   @MainActor
@@ -1110,8 +1164,11 @@ final class TableRockAppUITests: XCTestCase {
       let status = app.descendants(matching: .any)["connection.status"]
       guard status.waitForExistence(timeout: 5) else { continue }
       app.activate()
-      status.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
-      return
+      let reachable = XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "hittable == true"), object: status)
+      if XCTWaiter.wait(for: [reachable], timeout: 3) == .completed {
+        return
+      }
     }
     XCTFail("Temporary connection did not reach a focused connected workbench")
   }

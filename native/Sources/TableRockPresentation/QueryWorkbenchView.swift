@@ -20,6 +20,8 @@ struct QueryWorkbenchView: View {
         )
         .frame(minHeight: 150)
         .background(Color(nsColor: .textBackgroundColor))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Query editor pane")
         .task(id: model.queryText) {
           try? await Task.sleep(for: .milliseconds(300))
           guard !Task.isCancelled else { return }
@@ -28,6 +30,8 @@ struct QueryWorkbenchView: View {
 
         QueryResultPlane(tab: tab)
           .frame(minHeight: 190)
+          .accessibilityElement(children: .contain)
+          .accessibilityLabel("Query result pane")
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -61,13 +65,13 @@ private struct QueryWorkbenchHeader: View {
           .accessibilityIdentifier("query.header")
         Text(queryContext)
           .font(.caption2)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(Color(nsColor: .textColor))
           .lineLimit(1)
       }
       Spacer(minLength: 8)
       Text(caretChip)
         .font(.caption2.monospaced())
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color(nsColor: .textColor))
         .accessibilityIdentifier("query.editor.metrics")
         .accessibilityValue(caretChip)
       if model.activeProductionWarning {
@@ -76,49 +80,12 @@ private struct QueryWorkbenchHeader: View {
           .foregroundStyle(.orange)
           .accessibilityLabel("Production — writes need review")
       }
-      Menu {
-        Button {
-          Task { await model.presentSavedQueries() }
-        } label: {
-          Label("Saved Queries", systemImage: "bookmark")
-        }
-        Button {
-          model.beginSaveCurrentQuery()
-        } label: {
-          Label("Save Query", systemImage: "bookmark.badge.plus")
-        }
-        .disabled(!model.queryWorkbenchSelected)
-        Divider()
-        Button("Open SQL File…", systemImage: "folder") {
-          model.requestOpenSqlFile()
-        }
-        Button("Save SQL File", systemImage: "square.and.arrow.down") {
-          Task { await model.saveSqlFile() }
-        }
-        Button("Save SQL File As…", systemImage: "square.and.arrow.down.on.square") {
-          Task { await model.saveSqlFile(saveAs: true) }
-        }
-        Button("Reload SQL File", systemImage: "arrow.clockwise") {
-          Task { await model.reloadSqlFile() }
-        }
-        .disabled(model.sqlFile == nil)
-        Divider()
-        Button("Find and Replace…", systemImage: "magnifyingglass") {
-          model.findReplacePresented = true
-        }
-        .keyboardShortcut("f", modifiers: .command)
-        .accessibilityIdentifier("query.find")
-        if model.connectedEngine == "redis" {
-          Button("Redis Overview", systemImage: "gauge.with.dots.needle.bottom.50percent") {
-            Task { await model.showRedisOverview() }
-          }
-          .disabled(model.redisOverviewLoading)
-        }
-      } label: {
-        Image(systemName: "ellipsis.circle")
-      }
-      .menuStyle(.borderlessButton)
-      .accessibilityLabel("Query actions")
+      NativeActionMenu(
+        title: "",
+        systemImage: "ellipsis.circle",
+        accessibilityLabel: "Query actions",
+        entries: queryActionEntries
+      )
 
       Button {
         Task { await model.runExplain() }
@@ -159,6 +126,57 @@ private struct QueryWorkbenchHeader: View {
     .accessibilityIdentifier("query.header.container")
   }
 
+  private var queryActionEntries: [NativeActionMenuEntry] {
+    var entries: [NativeActionMenuEntry] = [
+      .command(title: "Saved Queries", systemImage: "bookmark") {
+        Task { await model.presentSavedQueries() }
+      },
+      .command(
+        title: "Save Query",
+        systemImage: "bookmark.badge.plus",
+        isEnabled: model.queryWorkbenchSelected
+      ) {
+        model.beginSaveCurrentQuery()
+      },
+      .separator,
+      .command(title: "Open SQL File…", systemImage: "folder") {
+        model.requestOpenSqlFile()
+      },
+      .command(title: "Save SQL File", systemImage: "square.and.arrow.down") {
+        Task { await model.saveSqlFile() }
+      },
+      .command(title: "Save SQL File As…", systemImage: "square.and.arrow.down.on.square") {
+        Task { await model.saveSqlFile(saveAs: true) }
+      },
+      .command(
+        title: "Reload SQL File",
+        systemImage: "arrow.clockwise",
+        isEnabled: model.sqlFile != nil
+      ) {
+        Task { await model.reloadSqlFile() }
+      },
+      .separator,
+      .command(
+        title: "Find and Replace…",
+        systemImage: "magnifyingglass",
+        identifier: "query.find"
+      ) {
+        model.findReplacePresented = true
+      },
+    ]
+    if model.connectedEngine == "redis" {
+      entries.append(
+        .command(
+          title: "Redis Overview",
+          systemImage: "gauge.with.dots.needle.bottom.50percent",
+          isEnabled: !model.redisOverviewLoading
+        ) {
+          Task { await model.showRedisOverview() }
+        })
+    }
+    return entries
+  }
+
   private var queryContext: String {
     let connection = model.activeProfile?.name ?? model.connectedEngine
     if let file = model.sqlFile {
@@ -197,7 +215,7 @@ private struct QueryResultPlane: View {
         .accessibilityIdentifier("query.result-section")
 
         Spacer(minLength: 8)
-        if tab.resultTable != nil {
+        if let resultTable = tab.resultTable {
           Button {
             quickFilterPresented = true
           } label: {
@@ -210,7 +228,7 @@ private struct QueryResultPlane: View {
           .accessibilityLabel("Filter loaded rows")
           .accessibilityIdentifier("query.quick-filter.open")
           .popover(isPresented: $quickFilterPresented, arrowEdge: .bottom) {
-            QueryLoadedRowFilter(table: tab.resultTable!)
+            QueryLoadedRowFilter(table: resultTable)
           }
           if tab.nextStartRow != nil {
             Button("Load more") { Task { await model.loadMore() } }
