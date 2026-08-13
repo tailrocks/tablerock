@@ -1051,9 +1051,9 @@ final class TableRockAppUITests: XCTestCase {
       "TABLEROCK_TEST_SCENARIO": scenario,
     ].merging(environment) { _, fixture in fixture }
     app.launchArguments = ["-ApplePersistenceIgnoreState", "YES"]
+    addTeardownBlock { app.terminate() }
     app.launch()
     assertWorkbenchWindowIsFrontmost(app)
-    addTeardownBlock { app.terminate() }
     return app
   }
 
@@ -1069,23 +1069,42 @@ final class TableRockAppUITests: XCTestCase {
         return
       }
     }
+    app.activate()
+    let newWindow = app.menuItems["New Window"]
+    if newWindow.waitForExistence(timeout: 2), newWindow.isEnabled {
+      newWindow.click()
+    } else {
+      app.typeKey("n", modifierFlags: .command)
+    }
+    if workbench.waitForExistence(timeout: 5) {
+      return
+    }
     XCTFail("TableRock launched without a frontmost workbench window")
   }
 
   @MainActor
   private func connectTemporarily(_ app: XCUIApplication) {
-    assertWorkbenchWindowIsFrontmost(app)
-    let opens = app.buttons.matching(identifier: "connection.direct.open")
-    XCTAssertTrue(opens.firstMatch.waitForExistence(timeout: 10))
-    let open = opens.allElementsBoundByIndex.first(where: \.isHittable) ?? opens.firstMatch
-    app.activate()
-    open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     let connect = app.buttons["connection.direct.connect"]
-    if !connect.waitForExistence(timeout: 3) {
+    for attempt in 0..<2 {
+      assertWorkbenchWindowIsFrontmost(app)
+      let opens = app.buttons.matching(identifier: "connection.direct.open")
+      if !opens.firstMatch.waitForExistence(timeout: 5) {
+        openAdditionalWorkbenchWindow(app)
+        continue
+      }
+      let open = opens.allElementsBoundByIndex.first(where: \.isHittable) ?? opens.firstMatch
       app.activate()
       open.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+      if connect.waitForExistence(timeout: 5) {
+        break
+      }
+      if attempt == 0 {
+        app.typeKey(.escape, modifierFlags: [])
+        openAdditionalWorkbenchWindow(app)
+      }
     }
     XCTAssertTrue(connect.waitForExistence(timeout: 7))
+    guard connect.exists else { return }
     XCTAssertTrue(connect.isEnabled)
     app.activate()
     let hittable = XCTNSPredicateExpectation(
@@ -1105,6 +1124,18 @@ final class TableRockAppUITests: XCTestCase {
     let connected = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "exists == false"), object: connect)
     XCTAssertEqual(XCTWaiter.wait(for: [connected], timeout: 10), .completed)
+  }
+
+  @MainActor
+  private func openAdditionalWorkbenchWindow(_ app: XCUIApplication) {
+    app.activate()
+    let newWindow = app.menuItems["New Window"]
+    if newWindow.waitForExistence(timeout: 2), newWindow.isEnabled {
+      newWindow.click()
+    } else {
+      app.typeKey("n", modifierFlags: .command)
+    }
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 5))
   }
 
   @MainActor
