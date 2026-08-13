@@ -34,7 +34,7 @@ for pattern in \
   'case "exhausted"' \
   'case "authentication_stopped": return "Authentication stopped"' \
   'EnvironmentSafetyBadge\(model: model\)' \
-  'WorkbenchTabLabel\(title: tab.title, model: model\)' \
+  'EnvironmentSafetyTabIndicators\(model: model\)' \
   'accessibilityLabel\("Environment ' \
   'Connections in .* move to Ungrouped. No connection is deleted.'
 do

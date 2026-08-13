@@ -17,6 +17,16 @@ struct ProfileSection: Identifiable {
   let alphabetical: Bool
 }
 
+enum ConnectionWorkspaceSurface: String {
+  case connections
+  case setup
+}
+
+enum ProfileEditorPresentation {
+  case sheet
+  case workspace
+}
+
 struct ProfileGroupDialog: Identifiable {
   let id: UUID
   let oldName: String?

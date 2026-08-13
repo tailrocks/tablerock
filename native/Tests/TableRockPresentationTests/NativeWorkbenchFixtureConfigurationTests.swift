@@ -46,6 +46,8 @@
 
       XCTAssertFalse(configuration.nativeWorkbench)
       XCTAssertFalse(configuration.nativeWorkbenchQuery)
+      XCTAssertFalse(configuration.nativeWorkbenchConnections)
+      XCTAssertFalse(configuration.nativeWorkbenchSetup)
       XCTAssertFalse(configuration.multiWindow)
       XCTAssertFalse(configuration.objectTabs)
       XCTAssertFalse(configuration.dataMovementUI)
@@ -78,6 +80,8 @@
       let booleanKeys = [
         "TABLEROCK_FIXTURE_NATIVE_WORKBENCH",
         "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_QUERY",
+        "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_CONNECTIONS",
+        "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SETUP",
         "TABLEROCK_FIXTURE_MULTI_WINDOW",
         "TABLEROCK_FIXTURE_OBJECT_TABS",
         "TABLEROCK_FIXTURE_DATA_MOVEMENT_UI",
@@ -111,6 +115,8 @@
 
       XCTAssertTrue(configuration.nativeWorkbench)
       XCTAssertTrue(configuration.nativeWorkbenchQuery)
+      XCTAssertTrue(configuration.nativeWorkbenchConnections)
+      XCTAssertTrue(configuration.nativeWorkbenchSetup)
       XCTAssertTrue(configuration.multiWindow)
       XCTAssertTrue(configuration.objectTabs)
       XCTAssertTrue(configuration.dataMovementUI)

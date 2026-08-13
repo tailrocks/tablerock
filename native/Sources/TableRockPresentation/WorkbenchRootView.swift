@@ -7,6 +7,11 @@ public struct ContentView: View {
 
   public var body: some View {
     @Bindable var model = model
+    // The disconnected toolbar is installed before profile loading completes.
+    // Observe readiness here so SwiftUI re-attaches customizable toolbar
+    // content even when the selected connection route remains unchanged.
+    let _ = model.profiles.count
+    let _ = model.profilesLoading
     NavigationSplitView {
       // Native Workbench uses one stable leading plane. Connections own it
       // before connect; the database catalog owns it for the live session.
@@ -14,10 +19,10 @@ public struct ContentView: View {
         if model.sessionHex != nil {
           ConnectionsCatalogPane()
         } else {
-          ConnectionsProfileList()
+          ConnectionsNavigatorPane()
         }
       }
-      .navigationTitle(model.sessionHex == nil ? "Connections" : "Catalog")
+      .navigationTitle(model.sessionHex == nil ? "TableRock" : "Catalog")
       .navigationSplitViewColumnWidth(min: 210, ideal: 232, max: 300)
     } detail: {
       // Workbench shell when connected; welcome/direct-connect when not.
@@ -26,7 +31,7 @@ public struct ContentView: View {
         if model.sessionHex != nil {
           WorkbenchShellView()
         } else {
-          WorkbenchWelcomeView()
+          ConnectionWorkspaceView()
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -34,15 +39,23 @@ public struct ContentView: View {
     .navigationSplitViewStyle(.balanced)
     .sheet(
       isPresented: Binding(
-        get: { model.editorDraft != nil },
-        set: { if !$0 { model.editorDraft = nil } }
+        get: { model.profileEditorSheetPresented },
+        set: {
+          model.profileEditorSheetPresented = $0
+          if !$0 { model.editorDraft = nil }
+        }
       )
     ) {
       if let draft = model.editorDraft {
-        ProfileEditorSheet(initialDraft: draft) { saved in
-          await model.saveProfile(saved)
-        }
+        ProfileEditorSheet(
+          initialDraft: draft,
+          onTest: { tested in await model.testProfileDraft(tested) },
+          onSave: { saved in await model.saveProfile(saved) }
+        )
       }
+    }
+    .sheet(isPresented: $model.directConnectionPresented) {
+      TemporaryConnectionSheet()
     }
     .sheet(item: $model.groupDialog) { dialog in
       ProfileGroupEditorSheet(initialDialog: dialog) { saved in

@@ -60,6 +60,41 @@ final class TableRockAppUITests: XCTestCase {
   }
 
   @MainActor
+  func testNativeWorkbenchFixtureOwnsConnectionBrowser() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_CONNECTIONS": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["toolbar.connection"].exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["sidebar.profile.04040404040404040404040404040404"].exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["profile.04040404040404040404040404040404"].exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["profile.05050505050505050505050505050505"].exists)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["profile.06060606060606060606060606060606"].exists)
+    XCTAssertTrue(app.buttons["profile.add"].exists)
+    XCTAssertTrue(app.buttons["profile.url-import"].exists)
+    XCTAssertFalse(app.descendants(matching: .any)["connection.status"].exists)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsConnectionSetup() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SETUP": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["connection.setup"].exists)
+    XCTAssertEqual(app.textFields["profile.editor.name"].value as? String, "Northstar Analytics")
+    XCTAssertEqual(app.textFields["profile.editor.host"].value as? String, "analytics.internal")
+    XCTAssertTrue(app.buttons["profile.editor.test"].exists)
+    XCTAssertTrue(app.buttons["profile.editor.save"].exists)
+  }
+
+  @MainActor
   func testSlowQueryCancelsThroughRustBoundary() throws {
     let app = launch(
       scenario: "slow-until-cancelled",
@@ -105,9 +140,7 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testNamedParametersRequireSheetBeforeExecution() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     let editor = app.textViews["query.editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     editor.click()
@@ -199,10 +232,7 @@ final class TableRockAppUITests: XCTestCase {
   func testTemporaryConnectionOpensThroughUserControl() throws {
     let app = launch(scenario: "success")
 
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    XCTAssertTrue(connect.isEnabled)
-    connect.click()
+    connectTemporarily(app)
 
     XCTAssertTrue(
       app.descendants(matching: .any)["connection.status"]
@@ -213,9 +243,7 @@ final class TableRockAppUITests: XCTestCase {
   func testCatalogRefreshLoadsHierarchyThroughUserControl() throws {
     let app = launch(scenario: "success")
 
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
 
     let refresh = app.buttons["catalog.refresh"]
     XCTAssertTrue(refresh.waitForExistence(timeout: 10))
@@ -500,9 +528,7 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testExplainRunsThroughRustIntentAndOpensPlanPlane() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     XCTAssertTrue(
       app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
 
@@ -519,9 +545,7 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testPostgresActivityRefreshAndCancelRequireAuthority() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     XCTAssertTrue(
       app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
 
@@ -545,9 +569,7 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testPostgresRelationshipsOpenFromSelectedObject() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     let refresh = app.buttons["catalog.refresh"]
     XCTAssertTrue(refresh.waitForExistence(timeout: 10))
     refresh.click()
@@ -594,9 +616,7 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testStructureChangeRequiresFrozenReviewAndConfirmation() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     let refresh = app.buttons["catalog.refresh"]
     XCTAssertTrue(refresh.waitForExistence(timeout: 10))
     refresh.click()
@@ -642,9 +662,7 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testTableOperationRequiresExactTargetConfirmation() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     let refresh = app.buttons["catalog.refresh"]
     XCTAssertTrue(refresh.waitForExistence(timeout: 10))
     refresh.click()
@@ -693,9 +711,7 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   func testPostgresRolesSearchAndInspectMembership() throws {
     let app = launch(scenario: "success")
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
 
     let command = app.menuItems["PostgreSQL Roles and Privileges…"]
     XCTAssertTrue(command.waitForExistence(timeout: 10))
@@ -731,9 +747,7 @@ final class TableRockAppUITests: XCTestCase {
     let app = launch(
       scenario: "success", root: root,
       environment: ["TABLEROCK_TEST_SAVE_FILE": output.path])
-    let connect = app.buttons["connection.direct.connect"]
-    XCTAssertTrue(connect.waitForExistence(timeout: 10))
-    connect.click()
+    connectTemporarily(app)
     XCTAssertTrue(
       app.descendants(matching: .any)["connection.status"].waitForExistence(timeout: 10))
 
@@ -883,5 +897,16 @@ final class TableRockAppUITests: XCTestCase {
     app.activate()
     addTeardownBlock { app.terminate() }
     return app
+  }
+
+  @MainActor
+  private func connectTemporarily(_ app: XCUIApplication) {
+    let open = app.buttons["connection.direct.open"]
+    XCTAssertTrue(open.waitForExistence(timeout: 10))
+    open.click()
+    let connect = app.buttons["connection.direct.connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 10))
+    XCTAssertTrue(connect.isEnabled)
+    connect.click()
   }
 }

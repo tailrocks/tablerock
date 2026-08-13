@@ -101,7 +101,9 @@ extension WorkbenchPresentationStore {
     } catch { profileActionError = "Reorder failed: \(error)" }
   }
 
-  func createProfile() {
+  func createProfile(presentation: ProfileEditorPresentation = .sheet) {
+    profileEditorPresentation = presentation
+    profileEditorSheetPresented = presentation == .sheet
     editorDraft = ProfileEditorDraft(
       WorkbenchProfileDraft(
         idBytes: nil, revision: 0, engine: "postgresql", name: "",
@@ -111,6 +113,22 @@ extension WorkbenchPresentationStore {
         plaintextAcknowledged: false, tlsMode: "verify_full",
         safetyMode: "confirm_writes"
       ))
+  }
+
+  func showConnectionBrowser() {
+    connectionWorkspaceSurface = .connections
+  }
+
+  func showConnectionSetup() {
+    connectionWorkspaceSurface = .setup
+    profileEditorSheetPresented = false
+    guard editorDraft == nil || profileEditorPresentation != .workspace else { return }
+    createProfile(presentation: .workspace)
+  }
+
+  func cancelConnectionSetup() {
+    if profileEditorPresentation == .workspace { editorDraft = nil }
+    connectionWorkspaceSurface = .connections
   }
 
   func beginConnectionUrlImport() {
@@ -124,6 +142,8 @@ extension WorkbenchPresentationStore {
       var draft = ProfileEditorDraft(try await client.parseConnectionUrl(input))
       draft.name = draft.database.isEmpty ? draft.host : "\(draft.database) on \(draft.host)"
       connectionUrlImport = nil
+      profileEditorPresentation = .sheet
+      profileEditorSheetPresented = true
       editorDraft = draft
       return nil
     } catch {
@@ -135,12 +155,12 @@ extension WorkbenchPresentationStore {
 
   #if TABLEROCK_DEVELOPMENT_SUPPORT
     public func receiveExternalUrlFixtureIfNeeded() async {
-    guard !externalUrlFixtureConsumed,
-      let raw = fixtures.externalURL,
-      let url = URL(string: raw)
-    else { return }
-    externalUrlFixtureConsumed = true
-    await receiveExternalURL(url)
+      guard !externalUrlFixtureConsumed,
+        let raw = fixtures.externalURL,
+        let url = URL(string: raw)
+      else { return }
+      externalUrlFixtureConsumed = true
+      await receiveExternalURL(url)
     }
   #endif
 
@@ -180,6 +200,8 @@ extension WorkbenchPresentationStore {
     guard var draft = externalUrlReview?.draft else { return }
     draft.name = draft.database.isEmpty ? draft.host : "\(draft.database) on \(draft.host)"
     externalUrlReview = nil
+    profileEditorPresentation = .sheet
+    profileEditorSheetPresented = true
     editorDraft = draft
   }
 
@@ -276,7 +298,11 @@ extension WorkbenchPresentationStore {
   func editProfile(_ item: WorkbenchProfileItem) async {
     guard let client else { return }
     profileActionError = nil
-    do { editorDraft = ProfileEditorDraft(try await client.profileDraft(id: item.idBytes)) } catch {
+    do {
+      profileEditorPresentation = .sheet
+      profileEditorSheetPresented = true
+      editorDraft = ProfileEditorDraft(try await client.profileDraft(id: item.idBytes))
+    } catch {
       profileActionError = "Load connection failed: \(error)"
     }
   }
@@ -293,6 +319,16 @@ extension WorkbenchPresentationStore {
       copy.hasStoredPassword = false
     }
     editorDraft = copy
+  }
+
+  func testProfileDraft(_ draft: ProfileEditorDraft) async -> String {
+    guard let id = draft.idBytes,
+      let profile = profiles.first(where: { $0.idBytes == id })
+    else {
+      return "Save this connection before testing it."
+    }
+    await testProfile(profile)
+    return profileActionError ?? profileActionOutcome ?? "Connection test finished."
   }
 
   func saveProfile(_ draft: ProfileEditorDraft) async -> Bool {
@@ -322,6 +358,10 @@ extension WorkbenchPresentationStore {
         }
       }
       editorDraft = nil
+      profileEditorSheetPresented = false
+      if profileEditorPresentation == .workspace {
+        connectionWorkspaceSurface = .connections
+      }
       profileActionOutcome =
         cleanupWarning
         ? "Connection saved; previous Keychain item cleanup failed"
@@ -335,6 +375,26 @@ extension WorkbenchPresentationStore {
       profileActionError = "Save connection failed: \(error)"
       return false
     }
+  }
+
+  func saveAndConnectProfile(_ draft: ProfileEditorDraft) async -> Bool {
+    let existingId = draft.idBytes
+    guard await saveProfile(draft) else { return false }
+    let candidate =
+      existingId.flatMap { id in
+        profiles.first(where: { $0.idBytes == id })
+      }
+      ?? profiles.first(where: {
+        $0.name == draft.name && $0.engine == draft.engine && $0.host == draft.host
+          && $0.port == draft.port && ($0.context ?? "") == draft.database
+      })
+    guard let candidate else {
+      profileActionError = "Connection saved, but its refreshed profile was unavailable."
+      connectionWorkspaceSurface = .connections
+      return false
+    }
+    connectionWorkspaceSurface = .connections
+    return await connect(candidate)
   }
 
   func testProfile(_ item: WorkbenchProfileItem, passwordOverride: String? = nil) async {
@@ -400,6 +460,7 @@ extension WorkbenchPresentationStore {
         engine: formEngine, host: formHost, port: port, database: formDatabase,
         user: formUser, password: formPassword, tlsMode: "off"
       ))
+    if sessionHex != nil { directConnectionPresented = false }
   }
 
   private func connectTemporary(_ params: WorkbenchOpenParams) async {

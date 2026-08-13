@@ -603,6 +603,7 @@ How to read an evidence document:
 - 728 — [Native Workbench production shell](delivery/728-native-workbench-shell.md)
 - 729 — [Native Workbench production object plane](delivery/729-native-workbench-object-plane.md)
 - 730 — [Native Workbench production query plane](delivery/730-native-workbench-query-plane.md)
+- 731 — [Native Workbench production connections](delivery/731-native-workbench-connections.md)
 - 406 — [Plan 012 residual — reveal cursor column after GoToColumn](delivery/406-plan-012-reveal-cursor-column.md)
 - 407 — [Plan 009 residual — CopyStatus grid status line](delivery/407-plan-009-copy-status.md)
 - 408 — [Plan 007 residual — GoToTab by title](delivery/408-plan-007-go-to-tab.md)

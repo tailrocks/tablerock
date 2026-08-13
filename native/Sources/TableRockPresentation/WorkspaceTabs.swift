@@ -142,6 +142,7 @@ private struct SelectedDocumentTabBackground: ViewModifier {
 }
 
 private struct WorkbenchDocumentTab: View {
+  @Environment(WorkbenchPresentationStore.self) private var model
   let title: String
   let symbol: String
   let selected: Bool
@@ -164,13 +165,50 @@ private struct WorkbenchDocumentTab: View {
             .frame(width: 6, height: 6)
             .accessibilityHidden(true)
         }
+        EnvironmentSafetyTabIndicators(model: model)
       }
       .padding(.leading, 10)
       .frame(height: 28)
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
-    .accessibilityLabel(title)
+    .accessibilityLabel(accessibilityLabel)
     .accessibilityHint(dirty ? "Pending changes" : "No pending changes")
+  }
+
+  private var accessibilityLabel: String {
+    var parts = [title]
+    if model.activeProductionWarning {
+      parts.append("Production")
+    } else if let environment = model.activeEnvironmentLabel {
+      parts.append("Environment \(environment)")
+    }
+    if let safety = model.activeSafetyLabel { parts.append(safety) }
+    return parts.joined(separator: ", ")
+  }
+}
+
+private struct EnvironmentSafetyTabIndicators: View {
+  let model: WorkbenchPresentationStore
+
+  var body: some View {
+    Group {
+      if model.activeProductionWarning {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .foregroundStyle(.orange)
+          .accessibilityLabel("Production")
+      } else if let environment = model.activeEnvironmentLabel {
+        Text(environment)
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+          .accessibilityLabel("Environment \(environment)")
+      }
+      if model.activeSafetyLabel == "Read only" {
+        Image(systemName: "lock.fill")
+          .foregroundStyle(.secondary)
+          .accessibilityLabel("Read only")
+      }
+    }
+    .accessibilityHidden(true)
   }
 }

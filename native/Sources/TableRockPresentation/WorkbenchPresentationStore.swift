@@ -11,6 +11,10 @@ public final class WorkbenchPresentationStore {
   var bridgeError: String?
   var profiles: [WorkbenchProfileItem] = []
   var profileGroups: [WorkbenchProfileGroup] = []
+  var connectionWorkspaceSurface: ConnectionWorkspaceSurface = .connections
+  var profileEditorPresentation: ProfileEditorPresentation = .sheet
+  var profileEditorSheetPresented = false
+  var directConnectionPresented = false
   var collapsedProfileGroups: Set<String> = []
   var profileSearch = ""
   private(set) var profilesLoading = false
@@ -581,6 +585,10 @@ public final class WorkbenchPresentationStore {
 
   public func initialize() async {
     #if TABLEROCK_DEVELOPMENT_SUPPORT
+      if fixtures.nativeWorkbenchConnections || fixtures.nativeWorkbenchSetup {
+        installNativeConnectionFixture(setup: fixtures.nativeWorkbenchSetup)
+        return
+      }
       if fixtures.nativeWorkbench || fixtures.nativeWorkbenchQuery {
         installNativeWorkbenchFixture(selectsQuery: fixtures.nativeWorkbenchQuery)
         return
@@ -1297,6 +1305,55 @@ public final class WorkbenchPresentationStore {
   }
 
   #if TABLEROCK_DEVELOPMENT_SUPPORT
+    private func installNativeConnectionFixture(setup: Bool) {
+      profiles = [
+        WorkbenchProfileItem(
+          idBytes: Data(repeating: 4, count: 16), revision: 1,
+          name: "Northstar Analytics", engine: "postgresql", group: "Production",
+          favorite: true, savedOrder: 0, host: "analytics.internal", port: "5432",
+          context: "analytics", safetyMode: "confirm_writes", environment: "production",
+          productionWarning: true, dangerousPlaintext: false, connected: false
+        ),
+        WorkbenchProfileItem(
+          idBytes: Data(repeating: 5, count: 16), revision: 1,
+          name: "Atlas Events", engine: "clickhouse", group: "Staging",
+          favorite: true, savedOrder: 1, host: "events.cluster", port: "9440",
+          context: "events", safetyMode: "read_only", environment: "staging",
+          productionWarning: false, dangerousPlaintext: false, connected: false
+        ),
+        WorkbenchProfileItem(
+          idBytes: Data(repeating: 6, count: 16), revision: 1,
+          name: "Arbor Cache", engine: "redis", group: "Local",
+          favorite: true, savedOrder: 2, host: "127.0.0.1", port: "6379",
+          context: "0", safetyMode: "read_only", environment: "development",
+          productionWarning: false, dangerousPlaintext: false, connected: false
+        ),
+      ]
+      profileGroups = [
+        WorkbenchProfileGroup(name: "Production", alphabetical: true),
+        WorkbenchProfileGroup(name: "Staging", alphabetical: true),
+        WorkbenchProfileGroup(name: "Local", alphabetical: true),
+      ]
+      status = "Native Workbench connection fixture"
+      guard setup else {
+        connectionWorkspaceSurface = .connections
+        return
+      }
+      profileEditorPresentation = .workspace
+      profileEditorSheetPresented = false
+      connectionWorkspaceSurface = .setup
+      editorDraft = ProfileEditorDraft(
+        WorkbenchProfileDraft(
+          idBytes: nil, revision: 0, engine: "postgresql",
+          name: "Northstar Analytics", group: "Production", environment: "production",
+          host: "analytics.internal", port: "5432", database: "analytics",
+          username: "table_operator", passwordSource: "prompt", passwordValue: "",
+          passwordReference: nil, hasStoredPassword: false, plaintextAcknowledged: false,
+          tlsMode: "verify_full", safetyMode: "confirm_writes"
+        )
+      )
+    }
+
     private func installNativeWorkbenchFixture(selectsQuery: Bool) {
       let rootId = Data(repeating: 6, count: 16)
       let customersNode = WorkbenchCatalogNode(
@@ -1473,6 +1530,13 @@ public final class WorkbenchPresentationStore {
       status = "error"
     }
     if generation == profileSearchGeneration { profilesLoading = false }
+  }
+
+  func refreshProfilesForConnectionSearch() async {
+    #if TABLEROCK_DEVELOPMENT_SUPPORT
+      if fixtures.nativeWorkbenchConnections || fixtures.nativeWorkbenchSetup { return }
+    #endif
+    await refreshProfiles()
   }
 
 }
