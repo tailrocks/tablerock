@@ -153,6 +153,41 @@ final class WorkbenchPresentationStoreScenarioTests: XCTestCase {
     XCTAssertNil(model.relationContinuum)
   }
 
+  func testSelectedRowUpdateStagesReviewsRevokesAndApplies() async throws {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let model = WorkbenchPresentationStore(client: backend)
+
+    await model.connectByParams()
+    let session = Data(repeating: 1, count: 16)
+    model.catalogSnapshot = try await backend.refreshCatalog(session: session, parentNodeId: nil)
+    let table = try XCTUnwrap(
+      model.catalogSnapshot?.first(where: { $0.name == "fixture_table" }))
+    await model.openCatalogObject(nodeId: table.idBytes)
+    model.selectCell(row: 0, column: 1)
+
+    XCTAssertTrue(model.canEditSelectedRow)
+    model.showSelectedRowEditor()
+    let draft = try XCTUnwrap(model.rowEditDraft)
+    XCTAssertEqual(draft.fields.map(\.column), ["customer_id"])
+    XCTAssertEqual(draft.fields[0].original, "42")
+    draft.fields[0].value = "43"
+
+    await model.stageRowUpdate()
+    XCTAssertEqual(model.activeObjectTab?.mutationReview?.lines[0].parameters, ["43", "1001"])
+    XCTAssertEqual(model.changeLedgerEntryCount, 1)
+
+    await model.backToRowEditor()
+    XCTAssertNil(model.activeObjectTab?.mutationReview)
+    XCTAssertNotNil(model.rowEditDraft)
+    await model.stageRowUpdate()
+    await model.applyRowUpdate()
+
+    XCTAssertNil(model.rowEditDraft)
+    XCTAssertNil(model.activeObjectTab?.mutationReview)
+    XCTAssertEqual(model.activeObjectTab?.mutationOutcome, "Applied 1 update in one transaction.")
+    XCTAssertEqual(model.changeLedgerEntryCount, 0)
+  }
+
   func testPostgresRolesUseTypedMembershipAndPrivilegeSnapshot() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
     let model = WorkbenchPresentationStore(client: backend)

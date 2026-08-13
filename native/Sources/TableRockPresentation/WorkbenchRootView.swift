@@ -109,6 +109,12 @@ public struct ContentView: View {
       DdlChangeSheet()
     }
     .sheet(
+      isPresented: $model.mutationReviewPresented,
+      onDismiss: { Task { await model.discardRowUpdate() } }
+    ) {
+      MutationWorkflowSheet()
+    }
+    .sheet(
       isPresented: $model.tableOperationPresented,
       onDismiss: { Task { await model.closeTableOperation() } }
     ) {

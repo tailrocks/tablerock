@@ -97,6 +97,14 @@ outcomes are stable Rust contracts. Rust driver objects, Tokio handles, Swift
 objects, and borrowed rows do not cross the seam. One event/page batch crosses
 per call; never one object or callback per cell.
 
+The selected-row mutation seam is also coarse. Swift asks whether an opaque
+catalog result is editable, then submits its result revision, absolute resident
+row, and changed typed fields. Rust resolves the base relation and primary-key
+locator from its resident page, rejects identity-column assignment, freezes the
+typed plan behind a 60-second consume-once review token, and returns only the
+parameterized review projection. Apply consumes that token before database I/O;
+preview text is never executable input.
+
 ## UniFFI bridge
 
 Use UniFFI-generated Swift bindings over a Rust `staticlib`, packaged for Apple

@@ -494,6 +494,26 @@ private actor LiveWorkbenchBackend: WorkbenchBackend {
     try bridge.cancelPostgresTool(operationId: operationId)
   }
 
+  func mutationEditability(sessionId: Data, resultId: Data) throws
+    -> WorkbenchMutationEditability
+  {
+    try bridge.mutationEditability(sessionId: sessionId, resultId: resultId).workbench
+  }
+
+  func stageRowUpdate(
+    sessionId: Data, resultId: Data, revision: UInt64, row: UInt64,
+    assignments: [WorkbenchMutationAssignment], nowMs: UInt64
+  ) throws -> WorkbenchMutationReview {
+    try bridge.stageRowUpdate(
+      request: BridgeMutationReviewRequest(
+        sessionId: sessionId, resultId: resultId, revision: revision, row: row,
+        assignments: assignments.map {
+          BridgeMutationAssignment(column: $0.column, kind: $0.kind, value: $0.value)
+        },
+        nowMs: nowMs)
+    ).workbench
+  }
+
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
     -> WorkbenchApplyOutcome
   {

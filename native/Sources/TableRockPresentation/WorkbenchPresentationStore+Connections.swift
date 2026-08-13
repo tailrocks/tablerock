@@ -599,6 +599,15 @@ extension WorkbenchPresentationStore {
 
   func disconnectActive() async {
     guard let client, let session = sessionData else { return }
+    guard changeLedgerEntryCount == 0, rowEditDraft == nil else {
+      if rowEditDraft != nil {
+        mutationReviewPresented = true
+      } else {
+        presentActiveReview()
+      }
+      profileActionError = "Apply or discard staged changes before disconnecting."
+      return
+    }
     await persistSessionIntent()
     if redisSubscriptionIsActive { await closeRedisSubscription() }
     do {

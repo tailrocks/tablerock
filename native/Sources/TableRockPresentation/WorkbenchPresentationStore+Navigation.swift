@@ -21,6 +21,11 @@ extension WorkbenchPresentationStore {
   }
 
   func selectQueryTab(_ tab: NativeQueryTab) {
+    guard activeObjectTab?.mutationReview == nil, rowEditDraft == nil else {
+      mutationReviewPresented = true
+      profileActionError = "Apply or discard the staged row update before switching tabs."
+      return
+    }
     if selectedWorkbenchKind == "object" { activeObjectTab?.pinned = true }
     selectedQueryTabId = tab.id
     selectedWorkbenchKind = "query"
@@ -113,6 +118,13 @@ extension WorkbenchPresentationStore {
   }
 
   func selectObjectTab(_ tab: NativeObjectTab) {
+    if selectedObjectTabId != tab.id,
+      activeObjectTab?.mutationReview != nil || rowEditDraft != nil
+    {
+      mutationReviewPresented = true
+      profileActionError = "Apply or discard the staged row update before switching tabs."
+      return
+    }
     if selectedWorkbenchKind == "object", selectedObjectTabId != tab.id {
       activeObjectTab?.pinned = true
     }
@@ -128,6 +140,15 @@ extension WorkbenchPresentationStore {
   func closeObjectTab(_ tab: NativeObjectTab) {
     guard !tab.isRunning else {
       profileActionError = "Cancel the running browse before closing its tab"
+      return
+    }
+    guard tab.mutationReview == nil,
+      !(selectedObjectTabId == tab.id && rowEditDraft != nil)
+    else {
+      selectedObjectTabId = tab.id
+      selectedWorkbenchKind = "object"
+      mutationReviewPresented = true
+      profileActionError = "Apply or discard the staged row update before closing this tab."
       return
     }
     guard let index = objectTabs.firstIndex(where: { $0.id == tab.id }) else { return }
@@ -186,6 +207,7 @@ extension WorkbenchPresentationStore {
       } else {
         tab.summary = "No rows"
       }
+      await refreshMutationEditability(for: tab)
     } catch { tab.error = "Object browse failed: \(error)" }
   }
 

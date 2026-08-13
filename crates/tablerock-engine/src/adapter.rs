@@ -609,6 +609,23 @@ pub trait DriverSession: Send + Sync {
         })
     }
 
+    /// PostgreSQL-only stable row identity for editable relation results.
+    ///
+    /// Empty means the relation has no primary key and must remain read-only.
+    fn postgres_primary_key_columns<'a>(
+        &'a self,
+        schema: &'a str,
+        relation: &'a str,
+    ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
+        let _ = (schema, relation);
+        Box::pin(async {
+            Err(AdapterError::new(
+                self.engine(),
+                AdapterFailureClass::EngineMismatch,
+            ))
+        })
+    }
+
     /// PostgreSQL-only bounded foreign-key graph around one relation.
     fn postgres_relationships<'a>(
         &'a self,
@@ -1060,6 +1077,18 @@ impl DriverSession for PostgresSession {
     ) -> DriverFuture<'a, Result<Vec<PostgresActivityRow>, AdapterError>> {
         Box::pin(async move {
             PostgresSession::activity_snapshot(self)
+                .await
+                .map_err(map_postgres)
+        })
+    }
+
+    fn postgres_primary_key_columns<'a>(
+        &'a self,
+        schema: &'a str,
+        relation: &'a str,
+    ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
+        Box::pin(async move {
+            PostgresSession::relation_primary_key_columns(self, schema, relation)
                 .await
                 .map_err(map_postgres)
         })

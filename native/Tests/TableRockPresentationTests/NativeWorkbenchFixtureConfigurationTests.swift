@@ -49,6 +49,7 @@
       XCTAssertFalse(configuration.nativeWorkbenchConnections)
       XCTAssertFalse(configuration.nativeWorkbenchSetup)
       XCTAssertFalse(configuration.nativeWorkbenchStructure)
+      XCTAssertFalse(configuration.nativeWorkbenchSafeEdit)
       XCTAssertFalse(configuration.nativeWorkbenchSafeReview)
       XCTAssertFalse(configuration.nativeWorkbenchDestructiveReview)
       XCTAssertNil(configuration.nativeWorkbenchEngine)
@@ -89,6 +90,7 @@
         "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_CONNECTIONS",
         "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SETUP",
         "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STRUCTURE",
+        "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SAFE_EDIT",
         "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SAFE_REVIEW",
         "TABLEROCK_FIXTURE_NATIVE_WORKBENCH_DESTRUCTIVE_REVIEW",
         "TABLEROCK_FIXTURE_MULTI_WINDOW",
@@ -129,6 +131,7 @@
       XCTAssertTrue(configuration.nativeWorkbenchConnections)
       XCTAssertTrue(configuration.nativeWorkbenchSetup)
       XCTAssertTrue(configuration.nativeWorkbenchStructure)
+      XCTAssertTrue(configuration.nativeWorkbenchSafeEdit)
       XCTAssertTrue(configuration.nativeWorkbenchSafeReview)
       XCTAssertTrue(configuration.nativeWorkbenchDestructiveReview)
       XCTAssertEqual(configuration.nativeWorkbenchEngine, .clickhouse)

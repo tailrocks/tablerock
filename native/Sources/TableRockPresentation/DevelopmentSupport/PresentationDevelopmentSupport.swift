@@ -26,6 +26,7 @@
     let nativeWorkbenchConnections: Bool
     let nativeWorkbenchSetup: Bool
     let nativeWorkbenchStructure: Bool
+    let nativeWorkbenchSafeEdit: Bool
     let nativeWorkbenchSafeReview: Bool
     let nativeWorkbenchDestructiveReview: Bool
     let nativeWorkbenchEngine: NativeWorkbenchFixtureEngine?
@@ -59,7 +60,7 @@
 
     var nativeWorkbenchRoute: Bool {
       nativeWorkbench || nativeWorkbenchQuery || nativeWorkbenchStructure
-        || nativeWorkbenchSafeReview || nativeWorkbenchDestructiveReview
+        || nativeWorkbenchSafeEdit || nativeWorkbenchSafeReview || nativeWorkbenchDestructiveReview
         || nativeWorkbenchEngine != nil || nativeWorkbenchState != nil
     }
 
@@ -74,6 +75,8 @@
         nativeWorkbenchSetup: environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SETUP"] == "1",
         nativeWorkbenchStructure:
           environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_STRUCTURE"] == "1",
+        nativeWorkbenchSafeEdit:
+          environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SAFE_EDIT"] == "1",
         nativeWorkbenchSafeReview:
           environment["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SAFE_REVIEW"] == "1",
         nativeWorkbenchDestructiveReview:

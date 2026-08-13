@@ -247,6 +247,25 @@ impl DriverSession for SessionSlot {
         })
     }
 
+    fn postgres_primary_key_columns<'a>(
+        &'a self,
+        schema: &'a str,
+        relation: &'a str,
+    ) -> DriverFuture<'a, Result<Vec<String>, AdapterError>> {
+        Box::pin(async move {
+            let guard = self.state.read().await;
+            match &*guard {
+                SessionState::Open(session) => {
+                    session.postgres_primary_key_columns(schema, relation).await
+                }
+                SessionState::Closed => Err(AdapterError::new(
+                    self.engine,
+                    AdapterFailureClass::Connection,
+                )),
+            }
+        })
+    }
+
     fn postgres_relationships<'a>(
         &'a self,
         schema: &'a str,

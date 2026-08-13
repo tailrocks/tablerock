@@ -65,11 +65,22 @@ final class TableRockAppUITests: XCTestCase {
 
     XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
     XCTAssertTrue(
-      app.descendants(matching: .any)["structure.change.sheet"].waitForExistence(timeout: 10))
+      app.descendants(matching: .any)["mutation.review.entry"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.descendants(matching: .any)["change.review.safe"].exists)
-    XCTAssertTrue(app.descendants(matching: .any)["structure.change.preview"].exists)
-    XCTAssertTrue(app.buttons["structure.change.apply-review"].isEnabled)
-    XCTAssertFalse(app.textFields["structure.change.confirmation"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["mutation.review.entry"].exists)
+    XCTAssertTrue(app.buttons["mutation.apply"].isEnabled)
+  }
+
+  @MainActor
+  func testNativeWorkbenchFixtureOwnsSafeRowEditor() throws {
+    let app = launch(
+      scenario: "success",
+      environment: ["TABLEROCK_FIXTURE_NATIVE_WORKBENCH_SAFE_EDIT": "1"])
+
+    XCTAssertTrue(app.windows["window.workbench"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.textFields["mutation.field.plan"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.textFields["mutation.field.seats"].exists)
+    XCTAssertTrue(app.buttons["mutation.stage-review"].isEnabled)
   }
 
   @MainActor

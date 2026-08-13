@@ -368,6 +368,13 @@ extension WorkbenchBackend {
   func cancelPostgresTool(operationId: Data) throws -> Bool {
     try scriptedUnavailable("postgres-tool-cancel")
   }
+  func mutationEditability(sessionId: Data, resultId: Data) throws
+    -> WorkbenchMutationEditability
+  { try scriptedUnavailable("mutation-editability") }
+  func stageRowUpdate(
+    sessionId: Data, resultId: Data, revision: UInt64, row: UInt64,
+    assignments: [WorkbenchMutationAssignment], nowMs: UInt64
+  ) throws -> WorkbenchMutationReview { try scriptedUnavailable("mutation-stage") }
   func applyReviewToken(tokenId: Data, nowMs: UInt64, sessionId: Data) throws
     -> WorkbenchApplyOutcome
   { try scriptedUnavailable("apply") }
@@ -399,6 +406,7 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
   private var tableOperationReviewActive = false
   private var scriptedTableOperationKind = "truncate"
   private var scriptedTableOperationPollCount = 0
+  private var mutationReviewActive = false
 
   init(scenario: String) { self.scenario = scenario }
 
@@ -671,7 +679,13 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
         table = WorkbenchTable(columns: ["id", "name"], rows: [])
       }
       return WorkbenchOperation(
-        table: table, envelope: nil, outcome: "completed", historyFailed: false)
+        table: table,
+        envelope: WorkbenchPageEnvelope(
+          encodingVersion: 1, resultId: Data(repeating: 8, count: 16), revision: 1,
+          engine: 0, startRow: 0, rowCount: UInt32(table.rows.count),
+          columnCount: UInt32(table.columns.count), arenaByteLen: 0,
+          columnTextByteLen: 0, delivery: 1, warnings: 0),
+        outcome: "completed", historyFailed: false)
     }
     if scenario == "success", submittedIntent == "explain" {
       return WorkbenchOperation(
@@ -868,6 +882,12 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
         transaction: "committed", changeCount: 1, appliedCount: 1,
         conflictCount: 0, failedCount: 0)
     }
+    if mutationReviewActive, tokenId == Data(repeating: 20, count: 16) {
+      mutationReviewActive = false
+      return WorkbenchApplyOutcome(
+        transaction: "committed", changeCount: 1, appliedCount: 1,
+        conflictCount: 0, failedCount: 0)
+    }
     return try scriptedUnavailable("apply")
   }
 
@@ -880,7 +900,45 @@ actor ScriptedWorkbenchBackend: WorkbenchBackend {
       importReviewActive = false
       return wasActive
     }
+    if tokenId == Data(repeating: 20, count: 16) {
+      let wasActive = mutationReviewActive
+      mutationReviewActive = false
+      return wasActive
+    }
     return try scriptedUnavailable("revoke")
+  }
+
+  func mutationEditability(sessionId: Data, resultId: Data) throws
+    -> WorkbenchMutationEditability
+  {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16),
+      resultId == Data(repeating: 8, count: 16)
+    else { return try scriptedUnavailable("mutation-editability") }
+    return WorkbenchMutationEditability(editable: true, reason: nil, identityColumns: ["id"])
+  }
+
+  func stageRowUpdate(
+    sessionId: Data, resultId: Data, revision: UInt64, row: UInt64,
+    assignments: [WorkbenchMutationAssignment], nowMs: UInt64
+  ) throws -> WorkbenchMutationReview {
+    guard scenario == "success", sessionId == Data(repeating: 1, count: 16),
+      resultId == Data(repeating: 8, count: 16), revision == 1, row == 0,
+      assignments == [
+        WorkbenchMutationAssignment(
+          column: "customer_id", kind: "signed", value: Data("43".utf8))
+      ], !mutationReviewActive
+    else { return try scriptedUnavailable("mutation-stage") }
+    mutationReviewActive = true
+    return WorkbenchMutationReview(
+      tokenId: Data(repeating: 20, count: 16), target: "public.fixture_table",
+      expiresAtMs: nowMs + 60_000,
+      lines: [
+        WorkbenchMutationReviewLine(
+          kind: "update",
+          preview:
+            "UPDATE \"public\".\"fixture_table\" SET \"customer_id\" = $1 WHERE \"id\" = $2",
+          parameters: ["43", "1001"])
+      ])
   }
 
   func startRedisSubscription(sessionId: Data, selector: String, pattern: Bool) throws -> Data {

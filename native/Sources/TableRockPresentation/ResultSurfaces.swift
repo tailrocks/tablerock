@@ -123,6 +123,12 @@ private struct ResultUtilityRail: View {
         Button("Load more") { Task { await model.loadMore() } }
           .accessibilityIdentifier("results.next-page")
       }
+      if model.canEditSelectedRow {
+        Button("Edit Selected", systemImage: "pencil") {
+          model.showSelectedRowEditor()
+        }
+        .accessibilityIdentifier("mutation.edit-selected")
+      }
       ResultCopyMenu()
       ResultExportMenu()
       Button {
@@ -157,6 +163,12 @@ private struct ResultUtilityRail: View {
           .font(.caption)
           .foregroundStyle(.secondary)
           .accessibilityIdentifier("relation.continuum.error")
+      }
+      if let outcome = model.activeObjectTab?.mutationOutcome {
+        Text(outcome)
+          .font(.caption)
+          .foregroundStyle(.green)
+          .accessibilityIdentifier("mutation.outcome")
       }
     }
     .font(.caption)

@@ -826,6 +826,12 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
     func listSavedQueries(engine: String?, search: String?) throws  -> [BridgeSavedQueryItem]
 
     /**
+     * Resolves whether one opaque catalog result is editable. Rust owns the
+     * base-relation, profile-safety, and stable-identity proof.
+     */
+    func mutationEditability(sessionId: Data, resultId: Data) throws  -> BridgeMutationEditability
+
+    /**
      * Returns a bounded event batch starting at `cursor` (exclusive of prior delivery).
      */
     func nextEvents(cursor: UInt64, maximum: UInt32) throws  -> BridgeEventBatch
@@ -1022,6 +1028,13 @@ public protocol TableRockBridgeProtocol: AnyObject, Sendable {
      * Freezes one typed role change behind a 60-second consume-once token.
      */
     func stagePostgresRoleChange(request: BridgeRoleChangeRequest) throws  -> BridgeRoleChangeReview
+
+    /**
+     * Freezes one selected-row update behind a consume-once review token.
+     * The locator is read from the resident typed result, never supplied by
+     * presentation text.
+     */
+    func stageRowUpdate(request: BridgeMutationReviewRequest) throws  -> BridgeMutationReview
 
     /**
      * Freezes one typed table operation behind target-specific confirmation.
@@ -1682,6 +1695,21 @@ open func listSavedQueries(engine: String?, search: String?)throws  -> [BridgeSa
 }
 
     /**
+     * Resolves whether one opaque catalog result is editable. Rust owns the
+     * base-relation, profile-safety, and stable-identity proof.
+     */
+open func mutationEditability(sessionId: Data, resultId: Data)throws  -> BridgeMutationEditability  {
+    return try  FfiConverterTypeBridgeMutationEditability_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_mutation_editability(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(sessionId),
+        FfiConverterData.lower(resultId),uniffiCallStatus
+    )
+})
+}
+
+    /**
      * Returns a bounded event batch starting at `cursor` (exclusive of prior delivery).
      */
 open func nextEvents(cursor: UInt64, maximum: UInt32)throws  -> BridgeEventBatch  {
@@ -2255,6 +2283,21 @@ open func stagePostgresRoleChange(request: BridgeRoleChangeRequest)throws  -> Br
     uniffi_tablerock_ffi_fn_method_tablerockbridge_stage_postgres_role_change(
             self.uniffiCloneHandle(),
         FfiConverterTypeBridgeRoleChangeRequest_lower(request),uniffiCallStatus
+    )
+})
+}
+
+    /**
+     * Freezes one selected-row update behind a consume-once review token.
+     * The locator is read from the resident typed result, never supplied by
+     * presentation text.
+     */
+open func stageRowUpdate(request: BridgeMutationReviewRequest)throws  -> BridgeMutationReview  {
+    return try  FfiConverterTypeBridgeMutationReview_lift(try rustCallWithError(FfiConverterTypeBridgeError_lift) {
+        uniffiCallStatus in
+    uniffi_tablerock_ffi_fn_method_tablerockbridge_stage_row_update(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeBridgeMutationReviewRequest_lower(request),uniffiCallStatus
     )
 })
 }
@@ -3798,6 +3841,323 @@ public func FfiConverterTypeBridgeHistoryItem_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeBridgeHistoryItem_lower(_ value: BridgeHistoryItem) -> RustBuffer {
     return FfiConverterTypeBridgeHistoryItem.lower(value)
+}
+
+
+/**
+ * One operator-entered assignment for a reviewed row update.
+ *
+ * `kind` is the Rust value family (`boolean`, `signed`, `unsigned`, `float`,
+ * `decimal`, `temporal`, `text`, `binary`, or `null`). Value bytes never
+ * appear in Debug output.
+ */
+public struct BridgeMutationAssignment: Equatable, Hashable {
+    public var column: String
+    public var kind: String
+    public var value: Data?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(column: String, kind: String, value: Data?) {
+        self.column = column
+        self.kind = kind
+        self.value = value
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeMutationAssignment: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeMutationAssignment: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeMutationAssignment {
+        return
+            try BridgeMutationAssignment(
+                column: FfiConverterString.read(from: &buf),
+                kind: FfiConverterString.read(from: &buf),
+                value: FfiConverterOptionData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeMutationAssignment, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.column, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterOptionData.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeMutationAssignment_lift(_ buf: RustBuffer) throws -> BridgeMutationAssignment {
+    return try FfiConverterTypeBridgeMutationAssignment.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeMutationAssignment_lower(_ value: BridgeMutationAssignment) -> RustBuffer {
+    return FfiConverterTypeBridgeMutationAssignment.lower(value)
+}
+
+
+public struct BridgeMutationEditability: Equatable, Hashable {
+    public var editable: Bool
+    public var reason: String?
+    public var identityColumns: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(editable: Bool, reason: String?, identityColumns: [String]) {
+        self.editable = editable
+        self.reason = reason
+        self.identityColumns = identityColumns
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeMutationEditability: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeMutationEditability: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeMutationEditability {
+        return
+            try BridgeMutationEditability(
+                editable: FfiConverterBool.read(from: &buf),
+                reason: FfiConverterOptionString.read(from: &buf),
+                identityColumns: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeMutationEditability, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.editable, into: &buf)
+        FfiConverterOptionString.write(value.reason, into: &buf)
+        FfiConverterSequenceString.write(value.identityColumns, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeMutationEditability_lift(_ buf: RustBuffer) throws -> BridgeMutationEditability {
+    return try FfiConverterTypeBridgeMutationEditability.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeMutationEditability_lower(_ value: BridgeMutationEditability) -> RustBuffer {
+    return FfiConverterTypeBridgeMutationEditability.lower(value)
+}
+
+
+public struct BridgeMutationReview: Equatable, Hashable {
+    public var tokenId: Data
+    public var target: String
+    public var expiresAtMs: UInt64
+    public var lines: [BridgeMutationReviewLine]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(tokenId: Data, target: String, expiresAtMs: UInt64, lines: [BridgeMutationReviewLine]) {
+        self.tokenId = tokenId
+        self.target = target
+        self.expiresAtMs = expiresAtMs
+        self.lines = lines
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeMutationReview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeMutationReview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeMutationReview {
+        return
+            try BridgeMutationReview(
+                tokenId: FfiConverterData.read(from: &buf),
+                target: FfiConverterString.read(from: &buf),
+                expiresAtMs: FfiConverterUInt64.read(from: &buf),
+                lines: FfiConverterSequenceTypeBridgeMutationReviewLine.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeMutationReview, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.tokenId, into: &buf)
+        FfiConverterString.write(value.target, into: &buf)
+        FfiConverterUInt64.write(value.expiresAtMs, into: &buf)
+        FfiConverterSequenceTypeBridgeMutationReviewLine.write(value.lines, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeMutationReview_lift(_ buf: RustBuffer) throws -> BridgeMutationReview {
+    return try FfiConverterTypeBridgeMutationReview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeMutationReview_lower(_ value: BridgeMutationReview) -> RustBuffer {
+    return FfiConverterTypeBridgeMutationReview.lower(value)
+}
+
+
+public struct BridgeMutationReviewLine: Equatable, Hashable {
+    public var kind: String
+    public var preview: String
+    public var parameters: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: String, preview: String, parameters: [String]) {
+        self.kind = kind
+        self.preview = preview
+        self.parameters = parameters
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeMutationReviewLine: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeMutationReviewLine: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeMutationReviewLine {
+        return
+            try BridgeMutationReviewLine(
+                kind: FfiConverterString.read(from: &buf),
+                preview: FfiConverterString.read(from: &buf),
+                parameters: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeMutationReviewLine, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.preview, into: &buf)
+        FfiConverterSequenceString.write(value.parameters, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeMutationReviewLine_lift(_ buf: RustBuffer) throws -> BridgeMutationReviewLine {
+    return try FfiConverterTypeBridgeMutationReviewLine.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeMutationReviewLine_lower(_ value: BridgeMutationReviewLine) -> RustBuffer {
+    return FfiConverterTypeBridgeMutationReviewLine.lower(value)
+}
+
+
+/**
+ * A selected resident row plus its requested assignments. Rust resolves the
+ * base relation and primary-key locator from the opaque result id.
+ */
+public struct BridgeMutationReviewRequest: Equatable, Hashable {
+    public var sessionId: Data
+    public var resultId: Data
+    public var revision: UInt64
+    public var row: UInt64
+    public var assignments: [BridgeMutationAssignment]
+    public var nowMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sessionId: Data, resultId: Data, revision: UInt64, row: UInt64, assignments: [BridgeMutationAssignment], nowMs: UInt64) {
+        self.sessionId = sessionId
+        self.resultId = resultId
+        self.revision = revision
+        self.row = row
+        self.assignments = assignments
+        self.nowMs = nowMs
+    }
+
+
+
+
+}
+
+#if compiler(>=6)
+extension BridgeMutationReviewRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeMutationReviewRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeMutationReviewRequest {
+        return
+            try BridgeMutationReviewRequest(
+                sessionId: FfiConverterData.read(from: &buf),
+                resultId: FfiConverterData.read(from: &buf),
+                revision: FfiConverterUInt64.read(from: &buf),
+                row: FfiConverterUInt64.read(from: &buf),
+                assignments: FfiConverterSequenceTypeBridgeMutationAssignment.read(from: &buf),
+                nowMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeMutationReviewRequest, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.sessionId, into: &buf)
+        FfiConverterData.write(value.resultId, into: &buf)
+        FfiConverterUInt64.write(value.revision, into: &buf)
+        FfiConverterUInt64.write(value.row, into: &buf)
+        FfiConverterSequenceTypeBridgeMutationAssignment.write(value.assignments, into: &buf)
+        FfiConverterUInt64.write(value.nowMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeMutationReviewRequest_lift(_ buf: RustBuffer) throws -> BridgeMutationReviewRequest {
+    return try FfiConverterTypeBridgeMutationReviewRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeMutationReviewRequest_lower(_ value: BridgeMutationReviewRequest) -> RustBuffer {
+    return FfiConverterTypeBridgeMutationReviewRequest.lower(value)
 }
 
 
@@ -7507,6 +7867,56 @@ fileprivate struct FfiConverterSequenceTypeBridgeHistoryItem: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBridgeMutationAssignment: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeMutationAssignment]
+
+    public static func write(_ value: [BridgeMutationAssignment], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeMutationAssignment.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeMutationAssignment] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeMutationAssignment]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeMutationAssignment.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeBridgeMutationReviewLine: FfiConverterRustBuffer {
+    typealias SwiftType = [BridgeMutationReviewLine]
+
+    public static func write(_ value: [BridgeMutationReviewLine], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBridgeMutationReviewLine.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BridgeMutationReviewLine] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BridgeMutationReviewLine]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBridgeMutationReviewLine.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeBridgePostgresActivityRow: FfiConverterRustBuffer {
     typealias SwiftType = [BridgePostgresActivityRow]
 
@@ -8042,6 +8452,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_list_saved_queries() != 61153) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_mutation_editability() != 41499) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_next_events() != 49029) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8175,6 +8588,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_postgres_role_change() != 21204) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_row_update() != 58428) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tablerock_ffi_checksum_method_tablerockbridge_stage_table_operation() != 20721) {

@@ -111,6 +111,7 @@ targets:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
         Test Release:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TABLEROCK_DEVELOPMENT_SUPPORT"
+          ENABLE_HARDENED_RUNTIME: NO
 
   TableRockDesignLab:
     type: application

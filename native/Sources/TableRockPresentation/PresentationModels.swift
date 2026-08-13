@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import TableRockFeature
 
 func connectedSessionLabel(_ session: String) -> String {
@@ -124,5 +125,28 @@ struct ProfileEditorDraft {
       sshPlaintextAcknowledged: sshPlaintextAcknowledged,
       startupActions: startupActions.map(\.workbench)
     )
+  }
+}
+
+struct NativeMutationField: Identifiable, Equatable {
+  let column: String
+  let kind: String
+  let original: String
+  var value: String
+  var id: String { column }
+}
+
+@MainActor
+@Observable
+final class NativeRowEditDraft: Identifiable {
+  let id = UUID()
+  let row: Int
+  let relation: String
+  var fields: [NativeMutationField]
+
+  init(row: Int, relation: String, fields: [NativeMutationField]) {
+    self.row = row
+    self.relation = relation
+    self.fields = fields
   }
 }

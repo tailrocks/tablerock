@@ -196,6 +196,11 @@ final class NativeObjectTab: Identifiable {
   var filterPresetName = ""
   var filterPresetOutcome: String?
   var filterPresetError: String?
+  var mutationEditability: WorkbenchMutationEditability?
+  var mutationReview: WorkbenchMutationReview?
+  var mutationOutcome: String?
+  var mutationError: String?
+  var mutationApplying = false
 
   init(id: UUID, node: WorkbenchCatalogNode, pinned: Bool = false) {
     self.id = id

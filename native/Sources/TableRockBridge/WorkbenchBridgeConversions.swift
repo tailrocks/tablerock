@@ -303,6 +303,23 @@ extension ApplyOutcome {
       conflictCount: conflictCount, failedCount: failedCount)
   }
 }
+extension BridgeMutationEditability {
+  var workbench: WorkbenchMutationEditability {
+    .init(editable: editable, reason: reason, identityColumns: identityColumns)
+  }
+}
+extension BridgeMutationReviewLine {
+  var workbench: WorkbenchMutationReviewLine {
+    .init(kind: kind, preview: preview, parameters: parameters)
+  }
+}
+extension BridgeMutationReview {
+  var workbench: WorkbenchMutationReview {
+    .init(
+      tokenId: tokenId, target: target, expiresAtMs: expiresAtMs,
+      lines: lines.map(\.workbench))
+  }
+}
 extension CancelOutcome {
   var workbench: WorkbenchCancelOutcome { .init(core: core, runtime: runtime) }
 }

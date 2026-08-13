@@ -390,7 +390,7 @@ struct WorkbenchStatusBar: View {
         model.presentActiveReview()
       } label: {
         Label(
-          "\(max(model.changeLedgerEntryCount, 1)) CHANGES",
+          counted(max(model.changeLedgerEntryCount, 1), "change").uppercased(),
           systemImage: "circle.fill"
         )
       }

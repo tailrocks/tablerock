@@ -134,6 +134,8 @@ public final class WorkbenchPresentationStore {
   var tableOperationApplying = false
   var tableOperationCatalogNodeId: Data?
   var tableOperationId: Data?
+  var rowEditDraft: NativeRowEditDraft?
+  var mutationReviewPresented = false
   var findReplacePresented = false
   var findPattern = ""
   var findReplacement = ""
@@ -214,7 +216,7 @@ public final class WorkbenchPresentationStore {
 
   /// Pending ledger entries visible to presentation.
   var changeLedgerEntryCount: Int {
-    var n = 0
+    var n = objectTabs.reduce(0) { $0 + ($1.mutationReview == nil ? 0 : 1) }
     if ddlChangeReview != nil { n += 1 }
     if tableOperationReview != nil { n += 1 }
     if csvImportReview != nil { n += 1 }
@@ -223,7 +225,8 @@ public final class WorkbenchPresentationStore {
   }
 
   var changeReviewOpen: Bool {
-    ddlChangeReview != nil || tableOperationReview != nil || csvImportReview != nil
+    objectTabs.contains(where: { $0.mutationReview != nil }) || ddlChangeReview != nil
+      || tableOperationReview != nil || csvImportReview != nil
       || postgresRoleChangeReview != nil
   }
   var activeQueryTab: NativeQueryTab {
@@ -336,7 +339,9 @@ public final class WorkbenchPresentationStore {
   }
 
   func presentActiveReview() {
-    if ddlChangeReview != nil {
+    if activeObjectTab?.mutationReview != nil {
+      mutationReviewPresented = true
+    } else if ddlChangeReview != nil {
       ddlChangePresented = true
     } else if tableOperationReview != nil {
       tableOperationPresented = true
@@ -590,7 +595,8 @@ public final class WorkbenchPresentationStore {
         return
       }
       if fixtures.nativeWorkbench || fixtures.nativeWorkbenchQuery
-        || fixtures.nativeWorkbenchStructure || fixtures.nativeWorkbenchSafeReview
+        || fixtures.nativeWorkbenchStructure || fixtures.nativeWorkbenchSafeEdit
+        || fixtures.nativeWorkbenchSafeReview
         || fixtures.nativeWorkbenchDestructiveReview || fixtures.nativeWorkbenchEngine != nil
         || fixtures.nativeWorkbenchState != nil
       {
@@ -600,10 +606,15 @@ public final class WorkbenchPresentationStore {
           state: fixtures.nativeWorkbenchState ?? .populated)
         if fixtures.nativeWorkbenchStructure {
           installNativeWorkbenchStructureFixture()
+        } else if fixtures.nativeWorkbenchSafeEdit {
+          installNativeWorkbenchSafeEditFixture()
+          await presentNativeWorkbenchFixtureReview(destructive: false)
         } else if fixtures.nativeWorkbenchSafeReview {
           installNativeWorkbenchReviewFixture(destructive: false)
+          await presentNativeWorkbenchFixtureReview(destructive: false)
         } else if fixtures.nativeWorkbenchDestructiveReview {
           installNativeWorkbenchReviewFixture(destructive: true)
+          await presentNativeWorkbenchFixtureReview(destructive: true)
         }
         return
       }
@@ -1438,7 +1449,7 @@ public final class WorkbenchPresentationStore {
         host: clickHouse ? "events.cluster" : "db.internal",
         port: clickHouse ? "9440" : "5432",
         context: clickHouse ? "analytics.events" : "analytics.public",
-        safetyMode: "read_only", environment: "development",
+        safetyMode: clickHouse ? "read_only" : "confirm_writes", environment: "development",
         productionWarning: false, dangerousPlaintext: false, connected: true)
       profiles = [profile]
       activeProfileId = profile.idBytes
@@ -1496,6 +1507,9 @@ public final class WorkbenchPresentationStore {
         ])
       customers.resultIdData = Data(repeating: 8, count: 16)
       customers.resultRevision = 1
+      customers.mutationEditability = WorkbenchMutationEditability(
+        editable: !clickHouse, reason: clickHouse ? "engine edit flow unavailable" : nil,
+        identityColumns: clickHouse ? [] : ["customer_id"])
       customers.summary = "48,224 rows · 41 ms"
       customers.filters = [
         WorkbenchBrowseFilter(
@@ -1807,22 +1821,53 @@ public final class WorkbenchPresentationStore {
         profiles = [profile]
         activeProfileId = profile.idBytes
       }
-      ddlChangeCatalogNodeId = tab.catalogNodeId
-      ddlChangeReview = WorkbenchDdlChangeReview(
-        tokenId: Data(repeating: destructive ? 19 : 18, count: 16),
-        preview: destructive
-          ? "ALTER TABLE analytics.public.customers DROP COLUMN legacy_status"
-          : "ALTER TABLE analytics.public.customers ADD COLUMN account_tier TEXT",
-        destructive: destructive,
-        rollbackSummary: destructive
-          ? "Dropped data cannot be reconstructed automatically."
-          : "Rollback removes account_tier before dependent writes.",
-        expiresAtMs: dependencies.clock.nowMilliseconds() + 60_000)
-      ddlChangePresented = true
+      if destructive {
+        ddlChangeCatalogNodeId = tab.catalogNodeId
+        ddlChangeReview = WorkbenchDdlChangeReview(
+          tokenId: Data(repeating: 19, count: 16),
+          preview: "ALTER TABLE analytics.public.customers DROP COLUMN legacy_status",
+          destructive: true,
+          rollbackSummary: "Dropped data cannot be reconstructed automatically.",
+          expiresAtMs: dependencies.clock.nowMilliseconds() + 60_000)
+      } else {
+        installNativeWorkbenchSafeEditFixture()
+        tab.mutationReview = WorkbenchMutationReview(
+          tokenId: Data(repeating: 18, count: 16), target: "analytics.customers",
+          expiresAtMs: dependencies.clock.nowMilliseconds() + 60_000,
+          lines: [
+            WorkbenchMutationReviewLine(
+              kind: "update",
+              preview:
+                "UPDATE \"analytics\".\"customers\" SET \"plan\" = $1, \"seats\" = $2 WHERE \"customer_id\" = $3",
+              parameters: ["Enterprise", "148", "…a91f"])
+          ])
+      }
       status =
         destructive
         ? "Native Workbench destructive review fixture"
         : "Native Workbench safe review fixture"
+    }
+
+    private func installNativeWorkbenchSafeEditFixture() {
+      guard let tab = selectedObjectTab else { return }
+      rowEditDraft = NativeRowEditDraft(
+        row: 2, relation: tab.title,
+        fields: [
+          NativeMutationField(column: "plan", kind: "text", original: "Scale", value: "Enterprise"),
+          NativeMutationField(column: "seats", kind: "signed", original: "124", value: "148"),
+        ])
+      status = "Native Workbench safe edit fixture"
+    }
+
+    private func presentNativeWorkbenchFixtureReview(destructive: Bool) async {
+      // Let SwiftUI attach and activate the owning workbench window before
+      // presenting a development-only fixture sheet.
+      try? await Task.sleep(for: .milliseconds(500))
+      if destructive {
+        ddlChangePresented = true
+      } else {
+        mutationReviewPresented = true
+      }
     }
 
     private func installPerformanceFixtureIfRequested() {

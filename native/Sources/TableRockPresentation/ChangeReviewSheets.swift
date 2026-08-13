@@ -133,6 +133,152 @@ struct ChangeReviewPlane: View {
   }
 }
 
+struct MutationWorkflowSheet: View {
+  @Environment(WorkbenchPresentationStore.self) private var model
+
+  var body: some View {
+    Group {
+      if let review = model.activeObjectTab?.mutationReview {
+        reviewSurface(review)
+      } else if let draft = model.rowEditDraft {
+        editorSurface(draft)
+      } else {
+        ContentUnavailableView("No staged row update", systemImage: "tablecells")
+      }
+    }
+    .frame(minWidth: 650, minHeight: 520)
+    .interactiveDismissDisabled(
+      model.activeObjectTab?.mutationReview != nil
+        || model.activeObjectTab?.mutationApplying == true
+    )
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("mutation.workflow.sheet")
+  }
+
+  private func editorSurface(_ draft: NativeRowEditDraft) -> some View {
+    @Bindable var draft = draft
+    return VStack(alignment: .leading, spacing: 16) {
+      HStack(alignment: .top, spacing: 12) {
+        Image(systemName: "pencil.and.list.clipboard")
+          .font(.title)
+          .foregroundStyle(.blue)
+        VStack(alignment: .leading, spacing: 3) {
+          Text("Edit Selected Row")
+            .font(.title2.weight(.semibold))
+          Text(
+            "\(draft.relation) · row \(draft.row + 1) · changes stay local until review and apply"
+          )
+          .foregroundStyle(.secondary)
+        }
+        Spacer()
+      }
+      Divider()
+      Form {
+        ForEach($draft.fields) { $field in
+          if field.kind == "boolean" {
+            Picker(field.column, selection: $field.value) {
+              Text("true").tag("true")
+              Text("false").tag("false")
+            }
+            .accessibilityIdentifier("mutation.field.\(field.column)")
+          } else {
+            TextField(field.column, text: $field.value)
+              .textFieldStyle(.roundedBorder)
+              .accessibilityLabel("\(field.column), \(field.kind)")
+              .accessibilityIdentifier("mutation.field.\(field.column)")
+          }
+        }
+      }
+      .formStyle(.grouped)
+      if let error = model.activeObjectTab?.mutationError {
+        Text(error)
+          .foregroundStyle(.red)
+          .textSelection(.enabled)
+          .accessibilityIdentifier("mutation.error")
+      }
+      Spacer(minLength: 0)
+      HStack {
+        Button("Discard") { Task { await model.discardRowUpdate() } }
+          .keyboardShortcut(.cancelAction)
+        Spacer()
+        Button("Stage for Review") { Task { await model.stageRowUpdate() } }
+          .buttonStyle(.glassProminent)
+          .accessibilityIdentifier("mutation.stage-review")
+      }
+    }
+    .padding(22)
+  }
+
+  private func reviewSurface(_ review: WorkbenchMutationReview) -> some View {
+    VStack(spacing: 0) {
+      ChangeReviewHeader(
+        destructive: false,
+        title: "Review staged changes",
+        summary:
+          "\(counted(review.lines.count, "safe update")) will apply in one PostgreSQL transaction."
+      )
+      .padding(22)
+      Divider()
+      List {
+        ForEach(review.lines) { line in
+          ChangeReviewEntry(
+            kind: line.kind,
+            title: review.target,
+            preview: line.preview,
+            destructive: false
+          )
+          .accessibilityIdentifier("mutation.review.entry")
+          if !line.parameters.isEmpty {
+            Text(
+              line.parameters.enumerated()
+                .map { "$\($0.offset + 1) = \($0.element)" }
+                .joined(separator: " · ")
+            )
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .accessibilityIdentifier("mutation.review.parameters")
+          }
+        }
+        Section("Review authority") {
+          Text(
+            ChangeReviewPresentation.metadataStrip(
+              target: review.target, expiresAtMs: review.expiresAtMs,
+              nowMs: model.nowMilliseconds(), destructive: false)
+          )
+          .font(.caption.monospaced())
+          Text("Apply consumes this review once. Conflict rolls back the transaction.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      if let error = model.activeObjectTab?.mutationError {
+        Text(error)
+          .foregroundStyle(.red)
+          .padding(.horizontal, 22)
+          .textSelection(.enabled)
+          .accessibilityIdentifier("mutation.error")
+      }
+      Divider()
+      HStack {
+        Button("Discard All", role: .destructive) {
+          Task { await model.discardRowUpdate() }
+        }
+        Button("Back") { Task { await model.backToRowEditor() } }
+        Spacer()
+        if model.activeObjectTab?.mutationApplying == true {
+          ProgressView("Applying…")
+        }
+        Button("Apply Updates") { Task { await model.applyRowUpdate() } }
+          .buttonStyle(.glassProminent)
+          .disabled(model.activeObjectTab?.mutationApplying == true)
+          .accessibilityIdentifier("mutation.apply")
+      }
+      .padding(18)
+    }
+  }
+}
+
 struct DdlChangeSheet: View {
   @Environment(WorkbenchPresentationStore.self) private var model
   @State private var destructiveConfirmation = ""

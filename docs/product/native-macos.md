@@ -105,6 +105,14 @@ and active raw mode remains visibly announced. Result column headers project
 each active server sort's direction and one-based priority; unsorted headers
 retain the database column name unchanged.
 
+For a PostgreSQL base-table browse, Rust resolves the relation, profile safety,
+and primary-key identity behind the opaque result ID. Selecting a resident row
+then exposes Edit Selected only when that proof is editable. The native sheet
+collects supported typed values, stages a Rust-owned parameterized update, and
+shows the frozen statement, values, expiry, and consume-once authority before
+Apply. Swift never supplies the row locator, constructs SQL, or reparses the
+preview.
+
 ## Platform evidence gates
 
 The native design is accepted only with the phase 12-14 gates: strict
