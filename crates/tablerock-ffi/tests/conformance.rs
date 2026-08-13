@@ -278,14 +278,23 @@ impl DriverSession for FixedPageSession {
                 );
                 return Ok(Some(("pg_catalog".into(), "int4".into(), 1)));
             }
-            assert_eq!((from_schema, from_table), ("public", "users"));
-            assert_eq!((to_schema, to_table), ("crm", "customers"));
+            assert_eq!(
+                (edge.from_schema.as_str(), edge.from_table.as_str()),
+                ("public", "users")
+            );
+            assert_eq!(
+                (edge.to_schema.as_str(), edge.to_table.as_str()),
+                ("crm", "customers")
+            );
             assert!(!browse_source);
-            let width = if from_column == "composite_id" {
-                assert_eq!(to_column, "composite_id");
+            let width = if edge.from_column == "composite_id" {
+                assert_eq!(edge.to_column, "composite_id");
                 2
             } else {
-                assert_eq!((from_column, to_column), ("customer_id", "id"));
+                assert_eq!(
+                    (edge.from_column.as_str(), edge.to_column.as_str()),
+                    ("customer_id", "id")
+                );
                 1
             };
             Ok(Some(("pg_catalog".into(), "int8".into(), width)))
