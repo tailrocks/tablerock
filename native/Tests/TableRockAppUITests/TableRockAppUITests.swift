@@ -1050,7 +1050,7 @@ final class TableRockAppUITests: XCTestCase {
     ].merging(environment) { _, fixture in fixture }
     app.launchArguments = ["-ApplePersistenceIgnoreState", "YES"]
     addTeardownBlock { app.terminate() }
-    app.launch()
+    relaunchApplication(app)
     assertWorkbenchWindowIsFrontmost(app)
     return app
   }
@@ -1058,19 +1058,17 @@ final class TableRockAppUITests: XCTestCase {
   @MainActor
   private func assertWorkbenchWindowIsFrontmost(_ app: XCUIApplication) {
     let workbench = app.windows["window.workbench"]
-    for _ in 0..<3 {
+    for attempt in 0..<3 {
+      if attempt > 0 {
+        relaunchApplication(app)
+      }
       app.activate()
       NSRunningApplication.runningApplications(withBundleIdentifier: "app.tablerock.TableRock")
         .max(by: { $0.processIdentifier < $1.processIdentifier })?
         .activate(options: [.activateAllWindows])
-      if workbench.waitForExistence(timeout: 3) {
+      if workbench.waitForExistence(timeout: 5) {
         return
       }
-    }
-    app.activate()
-    app.typeKey("n", modifierFlags: .command)
-    if workbench.waitForExistence(timeout: 5) {
-      return
     }
     XCTFail("TableRock launched without a frontmost workbench window")
   }
@@ -1120,9 +1118,21 @@ final class TableRockAppUITests: XCTestCase {
 
   @MainActor
   private func restartApplication(_ app: XCUIApplication) {
-    app.terminate()
-    app.launch()
+    relaunchApplication(app)
     assertWorkbenchWindowIsFrontmost(app)
+  }
+
+  @MainActor
+  private func relaunchApplication(_ app: XCUIApplication) {
+    if app.state != .notRunning {
+      app.terminate()
+      let stopped = XCTNSPredicateExpectation(
+        predicate: NSPredicate(
+          format: "state == %d", XCUIApplication.State.notRunning.rawValue),
+        object: app)
+      XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 5), .completed)
+    }
+    app.launch()
   }
 
   @MainActor
