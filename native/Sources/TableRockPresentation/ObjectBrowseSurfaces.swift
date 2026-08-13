@@ -105,7 +105,7 @@ private struct ObjectStructureView: View {
               .font(.body.monospaced())
           }
         }
-        .tableStyle(.inset(alternatesRowBackgrounds: true))
+        .tableStyle(.bordered(alternatesRowBackgrounds: true))
         .frame(minWidth: 500)
         .accessibilityLabel("\(structure.relation) columns")
         .accessibilityIdentifier("structure.columns")
