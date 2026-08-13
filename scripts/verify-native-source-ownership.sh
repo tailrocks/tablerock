@@ -17,26 +17,21 @@ if [[ -d "$PRESENTATION_SOURCE" ]]; then
   production_roots+=("$PRESENTATION_SOURCE")
 fi
 
-if rg -n '^import TableRockDesignLab$' "${production_roots[@]}"; then
-  echo "error: production imports the Design Lab" >&2
-  exit 1
-fi
-
 if rg -n \
-  '^import (TableRockBridge|TableRockPresentation|TableRockDesignLab|tablerock_ffiFFI|SwiftUI|AppKit)$' \
+  '^import (TableRockBridge|TableRockPresentation|tablerock_ffiFFI|SwiftUI|AppKit)$' \
   "$FEATURE_SOURCE"; then
   echo "error: TableRockFeature crosses its stable-contract boundary" >&2
   exit 1
 fi
 
-if rg -n '^import (TableRockPresentation|TableRockDesignLab|SwiftUI|AppKit)$' \
+if rg -n '^import (TableRockPresentation|SwiftUI|AppKit)$' \
   "$BRIDGE_SOURCE"; then
   echo "error: TableRockBridge imports presentation code" >&2
   exit 1
 fi
 
 if [[ -d "$PRESENTATION_SOURCE" ]] && rg -n \
-  '(^import (TableRockBridge|TableRockDesignLab|tablerock_ffiFFI|Network|Security)$)|tablerock_ffi|URLSession' \
+  '(^import (TableRockBridge|tablerock_ffiFFI|Network|Security)$)|tablerock_ffi|URLSession' \
   "$PRESENTATION_SOURCE"; then
   echo "error: TableRockPresentation crosses its bridge-neutral boundary" >&2
   exit 1
@@ -59,18 +54,6 @@ if [[ -e "$APP_SOURCE/TableRockApp.swift" ]]; then
 fi
 
 package_json="$(swift package dump-package --package-path "$REPO_ROOT/native")"
-if [[ "$(jq '[.targets[] | select(.name == "TableRockDesignLab")][0].dependencies | length' \
-  <<<"$package_json")" != "0" ]]; then
-  echo "error: Swift Package Design Lab target has dependencies" >&2
-  exit 1
-fi
-if jq -e '
-  [.targets[] | select(.name == "TableRockApp")][0].dependencies
-  | any((.byName?[0] // .target?[0] // .product?[0] // "") == "TableRockDesignLab")
-' <<<"$package_json" >/dev/null; then
-  echo "error: Swift Package production app depends on Design Lab" >&2
-  exit 1
-fi
 if [[ "$(jq -r '
   [.targets[] | select(.name == "TableRockBridge")][0].dependencies
   | map(.byName?[0] // .target?[0] // .product?[0] // "")
@@ -93,14 +76,7 @@ require "yaml"
 
 path = ARGV.fetch(0)
 targets = YAML.load_file(path).fetch("targets")
-lab_dependencies = targets.fetch("TableRockDesignLab").fetch("dependencies", [])
-abort "error: Xcode Design Lab target has dependencies" unless lab_dependencies.empty?
-
 app_dependencies = targets.fetch("TableRock").fetch("dependencies", [])
-if app_dependencies.any? { |entry| entry["target"] == "TableRockDesignLab" }
-  abort "error: Xcode production app depends on Design Lab"
-end
-
 bridge_dependencies = targets.fetch("TableRockBridge").fetch("dependencies", [])
 bridge_target_names = bridge_dependencies.map { |entry| entry["target"] }.compact
 unless bridge_target_names == ["TableRockFeature"]

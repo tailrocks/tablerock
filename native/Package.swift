@@ -14,7 +14,6 @@ let package = Package(
         .library(name: "TableRockBridge", targets: ["TableRockBridge"]),
         .library(name: "TableRockFeature", targets: ["TableRockFeature"]),
         .library(name: "TableRockPresentation", targets: ["TableRockPresentation"]),
-        .executable(name: "TableRockDesignLab", targets: ["TableRockDesignLab"]),
     ],
     targets: [
         // System library target wrapping the UniFFI C header + module map.
@@ -62,13 +61,6 @@ let package = Package(
                 .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
             ]
         ),
-        // Static, clean-room native interface exploration. This target must
-        // remain dependency-free and must not reuse production models.
-        .executableTarget(
-            name: "TableRockDesignLab",
-            dependencies: [],
-            path: "Sources/TableRockDesignLab"
-        ),
         .testTarget(
             name: "TableRockBridgeTests",
             dependencies: ["TableRockBridge"],
@@ -90,11 +82,6 @@ let package = Package(
             swiftSettings: [
                 .define("TABLEROCK_DEVELOPMENT_SUPPORT", .when(configuration: .debug)),
             ]
-        ),
-        .testTarget(
-            name: "TableRockDesignLabTests",
-            dependencies: ["TableRockDesignLab"],
-            path: "Tests/TableRockDesignLabTests"
         ),
     ]
 )

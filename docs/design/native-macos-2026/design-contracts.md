@@ -1,113 +1,71 @@
-# Design-lab contracts
+# Native Workbench design contracts
 
 ## Ownership
 
-`TableRockDesignLab` is a standalone Swift executable and Xcode application.
-Its Swift Package target has an empty dependency list. The Xcode target has no
-dependency on `TableRock`, `TableRockFeature`, `TableRockBridge`, the UniFFI
-XCFramework, Rust artifacts, or production resources.
+- `TableRockFeature` owns stable presentation contracts and application ports.
+- `TableRockPresentation` owns SwiftUI views, presentation state, and narrow
+  AppKit adapters. It depends only on `TableRockFeature`.
+- `TableRockBridge` translates between Swift contracts and the synchronous
+  UniFFI facade. It contains no presentation code.
+- Rust owns database clients, safety, redaction, paging, executable mutation,
+  persistence, and terminal truth.
 
-Lab code may import only Apple UI/foundation frameworks. All displayed data is
-invented and immutable. View-local selection and disclosure state is transient
-and does not leave the process.
+Development-only routes are compile-time excluded from Release builds. They
+may project deterministic production models for tests but cannot supply live
+behavior.
 
-## Stable comparison dimensions
+## Shell and surface hierarchy
 
-```text
-concept:
-  native-workbench | query-studio | column-observatory |
-  grid-canvas | change-desk
+- The toolbar carries connection context and global actions.
+- The leading catalog preserves engine and object orientation.
+- Tabs own object and query workspaces.
+- Data grids, SQL editors, results, and inspectors are opaque content planes.
+- The bottom rail exposes mode, row/page state, and pending changes.
+- Sheets own connection setup, row editing, and reviewed apply.
 
-surface:
-  connections | setup | data-grid | sql-results | change-review
+Minimum, typical, and expanded windows preserve a usable catalog and primary
+content plane. Inspectors may collapse before primary work becomes unusable.
 
-appearance:
-  system | light | dark
+## Engine truth
 
-accessibility:
-  system | reduce-transparency | increase-contrast | reduce-motion
+- PostgreSQL exposes relational data, structure, typed values, and reviewed
+  primary-key row updates.
+- ClickHouse exposes analytical catalog, data, structure, query, and mutation
+  truth without implying PostgreSQL transaction behavior.
+- Redis exposes keys, types, TTL, bounded scan position, collections, and
+  command results; it never renders a relational grid as engine truth.
 
-engine:
-  postgresql | clickhouse | redis
+Loading, empty, disconnected, connection-error, query-error, read-only,
+selected-value, pending-change, safe-review, destructive-review, and expiry
+states require explicit presentations.
 
-fixture:
-  populated | empty | loading | connection-error | large-result |
-  long-identifiers | selected-cell | pending-change | destructive-review
+## Interaction and safety
 
-window-size:
-  minimum | typical | expanded
-```
+- Keyboard, menu, toolbar, and direct-manipulation commands converge on the
+  same application actions.
+- Native tables own selection, scrolling, column resizing/reordering,
+  accessibility, and context menus; they contain no backend behavior.
+- Changes stay local until review. Apply uses Rust-issued bounded authority and
+  becomes unavailable after consumption or expiry.
+- Destructive actions require exact-name or typed confirmation according to the
+  Rust safety contract.
+- Credentials, SQL text, and cell values are not logged or persisted by
+  presentation code.
 
-Launch arguments use `--concept`, `--surface`, `--appearance`,
-`--accessibility`, `--engine`, `--fixture`, `--window-size`, `--inactive`, and
-`--capture`. Invalid or missing values fall back to Native Workbench, Data
-Grid, system appearance, system accessibility, PostgreSQL, populated data,
-and typical window size. Capture mode hides lab controls but does not change
-concept content.
+## Material and accessibility
 
-## Interaction contract
-
-- A single presentation-only session owns concept, surface, engine, fixture,
-  selection, inspector, sheet, and command state.
-- The result grid is a narrow `NSTableView` boundary because SwiftUI `Table`
-  does not provide the required column reordering and database-grid density.
-  It owns native row selection, scrolling, column resizing/reordering, cell
-  accessibility labels, and a context menu; it contains no backend behavior.
-- Connection and destructive-review flows use real sheets. Destructive apply
-  requires typed `APPLY` confirmation.
-- System toolbar and menu commands expose connection, query, navigation,
-  engine, inspector, and review actions. `Command-T` opens a query,
-  `Shift-Command-N` opens connection setup, and `Command-Return` runs the
-  static query route.
-- Launch routes deterministically exercise engine, fixture, appearance,
-  accessibility, activity, and window-size states without changing system
-  preferences.
-
-## Isolation proof
-
-The repository check must fail if the lab source contains any production
-module import or forbidden production/backend symbol. It must also assert the
-Swift Package and generated Xcode target dependency lists remain empty, then
-build and test the lab independently.
-
-Forbidden concepts include:
-
-```text
-TableRockBridge  TableRockFeature  tablerock_ffi  UniFFI  Rust
-WorkbenchPresentationStore  WorkbenchBackend  persistence    credential
-URLSession       Network.framework
-```
-
-The word list is defense in depth, not the module boundary itself.
-
-## Capture contract
-
-- Window sizes are fixed at 1280×760 minimum, 1440×900 typical, and 1720×1040
-  expanded content points; captures record actual pixel dimensions.
-- One filename per concept, surface, appearance, accessibility mode, engine,
-  fixture, window size, and activity state.
-- The 55-capture gate matrix includes all five light surfaces per concept,
-  two dark work surfaces per concept, one inactive window per concept, three
-  explicit accessibility previews, two alternate sizes, eight fixture
-  scenarios, and two alternate engines.
-- No real connection names, credentials, SQL, values, usernames, hostnames, or
-  application data may appear.
-- Capture manifest records git revision, host, Xcode/SDK, launch arguments,
-  dimensions, and checksum.
+- Use system Liquid Glass only for functional chrome.
+- Never apply glass, decorative blur, or shadow to content planes.
+- Use semantic colors, native fonts, labeled icon controls, visible focus, and
+  complete keyboard traversal.
+- Increase Contrast, Reduce Transparency, Reduce Motion, light/dark appearance,
+  inactive windows, and minimum-size layouts must preserve hierarchy and
+  meaning without color-only signals.
 
 ## Clean-room provenance
 
-TablePro's public product pages and documentation informed only broad
-workbench organization: persistent database context, dense native result
-tables, query tabs, inspectors, connection sheets, and keyboard-first flow.
-Apple platform components and the installed macOS SDK determine behavior and
-implementation. All names, fixtures, identifiers, geometry, copy, assets, and
-Swift/AppKit code are original TableRock work. No TablePro source, tests,
-comments, bundle internals, branding, or proprietary assets were inspected or
-used.
-
-## Gate contract
-
-Captures and verification open the first gate; they do not close it. Work must
-stop with production UI unchanged. Operator concept selection is required,
-followed by a separate refined-concept confirmation before migration.
+TablePro public material informed broad workbench rhythm only. Apple platform
+components determine native behavior. TableRock names, models, safety rules,
+geometry, copy, and implementation are original. No external source, tests,
+comments, branding, assets, bundle internals, credentials, or proprietary data
+are used.

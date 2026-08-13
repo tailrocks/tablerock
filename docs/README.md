@@ -18,16 +18,14 @@ drives the whole program.
 [`support-matrix.md`](support-matrix.md) records only configurations exercised
 by repository evidence and names the unproven boundaries.
 
-## Design exploration
+## Native macOS design
 
-- [Native macOS 2026 phase 0 audit](design/native-macos-2026/phase-0-architecture-and-drift.md)
-  — current architecture, drift, clean-room reference boundary, design-lab
-  isolation contract, and the mandatory operator gate.
+- [Production Native Workbench decision](design/native-macos-2026/decision-native-workbench.md)
+  — selected structure, ownership boundary, and clean-room provenance.
 - [Experience brief](design/native-macos-2026/experience-brief.md) ·
   [information architecture](design/native-macos-2026/information-architecture.md) ·
   [component/material map](design/native-macos-2026/component-material-map.md) ·
   [design contracts](design/native-macos-2026/design-contracts.md) ·
-  [five concepts](design/native-macos-2026/concepts.md) ·
   [research provenance](design/native-macos-2026/research-provenance.md)
 
 ## Product specification

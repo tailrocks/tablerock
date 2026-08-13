@@ -1,6 +1,0 @@
-revision	f0820edc01be011ca241654d783ad6ee46ee35c6
-host	26.5.2 (25F84)
-xcode	Xcode 26.6 Build version 17F113 
-sdk	26.5
-matrix	25 light surfaces + 10 dark work surfaces + 5 inactive windows + 3 accessibility previews + 2 alternate sizes + 8 scenarios + 2 alternate engines
-capture_count	55

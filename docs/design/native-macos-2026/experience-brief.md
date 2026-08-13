@@ -1,7 +1,7 @@
 # Native macOS experience brief
 
-Status: pre-gate design contract
-Audience: operator and implementers
+Status: production design contract
+Audience: operators and implementers
 
 ## Experience promise
 
@@ -36,9 +36,7 @@ The primary working loop is:
 - **Every state has an answer.** Loading, empty, disconnected, stale, error,
   read-only, and pending-change states need explicit presentation contracts.
 
-## Required pre-gate surfaces
-
-All five concepts present the same invented fixture world:
+## Required production surfaces
 
 - Connections: groups, environment labels, recency, health, add/search actions.
 - Connection Setup: engine, host, port, database, identity, SSL/SSH, safe mode,
@@ -59,10 +57,3 @@ All five concepts present the same invented fixture world:
 - Reduce Transparency replaces glass with a strong opaque material.
 - Reduce Motion removes decorative transitions and morphing.
 - Light and dark appearances both retain hierarchy and readable separators.
-
-## Explicit non-goals before operator selection
-
-No production UI edits, real database connections, bridge calls, persistence,
-credential access, network access, import/export, or production-model reuse.
-No attempt to unify the concepts prematurely. The stop condition is captured,
-verified concepts ready for operator selection.

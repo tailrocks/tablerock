@@ -7,8 +7,6 @@ Date observed: 2026-08-12
 - TablePro is the primary design reference and may be observed as an installed
   application if public materials leave a visual ambiguity.
 - The desired result should closely adapt its overall native design language.
-- `design/TableRock-Native-Concepts.sketch` is completely wrong for this work
-  and must not be used as a reference.
 
 ## TablePro public observations
 
@@ -33,14 +31,15 @@ Influence mapping:
 | Observation | Adaptation |
 |---|---|
 | Sidebar + context toolbar + tabs + grid rhythm | Native Workbench structure |
-| Editor/results split | Native Workbench SQL surface and Query Studio |
+| Editor/results split | Native Workbench SQL surface |
 | Trailing inspector | Native Workbench typed value detail |
 | Filter rail and bottom status/paging | Shared Data Grid components |
 | Native density and restrained hierarchy | Shared typography/spacing direction |
 
 No source code, tests, source comments, bundle internals, proprietary assets,
 branding, product strings, stored credentials, or real data were inspected.
-The installed application was not required for this checkpoint.
+The installed application supplied visual comparison only. No implementation
+material was inspected.
 
 ## Apple primary sources
 
