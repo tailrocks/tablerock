@@ -6,6 +6,33 @@
   @testable import TableRockPresentation
 
   final class NativeWorkbenchFixtureConfigurationTests: XCTestCase {
+    func testResponsiveWorkbenchCollapsesSidebarOnlyForNarrowInspector() {
+      XCTAssertTrue(
+        WorkbenchResponsiveLayout.shouldCollapseSidebar(
+          availableWidth: WorkbenchResponsiveLayout.navigationCollapseWidth - 1,
+          sessionActive: true,
+          trailingInspectorVisible: true
+        ))
+      XCTAssertFalse(
+        WorkbenchResponsiveLayout.shouldCollapseSidebar(
+          availableWidth: WorkbenchResponsiveLayout.navigationCollapseWidth,
+          sessionActive: true,
+          trailingInspectorVisible: true
+        ))
+      XCTAssertFalse(
+        WorkbenchResponsiveLayout.shouldCollapseSidebar(
+          availableWidth: 760,
+          sessionActive: false,
+          trailingInspectorVisible: true
+        ))
+      XCTAssertFalse(
+        WorkbenchResponsiveLayout.shouldCollapseSidebar(
+          availableWidth: 760,
+          sessionActive: true,
+          trailingInspectorVisible: false
+        ))
+    }
+
     @MainActor
     func testEmptyQueryRunSelectsExplicitMessagesState() async {
       let configuration = NativeWorkbenchFixtureConfiguration.from(environment: [:])

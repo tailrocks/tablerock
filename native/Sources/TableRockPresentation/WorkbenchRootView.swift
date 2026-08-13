@@ -2,6 +2,9 @@ import SwiftUI
 
 public struct ContentView: View {
   @Environment(WorkbenchPresentationStore.self) private var model
+  @State private var columnVisibility: NavigationSplitViewVisibility = .all
+  @State private var availableWidth: CGFloat = .infinity
+  @State private var automaticallyCollapsedSidebar = false
 
   public init() {}
 
@@ -12,31 +15,8 @@ public struct ContentView: View {
     // content even when the selected connection route remains unchanged.
     let _ = model.profiles.count
     let _ = model.profilesLoading
-    NavigationSplitView {
-      // Native Workbench uses one stable leading plane. Connections own it
-      // before connect; the database catalog owns it for the live session.
-      Group {
-        if model.sessionHex != nil {
-          ConnectionsCatalogPane()
-        } else {
-          ConnectionsNavigatorPane()
-        }
-      }
-      .navigationTitle(model.sessionHex == nil ? "TableRock" : "Catalog")
-      .navigationSplitViewColumnWidth(min: 210, ideal: 232, max: 300)
-    } detail: {
-      // Workbench shell when connected; welcome/direct-connect when not.
-      // Spec: context strip · tabs · content · status (workbench.md).
-      Group {
-        if model.sessionHex != nil {
-          WorkbenchShellView()
-        } else {
-          ConnectionWorkspaceView()
-        }
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-    .navigationSplitViewStyle(.balanced)
+    let trailingInspectorVisible = hasTrailingInspector
+    workbenchSplitView(trailingInspectorVisible: trailingInspectorVisible)
     .sheet(
       isPresented: Binding(
         get: { model.profileEditorSheetPresented },
@@ -243,6 +223,46 @@ public struct ContentView: View {
     }
   }
 
+  private func workbenchSplitView(trailingInspectorVisible: Bool) -> some View {
+    NavigationSplitView(columnVisibility: $columnVisibility) {
+      // Native Workbench uses one stable leading plane. Connections own it
+      // before connect; the database catalog owns it for the live session.
+      Group {
+        if model.sessionHex != nil {
+          ConnectionsCatalogPane()
+        } else {
+          ConnectionsNavigatorPane()
+        }
+      }
+      .navigationTitle(model.sessionHex == nil ? "TableRock" : "Catalog")
+      .navigationSplitViewColumnWidth(min: 210, ideal: 232, max: 300)
+    } detail: {
+      // Workbench shell when connected; welcome/direct-connect when not.
+      // Spec: context strip · tabs · content · status (workbench.md).
+      Group {
+        if model.sessionHex != nil {
+          WorkbenchShellView()
+        } else {
+          ConnectionWorkspaceView()
+        }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    .navigationSplitViewStyle(.balanced)
+    .onGeometryChange(for: CGFloat.self) { proxy in
+      proxy.size.width
+    } action: { width in
+      availableWidth = width
+      updateResponsiveSidebar(
+        width: width,
+        trailingInspectorVisible: trailingInspectorVisible
+      )
+    }
+    .onChange(of: trailingInspectorVisible) { _, visible in
+      updateResponsiveSidebar(width: availableWidth, trailingInspectorVisible: visible)
+    }
+  }
+
   private var focusedWorkbenchActions: WorkbenchActions {
     // Focused scene values carry a reference. Explicit reads make Observation
     // invalidate this value when command capabilities change.
@@ -253,5 +273,45 @@ public struct ContentView: View {
     _ = model.isCatalogRefreshing
     _ = model.selectedObjectTabId
     return WorkbenchActions(model: model)
+  }
+
+  private var hasTrailingInspector: Bool {
+    guard model.sessionHex != nil else { return false }
+    if let tab = model.selectedObjectTab, tab.selectedSection == "structure" {
+      return true
+    }
+    return model.selectedCellSnapshot != nil
+  }
+
+  private func updateResponsiveSidebar(width: CGFloat, trailingInspectorVisible: Bool) {
+    let shouldCollapse = WorkbenchResponsiveLayout.shouldCollapseSidebar(
+      availableWidth: width,
+      sessionActive: model.sessionHex != nil,
+      trailingInspectorVisible: trailingInspectorVisible
+    )
+    if shouldCollapse {
+      guard columnVisibility != .detailOnly else { return }
+      automaticallyCollapsedSidebar = true
+      columnVisibility = .detailOnly
+    } else if automaticallyCollapsedSidebar {
+      automaticallyCollapsedSidebar = false
+      columnVisibility = .all
+    }
+  }
+}
+
+enum WorkbenchResponsiveLayout {
+  static let navigationCollapseWidth: CGFloat = 980
+  static let inspectorMinimumWidth: CGFloat = 240
+  static let inspectorIdealWidth: CGFloat = 270
+
+  static func shouldCollapseSidebar(
+    availableWidth: CGFloat,
+    sessionActive: Bool,
+    trailingInspectorVisible: Bool
+  ) -> Bool {
+    sessionActive
+      && trailingInspectorVisible
+      && availableWidth < navigationCollapseWidth
   }
 }

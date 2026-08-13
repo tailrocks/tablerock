@@ -98,8 +98,12 @@ Copy Text / Copy Hex are presentation-only pasteboard actions over Rust-owned
 bytes.
 At the minimum supported workbench width, the result grid and inspector both
 retain operable widths; selecting a cell must never collapse the inspector out
-of the accessibility hierarchy. Sheets contain their independently actionable
-controls rather than replacing those descendants with one container element.
+of the accessibility hierarchy. Below 980 points, showing a trailing value or
+structure inspector auto-collapses the leading catalog; the system sidebar
+control can reopen it, and widening the window or closing the inspector restores
+an automatically collapsed catalog. Sheets contain their independently
+actionable controls rather than replacing those descendants with one container
+element.
 
 Table-like object tabs expose ordered server sorting, typed parameterized
 filters, and an explicitly labeled raw-WHERE editor. Raw fragments are capped

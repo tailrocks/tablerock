@@ -30,7 +30,11 @@ struct WorkbenchShellView: View {
       {
         Divider()
         NativeStructureInspector(tab: tab)
-          .frame(width: 270)
+          .frame(
+            minWidth: WorkbenchResponsiveLayout.inspectorMinimumWidth,
+            idealWidth: WorkbenchResponsiveLayout.inspectorIdealWidth,
+            maxWidth: WorkbenchResponsiveLayout.inspectorIdealWidth
+          )
       } else if let snapshot = model.selectedCellSnapshot {
         Divider()
         NativeValueInspector(
@@ -39,7 +43,11 @@ struct WorkbenchShellView: View {
           row: snapshot.2,
           columnIndex: snapshot.3
         )
-        .frame(width: 270)
+        .frame(
+          minWidth: WorkbenchResponsiveLayout.inspectorMinimumWidth,
+          idealWidth: WorkbenchResponsiveLayout.inspectorIdealWidth,
+          maxWidth: WorkbenchResponsiveLayout.inspectorIdealWidth
+        )
       }
     }
     .accessibilityElement(children: .contain)

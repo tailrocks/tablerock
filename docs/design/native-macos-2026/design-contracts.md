@@ -25,7 +25,10 @@ behavior.
 
 Minimum, typical, and expanded windows preserve a usable catalog and primary
 content plane. The production window supports a 760-by-520-point minimum;
-inspectors and secondary regions collapse before primary work becomes unusable.
+when a trailing inspector needs space below 980 points, the leading catalog
+auto-collapses but remains available through the system sidebar control. The
+inspector stays present and operable; expanding the window or closing the
+inspector restores an automatically collapsed catalog.
 
 ## Engine truth
 
