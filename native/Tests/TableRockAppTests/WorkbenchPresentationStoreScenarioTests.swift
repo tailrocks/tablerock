@@ -89,6 +89,26 @@ final class WorkbenchPresentationStoreScenarioTests: XCTestCase {
     XCTAssertEqual(catalog[2].parentIdBytes, catalog[0].idBytes)
   }
 
+  func testSQLiteCatalogTableOpensAsObjectTab() async throws {
+    let backend = ScriptedWorkbenchBackend(scenario: "success")
+    let model = WorkbenchPresentationStore(client: backend)
+    model.formEngine = "sqlite"
+    await model.connectByParams()
+    let table = WorkbenchCatalogNode(
+      idBytes: Data(repeating: 7, count: 16),
+      parentIdBytes: Data(repeating: 6, count: 16),
+      depth: 1, name: "artists", kind: "sqlite_table",
+      childrenState: "unrequested", expandable: true)
+    model.catalogSnapshot = [table]
+
+    await model.openCatalogObject(nodeId: table.idBytes)
+
+    XCTAssertEqual(model.activeObjectTab?.title, "artists")
+    XCTAssertEqual(model.activeObjectTab?.kind, "sqlite_table")
+    XCTAssertNotNil(model.activeObjectTab?.resultTable)
+    XCTAssertNil(model.profileActionError)
+  }
+
   func testPostgresActivityUsesTypedRowsAndConfirmedSignalOutcome() async {
     let backend = ScriptedWorkbenchBackend(scenario: "success")
     let model = WorkbenchPresentationStore(client: backend)

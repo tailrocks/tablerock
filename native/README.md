@@ -119,11 +119,11 @@ executable code in them. Closing or disconnecting is disabled while the tool
 is active; Cancel requests supervised process termination, and cancelled dumps
 remove their incomplete destination.
 
-Double-click a PostgreSQL or ClickHouse table-like catalog object to open a
-read-only preview tab. Leaving the preview or choosing Pin makes it durable for
-the current connection. The same object can open more than once with independent
-result/page state. Rust resolves the opaque catalog handle and renders bounded
-identifier-safe browse SQL; Swift never assembles object SQL. The active Redis
+Double-click a PostgreSQL, ClickHouse, or local SQLite table-like catalog object
+to open a read-only preview tab. Leaving the preview or choosing Pin makes it
+durable for the current connection. The same object can open more than once with
+independent result/page state. Rust resolves the opaque catalog handle and
+renders bounded identifier-safe browse SQL; Swift never assembles object SQL. The active Redis
 logical database expands through bounded SCAN/TYPE into typed key nodes;
 non-UTF-8 keys retain reversible hex identity. Redis key object tabs resolve
 those opaque identities below Swift and show bounded String, Hash, List, Set,

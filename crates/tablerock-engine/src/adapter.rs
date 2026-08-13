@@ -153,6 +153,8 @@ pub enum DriverPageRequest {
     /// Operator-supplied SQLite statement against a local file session.
     SqliteStatement {
         statement: StatementText,
+        /// Bound parameters for `?n` placeholders. Never logged by Debug.
+        parameters: Vec<crate::browse_plan::FilterValue>,
         limits: PageLimits,
         max_cell_bytes: u64,
     },
@@ -255,10 +257,12 @@ impl fmt::Debug for DriverPageRequest {
                 .field("options", options),
             Self::SqliteStatement {
                 statement,
+                parameters,
                 limits,
                 max_cell_bytes,
             } => debug
                 .field("statement_bytes", &statement.len())
+                .field("parameter_count", &parameters.len())
                 .field("limits", limits)
                 .field("max_cell_bytes", max_cell_bytes),
         };
